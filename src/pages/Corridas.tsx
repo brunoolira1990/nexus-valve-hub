@@ -7,7 +7,7 @@ import type { Corrida, ComposicaoQuimica, Tracao, Impacto } from '@/types';
 
 const chemKeys: (keyof ComposicaoQuimica)[] = ['C','Mn','P','S','Si','Ni','Cr','Mo','Cu','V','Nb','Al','Ti','N','Zn','Fe','Sn','Pb','Ca','Ta','W','Li','CO'];
 
-const emptyComp: ComposicaoQuimica = Object.fromEntries(chemKeys.map(k => [k, 0])) as ComposicaoQuimica;
+const emptyComp: ComposicaoQuimica = { C:0,Mn:0,P:0,S:0,Si:0,Ni:0,Cr:0,Mo:0,Cu:0,V:0,Nb:0,Al:0,Ti:0,N:0,Zn:0,Fe:0,Sn:0,Pb:0,Ca:0,Ta:0,W:0,Li:0,CO:0 };
 const emptyTrac: Tracao = { norma:'',corpo_prova:'',direcao:'',posicao:'',temperatura:0,limite_escoamento:0,limite_resistencia:0,alongamento:0,estriccao:0,dureza:'',tratamento_termico:'' };
 const emptyImp: Impacto = { norma:'',corpo_prova:'',direcao:'',posicao:'',temperatura:0,valor_a:0,valor_b:0,valor_c:0,media:0 };
 
