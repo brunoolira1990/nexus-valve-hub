@@ -21,7 +21,7 @@ const NFeEntrada = () => {
   const total = itens.reduce((s, i) => s + i.quantidade * i.valor, 0);
 
   const openNew = () => { setEditing(null); setForm({ numero:'',fornecedor_id:1,fornecedor_nome:'',data:'',pedido_compra_id:undefined,cte_id:undefined }); setItens([]); setModalOpen(true); };
-  const openEdit = (e: NFeEntrada) => { setEditing(e); setForm(e); setItens(e.itens); setModalOpen(true); };
+  const openEdit = (e: NFeEntrada) => { setEditing(e); setForm({...e, pedido_compra_id: e.pedido_compra_id, cte_id: e.cte_id}); setItens(e.itens); setModalOpen(true); };
   const handleDelete = async (id: number) => { if (confirm('Excluir?')) { await nfeEntradasService.delete(id); load(); } };
   const handleSave = async () => {
     const data = { ...form, itens, valor_total: total };

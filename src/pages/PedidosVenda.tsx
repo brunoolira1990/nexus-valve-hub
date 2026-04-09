@@ -21,7 +21,7 @@ const PedidosVenda = () => {
   const total = itens.reduce((s, i) => s + i.quantidade * i.valor_unitario, 0);
 
   const openNew = () => { setEditing(null); setForm({ numero:'',cliente_id:1,cliente_nome:'',data:'',status:'Pendente',proposta_id:undefined }); setItens([]); setModalOpen(true); };
-  const openEdit = (e: PedidoVenda) => { setEditing(e); setForm(e); setItens(e.itens); setModalOpen(true); };
+  const openEdit = (e: PedidoVenda) => { setEditing(e); setForm({...e, proposta_id: e.proposta_id}); setItens(e.itens); setModalOpen(true); };
   const handleDelete = async (id: number) => { if (confirm('Excluir?')) { await pedidosVendaService.delete(id); load(); } };
   const handleSave = async () => {
     const data = { ...form, itens, valor_total: total };

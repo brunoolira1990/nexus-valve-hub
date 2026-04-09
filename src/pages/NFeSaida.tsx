@@ -22,7 +22,7 @@ const NFeSaida = () => {
   const total = itens.reduce((s, i) => s + i.quantidade * i.valor, 0);
 
   const openNew = () => { setEditing(null); setEmitida(false); setForm({ numero:'',cliente_id:1,cliente_nome:'',data:'',status:'Pendente',pedido_venda_id:undefined }); setItens([]); setModalOpen(true); };
-  const openEdit = (e: NFeSaida) => { setEditing(e); setEmitida(false); setForm(e); setItens(e.itens); setModalOpen(true); };
+  const openEdit = (e: NFeSaida) => { setEditing(e); setEmitida(false); setForm({...e, pedido_venda_id: e.pedido_venda_id}); setItens(e.itens); setModalOpen(true); };
   const handleDelete = async (id: number) => { if (confirm('Excluir?')) { await nfeSaidasService.delete(id); load(); } };
   const handleSave = async () => {
     const data = { ...form, itens, valor_total: total, status: 'Emitida' };
