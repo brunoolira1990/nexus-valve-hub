@@ -1,0 +1,59 @@
+services:
+  db:
+    image: postgres:15
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${DB_NAME:-nexus_erp}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    # Sem publicar 5432 no host: evita conflito com PostgreSQL local (address already in use).
+    # O backend acessa o banco pela rede Docker em db:5432. Para expor no host (ex.: DBeaver),
+    # descomente e use outra porta: "5433:5432"
+    # ports:
+    #   - "5433:5432"
+    # Após kill/stop abrupto o Postgres pode demorar na recuperação (WAL/fsync).
+    # start_period evita marcar unhealthy enquanto ainda está a subir.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 10s
+      retries: 18
+      start_period: 120s
+
+  backend:
+    build: ./backend
+    command: sh -c "python manage.py migrate && python manage.py criar_usuario_inicial && python manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - ./backend:/app
+    ports:
+      # Opcional: aceder ao Django direto no host (admin, testes). O front em Docker usa o proxy /api.
+      - "${BACKEND_PORT:-8000}:8000"
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Host: padrão 5174 — a 5173 costuma estar ocupada por `npm run dev` (Vite) no Windows/WSL.
+  # Para publicar na 5173: no .env use FRONTEND_PORT=5173 e liberte a porta (pare o outro processo/container).
+  frontend:
+    build: ./frontend
+    ports:
+      - "${FRONTEND_PORT:-5174}:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      # Mesma origem no browser: Vite faz proxy de /api e /media para o backend (VITE_PROXY_TARGET).
+      VITE_API_URL: /api
+      VITE_PROXY_TARGET: http://backend:8000
+      VITE_HMR_HOST: localhost
+      VITE_HMR_CLIENT_PORT: ${FRONTEND_PORT:-5174}
+    env_file:
+      - .env
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
