@@ -13,6 +13,7 @@ const NFeSaida = () => {
   const [form, setForm] = useState({ numero:'', cliente_id:1, cliente_nome:'Petrobrás S.A.', data:'', status:'Pendente', pedido_venda_id:undefined as number|undefined });
   const [itens, setItens] = useState<ItemNFe[]>([]);
   const [emitida, setEmitida] = useState(false);
+  const [titulosGerados, setTitulosGerados] = useState<NFeSaida['titulos_receber']>([]);
 
   const load = async () => setItems(await nfeSaidasService.getAll());
   useEffect(() => { load(); }, []);
@@ -21,13 +22,15 @@ const NFeSaida = () => {
   const removeItem = (id: number) => setItens(p => p.filter(i => i.id !== id));
   const total = itens.reduce((s, i) => s + i.quantidade * i.valor, 0);
 
-  const openNew = () => { setEditing(null); setEmitida(false); setForm({ numero:'',cliente_id:1,cliente_nome:'',data:'',status:'Pendente',pedido_venda_id:undefined }); setItens([]); setModalOpen(true); };
-  const openEdit = (e: NFeSaida) => { setEditing(e); setEmitida(false); setForm({...e, pedido_venda_id: e.pedido_venda_id}); setItens(e.itens); setModalOpen(true); };
+  const openNew = () => { setEditing(null); setEmitida(false); setTitulosGerados([]); setForm({ numero:'',cliente_id:1,cliente_nome:'',data:'',status:'Pendente',pedido_venda_id:undefined }); setItens([]); setModalOpen(true); };
+  const openEdit = (e: NFeSaida) => { setEditing(e); setEmitida(false); setTitulosGerados(e.titulos_receber ?? []); setForm({...e, pedido_venda_id: e.pedido_venda_id}); setItens(e.itens); setModalOpen(true); };
   const handleDelete = async (id: number) => { if (confirm('Excluir?')) { await nfeSaidasService.delete(id); load(); } };
   const handleSave = async () => {
     const data = { ...form, itens, valor_total: total, status: 'Emitida' };
-    if (editing) await nfeSaidasService.update(editing.id, data);
-    else await nfeSaidasService.create(data as Omit<NFeSaida, 'id'>);
+    const saved = editing
+      ? await nfeSaidasService.update(editing.id, data)
+      : await nfeSaidasService.create(data as Omit<NFeSaida, 'id'>);
+    setTitulosGerados(saved.titulos_receber ?? []);
     setEmitida(true);
     setTimeout(() => { setModalOpen(false); load(); }, 2000);
   };
@@ -61,6 +64,11 @@ const NFeSaida = () => {
             <CheckCircle className="h-16 w-16 text-success mx-auto mb-4" />
             <h3 className="text-xl font-bold text-foreground">NF-e emitida com sucesso!</h3>
             <p className="text-muted-foreground mt-2">Documento fiscal gerado.</p>
+            {titulosGerados && titulosGerados.length > 0 && (
+              <p className="text-sm text-muted-foreground mt-1">
+                {titulosGerados.length} título(s) financeiro(s) gerado(s) para contas a receber.
+              </p>
+            )}
           </div>
         ) : (
           <>
@@ -83,6 +91,35 @@ const NFeSaida = () => {
               ))}
               <div className="text-right mt-3 pt-3 border-t border-border font-bold">Total: R$ {total.toFixed(2)}</div>
             </div>
+            {titulosGerados && titulosGerados.length > 0 && (
+              <div className="mt-4 border border-border rounded-md p-3">
+                <h3 className="font-medium text-sm mb-2">Títulos financeiros gerados</h3>
+                <div className="overflow-x-auto">
+                  <table className="erp-table">
+                    <thead>
+                      <tr>
+                        <th>Parcela</th>
+                        <th>Dias</th>
+                        <th>Vencimento</th>
+                        <th>Valor</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {titulosGerados.map((t) => (
+                        <tr key={`${t.parcela}-${t.vencimento}`}>
+                          <td>{t.parcela}</td>
+                          <td>{t.dias}</td>
+                          <td>{t.vencimento}</td>
+                          <td>R$ {Number(t.valor).toFixed(2)}</td>
+                          <td>{t.status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
             <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
               <button onClick={() => setModalOpen(false)} className="erp-btn-outline">Cancelar</button>
               <button onClick={handleSave} className="erp-btn-primary">Emitir NF-e</button>

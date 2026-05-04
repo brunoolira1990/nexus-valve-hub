@@ -17,7 +17,8 @@ import {
 import { consultaCep, consultaCnpj } from '@/services/api/consulta';
 import { apiErrorMessage } from '@/services/api/config';
 import { isValidCnpj, normalizeCnpj } from '@/lib/cnpj';
-import type { CondicaoPagamento, Fornecedor, Transportadora } from '@/types';
+import { parsePaymentCondition } from '@/lib/paymentTerms';
+import type { Fornecedor, Transportadora } from '@/types';
 import { REGIMES_CADASTRO, TIPOS_CONTA, UFS } from '@/types';
 
 const emailOrEmpty = z.union([z.literal(''), z.string().email('E-mail inválido')]);
@@ -54,7 +55,7 @@ const schema = z.object({
   cnae: z.string(),
   regime_tributario: z.string(),
   integracao_texto: z.string(),
-  condicao_pagamento_padrao_id: z.string(),
+  condicao_pagamento_texto: z.string(),
   transportadora_padrao_id: z.string(),
   prazo_entrega: z.coerce.number().min(0),
   ativo: z.boolean(),
@@ -105,8 +106,7 @@ function toApiPayload(values: FornecedorFormInput): Omit<Fornecedor, 'id'> {
     email_nf: values.email_nf,
     telefone_alternativo: values.telefone_alternativo,
     celular: values.celular,
-    condicao_pagamento_padrao_id:
-      values.condicao_pagamento_padrao_id === '' ? null : Number(values.condicao_pagamento_padrao_id),
+    condicao_pagamento_texto: values.condicao_pagamento_texto.trim(),
     transportadora_padrao_id:
       values.transportadora_padrao_id === '' ? null : Number(values.transportadora_padrao_id),
     prazo_entrega: values.prazo_entrega,
@@ -151,8 +151,7 @@ export function fornecedorToFormValues(f: Partial<Fornecedor>): FornecedorFormIn
     cnae: f.cnae ?? '',
     regime_tributario: f.regime_tributario ?? '',
     integracao_texto: f.integracao_texto ?? '',
-    condicao_pagamento_padrao_id:
-      f.condicao_pagamento_padrao_id != null ? String(f.condicao_pagamento_padrao_id) : '',
+    condicao_pagamento_texto: f.condicao_pagamento_texto ?? '',
     transportadora_padrao_id:
       f.transportadora_padrao_id != null ? String(f.transportadora_padrao_id) : '',
     prazo_entrega: f.prazo_entrega ?? 0,
@@ -163,7 +162,6 @@ export function fornecedorToFormValues(f: Partial<Fornecedor>): FornecedorFormIn
 
 type Props = {
   defaultValues: FornecedorFormInput;
-  condicoes: CondicaoPagamento[];
   transportadoras: Transportadora[];
   onSubmit: (payload: Omit<Fornecedor, 'id'>) => Promise<void>;
   onCancel: () => void;
@@ -172,7 +170,6 @@ type Props = {
 
 export function FornecedorForm({
   defaultValues,
-  condicoes,
   transportadoras,
   onSubmit,
   onCancel,
@@ -279,15 +276,21 @@ export function FornecedorForm({
     }
   };
 
-  const condicaoOptions = condicoes.map((c) => ({ value: String(c.id), label: c.descricao }));
   const transportadoraOptions = transportadoras.map((t) => ({ value: String(t.id), label: t.razao_social }));
+  const condicaoPreview = (() => {
+    try {
+      return parsePaymentCondition(getValues('condicao_pagamento_texto'));
+    } catch {
+      return null;
+    }
+  })();
 
   const panel = (
     <CadastroSection title={TAB_ITEMS.find((t) => t.id === tab)?.label ?? ''}>
       {tab === 'principal' && (
         <>
-          <InputField label="Razão Social *" {...register('razao_social')} error={errors.razao_social?.message} />
-          <InputField label="Nome Fantasia" {...register('nome_fantasia')} />
+          <InputField label="Razão Social *" operationalUpper {...register('razao_social')} error={errors.razao_social?.message} />
+          <InputField label="Nome Fantasia" operationalUpper {...register('nome_fantasia')} />
           <div className="md:col-span-2 flex flex-col gap-2">
             <InputField label="CNPJ *" {...register('cnpj')} onBlur={onCnpjBlur} error={errors.cnpj?.message} />
             <div className="flex flex-wrap gap-2">
@@ -317,12 +320,12 @@ export function FornecedorForm({
             </CadastroButton>
           </div>
           <div className="md:col-span-2">
-            <InputField label="Logradouro" {...register('logradouro')} />
+            <InputField label="Logradouro" operationalUpper {...register('logradouro')} />
           </div>
-          <InputField label="Número" {...register('numero')} />
-          <InputField label="Complemento" {...register('complemento')} />
-          <InputField label="Bairro" {...register('bairro')} />
-          <InputField label="Cidade" {...register('cidade')} />
+          <InputField label="Número" operationalUpper {...register('numero')} />
+          <InputField label="Complemento" operationalUpper {...register('complemento')} />
+          <InputField label="Bairro" operationalUpper {...register('bairro')} />
+          <InputField label="Cidade" operationalUpper {...register('cidade')} />
           <SelectField label="Estado (UF)" options={ufOptions} {...register('uf')} />
         </>
       )}
@@ -343,6 +346,7 @@ export function FornecedorForm({
           <InputField
             className="md:col-span-2"
             label="Nome do contato (referência)"
+            operationalUpper
             {...register('contato_responsavel')}
           />
         </>
@@ -350,19 +354,19 @@ export function FornecedorForm({
 
       {tab === 'bancario' && (
         <>
-          <InputField label="Banco" {...register('banco')} />
-          <InputField label="Agência" {...register('agencia')} />
-          <InputField label="Conta (com dígito)" {...register('conta')} />
+          <InputField label="Banco" operationalUpper {...register('banco')} />
+          <InputField label="Agência" operationalUpper {...register('agencia')} />
+          <InputField label="Conta (com dígito)" operationalUpper {...register('conta')} />
           <SelectField label="Tipo de conta" options={tipoContaOptions} {...register('tipo_conta')} />
         </>
       )}
 
       {tab === 'fiscal' && (
         <>
-          <InputField label="Inscrição Estadual (IE)" {...register('ie')} />
-          <InputField label="Inscrição Municipal (IM)" {...register('inscricao_municipal')} />
-          <InputField label="Suframa" {...register('suframa')} />
-          <InputField label="CNAE" {...register('cnae')} />
+          <InputField label="Inscrição Estadual (IE)" operationalUpper {...register('ie')} />
+          <InputField label="Inscrição Municipal (IM)" operationalUpper {...register('inscricao_municipal')} />
+          <InputField label="Suframa" operationalUpper {...register('suframa')} />
+          <InputField label="CNAE" operationalUpper {...register('cnae')} />
           <SelectField label="Regime tributário" options={regimeOptions} {...register('regime_tributario')} />
         </>
       )}
@@ -371,6 +375,7 @@ export function FornecedorForm({
         <TextareaField
           label="Integrações / observações de integração"
           placeholder="Ex.: enviar NF por e-mail, integrar com CRM…"
+          operationalUpper
           {...register('integracao_texto')}
         />
       )}
@@ -385,11 +390,19 @@ export function FornecedorForm({
             {...register('prazo_entrega')}
             error={errors.prazo_entrega?.message}
           />
-          <SelectField
-            label="Condição de pagamento padrão"
-            options={[{ value: '', label: 'Nenhuma' }, ...condicaoOptions]}
-            {...register('condicao_pagamento_padrao_id')}
-          />
+          <div>
+            <InputField
+              label="Condição de pagamento"
+              placeholder="Ex.: 30 DDL, 30/45 DDL, 30/60/90, à vista"
+              operationalUpper
+              {...register('condicao_pagamento_texto')}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              {condicaoPreview && condicaoPreview.length > 0
+                ? `Parcelas interpretadas: ${condicaoPreview.join(', ')} dia(s)`
+                : 'Use formatos como 30 DDL, 30/45 DDL, 30/60/90 ou à vista.'}
+            </p>
+          </div>
           <SelectField
             label="Transportadora padrão"
             options={[{ value: '', label: 'Nenhuma' }, ...transportadoraOptions]}
@@ -402,7 +415,7 @@ export function FornecedorForm({
       )}
 
       {tab === 'recomendacoes' && (
-        <TextareaField label="Observações / recomendações" {...register('observacoes')} />
+        <TextareaField label="Observações / recomendações" operationalUpper {...register('observacoes')} />
       )}
     </CadastroSection>
   );
@@ -467,6 +480,7 @@ export function FornecedorForm({
           <InputField
             className="md:col-span-2"
             label="Nome do contato"
+            operationalUpper
             value={contactDraft.contato_responsavel}
             onChange={(e) => setContactDraft((d) => ({ ...d, contato_responsavel: e.target.value }))}
           />

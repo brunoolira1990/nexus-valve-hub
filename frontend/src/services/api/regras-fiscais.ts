@@ -1,3 +1,4 @@
+import { isAxiosError } from 'axios';
 import api from './config';
 import type { RegraFiscal } from '@/types';
 
@@ -11,5 +12,14 @@ export const regrasFiscaisService = {
     (await api.patch<RegraFiscal>(`${path}${id}/`, data)).data,
   delete: async (id: number) => {
     await api.delete(`${path}${id}/`);
+  },
+  /** Retorna a regra fiscal ou `null` se não houver match (404). */
+  buscar: async (params: { ncm: string; uf_origem: string; uf_destino: string; operacao: string }) => {
+    try {
+      return (await api.get<RegraFiscal>(`${path}buscar/`, { params })).data;
+    } catch (e: unknown) {
+      if (isAxiosError(e) && e.response?.status === 404) return null;
+      throw e;
+    }
   },
 };

@@ -2,6 +2,7 @@ import api from './config';
 
 export type ConsultaCepResponse = {
   logradouro: string;
+  complemento?: string;
   bairro: string;
   cidade: string;
   uf: string;

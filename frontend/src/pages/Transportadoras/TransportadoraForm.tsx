@@ -264,8 +264,8 @@ export function TransportadoraForm({ defaultValues, onSubmit, onCancel, saving }
     <CadastroSection title={TAB_ITEMS.find((t) => t.id === tab)?.label ?? ''}>
       {tab === 'principal' && (
         <>
-          <InputField label="Razão Social *" {...register('razao_social')} error={errors.razao_social?.message} />
-          <InputField label="Nome Fantasia" {...register('nome_fantasia')} />
+          <InputField label="Razão Social *" operationalUpper {...register('razao_social')} error={errors.razao_social?.message} />
+          <InputField label="Nome Fantasia" operationalUpper {...register('nome_fantasia')} />
           <div className="md:col-span-2 flex flex-col gap-2">
             <InputField label="CNPJ *" {...register('cnpj')} onBlur={onCnpjBlur} error={errors.cnpj?.message} />
             <div className="flex flex-wrap gap-2">
@@ -295,12 +295,12 @@ export function TransportadoraForm({ defaultValues, onSubmit, onCancel, saving }
             </CadastroButton>
           </div>
           <div className="md:col-span-2">
-            <InputField label="Logradouro" {...register('logradouro')} />
+            <InputField label="Logradouro" operationalUpper {...register('logradouro')} />
           </div>
-          <InputField label="Número" {...register('numero')} />
-          <InputField label="Complemento" {...register('complemento')} />
-          <InputField label="Bairro" {...register('bairro')} />
-          <InputField label="Cidade" {...register('cidade')} />
+          <InputField label="Número" operationalUpper {...register('numero')} />
+          <InputField label="Complemento" operationalUpper {...register('complemento')} />
+          <InputField label="Bairro" operationalUpper {...register('bairro')} />
+          <InputField label="Cidade" operationalUpper {...register('cidade')} />
           <SelectField label="Estado (UF)" options={ufOptions} {...register('uf')} />
         </>
       )}
@@ -317,25 +317,25 @@ export function TransportadoraForm({ defaultValues, onSubmit, onCancel, saving }
             {...register('email_nf')}
             error={errors.email_nf?.message}
           />
-          <InputField className="md:col-span-2" label="Nome do contato (referência)" {...register('contato')} />
+          <InputField className="md:col-span-2" label="Nome do contato (referência)" operationalUpper {...register('contato')} />
         </>
       )}
 
       {tab === 'bancario' && (
         <>
-          <InputField label="Banco" {...register('banco')} />
-          <InputField label="Agência" {...register('agencia')} />
-          <InputField label="Conta (com dígito)" {...register('conta')} />
+          <InputField label="Banco" operationalUpper {...register('banco')} />
+          <InputField label="Agência" operationalUpper {...register('agencia')} />
+          <InputField label="Conta (com dígito)" operationalUpper {...register('conta')} />
           <SelectField label="Tipo de conta" options={tipoContaOptions} {...register('tipo_conta')} />
         </>
       )}
 
       {tab === 'fiscal' && (
         <>
-          <InputField label="Inscrição Estadual (IE)" {...register('ie')} />
-          <InputField label="Inscrição Municipal (IM)" {...register('inscricao_municipal')} />
-          <InputField label="Suframa" {...register('suframa')} />
-          <InputField label="CNAE" {...register('cnae')} />
+          <InputField label="Inscrição Estadual (IE)" operationalUpper {...register('ie')} />
+          <InputField label="Inscrição Municipal (IM)" operationalUpper {...register('inscricao_municipal')} />
+          <InputField label="Suframa" operationalUpper {...register('suframa')} />
+          <InputField label="CNAE" operationalUpper {...register('cnae')} />
           <SelectField label="Regime tributário" options={regimeOptions} {...register('regime_tributario')} />
         </>
       )}
@@ -344,6 +344,7 @@ export function TransportadoraForm({ defaultValues, onSubmit, onCancel, saving }
         <TextareaField
           label="Integrações / observações de integração"
           placeholder="Ex.: enviar NF por e-mail, integrar com CRM…"
+          operationalUpper
           {...register('integracao_texto')}
         />
       )}
@@ -358,7 +359,7 @@ export function TransportadoraForm({ defaultValues, onSubmit, onCancel, saving }
             {...register('valor_km')}
             error={errors.valor_km?.message}
           />
-          <InputField label="Placa padrão" {...register('placa_padrao')} />
+          <InputField label="Placa padrão" operationalUpper {...register('placa_padrao')} />
           <SelectField label="UF da placa" options={ufOptions} {...register('uf_placa')} />
           <div className="md:col-span-2 pt-2">
             <CheckboxField control={control} name="ativo" label="Ativo" />
@@ -367,7 +368,7 @@ export function TransportadoraForm({ defaultValues, onSubmit, onCancel, saving }
       )}
 
       {tab === 'recomendacoes' && (
-        <TextareaField label="Observações / recomendações" {...register('observacoes')} />
+        <TextareaField label="Observações / recomendações" operationalUpper {...register('observacoes')} />
       )}
     </CadastroSection>
   );
@@ -427,6 +428,7 @@ export function TransportadoraForm({ defaultValues, onSubmit, onCancel, saving }
           <InputField
             className="md:col-span-2"
             label="Nome do contato"
+            operationalUpper
             value={contactDraft.contato}
             onChange={(e) => setContactDraft((d) => ({ ...d, contato: e.target.value }))}
           />

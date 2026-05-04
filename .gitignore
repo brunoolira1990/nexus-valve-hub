@@ -33,6 +33,10 @@ htmlcov/
 backend/.venv
 backend/media/
 backend/staticfiles/
+backend/tmp/
+
+# Artefatos locais / temporários
+tmp/
 
 # Editor directories and files
 .vscode/*

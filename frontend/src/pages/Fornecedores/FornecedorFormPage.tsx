@@ -2,10 +2,9 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
 import { fornecedoresService } from '@/services/api/fornecedores';
-import { condicoesPagamentoService } from '@/services/api/condicoesPagamento';
 import { transportadorasService } from '@/services/api/transportadoras';
 import { apiErrorMessage } from '@/services/api/config';
-import type { CondicaoPagamento, Fornecedor, Transportadora } from '@/types';
+import type { Fornecedor, Transportadora } from '@/types';
 import { FornecedorForm, fornecedorToFormValues, type FornecedorFormInput } from './FornecedorForm';
 
 const FornecedorFormPage = () => {
@@ -18,11 +17,9 @@ const FornecedorFormPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [formKey, setFormKey] = useState(0);
   const [defaults, setDefaults] = useState<FornecedorFormInput>(() => fornecedorToFormValues({}));
-  const [condicoes, setCondicoes] = useState<CondicaoPagamento[]>([]);
   const [transportadoras, setTransportadoras] = useState<Transportadora[]>([]);
 
   useEffect(() => {
-    condicoesPagamentoService.getAll().then(setCondicoes).catch(() => setCondicoes([]));
     transportadorasService.getAll().then(setTransportadoras).catch(() => setTransportadoras([]));
   }, []);
 
@@ -81,7 +78,6 @@ const FornecedorFormPage = () => {
         <FornecedorForm
           key={formKey}
           defaultValues={defaults}
-          condicoes={condicoes}
           transportadoras={transportadoras}
           onSubmit={handleSubmit}
           onCancel={() => navigate('/fornecedores')}

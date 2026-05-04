@@ -1,5 +1,5 @@
 import api from './config';
-import type { ApuracaoFiscal, Balancete, ContaContabil, EstoqueItem } from '@/types';
+import type { ApuracaoFiscal, Balancete, ContaContabil, EstoqueItem, EstoqueSaldoItem } from '@/types';
 
 type ContaAPI = ContaContabil & {
   filhos?: Array<{
@@ -26,6 +26,8 @@ function flattenContas(rows: ContaAPI[]): ContaContabil[] {
 
 export const estoqueService = {
   getAll: async (): Promise<EstoqueItem[]> => (await api.get<EstoqueItem[]>('estoque/')).data,
+  getSaldos: async (params?: Record<string, string | number | boolean>): Promise<EstoqueSaldoItem[]> =>
+    (await api.get<EstoqueSaldoItem[]>('estoque/saldos/', { params })).data,
 };
 
 export const apuracaoService = {

@@ -1,9 +1,8 @@
-import type { FocusEvent } from 'react';
+import type { ChangeEventHandler, FocusEvent, KeyboardEvent } from 'react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Modal } from '@/components/Modal';
 import {
   CadastroButton,
   CadastroFormShell,
@@ -17,7 +16,9 @@ import {
 import { consultaCep, consultaCnpj } from '@/services/api/consulta';
 import { apiErrorMessage } from '@/services/api/config';
 import { isValidCnpj, normalizeCnpj } from '@/lib/cnpj';
-import type { Cliente, CondicaoPagamento, Transportadora } from '@/types';
+import { digitsOnly, formatCep, formatCnpj, formatPhone } from '@/lib/masks';
+import { parsePaymentCondition } from '@/lib/paymentTerms';
+import type { Cliente, Transportadora } from '@/types';
 import { REGIMES_CADASTRO, TIPOS_CONTA, UFS } from '@/types';
 
 const emailOrEmpty = z.union([z.literal(''), z.string().email('E-mail inválido')]);
@@ -55,7 +56,7 @@ const schema = z.object({
   regime_tributario: z.string(),
   integracao_texto: z.string(),
   limite_credito: z.coerce.number().min(0),
-  condicao_pagamento_padrao_id: z.string(),
+  condicao_pagamento_texto: z.string(),
   transportadora_padrao_id: z.string(),
   vendedor_padrao: z.string(),
   bloqueado: z.boolean(),
@@ -66,14 +67,11 @@ const schema = z.object({
 export type ClienteFormInput = z.infer<typeof schema>;
 
 const TAB_ITEMS = [
-  { id: 'principal', label: 'Dados Principais' },
+  { id: 'dados-gerais', label: 'Dados Gerais' },
   { id: 'endereco', label: 'Endereço' },
-  { id: 'telefones', label: 'Telefones e E-mail' },
-  { id: 'bancario', label: 'Dados Bancários' },
-  { id: 'fiscal', label: 'Inscrições, CNAE e Outros' },
-  { id: 'integracao', label: 'Integração Automática' },
-  { id: 'caracteristicas', label: 'Características' },
-  { id: 'recomendacoes', label: 'Recomendações' },
+  { id: 'contatos', label: 'Contatos' },
+  { id: 'fiscal-financeiro', label: 'Fiscal / Financeiro' },
+  { id: 'observacoes', label: 'Observações' },
 ] as const;
 
 const regimeOptions = [
@@ -89,7 +87,7 @@ function toApiPayload(values: ClienteFormInput): Omit<Cliente, 'id'> {
   return {
     razao_social: values.razao_social,
     nome_fantasia: values.nome_fantasia,
-    cnpj: values.cnpj,
+    cnpj: normalizeCnpj(values.cnpj),
     ie: values.ie,
     logradouro: values.logradouro,
     numero: values.numero,
@@ -97,25 +95,24 @@ function toApiPayload(values: ClienteFormInput): Omit<Cliente, 'id'> {
     bairro: values.bairro,
     cidade: values.cidade,
     uf: values.uf,
-    cep: values.cep,
-    telefone: values.telefone,
+    cep: digitsOnly(values.cep, 8),
+    telefone: digitsOnly(values.telefone, 11),
     email: values.email,
     contato_responsavel: values.contato_responsavel,
     observacoes: values.observacoes,
     inscricao_municipal: values.inscricao_municipal,
     suframa: values.suframa,
     email_nf: values.email_nf,
-    telefone_alternativo: values.telefone_alternativo,
-    celular: values.celular,
+    telefone_alternativo: digitsOnly(values.telefone_alternativo, 11),
+    celular: digitsOnly(values.celular, 11),
     limite_credito: values.limite_credito,
-    condicao_pagamento_padrao_id:
-      values.condicao_pagamento_padrao_id === '' ? null : Number(values.condicao_pagamento_padrao_id),
+    condicao_pagamento_texto: values.condicao_pagamento_texto.trim(),
     transportadora_padrao_id:
       values.transportadora_padrao_id === '' ? null : Number(values.transportadora_padrao_id),
     vendedor_padrao: values.vendedor_padrao,
     bloqueado: values.bloqueado,
     ativo: values.ativo,
-    ddd: values.ddd,
+    ddd: digitsOnly(values.ddd, 4),
     banco: values.banco,
     agencia: values.agencia,
     conta: values.conta,
@@ -130,26 +127,25 @@ export function clientToFormValues(c: Partial<Cliente>): ClienteFormInput {
   return {
     razao_social: c.razao_social ?? '',
     nome_fantasia: c.nome_fantasia ?? '',
-    cnpj: c.cnpj ?? '',
-    ddd: c.ddd ?? '',
+    cnpj: formatCnpj(c.cnpj ?? ''),
+    ddd: digitsOnly(c.ddd ?? '', 4),
     ie: c.ie ?? '',
     inscricao_municipal: c.inscricao_municipal ?? '',
     suframa: c.suframa ?? '',
-    cep: c.cep ?? '',
+    cep: formatCep(c.cep ?? ''),
     logradouro: c.logradouro ?? '',
     numero: c.numero ?? '',
     complemento: c.complemento ?? '',
     bairro: c.bairro ?? '',
     cidade: c.cidade ?? '',
     uf: c.uf ?? 'SP',
-    telefone: c.telefone ?? '',
-    telefone_alternativo: c.telefone_alternativo ?? '',
-    celular: c.celular ?? '',
+    telefone: formatPhone(c.telefone ?? ''),
+    telefone_alternativo: formatPhone(c.telefone_alternativo ?? ''),
+    celular: formatPhone(c.celular ?? ''),
     email: c.email ?? '',
     email_nf: c.email_nf ?? '',
     limite_credito: c.limite_credito ?? 0,
-    condicao_pagamento_padrao_id:
-      c.condicao_pagamento_padrao_id != null ? String(c.condicao_pagamento_padrao_id) : '',
+    condicao_pagamento_texto: c.condicao_pagamento_texto ?? '',
     transportadora_padrao_id:
       c.transportadora_padrao_id != null ? String(c.transportadora_padrao_id) : '',
     bloqueado: c.bloqueado ?? false,
@@ -169,24 +165,20 @@ export function clientToFormValues(c: Partial<Cliente>): ClienteFormInput {
 
 type Props = {
   defaultValues: ClienteFormInput;
-  condicoes: CondicaoPagamento[];
   transportadoras: Transportadora[];
   onSubmit: (payload: Omit<Cliente, 'id'>) => Promise<void>;
   onCancel: () => void;
   saving?: boolean;
 };
 
-export function ClienteForm({ defaultValues, condicoes, transportadoras, onSubmit, onCancel, saving }: Props) {
+export function ClienteForm({ defaultValues, transportadoras, onSubmit, onCancel, saving }: Props) {
   const [tab, setTab] = useState<string>(TAB_ITEMS[0].id);
-  const [contactOpen, setContactOpen] = useState(false);
-  const [contactDraft, setContactDraft] = useState({
-    ddd: '',
-    telefone: '',
-    telefone_alternativo: '',
-    celular: '',
-    email: '',
-    contato_responsavel: '',
-  });
+  const [cnpjLookupLoading, setCnpjLookupLoading] = useState(false);
+  const [cnpjLookupMessage, setCnpjLookupMessage] = useState<string | null>(null);
+  const [lastLookupCnpj, setLastLookupCnpj] = useState<string | null>(null);
+  const [cepLookupLoading, setCepLookupLoading] = useState(false);
+  const [cepLookupMessage, setCepLookupMessage] = useState<string | null>(null);
+  const [lastLookupCep, setLastLookupCep] = useState<string | null>(null);
 
   const {
     register,
@@ -201,137 +193,250 @@ export function ClienteForm({ defaultValues, condicoes, transportadoras, onSubmi
     resolver: zodResolver(schema),
     defaultValues,
   });
+  const cnpjField = register('cnpj');
+  const cepField = register('cep');
+  const dddField = register('ddd');
+  const telefoneField = register('telefone');
+  const telefoneAlternativoField = register('telefone_alternativo');
+  const celularField = register('celular');
 
-  const openContactModal = () => {
-    const v = getValues();
-    setContactDraft({
-      ddd: v.ddd,
-      telefone: v.telefone,
-      telefone_alternativo: v.telefone_alternativo,
-      celular: v.celular,
-      email: v.email,
-      contato_responsavel: v.contato_responsavel,
-    });
-    setContactOpen(true);
+  const setIfEmpty = (field: keyof ClienteFormInput, nextValue: string) => {
+    const currentValue = getValues(field);
+    if ((currentValue ?? '').toString().trim() !== '') return;
+    if ((nextValue ?? '').toString().trim() === '') return;
+    setValue(field, nextValue);
   };
 
-  const applyContactModal = () => {
-    setValue('ddd', contactDraft.ddd);
-    setValue('telefone', contactDraft.telefone);
-    setValue('telefone_alternativo', contactDraft.telefone_alternativo);
-    setValue('celular', contactDraft.celular);
-    setValue('email', contactDraft.email);
-    setValue('contato_responsavel', contactDraft.contato_responsavel);
-    setContactOpen(false);
-  };
-
-  const runCepLookup = async () => {
-    const cep = getValues('cep').replace(/\D/g, '');
+  const runCepLookup = async (rawValue: string, force = false) => {
+    const cep = digitsOnly(rawValue, 8);
     if (cep.length !== 8) return;
+    if (cepLookupLoading) return;
+    if (!force && lastLookupCep === cep) return;
     clearErrors('root');
+    setCepLookupMessage(null);
+    setCepLookupLoading(true);
     try {
       const { data } = await consultaCep(cep);
-      setValue('logradouro', data.logradouro || '');
-      setValue('bairro', data.bairro || '');
-      setValue('cidade', data.cidade || '');
-      setValue('uf', data.uf || '');
-      setValue('cep', data.cep || '');
+      setIfEmpty('logradouro', data.logradouro || '');
+      setIfEmpty('complemento', data.complemento || '');
+      setIfEmpty('bairro', data.bairro || '');
+      setIfEmpty('cidade', data.cidade || '');
+      setIfEmpty('uf', data.uf || '');
+      if (data.cep) setValue('cep', formatCep(data.cep));
+      setLastLookupCep(cep);
+      setCepLookupMessage('Endereço encontrado pelo CEP.');
     } catch (err) {
-      setError('root', { message: apiErrorMessage(err) });
+      const msg = apiErrorMessage(err);
+      setCepLookupMessage(msg);
+      setError('root', { message: msg });
+    } finally {
+      setCepLookupLoading(false);
     }
   };
 
   const onCepBlur = async (e: FocusEvent<HTMLInputElement>) => {
-    const cep = e.target.value.replace(/\D/g, '');
-    if (cep.length !== 8) return;
+    cepField.onBlur(e);
+    await runCepLookup(e.target.value);
+  };
+
+  const runCnpjLookup = async (rawValue: string, force = false) => {
+    const cnpj = normalizeCnpj(rawValue);
+    if (cnpj.length !== 14 || !isValidCnpj(cnpj)) return;
+    if (cnpjLookupLoading) return;
+    if (!force && lastLookupCnpj === cnpj) return;
+
     clearErrors('root');
+    setCnpjLookupMessage(null);
+    setCnpjLookupLoading(true);
     try {
-      const { data } = await consultaCep(cep);
-      setValue('logradouro', data.logradouro || '');
-      setValue('bairro', data.bairro || '');
-      setValue('cidade', data.cidade || '');
-      setValue('uf', data.uf || '');
-      setValue('cep', data.cep || '');
+      const { data } = await consultaCnpj(cnpj);
+      setIfEmpty('razao_social', data.razao_social || '');
+      setIfEmpty('nome_fantasia', data.nome_fantasia || '');
+      setIfEmpty('logradouro', data.logradouro || '');
+      setIfEmpty('numero', data.numero || '');
+      setIfEmpty('complemento', data.complemento || '');
+      setIfEmpty('bairro', data.bairro || '');
+      setIfEmpty('cidade', data.cidade || '');
+      setIfEmpty('uf', data.uf || '');
+      setIfEmpty('cep', data.cep || '');
+      setIfEmpty('telefone', formatPhone(data.telefone || ''));
+      setLastLookupCnpj(cnpj);
+      setCnpjLookupMessage('Dados do CNPJ consultados com sucesso.');
     } catch (err) {
-      setError('root', { message: apiErrorMessage(err) });
+      const msg = apiErrorMessage(err);
+      setCnpjLookupMessage(msg);
+      setError('root', { message: msg });
+    } finally {
+      setCnpjLookupLoading(false);
     }
   };
 
   const onCnpjBlur = async (e: FocusEvent<HTMLInputElement>) => {
-    const cnpj = normalizeCnpj(e.target.value);
-    if (cnpj.length !== 14) return;
-    clearErrors('root');
-    try {
-      const { data } = await consultaCnpj(cnpj);
-      if (data.razao_social) setValue('razao_social', data.razao_social);
-      if (data.nome_fantasia) setValue('nome_fantasia', data.nome_fantasia);
-      setValue('logradouro', data.logradouro || '');
-      setValue('numero', data.numero || '');
-      setValue('complemento', data.complemento || '');
-      setValue('bairro', data.bairro || '');
-      setValue('cidade', data.cidade || '');
-      setValue('uf', data.uf || '');
-      setValue('cep', data.cep || '');
-      setValue('telefone', data.telefone || '');
-    } catch (err) {
-      setError('root', { message: apiErrorMessage(err) });
-    }
+    cnpjField.onBlur(e);
+    await runCnpjLookup(e.target.value);
   };
 
-  const condicaoOptions = condicoes.map((c) => ({ value: String(c.id), label: c.descricao }));
+  const onCnpjChange: ChangeEventHandler<HTMLInputElement> = (e) => {
+    const masked = formatCnpj(e.target.value);
+    cnpjField.onChange({
+      ...e,
+      target: { ...e.target, value: masked, name: cnpjField.name },
+    });
+  };
+
+  const onDddChange: ChangeEventHandler<HTMLInputElement> = (e) => {
+    const digits = digitsOnly(e.target.value, 4);
+    dddField.onChange({
+      ...e,
+      target: { ...e.target, value: digits, name: dddField.name },
+    });
+  };
+
+  const onCepChange: ChangeEventHandler<HTMLInputElement> = (e) => {
+    const masked = formatCep(e.target.value);
+    cepField.onChange({
+      ...e,
+      target: { ...e.target, value: masked, name: cepField.name },
+    });
+  };
+
+  const onTelefoneChange: ChangeEventHandler<HTMLInputElement> = (e) => {
+    const masked = formatPhone(e.target.value);
+    telefoneField.onChange({
+      ...e,
+      target: { ...e.target, value: masked, name: telefoneField.name },
+    });
+  };
+
+  const onTelefoneAlternativoChange: ChangeEventHandler<HTMLInputElement> = (e) => {
+    const masked = formatPhone(e.target.value);
+    telefoneAlternativoField.onChange({
+      ...e,
+      target: { ...e.target, value: masked, name: telefoneAlternativoField.name },
+    });
+  };
+
+  const onCelularChange: ChangeEventHandler<HTMLInputElement> = (e) => {
+    const masked = formatPhone(e.target.value);
+    celularField.onChange({
+      ...e,
+      target: { ...e.target, value: masked, name: celularField.name },
+    });
+  };
+
+  const onCnpjKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter' && e.key !== 'Tab') return;
+    void runCnpjLookup(e.currentTarget.value);
+  };
+
+  const onCepKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter' && e.key !== 'Tab') return;
+    void runCepLookup(e.currentTarget.value);
+  };
+
   const transportadoraOptions = transportadoras.map((t) => ({ value: String(t.id), label: t.razao_social }));
+  const condicaoPreview = (() => {
+    try {
+      return parsePaymentCondition(getValues('condicao_pagamento_texto'));
+    } catch {
+      return null;
+    }
+  })();
 
   const panel = (
-    <CadastroSection title={TAB_ITEMS.find((t) => t.id === tab)?.label ?? ''}>
-      {tab === 'principal' && (
+    <CadastroSection
+      title={TAB_ITEMS.find((t) => t.id === tab)?.label ?? ''}
+      description={
+        tab === 'dados-gerais'
+          ? 'Base cadastral e identificação principal do cliente.'
+          : tab === 'endereco'
+            ? 'Localização fiscal e logística para faturamento e entrega.'
+            : tab === 'contatos'
+              ? 'Canal oficial de relacionamento, cobrança e envio de documentos.'
+              : tab === 'fiscal-financeiro'
+                ? 'Informações fiscais, bancárias e regras comerciais do cadastro.'
+                : 'Observações operacionais para atendimento e equipe interna.'
+      }
+    >
+      {tab === 'dados-gerais' && (
         <>
-          <InputField label="Razão Social *" {...register('razao_social')} error={errors.razao_social?.message} />
-          <InputField label="Nome Fantasia" {...register('nome_fantasia')} />
-          <div className="md:col-span-2 flex flex-col gap-2">
-            <InputField label="CNPJ *" {...register('cnpj')} onBlur={onCnpjBlur} error={errors.cnpj?.message} />
-            <div className="flex flex-wrap gap-2">
-              <CadastroButton
+          <InputField label="Razão Social *" operationalUpper {...register('razao_social')} error={errors.razao_social?.message} />
+          <InputField label="Nome Fantasia" operationalUpper {...register('nome_fantasia')} />
+          <div>
+            <InputField
+              label="CNPJ *"
+              {...cnpjField}
+              onChange={onCnpjChange}
+              onBlur={onCnpjBlur}
+              onKeyDown={onCnpjKeyDown}
+              error={errors.cnpj?.message}
+            />
+            <div className="mt-1 flex items-center gap-3 text-xs">
+              <span className="text-muted-foreground">
+                {cnpjLookupLoading
+                  ? 'Consultando CNPJ...'
+                  : cnpjLookupMessage ?? 'A consulta ocorre automaticamente ao sair do campo.'}
+              </span>
+              <button
                 type="button"
-                variant="outline"
-                onClick={() => window.alert('Consulta SEFAZ simulada')}
+                className="text-primary hover:underline disabled:text-muted-foreground disabled:no-underline"
+                onClick={() => void runCnpjLookup(getValues('cnpj'), true)}
+                disabled={cnpjLookupLoading}
               >
-                Pesquisar SEFAZ
-              </CadastroButton>
-              <CadastroButton type="button" variant="secondary" onClick={openContactModal}>
-                Alterar dados de contato
-              </CadastroButton>
+                Consultar novamente
+              </button>
             </div>
+          </div>
+          <InputField label="Inscrição Estadual (IE)" operationalUpper {...register('ie')} />
+          <div className="md:col-span-2 flex flex-wrap gap-2 pt-1">
+            <CheckboxField control={control} name="ativo" label="Cadastro ativo" />
+            <CheckboxField control={control} name="bloqueado" label="Bloqueado para venda" />
           </div>
         </>
       )}
 
       {tab === 'endereco' && (
         <>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <div className="flex-1">
-              <InputField label="CEP" {...register('cep')} onBlur={onCepBlur} />
+          <div>
+            <InputField label="CEP" {...cepField} onChange={onCepChange} onBlur={onCepBlur} onKeyDown={onCepKeyDown} />
+            <div className="mt-1 flex items-center gap-3 text-xs">
+              <span className="text-muted-foreground">
+                {cepLookupLoading
+                  ? 'Consultando CEP...'
+                  : cepLookupMessage ?? 'A consulta ocorre automaticamente ao sair do campo.'}
+              </span>
+              <button
+                type="button"
+                className="text-primary hover:underline disabled:text-muted-foreground disabled:no-underline"
+                onClick={() => void runCepLookup(getValues('cep'), true)}
+                disabled={cepLookupLoading}
+              >
+                Consultar novamente
+              </button>
             </div>
-            <CadastroButton type="button" variant="outline" className="shrink-0" onClick={() => void runCepLookup()}>
-              Pesquisar CEP
-            </CadastroButton>
           </div>
           <div className="md:col-span-2">
-            <InputField label="Logradouro" {...register('logradouro')} />
+            <InputField label="Logradouro" operationalUpper {...register('logradouro')} />
           </div>
-          <InputField label="Número" {...register('numero')} />
-          <InputField label="Complemento" {...register('complemento')} />
-          <InputField label="Bairro" {...register('bairro')} />
-          <InputField label="Cidade" {...register('cidade')} />
+          <InputField label="Número" operationalUpper {...register('numero')} />
+          <InputField label="Complemento" operationalUpper {...register('complemento')} />
+          <InputField label="Bairro" operationalUpper {...register('bairro')} />
+          <InputField label="Cidade" operationalUpper {...register('cidade')} />
           <SelectField label="Estado (UF)" options={ufOptions} {...register('uf')} />
         </>
       )}
 
-      {tab === 'telefones' && (
+      {tab === 'contatos' && (
         <>
-          <InputField label="DDD" {...register('ddd')} maxLength={4} />
-          <InputField label="Telefone" {...register('telefone')} />
-          <InputField label="Telefone alternativo" {...register('telefone_alternativo')} />
-          <InputField label="Celular" {...register('celular')} />
+          <InputField label="Contato responsável" operationalUpper {...register('contato_responsavel')} />
+          <InputField label="DDD" {...dddField} onChange={onDddChange} maxLength={4} />
+          <InputField label="Telefone principal" {...telefoneField} onChange={onTelefoneChange} />
+          <InputField
+            label="Telefone alternativo"
+            {...telefoneAlternativoField}
+            onChange={onTelefoneAlternativoChange}
+          />
+          <InputField label="Celular" {...celularField} onChange={onCelularChange} />
           <InputField label="E-mail" type="email" {...register('email')} error={errors.email?.message} />
           <InputField
             label="E-mail NF"
@@ -339,43 +444,19 @@ export function ClienteForm({ defaultValues, condicoes, transportadoras, onSubmi
             {...register('email_nf')}
             error={errors.email_nf?.message}
           />
-          <InputField
-            className="md:col-span-2"
-            label="Nome do contato (referência)"
-            {...register('contato_responsavel')}
-          />
         </>
       )}
 
-      {tab === 'bancario' && (
+      {tab === 'fiscal-financeiro' && (
         <>
-          <InputField label="Banco" {...register('banco')} />
-          <InputField label="Agência" {...register('agencia')} />
-          <InputField label="Conta (com dígito)" {...register('conta')} />
-          <SelectField label="Tipo de conta" options={tipoContaOptions} {...register('tipo_conta')} />
-        </>
-      )}
-
-      {tab === 'fiscal' && (
-        <>
-          <InputField label="Inscrição Estadual (IE)" {...register('ie')} />
-          <InputField label="Inscrição Municipal (IM)" {...register('inscricao_municipal')} />
-          <InputField label="Suframa" {...register('suframa')} />
-          <InputField label="CNAE" {...register('cnae')} />
+          <InputField label="Inscrição Municipal (IM)" operationalUpper {...register('inscricao_municipal')} />
+          <InputField label="Suframa" operationalUpper {...register('suframa')} />
+          <InputField label="CNAE" operationalUpper {...register('cnae')} />
           <SelectField label="Regime tributário" options={regimeOptions} {...register('regime_tributario')} />
-        </>
-      )}
-
-      {tab === 'integracao' && (
-        <TextareaField
-          label="Integrações / observações de integração"
-          placeholder="Ex.: enviar NF por e-mail, integrar com CRM…"
-          {...register('integracao_texto')}
-        />
-      )}
-
-      {tab === 'caracteristicas' && (
-        <>
+          <InputField label="Banco" operationalUpper {...register('banco')} />
+          <InputField label="Agência" operationalUpper {...register('agencia')} />
+          <InputField label="Conta (com dígito)" operationalUpper {...register('conta')} />
+          <SelectField label="Tipo de conta" options={tipoContaOptions} {...register('tipo_conta')} />
           <InputField
             label="Limite de crédito"
             type="number"
@@ -384,26 +465,43 @@ export function ClienteForm({ defaultValues, condicoes, transportadoras, onSubmi
             {...register('limite_credito')}
             error={errors.limite_credito?.message}
           />
-          <SelectField
-            label="Condição de pagamento padrão"
-            options={[{ value: '', label: 'Nenhuma' }, ...condicaoOptions]}
-            {...register('condicao_pagamento_padrao_id')}
-          />
+          <div>
+            <InputField
+              label="Condição de pagamento"
+              placeholder="Ex.: 30 DDL, 30/45 DDL, 30/60/90, à vista"
+              operationalUpper
+              {...register('condicao_pagamento_texto')}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              {condicaoPreview && condicaoPreview.length > 0
+                ? `Parcelas interpretadas: ${condicaoPreview.join(', ')} dia(s)`
+                : 'Use formatos como 30 DDL, 30/45 DDL, 30/60/90 ou à vista.'}
+            </p>
+          </div>
           <SelectField
             label="Transportadora padrão"
             options={[{ value: '', label: 'Nenhuma' }, ...transportadoraOptions]}
             {...register('transportadora_padrao_id')}
           />
-          <InputField label="Vendedor padrão" {...register('vendedor_padrao')} />
-          <div className="flex flex-col gap-3 md:col-span-2 pt-2">
-            <CheckboxField control={control} name="bloqueado" label="Bloqueado" />
-            <CheckboxField control={control} name="ativo" label="Ativo" />
-          </div>
+          <InputField label="Vendedor padrão" operationalUpper {...register('vendedor_padrao')} />
+          <TextareaField
+            label="Integrações automáticas"
+            className="min-h-[90px]"
+            placeholder="Ex.: regras de envio de XML, integração com CRM e observações de automação."
+            operationalUpper
+            {...register('integracao_texto')}
+          />
         </>
       )}
 
-      {tab === 'recomendacoes' && (
-        <TextareaField label="Observações / recomendações" {...register('observacoes')} />
+      {tab === 'observacoes' && (
+        <TextareaField
+          label="Observações / recomendações"
+          className="min-h-[180px]"
+          placeholder="Informações relevantes para vendas, financeiro, logística e pós-venda."
+          operationalUpper
+          {...register('observacoes')}
+        />
       )}
     </CadastroSection>
   );
@@ -426,61 +524,17 @@ export function ClienteForm({ defaultValues, condicoes, transportadoras, onSubmi
           {panel}
         </CadastroTabs>
 
-        <div className="flex justify-end gap-2 pt-4 border-t border-border">
-          <CadastroButton type="button" variant="outline" onClick={onCancel} disabled={saving}>
-            Cancelar
-          </CadastroButton>
-          <CadastroButton type="submit" disabled={saving}>
-            {saving ? 'Salvando…' : 'Salvar'}
-          </CadastroButton>
+        <div className="sticky bottom-0 z-10 -mx-4 border-t border-border bg-card px-4 py-3 md:-mx-6 md:px-6">
+          <div className="flex justify-end gap-2">
+            <CadastroButton type="button" variant="outline" onClick={onCancel} disabled={saving}>
+              Cancelar
+            </CadastroButton>
+            <CadastroButton type="submit" disabled={saving}>
+              {saving ? 'Salvando…' : 'Salvar'}
+            </CadastroButton>
+          </div>
         </div>
       </form>
-
-      <Modal isOpen={contactOpen} onClose={() => setContactOpen(false)} title="Alterar dados de contato" size="md">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <InputField
-            label="DDD"
-            value={contactDraft.ddd}
-            onChange={(e) => setContactDraft((d) => ({ ...d, ddd: e.target.value }))}
-          />
-          <InputField
-            label="Telefone"
-            value={contactDraft.telefone}
-            onChange={(e) => setContactDraft((d) => ({ ...d, telefone: e.target.value }))}
-          />
-          <InputField
-            label="Telefone alternativo"
-            value={contactDraft.telefone_alternativo}
-            onChange={(e) => setContactDraft((d) => ({ ...d, telefone_alternativo: e.target.value }))}
-          />
-          <InputField
-            label="Celular"
-            value={contactDraft.celular}
-            onChange={(e) => setContactDraft((d) => ({ ...d, celular: e.target.value }))}
-          />
-          <InputField
-            className="md:col-span-2"
-            label="E-mail"
-            type="email"
-            value={contactDraft.email}
-            onChange={(e) => setContactDraft((d) => ({ ...d, email: e.target.value }))}
-          />
-          <InputField
-            className="md:col-span-2"
-            label="Nome do contato"
-            value={contactDraft.contato_responsavel}
-            onChange={(e) => setContactDraft((d) => ({ ...d, contato_responsavel: e.target.value }))}
-          />
-        </div>
-        <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
-          <CadastroButton type="button" variant="outline" onClick={() => setContactOpen(false)}>
-            Fechar
-          </CadastroButton>
-          <CadastroButton type="button" onClick={applyContactModal}>
-            Aplicar
-          </CadastroButton>
-        </div>
-      </Modal>
     </CadastroFormShell>
   );
 }

@@ -1,23 +1,10 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from .models import Cliente, CondicaoPagamento, Empresa, Fornecedor, Transportadora
+from apps.comercial.payment_terms import parse_payment_condition
+from apps.text_normalize import normalize_operational_fields
 
-
-class CondicaoPagamentoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = CondicaoPagamento
-        fields = ('id', 'descricao', 'dias_parcelas', 'ativo')
-
-    def validate_dias_parcelas(self, value):
-        if value is None:
-            return []
-        if not isinstance(value, list):
-            raise serializers.ValidationError('Informe uma lista de inteiros (dias por parcela).')
-        for d in value:
-            if not isinstance(d, int) or d < 0:
-                raise serializers.ValidationError('Cada prazo deve ser um número inteiro ≥ 0.')
-        return value
+from .models import Cliente, Empresa, Fornecedor, Transportadora
 
 
 class EmpresaSerializer(serializers.ModelSerializer):
@@ -36,6 +23,22 @@ class EmpresaSerializer(serializers.ModelSerializer):
         }
 
     def validate(self, attrs):
+        normalize_operational_fields(
+            attrs,
+            {
+                'razao_social',
+                'nome_fantasia',
+                'ie',
+                'im',
+                'logradouro',
+                'numero',
+                'complemento',
+                'bairro',
+                'cidade',
+                'uf',
+                'telefone',
+            },
+        )
         pai = attrs.get('empresa_pai')
         pk = self.instance.pk if self.instance else None
         if pk and pai and pai.pk == pk:
@@ -75,12 +78,6 @@ class EmpresaSerializer(serializers.ModelSerializer):
 
 
 class ClienteSerializer(serializers.ModelSerializer):
-    condicao_pagamento_padrao_id = serializers.PrimaryKeyRelatedField(
-        queryset=CondicaoPagamento.objects.all(),
-        source='condicao_pagamento_padrao',
-        allow_null=True,
-        required=False,
-    )
     transportadora_padrao_id = serializers.PrimaryKeyRelatedField(
         queryset=Transportadora.objects.all(),
         source='transportadora_padrao',
@@ -90,22 +87,53 @@ class ClienteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Cliente
-        exclude = ('condicao_pagamento_padrao', 'transportadora_padrao')
+        exclude = ('transportadora_padrao',)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        normalize_operational_fields(
+            attrs,
+            {
+                'razao_social',
+                'nome_fantasia',
+                'ie',
+                'logradouro',
+                'numero',
+                'complemento',
+                'bairro',
+                'cidade',
+                'uf',
+                'contato_responsavel',
+                'observacoes',
+                'inscricao_municipal',
+                'suframa',
+                'vendedor_padrao',
+                'banco',
+                'agencia',
+                'conta',
+                'tipo_conta',
+                'cnae',
+                'regime_tributario',
+                'integracao_texto',
+                'condicao_pagamento_texto',
+            },
+        )
+        texto = attrs.get(
+            'condicao_pagamento_texto',
+            self.instance.condicao_pagamento_texto if self.instance else '',
+        )
+        dias = parse_payment_condition(texto)
+        attrs['dias_parcelas'] = dias
+        attrs['quantidade_parcelas'] = len(dias)
+        return attrs
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        data['condicao_pagamento_padrao_id'] = instance.condicao_pagamento_padrao_id
         data['transportadora_padrao_id'] = instance.transportadora_padrao_id
         return data
 
 
 class FornecedorSerializer(serializers.ModelSerializer):
-    condicao_pagamento_padrao_id = serializers.PrimaryKeyRelatedField(
-        queryset=CondicaoPagamento.objects.all(),
-        source='condicao_pagamento_padrao',
-        allow_null=True,
-        required=False,
-    )
     transportadora_padrao_id = serializers.PrimaryKeyRelatedField(
         queryset=Transportadora.objects.all(),
         source='transportadora_padrao',
@@ -115,11 +143,47 @@ class FornecedorSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Fornecedor
-        exclude = ('condicao_pagamento_padrao', 'transportadora_padrao')
+        exclude = ('transportadora_padrao',)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        normalize_operational_fields(
+            attrs,
+            {
+                'razao_social',
+                'nome_fantasia',
+                'ie',
+                'logradouro',
+                'numero',
+                'complemento',
+                'bairro',
+                'cidade',
+                'uf',
+                'contato_responsavel',
+                'observacoes',
+                'inscricao_municipal',
+                'suframa',
+                'banco',
+                'agencia',
+                'conta',
+                'tipo_conta',
+                'cnae',
+                'regime_tributario',
+                'integracao_texto',
+                'condicao_pagamento_texto',
+            },
+        )
+        texto = attrs.get(
+            'condicao_pagamento_texto',
+            self.instance.condicao_pagamento_texto if self.instance else '',
+        )
+        dias = parse_payment_condition(texto)
+        attrs['dias_parcelas'] = dias
+        attrs['quantidade_parcelas'] = len(dias)
+        return attrs
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        data['condicao_pagamento_padrao_id'] = instance.condicao_pagamento_padrao_id
         data['transportadora_padrao_id'] = instance.transportadora_padrao_id
         return data
 
@@ -128,3 +192,35 @@ class TransportadoraSerializer(serializers.ModelSerializer):
     class Meta:
         model = Transportadora
         fields = '__all__'
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        normalize_operational_fields(
+            attrs,
+            {
+                'razao_social',
+                'nome_fantasia',
+                'ie',
+                'inscricao_municipal',
+                'logradouro',
+                'numero',
+                'complemento',
+                'bairro',
+                'cidade',
+                'uf',
+                'contato',
+                'placa_padrao',
+                'uf_placa',
+                'observacoes',
+                'ddd',
+                'suframa',
+                'banco',
+                'agencia',
+                'conta',
+                'tipo_conta',
+                'cnae',
+                'regime_tributario',
+                'integracao_texto',
+            },
+        )
+        return attrs

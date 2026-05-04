@@ -3,14 +3,34 @@ import { useNavigate } from 'react-router-dom';
 import { Pencil, Trash2 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { clientesService } from '@/services/api/clientes';
+import { apiErrorMessage } from '@/services/api/config';
 import type { Cliente } from '@/types';
 
 const ClienteList = () => {
   const navigate = useNavigate();
   const [items, setItems] = useState<Cliente[]>([]);
   const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const load = async () => setItems(await clientesService.getAll());
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setItems(await clientesService.getAll());
+    } catch (e) {
+      console.error('Falha ao carregar clientes:', e);
+      setItems([]);
+      setError(
+        apiErrorMessage(e, {
+          fallback: 'Não foi possível carregar os clientes.',
+          preferGeneric: true,
+        }),
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
   useEffect(() => {
     load();
   }, []);
@@ -36,6 +56,11 @@ const ClienteList = () => {
         onSearch={setSearch}
       />
       <div className="erp-card overflow-x-auto">
+        {error ? (
+          <div className="m-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {error}
+          </div>
+        ) : null}
         <table className="erp-table">
           <thead>
             <tr>
@@ -73,6 +98,13 @@ const ClienteList = () => {
                 </td>
               </tr>
             ))}
+            {!loading && !error && filtered.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
+                  Nenhum cliente encontrado.
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>

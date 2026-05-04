@@ -2,10 +2,9 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
 import { clientesService } from '@/services/api/clientes';
-import { condicoesPagamentoService } from '@/services/api/condicoesPagamento';
 import { transportadorasService } from '@/services/api/transportadoras';
 import { apiErrorMessage } from '@/services/api/config';
-import type { Cliente, CondicaoPagamento, Transportadora } from '@/types';
+import type { Cliente, Transportadora } from '@/types';
 import { ClienteForm, clientToFormValues, type ClienteFormInput } from './ClienteForm';
 
 const ClienteFormPage = () => {
@@ -18,11 +17,9 @@ const ClienteFormPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [formKey, setFormKey] = useState(0);
   const [defaults, setDefaults] = useState<ClienteFormInput>(() => clientToFormValues({}));
-  const [condicoes, setCondicoes] = useState<CondicaoPagamento[]>([]);
   const [transportadoras, setTransportadoras] = useState<Transportadora[]>([]);
 
   useEffect(() => {
-    condicoesPagamentoService.getAll().then(setCondicoes).catch(() => setCondicoes([]));
     transportadorasService.getAll().then(setTransportadoras).catch(() => setTransportadoras([]));
   }, []);
 
@@ -81,7 +78,6 @@ const ClienteFormPage = () => {
         <ClienteForm
           key={formKey}
           defaultValues={defaults}
-          condicoes={condicoes}
           transportadoras={transportadoras}
           onSubmit={handleSubmit}
           onCancel={() => navigate('/clientes')}

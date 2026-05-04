@@ -3,18 +3,18 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from rest_framework import status, viewsets
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
-from .models import Cliente, CondicaoPagamento, Empresa, Fornecedor, Transportadora
+from .models import Cliente, Empresa, Fornecedor, Transportadora
 from .serializers import (
     ClienteSerializer,
-    CondicaoPagamentoSerializer,
     EmpresaSerializer,
     FornecedorSerializer,
     TransportadoraSerializer,
 )
+from django.db.models import Q
 
 
 class EmpresaViewSet(viewsets.ModelViewSet):
@@ -22,11 +22,48 @@ class EmpresaViewSet(viewsets.ModelViewSet):
     serializer_class = EmpresaSerializer
     permission_classes = [IsAuthenticated]
 
+    def get_queryset(self):
+        qs = super().get_queryset().order_by('razao_social')
+        search = (self.request.query_params.get('search') or '').strip()
+        if search:
+            qs = qs.filter(
+                Q(razao_social__icontains=search)
+                | Q(nome_fantasia__icontains=search)
+                | Q(cnpj__icontains=search)
+                | Q(cidade__icontains=search),
+            )
+        limit = self.request.query_params.get('limit')
+        if limit:
+            try:
+                qs = qs[: max(1, min(int(limit), 100))]
+            except (TypeError, ValueError):
+                pass
+        return qs
+
 
 class ClienteViewSet(viewsets.ModelViewSet):
     queryset = Cliente.objects.all()
     serializer_class = ClienteSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset().order_by('razao_social')
+        search = (self.request.query_params.get('search') or '').strip()
+        if search:
+            qs = qs.filter(
+                Q(razao_social__icontains=search)
+                | Q(nome_fantasia__icontains=search)
+                | Q(cnpj__icontains=search)
+                | Q(cidade__icontains=search)
+                | Q(ie__icontains=search),
+            )
+        limit = self.request.query_params.get('limit')
+        if limit:
+            try:
+                qs = qs[: max(1, min(int(limit), 100))]
+            except (TypeError, ValueError):
+                pass
+        return qs
 
 
 class FornecedorViewSet(viewsets.ModelViewSet):
@@ -34,17 +71,49 @@ class FornecedorViewSet(viewsets.ModelViewSet):
     serializer_class = FornecedorSerializer
     permission_classes = [IsAuthenticated]
 
+    def get_queryset(self):
+        qs = super().get_queryset().order_by('razao_social')
+        search = (self.request.query_params.get('search') or '').strip()
+        if search:
+            qs = qs.filter(
+                Q(razao_social__icontains=search)
+                | Q(nome_fantasia__icontains=search)
+                | Q(cnpj__icontains=search)
+                | Q(cidade__icontains=search)
+                | Q(ie__icontains=search),
+            )
+        limit = self.request.query_params.get('limit')
+        if limit:
+            try:
+                qs = qs[: max(1, min(int(limit), 100))]
+            except (TypeError, ValueError):
+                pass
+        return qs
+
 
 class TransportadoraViewSet(viewsets.ModelViewSet):
     queryset = Transportadora.objects.all()
     serializer_class = TransportadoraSerializer
     permission_classes = [IsAuthenticated]
 
-
-class CondicaoPagamentoViewSet(viewsets.ModelViewSet):
-    queryset = CondicaoPagamento.objects.all()
-    serializer_class = CondicaoPagamentoSerializer
-    permission_classes = [IsAuthenticated]
+    def get_queryset(self):
+        qs = super().get_queryset().order_by('razao_social')
+        search = (self.request.query_params.get('search') or '').strip()
+        if search:
+            qs = qs.filter(
+                Q(razao_social__icontains=search)
+                | Q(nome_fantasia__icontains=search)
+                | Q(cnpj__icontains=search)
+                | Q(cidade__icontains=search)
+                | Q(placa_padrao__icontains=search),
+            )
+        limit = self.request.query_params.get('limit')
+        if limit:
+            try:
+                qs = qs[: max(1, min(int(limit), 100))]
+            except (TypeError, ValueError):
+                pass
+        return qs
 
 
 def _get_json(url: str, timeout: int = 8) -> dict:
@@ -64,6 +133,7 @@ def _format_cep_br(digits: str) -> str:
 
 
 @api_view(['GET'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def consulta_cep(request, cep: str):
     cep_digitos = ''.join(ch for ch in str(cep or '') if ch.isdigit())
@@ -86,6 +156,7 @@ def consulta_cep(request, cep: str):
     return Response(
         {
             'logradouro': payload.get('logradouro', '') or '',
+            'complemento': payload.get('complemento', '') or '',
             'bairro': payload.get('bairro', '') or '',
             'cidade': payload.get('localidade', '') or '',
             'uf': payload.get('uf', '') or '',
@@ -95,6 +166,7 @@ def consulta_cep(request, cep: str):
 
 
 @api_view(['GET'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def consulta_cnpj(request, cnpj: str):
     cnpj_digitos = ''.join(ch for ch in str(cnpj or '') if ch.isdigit())

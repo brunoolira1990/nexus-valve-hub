@@ -9,18 +9,22 @@ const breadcrumbMap: Record<string, { label: string; path?: string }[]> = {
   '/clientes': [{ label: 'Cadastros' }, { label: 'Clientes' }],
   '/fornecedores': [{ label: 'Cadastros' }, { label: 'Fornecedores' }],
   '/transportadoras': [{ label: 'Cadastros' }, { label: 'Transportadoras' }],
-  '/condicoes-pagamento': [{ label: 'Cadastros' }, { label: 'Condições de pagamento' }],
-  '/produtos': [{ label: 'Produtos' }],
-  '/corridas': [{ label: 'Corridas' }],
-  '/regras-fiscais': [{ label: 'Regras Fiscais' }],
+  '/produtos': [{ label: 'Produtos' }, { label: 'Produtos' }],
+  '/corridas': [{ label: 'Qualidade' }, { label: 'Corridas / Lotes Técnicos' }],
+  '/regras-fiscais': [{ label: 'Fiscal' }, { label: 'Regras Fiscais' }],
   '/propostas': [{ label: 'Comercial' }, { label: 'Propostas' }],
   '/pedidos-venda': [{ label: 'Comercial' }, { label: 'Pedidos de Venda' }],
-  '/pedidos-compra': [{ label: 'Comercial' }, { label: 'Pedidos de Compra' }],
-  '/nfe-entrada': [{ label: 'Fiscal' }, { label: 'NF-e Entrada' }],
+  '/pedidos-compra': [{ label: 'Compras' }, { label: 'Pedidos de Compra' }],
+  '/nfe-entrada': [{ label: 'Compras' }, { label: 'NF-e de Entrada' }],
+  '/nfe-entrada-historica-importada': [{ label: 'Compras' }, { label: 'NF-e Entrada Histórica/XML' }],
   '/nfe-saida': [{ label: 'Fiscal' }, { label: 'NF-e Saída' }],
+  '/nfe-historica-importada': [{ label: 'Fiscal' }, { label: 'NF-e Saída Histórica/XML' }],
   '/cte-entrada': [{ label: 'Fiscal' }, { label: 'CT-e Entrada' }],
+  '/cte-historico-importado': [{ label: 'Fiscal' }, { label: 'CT-e Histórico/XML' }],
+  '/visao-gerencial-nfe-historica': [{ label: 'Fiscal' }, { label: 'Painel Fiscal/Gerencial' }],
   '/certificados': [{ label: 'Qualidade', }, { label: 'Certificados' }],
-  '/estoque': [{ label: 'Estoque' }],
+  '/certificados-fornecedor': [{ label: 'Qualidade' }, { label: 'Certificados de Fornecedor' }],
+  '/estoque': [{ label: 'Estoque' }, { label: 'Saldos' }],
   '/apuracao-fiscal': [{ label: 'Apuração Fiscal' }],
   '/contabil': [{ label: 'Contábil' }],
 };
@@ -28,8 +32,11 @@ const breadcrumbMap: Record<string, { label: string; path?: string }[]> = {
 export const MainLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
+  const isConferenciaEntrada = /^\/nfe-entrada\/[^/]+\/conferencia$/.test(location.pathname);
   const basePath = '/' + location.pathname.split('/')[1];
-  const breadcrumbs = breadcrumbMap[basePath] || [{ label: 'Página' }];
+  const breadcrumbs = isConferenciaEntrada
+    ? [{ label: 'Compras' }, { label: 'NF-e Entrada Histórica/XML' }, { label: 'Conferência de Entrada' }]
+    : (breadcrumbMap[basePath] || [{ label: 'Página' }]);
 
   return (
     <div className="flex h-screen w-full overflow-hidden">

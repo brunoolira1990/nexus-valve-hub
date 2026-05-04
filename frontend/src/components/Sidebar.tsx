@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Building2, Users, Truck, Package, Layers, FileText,
-  ShoppingCart, Receipt, ShieldCheck, Warehouse, Calculator, BookOpen,
+  LayoutDashboard, Building2, Package, ShoppingBag, Handshake, Receipt, ShieldCheck, Warehouse, Calculator, BookOpen,
   ChevronDown, ChevronRight, X
 } from 'lucide-react';
 
@@ -15,7 +14,7 @@ interface MenuItem {
   label: string;
   path?: string;
   icon: React.ElementType;
-  children?: { label: string; path: string }[];
+  children?: { label: string; path: string; activeMatchPaths?: string[] }[];
 }
 
 const menuItems: MenuItem[] = [
@@ -25,36 +24,56 @@ const menuItems: MenuItem[] = [
     { label: 'Clientes', path: '/clientes' },
     { label: 'Fornecedores', path: '/fornecedores' },
     { label: 'Transportadoras', path: '/transportadoras' },
-    { label: 'Condições de pagamento', path: '/condicoes-pagamento' },
   ]},
-  { label: 'Produtos', path: '/produtos', icon: Package },
-  { label: 'Corridas', path: '/corridas', icon: Layers },
-  { label: 'Regras Fiscais', path: '/regras-fiscais', icon: FileText },
-  { label: 'Comercial', icon: ShoppingCart, children: [
+  { label: 'Produtos', icon: Package, children: [
+    { label: 'Produtos', path: '/produtos' },
+  ]},
+  { label: 'Compras', icon: ShoppingBag, children: [
+    { label: 'Pedidos de Compra', path: '/pedidos-compra' },
+    { label: 'NF-e de Entrada', path: '/nfe-entrada', activeMatchPaths: ['/nfe-entrada/:id/conferencia'] },
+    { label: 'NF-e Entrada Histórica/XML', path: '/nfe-entrada-historica-importada', activeMatchPaths: ['/nfe-entrada/:id/conferencia'] },
+    { label: 'Conferência de Entrada', path: '/nfe-entrada-historica-importada', activeMatchPaths: ['/nfe-entrada/:id/conferencia'] },
+  ]},
+  { label: 'Comercial', icon: Handshake, children: [
     { label: 'Propostas', path: '/propostas' },
     { label: 'Pedidos de Venda', path: '/pedidos-venda' },
-    { label: 'Pedidos de Compra', path: '/pedidos-compra' },
   ]},
   { label: 'Fiscal', icon: Receipt, children: [
-    { label: 'NF-e Entrada', path: '/nfe-entrada' },
     { label: 'NF-e Saída', path: '/nfe-saida' },
+    { label: 'NF-e Saída Histórica/XML', path: '/nfe-historica-importada' },
+    { label: 'Painel fiscal/gerencial consolidado', path: '/visao-gerencial-nfe-historica' },
     { label: 'CT-e Entrada', path: '/cte-entrada' },
+    { label: 'CT-e histórico (XML)', path: '/cte-historico-importado' },
+    { label: 'Regras Fiscais', path: '/regras-fiscais' },
   ]},
-  { label: 'Qualidade', path: '/certificados', icon: ShieldCheck },
-  { label: 'Estoque', path: '/estoque', icon: Warehouse },
+  { label: 'Estoque', icon: Warehouse, children: [
+    { label: 'Saldos', path: '/estoque' },
+  ]},
+  { label: 'Qualidade', icon: ShieldCheck, children: [
+    { label: 'Certificados de Qualidade', path: '/certificados' },
+    { label: 'Certificados de Fornecedor', path: '/certificados-fornecedor' },
+    { label: 'Corridas / Lotes Técnicos', path: '/corridas' },
+  ]},
   { label: 'Apuração Fiscal', path: '/apuracao-fiscal', icon: Calculator },
   { label: 'Contábil', path: '/contabil', icon: BookOpen },
 ];
 
 export const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
   const location = useLocation();
-  const [expanded, setExpanded] = useState<string[]>(['Cadastros', 'Comercial', 'Fiscal']);
+  const [expanded, setExpanded] = useState<string[]>(['Cadastros', 'Produtos', 'Compras', 'Comercial', 'Fiscal', 'Estoque', 'Qualidade']);
 
   const toggleExpand = (label: string) => {
     setExpanded(prev => prev.includes(label) ? prev.filter(l => l !== label) : [...prev, label]);
   };
 
-  const isActive = (path?: string) => path && location.pathname.startsWith(path);
+  const isActive = (path?: string, activeMatchPaths?: string[]) => {
+    if (path && location.pathname.startsWith(path)) return true;
+    if (!activeMatchPaths?.length) return false;
+    return activeMatchPaths.some((p) => {
+      if (p === '/nfe-entrada/:id/conferencia') return /^\/nfe-entrada\/[^/]+\/conferencia$/.test(location.pathname);
+      return location.pathname.startsWith(p);
+    });
+  };
 
   return (
     <>
@@ -92,7 +111,7 @@ export const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
                           key={child.path}
                           to={child.path}
                           onClick={onClose}
-                          className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors ${isActive(child.path) ? 'bg-sidebar-active text-primary-foreground font-medium' : 'text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-fg'}`}
+                          className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors ${isActive(child.path, child.activeMatchPaths) ? 'bg-sidebar-active text-primary-foreground font-medium' : 'text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-fg'}`}
                         >
                           {child.label}
                         </Link>

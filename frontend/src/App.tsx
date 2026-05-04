@@ -6,7 +6,6 @@ import Dashboard from "./pages/Dashboard";
 import Empresas from "./pages/Empresas";
 import ClienteList from "./pages/Clientes/ClienteList";
 import ClienteFormPage from "./pages/Clientes/ClienteFormPage";
-import CondicoesPagamento from "./pages/CondicoesPagamento";
 import FornecedorList from "./pages/Fornecedores/FornecedorList";
 import FornecedorFormPage from "./pages/Fornecedores/FornecedorFormPage";
 import TransportadoraList from "./pages/Transportadoras/TransportadoraList";
@@ -19,8 +18,14 @@ import PedidosVenda from "./pages/PedidosVenda";
 import PedidosCompra from "./pages/PedidosCompra";
 import NFeEntrada from "./pages/NFeEntrada";
 import NFeSaida from "./pages/NFeSaida";
+import NFeHistoricaImportada from "./pages/NFeHistoricaImportada";
+import NFeHistoricaEntradaImportada from "./pages/NFeHistoricaEntradaImportada";
+import NFeEntradaConferenciaPage from "./pages/NFeEntradaConferencia";
+import PainelFiscalGerencialHistorico from "./pages/PainelFiscalGerencialHistorico";
 import CTeEntrada from "./pages/CTeEntrada";
+import CTeHistoricoImportado from "./pages/CTeHistoricoImportado";
 import Certificados from "./pages/Certificados";
+import CertificadosFornecedor from "./pages/CertificadosFornecedor";
 import Estoque from "./pages/Estoque";
 import ApuracaoFiscal from "./pages/ApuracaoFiscal";
 import Contabil from "./pages/Contabil";
@@ -36,7 +41,6 @@ const App = () => (
         <Route path="clientes" element={<ClienteList />} />
         <Route path="clientes/novo" element={<ClienteFormPage />} />
         <Route path="clientes/:id/edit" element={<ClienteFormPage />} />
-        <Route path="condicoes-pagamento" element={<CondicoesPagamento />} />
         <Route path="fornecedores" element={<FornecedorList />} />
         <Route path="fornecedores/novo" element={<FornecedorFormPage />} />
         <Route path="fornecedores/:id/edit" element={<FornecedorFormPage />} />
@@ -51,8 +55,14 @@ const App = () => (
         <Route path="pedidos-compra" element={<PedidosCompra />} />
         <Route path="nfe-entrada" element={<NFeEntrada />} />
         <Route path="nfe-saida" element={<NFeSaida />} />
+        <Route path="nfe-historica-importada" element={<NFeHistoricaImportada />} />
+        <Route path="nfe-entrada-historica-importada" element={<NFeHistoricaEntradaImportada />} />
+        <Route path="nfe-entrada/:id/conferencia" element={<NFeEntradaConferenciaPage />} />
+        <Route path="visao-gerencial-nfe-historica" element={<PainelFiscalGerencialHistorico />} />
         <Route path="cte-entrada" element={<CTeEntrada />} />
+        <Route path="cte-historico-importado" element={<CTeHistoricoImportado />} />
         <Route path="certificados" element={<Certificados />} />
+        <Route path="certificados-fornecedor" element={<CertificadosFornecedor />} />
         <Route path="estoque" element={<Estoque />} />
         <Route path="apuracao-fiscal" element={<ApuracaoFiscal />} />
         <Route path="contabil" element={<Contabil />} />

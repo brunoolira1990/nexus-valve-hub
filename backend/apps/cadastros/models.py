@@ -89,22 +89,6 @@ class Empresa(models.Model):
             raise ValidationError({'senha_certificado': f'Falha ao validar certificado: {str(e)}'}) from e
 
 
-class CondicaoPagamento(models.Model):
-    descricao = models.CharField(max_length=100, unique=True)
-    dias_parcelas = ArrayField(
-        models.IntegerField(),
-        default=_default_dias_parcelas,
-        blank=True,
-    )
-    ativo = models.BooleanField(default=True)
-
-    class Meta:
-        ordering = ['descricao']
-
-    def __str__(self):
-        return f"{self.descricao} ({', '.join(str(d) for d in self.dias_parcelas)} dias)"
-
-
 class Cliente(models.Model):
     razao_social = models.CharField(max_length=255)
     nome_fantasia = models.CharField(max_length=255, blank=True)
@@ -127,13 +111,9 @@ class Cliente(models.Model):
     telefone_alternativo = models.CharField(max_length=20, blank=True)
     celular = models.CharField(max_length=20, blank=True)
     limite_credito = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0'))
-    condicao_pagamento_padrao = models.ForeignKey(
-        CondicaoPagamento,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='clientes_condicao_padrao',
-    )
+    condicao_pagamento_texto = models.CharField(max_length=120, blank=True)
+    dias_parcelas = ArrayField(models.IntegerField(), default=_default_dias_parcelas, blank=True)
+    quantidade_parcelas = models.PositiveSmallIntegerField(default=0)
     transportadora_padrao = models.ForeignKey(
         'cadastros.Transportadora',
         on_delete=models.SET_NULL,
@@ -186,13 +166,9 @@ class Fornecedor(models.Model):
     email_nf = models.EmailField(blank=True)
     telefone_alternativo = models.CharField(max_length=20, blank=True)
     celular = models.CharField(max_length=20, blank=True)
-    condicao_pagamento_padrao = models.ForeignKey(
-        CondicaoPagamento,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='fornecedores_condicao_padrao',
-    )
+    condicao_pagamento_texto = models.CharField(max_length=120, blank=True)
+    dias_parcelas = ArrayField(models.IntegerField(), default=_default_dias_parcelas, blank=True)
+    quantidade_parcelas = models.PositiveSmallIntegerField(default=0)
     transportadora_padrao = models.ForeignKey(
         'cadastros.Transportadora',
         on_delete=models.SET_NULL,
