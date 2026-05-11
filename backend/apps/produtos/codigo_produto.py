@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -49,7 +50,7 @@ def _descricao_schedule_comercial(schedule: ScheduleEspessura | None) -> str:
     if not schedule:
         return ''
     desc = _normalize_spaces((schedule.descricao or ''))
-    cod = _normalize_spaces((schedule.codigo_schedule or ''))
+    cod = _normalize_spaces((schedule.codigo or schedule.codigo_schedule or ''))
     return desc or cod
 
 
@@ -62,7 +63,7 @@ def _codigo_rosca(rosca: RoscaConexao | None) -> str:
 def _codigo_schedule(sch: ScheduleEspessura | None) -> str:
     if not sch:
         return ''
-    return (sch.codigo_schedule or '').strip()
+    return (sch.codigo or sch.codigo_schedule or '').strip()
 
 
 def _codigo_pol(p: Polegada | None, *, width: int = 2) -> str:
@@ -77,6 +78,57 @@ def _codigo_pol(p: Polegada | None, *, width: int = 2) -> str:
     return c
 
 
+def _segmento_mm_codigo(val: Decimal | None, *, width: int = 2) -> str:
+    if val is None:
+        return ''
+    n = int(val.quantize(Decimal('1')))
+    s = str(abs(n))
+    if width > 1 and len(s) <= width:
+        return s.zfill(width)
+    return s
+
+
+def _prefixo_od(figura: str) -> str:
+    f = (figura or '').strip()
+    if not f:
+        return ''
+    return f if f.upper().endswith('OD') else f'{f}OD'
+
+
+def _format_mm_descricao(val: Decimal | None) -> str:
+    if val is None:
+        return ''
+    normalized = val.normalize()
+    if normalized == normalized.to_integral():
+        return f'{int(normalized)}MM'
+    txt = format(normalized, 'f').rstrip('0').rstrip('.')
+    return f'{txt.replace(".", ",")}MM'
+
+
+def _format_dim_code_piece(val: Decimal | None) -> str:
+    if val is None:
+        return ''
+    normalized = val.normalize()
+    if normalized == normalized.to_integral():
+        return str(int(normalized))
+    txt = format(normalized, 'f').rstrip('0').rstrip('.')
+    return txt.replace('.', 'P')
+
+
+def _dimensao_decimal(dimensoes: dict | None, key: str) -> Decimal | None:
+    if not isinstance(dimensoes, dict):
+        return None
+    raw = dimensoes.get(key)
+    if raw in (None, ''):
+        return None
+    if isinstance(raw, str):
+        raw = raw.strip().replace(',', '.')
+    try:
+        return Decimal(str(raw))
+    except Exception:
+        return None
+
+
 def montar_codigo_interno(
     familia: FamiliaProduto,
     *,
@@ -84,12 +136,16 @@ def montar_codigo_interno(
     schedule: ScheduleEspessura | None,
     polegada_principal: Polegada | None,
     polegada_secundaria: Polegada | None,
+    od_mm: Decimal | None = None,
+    espessura_mm: Decimal | None = None,
+    dimensoes: dict | None = None,
 ) -> str:
     from apps.produtos.models import FamiliaProduto
 
     rule = familia.tipo_regra_codigo
     if rule == FamiliaProduto.TipoRegraCodigo.MANUAL_FABRICANTE:
         return ''
+    td = familia.tipo_dimensional or FamiliaProduto.TipoDimensional.SIMPLES
 
     fig = (familia.codigo_figura or '').strip()
     rs = _codigo_rosca(rosca)
@@ -99,6 +155,54 @@ def montar_codigo_interno(
     sep = (familia.separador_base_medidas or '.')[:1] or '.'
 
     t = FamiliaProduto.TipoRegraCodigo
+    td_new = FamiliaProduto.TipoDimensional
+
+    if td == td_new.CHAPA_MM:
+        esp = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'espessura_mm'))
+        lar = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'largura_mm'))
+        comp = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'comprimento_mm'))
+        return f'{fig}{sep}{esp}X{lar}X{comp}' if esp and lar and comp else ''
+    if td == td_new.CHAPA_FURO_MM:
+        furo = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'furo_mm'))
+        esp = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'espessura_mm'))
+        lar = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'largura_mm'))
+        comp = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'comprimento_mm'))
+        return f'{fig}{sep}F{furo}X{esp}X{lar}X{comp}' if furo and esp and lar and comp else ''
+    if td == td_new.BARRA_CHATA_MM:
+        lar = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'largura_mm'))
+        esp = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'espessura_mm'))
+        comp = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'comprimento_mm'))
+        if not lar or not esp:
+            return ''
+        return f'{fig}{sep}{lar}X{esp}X{comp}' if comp else f'{fig}{sep}{lar}X{esp}'
+    if td == td_new.METALON_MM:
+        alt = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'altura_mm'))
+        lar = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'largura_mm'))
+        esp = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'espessura_mm'))
+        return f'{fig}{sep}{alt}X{lar}X{esp}' if alt and lar and esp else ''
+    if td == td_new.PERFIL_RETANGULAR_MM:
+        alt = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'altura_mm'))
+        lar = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'largura_mm'))
+        esp = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'espessura_mm'))
+        return f'{fig}{sep}{alt}X{lar}X{esp}' if alt and lar and esp else ''
+    if td == td_new.CANTONEIRA_MM:
+        aba = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'aba_mm'))
+        esp = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'espessura_mm'))
+        comp = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'comprimento_mm'))
+        if not aba or not esp:
+            return ''
+        return f'{fig}{sep}{aba}X{esp}X{comp}' if comp else f'{fig}{sep}{aba}X{esp}'
+    if td == td_new.CANTONEIRA_POLEGADA:
+        aba = _codigo_pol(polegada_principal, width=2)
+        esp = _codigo_pol(polegada_secundaria, width=2)
+        if not aba or not esp:
+            return ''
+        return f'{fig}{sep}P{aba}X{esp}'
+    if td == td_new.DIMENSIONAL_LIVRE_CONTROLADO:
+        dim_code = _normalize_spaces(str((dimensoes or {}).get('dimensao_codigo') or '')).upper()
+        if not dim_code:
+            return ''
+        return f'{fig}{sep}{dim_code}'
 
     if rule == t.BASE_POLEGADA:
         return f'{fig}{sep}{id1}' if id1 else ''
@@ -142,6 +246,13 @@ def montar_codigo_interno(
             return ''
         return f'{fig}_{id_u}'
 
+    if rule == t.BASE_OD_MM_ESPESSURA:
+        od_s = _segmento_mm_codigo(od_mm, width=2)
+        esp_s = _segmento_mm_codigo(espessura_mm, width=2)
+        if not od_s or not esp_s:
+            return ''
+        return f'{_prefixo_od(fig)}{sep}{od_s}{esp_s}'
+
     return ''
 
 
@@ -152,7 +263,102 @@ def montar_descricao_sugerida(
     schedule: ScheduleEspessura | None,
     polegada_principal: Polegada | None,
     polegada_secundaria: Polegada | None,
+    od_mm: Decimal | None = None,
+    espessura_mm: Decimal | None = None,
+    comprimento_mm: Decimal | None = None,
+    dimensoes: dict | None = None,
 ) -> str:
+    from apps.produtos.dimensional_regra import requisitos_efetivos_produto
+    from apps.produtos.models import FamiliaProduto
+
+    req = requisitos_efetivos_produto(familia)
+    td = familia.tipo_dimensional or FamiliaProduto.TipoDimensional.SIMPLES
+    Td = FamiliaProduto.TipoDimensional
+    schedule_eff = schedule if req['incluir_schedule_na_descricao'] else None
+
+    if td == Td.OD_POLEGADA_X_ROSCA:
+        partes_od: list[str] = []
+        base = _normalize_spaces(familia.descricao_base or '')
+        if base:
+            partes_od.append(base)
+        if polegada_principal and (polegada_principal.descricao or '').strip():
+            partes_od.append(_normalize_spaces(polegada_principal.descricao))
+        rosca_text = _descricao_rosca_comercial(rosca)
+        if rosca_text:
+            partes_od.append(f'X ROSCA {rosca_text}')
+        if polegada_secundaria and (polegada_secundaria.descricao or '').strip():
+            partes_od.append(_normalize_spaces(polegada_secundaria.descricao))
+        return _normalize_spaces(' '.join(partes_od))
+
+    if td in (Td.CHAPA_MM, Td.CHAPA_FURO_MM, Td.BARRA_CHATA_MM, Td.METALON_MM, Td.PERFIL_RETANGULAR_MM, Td.CANTONEIRA_MM):
+        base = _normalize_spaces(familia.descricao_base or '')
+        chunks: list[str] = []
+        if td == Td.CHAPA_MM:
+            for k in ('espessura_mm', 'largura_mm', 'comprimento_mm'):
+                x = _format_mm_descricao(_dimensao_decimal(dimensoes, k))
+                if x:
+                    chunks.append(x)
+        elif td == Td.CHAPA_FURO_MM:
+            furo = _format_mm_descricao(_dimensao_decimal(dimensoes, 'furo_mm'))
+            if furo:
+                chunks.append(furo)
+            for k in ('espessura_mm', 'largura_mm', 'comprimento_mm'):
+                x = _format_mm_descricao(_dimensao_decimal(dimensoes, k))
+                if x:
+                    chunks.append(x)
+        elif td == Td.BARRA_CHATA_MM:
+            for k in ('largura_mm', 'espessura_mm', 'comprimento_mm'):
+                x = _format_mm_descricao(_dimensao_decimal(dimensoes, k))
+                if x:
+                    chunks.append(x)
+        elif td == Td.METALON_MM:
+            alt = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'altura_mm'))
+            lar = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'largura_mm'))
+            esp = _format_mm_descricao(_dimensao_decimal(dimensoes, 'espessura_mm'))
+            if alt and lar and esp:
+                chunks.append(f'{alt} X {lar} X {esp}')
+        elif td == Td.PERFIL_RETANGULAR_MM:
+            alt = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'altura_mm'))
+            lar = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'largura_mm'))
+            esp = _format_mm_descricao(_dimensao_decimal(dimensoes, 'espessura_mm'))
+            if alt and lar and esp:
+                chunks.append(f'{alt} X {lar} X {esp}')
+        elif td == Td.CANTONEIRA_MM:
+            for k in ('aba_mm', 'espessura_mm', 'comprimento_mm'):
+                x = _format_mm_descricao(_dimensao_decimal(dimensoes, k))
+                if x:
+                    chunks.append(x)
+        return _normalize_spaces(' '.join([base, ' X '.join(chunks)]))
+
+    if td == Td.CANTONEIRA_POLEGADA:
+        partes_cp: list[str] = []
+        base = _normalize_spaces(familia.descricao_base or '')
+        if base:
+            partes_cp.append(base)
+        if polegada_principal and polegada_secundaria:
+            partes_cp.append(f'{_normalize_spaces(polegada_principal.descricao)} X {_normalize_spaces(polegada_secundaria.descricao)}')
+        return _normalize_spaces(' '.join(partes_cp))
+    if td == Td.DIMENSIONAL_LIVRE_CONTROLADO:
+        base = _normalize_spaces(familia.descricao_base or '')
+        dim_desc = _normalize_spaces(str((dimensoes or {}).get('dimensao_descricao') or '')).upper()
+        return _normalize_spaces(' '.join([base, dim_desc]))
+
+    if td in (Td.OD_MM, Td.OD_MM_X_ESPESSURA, Td.OD_MM_X_ESPESSURA_X_COMPRIMENTO):
+        partes_mm: list[str] = []
+        base = _normalize_spaces(familia.descricao_base or '')
+        if base:
+            partes_mm.append(base)
+        dim_chunks: list[str] = []
+        if od_mm is not None:
+            dim_chunks.append(_format_mm_descricao(od_mm))
+        if espessura_mm is not None:
+            dim_chunks.append(_format_mm_descricao(espessura_mm))
+        if comprimento_mm is not None:
+            dim_chunks.append(_format_mm_descricao(comprimento_mm))
+        if dim_chunks:
+            partes_mm.append('OD ' + ' X '.join(dim_chunks))
+        return _normalize_spaces(' '.join(partes_mm))
+
     partes: list[str] = []
     base = _normalize_spaces(familia.descricao_base or '')
     base_upper = base.upper()
@@ -161,13 +367,23 @@ def montar_descricao_sugerida(
     rosca_text = _descricao_rosca_comercial(rosca)
     if rosca_text and not _token_in_text(base_upper, rosca_text):
         partes.append(rosca_text)
-    schedule_text = _descricao_schedule_comercial(schedule)
+    schedule_text = _descricao_schedule_comercial(schedule_eff)
     if schedule_text and not _token_in_text(base_upper, schedule_text):
         partes.append(schedule_text)
-    if polegada_principal and (polegada_principal.descricao or '').strip():
-        partes.append(_normalize_spaces(polegada_principal.descricao))
-    if polegada_secundaria and (polegada_secundaria.descricao or '').strip():
-        partes.append(f'x {_normalize_spaces(polegada_secundaria.descricao)}')
+    if td == Td.REDUCAO_NPS and polegada_principal and polegada_secundaria:
+        p1 = _normalize_spaces(polegada_principal.descricao)
+        p2 = _normalize_spaces(polegada_secundaria.descricao)
+        if p1 and p2:
+            partes.append(f'{p1} X {p2}')
+        elif p1:
+            partes.append(p1)
+        elif p2:
+            partes.append(p2)
+    else:
+        if polegada_principal and (polegada_principal.descricao or '').strip():
+            partes.append(_normalize_spaces(polegada_principal.descricao))
+        if polegada_secundaria and (polegada_secundaria.descricao or '').strip():
+            partes.append(f'x {_normalize_spaces(polegada_secundaria.descricao)}')
     return _normalize_spaces(' '.join(partes))
 
 
@@ -201,5 +417,18 @@ def produto_aplicar_codigo_completo(produto: Produto) -> None:
         schedule=produto.schedule_ref,
         polegada_principal=produto.polegada_principal_ref,
         polegada_secundaria=produto.polegada_secundaria_ref,
+        od_mm=produto.od_mm,
+        espessura_mm=produto.espessura_mm,
+        dimensoes={
+            **(produto.dimensoes_json or {}),
+            'espessura_mm': produto.dim_espessura_mm,
+            'largura_mm': produto.dim_largura_mm,
+            'comprimento_mm': produto.dim_comprimento_mm,
+            'altura_mm': produto.dim_altura_mm,
+            'furo_mm': produto.dim_furo_mm,
+            'aba_mm': produto.dim_aba_mm,
+            'dimensao_codigo': produto.dimensao_codigo,
+            'dimensao_descricao': produto.dimensao_descricao,
+        },
     )
     produto.codigo_completo = codigo

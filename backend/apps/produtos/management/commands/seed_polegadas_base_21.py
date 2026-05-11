@@ -21,7 +21,7 @@ def _fmt_inches(value: Fraction) -> str:
 
 
 class Command(BaseCommand):
-    help = 'Gera tabela base de polegadas validada até 21".'
+    help = 'Gera base de medidas OD (polegada real) validada até 21".'
 
     def handle(self, *args, **options):
         faixas = [
@@ -33,7 +33,11 @@ class Command(BaseCommand):
         ]
         created = 0
         current_code = (
-            Polegada.objects.exclude(codigo_oficial='').order_by('-codigo_oficial').values_list('codigo_oficial', flat=True).first()
+            Polegada.objects.filter(tipo_medida=Polegada.TipoMedida.OD)
+            .exclude(codigo_oficial='')
+            .order_by('-codigo_oficial')
+            .values_list('codigo_oficial', flat=True)
+            .first()
             or '00'
         )
         seq = int(''.join(ch for ch in current_code if ch.isdigit()) or '0')
@@ -45,20 +49,21 @@ class Command(BaseCommand):
                     break
                 mm = (dec * Decimal('25.4')).quantize(Decimal('0.001'))
                 descricao = _fmt_inches(v)
-                obj = Polegada.objects.filter(valor_decimal=dec).first()
+                obj = Polegada.objects.filter(tipo_medida=Polegada.TipoMedida.OD, valor_decimal=dec).first()
                 if not obj:
                     seq += 1
                     codigo = str(seq).zfill(2)
                     Polegada.objects.create(
+                        tipo_medida=Polegada.TipoMedida.OD,
                         codigo=codigo,
                         codigo_oficial=codigo,
                         descricao=descricao,
                         valor_decimal=dec,
                         valor_mm=mm,
                         aliases=aliases_for_polegada(descricao, dec, mm),
-                        origem='TABELA_BASE_21',
+                        origem='SEED_OD_BASE_21',
                         ativo=True,
                     )
                     created += 1
                 v += passo
-        self.stdout.write(self.style.SUCCESS(f'Polegadas base até 21": {created} novos registros.'))
+        self.stdout.write(self.style.SUCCESS(f'Medidas OD base até 21": {created} novos registros.'))

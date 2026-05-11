@@ -46,26 +46,29 @@ POLEGADAS_OFICIAIS = [
     ('38', '46"'),
     ('39', '48"'),
     ('40', '2.3/4"'),
+    ('41', '4.1/2"'),
+    ('42', '7/8"'),
 ]
 
 
 class Command(BaseCommand):
-    help = 'Popula a tabela Polegada com códigos oficiais 01–40 e descrições legíveis.'
+    help = 'Popula medidas NPS (nominais) com códigos oficiais Nexus.'
 
     def handle(self, *args, **options):
         for codigo, descricao in POLEGADAS_OFICIAIS:
             dec = parse_polegada_to_decimal(descricao) or Decimal('0')
             mm = (dec * Decimal('25.4')).quantize(Decimal('0.001'))
             Polegada.objects.update_or_create(
+                tipo_medida=Polegada.TipoMedida.NPS,
                 codigo_oficial=codigo,
                 defaults={
                     'codigo': codigo,
                     'descricao': descricao,
                     'valor_decimal': dec,
-                    'valor_mm': mm,
+                    'valor_mm': None,
                     'aliases': aliases_for_polegada(descricao, dec, mm),
                     'ativo': True,
-                    'origem': 'SEED_LEGADO',
+                    'origem': 'SEED_NPS',
                 },
             )
-        self.stdout.write(self.style.SUCCESS(f'Polegadas: {len(POLEGADAS_OFICIAIS)} registros garantidos.'))
+        self.stdout.write(self.style.SUCCESS(f'Medidas NPS: {len(POLEGADAS_OFICIAIS)} registros garantidos.'))

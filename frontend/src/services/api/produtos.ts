@@ -32,6 +32,20 @@ export type PreviewCodigoPayload = {
   schedule_ref_id?: number | null;
   polegada_principal_ref_id?: number | null;
   polegada_secundaria_ref_id?: number | null;
+  od_mm?: number | null;
+  espessura_mm?: number | null;
+  comprimento_mm?: number | null;
+  dim_espessura_mm?: number | null;
+  dim_largura_mm?: number | null;
+  dim_comprimento_mm?: number | null;
+  dim_altura_mm?: number | null;
+  dim_furo_mm?: number | null;
+  dim_aba_mm?: number | null;
+  dim_aba_polegada_ref_id?: number | null;
+  dim_espessura_polegada_ref_id?: number | null;
+  dimensao_codigo?: string;
+  dimensao_descricao?: string;
+  dimensoes_json?: Record<string, number | string | null>;
 };
 
 export type PreviewCodigoResponse = {
@@ -141,8 +155,10 @@ export const polegadasService = {
     const response = await api.get<ListResponse<Polegada>>(polPath);
     return unwrapList(response.data);
   },
-  search: async (term: string, limit = 20) => {
-    const response = await api.get<ListResponse<Polegada>>(polPath, { params: { search: term, limit } });
+  search: async (term: string, limit = 20, tipo_medida?: 'NPS' | 'OD') => {
+    const response = await api.get<ListResponse<Polegada>>(polPath, {
+      params: { search: term, limit, tipo_medida: tipo_medida || undefined },
+    });
     return unwrapList(response.data);
   },
   create: async (data: Partial<Polegada>) => (await api.post<Polegada>(polPath, data)).data,

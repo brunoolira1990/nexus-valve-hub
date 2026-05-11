@@ -172,13 +172,54 @@ export type TipoRegraCodigo =
   | 'BASE_ROSCA_SCHEDULE_POLEGADA'
   | 'BASE_ROSCA_SCHEDULE_DUAS_POLEGADAS'
   | 'UNDERSCORE_POLEGADA'
+  | 'BASE_OD_MM_ESPESSURA'
   | 'MANUAL_FABRICANTE';
+
+export type TipoDimensional =
+  | 'SIMPLES'
+  | 'NPS'
+  | 'NPS_SCHEDULE'
+  | 'REDUCAO_NPS'
+  | 'ROSCA'
+  | 'ROSCA_X_ROSCA'
+  | 'NPS_X_ROSCA'
+  | 'OD_POLEGADA'
+  | 'OD_POLEGADA_X_ROSCA'
+  | 'OD_MM'
+  | 'OD_MM_X_ESPESSURA'
+  | 'OD_MM_X_ESPESSURA_X_COMPRIMENTO'
+  | 'CHAPA_MM'
+  | 'CHAPA_FURO_MM'
+  | 'BARRA_CHATA_MM'
+  | 'METALON_MM'
+  | 'CANTONEIRA_MM'
+  | 'CANTONEIRA_POLEGADA'
+  | 'DIMENSIONAL_LIVRE_CONTROLADO'
+  | 'PERFIL_RETANGULAR_MM'
+  | 'FLANGE'
+  | 'VALVULA'
+  | 'MANUAL'
+  | 'LEGADO';
+
+export type RequisitosProdutoDimensionais = {
+  usa_rosca_conexao: boolean;
+  usa_schedule: boolean;
+  usa_polegada_principal: boolean;
+  usa_polegada_secundaria: boolean;
+  exige_od_mm: boolean;
+  exige_espessura_mm: boolean;
+  exige_comprimento_mm: boolean;
+  incluir_schedule_na_descricao: boolean;
+};
 
 export interface FamiliaProduto {
   id: number;
   codigo_figura: string;
   descricao_base: string;
   tipo_regra_codigo: TipoRegraCodigo;
+  categoria_produto?: 'PRODUTO_TECNICO' | 'MATERIAL_DIMENSIONAL' | 'MANUAL_FABRICANTE';
+  tipo_dimensional?: TipoDimensional;
+  requisitos_produto?: RequisitosProdutoDimensionais;
   usa_rosca_conexao: boolean;
   usa_schedule: boolean;
   usa_polegada_principal: boolean;
@@ -209,7 +250,14 @@ export interface FamiliaProduto {
   observacoes_conversao?: string;
   polegadas_permitidas?: Array<{ id: number; codigo: string; descricao: string; tipo: 'principal' | 'secundaria' | 'ambas' }>;
   roscas_permitidas?: Array<{ id: number; codigo: string; descricao: string; padrao_da_familia: boolean }>;
-  schedules_permitidos?: Array<{ id: number; codigo_schedule: string; descricao: string; padrao_da_familia: boolean }>;
+  schedules_permitidos?: Array<{
+    id: number;
+    codigo_schedule: string;
+    codigo?: string;
+    descricao: string;
+    aplicacao?: 'CARBONO' | 'INOX' | 'AMBOS' | 'OUTRO';
+    padrao_da_familia: boolean;
+  }>;
   rosca_padrao_id?: number | null;
   schedule_padrao_id?: number | null;
   ativo: boolean;
@@ -226,12 +274,17 @@ export interface RoscaConexao {
 export interface ScheduleEspessura {
   id: number;
   codigo_schedule: string;
+  codigo?: string;
   descricao: string;
+  aplicacao?: 'CARBONO' | 'INOX' | 'AMBOS' | 'OUTRO';
+  ordem?: number | null;
   ativo: boolean;
+  observacoes?: string;
 }
 
 export interface Polegada {
   id: number;
+  tipo_medida?: 'NPS' | 'OD';
   codigo?: string;
   codigo_oficial?: string;
   descricao: string;
@@ -302,6 +355,20 @@ export interface Produto {
   preco_venda: number;
   estoque_minimo: number;
   codigo_completo: string;
+  od_mm?: number | null;
+  espessura_mm?: number | null;
+  comprimento_mm?: number | null;
+  dim_espessura_mm?: number | null;
+  dim_largura_mm?: number | null;
+  dim_comprimento_mm?: number | null;
+  dim_altura_mm?: number | null;
+  dim_furo_mm?: number | null;
+  dim_aba_mm?: number | null;
+  dim_aba_polegada_ref?: number | null;
+  dim_espessura_polegada_ref?: number | null;
+  dimensao_codigo?: string;
+  dimensao_descricao?: string;
+  dimensoes_json?: Record<string, number | string | null>;
 }
 
 export interface ComposicaoQuimica {

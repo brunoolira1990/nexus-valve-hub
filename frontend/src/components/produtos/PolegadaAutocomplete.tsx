@@ -10,6 +10,7 @@ type Props = {
   selectedLabel?: string;
   onChange: (id: number | null, option?: Polegada | null) => void;
   placeholder?: string;
+  tipoMedida?: 'NPS' | 'OD';
   disabled?: boolean;
   allowCreate?: boolean;
   allowedIds?: number[];
@@ -27,6 +28,7 @@ export function PolegadaAutocomplete({
   selectedLabel,
   onChange,
   placeholder = 'Digite código, polegada, decimal ou mm. Ex.: 1/2, 0,5, 12,70',
+  tipoMedida,
   disabled = false,
   allowCreate = false,
   allowedIds,
@@ -43,6 +45,7 @@ export function PolegadaAutocomplete({
   const minChars = 1;
 
   const [novo, setNovo] = useState({
+    tipo_medida: tipoMedida || 'OD',
     codigo_oficial: '',
     descricao: '',
     valor_decimal: '',
@@ -83,7 +86,7 @@ export function PolegadaAutocomplete({
     setError(null);
     const t = setTimeout(async () => {
       try {
-        const list = await polegadasService.search(q, 20);
+        const list = await polegadasService.search(q, 20, tipoMedida);
         if (reqId.current !== current) return;
         setOptions(list);
       } catch {
@@ -95,7 +98,7 @@ export function PolegadaAutocomplete({
       }
     }, 300);
     return () => clearTimeout(t);
-  }, [open, term]);
+  }, [open, term, tipoMedida]);
 
   const currentLabel = selected ? polegadaLabel(selected) : selectedLabel || '';
 
@@ -105,7 +108,7 @@ export function PolegadaAutocomplete({
     const mm = dec != null ? decimalToMm(dec) : null;
     let nextCode = '';
     try {
-      const base = await polegadasService.search('', 100);
+      const base = await polegadasService.search('', 100, tipoMedida);
       const maxCode = base.reduce((acc, p) => {
         const code = (p.codigo_oficial || p.codigo || '').replace(/\D/g, '');
         const num = Number(code || '0');
@@ -116,6 +119,7 @@ export function PolegadaAutocomplete({
       nextCode = '';
     }
     setNovo({
+      tipo_medida: tipoMedida || 'OD',
       codigo_oficial: nextCode,
       descricao: normalized || term.trim(),
       valor_decimal: dec != null ? String(dec) : '',
@@ -138,6 +142,7 @@ export function PolegadaAutocomplete({
     if (decimal > 100 || mm > 2540) return setCreateErr('Medida acima do limite operacional de 100". Verifique antes de cadastrar.');
     try {
       const created = await polegadasService.create({
+        tipo_medida: novo.tipo_medida || tipoMedida || 'OD',
         codigo_oficial: novo.codigo_oficial.trim(),
         descricao: novo.descricao.trim(),
         valor_decimal: String(decimal),

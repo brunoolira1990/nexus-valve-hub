@@ -29,8 +29,13 @@ class Ncm(models.Model):
 class Polegada(models.Model):
     """Cadastro mestre de polegadas com código oficial operacional."""
 
-    codigo = models.CharField(max_length=4, unique=True)
-    codigo_oficial = models.CharField(max_length=8, unique=True, null=True, blank=True)
+    class TipoMedida(models.TextChoices):
+        NPS = 'NPS', 'NPS / nominal'
+        OD = 'OD', 'OD / diâmetro externo real'
+
+    tipo_medida = models.CharField(max_length=8, choices=TipoMedida.choices, default=TipoMedida.OD, db_index=True)
+    codigo = models.CharField(max_length=4)
+    codigo_oficial = models.CharField(max_length=8, null=True, blank=True)
     descricao = models.CharField(max_length=64)
     valor_decimal = models.DecimalField(max_digits=10, decimal_places=6, null=True, blank=True)
     valor_mm = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
@@ -40,8 +45,18 @@ class Polegada(models.Model):
     observacoes = models.CharField(max_length=255, blank=True)
 
     class Meta:
-        ordering = ['valor_decimal', 'codigo_oficial']
+        ordering = ['tipo_medida', 'valor_decimal', 'codigo_oficial']
         verbose_name = 'Polegada'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['tipo_medida', 'codigo_oficial'],
+                name='uq_polegada_tipo_codigo_oficial',
+            ),
+            models.UniqueConstraint(
+                fields=['tipo_medida', 'descricao'],
+                name='uq_polegada_tipo_descricao',
+            ),
+        ]
 
     def __str__(self):
         return f'{self.codigo_oficial} — {self.descricao}'
@@ -78,20 +93,65 @@ class RoscaConexao(models.Model):
 
 
 class ScheduleEspessura(models.Model):
+    class Aplicacao(models.TextChoices):
+        CARBONO = 'CARBONO', 'Carbono'
+        INOX = 'INOX', 'Inox'
+        AMBOS = 'AMBOS', 'Ambos'
+        OUTRO = 'OUTRO', 'Outro'
+
     codigo_schedule = models.CharField(max_length=32, unique=True)
+    codigo = models.CharField(max_length=32, blank=True, db_index=True)
     descricao = models.CharField(max_length=128, blank=True)
+    aplicacao = models.CharField(max_length=16, choices=Aplicacao.choices, default=Aplicacao.AMBOS)
+    ordem = models.PositiveIntegerField(null=True, blank=True)
     ativo = models.BooleanField(default=True)
+    observacoes = models.CharField(max_length=255, blank=True)
 
     class Meta:
-        ordering = ['codigo_schedule']
+        ordering = ['ordem', 'codigo_schedule']
         verbose_name = 'Schedule / Espessura'
 
     def __str__(self):
         return f'{self.codigo_schedule} — {self.descricao}'
 
+    def save(self, *args, **kwargs):
+        if not self.codigo:
+            self.codigo = self.codigo_schedule
+        super().save(*args, **kwargs)
+
 
 class FamiliaProduto(models.Model):
     """Família / figura base para geração de código interno."""
+    class CategoriaProduto(models.TextChoices):
+        PRODUTO_TECNICO = 'PRODUTO_TECNICO', 'Produto técnico'
+        MATERIAL_DIMENSIONAL = 'MATERIAL_DIMENSIONAL', 'Material dimensional'
+        MANUAL_FABRICANTE = 'MANUAL_FABRICANTE', 'Produto manual/fabricante'
+
+    class TipoDimensional(models.TextChoices):
+        SIMPLES = 'SIMPLES', 'Simples (somente regra de código)'
+        NPS = 'NPS', 'NPS — polegada nominal'
+        NPS_SCHEDULE = 'NPS_SCHEDULE', 'NPS + Schedule (SCH)'
+        REDUCAO_NPS = 'REDUCAO_NPS', 'Redução NPS + Schedule'
+        ROSCA = 'ROSCA', 'Rosca / conexão (orientação)'
+        ROSCA_X_ROSCA = 'ROSCA_X_ROSCA', 'Rosca x Rosca (orientação)'
+        NPS_X_ROSCA = 'NPS_X_ROSCA', 'NPS x Rosca'
+        OD_POLEGADA = 'OD_POLEGADA', 'OD em polegada (não é NPS/SCH)'
+        OD_POLEGADA_X_ROSCA = 'OD_POLEGADA_X_ROSCA', 'OD em polegada x Rosca'
+        OD_MM = 'OD_MM', 'OD em mm (tubo / dimensional)'
+        OD_MM_X_ESPESSURA = 'OD_MM_X_ESPESSURA', 'OD mm + espessura mm'
+        OD_MM_X_ESPESSURA_X_COMPRIMENTO = 'OD_MM_X_ESPESSURA_X_COMPRIMENTO', 'OD mm + espessura + comprimento'
+        CHAPA_MM = 'CHAPA_MM', 'Chapa em mm (espessura x largura x comprimento)'
+        CHAPA_FURO_MM = 'CHAPA_FURO_MM', 'Chapa com furo em mm (furo x espessura x largura x comprimento)'
+        BARRA_CHATA_MM = 'BARRA_CHATA_MM', 'Barra chata em mm (largura x espessura [x comprimento])'
+        METALON_MM = 'METALON_MM', 'Metalon em mm (altura x largura x espessura)'
+        CANTONEIRA_MM = 'CANTONEIRA_MM', 'Cantoneira em mm (aba x espessura [x comprimento])'
+        CANTONEIRA_POLEGADA = 'CANTONEIRA_POLEGADA', 'Cantoneira em polegada (aba x espessura)'
+        PERFIL_RETANGULAR_MM = 'PERFIL_RETANGULAR_MM', 'Perfil retangular em mm (altura x largura x espessura)'
+        DIMENSIONAL_LIVRE_CONTROLADO = 'DIMENSIONAL_LIVRE_CONTROLADO', 'Dimensional livre controlado'
+        FLANGE = 'FLANGE', 'Flange (orientação)'
+        VALVULA = 'VALVULA', 'Válvula (orientação)'
+        MANUAL = 'MANUAL', 'Dimensional manual / sem padrão automático'
+        LEGADO = 'LEGADO', 'Legado / misto (orientação)'
 
     class TipoRegraCodigo(models.TextChoices):
         BASE_POLEGADA = 'BASE_POLEGADA', 'Base + polegada principal'
@@ -106,6 +166,7 @@ class FamiliaProduto(models.Model):
             'Base + rosca + schedule + duas polegadas',
         )
         UNDERSCORE_POLEGADA = 'UNDERSCORE_POLEGADA', 'Base + underscore + ID polegada (3 dígitos)'
+        BASE_OD_MM_ESPESSURA = 'BASE_OD_MM_ESPESSURA', 'Base + OD mm + espessura mm (ex.: 6119OD.1002)'
         MANUAL_FABRICANTE = 'MANUAL_FABRICANTE', 'Manual / fabricante (sem código automático por família)'
 
     class TipoControleUnidade(models.TextChoices):
@@ -137,6 +198,18 @@ class FamiliaProduto(models.Model):
         max_length=48,
         choices=TipoRegraCodigo.choices,
         default=TipoRegraCodigo.BASE_POLEGADA,
+    )
+    categoria_produto = models.CharField(
+        max_length=32,
+        choices=CategoriaProduto.choices,
+        default=CategoriaProduto.PRODUTO_TECNICO,
+    )
+    tipo_dimensional = models.CharField(
+        max_length=48,
+        choices=TipoDimensional.choices,
+        default=TipoDimensional.SIMPLES,
+        help_text='Significado dimensional dos campos (rótulos, obrigatoriedade, descrição). '
+        'A montagem do código continua definida apenas por tipo_regra_codigo.',
     )
     usa_rosca_conexao = models.BooleanField(default=False)
     usa_schedule = models.BooleanField(default=False)
@@ -283,6 +356,38 @@ class Produto(models.Model):
     peso_por_chapa_kg = models.DecimalField(max_digits=14, decimal_places=6, null=True, blank=True)
     densidade = models.DecimalField(max_digits=14, decimal_places=6, null=True, blank=True)
     usa_conversao_dimensional = models.BooleanField(default=False)
+    od_mm = models.DecimalField(
+        max_digits=10,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        help_text='OD externo em mm (tubo / dimensional; não confundir com NPS).',
+    )
+    espessura_mm = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    comprimento_mm = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
+    dimensoes_json = models.JSONField(default=dict, blank=True)
+    dim_espessura_mm = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    dim_largura_mm = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    dim_comprimento_mm = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
+    dim_altura_mm = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    dim_furo_mm = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    dim_aba_mm = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    dim_aba_polegada_ref = models.ForeignKey(
+        Polegada,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='produtos_dim_aba',
+    )
+    dim_espessura_polegada_ref = models.ForeignKey(
+        Polegada,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='produtos_dim_espessura',
+    )
+    dimensao_codigo = models.CharField(max_length=64, blank=True)
+    dimensao_descricao = models.CharField(max_length=256, blank=True)
 
     class Meta:
         ordering = ['codigo_completo']

@@ -14,12 +14,22 @@ import type {
   FamiliaProduto,
   ModoCodigoProduto,
   Produto,
+  RequisitosProdutoDimensionais,
   RoscaConexao,
   ScheduleEspessura,
+  TipoDimensional,
   TipoRegraCodigo,
 } from '@/types';
 import { MATERIAIS } from '@/types';
-import { flagsPorTipoRegra, labelsCamposObrigatorios, normalizarTipoRegra } from '@/lib/familiaRegra';
+import {
+  flagsPorTipoRegra,
+  hintTipoDimensional,
+  labelPolegadaPrincipal,
+  labelPolegadaSecundaria,
+  labelsCamposObrigatorios,
+  labelsCamposObrigatoriosProduto,
+  normalizarTipoRegra,
+} from '@/lib/familiaRegra';
 import { ConversaoMedidasBlock, type CampoHeranca } from '@/components/produtos/ConversaoMedidasBlock';
 import { NcmAutocomplete, type NcmOption } from '@/components/produtos/NcmAutocomplete';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
@@ -70,7 +80,43 @@ const emptyForm = (): FormState => ({
   preco_venda: 0,
   estoque_minimo: 0,
   codigo_completo: '',
+  od_mm: null,
+  espessura_mm: null,
+  comprimento_mm: null,
+  dim_espessura_mm: null,
+  dim_largura_mm: null,
+  dim_comprimento_mm: null,
+  dim_altura_mm: null,
+  dim_furo_mm: null,
+  dim_aba_mm: null,
+  dim_aba_polegada_ref: null,
+  dim_espessura_polegada_ref: null,
+  dimensao_codigo: '',
+  dimensao_descricao: '',
+  dimensoes_json: {},
 });
+
+function formatDecimalField(v: number | null | undefined): string {
+  if (v == null || Number.isNaN(v)) return '';
+  const txt = String(v);
+  return txt.includes('.') ? txt.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1') : txt;
+}
+
+function parseDecimalFlexible(raw: string): number | null {
+  const s = (raw || '').trim();
+  if (!s) return null;
+  const normalized = s.replace(',', '.');
+  const n = Number(normalized);
+  return Number.isFinite(n) ? n : null;
+}
+
+function getDimInputValue(form: FormState, key: string): string {
+  const explicit = (form as unknown as Record<string, number | string | null | undefined>)[`dim_${key}`];
+  const v = explicit ?? form.dimensoes_json?.[key];
+  if (v == null || v === '') return '';
+  const n = typeof v === 'number' ? v : Number(String(v).replace(',', '.'));
+  return Number.isFinite(n) ? formatDecimalField(n) : '';
+}
 
 function genCodigoLegadoPreview(f: FormState): string {
   const parts = [f.figura, f.sufixo, f.schedule].map((s) => (s || '').trim()).filter(Boolean);
@@ -95,12 +141,47 @@ const REGRAS: { value: TipoRegraCodigo; label: string }[] = [
   { value: 'BASE_ROSCA_SCHEDULE_DUAS_POLEGADAS', label: '8) Base + rosca + schedule + duas polegadas' },
   { value: 'UNDERSCORE_POLEGADA', label: '9) Underscore + ID 3 dígitos — {figura}_{id}' },
   { value: 'MANUAL_FABRICANTE', label: '10) Manual/fabricante (sem código por família)' },
+  { value: 'BASE_OD_MM_ESPESSURA', label: '11) Base + OD mm + espessura mm — {figura}.{od}{esp} (ex.: 6119OD.1002)' },
+];
+
+const CATEGORIAS_FAMILIA = [
+  { value: 'PRODUTO_TECNICO', label: 'Produto técnico' },
+  { value: 'MATERIAL_DIMENSIONAL', label: 'Material dimensional' },
+  { value: 'MANUAL_FABRICANTE', label: 'Produto manual/fabricante' },
+] as const;
+
+const TIPOS_DIMENSIONAIS: { value: TipoDimensional; label: string }[] = [
+  { value: 'SIMPLES', label: 'Simples — só a regra de código define campos' },
+  { value: 'NPS', label: 'NPS — polegada nominal' },
+  { value: 'NPS_SCHEDULE', label: 'NPS + Schedule (SCH)' },
+  { value: 'REDUCAO_NPS', label: 'Redução NPS + Schedule' },
+  { value: 'NPS_X_ROSCA', label: 'NPS x Rosca' },
+  { value: 'OD_POLEGADA', label: 'OD em polegada (não é NPS/SCH)' },
+  { value: 'OD_POLEGADA_X_ROSCA', label: 'OD em polegada x Rosca' },
+  { value: 'OD_MM', label: 'OD em mm' },
+  { value: 'OD_MM_X_ESPESSURA', label: 'OD mm + espessura mm' },
+  { value: 'OD_MM_X_ESPESSURA_X_COMPRIMENTO', label: 'OD mm + espessura + comprimento' },
+  { value: 'CHAPA_MM', label: 'Chapa mm (espessura x largura x comprimento)' },
+  { value: 'CHAPA_FURO_MM', label: 'Chapa furo mm (furo x espessura x largura x comprimento)' },
+  { value: 'BARRA_CHATA_MM', label: 'Barra chata mm (largura x espessura [x comprimento])' },
+  { value: 'METALON_MM', label: 'Metalon mm (altura x largura x espessura)' },
+  { value: 'CANTONEIRA_MM', label: 'Cantoneira mm (aba x espessura [x comprimento])' },
+  { value: 'CANTONEIRA_POLEGADA', label: 'Cantoneira polegada (aba x espessura)' },
+  { value: 'DIMENSIONAL_LIVRE_CONTROLADO', label: 'Dimensional livre controlado' },
+  { value: 'ROSCA', label: 'Rosca (orientação)' },
+  { value: 'ROSCA_X_ROSCA', label: 'Rosca x Rosca (orientação)' },
+  { value: 'FLANGE', label: 'Flange (orientação)' },
+  { value: 'VALVULA', label: 'Válvula (orientação)' },
+  { value: 'MANUAL', label: 'Dimensional manual' },
+  { value: 'LEGADO', label: 'Legado / misto' },
 ];
 
 const emptyFamiliaQuick = () => ({
   codigo_figura: '',
   descricao_base: '',
+  categoria_produto: 'PRODUTO_TECNICO' as 'PRODUTO_TECNICO' | 'MATERIAL_DIMENSIONAL' | 'MANUAL_FABRICANTE',
   tipo_regra_codigo: 'BASE_POLEGADA' as TipoRegraCodigo,
+  tipo_dimensional: 'SIMPLES' as TipoDimensional,
   separador_base_medidas: '.',
   ativo: true,
   usa_conversao_dimensional: false,
@@ -120,6 +201,17 @@ const emptyFamiliaQuick = () => ({
   observacoes_conversao: '',
   ncm_padrao: null as number | null,
 });
+
+function regraSugeridaPorTipoDimensional(td: TipoDimensional): TipoRegraCodigo {
+  if (td === 'NPS_SCHEDULE') return 'BASE_SCHEDULE_POLEGADA';
+  if (td === 'REDUCAO_NPS') return 'BASE_SCHEDULE_DUAS_POLEGADAS';
+  if (td === 'OD_POLEGADA') return 'BASE_POLEGADA';
+  if (td === 'OD_POLEGADA_X_ROSCA') return 'BASE_ROSCA_DUAS_POLEGADAS';
+  if (td === 'OD_MM' || td === 'OD_MM_X_ESPESSURA' || td === 'OD_MM_X_ESPESSURA_X_COMPRIMENTO') return 'BASE_OD_MM_ESPESSURA';
+  if (td === 'NPS_X_ROSCA') return 'BASE_ROSCA_POLEGADA';
+  if (td === 'CANTONEIRA_POLEGADA') return 'BASE_POLEGADA';
+  return 'BASE_POLEGADA';
+}
 
 function extractCodigoDuplicado(err: unknown): string | null {
   const ax = err as AxiosError<{
@@ -159,6 +251,7 @@ const Produtos = () => {
   const [ncmFamiliaOption, setNcmFamiliaOption] = useState<NcmOption | null>(null);
   const [ncmProdutoOption, setNcmProdutoOption] = useState<NcmOption | null>(null);
   const [familiaOption, setFamiliaOption] = useState<FamiliaProduto | null>(null);
+  const [scheduleOption, setScheduleOption] = useState<ScheduleEspessura | null>(null);
   const [famSearch, setFamSearch] = useState('');
   const [previewCodigo, setPreviewCodigo] = useState('');
   const [previewDesc, setPreviewDesc] = useState('');
@@ -170,6 +263,9 @@ const Produtos = () => {
   const [duplicateProdutoId, setDuplicateProdutoId] = useState<number | null>(null);
   const [previewCodigoDuplicado, setPreviewCodigoDuplicado] = useState<string | null>(null);
   const [famQuick, setFamQuick] = useState(emptyFamiliaQuick());
+  const [odMmInput, setOdMmInput] = useState('');
+  const [espessuraMmInput, setEspessuraMmInput] = useState('');
+  const [comprimentoMmInput, setComprimentoMmInput] = useState('');
   const [famSaveErr, setFamSaveErr] = useState<string | null>(null);
   const [editingFamilia, setEditingFamilia] = useState<FamiliaProduto | null>(null);
   const [listNotice, setListNotice] = useState<string | null>(null);
@@ -252,21 +348,30 @@ const Produtos = () => {
     return base;
   }, [familiasFiltradas, familias, form.familia_id]);
 
-  const famReq = useMemo(() => {
+  const famReq = useMemo((): RequisitosProdutoDimensionais | null => {
     if (!familiaSel) return null;
-    const nt = normalizarTipoRegra(familiaSel.tipo_regra_codigo);
-    return flagsPorTipoRegra(nt || familiaSel.tipo_regra_codigo);
+    if (familiaSel.requisitos_produto) return familiaSel.requisitos_produto;
+    const fl = flagsPorTipoRegra(normalizarTipoRegra(familiaSel.tipo_regra_codigo) || familiaSel.tipo_regra_codigo);
+    return {
+      usa_rosca_conexao: fl.usa_rosca_conexao,
+      usa_schedule: fl.usa_schedule,
+      usa_polegada_principal: fl.usa_polegada_principal,
+      usa_polegada_secundaria: fl.usa_polegada_secundaria,
+      exige_od_mm: false,
+      exige_espessura_mm: false,
+      exige_comprimento_mm: false,
+      incluir_schedule_na_descricao: fl.usa_schedule,
+    };
   }, [familiaSel]);
   const roscasPermitidas = useMemo(() => {
     if (!familiaSel?.roscas_permitidas?.length) return roscas;
     const ids = new Set(familiaSel.roscas_permitidas.map((r) => r.id));
     return roscas.filter((r) => ids.has(r.id));
   }, [familiaSel, roscas]);
-  const schedulesPermitidos = useMemo(() => {
-    if (!familiaSel?.schedules_permitidos?.length) return schedules;
-    const ids = new Set(familiaSel.schedules_permitidos.map((r) => r.id));
-    return schedules.filter((r) => ids.has(r.id));
-  }, [familiaSel, schedules]);
+  const schedulePermitidosIds = useMemo(() => {
+    if (!familiaSel?.schedules_permitidos?.length) return null;
+    return new Set(familiaSel.schedules_permitidos.map((r) => r.id));
+  }, [familiaSel]);
   const polegadasPrincipalPermitidas = useMemo(() => {
     if (!familiaSel?.polegadas_permitidas?.length) return [];
     return familiaSel.polegadas_permitidas
@@ -279,9 +384,28 @@ const Produtos = () => {
       .filter((p) => p.tipo === 'secundaria' || p.tipo === 'ambas')
       .map((p) => p.id);
   }, [familiaSel]);
+  const tipoMedidaPrincipal = useMemo<'NPS' | 'OD' | undefined>(() => {
+    const td = familiaSel?.tipo_dimensional;
+    if (!td) return undefined;
+    if (td === 'OD_POLEGADA' || td === 'OD_POLEGADA_X_ROSCA') return 'OD';
+    if (td === 'NPS' || td === 'NPS_SCHEDULE' || td === 'REDUCAO_NPS' || td === 'NPS_X_ROSCA' || td === 'FLANGE' || td === 'VALVULA' || td === 'ROSCA' || td === 'ROSCA_X_ROSCA') return 'NPS';
+    return undefined;
+  }, [familiaSel?.tipo_dimensional]);
+  const tipoMedidaSecundaria = useMemo<'NPS' | 'OD' | undefined>(() => {
+    const td = familiaSel?.tipo_dimensional;
+    if (!td) return undefined;
+    if (td === 'OD_POLEGADA_X_ROSCA' || td === 'REDUCAO_NPS' || td === 'NPS' || td === 'NPS_SCHEDULE' || td === 'NPS_X_ROSCA' || td === 'ROSCA_X_ROSCA') return 'NPS';
+    return undefined;
+  }, [familiaSel?.tipo_dimensional]);
 
   const famQuickFlags = useMemo(() => flagsPorTipoRegra(famQuick.tipo_regra_codigo), [famQuick.tipo_regra_codigo]);
-
+  const tdAtual = familiaSel?.tipo_dimensional;
+  const usaDimensoesMateriais = useMemo(
+    () =>
+      !!tdAtual &&
+      ['CHAPA_MM', 'CHAPA_FURO_MM', 'BARRA_CHATA_MM', 'METALON_MM', 'PERFIL_RETANGULAR_MM', 'CANTONEIRA_MM', 'CANTONEIRA_POLEGADA', 'DIMENSIONAL_LIVRE_CONTROLADO'].includes(tdAtual),
+    [tdAtual],
+  );
   const refreshPreview = useCallback(async () => {
     if (form.modo_codigo !== 'INTERNO' || !form.familia_id) {
       setPreviewCodigo('');
@@ -296,6 +420,20 @@ const Produtos = () => {
         schedule_ref_id: form.schedule_ref_id,
         polegada_principal_ref_id: form.polegada_principal_ref_id,
         polegada_secundaria_ref_id: form.polegada_secundaria_ref_id,
+        od_mm: form.od_mm ?? null,
+        espessura_mm: form.espessura_mm ?? null,
+        comprimento_mm: form.comprimento_mm ?? null,
+        dim_espessura_mm: form.dim_espessura_mm ?? null,
+        dim_largura_mm: form.dim_largura_mm ?? null,
+        dim_comprimento_mm: form.dim_comprimento_mm ?? null,
+        dim_altura_mm: form.dim_altura_mm ?? null,
+        dim_furo_mm: form.dim_furo_mm ?? null,
+        dim_aba_mm: form.dim_aba_mm ?? null,
+        dim_aba_polegada_ref_id: form.dim_aba_polegada_ref ?? null,
+        dim_espessura_polegada_ref_id: form.dim_espessura_polegada_ref ?? null,
+        dimensao_codigo: form.dimensao_codigo || '',
+        dimensao_descricao: form.dimensao_descricao || '',
+        dimensoes_json: form.dimensoes_json ?? {},
       });
       setPreviewCodigo(res.codigo);
       setPreviewDesc(res.descricao_sugerida);
@@ -309,7 +447,28 @@ const Produtos = () => {
       setPreviewNcm('');
       setPreviewUnidade('');
     }
-  }, [form]);
+  }, [
+    form.familia_id,
+    form.modo_codigo,
+    form.rosca_conexao_id,
+    form.schedule_ref_id,
+    form.polegada_principal_ref_id,
+    form.polegada_secundaria_ref_id,
+    form.od_mm,
+    form.espessura_mm,
+    form.comprimento_mm,
+    form.dim_espessura_mm,
+    form.dim_largura_mm,
+    form.dim_comprimento_mm,
+    form.dim_altura_mm,
+    form.dim_furo_mm,
+    form.dim_aba_mm,
+    form.dim_aba_polegada_ref,
+    form.dim_espessura_polegada_ref,
+    form.dimensao_codigo,
+    form.dimensao_descricao,
+    form.dimensoes_json,
+  ]);
 
   useEffect(() => {
     if (!modalOpen || form.modo_codigo !== 'INTERNO') return;
@@ -323,6 +482,20 @@ const Produtos = () => {
     form.schedule_ref_id,
     form.polegada_principal_ref_id,
     form.polegada_secundaria_ref_id,
+    form.od_mm,
+    form.espessura_mm,
+    form.comprimento_mm,
+    form.dim_espessura_mm,
+    form.dim_largura_mm,
+    form.dim_comprimento_mm,
+    form.dim_altura_mm,
+    form.dim_furo_mm,
+    form.dim_aba_mm,
+    form.dim_aba_polegada_ref,
+    form.dim_espessura_polegada_ref,
+    form.dimensao_codigo,
+    form.dimensao_descricao,
+    form.dimensoes_json,
     refreshPreview,
   ]);
 
@@ -340,6 +513,13 @@ const Produtos = () => {
       return next;
     });
   }, [modalOpen, form.modo_codigo, familiaSel]);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    setOdMmInput(formatDecimalField(form.od_mm));
+    setEspessuraMmInput(formatDecimalField(form.espessura_mm));
+    setComprimentoMmInput(formatDecimalField(form.comprimento_mm));
+  }, [modalOpen, form.od_mm, form.espessura_mm, form.comprimento_mm]);
 
   useEffect(() => {
     setPreviewCodigoDuplicado(null);
@@ -360,6 +540,23 @@ const Produtos = () => {
 
   const f = (k: keyof FormState, v: string | number | null) =>
     setForm((p) => ({ ...p, [k]: v } as FormState));
+  const setDimensao = (key: string, raw: string) => {
+    const fieldMap: Record<string, keyof FormState> = {
+      espessura_mm: 'dim_espessura_mm',
+      largura_mm: 'dim_largura_mm',
+      comprimento_mm: 'dim_comprimento_mm',
+      altura_mm: 'dim_altura_mm',
+      furo_mm: 'dim_furo_mm',
+      aba_mm: 'dim_aba_mm',
+    };
+    setForm((prev) => {
+      const nextDims = { ...(prev.dimensoes_json || {}) } as Record<string, number | string | null>;
+      const parsed = parseDecimalFlexible(raw);
+      nextDims[key] = parsed;
+      const fld = fieldMap[key];
+      return { ...prev, dimensoes_json: nextDims, ...(fld ? { [fld]: parsed } : {}) };
+    });
+  };
 
   const openNew = () => {
     setEditing(null);
@@ -370,6 +567,7 @@ const Produtos = () => {
     setDuplicateProdutoId(null);
     setNcmProdutoOption(null);
     setFamiliaOption(null);
+    setScheduleOption(null);
     setModalOpen(true);
   };
 
@@ -400,6 +598,8 @@ const Produtos = () => {
       codigo_figura: familia.codigo_figura,
       descricao_base: familia.descricao_base,
       tipo_regra_codigo: (normalizarTipoRegra(familia.tipo_regra_codigo) ?? 'BASE_POLEGADA') as TipoRegraCodigo,
+      categoria_produto: (familia.categoria_produto || 'PRODUTO_TECNICO') as 'PRODUTO_TECNICO' | 'MATERIAL_DIMENSIONAL' | 'MANUAL_FABRICANTE',
+      tipo_dimensional: (familia.tipo_dimensional || 'SIMPLES') as TipoDimensional,
       separador_base_medidas: familia.separador_base_medidas || '.',
       ativo: familia.ativo,
       usa_conversao_dimensional: !!familia.usa_conversao_dimensional,
@@ -475,12 +675,27 @@ const Produtos = () => {
       preco_venda: e.preco_venda,
       estoque_minimo: e.estoque_minimo,
       codigo_completo: e.codigo_completo,
+      od_mm: e.od_mm ?? null,
+      espessura_mm: e.espessura_mm ?? null,
+      comprimento_mm: e.comprimento_mm ?? null,
+      dim_espessura_mm: e.dim_espessura_mm ?? null,
+      dim_largura_mm: e.dim_largura_mm ?? null,
+      dim_comprimento_mm: e.dim_comprimento_mm ?? null,
+      dim_altura_mm: e.dim_altura_mm ?? null,
+      dim_furo_mm: e.dim_furo_mm ?? null,
+      dim_aba_mm: e.dim_aba_mm ?? null,
+      dim_aba_polegada_ref: e.dim_aba_polegada_ref ?? null,
+      dim_espessura_polegada_ref: e.dim_espessura_polegada_ref ?? null,
+      dimensao_codigo: e.dimensao_codigo ?? '',
+      dimensao_descricao: e.dimensao_descricao ?? '',
+      dimensoes_json: e.dimensoes_json ?? {},
     });
     setFamSearch('');
     setSaveError(null);
     setDuplicateCodigo(null);
     setDuplicateProdutoId(null);
     setFamiliaOption(familias.find((x) => x.id === (e.familia_id ?? 0)) ?? null);
+    setScheduleOption(schedules.find((x) => x.id === (e.schedule_ref_id ?? 0)) ?? null);
     setNcmProdutoOption(
       e.ncm && e.ncm_efetivo
         ? {
@@ -515,6 +730,17 @@ const Produtos = () => {
       })
       .catch(() => {});
   }, [modalOpen, form.familia_id, familiaOption?.id]);
+
+  useEffect(() => {
+    if (!modalOpen || !form.schedule_ref_id || scheduleOption?.id === form.schedule_ref_id) return;
+    void schedulesEspessuraService
+      .search(String(form.schedule_ref_id), 5)
+      .then((items) => {
+        const match = items.find((x) => x.id === form.schedule_ref_id);
+        if (match) setScheduleOption(match);
+      })
+      .catch(() => {});
+  }, [modalOpen, form.schedule_ref_id, scheduleOption?.id]);
 
   useEffect(() => {
     if (!famModalOpen || !famQuick.ncm_padrao || ncmFamiliaOption?.id === famQuick.ncm_padrao) return;
@@ -566,18 +792,60 @@ const Produtos = () => {
       body.schedule_ref_id = null;
       body.polegada_principal_ref_id = null;
       body.polegada_secundaria_ref_id = null;
+      body.od_mm = null;
+      body.espessura_mm = null;
+      body.comprimento_mm = null;
+      body.dim_espessura_mm = null;
+      body.dim_largura_mm = null;
+      body.dim_comprimento_mm = null;
+      body.dim_altura_mm = null;
+      body.dim_furo_mm = null;
+      body.dim_aba_mm = null;
+      body.dim_aba_polegada_ref = null;
+      body.dim_espessura_polegada_ref = null;
+      body.dimensao_codigo = '';
+      body.dimensao_descricao = '';
+      body.dimensoes_json = {};
     } else if (form.modo_codigo === 'INTERNO') {
       body.familia_id = form.familia_id;
       body.rosca_conexao_id = form.rosca_conexao_id;
       body.schedule_ref_id = form.schedule_ref_id;
       body.polegada_principal_ref_id = form.polegada_principal_ref_id;
       body.polegada_secundaria_ref_id = form.polegada_secundaria_ref_id;
+      body.od_mm = form.od_mm ?? null;
+      body.espessura_mm = form.espessura_mm ?? null;
+      body.comprimento_mm = form.comprimento_mm ?? null;
+      body.dim_espessura_mm = form.dim_espessura_mm ?? null;
+      body.dim_largura_mm = form.dim_largura_mm ?? null;
+      body.dim_comprimento_mm = form.dim_comprimento_mm ?? null;
+      body.dim_altura_mm = form.dim_altura_mm ?? null;
+      body.dim_furo_mm = form.dim_furo_mm ?? null;
+      body.dim_aba_mm = form.dim_aba_mm ?? null;
+      body.dim_aba_polegada_ref = form.dim_aba_polegada_ref ?? null;
+      body.dim_espessura_polegada_ref = form.dim_espessura_polegada_ref ?? null;
+      body.dimensao_codigo = (form.dimensao_codigo || '').toUpperCase();
+      body.dimensao_descricao = (form.dimensao_descricao || '').toUpperCase();
+      body.dimensoes_json = form.dimensoes_json ?? {};
     } else {
       body.figura = form.figura;
       body.sufixo = form.sufixo;
       body.schedule = form.schedule;
       body.polegada_principal = form.polegada_principal;
       body.polegada_secundaria = form.polegada_secundaria;
+      body.od_mm = null;
+      body.espessura_mm = null;
+      body.comprimento_mm = null;
+      body.dim_espessura_mm = null;
+      body.dim_largura_mm = null;
+      body.dim_comprimento_mm = null;
+      body.dim_altura_mm = null;
+      body.dim_furo_mm = null;
+      body.dim_aba_mm = null;
+      body.dim_aba_polegada_ref = null;
+      body.dim_espessura_polegada_ref = null;
+      body.dimensao_codigo = '';
+      body.dimensao_descricao = '';
+      body.dimensoes_json = {};
     }
     try {
       if (editing) {
@@ -691,7 +959,9 @@ const Produtos = () => {
       const payload = {
         codigo_figura: famQuick.codigo_figura.trim(),
         descricao_base: famQuick.descricao_base.trim(),
+        categoria_produto: famQuick.categoria_produto,
         tipo_regra_codigo: famQuick.tipo_regra_codigo,
+        tipo_dimensional: famQuick.tipo_dimensional || 'SIMPLES',
         separador_base_medidas: famQuick.separador_base_medidas,
         ativo: famQuick.ativo,
         usa_rosca_conexao: fl.usa_rosca_conexao,
@@ -757,6 +1027,19 @@ const Produtos = () => {
     const ft = (familiaSel?.tipo_fisico || '').trim();
     return ft || 'PECA';
   }, [form.tipo_fisico, familiaSel?.tipo_fisico]);
+  const familiaCategoria = (familiaSel?.categoria_produto || 'PRODUTO_TECNICO') as 'PRODUTO_TECNICO' | 'MATERIAL_DIMENSIONAL' | 'MANUAL_FABRICANTE';
+  const familiaEhMaterialDimensional = familiaCategoria === 'MATERIAL_DIMENSIONAL';
+  const tiposDimensionaisPorCategoria = useMemo(() => {
+    if (famQuick.categoria_produto === 'MANUAL_FABRICANTE') return [{ value: 'MANUAL' as TipoDimensional, label: 'Manual/fabricante' }];
+    if (famQuick.categoria_produto === 'MATERIAL_DIMENSIONAL') {
+      return TIPOS_DIMENSIONAIS.filter((x) =>
+        ['CHAPA_MM', 'CHAPA_FURO_MM', 'BARRA_CHATA_MM', 'METALON_MM', 'CANTONEIRA_MM', 'CANTONEIRA_POLEGADA', 'PERFIL_RETANGULAR_MM', 'DIMENSIONAL_LIVRE_CONTROLADO'].includes(x.value),
+      );
+    }
+    return TIPOS_DIMENSIONAIS.filter((x) =>
+      ['SIMPLES', 'NPS', 'NPS_SCHEDULE', 'REDUCAO_NPS', 'ROSCA', 'ROSCA_X_ROSCA', 'NPS_X_ROSCA', 'OD_POLEGADA', 'OD_POLEGADA_X_ROSCA', 'OD_MM', 'OD_MM_X_ESPESSURA', 'OD_MM_X_ESPESSURA_X_COMPRIMENTO', 'FLANGE', 'VALVULA'].includes(x.value),
+    );
+  }, [famQuick.categoria_produto]);
 
   const herancaConv = useMemo(() => {
     if (!familiaSel) return undefined;
@@ -1106,6 +1389,15 @@ const Produtos = () => {
 
         {modo === 'INTERNO' && (
           <div className="mb-4 p-3 rounded-md border border-border bg-muted/30 space-y-3">
+            {familiaSel ? (
+              <div className="rounded-md border border-dashed border-border bg-background p-3 text-xs">
+                <p className="font-semibold text-foreground">Produto guiado pela Família/Figura</p>
+                <p>Categoria: {familiaCategoria === 'MATERIAL_DIMENSIONAL' ? 'Material dimensional' : familiaCategoria === 'MANUAL_FABRICANTE' ? 'Produto manual/fabricante' : 'Produto técnico'}</p>
+                <p>Tipo dimensional: {familiaSel.tipo_dimensional || 'SIMPLES'}</p>
+                <p>Regra de código: {regraLabelMap[normalizarTipoRegra(familiaSel.tipo_regra_codigo) || familiaSel.tipo_regra_codigo] || familiaSel.tipo_regra_codigo}</p>
+                <p>Obrigatórios: {labelsCamposObrigatoriosProduto(familiaSel).join(' · ')}</p>
+              </div>
+            ) : null}
             <div>
               <label className="erp-label">Família / figura</label>
               <AsyncAutocomplete<FamiliaProduto>
@@ -1125,10 +1417,13 @@ const Produtos = () => {
             {familiaSel && famReq && (
               <>
                 <p className="text-xs text-muted-foreground rounded-md bg-muted/50 px-2 py-1.5">
-                  <span className="font-medium text-foreground">Obrigatórios para o código:</span>{' '}
-                  {labelsCamposObrigatorios(famReq).join(' · ')}
+                  <span className="font-medium text-foreground">Obrigatórios no produto (regra + tipo dimensional):</span>{' '}
+                  {labelsCamposObrigatoriosProduto(familiaSel).join(' · ')}
                 </p>
-                {famReq.usa_rosca_conexao && (
+                {familiaSel.tipo_dimensional && familiaSel.tipo_dimensional !== 'SIMPLES' ? (
+                  <p className="text-xs text-muted-foreground">{hintTipoDimensional(familiaSel.tipo_dimensional)}</p>
+                ) : null}
+                {!familiaEhMaterialDimensional && famReq.usa_rosca_conexao && (
                   <div>
                     <label className="erp-label">Rosca / conexão</label>
                     <select
@@ -1145,40 +1440,191 @@ const Produtos = () => {
                     </select>
                   </div>
                 )}
-                {famReq.usa_schedule && (
+                {!familiaEhMaterialDimensional && famReq.usa_schedule && (
                   <div>
                     <label className="erp-label">Schedule / espessura</label>
-                    <select
-                      className="erp-select mt-1 w-full"
-                      value={form.schedule_ref_id ?? ''}
-                      onChange={(e) => f('schedule_ref_id', e.target.value ? +e.target.value : null)}
-                    >
-                      <option value="">Selecione…</option>
-                      {schedulesPermitidos.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.codigo_schedule} — {s.descricao}
-                        </option>
-                      ))}
-                    </select>
+                    <AsyncAutocomplete<ScheduleEspessura>
+                      value={form.schedule_ref_id ?? null}
+                      selectedOption={scheduleOption}
+                      placeholder="Digite código, descrição ou aplicação (ex.: 10S, SCH 20, INOX)"
+                      search={async (term, limit) => {
+                        const list = await schedulesEspessuraService.search(term, limit ?? 20);
+                        if (!schedulePermitidosIds) return list;
+                        return list.filter((opt) => schedulePermitidosIds.has(opt.id));
+                      }}
+                      getOptionValue={(opt) => opt.id}
+                      getOptionLabel={(opt) =>
+                        `${opt.codigo || opt.codigo_schedule} — ${opt.descricao || opt.codigo_schedule}`
+                      }
+                      onChange={(val, opt) => {
+                        const id = typeof val === 'number' ? val : null;
+                        f('schedule_ref_id', id);
+                        setScheduleOption(opt ?? null);
+                      }}
+                    />
                   </div>
                 )}
-                {famReq.usa_polegada_principal && (
+                {!familiaEhMaterialDimensional && famReq.exige_od_mm && (
                   <div>
-                    <label className="erp-label">Polegada principal (código oficial)</label>
+                    <label className="erp-label">OD externo (mm)</label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      className="erp-input mt-1"
+                      placeholder='Ex.: 10 | 10,0 | 1,5'
+                      value={odMmInput}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setOdMmInput(v);
+                        f('od_mm', parseDecimalFlexible(v));
+                      }}
+                    />
+                  </div>
+                )}
+                {!familiaEhMaterialDimensional && famReq.exige_espessura_mm && (
+                  <div>
+                    <label className="erp-label">Espessura (mm)</label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      className="erp-input mt-1"
+                      placeholder='Ex.: 2 | 2,0 | 1,5'
+                      value={espessuraMmInput}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setEspessuraMmInput(v);
+                        f('espessura_mm', parseDecimalFlexible(v));
+                      }}
+                    />
+                  </div>
+                )}
+                {!familiaEhMaterialDimensional && famReq.exige_comprimento_mm && (
+                  <div>
+                    <label className="erp-label">Comprimento (mm)</label>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Se vazio, pode usar o comprimento padrão da barra cadastrado na família (metros → mm no servidor).
+                    </p>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      className="erp-input mt-1"
+                      placeholder='Ex.: 6000'
+                      value={comprimentoMmInput}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setComprimentoMmInput(v);
+                        f('comprimento_mm', parseDecimalFlexible(v));
+                      }}
+                    />
+                  </div>
+                )}
+                {familiaEhMaterialDimensional && usaDimensoesMateriais && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {(tdAtual === 'CHAPA_MM' || tdAtual === 'CHAPA_FURO_MM') ? (
+                      <>
+                        {tdAtual === 'CHAPA_FURO_MM' ? (
+                          <div>
+                            <label className="erp-label">Furo (mm)</label>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              className="erp-input mt-1"
+                              value={getDimInputValue(form, 'furo_mm')}
+                              onChange={(e) => setDimensao('furo_mm', e.target.value)}
+                            />
+                          </div>
+                        ) : null}
+                        <div>
+                          <label className="erp-label">Espessura (mm)</label>
+                          <input type="text" inputMode="decimal" className="erp-input mt-1" value={getDimInputValue(form, 'espessura_mm')} onChange={(e) => setDimensao('espessura_mm', e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="erp-label">Largura (mm)</label>
+                          <input type="text" inputMode="decimal" className="erp-input mt-1" value={getDimInputValue(form, 'largura_mm')} onChange={(e) => setDimensao('largura_mm', e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="erp-label">Comprimento (mm)</label>
+                          <input type="text" inputMode="decimal" className="erp-input mt-1" value={getDimInputValue(form, 'comprimento_mm')} onChange={(e) => setDimensao('comprimento_mm', e.target.value)} />
+                        </div>
+                      </>
+                    ) : null}
+                    {(tdAtual === 'METALON_MM' || tdAtual === 'PERFIL_RETANGULAR_MM') ? (
+                      <>
+                        <div>
+                          <label className="erp-label">Altura (mm)</label>
+                          <input type="text" inputMode="decimal" className="erp-input mt-1" value={getDimInputValue(form, 'altura_mm')} onChange={(e) => setDimensao('altura_mm', e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="erp-label">Largura (mm)</label>
+                          <input type="text" inputMode="decimal" className="erp-input mt-1" value={getDimInputValue(form, 'largura_mm')} onChange={(e) => setDimensao('largura_mm', e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="erp-label">Espessura (mm)</label>
+                          <input type="text" inputMode="decimal" className="erp-input mt-1" value={getDimInputValue(form, 'espessura_mm')} onChange={(e) => setDimensao('espessura_mm', e.target.value)} />
+                        </div>
+                      </>
+                    ) : null}
+                    {(tdAtual === 'BARRA_CHATA_MM' || tdAtual === 'CANTONEIRA_MM') ? (
+                      <>
+                        <div>
+                          <label className="erp-label">{tdAtual === 'CANTONEIRA_MM' ? 'Aba (mm)' : 'Largura (mm)'}</label>
+                          <input type="text" inputMode="decimal" className="erp-input mt-1" value={getDimInputValue(form, tdAtual === 'CANTONEIRA_MM' ? 'aba_mm' : 'largura_mm')} onChange={(e) => setDimensao(tdAtual === 'CANTONEIRA_MM' ? 'aba_mm' : 'largura_mm', e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="erp-label">Espessura (mm)</label>
+                          <input type="text" inputMode="decimal" className="erp-input mt-1" value={getDimInputValue(form, 'espessura_mm')} onChange={(e) => setDimensao('espessura_mm', e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="erp-label">Comprimento (mm) opcional</label>
+                          <input type="text" inputMode="decimal" className="erp-input mt-1" value={getDimInputValue(form, 'comprimento_mm')} onChange={(e) => setDimensao('comprimento_mm', e.target.value)} />
+                        </div>
+                      </>
+                    ) : null}
+                    {tdAtual === 'CANTONEIRA_POLEGADA' ? (
+                      <>
+                        <div>
+                          <label className="erp-label">Aba (polegada OD)</label>
+                          <PolegadaAutocomplete value={form.dim_aba_polegada_ref ?? null} onChange={(id) => f('dim_aba_polegada_ref', id)} tipoMedida="OD" allowCreate />
+                        </div>
+                        <div>
+                          <label className="erp-label">Espessura (polegada OD)</label>
+                          <PolegadaAutocomplete value={form.dim_espessura_polegada_ref ?? null} onChange={(id) => f('dim_espessura_polegada_ref', id)} tipoMedida="OD" allowCreate />
+                        </div>
+                      </>
+                    ) : null}
+                    {tdAtual === 'DIMENSIONAL_LIVRE_CONTROLADO' ? (
+                      <>
+                        <div>
+                          <label className="erp-label">Dimensão código</label>
+                          <input className="erp-input mt-1 font-mono" value={form.dimensao_codigo || ''} onChange={(e) => f('dimensao_codigo', e.target.value.toUpperCase())} />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="erp-label">Dimensão descrição</label>
+                          <input className="erp-input mt-1" value={form.dimensao_descricao || ''} onChange={(e) => f('dimensao_descricao', e.target.value.toUpperCase())} />
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                )}
+                {!familiaEhMaterialDimensional && famReq.usa_polegada_principal && (
+                  <div>
+                    <label className="erp-label">{labelPolegadaPrincipal(familiaSel.tipo_dimensional)}</label>
                     <PolegadaAutocomplete
                       value={form.polegada_principal_ref_id ?? null}
                       onChange={(id) => f('polegada_principal_ref_id', id)}
+                      tipoMedida={tipoMedidaPrincipal}
                       allowCreate
                       allowedIds={polegadasPrincipalPermitidas.length ? polegadasPrincipalPermitidas : undefined}
                     />
                   </div>
                 )}
-                {famReq.usa_polegada_secundaria && (
+                {!familiaEhMaterialDimensional && famReq.usa_polegada_secundaria && (
                   <div>
-                    <label className="erp-label">Polegada secundária (redução / segunda medida)</label>
+                    <label className="erp-label">{labelPolegadaSecundaria(familiaSel.tipo_dimensional)}</label>
                     <PolegadaAutocomplete
                       value={form.polegada_secundaria_ref_id ?? null}
                       onChange={(id) => f('polegada_secundaria_ref_id', id)}
+                      tipoMedida={tipoMedidaSecundaria}
                       allowCreate
                       allowedIds={polegadasSecundariaPermitidas.length ? polegadasSecundariaPermitidas : undefined}
                     />
@@ -1187,7 +1633,8 @@ const Produtos = () => {
               </>
             )}
             <div className="rounded-md border border-dashed border-border p-3 bg-background">
-              <p className="text-xs text-muted-foreground">Prévia do código</p>
+              <p className="text-xs font-semibold text-foreground">Prévia do produto</p>
+              <p className="text-xs text-muted-foreground mt-1">Código sugerido</p>
               <p className="font-mono font-semibold text-lg mt-1">{previewCodigo || '—'}</p>
               {previewCodigoDuplicado ? (
                 <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
@@ -1199,7 +1646,8 @@ const Produtos = () => {
                   NCM efetivo: {previewNcm || '—'} | Unidade efetiva: {previewUnidade || '—'}
                 </p>
               )}
-              {previewMsg ? <p className="text-xs text-amber-700 dark:text-amber-300 mt-2">{previewMsg}</p> : null}
+              <p className="text-xs text-muted-foreground mt-2">Descrição sugerida</p>
+              {previewMsg ? <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">{previewMsg}</p> : null}
               {previewDesc ? (
                 <div className="mt-2">
                   <p className="text-xs text-muted-foreground">Descrição sugerida</p>
@@ -1429,16 +1877,18 @@ const Produtos = () => {
             </button>
           </div>
         )}
-        <div className="space-y-3">
-          <div>
+        <div className="space-y-4">
+          <div className="rounded-md border border-border p-3">
+            <p className="text-xs font-semibold text-muted-foreground mb-2">Identificação</p>
+            <div>
             <label className="erp-label">Código figura / base</label>
             <input className="erp-input mt-1 font-mono" value={famQuick.codigo_figura} onChange={(e) => setFamQuick((q) => ({ ...q, codigo_figura: e.target.value }))} />
-          </div>
-          <div>
+            </div>
+            <div className="mt-3">
             <label className="erp-label">Descrição base</label>
             <input className="erp-input mt-1" value={famQuick.descricao_base} onChange={(e) => setFamQuick((q) => ({ ...q, descricao_base: e.target.value }))} />
-          </div>
-          <div>
+            </div>
+            <div className="mt-3">
             <label className="erp-label">NCM padrão</label>
             <NcmAutocomplete
               value={ncmFamiliaOption}
@@ -1451,8 +1901,51 @@ const Produtos = () => {
             <p className="text-xs text-muted-foreground mt-1">
               Se não encontrar resultados, verifique se a lista TIPI/NCM foi importada.
             </p>
+            </div>
           </div>
-          <div>
+          <div className="rounded-md border border-border p-3">
+            <p className="text-xs font-semibold text-muted-foreground mb-2">Classificação</p>
+            <div>
+              <label className="erp-label">Categoria do produto</label>
+              <select
+                className="erp-select mt-1 w-full"
+                value={famQuick.categoria_produto}
+                onChange={(e) => {
+                  const categoria = e.target.value as 'PRODUTO_TECNICO' | 'MATERIAL_DIMENSIONAL' | 'MANUAL_FABRICANTE';
+                  setFamQuick((q) => {
+                    const nextTipo = categoria === 'MANUAL_FABRICANTE' ? 'MANUAL' : q.tipo_dimensional;
+                    const nextRegra = categoria === 'MANUAL_FABRICANTE' ? 'MANUAL_FABRICANTE' : regraSugeridaPorTipoDimensional(nextTipo);
+                    return { ...q, categoria_produto: categoria, tipo_dimensional: nextTipo, tipo_regra_codigo: nextRegra };
+                  });
+                }}
+              >
+                {CATEGORIAS_FAMILIA.map((c) => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="mt-3">
+              <label className="erp-label">Tipo dimensional</label>
+              <select
+                className="erp-select mt-1 w-full"
+                value={famQuick.tipo_dimensional}
+                onChange={(e) => {
+                  const td = e.target.value as TipoDimensional;
+                  setFamQuick((q) => ({ ...q, tipo_dimensional: td, tipo_regra_codigo: regraSugeridaPorTipoDimensional(td) }));
+                }}
+              >
+                {tiposDimensionaisPorCategoria.map((r) => (
+                  <option key={r.value} value={r.value}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">{hintTipoDimensional(famQuick.tipo_dimensional)}</p>
+            </div>
+          </div>
+          <div className="rounded-md border border-border p-3">
+            <p className="text-xs font-semibold text-muted-foreground mb-2">Regra e campos do produto</p>
+            <div>
             <label className="erp-label">Regra de código</label>
             <select
               className="erp-select mt-1 w-full"
@@ -1466,7 +1959,7 @@ const Produtos = () => {
               ))}
             </select>
           </div>
-          <div>
+          <div className="mt-3">
             <label className="erp-label">Separador base → medidas</label>
             <input
               className="erp-input mt-1 w-16 font-mono"
@@ -1476,15 +1969,27 @@ const Produtos = () => {
             />
             <p className="text-xs text-muted-foreground mt-1">Em UNDERSCORE_POLEGADA o código usa &quot;_&quot; fixo; o separador acima afeta demais regras com ponto.</p>
           </div>
-          <div className="rounded-md border border-border bg-muted/30 p-3 text-sm space-y-1">
-            <p className="font-medium text-foreground">Campos exigidos no produto (derivados da regra)</p>
+          <div className="rounded-md border border-border bg-muted/30 p-3 text-sm space-y-1 mt-3">
+            <p className="font-medium text-foreground">Campos exigidos no produto (regra de código)</p>
             <p className="text-muted-foreground">{labelsCamposObrigatorios(famQuickFlags).join(' · ')}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              O tipo dimensional combina com a regra no cadastro de produto (validação no servidor). {hintTipoDimensional(famQuick.tipo_dimensional)}
+            </p>
             <ul className="text-xs text-muted-foreground grid grid-cols-2 gap-x-3 gap-y-0.5 mt-2 font-mono">
               <li>Rosca: {famQuickFlags.usa_rosca_conexao ? 'sim' : 'não'}</li>
               <li>Schedule: {famQuickFlags.usa_schedule ? 'sim' : 'não'}</li>
               <li>Polegada 1: {famQuickFlags.usa_polegada_principal ? 'sim' : 'não'}</li>
               <li>Polegada 2: {famQuickFlags.usa_polegada_secundaria ? 'sim' : 'não'}</li>
             </ul>
+          </div>
+          <div className="rounded-md border border-dashed border-border bg-background p-3 text-xs text-muted-foreground mt-3">
+            <p className="font-semibold text-foreground mb-1">Prévia de cadastro da família</p>
+            <p>Categoria: {CATEGORIAS_FAMILIA.find((c) => c.value === famQuick.categoria_produto)?.label}</p>
+            <p>Tipo: {famQuick.tipo_dimensional}</p>
+            <p>Produto vai pedir: {labelsCamposObrigatorios(famQuickFlags).join(' · ')}</p>
+            <p className="mt-1">Exemplo de código: {famQuick.codigo_figura || 'FIG'}.{famQuick.tipo_dimensional === 'NPS_SCHEDULE' ? '20.XX' : '...'}</p>
+            <p>Exemplo de descrição: {(famQuick.descricao_base || 'DESCRIÇÃO BASE')} ...</p>
+          </div>
           </div>
         </div>
         <ConversaoMedidasBlock

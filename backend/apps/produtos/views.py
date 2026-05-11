@@ -78,10 +78,15 @@ class ScheduleEspessuraViewSet(viewsets.ModelViewSet):
     serializer_class = ScheduleEspessuraSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset().order_by('codigo_schedule')
+        qs = super().get_queryset().order_by('ordem', 'codigo_schedule')
         search = (self.request.query_params.get('search') or '').strip()
         if search:
-            qs = qs.filter(Q(codigo_schedule__icontains=search) | Q(descricao__icontains=search))
+            qs = qs.filter(
+                Q(codigo_schedule__icontains=search)
+                | Q(codigo__icontains=search)
+                | Q(descricao__icontains=search)
+                | Q(aplicacao__icontains=search),
+            )
         if self.request.query_params.get('apenas_ativas') == '1':
             qs = qs.filter(ativo=True)
         limit = self.request.query_params.get('limit')
@@ -228,6 +233,9 @@ class PolegadaViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset().order_by('valor_decimal')
+        tipo_medida = (self.request.query_params.get('tipo_medida') or '').strip().upper()
+        if tipo_medida in {Polegada.TipoMedida.NPS, Polegada.TipoMedida.OD}:
+            qs = qs.filter(tipo_medida=tipo_medida)
         if self.request.query_params.get('ativo') is None:
             qs = qs.filter(ativo=True)
         search = (self.request.query_params.get('search') or '').strip()
@@ -239,7 +247,7 @@ class PolegadaViewSet(viewsets.ModelViewSet):
                 | Q(aliases__icontains=search)
             )
             mm = extract_mm_from_term(search)
-            if mm is not None:
+            if mm is not None and (not tipo_medida or tipo_medida == Polegada.TipoMedida.OD):
                 tol =  Decimal('0.05')
                 query = query | Q(valor_mm__gte=mm - tol, valor_mm__lte=mm + tol)
             qs = qs.filter(query)
