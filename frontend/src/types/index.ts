@@ -173,6 +173,7 @@ export type TipoRegraCodigo =
   | 'BASE_ROSCA_SCHEDULE_DUAS_POLEGADAS'
   | 'UNDERSCORE_POLEGADA'
   | 'BASE_OD_MM_ESPESSURA'
+  | 'BASE_ESPIGAO_FLANGE_NPS'
   | 'MANUAL_FABRICANTE';
 
 export type TipoDimensional =
@@ -197,6 +198,7 @@ export type TipoDimensional =
   | 'DIMENSIONAL_LIVRE_CONTROLADO'
   | 'PERFIL_RETANGULAR_MM'
   | 'FLANGE'
+  | 'ESPIGAO_X_FLANGE'
   | 'VALVULA'
   | 'MANUAL'
   | 'LEGADO';
@@ -248,10 +250,22 @@ export interface FamiliaProduto {
   densidade?: number | null;
   usa_conversao_dimensional?: boolean;
   observacoes_conversao?: string;
-  polegadas_permitidas?: Array<{ id: number; codigo: string; descricao: string; tipo: 'principal' | 'secundaria' | 'ambas' }>;
+  polegadas_permitidas?: Array<{
+    permitida_id?: number;
+    /** ID da polegada (FK); mantido como `id` por compatibilidade com o front. */
+    id: number;
+    polegada_id?: number;
+    codigo: string;
+    descricao: string;
+    tipo_medida?: 'NPS' | 'OD';
+    tipo: 'principal' | 'secundaria' | 'ambas';
+  }>;
   roscas_permitidas?: Array<{ id: number; codigo: string; descricao: string; padrao_da_familia: boolean }>;
   schedules_permitidos?: Array<{
+    permitido_id?: number;
+    /** ID do schedule (FK); mantido como `id` por compatibilidade. */
     id: number;
+    schedule_id?: number;
     codigo_schedule: string;
     codigo?: string;
     descricao: string;
@@ -918,6 +932,209 @@ export interface EstoqueSaldoItem {
   corridas_resumo?: string[];
 }
 
+export interface ApuracaoFiscalFiltros {
+  empresa_id: number | null;
+  data_inicio: string;
+  data_fim: string;
+  tipo: string;
+  fonte?: 'TODOS' | 'OPERACIONAIS' | 'HISTORICOS';
+  status: string | null;
+  cliente_id: number | null;
+  fornecedor_id: number | null;
+  cfop: string | null;
+  ncm: string | null;
+  modelo_documento: string | null;
+  incluir_canceladas: boolean;
+}
+
+export interface ApuracaoFiscalAcumulo {
+  quantidade_notas: number;
+  quantidade_itens: number;
+  valor_documentos: number;
+  valor_produtos: number;
+  base_icms: number;
+  valor_icms: number;
+  base_ipi: number;
+  valor_ipi: number;
+  base_pis: number;
+  valor_pis: number;
+  base_cofins: number;
+  valor_cofins: number;
+}
+
+export interface ApuracaoFiscalAlerta {
+  codigo: string;
+  severidade: string;
+  mensagem: string;
+  documento_tipo?: string | null;
+  documento_id?: number | null;
+  item_id?: number | null;
+  acao_sugerida?: string | null;
+}
+
+/** Indicadores pré-SPED EFD ICMS/IPI (backend `montar_base_efd_icms_ipi`). */
+export interface ApuracaoEfdIcmsIpiIndicadores {
+  notas_mapeaveis_c100?: number;
+  notas_com_campos_faltantes_c100?: number;
+  itens_mapeaveis_c170?: number;
+  itens_cadastro_participante_0150_pendentes?: number;
+  produtos_cadastro_0200_pendentes?: number;
+  agrupamentos_possiveis_c190?: number;
+}
+
+export interface ApuracaoEfdIcmsIpi {
+  registros_planejados?: Record<string, string[]>;
+  indicadores?: ApuracaoEfdIcmsIpiIndicadores;
+  alertas?: string[];
+  txt_oficial?: boolean;
+  observacao?: string;
+}
+
+/** Indicadores pré-SPED Contribuições (backend `montar_base_efd_contribuicoes`). */
+export interface ApuracaoEfdContribIndicadores {
+  notas_com_totais_pis_cofins_documento?: number;
+  itens_com_cst_pis?: number;
+  itens_com_cst_cofins?: number;
+  itens_com_base_pis?: number;
+  itens_com_base_cofins?: number;
+  creditos_entrada_possiveis?: number;
+  debitos_saida_possiveis?: number;
+}
+
+export interface ApuracaoEfdContribuicoes {
+  registros_planejados?: Record<string, string[]>;
+  indicadores?: ApuracaoEfdContribIndicadores;
+  alertas?: string[];
+  txt_oficial?: boolean;
+  observacao?: string;
+}
+
+/** Bloco de totais CBS/IBS/IS (sem recursão por_documento). */
+export type ApuracaoReformaDetalhe = Omit<ApuracaoReformaTributaria, 'por_documento'>;
+
+/** Totais reforma (CBS/IBS/IS) serializados pelo backend. */
+export interface ApuracaoReformaTributaria {
+  base_cbs?: number;
+  aliquota_cbs?: number | null;
+  valor_cbs?: number;
+  base_ibs?: number;
+  aliquota_ibs_uf?: number | null;
+  valor_ibs_uf?: number;
+  aliquota_ibs_municipio?: number | null;
+  valor_ibs_municipio?: number;
+  valor_ibs_total?: number;
+  base_is?: number;
+  aliquota_is?: number | null;
+  valor_is?: number;
+  cst_reforma?: string | null;
+  classificacao_tributaria?: string | null;
+  cclass_trib?: string | null;
+  notas_com_reforma_e_outros_json?: number;
+  itens_com_tags_nao_mapeadas_imposto?: number;
+  itens_com_tags_ibscbs?: number;
+  itens_com_valores_ibscbs?: number;
+  notas_com_ibscbstot?: number;
+  notas_tags_ibscbs_zeradas?: number;
+  cte_com_tags_ibscbs?: number;
+  cte_com_valores_ibscbs?: number;
+  por_documento?: {
+    entrada?: ApuracaoReformaDetalhe;
+    saida?: ApuracaoReformaDetalhe;
+    cte?: ApuracaoReformaDetalhe;
+  };
+}
+
+export interface ApuracaoDiagnostico {
+  models_utilizados?: string[];
+  campos_fiscais_xml?: string[];
+  campos_ausentes_sped_reforma?: string[];
+  impacto?: string;
+}
+
+/** Contagens de candidatos à apuração (após filtros) e referência sem filtro de empresa. */
+export interface ApuracaoFiscalFontes {
+  saidas_historicas_candidatas?: number;
+  entradas_historicas_candidatas?: number;
+  saidas_operacionais_candidatas?: number;
+  entradas_operacionais_candidatas?: number;
+  saidas_historicas_periodo_sem_filtro_empresa?: number;
+  entradas_historicas_periodo_sem_filtro_empresa?: number;
+  candidatas_aplicaveis_tipo?: number;
+  ctes_historicos_escaneados_reforma?: number;
+}
+
+/** Contagens progressivas NF histórica + metadados dos campos usados na query. */
+export interface ApuracaoDiagnosticoFontes {
+  saidas_historicas_total_banco?: number;
+  saidas_historicas_no_periodo?: number;
+  saidas_historicas_apos_empresa?: number;
+  saidas_historicas_apos_status?: number;
+  saidas_historicas_apos_canceladas?: number;
+  saidas_historicas_incluidas?: number;
+  campo_data_usado?: string;
+  campo_valor_usado?: string;
+  campo_status_usado?: string;
+  campo_empresa_usado?: string;
+  campo_cancelada_usado?: string;
+  entradas_historicas_total_banco?: number;
+  entradas_historicas_no_periodo?: number;
+  entradas_historicas_apos_empresa?: number;
+  entradas_historicas_apos_status?: number;
+  entradas_historicas_incluidas?: number;
+  entrada_campo_data_usado?: string;
+  entrada_campo_valor_usado?: string;
+  entrada_campo_empresa_usado?: string;
+}
+
+export interface ApuracaoDiagnosticoReformaLado {
+  valor_cbs?: number;
+  valor_ibs_total?: number;
+  valor_ibs_uf?: number;
+  valor_ibs_municipio?: number;
+  base_cbs?: number;
+  itens_com_tags_ibscbs?: number;
+  itens_com_valores_ibscbs?: number;
+  notas_com_ibscbstot?: number;
+}
+
+export interface ApuracaoDiagnosticoReforma {
+  candidatas_entrada_historica?: number;
+  candidatas_saida_historica?: number;
+  entrada?: ApuracaoDiagnosticoReformaLado;
+  saida?: ApuracaoDiagnosticoReformaLado;
+  cte?: ApuracaoDiagnosticoReformaLado;
+  consolidado?: ApuracaoDiagnosticoReformaLado;
+}
+
+export interface ApuracaoFiscalPayload {
+  meta: {
+    versao_api_apuracao: string;
+    pre_validacao: boolean;
+    sped_txt_oficial: boolean;
+    calculo: string;
+    parametros_fiscais_futuros: Record<string, unknown>;
+  };
+  filtros: ApuracaoFiscalFiltros;
+  fontes?: ApuracaoFiscalFontes;
+  diagnostico_fontes?: ApuracaoDiagnosticoFontes;
+  diagnostico_reforma?: ApuracaoDiagnosticoReforma;
+  cards: Record<string, number>;
+  resumo: {
+    entrada: ApuracaoFiscalAcumulo;
+    saida: ApuracaoFiscalAcumulo;
+    saldo_gerencial_saida_menos_entrada: Record<string, number>;
+  };
+  icms_ipi: { entrada: ApuracaoFiscalAcumulo; saida: ApuracaoFiscalAcumulo; comparativo_documento: { observacao: string } };
+  pis_cofins: { entrada: ApuracaoFiscalAcumulo; saida: ApuracaoFiscalAcumulo };
+  reforma_tributaria: ApuracaoReformaTributaria;
+  efd_icms_ipi: ApuracaoEfdIcmsIpi;
+  efd_contribuicoes: ApuracaoEfdContribuicoes;
+  agrupamentos: Record<string, Array<{ chave: string } & ApuracaoFiscalAcumulo>>;
+  alertas: ApuracaoFiscalAlerta[];
+  diagnostico: ApuracaoDiagnostico;
+}
+
+/** @deprecated legado mes/ano — usar ApuracaoFiscalPayload */
 export interface ApuracaoFiscal {
   periodo: string;
   receita_bruta: number;

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Building2, Package, ShoppingBag, Handshake, Receipt, ShieldCheck, Warehouse, Calculator, BookOpen,
+  LayoutDashboard, Building2, Package, ShoppingBag, Handshake, Receipt, ShieldCheck, Warehouse, BookOpen,
   ChevronDown, ChevronRight, X
 } from 'lucide-react';
 
@@ -31,8 +31,7 @@ const menuItems: MenuItem[] = [
   { label: 'Compras', icon: ShoppingBag, children: [
     { label: 'Pedidos de Compra', path: '/pedidos-compra' },
     { label: 'NF-e de Entrada', path: '/nfe-entrada', activeMatchPaths: ['/nfe-entrada/:id/conferencia'] },
-    { label: 'NF-e Entrada Histórica/XML', path: '/nfe-entrada-historica-importada', activeMatchPaths: ['/nfe-entrada/:id/conferencia'] },
-    { label: 'Conferência de Entrada', path: '/nfe-entrada-historica-importada', activeMatchPaths: ['/nfe-entrada/:id/conferencia'] },
+    { label: 'NF-e Entrada Histórica/XML', path: '/nfe-entrada-historica-importada' },
   ]},
   { label: 'Comercial', icon: Handshake, children: [
     { label: 'Propostas', path: '/propostas' },
@@ -42,6 +41,7 @@ const menuItems: MenuItem[] = [
     { label: 'NF-e Saída', path: '/nfe-saida' },
     { label: 'NF-e Saída Histórica/XML', path: '/nfe-historica-importada' },
     { label: 'Painel fiscal/gerencial consolidado', path: '/visao-gerencial-nfe-historica' },
+    { label: 'Apuração Fiscal', path: '/apuracao-fiscal' },
     { label: 'CT-e Entrada', path: '/cte-entrada' },
     { label: 'CT-e histórico (XML)', path: '/cte-historico-importado' },
     { label: 'Regras Fiscais', path: '/regras-fiscais' },
@@ -54,7 +54,6 @@ const menuItems: MenuItem[] = [
     { label: 'Certificados de Fornecedor', path: '/certificados-fornecedor' },
     { label: 'Corridas / Lotes Técnicos', path: '/corridas' },
   ]},
-  { label: 'Apuração Fiscal', path: '/apuracao-fiscal', icon: Calculator },
   { label: 'Contábil', path: '/contabil', icon: BookOpen },
 ];
 
@@ -108,7 +107,7 @@ export const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
                     <div className="ml-4 pl-3 border-l border-sidebar-hover">
                       {item.children.map(child => (
                         <Link
-                          key={child.path}
+                          key={`${item.label}-${child.label}`}
                           to={child.path}
                           onClick={onClose}
                           className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors ${isActive(child.path, child.activeMatchPaths) ? 'bg-sidebar-active text-primary-foreground font-medium' : 'text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-fg'}`}

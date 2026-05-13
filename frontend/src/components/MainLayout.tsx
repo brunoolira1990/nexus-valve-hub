@@ -25,7 +25,7 @@ const breadcrumbMap: Record<string, { label: string; path?: string }[]> = {
   '/certificados': [{ label: 'Qualidade', }, { label: 'Certificados' }],
   '/certificados-fornecedor': [{ label: 'Qualidade' }, { label: 'Certificados de Fornecedor' }],
   '/estoque': [{ label: 'Estoque' }, { label: 'Saldos' }],
-  '/apuracao-fiscal': [{ label: 'Apuração Fiscal' }],
+  '/apuracao-fiscal': [{ label: 'Fiscal' }, { label: 'Apuração Fiscal' }],
   '/contabil': [{ label: 'Contábil' }],
 };
 

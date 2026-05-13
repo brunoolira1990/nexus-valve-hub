@@ -182,8 +182,14 @@ export const ncmApiService = {
 export const familiaVariacoesService = {
   addPolegadaPermitida: async (payload: { familia: number; polegada: number; tipo: 'principal' | 'secundaria' | 'ambas'; ordem?: number; ativo?: boolean }) =>
     (await api.post(famPolPath, payload)).data,
+  removePolegadaPermitida: async (permitidaId: number) => {
+    await api.delete(`${famPolPath}${permitidaId}/`);
+  },
   addRoscaPermitida: async (payload: { familia: number; rosca_conexao: number; padrao_da_familia?: boolean; ativo?: boolean }) =>
     (await api.post(famRoscaPath, payload)).data,
   addSchedulePermitido: async (payload: { familia: number; schedule: number; padrao_da_familia?: boolean; ativo?: boolean }) =>
     (await api.post(famSchedPath, payload)).data,
+  removeSchedulePermitido: async (permitidoId: number) => {
+    await api.delete(`${famSchedPath}${permitidoId}/`);
+  },
 };

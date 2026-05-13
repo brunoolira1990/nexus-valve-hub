@@ -1,5 +1,5 @@
 import api from './config';
-import type { ApuracaoFiscal, Balancete, ContaContabil, EstoqueItem, EstoqueSaldoItem } from '@/types';
+import type { ApuracaoFiscalPayload, Balancete, ContaContabil, EstoqueItem, EstoqueSaldoItem } from '@/types';
 
 type ContaAPI = ContaContabil & {
   filhos?: Array<{
@@ -30,9 +30,46 @@ export const estoqueService = {
     (await api.get<EstoqueSaldoItem[]>('estoque/saldos/', { params })).data,
 };
 
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export const apuracaoService = {
-  get: async (mes: number, ano: number): Promise<ApuracaoFiscal> =>
-    (await api.get<ApuracaoFiscal>('apuracao/', { params: { mes, ano } })).data,
+  /** Não altera `params`; repassa ao axios como enviado pela tela. */
+  get: async (
+    params: Record<string, string | number | boolean>,
+    opts?: { signal?: AbortSignal },
+  ): Promise<ApuracaoFiscalPayload> =>
+    (
+      await api.get<ApuracaoFiscalPayload>('fiscal/apuracao/', {
+        params,
+        signal: opts?.signal,
+        headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+      })
+    ).data,
+
+  exportCsvApuracao: async (params: Record<string, string | number | boolean>) => {
+    const res = await api.get<Blob>('fiscal/apuracao/', {
+      params: { ...params, formato: 'csv_apuracao' },
+      responseType: 'blob',
+      headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+    });
+    downloadBlob(res.data, 'apuracao_fiscal.csv');
+  },
+
+  exportCsvAlertas: async (params: Record<string, string | number | boolean>) => {
+    const res = await api.get<Blob>('fiscal/apuracao/', {
+      params: { ...params, formato: 'csv_alertas' },
+      responseType: 'blob',
+      headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+    });
+    downloadBlob(res.data, 'apuracao_fiscal_alertas.csv');
+  },
 };
 
 export const contabilService = {

@@ -24,6 +24,7 @@ from .models import (
     CTeEntrada,
     CTeHistoricoImportado,
     EstoqueCorrida,
+    EventoNFeSaidaHistoricaPendente,
     NFeEntrada,
     NFeEntradaConferencia,
     NFeEntradaHistoricaImportada,
@@ -48,7 +49,7 @@ from .nfe_historica_fiscal import (
 )
 from .nfe_historica_periodo import PeriodoInvalido, aplicar_filtros_vinculo, bounds_para_listagem, resolver_periodo
 from .nfe_import.service_entrada import importar_arquivos_entrada
-from .nfe_import.service import importar_arquivos
+from .nfe_import.service import importar_arquivos, reprocessar_eventos_pendentes_saida
 from .serializers import (
     CTeEntradaSerializer,
     CTeHistoricoImportadoListSerializer,
@@ -57,6 +58,7 @@ from .serializers import (
     NFeEntradaHistoricaImportadaListSerializer,
     NFeEntradaHistoricaImportadaSerializer,
     NFeEntradaConferenciaSerializer,
+    EventoNFeSaidaHistoricaPendenteSerializer,
     NFeSaidaHistoricaImportadaListSerializer,
     NFeSaidaHistoricaImportadaSerializer,
     NFeSaidaSerializer,
@@ -169,6 +171,24 @@ class NFeSaidaHistoricaImportadaViewSet(viewsets.ReadOnlyModelViewSet):
         qs = queryset_faturamento_nf_saida_historica(qs)
         return qs, di, df, meta
 
+    @action(detail=False, methods=['get'], url_path='eventos-pendentes')
+    def eventos_pendentes(self, request):
+        try:
+            limite = int(request.query_params.get('limit', '500'))
+        except ValueError:
+            limite = 500
+        limite = max(1, min(limite, 2000))
+        qs = (
+            EventoNFeSaidaHistoricaPendente.objects.filter(status=EventoNFeSaidaHistoricaPendente.Status.PENDENTE)
+            .order_by('-criado_em')[:limite]
+        )
+        return response.Response(EventoNFeSaidaHistoricaPendenteSerializer(qs, many=True).data)
+
+    @action(detail=False, methods=['post'], url_path='reprocessar-eventos-pendentes')
+    def reprocessar_eventos_pendentes(self, request):
+        out = reprocessar_eventos_pendentes_saida()
+        return response.Response(out, status=status.HTTP_200_OK)
+
     @action(detail=False, methods=['get'], url_path='resumo-fiscal')
     def resumo_fiscal(self, request):
         """Consolidado de faturamento (vendas): apenas NF-e em que o emitente do XML = Empresa cadastrada."""
@@ -205,9 +225,8 @@ class NFeSaidaHistoricaImportadaViewSet(viewsets.ReadOnlyModelViewSet):
                 },
                 'reforma_tributaria': {
                     'observacao': (
-                        'Grupos extras do XML permanecem em reforma_e_outros_json por nota; '
-                        'painel CBS/IBS será evolução futura. O campo notas_com_reforma_e_outros_json '
-                        'indica quantas notas possuem esse bloco preenchido na importação.'
+                        'CBS/IBS/IS na apuração: totais consolidados (NF-e + CT-e) e detalhe em reforma_tributaria.por_documento '
+                        '(entrada, saida, cte).'
                     ),
                 },
             }

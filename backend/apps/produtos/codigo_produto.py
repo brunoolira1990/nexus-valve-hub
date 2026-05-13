@@ -204,6 +204,13 @@ def montar_codigo_interno(
             return ''
         return f'{fig}{sep}{dim_code}'
 
+    if rule == t.BASE_ESPIGAO_FLANGE_NPS:
+        cod_e = _codigo_pol(polegada_principal, width=2)
+        cod_f = _codigo_pol(polegada_secundaria, width=2)
+        if not cod_e or not cod_f:
+            return ''
+        return f'{fig}{sep}E{cod_e}F{cod_f}'
+
     if rule == t.BASE_POLEGADA:
         return f'{fig}{sep}{id1}' if id1 else ''
 
@@ -268,7 +275,7 @@ def montar_descricao_sugerida(
     comprimento_mm: Decimal | None = None,
     dimensoes: dict | None = None,
 ) -> str:
-    from apps.produtos.dimensional_regra import requisitos_efetivos_produto
+    from apps.produtos.dimensional_regra import familia_espigao_x_flange_nps, requisitos_efetivos_produto
     from apps.produtos.models import FamiliaProduto
 
     req = requisitos_efetivos_produto(familia)
@@ -289,6 +296,27 @@ def montar_descricao_sugerida(
         if polegada_secundaria and (polegada_secundaria.descricao or '').strip():
             partes_od.append(_normalize_spaces(polegada_secundaria.descricao))
         return _normalize_spaces(' '.join(partes_od))
+
+    if familia_espigao_x_flange_nps(familia):
+        base = _normalize_spaces(familia.descricao_base or '')
+        d1 = _normalize_spaces((polegada_principal.descricao or '').strip()) if polegada_principal else ''
+        d2 = _normalize_spaces((polegada_secundaria.descricao or '').strip()) if polegada_secundaria else ''
+        rx = re.compile(r'\s+X\s+FLANGE\s+', re.IGNORECASE)
+        m = rx.search(base)
+        if m and (d1 or d2):
+            left = base[: m.start()].rstrip()
+            right = base[m.end() :].lstrip()
+            left_with = _normalize_spaces(f'{left} {d1}'.strip())
+            tail = _normalize_spaces(f'{right} {d2}'.strip())
+            return _normalize_spaces(f'{left_with} X FLANGE {tail}')
+        chunks_ef: list[str] = []
+        if base:
+            chunks_ef.append(base)
+        if d1:
+            chunks_ef.append(d1)
+        if d2:
+            chunks_ef.append(d2)
+        return _normalize_spaces(' '.join(chunks_ef))
 
     if td in (Td.CHAPA_MM, Td.CHAPA_FURO_MM, Td.BARRA_CHATA_MM, Td.METALON_MM, Td.PERFIL_RETANGULAR_MM, Td.CANTONEIRA_MM):
         base = _normalize_spaces(familia.descricao_base or '')

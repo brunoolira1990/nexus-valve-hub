@@ -29,6 +29,7 @@ import {
   labelsCamposObrigatorios,
   labelsCamposObrigatoriosProduto,
   normalizarTipoRegra,
+  requisitosMedidasPermitidasModal,
 } from '@/lib/familiaRegra';
 import { ConversaoMedidasBlock, type CampoHeranca } from '@/components/produtos/ConversaoMedidasBlock';
 import { NcmAutocomplete, type NcmOption } from '@/components/produtos/NcmAutocomplete';
@@ -142,6 +143,7 @@ const REGRAS: { value: TipoRegraCodigo; label: string }[] = [
   { value: 'UNDERSCORE_POLEGADA', label: '9) Underscore + ID 3 dígitos — {figura}_{id}' },
   { value: 'MANUAL_FABRICANTE', label: '10) Manual/fabricante (sem código por família)' },
   { value: 'BASE_OD_MM_ESPESSURA', label: '11) Base + OD mm + espessura mm — {figura}.{od}{esp} (ex.: 6119OD.1002)' },
+  { value: 'BASE_ESPIGAO_FLANGE_NPS', label: '12) Base + espigão NPS + flange NPS ({figura}.E{id}F{id})' },
 ];
 
 const CATEGORIAS_FAMILIA = [
@@ -171,6 +173,7 @@ const TIPOS_DIMENSIONAIS: { value: TipoDimensional; label: string }[] = [
   { value: 'ROSCA', label: 'Rosca (orientação)' },
   { value: 'ROSCA_X_ROSCA', label: 'Rosca x Rosca (orientação)' },
   { value: 'FLANGE', label: 'Flange (orientação)' },
+  { value: 'ESPIGAO_X_FLANGE', label: 'Espigão x Flange (duas NPS, texto flange na descrição base)' },
   { value: 'VALVULA', label: 'Válvula (orientação)' },
   { value: 'MANUAL', label: 'Dimensional manual' },
   { value: 'LEGADO', label: 'Legado / misto' },
@@ -209,6 +212,7 @@ function regraSugeridaPorTipoDimensional(td: TipoDimensional): TipoRegraCodigo {
   if (td === 'OD_POLEGADA_X_ROSCA') return 'BASE_ROSCA_DUAS_POLEGADAS';
   if (td === 'OD_MM' || td === 'OD_MM_X_ESPESSURA' || td === 'OD_MM_X_ESPESSURA_X_COMPRIMENTO') return 'BASE_OD_MM_ESPESSURA';
   if (td === 'NPS_X_ROSCA') return 'BASE_ROSCA_POLEGADA';
+  if (td === 'ESPIGAO_X_FLANGE') return 'BASE_ESPIGAO_FLANGE_NPS';
   if (td === 'CANTONEIRA_POLEGADA') return 'BASE_POLEGADA';
   return 'BASE_POLEGADA';
 }
@@ -363,38 +367,38 @@ const Produtos = () => {
       incluir_schedule_na_descricao: fl.usa_schedule,
     };
   }, [familiaSel]);
-  const roscasPermitidas = useMemo(() => {
-    if (!familiaSel?.roscas_permitidas?.length) return roscas;
-    const ids = new Set(familiaSel.roscas_permitidas.map((r) => r.id));
-    return roscas.filter((r) => ids.has(r.id));
-  }, [familiaSel, roscas]);
-  const schedulePermitidosIds = useMemo(() => {
-    if (!familiaSel?.schedules_permitidos?.length) return null;
-    return new Set(familiaSel.schedules_permitidos.map((r) => r.id));
-  }, [familiaSel]);
-  const polegadasPrincipalPermitidas = useMemo(() => {
-    if (!familiaSel?.polegadas_permitidas?.length) return [];
-    return familiaSel.polegadas_permitidas
-      .filter((p) => p.tipo === 'principal' || p.tipo === 'ambas')
-      .map((p) => p.id);
-  }, [familiaSel]);
-  const polegadasSecundariaPermitidas = useMemo(() => {
-    if (!familiaSel?.polegadas_permitidas?.length) return [];
-    return familiaSel.polegadas_permitidas
-      .filter((p) => p.tipo === 'secundaria' || p.tipo === 'ambas')
-      .map((p) => p.id);
-  }, [familiaSel]);
+  const roscasPermitidas = roscas;
   const tipoMedidaPrincipal = useMemo<'NPS' | 'OD' | undefined>(() => {
     const td = familiaSel?.tipo_dimensional;
     if (!td) return undefined;
     if (td === 'OD_POLEGADA' || td === 'OD_POLEGADA_X_ROSCA') return 'OD';
-    if (td === 'NPS' || td === 'NPS_SCHEDULE' || td === 'REDUCAO_NPS' || td === 'NPS_X_ROSCA' || td === 'FLANGE' || td === 'VALVULA' || td === 'ROSCA' || td === 'ROSCA_X_ROSCA') return 'NPS';
+    if (
+      td === 'NPS' ||
+      td === 'NPS_SCHEDULE' ||
+      td === 'REDUCAO_NPS' ||
+      td === 'NPS_X_ROSCA' ||
+      td === 'FLANGE' ||
+      td === 'ESPIGAO_X_FLANGE' ||
+      td === 'VALVULA' ||
+      td === 'ROSCA' ||
+      td === 'ROSCA_X_ROSCA'
+    )
+      return 'NPS';
     return undefined;
   }, [familiaSel?.tipo_dimensional]);
   const tipoMedidaSecundaria = useMemo<'NPS' | 'OD' | undefined>(() => {
     const td = familiaSel?.tipo_dimensional;
     if (!td) return undefined;
-    if (td === 'OD_POLEGADA_X_ROSCA' || td === 'REDUCAO_NPS' || td === 'NPS' || td === 'NPS_SCHEDULE' || td === 'NPS_X_ROSCA' || td === 'ROSCA_X_ROSCA') return 'NPS';
+    if (
+      td === 'OD_POLEGADA_X_ROSCA' ||
+      td === 'REDUCAO_NPS' ||
+      td === 'NPS' ||
+      td === 'NPS_SCHEDULE' ||
+      td === 'NPS_X_ROSCA' ||
+      td === 'ROSCA_X_ROSCA' ||
+      td === 'ESPIGAO_X_FLANGE'
+    )
+      return 'NPS';
     return undefined;
   }, [familiaSel?.tipo_dimensional]);
 
@@ -954,7 +958,7 @@ const Produtos = () => {
       );
       return;
     }
-    const fl = flagsPorTipoRegra(famQuick.tipo_regra_codigo);
+    const effSave = requisitosMedidasPermitidasModal(famQuick.tipo_dimensional, famQuick.tipo_regra_codigo);
     try {
       const payload = {
         codigo_figura: famQuick.codigo_figura.trim(),
@@ -964,10 +968,10 @@ const Produtos = () => {
         tipo_dimensional: famQuick.tipo_dimensional || 'SIMPLES',
         separador_base_medidas: famQuick.separador_base_medidas,
         ativo: famQuick.ativo,
-        usa_rosca_conexao: fl.usa_rosca_conexao,
-        usa_schedule: fl.usa_schedule,
-        usa_polegada_principal: fl.usa_polegada_principal,
-        usa_polegada_secundaria: fl.usa_polegada_secundaria,
+        usa_rosca_conexao: effSave.usa_rosca_conexao,
+        usa_schedule: effSave.usa_schedule,
+        usa_polegada_principal: effSave.usa_polegada_principal,
+        usa_polegada_secundaria: effSave.usa_polegada_secundaria,
         ncm_padrao: famQuick.ncm_padrao,
         unidade_padrao: '',
         material_base: '',
@@ -1037,7 +1041,23 @@ const Produtos = () => {
       );
     }
     return TIPOS_DIMENSIONAIS.filter((x) =>
-      ['SIMPLES', 'NPS', 'NPS_SCHEDULE', 'REDUCAO_NPS', 'ROSCA', 'ROSCA_X_ROSCA', 'NPS_X_ROSCA', 'OD_POLEGADA', 'OD_POLEGADA_X_ROSCA', 'OD_MM', 'OD_MM_X_ESPESSURA', 'OD_MM_X_ESPESSURA_X_COMPRIMENTO', 'FLANGE', 'VALVULA'].includes(x.value),
+      [
+        'SIMPLES',
+        'NPS',
+        'NPS_SCHEDULE',
+        'REDUCAO_NPS',
+        'ROSCA',
+        'ROSCA_X_ROSCA',
+        'NPS_X_ROSCA',
+        'OD_POLEGADA',
+        'OD_POLEGADA_X_ROSCA',
+        'OD_MM',
+        'OD_MM_X_ESPESSURA',
+        'OD_MM_X_ESPESSURA_X_COMPRIMENTO',
+        'FLANGE',
+        'ESPIGAO_X_FLANGE',
+        'VALVULA',
+      ].includes(x.value),
     );
   }, [famQuick.categoria_produto]);
 
@@ -1447,11 +1467,7 @@ const Produtos = () => {
                       value={form.schedule_ref_id ?? null}
                       selectedOption={scheduleOption}
                       placeholder="Digite código, descrição ou aplicação (ex.: 10S, SCH 20, INOX)"
-                      search={async (term, limit) => {
-                        const list = await schedulesEspessuraService.search(term, limit ?? 20);
-                        if (!schedulePermitidosIds) return list;
-                        return list.filter((opt) => schedulePermitidosIds.has(opt.id));
-                      }}
+                      search={async (term, limit) => schedulesEspessuraService.search(term, limit ?? 20)}
                       getOptionValue={(opt) => opt.id}
                       getOptionLabel={(opt) =>
                         `${opt.codigo || opt.codigo_schedule} — ${opt.descricao || opt.codigo_schedule}`
@@ -1614,7 +1630,6 @@ const Produtos = () => {
                       onChange={(id) => f('polegada_principal_ref_id', id)}
                       tipoMedida={tipoMedidaPrincipal}
                       allowCreate
-                      allowedIds={polegadasPrincipalPermitidas.length ? polegadasPrincipalPermitidas : undefined}
                     />
                   </div>
                 )}
@@ -1626,7 +1641,6 @@ const Produtos = () => {
                       onChange={(id) => f('polegada_secundaria_ref_id', id)}
                       tipoMedida={tipoMedidaSecundaria}
                       allowCreate
-                      allowedIds={polegadasSecundariaPermitidas.length ? polegadasSecundariaPermitidas : undefined}
                     />
                   </div>
                 )}
@@ -1971,7 +1985,7 @@ const Produtos = () => {
           </div>
           <div className="rounded-md border border-border bg-muted/30 p-3 text-sm space-y-1 mt-3">
             <p className="font-medium text-foreground">Campos exigidos no produto (regra de código)</p>
-            <p className="text-muted-foreground">{labelsCamposObrigatorios(famQuickFlags).join(' · ')}</p>
+            <p className="text-muted-foreground">{labelsCamposObrigatorios(famQuickFlags, famQuick.tipo_dimensional).join(' · ')}</p>
             <p className="text-xs text-muted-foreground mt-1">
               O tipo dimensional combina com a regra no cadastro de produto (validação no servidor). {hintTipoDimensional(famQuick.tipo_dimensional)}
             </p>
@@ -1986,12 +2000,16 @@ const Produtos = () => {
             <p className="font-semibold text-foreground mb-1">Prévia de cadastro da família</p>
             <p>Categoria: {CATEGORIAS_FAMILIA.find((c) => c.value === famQuick.categoria_produto)?.label}</p>
             <p>Tipo: {famQuick.tipo_dimensional}</p>
-            <p>Produto vai pedir: {labelsCamposObrigatorios(famQuickFlags).join(' · ')}</p>
+            <p>Produto vai pedir: {labelsCamposObrigatorios(famQuickFlags, famQuick.tipo_dimensional).join(' · ')}</p>
             <p className="mt-1">Exemplo de código: {famQuick.codigo_figura || 'FIG'}.{famQuick.tipo_dimensional === 'NPS_SCHEDULE' ? '20.XX' : '...'}</p>
             <p>Exemplo de descrição: {(famQuick.descricao_base || 'DESCRIÇÃO BASE')} ...</p>
           </div>
           </div>
         </div>
+        <p className="text-xs text-muted-foreground mt-4">
+          <span className="font-medium text-foreground">Conversão de medidas</span> — unidades comerciais (PC, KG, TON…). Não
+          substituem bitolas NPS/OD nem schedule escolhidos no cadastro do produto.
+        </p>
         <ConversaoMedidasBlock
           usaConversao={!!famQuick.usa_conversao_dimensional}
           onUsaConversaoChange={(v) => setFamQuick((q) => ({ ...q, usa_conversao_dimensional: v }))}

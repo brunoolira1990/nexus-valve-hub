@@ -10,6 +10,7 @@ from apps.produtos.codigo_produto import (
 )
 from apps.produtos.dimensional_regra import (
     comprimento_mm_efetivo,
+    familia_espigao_x_flange_nps,
     requisitos_efetivos_produto,
     tipo_medida_esperado_por_campo,
     validar_campos_obrigatorios_produto_interno,
@@ -176,6 +177,24 @@ class FamiliaProdutoSerializer(serializers.ModelSerializer):
         model = FamiliaProduto
         fields = '__all__'
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Garante que o DRF ChoiceField use sempre as choices atuais do model (evita lista defasada em reload).
+        tr = self.fields.get('tipo_regra_codigo')
+        if tr is not None and hasattr(tr, 'choices'):
+            tr.choices = FamiliaProduto.TipoRegraCodigo.choices
+        td = self.fields.get('tipo_dimensional')
+        if td is not None and hasattr(td, 'choices'):
+            td.choices = FamiliaProduto.TipoDimensional.choices
+
+    def to_internal_value(self, data):
+        if hasattr(data, 'copy') and hasattr(data, 'get'):
+            tr = data.get('tipo_regra_codigo')
+            if isinstance(tr, str):
+                data = data.copy()
+                data['tipo_regra_codigo'] = tr.strip()
+        return super().to_internal_value(data)
+
     def validate(self, attrs):
         inst = self.instance
         normalize_operational_fields(
@@ -232,9 +251,12 @@ class FamiliaProdutoSerializer(serializers.ModelSerializer):
     def get_polegadas_permitidas(self, obj: FamiliaProduto):
         return [
             {
+                'permitida_id': rel.id,
                 'id': rel.polegada_id,
+                'polegada_id': rel.polegada_id,
                 'codigo': rel.polegada.codigo,
                 'descricao': rel.polegada.descricao,
+                'tipo_medida': rel.polegada.tipo_medida,
                 'tipo': rel.tipo,
             }
             for rel in obj.polegadas_permitidas.select_related('polegada').filter(ativo=True)
@@ -254,7 +276,9 @@ class FamiliaProdutoSerializer(serializers.ModelSerializer):
     def get_schedules_permitidos(self, obj: FamiliaProduto):
         return [
             {
+                'permitido_id': rel.id,
                 'id': rel.schedule_id,
+                'schedule_id': rel.schedule_id,
                 'codigo_schedule': rel.schedule.codigo_schedule,
                 'codigo': rel.schedule.codigo,
                 'descricao': rel.schedule.descricao,
@@ -288,6 +312,46 @@ class FamiliaProdutoPolegadaPermitidaSerializer(serializers.ModelSerializer):
     class Meta:
         model = FamiliaProdutoPolegadaPermitida
         fields = '__all__'
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        familia = attrs.get('familia') or getattr(self.instance, 'familia', None)
+        polegada = attrs.get('polegada') or getattr(self.instance, 'polegada', None)
+        tipo = attrs.get('tipo') or (getattr(self.instance, 'tipo', None) if self.instance else None)
+        if not familia or not polegada or not tipo:
+            return attrs
+        expected = tipo_medida_esperado_por_campo(familia)
+        exp_p = expected.get('polegada_principal_ref_id')
+        exp_s = expected.get('polegada_secundaria_ref_id')
+        pm = polegada.tipo_medida or Polegada.TipoMedida.NPS
+        if tipo in ('principal', 'ambas') and exp_p and pm != exp_p:
+            raise serializers.ValidationError(
+                {
+                    'polegada': (
+                        f'Para esta família a medida principal deve ser {exp_p}; '
+                        f'a polegada selecionada está como {pm}.'
+                    ),
+                },
+            )
+        if tipo in ('secundaria', 'ambas') and exp_s and pm != exp_s:
+            raise serializers.ValidationError(
+                {
+                    'polegada': (
+                        f'Para esta família a medida secundária deve ser {exp_s}; '
+                        f'a polegada selecionada está como {pm}.'
+                    ),
+                },
+            )
+        if tipo == 'ambas' and exp_p and exp_s and exp_p != exp_s:
+            raise serializers.ValidationError(
+                {
+                    'tipo': (
+                        'Para este tipo dimensional use cadastros separados (principal e secundária) '
+                        'ou apenas polegadas compatíveis com ambos os campos.'
+                    ),
+                },
+            )
+        return attrs
 
 
 class FamiliaProdutoRoscaConexaoPermitidaSerializer(serializers.ModelSerializer):
@@ -537,78 +601,27 @@ class ProdutoSerializer(serializers.ModelSerializer):
         if not req['exige_comprimento_mm'] and pick('comprimento_mm') is not None:
             raise serializers.ValidationError({'comprimento_mm': 'Esta família não utiliza comprimento em mm no produto.'})
 
-        polegadas_rel = familia.polegadas_permitidas.filter(ativo=True)
-        if req['usa_polegada_principal']:
-            allowed_principal_ids = set(
-                polegadas_rel.filter(tipo__in=[
-                    FamiliaProdutoPolegadaPermitida.TipoPolegada.PRINCIPAL,
-                    FamiliaProdutoPolegadaPermitida.TipoPolegada.AMBAS,
-                ]).values_list('polegada_id', flat=True),
-            )
-            if not allowed_principal_ids:
-                raise serializers.ValidationError(
-                    {'polegada_principal_ref_id': 'Configure as polegadas permitidas desta família antes de criar produtos.'},
-                )
-            if pp and pp.id not in allowed_principal_ids:
-                raise serializers.ValidationError(
-                    {'polegada_principal_ref_id': f'A polegada {pp.descricao} não está permitida para esta família.'},
-                )
-        if req['usa_polegada_secundaria']:
-            allowed_sec_ids = set(
-                polegadas_rel.filter(tipo__in=[
-                    FamiliaProdutoPolegadaPermitida.TipoPolegada.SECUNDARIA,
-                    FamiliaProdutoPolegadaPermitida.TipoPolegada.AMBAS,
-                ]).values_list('polegada_id', flat=True),
-            )
-            if not allowed_sec_ids:
-                raise serializers.ValidationError(
-                    {'polegada_secundaria_ref_id': 'Configure polegadas secundárias permitidas nesta família.'},
-                )
-            if ps and ps.id not in allowed_sec_ids:
-                raise serializers.ValidationError(
-                    {'polegada_secundaria_ref_id': f'A polegada {ps.descricao} não está permitida para esta família.'},
-                )
         expected_types = tipo_medida_esperado_por_campo(familia)
         if pp is not None:
             expected_principal = expected_types.get('polegada_principal_ref_id')
             if expected_principal and pp.tipo_medida != expected_principal:
-                msg = 'Informe a medida OD.' if expected_principal == Polegada.TipoMedida.OD else 'Informe a medida NPS.'
+                if familia_espigao_x_flange_nps(familia):
+                    msg = 'Informe a medida do espigão.'
+                else:
+                    msg = 'Informe a medida OD.' if expected_principal == Polegada.TipoMedida.OD else 'Informe a medida NPS.'
                 raise serializers.ValidationError({'polegada_principal_ref_id': msg})
         if ps is not None:
             expected_sec = expected_types.get('polegada_secundaria_ref_id')
             if expected_sec and ps.tipo_medida != expected_sec:
-                if familia.tipo_dimensional == FamiliaProduto.TipoDimensional.OD_POLEGADA_X_ROSCA:
+                if familia_espigao_x_flange_nps(familia):
+                    msg = 'Informe a medida da flange.'
+                elif familia.tipo_dimensional == FamiliaProduto.TipoDimensional.OD_POLEGADA_X_ROSCA:
                     msg = 'Informe a medida da rosca.'
                 elif expected_sec == Polegada.TipoMedida.OD:
                     msg = 'Informe a medida OD.'
                 else:
                     msg = 'Informe a medida NPS.'
                 raise serializers.ValidationError({'polegada_secundaria_ref_id': msg})
-        if req['usa_rosca_conexao']:
-            allowed_rosc_ids = set(
-                familia.roscas_permitidas.filter(ativo=True).values_list('rosca_conexao_id', flat=True),
-            )
-            if not allowed_rosc_ids:
-                raise serializers.ValidationError(
-                    {'rosca_conexao_id': 'Configure as roscas/conexões permitidas desta família antes de criar produtos.'},
-                )
-            if rosca and rosca.id not in allowed_rosc_ids:
-                raise serializers.ValidationError(
-                    {'rosca_conexao_id': f'A rosca/conexão {rosca.descricao} não está permitida para esta família.'},
-                )
-        if req['usa_schedule']:
-            allowed_sched_ids = set(
-                familia.schedules_permitidos.filter(ativo=True).values_list('schedule_id', flat=True),
-            )
-            if not allowed_sched_ids:
-                raise serializers.ValidationError(
-                    {'schedule_ref_id': 'Configure os schedules permitidos desta família antes de criar produtos.'},
-                )
-            if schedule and schedule.id not in allowed_sched_ids:
-                raise serializers.ValidationError(
-                    {'schedule_ref_id': f'O schedule {schedule.codigo_schedule} não está permitido para esta família.'},
-                )
-
         codigo = montar_codigo_interno(
             f,
             rosca=rosca,
@@ -841,62 +854,27 @@ class PreviewCodigoSerializer(serializers.Serializer):
         if not req['exige_comprimento_mm'] and comp_in is not None:
             raise serializers.ValidationError({'comprimento_mm': 'Comprimento em mm não aplicável.'})
 
-        polegadas_rel = f.polegadas_permitidas.filter(ativo=True)
-        if req['usa_polegada_principal']:
-            allowed_pp = set(
-                polegadas_rel.filter(tipo__in=[
-                    FamiliaProdutoPolegadaPermitida.TipoPolegada.PRINCIPAL,
-                    FamiliaProdutoPolegadaPermitida.TipoPolegada.AMBAS,
-                ]).values_list('polegada_id', flat=True),
-            )
-            if not allowed_pp:
-                raise serializers.ValidationError(
-                    {'polegada_principal_ref_id': 'Configure as polegadas permitidas desta família antes de criar produtos.'},
-                )
-            if pp and pp.id not in allowed_pp:
-                raise serializers.ValidationError({'polegada_principal_ref_id': f'A polegada {pp.descricao} não está permitida para esta família.'})
-        if req['usa_polegada_secundaria']:
-            allowed_ps = set(
-                polegadas_rel.filter(tipo__in=[
-                    FamiliaProdutoPolegadaPermitida.TipoPolegada.SECUNDARIA,
-                    FamiliaProdutoPolegadaPermitida.TipoPolegada.AMBAS,
-                ]).values_list('polegada_id', flat=True),
-            )
-            if not allowed_ps:
-                raise serializers.ValidationError(
-                    {'polegada_secundaria_ref_id': 'Configure polegadas secundárias permitidas nesta família.'},
-                )
-            if ps and ps.id not in allowed_ps:
-                raise serializers.ValidationError({'polegada_secundaria_ref_id': f'A polegada {ps.descricao} não está permitida para esta família.'})
         expected_types = tipo_medida_esperado_por_campo(f)
         if pp is not None:
             expected_principal = expected_types.get('polegada_principal_ref_id')
             if expected_principal and pp.tipo_medida != expected_principal:
-                msg = 'Informe a medida OD.' if expected_principal == Polegada.TipoMedida.OD else 'Informe a medida NPS.'
+                if familia_espigao_x_flange_nps(f):
+                    msg = 'Informe a medida do espigão.'
+                else:
+                    msg = 'Informe a medida OD.' if expected_principal == Polegada.TipoMedida.OD else 'Informe a medida NPS.'
                 raise serializers.ValidationError({'polegada_principal_ref_id': msg})
         if ps is not None:
             expected_sec = expected_types.get('polegada_secundaria_ref_id')
             if expected_sec and ps.tipo_medida != expected_sec:
-                if f.tipo_dimensional == FamiliaProduto.TipoDimensional.OD_POLEGADA_X_ROSCA:
+                if familia_espigao_x_flange_nps(f):
+                    msg = 'Informe a medida da flange.'
+                elif f.tipo_dimensional == FamiliaProduto.TipoDimensional.OD_POLEGADA_X_ROSCA:
                     msg = 'Informe a medida da rosca.'
                 elif expected_sec == Polegada.TipoMedida.OD:
                     msg = 'Informe a medida OD.'
                 else:
                     msg = 'Informe a medida NPS.'
                 raise serializers.ValidationError({'polegada_secundaria_ref_id': msg})
-        if req['usa_rosca_conexao']:
-            allowed_rosca = set(f.roscas_permitidas.filter(ativo=True).values_list('rosca_conexao_id', flat=True))
-            if not allowed_rosca:
-                raise serializers.ValidationError({'rosca_conexao_id': 'Configure roscas/conexões permitidas desta família.'})
-            if rosca and rosca.id not in allowed_rosca:
-                raise serializers.ValidationError({'rosca_conexao_id': f'A rosca/conexão {rosca.descricao} não está permitida para esta família.'})
-        if req['usa_schedule']:
-            allowed_sched = set(f.schedules_permitidos.filter(ativo=True).values_list('schedule_id', flat=True))
-            if not allowed_sched:
-                raise serializers.ValidationError({'schedule_ref_id': 'Configure schedules permitidos desta família.'})
-            if schedule and schedule.id not in allowed_sched:
-                raise serializers.ValidationError({'schedule_ref_id': f'O schedule {schedule.codigo_schedule} não está permitido para esta família.'})
-
         codigo = montar_codigo_interno(
             f,
             rosca=rosca,

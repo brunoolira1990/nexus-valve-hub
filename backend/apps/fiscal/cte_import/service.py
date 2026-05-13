@@ -7,6 +7,7 @@ from django.db import transaction
 from apps.cadastros.models import Empresa, Fornecedor, Transportadora
 
 from ..models import CTeHistoricoImportado
+from ..services.reforma_tributaria import enriquecer_reforma_e_outros_json_cte
 from .parser import parse_cte_xml
 
 
@@ -134,7 +135,9 @@ def importar_arquivos_cte(arquivos: list[tuple[str, bytes]]) -> dict[str, Any]:
                     totais_json=parsed.totais_json,
                     imposto_json=parsed.imposto_json,
                     prot_json=parsed.prot_json,
-                    reforma_e_outros_json=parsed.reforma_e_outros_json,
+                    reforma_e_outros_json=enriquecer_reforma_e_outros_json_cte(
+                        parsed.imposto_json, parsed.reforma_e_outros_json
+                    ),
                     chaves_nfe_vinculadas=parsed.chaves_nfe_vinculadas,
                     transportadora=_resolve_transportadora(parsed.emit_json),
                     empresa_tomadora=empresa_tomadora,

@@ -14,6 +14,21 @@ if TYPE_CHECKING:
     from apps.produtos.models import FamiliaProduto
 
 
+def familia_espigao_x_flange_nps(familia: 'FamiliaProduto') -> bool:
+    """Família no fluxo espigão × flange (E…F…): allowlist de polegadas na família é opcional até existir cadastro."""
+    from apps.produtos.models import FamiliaProduto
+
+    td = FamiliaProduto.TipoDimensional.ESPIGAO_X_FLANGE
+    tr = FamiliaProduto.TipoRegraCodigo.BASE_ESPIGAO_FLANGE_NPS
+    raw_td = getattr(familia, 'tipo_dimensional', None)
+    raw_tr = getattr(familia, 'tipo_regra_codigo', None)
+    if raw_tr == tr or raw_td == td:
+        return True
+    tr_norm = str(getattr(raw_tr, 'value', raw_tr) or '').strip().upper()
+    td_norm = str(getattr(raw_td, 'value', raw_td) or '').strip().upper()
+    return tr_norm == tr.value or td_norm == td.value
+
+
 class RequisitosEfetivosProduto(TypedDict):
     """Flags efetivas após combinar regra de código + tipo dimensional."""
 
@@ -84,6 +99,12 @@ def validar_tipo_dimensional_x_regra(*, tipo_dimensional: str, tipo_regra_codigo
 
     if tipo_dimensional == Td.NPS_X_ROSCA and tipo_regra_codigo != Tr.BASE_ROSCA_POLEGADA:
         return 'NPS x Rosca exige regra 2 (base + rosca + polegada).'
+
+    if tipo_dimensional == Td.ESPIGAO_X_FLANGE and tipo_regra_codigo != Tr.BASE_ESPIGAO_FLANGE_NPS:
+        return 'Espigão x Flange exige a regra Base + espigão NPS + flange NPS (E…F…).'
+
+    if tipo_regra_codigo == Tr.BASE_ESPIGAO_FLANGE_NPS and tipo_dimensional != Td.ESPIGAO_X_FLANGE:
+        return 'A regra E…F… (espigão x flange) exige o tipo dimensional Espigão x Flange.'
 
     if tipo_regra_codigo == Tr.BASE_OD_MM_ESPESSURA and tipo_dimensional not in (
         Td.OD_MM,
@@ -163,6 +184,13 @@ def requisitos_efetivos_produto(familia: FamiliaProduto) -> RequisitosEfetivosPr
         r['usa_schedule'] = False
         r['incluir_schedule_na_descricao'] = False
 
+    if familia_espigao_x_flange_nps(familia):
+        r['usa_rosca_conexao'] = False
+        r['usa_schedule'] = False
+        r['usa_polegada_principal'] = True
+        r['usa_polegada_secundaria'] = True
+        r['incluir_schedule_na_descricao'] = False
+
     if td == Td.OD_POLEGADA:
         r['usa_polegada_principal'] = True
         r['usa_polegada_secundaria'] = False
@@ -233,6 +261,8 @@ def validar_campos_obrigatorios_produto_interno(
     req = requisitos_efetivos_produto(familia)
     td = familia.tipo_dimensional or FamiliaProduto.TipoDimensional.SIMPLES
     Td = FamiliaProduto.TipoDimensional
+    Tr = FamiliaProduto.TipoRegraCodigo
+    espigao_x_flange_efetivo = familia_espigao_x_flange_nps(familia)
     errs: dict[str, str] = {}
 
     if req['usa_schedule'] and schedule is None:
@@ -240,14 +270,18 @@ def validar_campos_obrigatorios_produto_interno(
     if req['usa_rosca_conexao'] and rosca is None:
         errs['rosca_conexao_id'] = 'Informe o Tipo de rosca/conexão.'
     if req['usa_polegada_principal'] and polegada_principal is None:
-        if td == Td.OD_POLEGADA:
+        if espigao_x_flange_efetivo:
+            errs['polegada_principal_ref_id'] = 'Informe a medida do espigão.'
+        elif td == Td.OD_POLEGADA:
             errs['polegada_principal_ref_id'] = 'Informe a Medida OD.'
         elif td == Td.NPS_SCHEDULE:
             errs['polegada_principal_ref_id'] = 'Informe a polegada nominal (NPS).'
         else:
             errs['polegada_principal_ref_id'] = 'Informe a polegada principal.'
     if req['usa_polegada_secundaria'] and polegada_secundaria is None:
-        if td == Td.REDUCAO_NPS:
+        if espigao_x_flange_efetivo:
+            errs['polegada_secundaria_ref_id'] = 'Informe a medida da flange.'
+        elif td == Td.REDUCAO_NPS:
             errs['polegada_secundaria_ref_id'] = 'Informe a Polegada menor da redução.'
         elif td == Td.OD_POLEGADA_X_ROSCA:
             errs['polegada_secundaria_ref_id'] = 'Informe a Medida da rosca.'
@@ -269,8 +303,12 @@ def tipo_medida_esperado_por_campo(familia: FamiliaProduto) -> dict[str, str | N
 
     td = familia.tipo_dimensional or FamiliaProduto.TipoDimensional.SIMPLES
     Td = FamiliaProduto.TipoDimensional
+    Tr = FamiliaProduto.TipoRegraCodigo
     tipo_nps = Polegada.TipoMedida.NPS
     tipo_od = Polegada.TipoMedida.OD
+
+    if familia_espigao_x_flange_nps(familia):
+        return {'polegada_principal_ref_id': tipo_nps, 'polegada_secundaria_ref_id': tipo_nps}
 
     principal: str | None = None
     secundaria: str | None = None

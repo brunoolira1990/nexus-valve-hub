@@ -149,6 +149,7 @@ class FamiliaProduto(models.Model):
         PERFIL_RETANGULAR_MM = 'PERFIL_RETANGULAR_MM', 'Perfil retangular em mm (altura x largura x espessura)'
         DIMENSIONAL_LIVRE_CONTROLADO = 'DIMENSIONAL_LIVRE_CONTROLADO', 'Dimensional livre controlado'
         FLANGE = 'FLANGE', 'Flange (orientação)'
+        ESPIGAO_X_FLANGE = 'ESPIGAO_X_FLANGE', 'Espigão x Flange (duas NPS + texto flange na base)'
         VALVULA = 'VALVULA', 'Válvula (orientação)'
         MANUAL = 'MANUAL', 'Dimensional manual / sem padrão automático'
         LEGADO = 'LEGADO', 'Legado / misto (orientação)'
@@ -167,6 +168,7 @@ class FamiliaProduto(models.Model):
         )
         UNDERSCORE_POLEGADA = 'UNDERSCORE_POLEGADA', 'Base + underscore + ID polegada (3 dígitos)'
         BASE_OD_MM_ESPESSURA = 'BASE_OD_MM_ESPESSURA', 'Base + OD mm + espessura mm (ex.: 6119OD.1002)'
+        BASE_ESPIGAO_FLANGE_NPS = 'BASE_ESPIGAO_FLANGE_NPS', 'Base + espigão NPS + flange NPS'
         MANUAL_FABRICANTE = 'MANUAL_FABRICANTE', 'Manual / fabricante (sem código automático por família)'
 
     class TipoControleUnidade(models.TextChoices):

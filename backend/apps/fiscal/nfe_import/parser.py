@@ -163,6 +163,8 @@ class ParsedNFeEvento:
     id_evento: str = ''
     sequencial_evento: int = 0
     data_evento: datetime | None = None
+    desc_evento: str = ''
+    x_just: str = ''
     evento_json: dict[str, Any] = field(default_factory=dict)
     evento_cancelamento: bool = False
 
@@ -304,7 +306,7 @@ def parse_xml_nfe_importacao(xml_bytes: bytes) -> ParsedNFeImport:
     try:
         root = ET.fromstring(xml_bytes)
     except ET.ParseError as e:
-        return ParsedNFeImport(erro=f'XML inválido ou corrompido: {e}')
+        return ParsedNFeImport(tipo_documento='desconhecido', erro=f'XML inválido ou corrompido: {e}')
 
     ln = _local(root.tag)
     if ln in {'procEventoNFe', 'evento'}:
@@ -357,6 +359,13 @@ def parse_evento_nfe_xml(xml_bytes: bytes) -> ParsedNFeEvento:
     if not out.tipo_evento:
         out.erro = 'Evento sem tpEvento.'
         return out
+
+    det_evt = _find_child(inf_evento, 'detEvento')
+    if det_evt is not None:
+        out.desc_evento = _text(_find_child(det_evt, 'descEvento'))
+        out.x_just = _text(_find_child(det_evt, 'xJust'))
+        if not out.desc_evento:
+            out.desc_evento = _text(_find_child(det_evt, 'xCorrecao'))[:255]
 
     out.evento_cancelamento = out.tipo_evento == '110111'
     out.evento_json = {

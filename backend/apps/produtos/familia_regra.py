@@ -84,6 +84,12 @@ def flags_por_tipo_regra(tipo: str) -> FlagsFamilia:
             usa_polegada_principal=False,
             usa_polegada_secundaria=False,
         ),
+        t.BASE_ESPIGAO_FLANGE_NPS: FlagsFamilia(
+            usa_rosca_conexao=False,
+            usa_schedule=False,
+            usa_polegada_principal=True,
+            usa_polegada_secundaria=True,
+        ),
         t.MANUAL_FABRICANTE: FlagsFamilia(
             usa_rosca_conexao=False,
             usa_schedule=False,

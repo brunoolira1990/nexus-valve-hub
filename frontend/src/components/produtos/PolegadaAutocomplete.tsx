@@ -16,6 +16,9 @@ type Props = {
   allowedIds?: number[];
 };
 
+const PLACEHOLDER_OD_DEFAULT = 'Digite código, polegada, decimal ou mm. Ex.: 1/2, 0,5, 12,70';
+const PLACEHOLDER_NPS_DEFAULT = 'Busque NPS (nominal): código oficial, polegada ou decimal. Ex.: 1/2, 4';
+
 function polegadaLabel(p: Polegada): string {
   if (p.label) return p.label;
   const codigo = p.codigo_oficial || p.codigo || '';
@@ -27,12 +30,14 @@ export function PolegadaAutocomplete({
   value,
   selectedLabel,
   onChange,
-  placeholder = 'Digite código, polegada, decimal ou mm. Ex.: 1/2, 0,5, 12,70',
+  placeholder,
   tipoMedida,
   disabled = false,
   allowCreate = false,
   allowedIds,
 }: Props) {
+  const placeholderResolved =
+    placeholder ?? (tipoMedida === 'NPS' ? PLACEHOLDER_NPS_DEFAULT : PLACEHOLDER_OD_DEFAULT);
   const [open, setOpen] = useState(false);
   const [term, setTerm] = useState('');
   const [options, setOptions] = useState<Polegada[]>([]);
@@ -170,7 +175,7 @@ export function PolegadaAutocomplete({
     <div className="relative">
       <input
         className="erp-input mt-1"
-        placeholder={placeholder}
+        placeholder={placeholderResolved}
         disabled={disabled}
         value={open ? term : currentLabel}
         onFocus={() => {

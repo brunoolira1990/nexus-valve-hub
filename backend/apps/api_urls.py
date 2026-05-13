@@ -84,6 +84,7 @@ router.register(r'certificados-fornecedor', CertificadoFornecedorEntradaViewSet,
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('fiscal/apuracao/', ApuracaoView.as_view(), name='fiscal-apuracao'),
     path('apuracao/', ApuracaoView.as_view(), name='apuracao'),
     path('balancete/', BalanceteView.as_view(), name='balancete'),
 ]

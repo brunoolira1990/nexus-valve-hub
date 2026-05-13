@@ -1,3 +1,4 @@
+import type { NFeXmlImportFalhaApi } from '@/utils/nfeXmlImportDiagnostico';
 import api from './config';
 
 const base = 'nf-saidas-historicas-importadas/';
@@ -5,11 +6,17 @@ const base = 'nf-saidas-historicas-importadas/';
 export type NFeHistoricaImportResumo = {
   total_arquivos: number;
   importadas: number;
+  importadas_com_advertencia?: number;
+  ja_existiam?: number;
   duplicadas: number;
   eventos_aplicados: number;
   eventos_duplicados: number;
+  eventos_pendentes?: number;
   erros: number;
+  falhas?: number;
 };
+
+export type { NFeXmlImportFalhaApi as NFeHistoricaImportFalha } from '@/utils/nfeXmlImportDiagnostico';
 
 export type NFeHistoricaImportResultado = {
   importadas: {
@@ -18,6 +25,7 @@ export type NFeHistoricaImportResultado = {
     chave_acesso: string;
     numero: string;
     serie: string;
+    tipo_documento?: string;
   }[];
   duplicadas: { arquivo: string; chave_acesso: string; mensagem: string; tipo_documento?: string }[];
   eventos_aplicados: {
@@ -27,6 +35,7 @@ export type NFeHistoricaImportResultado = {
     tipo_evento: string;
     protocolo_evento: string;
     tipo_documento: 'evento';
+    origem?: string;
   }[];
   eventos_duplicados: {
     arquivo: string;
@@ -34,8 +43,48 @@ export type NFeHistoricaImportResultado = {
     tipo_evento: string;
     mensagem: string;
   }[];
-  erros: { arquivo: string; mensagem: string; tipo_documento?: string }[];
+  eventos_pendentes?: {
+    id: number;
+    arquivo: string;
+    chave_nfe: string;
+    tipo_evento: string;
+    descricao_evento?: string;
+    sequencia_evento?: number;
+    data_evento?: string | null;
+    protocolo?: string;
+    protocolo_evento?: string;
+    mensagem: string;
+    acao_sugerida?: string;
+    situacao?: string;
+    status?: string;
+  }[];
+  erros: NFeXmlImportFalhaApi[];
   resumo: NFeHistoricaImportResumo;
+};
+
+export type NFeEventoPendenteApi = {
+  id: number;
+  chave_nfe: string;
+  tipo_evento: string;
+  descricao_evento: string;
+  sequencia_evento: number;
+  data_evento: string | null;
+  protocolo_evento: string;
+  id_evento: string;
+  justificativa: string;
+  nome_arquivo: string;
+  direcao: string;
+  status: string;
+  mensagem: string;
+  nf: number | null;
+  criado_em: string;
+  atualizado_em: string;
+};
+
+export type ReprocessarEventosPendentesResponse = {
+  aplicados: number;
+  permanecem_pendentes: number;
+  detalhes: { chave_nfe: string; resultado: string; id_nota?: number; motivo?: string; detalhe?: string }[];
 };
 
 export type NFeSaidaHistoricaList = {
@@ -206,4 +255,8 @@ export const nfeHistoricaImportadaService = {
       })
     ).data;
   },
+  eventosPendentes: async (limit = 500) =>
+    (await api.get<NFeEventoPendenteApi[]>(`${base}eventos-pendentes/`, { params: { limit } })).data,
+  reprocessarEventosPendentes: async () =>
+    (await api.post<ReprocessarEventosPendentesResponse>(`${base}reprocessar-eventos-pendentes/`)).data,
 };

@@ -1,11 +1,13 @@
 import api from './config';
 
+import type { NFeXmlImportFalhaApi } from '@/utils/nfeXmlImportDiagnostico';
+
 const base = 'nf-entradas-historicas-importadas/';
 
 export type NFeEntradaHistoricaImportResultado = {
   importadas: { arquivo: string; id: number; chave_acesso: string; numero: string; serie: string }[];
   duplicadas: { arquivo: string; chave_acesso: string; mensagem: string }[];
-  erros: { arquivo: string; mensagem: string }[];
+  erros: NFeXmlImportFalhaApi[];
   resumo: { total_arquivos: number; importadas: number; duplicadas: number; erros: number };
 };
 

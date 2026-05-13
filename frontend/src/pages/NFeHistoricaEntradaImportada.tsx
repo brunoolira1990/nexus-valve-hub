@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileUp, FileCheck, Copy, AlertCircle } from 'lucide-react';
+import { FileUp, FileCheck, Copy, AlertCircle, ClipboardList } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
 import { apiErrorMessage } from '@/services/api/config';
@@ -13,6 +13,11 @@ import {
   type NFeEntradaHistoricaList,
 } from '@/services/api/nfeHistoricaEntradaImportada';
 import type { Empresa, Fornecedor } from '@/types';
+import {
+  copiarTextoParaAreaDeTransferencia,
+  montarTextoDiagnosticoNfeEntradaXml,
+  normalizarFalhaImportacaoXml,
+} from '@/utils/nfeXmlImportDiagnostico';
 
 const NFeHistoricaEntradaImportada = () => {
   const navigate = useNavigate();
@@ -27,6 +32,7 @@ const NFeHistoricaEntradaImportada = () => {
   const [fornecedorId, setFornecedorId] = useState('');
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
+  const [diagCopiado, setDiagCopiado] = useState(false);
 
   const load = useCallback(async () => {
     const qs = new URLSearchParams();
@@ -64,6 +70,17 @@ const NFeHistoricaEntradaImportada = () => {
 
   const filtrados = lista.filter((x) => x.chave_acesso.includes(search) || `${x.numero}/${x.serie}`.includes(search) || (x.fornecedor_nome || '').toLowerCase().includes(search.toLowerCase()));
 
+  const falhasEntrada = resultado?.erros?.length
+    ? resultado.erros.map((raw) => normalizarFalhaImportacaoXml(raw))
+    : [];
+
+  const copiarDiagnosticoEntrada = async () => {
+    if (!resultado) return;
+    await copiarTextoParaAreaDeTransferencia(montarTextoDiagnosticoNfeEntradaXml(resultado));
+    setDiagCopiado(true);
+    window.setTimeout(() => setDiagCopiado(false), 2500);
+  };
+
   return (
     <div>
       <PageHeader title="NF-e entrada histórica (importação XML)" searchValue={search} onSearch={setSearch} />
@@ -83,13 +100,73 @@ const NFeHistoricaEntradaImportada = () => {
       </div>
 
       {resultado && (
-        <div className="erp-card p-4 mb-4 grid md:grid-cols-3 gap-3">
-          <div><div className="text-xs text-muted-foreground">Importadas</div><div className="text-xl font-semibold">{resultado.resumo.importadas}</div></div>
-          <div><div className="text-xs text-muted-foreground">Duplicadas</div><div className="text-xl font-semibold">{resultado.resumo.duplicadas}</div></div>
-          <div><div className="text-xs text-muted-foreground">Erros</div><div className="text-xl font-semibold">{resultado.resumo.erros}</div></div>
-          {resultado.importadas.slice(0, 5).map((r) => <div key={r.id} className="text-xs text-muted-foreground"><FileCheck className="inline h-3 w-3 mr-1 text-success" />{r.arquivo}</div>)}
-          {resultado.duplicadas.slice(0, 5).map((r) => <div key={`${r.arquivo}-${r.chave_acesso}`} className="text-xs text-muted-foreground"><Copy className="inline h-3 w-3 mr-1" />{r.arquivo}</div>)}
-          {resultado.erros.slice(0, 5).map((r) => <div key={r.arquivo} className="text-xs text-destructive"><AlertCircle className="inline h-3 w-3 mr-1" />{r.arquivo}: {r.mensagem}</div>)}
+        <div className="erp-card p-4 mb-4 space-y-4">
+          <div className="flex flex-wrap justify-between gap-2 items-start">
+            <div className="grid md:grid-cols-3 gap-3 flex-1">
+              <div>
+                <div className="text-xs text-muted-foreground">Importadas</div>
+                <div className="text-xl font-semibold">{resultado.resumo.importadas}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Duplicadas</div>
+                <div className="text-xl font-semibold">{resultado.resumo.duplicadas}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Falhas</div>
+                <div className="text-xl font-semibold">{resultado.resumo.erros}</div>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1 shrink-0"
+              onClick={() => void copiarDiagnosticoEntrada()}
+            >
+              <ClipboardList className="h-4 w-4" />
+              {diagCopiado ? 'Copiado!' : 'Copiar diagnóstico'}
+            </button>
+          </div>
+          {resultado.importadas.slice(0, 5).map((r) => (
+            <div key={r.id} className="text-xs text-muted-foreground">
+              <FileCheck className="inline h-3 w-3 mr-1 text-success" />
+              {r.arquivo}
+            </div>
+          ))}
+          {resultado.duplicadas.slice(0, 5).map((r) => (
+            <div key={`${r.arquivo}-${r.chave_acesso}`} className="text-xs text-muted-foreground">
+              <Copy className="inline h-3 w-3 mr-1" />
+              {r.arquivo}
+            </div>
+          ))}
+          {falhasEntrada.length > 0 && (
+            <div className="overflow-x-auto border border-border rounded-md max-h-80 overflow-y-auto">
+              <table className="erp-table text-xs">
+                <thead>
+                  <tr>
+                    <th>Arquivo</th>
+                    <th>Chave</th>
+                    <th>Tipo doc.</th>
+                    <th>Tipo erro</th>
+                    <th>Mensagem</th>
+                    <th>Ação sugerida</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {falhasEntrada.map((row, idx) => (
+                    <tr key={`${row.arquivo}-${idx}`}>
+                      <td className="font-mono max-w-[120px] truncate" title={row.arquivo}>
+                        {row.arquivo}
+                      </td>
+                      <td className="font-mono whitespace-nowrap">{row.chave || '—'}</td>
+                      <td>{row.tipoDocumento}</td>
+                      <td>{row.tipoErro}</td>
+                      <td className="max-w-md whitespace-pre-wrap break-words">{row.mensagemCompleta}</td>
+                      <td className="max-w-xs text-muted-foreground">{row.acaoSugerida}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 

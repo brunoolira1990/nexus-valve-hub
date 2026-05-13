@@ -27,6 +27,7 @@ from .models import (
     CTeHistoricoImportado,
     EventoCTeHistoricoImportado,
     EventoNFeSaidaHistoricaImportada,
+    EventoNFeSaidaHistoricaPendente,
     ItemNFeEntrada,
     ItemNFeEntradaConferencia,
     ItemNFeEntradaHistoricaImportada,
@@ -794,6 +795,34 @@ class EventoNFeSaidaHistoricaImportadaSerializer(serializers.ModelSerializer):
             'nome_arquivo',
             'importado_em',
         )
+
+
+class EventoNFeSaidaHistoricaPendenteSerializer(serializers.ModelSerializer):
+    data_evento = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EventoNFeSaidaHistoricaPendente
+        fields = (
+            'id',
+            'chave_nfe',
+            'tipo_evento',
+            'descricao_evento',
+            'sequencia_evento',
+            'data_evento',
+            'protocolo_evento',
+            'id_evento',
+            'justificativa',
+            'nome_arquivo',
+            'direcao',
+            'status',
+            'mensagem',
+            'nf',
+            'criado_em',
+            'atualizado_em',
+        )
+
+    def get_data_evento(self, obj):
+        return obj.data_evento.isoformat() if obj.data_evento else None
 
 
 class NFeSaidaHistoricaImportadaListSerializer(serializers.ModelSerializer):

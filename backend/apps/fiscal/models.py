@@ -353,6 +353,54 @@ class ItemNFeSaidaHistoricaImportada(models.Model):
         return f'Item {self.n_item} NF hist. {self.nf_id}'
 
 
+class EventoNFeSaidaHistoricaPendente(models.Model):
+    """Evento de NF-e (XML) recebido antes da nota correspondente existir na base — conciliação posterior."""
+
+    class Direcao(models.TextChoices):
+        SAIDA = 'SAIDA', 'Saída'
+        ENTRADA = 'ENTRADA', 'Entrada'
+
+    class Status(models.TextChoices):
+        PENDENTE = 'PENDENTE', 'Pendente'
+        APLICADO = 'APLICADO', 'Aplicado'
+        IGNORADO = 'IGNORADO', 'Ignorado'
+
+    chave_nfe = models.CharField(max_length=44, db_index=True)
+    tipo_evento = models.CharField(max_length=16, db_index=True)
+    descricao_evento = models.CharField(max_length=255, blank=True)
+    sequencia_evento = models.PositiveSmallIntegerField(default=0)
+    data_evento = models.DateTimeField(null=True, blank=True)
+    protocolo_evento = models.CharField(max_length=30, blank=True)
+    id_evento = models.CharField(max_length=80, blank=True)
+    justificativa = models.TextField(blank=True)
+    evento_json = models.JSONField(default=dict, blank=True)
+    nome_arquivo = models.CharField(max_length=255, blank=True)
+    direcao = models.CharField(max_length=8, choices=Direcao.choices, default=Direcao.SAIDA)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDENTE, db_index=True)
+    mensagem = models.TextField(blank=True)
+    nf = models.ForeignKey(
+        NFeSaidaHistoricaImportada,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='eventos_pendentes_resolvidos',
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-criado_em', '-id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['chave_nfe', 'tipo_evento', 'protocolo_evento', 'id_evento'],
+                name='uniq_evento_hist_pendente_dedup',
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f'Evento pendente {self.tipo_evento} chave {self.chave_nfe[:8]}…'
+
+
 class EventoNFeSaidaHistoricaImportada(models.Model):
     nf = models.ForeignKey(
         NFeSaidaHistoricaImportada,
