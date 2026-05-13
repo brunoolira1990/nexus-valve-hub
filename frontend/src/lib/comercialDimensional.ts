@@ -18,15 +18,48 @@ export function unidadesNegociacaoProduto(produto?: Produto | null): string[] {
   return [fallback];
 }
 
+/** Unidades permitidas no pedido de compra (compra → estoque). */
+export function unidadesNegociacaoCompraProduto(produto?: Produto | null): string[] {
+  if (!produto) return ['PC'];
+  const list = (produto.unidades_compra_permitidas?.length ? produto.unidades_compra_permitidas : []) || [];
+  const out = Array.from(new Set(list.map((u) => (u || '').toUpperCase()).filter(Boolean)));
+  if (out.length) return out;
+  const fallback = (
+    produto.unidade_compra_efetiva ||
+    produto.unidade_compra_padrao ||
+    produto.unidade_venda_efetiva ||
+    produto.unidade_venda_padrao ||
+    produto.unidade ||
+    'PC'
+  ).toUpperCase();
+  return [fallback];
+}
+
 export function labelPrecoPorUnidade(unidade?: string): string {
-  const u = (unidade || '').toUpperCase();
+  const u = (unidade || '').trim().toUpperCase();
+  if (!u) return 'Preço unitário';
+  if (u === 'PC') return 'Preço por PC';
   if (u === 'KG') return 'Preço por KG';
-  if (u === 'M') return 'Preço por metro';
-  if (u === 'BR') return 'Preço por barra';
-  if (u === 'TON') return 'Preço por tonelada';
-  if (u === 'PC') return 'Preço por peça';
-  if (u === 'CH') return 'Preço por chapa';
-  return `Preço por ${u || 'unidade'}`;
+  if (u === 'M') return 'Preço por M';
+  if (u === 'BR') return 'Preço por BR';
+  if (u === 'TON') return 'Preço por TON';
+  if (u === 'CH') return 'Preço por CH';
+  if (u === 'UN' || u === 'CJ') return `Preço por ${u}`;
+  return 'Preço unitário';
+}
+
+/** Label comercial para pedidos (valor unitário negociado). */
+export function labelPrecoUnitarioPorUnidade(unidade?: string): string {
+  const u = (unidade || '').trim().toUpperCase();
+  if (!u) return 'Preço unitário';
+  if (u === 'PC') return 'Preço unitário por PC';
+  if (u === 'KG') return 'Preço unitário por KG';
+  if (u === 'M') return 'Preço unitário por M';
+  if (u === 'BR') return 'Preço unitário por BR';
+  if (u === 'TON') return 'Preço unitário por TON';
+  if (u === 'CH') return 'Preço unitário por CH';
+  if (u === 'UN' || u === 'CJ') return `Preço unitário por ${u}`;
+  return 'Preço unitário';
 }
 
 export function previewConversaoItem(item: Pick<ItemProposta, 'quantidade_negociada' | 'quantidade' | 'unidade_negociada' | 'metros_total' | 'peso_total_kg' | 'barras_total' | 'quantidade_estoque_calculada' | 'unidade_estoque_calculada'>): string {

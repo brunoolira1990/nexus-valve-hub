@@ -184,7 +184,7 @@ const NFeHistoricaEntradaImportada = () => {
 
       <div className="erp-card overflow-x-auto">
         <table className="erp-table">
-          <thead><tr><th>Emissão</th><th>NF</th><th>Fornecedor</th><th>Empresa (ERP)</th><th>Valor</th><th>Ações</th></tr></thead>
+          <thead><tr><th>Emissão</th><th>NF</th><th>Fornecedor</th><th>Empresa (ERP)</th><th>Valor</th><th>Conferência</th><th>Ações</th></tr></thead>
           <tbody>
             {filtrados.map((r) => (
               <tr key={r.id}>
@@ -193,6 +193,12 @@ const NFeHistoricaEntradaImportada = () => {
                 <td>{r.fornecedor_nome || '—'}</td>
                 <td>{r.empresa_nome ? `${r.empresa_nome} (${r.papel_empresa || 'destinatario'})` : '—'}</td>
                 <td>R$ {Number(r.valor_total_nf || 0).toFixed(2)}</td>
+                <td className="text-xs">
+                  <div>{r.conferencia_status ?? '—'}</div>
+                  {r.conferencia_status === 'PREPARADA' ? (
+                    <div className="text-muted-foreground mt-0.5">Estoque operacional ainda não aplicado automaticamente.</div>
+                  ) : null}
+                </td>
                 <td>
                   <div className="flex gap-2">
                     <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => {

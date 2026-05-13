@@ -36,6 +36,8 @@ export type NFeEntradaHistoricaList = {
   importada: boolean;
   origem_externa: boolean;
   historica: boolean;
+  conferencia_status?: string | null;
+  conferencia_preparado_em?: string | null;
 };
 
 export type TotaisConsolidadoNFeEntradaHist = {

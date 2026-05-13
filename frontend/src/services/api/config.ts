@@ -73,5 +73,49 @@ export function apiErrorMessage(err: unknown, options: ApiErrorMessageOptions = 
 
 export default api;
 
+/** Mensagem para alert/toast sem vazar HTML de páginas de erro do Django. */
+export function alertMessageFromApiError(err: unknown): string {
+  const ax = err as AxiosError<Record<string, unknown> | string>;
+  const status = ax.response?.status;
+  const d = ax.response?.data;
+
+  if (status != null && status >= 500) {
+    return 'Erro interno ao salvar o pedido de compra. Verifique os dados e tente novamente.';
+  }
+
+  if (typeof d === 'string') {
+    const s = d.trim();
+    const sl = s.toLowerCase();
+    if (sl.startsWith('<!doctype') || sl.startsWith('<html')) {
+      return 'Não foi possível salvar o pedido de compra. Verifique os dados e tente novamente.';
+    }
+    return sanitizeForUser(s, 'Não foi possível salvar o pedido de compra. Verifique os dados e tente novamente.');
+  }
+
+  if (d && typeof d === 'object' && !Array.isArray(d)) {
+    const detail = d.detail;
+    if (typeof detail === 'string') return sanitizeForUser(detail, 'Não foi possível salvar o pedido de compra.');
+    if (Array.isArray(detail)) return detail.map(String).join('\n');
+
+    const lines: string[] = [];
+    for (const [k, v] of Object.entries(d)) {
+      if (k === 'detail') continue;
+      if (Array.isArray(v)) lines.push(...v.map((x) => `${k}: ${String(x)}`));
+      else if (typeof v === 'string') lines.push(`${k}: ${v}`);
+    }
+    if (lines.length) return lines.join('\n');
+  }
+
+  return 'Não foi possível salvar o pedido de compra. Verifique os dados e tente novamente.';
+}
+
+function sanitizeForUser(message: string, fallback: string): string {
+  if (!message) return fallback;
+  const normalized = String(message).replace(/\s+/g, ' ').trim();
+  const withoutTags = normalized.replace(/<[^>]*>/g, '').trim();
+  const value = withoutTags || fallback;
+  return value.length > 220 ? `${value.slice(0, 217)}...` : value;
+}
+
 /** Mantido para compatibilidade; não usar em chamadas reais. */
 export const delay = (ms = 300) => new Promise((r) => setTimeout(r, ms));

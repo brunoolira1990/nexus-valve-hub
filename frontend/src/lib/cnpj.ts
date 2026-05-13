@@ -3,6 +3,13 @@ export function normalizeCnpj(value: string): string {
   return value.replace(/\D/g, '').slice(0, 14);
 }
 
+/** Formata CNPJ para exibição (14 dígitos); caso incompleto, devolve o texto trimado. */
+export function formatCnpjDisplay(value: string): string {
+  const c = normalizeCnpj(value);
+  if (c.length !== 14) return (value || '').trim() || '—';
+  return `${c.slice(0, 2)}.${c.slice(2, 5)}.${c.slice(5, 8)}/${c.slice(8, 12)}-${c.slice(12)}`;
+}
+
 /** Valida dígitos verificadores do CNPJ (após normalização). */
 export function isValidCnpj(value: string): boolean {
   const c = normalizeCnpj(value);

@@ -10,6 +10,7 @@ export type ConsultaCepResponse = {
 };
 
 export type ConsultaCnpjResponse = {
+  cnpj?: string;
   razao_social: string;
   nome_fantasia?: string;
   logradouro: string;
@@ -20,6 +21,7 @@ export type ConsultaCnpjResponse = {
   uf: string;
   cep: string;
   telefone: string;
+  email?: string;
 };
 
 /** GET /api/consulta-cep/<cep>/ — `cep` pode vir formatado; o backend normaliza. */

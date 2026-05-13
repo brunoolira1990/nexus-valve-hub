@@ -14,7 +14,11 @@ from .serializers import (
     FornecedorSerializer,
     TransportadoraSerializer,
 )
-from django.db.models import Q
+from django.db.models import Case, Q, When
+
+
+def _digits_only(s: str) -> str:
+    return ''.join(ch for ch in (s or '') if ch.isdigit())
 
 
 class EmpresaViewSet(viewsets.ModelViewSet):
@@ -72,23 +76,64 @@ class FornecedorViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = super().get_queryset().order_by('razao_social')
+        qs = Fornecedor.objects.all()
         search = (self.request.query_params.get('search') or '').strip()
-        if search:
-            qs = qs.filter(
-                Q(razao_social__icontains=search)
-                | Q(nome_fantasia__icontains=search)
-                | Q(cnpj__icontains=search)
-                | Q(cidade__icontains=search)
-                | Q(ie__icontains=search),
-            )
-        limit = self.request.query_params.get('limit')
-        if limit:
+        limit_raw = self.request.query_params.get('limit')
+        limit = 20
+        if limit_raw:
             try:
-                qs = qs[: max(1, min(int(limit), 100))]
+                limit = max(1, min(int(limit_raw), 100))
             except (TypeError, ValueError):
                 pass
-        return qs
+
+        if not search:
+            return qs.order_by('razao_social')
+
+        s = search.strip()
+        s_lower = s.lower()
+        digits = _digits_only(s)
+
+        q = (
+            Q(razao_social__icontains=s)
+            | Q(nome_fantasia__icontains=s)
+            | Q(cnpj__icontains=s)
+            | Q(cidade__icontains=s)
+            | Q(uf__icontains=s)
+            | Q(ie__icontains=s)
+            | Q(telefone__icontains=s)
+            | Q(email__icontains=s)
+        )
+        if len(s) == 2 and s.isalpha():
+            q |= Q(uf__iexact=s.upper())
+
+        matched = list(qs.filter(q).distinct()[:250])
+
+        def sort_key(f: Fornecedor):
+            cnpj_d = _digits_only(f.cnpj or '')
+            rz = (f.razao_social or '').lower()
+            nf = (f.nome_fantasia or '').lower()
+            if len(digits) == 14 and cnpj_d == digits:
+                return (0, rz)
+            if rz.startswith(s_lower):
+                return (1, rz)
+            if nf.startswith(s_lower):
+                return (2, rz)
+            if s_lower in rz:
+                return (3, rz)
+            if s_lower in nf:
+                return (4, rz)
+            if digits and digits in cnpj_d:
+                return (5, rz)
+            return (6, rz)
+
+        matched.sort(key=sort_key)
+        matched = matched[:limit]
+        if not matched:
+            return qs.none()
+
+        ids = [f.id for f in matched]
+        preserved = Case(*[When(pk=pk, then=pos) for pos, pk in enumerate(ids)])
+        return qs.filter(pk__in=ids).order_by(preserved)
 
 
 class TransportadoraViewSet(viewsets.ModelViewSet):

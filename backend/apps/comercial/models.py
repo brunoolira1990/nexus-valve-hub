@@ -165,6 +165,21 @@ class ItemPedidoVenda(models.Model):
     snapshot_produto = models.JSONField(default=dict, blank=True)
 
 
+class SequenciaPedidoCompra(models.Model):
+    """Controle de sequência diária para numeração PC-AAAAMMDD-NNNN."""
+
+    data_referencia = models.DateField(unique=True, db_index=True)
+    proximo_numero = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        ordering = ['-data_referencia']
+        verbose_name = 'Sequência pedido de compra'
+        verbose_name_plural = 'Sequências pedidos de compra'
+
+    def __str__(self):
+        return f'{self.data_referencia} → próximo {self.proximo_numero}'
+
+
 class PedidoCompra(models.Model):
     numero = models.CharField(max_length=32, unique=True)
     fornecedor = models.ForeignKey(
@@ -179,6 +194,8 @@ class PedidoCompra(models.Model):
     quantidade_parcelas = models.PositiveSmallIntegerField(default=0)
     vencimentos_previstos = ArrayField(models.DateField(), default=_default_datas, blank=True)
     valor_total = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
+    prazo_entrega_texto = models.CharField(max_length=255, blank=True)
+    data_prevista_entrega = models.DateField(null=True, blank=True)
 
     class Meta:
         ordering = ['-data', 'numero']
@@ -201,3 +218,12 @@ class ItemPedidoCompra(models.Model):
     preco_por_metro = models.DecimalField(max_digits=14, decimal_places=4, default=Decimal('0'))
     fator_conversao = models.DecimalField(max_digits=14, decimal_places=6, default=Decimal('0'))
     snapshot_produto = models.JSONField(default=dict, blank=True)
+    ipi_percentual = models.DecimalField(max_digits=7, decimal_places=4, default=Decimal('0'))
+    ipi_valor = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
+    icms_st_percentual = models.DecimalField(max_digits=7, decimal_places=4, default=Decimal('0'))
+    icms_st_valor = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
+    desconto_valor = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
+    frete_valor = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
+    outras_despesas_valor = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
+    valor_produtos = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
+    valor_total_item = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))

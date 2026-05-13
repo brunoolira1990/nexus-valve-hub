@@ -14,6 +14,26 @@ def _normalize_text(value: str) -> str:
     return normalized.strip().lower()
 
 
+def _is_indeterminate_payment(normalized: str) -> bool:
+    """Condições em que não calculamos vencimentos nem quantidade de parcelas a partir de dias."""
+    if not normalized:
+        return False
+    markers = (
+        "a combinar",
+        "a combinar.",
+        "sob consulta",
+        "apos aprovacao",
+        "apos aprovacao do pedido",
+        "apos pagamento",
+        "apos pagamento do pedido",
+        "a definir",
+        "negociar",
+        "conforme negocio",
+        "conforme negociacao",
+    )
+    return any(m in normalized for m in markers)
+
+
 def parse_payment_condition(text: str) -> list[int]:
     raw = (text or "").strip()
     if raw == "":
@@ -22,6 +42,9 @@ def parse_payment_condition(text: str) -> list[int]:
     normalized = _normalize_text(raw)
     normalized = normalized.replace("ddl", " ")
     normalized = re.sub(r"\s+", " ", normalized).strip()
+
+    if _is_indeterminate_payment(normalized):
+        return []
 
     if normalized in {"a vista", "avista", "0"}:
         return [0]

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 type Key = number | string;
 
@@ -12,6 +12,12 @@ export type AsyncAutocompleteProps<T> = {
   search: (term: string, limit?: number) => Promise<T[]>;
   getOptionValue: (option: T) => Key;
   getOptionLabel: (option: T) => string;
+  /** Se definido, substitui o texto simples da lista (ex.: várias linhas por opção). */
+  renderOption?: (option: T) => ReactNode;
+  /** Rodapé fixo dentro da lista (ex.: cadastro rápido), após resultados ou mensagem. */
+  renderListFooter?: (ctx: { term: string; options: T[]; loading: boolean; error: string | null }) => ReactNode;
+  /** Classes extras para o painel da lista (ex.: largura mínima). */
+  listBoxClassName?: string;
   onChange: (value: Key | null, option?: T | null) => void;
 };
 
@@ -25,6 +31,9 @@ export function AsyncAutocomplete<T>({
   search,
   getOptionValue,
   getOptionLabel,
+  renderOption,
+  renderListFooter,
+  listBoxClassName,
   onChange,
 }: AsyncAutocompleteProps<T>) {
   const [open, setOpen] = useState(false);
@@ -100,7 +109,12 @@ export function AsyncAutocomplete<T>({
       ) : null}
 
       {open ? (
-        <div className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-md border border-border bg-background shadow">
+        <div
+          className={
+            listBoxClassName ??
+            'absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-md border border-border bg-background shadow'
+          }
+        >
           {term.trim().length < minChars ? (
             <p className="px-3 py-2 text-xs text-muted-foreground">Digite ao menos {minChars} caracteres para buscar.</p>
           ) : loading ? (
@@ -117,20 +131,25 @@ export function AsyncAutocomplete<T>({
                   <li key={String(key)}>
                     <button
                       type="button"
-                      className="w-full px-3 py-2 text-left text-sm hover:bg-muted"
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-muted whitespace-normal"
                       onClick={() => {
                         onChange(key, opt);
                         setOpen(false);
                         setTerm('');
                       }}
                     >
-                      {getOptionLabel(opt)}
+                      {renderOption ? renderOption(opt) : getOptionLabel(opt)}
                     </button>
                   </li>
                 );
               })}
             </ul>
           )}
+          {renderListFooter && term.trim().length >= minChars && !loading ? (
+            <div className="border-t border-border bg-muted/30">
+              {renderListFooter({ term: term.trim(), options, loading, error })}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

@@ -314,6 +314,7 @@ class NFeEntradaHistoricaImportadaViewSet(viewsets.ReadOnlyModelViewSet):
                 qs = qs.filter(fornecedor_emitente_id=fid)
             if str(p.get('apenas_compras_destinatario_erp', '')).lower() in {'1', 'true', 'sim'}:
                 qs = queryset_compras_nf_entrada_historica(qs)
+            qs = qs.select_related('conferencia')
         return qs
 
     def get_serializer_class(self):

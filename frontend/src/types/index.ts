@@ -742,6 +742,16 @@ export interface ItemPedido {
   fator_conversao?: number;
   corrida_id?: number;
   corrida_numero?: string;
+  /** Alinhado a vProd / vIPI / vST / vDesc / vFrete / vOutro (NF-e). */
+  ipi_percentual?: number;
+  ipi_valor?: number;
+  icms_st_percentual?: number;
+  icms_st_valor?: number;
+  desconto_valor?: number;
+  frete_valor?: number;
+  outras_despesas_valor?: number;
+  valor_produtos?: number;
+  valor_total_item?: number;
 }
 
 export interface PedidoVenda {
@@ -774,6 +784,17 @@ export interface PedidoCompra {
   quantidade_parcelas: number;
   vencimentos_previstos: string[];
   valor_total: number;
+  prazo_entrega_texto?: string;
+  data_prevista_entrega?: string | null;
+  resumo_financeiro_pedido?: {
+    subtotal_produtos: number;
+    total_ipi: number;
+    total_icms_st: number;
+    total_descontos: number;
+    total_frete: number;
+    total_outras_despesas: number;
+    valor_total_pedido: number;
+  };
   itens: ItemPedido[];
 }
 

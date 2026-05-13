@@ -55,6 +55,16 @@
   .erp-input {
     @apply flex h-10 w-full rounded-md border border-input bg-card px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
   }
+  /* Remove spinners em inputs numéricos (Chrome / Firefox). */
+  .erp-input[type='number']::-webkit-outer-spin-button,
+  .erp-input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .erp-input[type='number'] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
   .erp-select {
     @apply flex h-10 w-full rounded-md border border-input bg-card px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring;
   }

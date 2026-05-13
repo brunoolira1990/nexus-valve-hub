@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from django.db import IntegrityError
 from rest_framework import serializers
 
 from apps.cadastros.models import Cliente, Empresa, Fornecedor
@@ -10,6 +11,8 @@ from apps.produtos.models import Produto
 from apps.produtos.snapshot import build_produto_snapshot
 from apps.comercial.payment_terms import compute_due_dates, parse_payment_condition
 from apps.comercial.conversao_item_comercial import calcular_item_comercial_com_conversao
+from apps.comercial.pedido_compra_finance import calcular_financeiro_item_pedido_compra
+from apps.comercial.pedido_compra_numero import alocar_numero_pedido_compra
 from apps.text_normalize import normalize_operational_fields, to_operational_upper
 
 from .models import (
@@ -49,10 +52,7 @@ def recalcular_pedido_venda(pedido: PedidoVenda) -> None:
 
 
 def recalcular_pedido_compra(pedido: PedidoCompra) -> None:
-    total = sum(
-        (_dec(it.quantidade_negociada or it.quantidade) * _dec(it.preco_por_unidade_negociada or it.valor_unitario) for it in pedido.itens.all()),
-        Decimal('0'),
-    )
+    total = sum((_dec(getattr(it, 'valor_total_item', None) or Decimal('0')) for it in pedido.itens.all()), Decimal('0'))
     pedido.valor_total = total
     pedido.save(update_fields=['valor_total'])
 
@@ -738,6 +738,15 @@ class ItemPedidoCompraSerializer(serializers.ModelSerializer):
             'preco_por_metro',
             'fator_conversao',
             'snapshot_produto',
+            'ipi_percentual',
+            'ipi_valor',
+            'icms_st_percentual',
+            'icms_st_valor',
+            'desconto_valor',
+            'frete_valor',
+            'outras_despesas_valor',
+            'valor_produtos',
+            'valor_total_item',
         )
 
     def get_produto_nome(self, obj):
@@ -752,8 +761,12 @@ class ItemPedidoCompraSerializer(serializers.ModelSerializer):
         attrs = super().validate(attrs)
         normalize_operational_fields(attrs, {'unidade_negociada'})
         produto = attrs.get('produto', self.instance.produto if self.instance else None)
+        if not produto:
+            raise serializers.ValidationError({'produto_id': 'Selecione o produto Nexus para o item.'})
         quantidade = _dec(attrs.get('quantidade', self.instance.quantidade if self.instance else Decimal('0')))
         unidade_negociada = (attrs.get('unidade_negociada', self.instance.unidade_negociada if self.instance else '') or '').strip().upper()
+        if not unidade_negociada:
+            raise serializers.ValidationError({'unidade_negociada': 'Selecione a unidade negociada.'})
         quantidade_neg = _dec(attrs.get('quantidade_negociada', quantidade)) or quantidade
         preco = _dec(
             attrs.get(
@@ -761,6 +774,27 @@ class ItemPedidoCompraSerializer(serializers.ModelSerializer):
                 attrs.get('valor_unitario', self.instance.valor_unitario if self.instance else Decimal('0')),
             )
         )
+
+        def gv(key):
+            if key in attrs and attrs[key] is not None:
+                return _dec(attrs[key])
+            if self.instance is not None:
+                return _dec(getattr(self.instance, key))
+            return Decimal('0')
+
+        neg_checks = (
+            ('ipi_percentual', 'IPI % não pode ser negativo.'),
+            ('ipi_valor', 'Valor de IPI não pode ser negativo.'),
+            ('icms_st_percentual', 'ICMS ST % não pode ser negativo.'),
+            ('icms_st_valor', 'Valor de ICMS ST não pode ser negativo.'),
+            ('desconto_valor', 'Desconto não pode ser negativo.'),
+            ('frete_valor', 'Frete não pode ser negativo.'),
+            ('outras_despesas_valor', 'Outras despesas não podem ser negativas.'),
+        )
+        for key, msg in neg_checks:
+            if gv(key) < 0:
+                raise serializers.ValidationError({key: msg})
+
         calc = calcular_item_comercial_com_conversao(
             produto=produto,
             quantidade_negociada=quantidade_neg,
@@ -771,6 +805,21 @@ class ItemPedidoCompraSerializer(serializers.ModelSerializer):
         attrs.update({k: v for k, v in calc.items() if k not in {'alertas_conversao', 'valor_total_calculado'}})
         if produto:
             attrs['snapshot_produto'] = build_produto_snapshot(produto)
+
+        qn = _dec(attrs.get('quantidade_negociada', quantidade_neg))
+        pr = _dec(attrs.get('preco_por_unidade_negociada', preco))
+        fin = calcular_financeiro_item_pedido_compra(
+            quantidade_negociada=qn,
+            preco_por_unidade_negociada=pr,
+            ipi_percentual=gv('ipi_percentual'),
+            ipi_valor_informado=gv('ipi_valor'),
+            icms_st_percentual=gv('icms_st_percentual'),
+            icms_st_valor_informado=gv('icms_st_valor'),
+            desconto_valor=gv('desconto_valor'),
+            frete_valor=gv('frete_valor'),
+            outras_despesas_valor=gv('outras_despesas_valor'),
+        )
+        attrs.update(fin)
         return attrs
 
 
@@ -781,6 +830,9 @@ class PedidoCompraSerializer(serializers.ModelSerializer):
     )
     fornecedor_nome = serializers.SerializerMethodField(read_only=True)
     itens = ItemPedidoCompraSerializer(many=True)
+    data_prevista_entrega = serializers.DateField(required=False, allow_null=True)
+    resumo_financeiro_pedido = serializers.SerializerMethodField(read_only=True)
+    numero = serializers.CharField(max_length=32, required=False, allow_blank=True)
 
     class Meta:
         model = PedidoCompra
@@ -796,11 +848,33 @@ class PedidoCompraSerializer(serializers.ModelSerializer):
             'quantidade_parcelas',
             'vencimentos_previstos',
             'valor_total',
+            'prazo_entrega_texto',
+            'data_prevista_entrega',
+            'resumo_financeiro_pedido',
             'itens',
         )
 
     def get_fornecedor_nome(self, obj):
         return obj.fornecedor.razao_social
+
+    def get_resumo_financeiro_pedido(self, obj):
+        sub = ipi = st = desc = frete = outras = Decimal('0')
+        for it in obj.itens.all():
+            sub += _dec(it.valor_produtos)
+            ipi += _dec(it.ipi_valor)
+            st += _dec(it.icms_st_valor)
+            desc += _dec(it.desconto_valor)
+            frete += _dec(it.frete_valor)
+            outras += _dec(it.outras_despesas_valor)
+        return {
+            'subtotal_produtos': float(_round(sub)),
+            'total_ipi': float(_round(ipi)),
+            'total_icms_st': float(_round(st)),
+            'total_descontos': float(_round(desc)),
+            'total_frete': float(_round(frete)),
+            'total_outras_despesas': float(_round(outras)),
+            'valor_total_pedido': float(_round(_dec(obj.valor_total))),
+        }
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -808,11 +882,25 @@ class PedidoCompraSerializer(serializers.ModelSerializer):
         data['data'] = instance.data.isoformat()
         data['vencimentos_previstos'] = [d.isoformat() for d in instance.vencimentos_previstos]
         data['valor_total'] = float(instance.valor_total)
+        data['data_prevista_entrega'] = instance.data_prevista_entrega.isoformat() if instance.data_prevista_entrega else None
         return data
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
-        normalize_operational_fields(attrs, {'numero', 'status', 'condicao_pagamento_texto'})
+        if self.instance is not None:
+            attrs.pop('numero', None)
+        else:
+            raw_num = (attrs.get('numero') or '').strip()
+            if raw_num:
+                attrs['numero'] = raw_num
+                if PedidoCompra.objects.filter(numero=raw_num).exists():
+                    raise serializers.ValidationError(
+                        {'numero': ['Já existe um pedido de compra com este número.']}
+                    )
+            else:
+                attrs.pop('numero', None)
+
+        normalize_operational_fields(attrs, {'status', 'condicao_pagamento_texto', 'prazo_entrega_texto'})
         texto = attrs.get(
             'condicao_pagamento_texto',
             self.instance.condicao_pagamento_texto if self.instance else '',
@@ -822,21 +910,41 @@ class PedidoCompraSerializer(serializers.ModelSerializer):
         attrs['dias_parcelas'] = dias
         attrs['quantidade_parcelas'] = len(dias)
         attrs['vencimentos_previstos'] = compute_due_dates(data_base, dias)
+        itens = attrs.get('itens')
+        if self.instance is None:
+            if not itens:
+                raise serializers.ValidationError({'itens': 'Inclua ao menos um item no pedido.'})
+        elif itens is not None and len(itens) == 0:
+            raise serializers.ValidationError({'itens': 'O pedido deve manter ao menos um item.'})
         return attrs
 
     def create(self, validated_data):
         itens_data = validated_data.pop('itens')
-        pedido = PedidoCompra.objects.create(**validated_data)
+        data_pedido = validated_data['data']
+        if not (validated_data.get('numero') or '').strip():
+            validated_data['numero'] = alocar_numero_pedido_compra(data_pedido)
+        try:
+            pedido = PedidoCompra.objects.create(**validated_data)
+        except IntegrityError:
+            raise serializers.ValidationError(
+                {'numero': ['Já existe um pedido de compra com este número.']}
+            ) from None
         for item in itens_data:
             ItemPedidoCompra.objects.create(pedido=pedido, **item)
         recalcular_pedido_compra(pedido)
         return pedido
 
     def update(self, instance, validated_data):
+        validated_data.pop('numero', None)
         itens_data = validated_data.pop('itens', None)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
-        instance.save()
+        try:
+            instance.save()
+        except IntegrityError:
+            raise serializers.ValidationError(
+                {'detail': 'Não foi possível salvar o pedido de compra. Verifique se o número já existe.'}
+            ) from None
         if itens_data is not None:
             instance.itens.all().delete()
             for item in itens_data:

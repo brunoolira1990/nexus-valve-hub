@@ -1,6 +1,7 @@
 from decimal import Decimal
 from typing import Any
 
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
@@ -455,6 +456,8 @@ class NFeEntradaHistoricaImportadaListSerializer(serializers.ModelSerializer):
     papel_empresa = serializers.SerializerMethodField(read_only=True)
     fornecedor_cnpj = serializers.SerializerMethodField(read_only=True)
     fornecedor_id = serializers.SerializerMethodField(read_only=True)
+    conferencia_status = serializers.SerializerMethodField(read_only=True)
+    conferencia_preparado_em = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = NFeEntradaHistoricaImportada
@@ -486,6 +489,8 @@ class NFeEntradaHistoricaImportadaListSerializer(serializers.ModelSerializer):
             'importada',
             'origem_externa',
             'historica',
+            'conferencia_status',
+            'conferencia_preparado_em',
         )
 
     def get_empresa_id(self, obj):
@@ -507,6 +512,19 @@ class NFeEntradaHistoricaImportadaListSerializer(serializers.ModelSerializer):
 
     def get_papel_empresa(self, obj):
         return obj.papel_empresa_no_documento or ('destinatario' if obj.empresa_destinataria_id else '')
+
+    def get_conferencia_status(self, obj):
+        try:
+            return obj.conferencia.status
+        except ObjectDoesNotExist:
+            return None
+
+    def get_conferencia_preparado_em(self, obj):
+        try:
+            c = obj.conferencia
+        except ObjectDoesNotExist:
+            return None
+        return c.preparado_em.isoformat() if c.preparado_em else None
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

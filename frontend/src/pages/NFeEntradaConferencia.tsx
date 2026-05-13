@@ -194,6 +194,10 @@ const NFeEntradaConferenciaPage = () => {
         <button className="erp-btn-outline" onClick={() => void salvar()} disabled={busy}>Salvar conferência</button>
         <button className="erp-btn-primary" onClick={() => void preparar()} disabled={busy}>Preparar estoque</button>
       </div>
+      <p className="text-xs text-muted-foreground mt-3 max-w-3xl ml-auto text-right">
+        &quot;Preparar estoque&quot; grava a conferência como PREPARADA (validações no servidor). Ainda não há endpoint que incremente{' '}
+        <span className="font-mono">EstoqueCorrida</span> a partir desta NF histórica; isso virá na fase de aplicação de estoque.
+      </p>
     </div>
   );
 };
