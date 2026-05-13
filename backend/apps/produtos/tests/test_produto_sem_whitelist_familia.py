@@ -91,7 +91,7 @@ class ProdutoSemWhitelistFamiliaTests(TestCase):
         self.assertTrue(d.get('_codigo'))
         desc = d.get('_descricao') or ''
         self.assertIn('BSP', desc)
-        self.assertIn('LUVA AÇO INOX 316 3000#', desc)
+        self.assertIn('LUVA ACO INOX 316 3000#', desc)
         self.assertRegex(desc, r'1/2')
 
     def test_expand_siglas_valvula_descricao(self):
@@ -160,7 +160,7 @@ class ProdutoSemWhitelistFamiliaTests(TestCase):
         self.assertNotIn('Configure as polegadas permitidas', blob)
         self.assertIn('SCH 40', ser.validated_data.get('_descricao') or '')
         desc = ser.validated_data.get('_descricao') or ''
-        self.assertIn('FLANGE SW AÇO RF', desc)
+        self.assertIn('FLANGE SW ACO RF', desc)
         self.assertRegex(desc, r'6["\u201d]')
 
     def test_polegada_obrigatoria_sem_mensagem_whitelist(self):

@@ -20,6 +20,7 @@ from apps.produtos.familia_regra import aplicar_flags_derivadas_no_dict
 from apps.produtos.conversao_medidas import ConversaoErro, converter_quantidade_produto
 from apps.produtos.polegadas import aliases_for_polegada, normalize_polegada_label, parse_polegada_to_decimal
 from apps.text_normalize import normalize_operational_fields, to_operational_upper
+from apps.produtos.descricao_norm import normalizar_descricao_produto
 from apps.produtos.models import (
     FamiliaProdutoPolegadaPermitida,
     FamiliaProdutoRoscaConexaoPermitida,
@@ -223,6 +224,8 @@ class FamiliaProdutoSerializer(serializers.ModelSerializer):
                 'categoria_produto',
             },
         )
+        if attrs.get('descricao_base'):
+            attrs['descricao_base'] = normalizar_descricao_produto(attrs['descricao_base'])
         tipo = attrs.get('tipo_regra_codigo')
         if tipo is None and inst is not None:
             tipo = inst.tipo_regra_codigo
@@ -501,6 +504,9 @@ class ProdutoSerializer(serializers.ModelSerializer):
                 'dimensao_descricao',
             },
         )
+        for _k in ('descricao', 'dimensao_descricao'):
+            if attrs.get(_k):
+                attrs[_k] = normalizar_descricao_produto(attrs[_k])
 
         def pick(name: str):
             if name in attrs:

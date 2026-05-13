@@ -28,8 +28,49 @@ from apps.produtos.serializers import (
     RoscaConexaoSerializer,
     ScheduleEspessuraSerializer,
 )
-from django.db.models import Case, IntegerField, Q, Value, When
+from django.db.models import Q, Value
+from django.db.models.functions import Coalesce
 from apps.produtos.polegadas import extract_mm_from_term
+from apps.produtos.sorting import (
+    natural_codigo_completo_key,
+    natural_codigo_figura_key,
+    rosca_ordenacao_tuple,
+    schedule_ordenacao_tuple,
+)
+
+
+def _familia_busca_rank(term: str, obj: FamiliaProduto) -> int:
+    q = term.lower()
+    cf = (obj.codigo_figura or '').lower()
+    db = (obj.descricao_base or '').lower()
+    if cf == q:
+        return 0
+    if cf.startswith(q):
+        return 1
+    if db.startswith(q):
+        return 2
+    if q in db:
+        return 3
+    if q in cf:
+        return 4
+    return 5
+
+
+def _produto_busca_rank(term: str, obj: Produto) -> int:
+    q = term.lower()
+    cc = (obj.codigo_completo or '').lower()
+    dsc = (obj.descricao or '').lower()
+    if cc == q:
+        return 0
+    if cc.startswith(q):
+        return 1
+    if dsc.startswith(q):
+        return 2
+    if q in dsc:
+        return 3
+    if q in cc:
+        return 4
+    return 5
 
 
 class FamiliaProdutoViewSet(viewsets.ModelViewSet):
@@ -50,7 +91,23 @@ class FamiliaProdutoViewSet(viewsets.ModelViewSet):
             qs = qs.filter(Q(codigo_figura__icontains=q) | Q(descricao_base__icontains=q))
         if self.request.query_params.get('apenas_ativas') == '1':
             qs = qs.filter(ativo=True)
-        return qs.order_by('codigo_figura')
+        return qs
+
+    def list(self, request, *args, **kwargs):
+        qs = self.filter_queryset(self.get_queryset())
+        term = (request.query_params.get('search') or '').strip()
+        rows = list(qs)
+        if term:
+            rows.sort(
+                key=lambda o: (
+                    _familia_busca_rank(term, o),
+                    natural_codigo_figura_key(o.codigo_figura or ''),
+                ),
+            )
+        else:
+            rows.sort(key=lambda o: natural_codigo_figura_key(o.codigo_figura or ''))
+        serializer = self.get_serializer(rows, many=True)
+        return Response(serializer.data)
 
 
 class RoscaConexaoViewSet(viewsets.ModelViewSet):
@@ -58,19 +115,25 @@ class RoscaConexaoViewSet(viewsets.ModelViewSet):
     serializer_class = RoscaConexaoSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset().order_by('codigo')
+        qs = super().get_queryset()
         search = (self.request.query_params.get('search') or '').strip()
         if search:
             qs = qs.filter(Q(codigo__icontains=search) | Q(descricao__icontains=search))
         if self.request.query_params.get('apenas_ativas') == '1':
             qs = qs.filter(ativo=True)
-        limit = self.request.query_params.get('limit')
-        if limit:
+        return qs
+
+    def list(self, request, *args, **kwargs):
+        qs = self.filter_queryset(self.get_queryset())
+        rows = list(qs)
+        rows.sort(key=lambda o: rosca_ordenacao_tuple(o.codigo or ''))
+        lim = request.query_params.get('limit')
+        if lim:
             try:
-                qs = qs[: max(1, min(int(limit), 100))]
+                rows = rows[: max(1, min(int(lim), 100))]
             except (TypeError, ValueError):
                 pass
-        return qs
+        return Response(self.get_serializer(rows, many=True).data)
 
 
 class ScheduleEspessuraViewSet(viewsets.ModelViewSet):
@@ -78,7 +141,7 @@ class ScheduleEspessuraViewSet(viewsets.ModelViewSet):
     serializer_class = ScheduleEspessuraSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset().order_by('ordem', 'codigo_schedule')
+        qs = super().get_queryset()
         search = (self.request.query_params.get('search') or '').strip()
         if search:
             qs = qs.filter(
@@ -89,13 +152,25 @@ class ScheduleEspessuraViewSet(viewsets.ModelViewSet):
             )
         if self.request.query_params.get('apenas_ativas') == '1':
             qs = qs.filter(ativo=True)
-        limit = self.request.query_params.get('limit')
-        if limit:
+        return qs
+
+    def list(self, request, *args, **kwargs):
+        qs = self.filter_queryset(self.get_queryset())
+        rows = list(qs)
+        rows.sort(
+            key=lambda o: schedule_ordenacao_tuple(
+                ordem=o.ordem,
+                codigo_schedule=o.codigo_schedule or '',
+                codigo=o.codigo or '',
+            ),
+        )
+        lim = request.query_params.get('limit')
+        if lim:
             try:
-                qs = qs[: max(1, min(int(limit), 100))]
+                rows = rows[: max(1, min(int(lim), 100))]
             except (TypeError, ValueError):
                 pass
-        return qs
+        return Response(self.get_serializer(rows, many=True).data)
 
 
 class FamiliaProdutoPolegadaPermitidaViewSet(viewsets.ModelViewSet):
@@ -127,14 +202,6 @@ class ProdutoViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         search = (self.request.query_params.get('search') or '').strip()
-        limit_raw = self.request.query_params.get('limit')
-        lim = None
-        if limit_raw:
-            try:
-                lim = max(1, min(int(limit_raw), 100))
-            except (TypeError, ValueError):
-                lim = None
-
         if search:
             qs = qs.filter(
                 Q(codigo_completo__icontains=search)
@@ -153,26 +220,31 @@ class ProdutoViewSet(viewsets.ModelViewSet):
                 | Q(familia__descricao_base__icontains=search)
                 | Q(familia__ncm_padrao__codigo__icontains=search)
             )
-            if lim is not None:
-                qs = (
-                    qs.annotate(
-                        _search_rank=Case(
-                            When(codigo_completo__iexact=search, then=Value(0)),
-                            When(codigo_completo__istartswith=search, then=Value(1)),
-                            default=Value(2),
-                            output_field=IntegerField(),
-                        )
-                    )
-                    .order_by('_search_rank', 'codigo_completo')[:lim]
-                )
-                return qs
-            qs = qs.order_by('-id')
-        else:
-            qs = qs.order_by('-id')
-
-        if lim is not None:
-            qs = qs[:lim]
         return qs
+
+    def list(self, request, *args, **kwargs):
+        qs = self.filter_queryset(self.get_queryset())
+        term = (request.query_params.get('search') or '').strip()
+        limit_raw = request.query_params.get('limit')
+        lim = None
+        if limit_raw:
+            try:
+                lim = max(1, min(int(limit_raw), 100))
+            except (TypeError, ValueError):
+                lim = None
+        rows = list(qs)
+        if term:
+            rows.sort(
+                key=lambda o: (
+                    _produto_busca_rank(term, o),
+                    natural_codigo_completo_key(o.codigo_completo or ''),
+                ),
+            )
+        else:
+            rows.sort(key=lambda o: natural_codigo_completo_key(o.codigo_completo or ''))
+        if lim is not None:
+            rows = rows[:lim]
+        return Response(self.get_serializer(rows, many=True).data)
 
     @action(detail=False, methods=['post'], url_path='preview-codigo')
     def preview_codigo(self, request):
@@ -232,7 +304,16 @@ class PolegadaViewSet(viewsets.ModelViewSet):
     serializer_class = PolegadaSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset().order_by('valor_decimal')
+        hi = Decimal('999999999')
+        qs = (
+            super()
+            .get_queryset()
+            .annotate(
+                _sort_vd=Coalesce('valor_decimal', Value(hi)),
+                _sort_mm=Coalesce('valor_mm', Value(hi)),
+            )
+            .order_by('tipo_medida', '_sort_vd', '_sort_mm', 'codigo_oficial')
+        )
         tipo_medida = (self.request.query_params.get('tipo_medida') or '').strip().upper()
         if tipo_medida in {Polegada.TipoMedida.NPS, Polegada.TipoMedida.OD}:
             qs = qs.filter(tipo_medida=tipo_medida)
@@ -248,16 +329,21 @@ class PolegadaViewSet(viewsets.ModelViewSet):
             )
             mm = extract_mm_from_term(search)
             if mm is not None and (not tipo_medida or tipo_medida == Polegada.TipoMedida.OD):
-                tol =  Decimal('0.05')
+                tol = Decimal('0.05')
                 query = query | Q(valor_mm__gte=mm - tol, valor_mm__lte=mm + tol)
             qs = qs.filter(query)
-        limit = self.request.query_params.get('limit')
-        if limit:
+        return qs
+
+    def list(self, request, *args, **kwargs):
+        qs = self.filter_queryset(self.get_queryset())
+        lim = request.query_params.get('limit')
+        rows = list(qs)
+        if lim:
             try:
-                qs = qs[: max(1, min(int(limit), 100))]
+                rows = rows[: max(1, min(int(lim), 100))]
             except (TypeError, ValueError):
                 pass
-        return qs
+        return Response(self.get_serializer(rows, many=True).data)
 
 
 class NcmViewSet(viewsets.ReadOnlyModelViewSet):

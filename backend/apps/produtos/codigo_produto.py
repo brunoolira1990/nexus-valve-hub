@@ -41,7 +41,10 @@ def expandir_siglas_valvula_descricao_base(text: str) -> str:
 
 
 def _base_descricao_comercial(familia: 'FamiliaProduto') -> str:
-    return _normalize_spaces(expandir_siglas_valvula_descricao_base(familia.descricao_base or ''))
+    from apps.produtos.descricao_norm import normalizar_descricao_produto
+
+    raw = expandir_siglas_valvula_descricao_base(familia.descricao_base or '')
+    return normalizar_descricao_produto(_normalize_spaces(raw))
 
 
 def _token_in_text(text: str, token: str) -> bool:
@@ -206,10 +209,10 @@ def montar_codigo_interno(
             return ''
         return f'{fig}{sep}{lar}X{esp}X{comp}' if comp else f'{fig}{sep}{lar}X{esp}'
     if td == td_new.METALON_MM:
-        alt = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'altura_mm'))
         lar = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'largura_mm'))
+        alt = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'altura_mm'))
         esp = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'espessura_mm'))
-        return f'{fig}{sep}{alt}X{lar}X{esp}' if alt and lar and esp else ''
+        return f'{fig}{sep}{lar}X{alt}X{esp}' if alt and lar and esp else ''
     if td == td_new.PERFIL_RETANGULAR_MM:
         alt = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'altura_mm'))
         lar = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'largura_mm'))
@@ -305,8 +308,12 @@ def montar_descricao_sugerida(
     comprimento_mm: Decimal | None = None,
     dimensoes: dict | None = None,
 ) -> str:
+    from apps.produtos.descricao_norm import normalizar_descricao_produto
     from apps.produtos.dimensional_regra import familia_espigao_x_flange_nps, requisitos_efetivos_produto
     from apps.produtos.models import FamiliaProduto
+
+    def _fin(texto: str) -> str:
+        return normalizar_descricao_produto(_normalize_spaces(texto))
 
     req = requisitos_efetivos_produto(familia)
     td = familia.tipo_dimensional or FamiliaProduto.TipoDimensional.SIMPLES
@@ -325,7 +332,7 @@ def montar_descricao_sugerida(
             partes_od.append(f'X ROSCA {rosca_text}')
         if polegada_secundaria and (polegada_secundaria.descricao or '').strip():
             partes_od.append(_normalize_spaces(polegada_secundaria.descricao))
-        return _normalize_spaces(' '.join(partes_od))
+        return _fin(' '.join(partes_od))
 
     if familia_espigao_x_flange_nps(familia):
         base = _base_descricao_comercial(familia)
@@ -338,7 +345,7 @@ def montar_descricao_sugerida(
             right = base[m.end() :].lstrip()
             left_with = _normalize_spaces(f'{left} {d1}'.strip())
             tail = _normalize_spaces(f'{right} {d2}'.strip())
-            return _normalize_spaces(f'{left_with} X FLANGE {tail}')
+            return _fin(f'{left_with} X FLANGE {tail}')
         chunks_ef: list[str] = []
         if base:
             chunks_ef.append(base)
@@ -346,7 +353,7 @@ def montar_descricao_sugerida(
             chunks_ef.append(d1)
         if d2:
             chunks_ef.append(d2)
-        return _normalize_spaces(' '.join(chunks_ef))
+        return _fin(' '.join(chunks_ef))
 
     if td in (Td.CHAPA_MM, Td.CHAPA_FURO_MM, Td.BARRA_CHATA_MM, Td.METALON_MM, Td.PERFIL_RETANGULAR_MM, Td.CANTONEIRA_MM):
         base = _base_descricao_comercial(familia)
@@ -370,11 +377,11 @@ def montar_descricao_sugerida(
                 if x:
                     chunks.append(x)
         elif td == Td.METALON_MM:
-            alt = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'altura_mm'))
             lar = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'largura_mm'))
+            alt = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'altura_mm'))
             esp = _format_mm_descricao(_dimensao_decimal(dimensoes, 'espessura_mm'))
             if alt and lar and esp:
-                chunks.append(f'{alt} X {lar} X {esp}')
+                chunks.append(f'{lar} X {alt} X {esp}')
         elif td == Td.PERFIL_RETANGULAR_MM:
             alt = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'altura_mm'))
             lar = _format_dim_code_piece(_dimensao_decimal(dimensoes, 'largura_mm'))
@@ -386,7 +393,7 @@ def montar_descricao_sugerida(
                 x = _format_mm_descricao(_dimensao_decimal(dimensoes, k))
                 if x:
                     chunks.append(x)
-        return _normalize_spaces(' '.join([base, ' X '.join(chunks)]))
+        return _fin(' '.join([base, ' X '.join(chunks)]))
 
     if td == Td.CANTONEIRA_POLEGADA:
         partes_cp: list[str] = []
@@ -395,11 +402,11 @@ def montar_descricao_sugerida(
             partes_cp.append(base)
         if polegada_principal and polegada_secundaria:
             partes_cp.append(f'{_normalize_spaces(polegada_principal.descricao)} X {_normalize_spaces(polegada_secundaria.descricao)}')
-        return _normalize_spaces(' '.join(partes_cp))
+        return _fin(' '.join(partes_cp))
     if td == Td.DIMENSIONAL_LIVRE_CONTROLADO:
         base = _base_descricao_comercial(familia)
-        dim_desc = _normalize_spaces(str((dimensoes or {}).get('dimensao_descricao') or '')).upper()
-        return _normalize_spaces(' '.join([base, dim_desc]))
+        dim_desc = normalizar_descricao_produto(str((dimensoes or {}).get('dimensao_descricao') or ''))
+        return _fin(' '.join([base, dim_desc]))
 
     if td in (Td.OD_MM, Td.OD_MM_X_ESPESSURA, Td.OD_MM_X_ESPESSURA_X_COMPRIMENTO):
         partes_mm: list[str] = []
@@ -415,7 +422,7 @@ def montar_descricao_sugerida(
             dim_chunks.append(_format_mm_descricao(comprimento_mm))
         if dim_chunks:
             partes_mm.append('OD ' + ' X '.join(dim_chunks))
-        return _normalize_spaces(' '.join(partes_mm))
+        return _fin(' '.join(partes_mm))
 
     partes: list[str] = []
     base = _base_descricao_comercial(familia)
@@ -442,7 +449,7 @@ def montar_descricao_sugerida(
             partes.append(_normalize_spaces(polegada_principal.descricao))
         if polegada_secundaria and (polegada_secundaria.descricao or '').strip():
             partes.append(f'x {_normalize_spaces(polegada_secundaria.descricao)}')
-    return _normalize_spaces(' '.join(partes))
+    return _fin(' '.join(partes))
 
 
 def codigo_interno_valido(codigo: str) -> bool:

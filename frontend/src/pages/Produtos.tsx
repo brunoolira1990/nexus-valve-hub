@@ -34,6 +34,7 @@ import {
   sugerirConfiguracaoFamilia,
   sugerirTipoRegraPorDimensional,
 } from '@/lib/familiaRegra';
+import { normalizarDescricaoProduto } from '@/lib/descricaoProduto';
 import { ConversaoMedidasBlock, type CampoHeranca } from '@/components/produtos/ConversaoMedidasBlock';
 import { NcmAutocomplete, type NcmOption } from '@/components/produtos/NcmAutocomplete';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
@@ -823,7 +824,7 @@ const Produtos = () => {
       body.dim_aba_polegada_ref = form.dim_aba_polegada_ref ?? null;
       body.dim_espessura_polegada_ref = form.dim_espessura_polegada_ref ?? null;
       body.dimensao_codigo = (form.dimensao_codigo || '').toUpperCase();
-      body.dimensao_descricao = (form.dimensao_descricao || '').toUpperCase();
+      body.dimensao_descricao = normalizarDescricaoProduto(form.dimensao_descricao || '');
       body.dimensoes_json = form.dimensoes_json ?? {};
     } else {
       body.figura = form.figura;
@@ -1611,7 +1612,11 @@ const Produtos = () => {
                         </div>
                         <div className="md:col-span-2">
                           <label className="erp-label">Dimensão descrição</label>
-                          <input className="erp-input mt-1" value={form.dimensao_descricao || ''} onChange={(e) => f('dimensao_descricao', e.target.value.toUpperCase())} />
+                          <input
+                            className="erp-input mt-1"
+                            value={form.dimensao_descricao || ''}
+                            onChange={(e) => f('dimensao_descricao', normalizarDescricaoProduto(e.target.value))}
+                          />
                         </div>
                       </>
                     ) : null}

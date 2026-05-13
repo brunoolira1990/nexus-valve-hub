@@ -1,4 +1,5 @@
 import type { FamiliaProduto, RequisitosProdutoDimensionais, TipoDimensional, TipoRegraCodigo } from '@/types';
+import { normalizarDescricaoProduto } from '@/lib/descricaoProduto';
 
 export type CategoriaProdutoSugestao = 'PRODUTO_TECNICO' | 'MATERIAL_DIMENSIONAL' | 'MANUAL_FABRICANTE';
 
@@ -197,7 +198,7 @@ export function sugerirTipoRegraPorDimensional(td: TipoDimensional): TipoRegraCo
 }
 
 function _norm(s: string): string {
-  return s.trim().toUpperCase().replace(/\s+/g, ' ');
+  return normalizarDescricaoProduto(s);
 }
 
 function _has(u: string, re: RegExp): boolean {
