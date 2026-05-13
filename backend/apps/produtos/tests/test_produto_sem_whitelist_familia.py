@@ -89,7 +89,44 @@ class ProdutoSemWhitelistFamiliaTests(TestCase):
         blob = (d.get('_mensagem') or '') + (d.get('_descricao') or '')
         self.assertNotIn('Configure as polegadas permitidas', blob)
         self.assertTrue(d.get('_codigo'))
-        self.assertIn('BSP', d.get('_descricao') or '')
+        desc = d.get('_descricao') or ''
+        self.assertIn('BSP', desc)
+        self.assertIn('LUVA AÇO INOX 316 3000#', desc)
+        self.assertRegex(desc, r'1/2')
+
+    def test_expand_siglas_valvula_descricao(self):
+        from apps.produtos.codigo_produto import expandir_siglas_valvula_descricao_base
+
+        self.assertEqual(
+            expandir_siglas_valvula_descricao_base('VEM WCB PP TP'),
+            'VALVULA ESFERA MONOBLOCO WCB PP TP',
+        )
+        self.assertEqual(
+            expandir_siglas_valvula_descricao_base('VEB SI CF8 PP TR FLANGEADA ANSI 150#'),
+            'VALVULA ESFERA BIPARTIDA SI CF8 PP TR FLANGEADA ANSI 150#',
+        )
+        self.assertEqual(
+            expandir_siglas_valvula_descricao_base('VET CF8M PP TP BSP'),
+            'VALVULA ESFERA TRIPARTIDA CF8M PP TP BSP',
+        )
+
+    def test_preview_descricao_valvula_expandida(self):
+        slug = uuid.uuid4().hex[:5]
+        fam = FamiliaProduto.objects.create(
+            codigo_figura=f'V{slug}',
+            descricao_base='VEM WCB PP TP',
+            tipo_regra_codigo=FamiliaProduto.TipoRegraCodigo.BASE_POLEGADA,
+            tipo_dimensional=FamiliaProduto.TipoDimensional.NPS,
+            categoria_produto=FamiliaProduto.CategoriaProduto.PRODUTO_TECNICO,
+        )
+        pol = _mk_polegada_nps(f'v{slug}', '2', f'2" NPS {slug}')
+        ser = PreviewCodigoSerializer(
+            data={'familia_id': fam.id, 'polegada_principal_ref_id': pol.id},
+        )
+        self.assertTrue(ser.is_valid(), ser.errors)
+        desc = ser.validated_data.get('_descricao') or ''
+        self.assertIn('VALVULA ESFERA MONOBLOCO', desc)
+        self.assertNotIn('VEM ', desc)
 
     def test_create_produto_interno_luva_sem_whitelist(self):
         pser = ProdutoSerializer(
@@ -122,6 +159,9 @@ class ProdutoSemWhitelistFamiliaTests(TestCase):
         blob = (ser.validated_data.get('_mensagem') or '') + (ser.validated_data.get('_descricao') or '')
         self.assertNotIn('Configure as polegadas permitidas', blob)
         self.assertIn('SCH 40', ser.validated_data.get('_descricao') or '')
+        desc = ser.validated_data.get('_descricao') or ''
+        self.assertIn('FLANGE SW AÇO RF', desc)
+        self.assertRegex(desc, r'6["\u201d]')
 
     def test_polegada_obrigatoria_sem_mensagem_whitelist(self):
         ser = PreviewCodigoSerializer(
@@ -133,6 +173,7 @@ class ProdutoSemWhitelistFamiliaTests(TestCase):
         self.assertFalse(ser.is_valid())
         self.assertIn('polegada_principal_ref_id', ser.errors)
         self.assertNotIn('Configure as polegadas permitidas', str(ser.errors))
+        self.assertIn('Informe a polegada principal', str(ser.errors))
 
     def test_nps_esperado_rejeita_polegada_od(self):
         ser = PreviewCodigoSerializer(
@@ -144,8 +185,7 @@ class ProdutoSemWhitelistFamiliaTests(TestCase):
         )
         self.assertFalse(ser.is_valid())
         self.assertIn('polegada_principal_ref_id', ser.errors)
-
-    def test_familia_od_aceita_polegada_od(self):
+        self.assertIn('NPS', str(ser.errors))
         ser = PreviewCodigoSerializer(
             data={
                 'familia_id': self.fam_od.id,

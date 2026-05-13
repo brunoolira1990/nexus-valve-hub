@@ -22,6 +22,7 @@ import type {
 } from '@/types';
 import { MATERIAIS } from '@/types';
 import {
+  expandirSiglasValvulaDescricaoBase,
   flagsPorTipoRegra,
   hintTipoDimensional,
   labelPolegadaPrincipal,
@@ -30,6 +31,8 @@ import {
   labelsCamposObrigatoriosProduto,
   normalizarTipoRegra,
   requisitosMedidasPermitidasModal,
+  sugerirConfiguracaoFamilia,
+  sugerirTipoRegraPorDimensional,
 } from '@/lib/familiaRegra';
 import { ConversaoMedidasBlock, type CampoHeranca } from '@/components/produtos/ConversaoMedidasBlock';
 import { NcmAutocomplete, type NcmOption } from '@/components/produtos/NcmAutocomplete';
@@ -204,18 +207,6 @@ const emptyFamiliaQuick = () => ({
   observacoes_conversao: '',
   ncm_padrao: null as number | null,
 });
-
-function regraSugeridaPorTipoDimensional(td: TipoDimensional): TipoRegraCodigo {
-  if (td === 'NPS_SCHEDULE') return 'BASE_SCHEDULE_POLEGADA';
-  if (td === 'REDUCAO_NPS') return 'BASE_SCHEDULE_DUAS_POLEGADAS';
-  if (td === 'OD_POLEGADA') return 'BASE_POLEGADA';
-  if (td === 'OD_POLEGADA_X_ROSCA') return 'BASE_ROSCA_DUAS_POLEGADAS';
-  if (td === 'OD_MM' || td === 'OD_MM_X_ESPESSURA' || td === 'OD_MM_X_ESPESSURA_X_COMPRIMENTO') return 'BASE_OD_MM_ESPESSURA';
-  if (td === 'NPS_X_ROSCA') return 'BASE_ROSCA_POLEGADA';
-  if (td === 'ESPIGAO_X_FLANGE') return 'BASE_ESPIGAO_FLANGE_NPS';
-  if (td === 'CANTONEIRA_POLEGADA') return 'BASE_POLEGADA';
-  return 'BASE_POLEGADA';
-}
 
 function extractCodigoDuplicado(err: unknown): string | null {
   const ax = err as AxiosError<{
@@ -402,7 +393,11 @@ const Produtos = () => {
     return undefined;
   }, [familiaSel?.tipo_dimensional]);
 
-  const famQuickFlags = useMemo(() => flagsPorTipoRegra(famQuick.tipo_regra_codigo), [famQuick.tipo_regra_codigo]);
+  const famQuickFlags = useMemo(
+    () => requisitosMedidasPermitidasModal(famQuick.tipo_dimensional, famQuick.tipo_regra_codigo),
+    [famQuick.tipo_dimensional, famQuick.tipo_regra_codigo],
+  );
+  const sugestaoFamiliaAuto = useMemo(() => sugerirConfiguracaoFamilia(famQuick.descricao_base), [famQuick.descricao_base]);
   const tdAtual = familiaSel?.tipo_dimensional;
   const usaDimensoesMateriais = useMemo(
     () =>
@@ -1664,12 +1659,13 @@ const Produtos = () => {
               {previewMsg ? <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">{previewMsg}</p> : null}
               {previewDesc ? (
                 <div className="mt-2">
-                  <p className="text-xs text-muted-foreground">Descrição sugerida</p>
-                  <p className="text-sm mt-1">{previewDesc}</p>
+                  <p className="text-sm">{previewDesc}</p>
                   <button type="button" className="erp-btn-outline erp-btn-sm mt-2" onClick={aplicarDescricaoPreview}>
                     Usar descrição sugerida
                   </button>
                 </div>
+              ) : !previewMsg ? (
+                <p className="text-xs text-muted-foreground mt-1">Preencha os campos obrigatórios da família para ver código e descrição.</p>
               ) : null}
             </div>
           </div>
@@ -1902,6 +1898,37 @@ const Produtos = () => {
             <label className="erp-label">Descrição base</label>
             <input className="erp-input mt-1" value={famQuick.descricao_base} onChange={(e) => setFamQuick((q) => ({ ...q, descricao_base: e.target.value }))} />
             </div>
+            {famQuick.descricao_base.trim().length >= 2 ? (
+              <div className="mt-3 rounded-md border border-dashed border-border bg-muted/20 p-3 text-xs space-y-2">
+                <p className="font-semibold text-foreground">Sugestão automática</p>
+                <p>
+                  Categoria:{' '}
+                  {sugestaoFamiliaAuto.categoria_produto === 'MATERIAL_DIMENSIONAL'
+                    ? 'Material dimensional'
+                    : sugestaoFamiliaAuto.categoria_produto === 'MANUAL_FABRICANTE'
+                      ? 'Produto manual/fabricante'
+                      : 'Produto técnico'}
+                </p>
+                <p>Tipo dimensional: {sugestaoFamiliaAuto.tipo_dimensional}</p>
+                <p>Regra de código: {sugestaoFamiliaAuto.tipo_regra_codigo}</p>
+                <p>Campos que o produto vai pedir: {sugestaoFamiliaAuto.campos_obrigatorios_labels.join(' · ')}</p>
+                {sugestaoFamiliaAuto.observacao ? <p className="text-muted-foreground">{sugestaoFamiliaAuto.observacao}</p> : null}
+                <button
+                  type="button"
+                  className="erp-btn-outline erp-btn-sm"
+                  onClick={() => {
+                    setFamQuick((q) => ({
+                      ...q,
+                      categoria_produto: sugestaoFamiliaAuto.categoria_produto,
+                      tipo_dimensional: sugestaoFamiliaAuto.tipo_dimensional,
+                      tipo_regra_codigo: sugestaoFamiliaAuto.tipo_regra_codigo,
+                    }));
+                  }}
+                >
+                  Aplicar sugestão
+                </button>
+              </div>
+            ) : null}
             <div className="mt-3">
             <label className="erp-label">NCM padrão</label>
             <NcmAutocomplete
@@ -1928,7 +1955,7 @@ const Produtos = () => {
                   const categoria = e.target.value as 'PRODUTO_TECNICO' | 'MATERIAL_DIMENSIONAL' | 'MANUAL_FABRICANTE';
                   setFamQuick((q) => {
                     const nextTipo = categoria === 'MANUAL_FABRICANTE' ? 'MANUAL' : q.tipo_dimensional;
-                    const nextRegra = categoria === 'MANUAL_FABRICANTE' ? 'MANUAL_FABRICANTE' : regraSugeridaPorTipoDimensional(nextTipo);
+                    const nextRegra = categoria === 'MANUAL_FABRICANTE' ? 'MANUAL_FABRICANTE' : sugerirTipoRegraPorDimensional(nextTipo);
                     return { ...q, categoria_produto: categoria, tipo_dimensional: nextTipo, tipo_regra_codigo: nextRegra };
                   });
                 }}
@@ -1945,7 +1972,7 @@ const Produtos = () => {
                 value={famQuick.tipo_dimensional}
                 onChange={(e) => {
                   const td = e.target.value as TipoDimensional;
-                  setFamQuick((q) => ({ ...q, tipo_dimensional: td, tipo_regra_codigo: regraSugeridaPorTipoDimensional(td) }));
+                  setFamQuick((q) => ({ ...q, tipo_dimensional: td, tipo_regra_codigo: sugerirTipoRegraPorDimensional(td) }));
                 }}
               >
                 {tiposDimensionaisPorCategoria.map((r) => (
@@ -2002,7 +2029,7 @@ const Produtos = () => {
             <p>Tipo: {famQuick.tipo_dimensional}</p>
             <p>Produto vai pedir: {labelsCamposObrigatorios(famQuickFlags, famQuick.tipo_dimensional).join(' · ')}</p>
             <p className="mt-1">Exemplo de código: {famQuick.codigo_figura || 'FIG'}.{famQuick.tipo_dimensional === 'NPS_SCHEDULE' ? '20.XX' : '...'}</p>
-            <p>Exemplo de descrição: {(famQuick.descricao_base || 'DESCRIÇÃO BASE')} ...</p>
+            <p>Exemplo de descrição: {expandirSiglasValvulaDescricaoBase(famQuick.descricao_base || 'DESCRIÇÃO BASE')} …</p>
           </div>
           </div>
         </div>

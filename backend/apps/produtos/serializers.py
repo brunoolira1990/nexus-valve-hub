@@ -33,6 +33,10 @@ from apps.produtos.models import (
 )
 
 
+def _msg_polegada_tipo_incompativel(esperado: str) -> str:
+    return f'Use uma polegada da tabela oficial com tipo {esperado} neste campo.'
+
+
 def _decimal_from_dim(raw):
     if raw in (None, ''):
         return None
@@ -607,8 +611,10 @@ class ProdutoSerializer(serializers.ModelSerializer):
             if expected_principal and pp.tipo_medida != expected_principal:
                 if familia_espigao_x_flange_nps(familia):
                     msg = 'Informe a medida do espigão.'
+                elif expected_principal == Polegada.TipoMedida.OD:
+                    msg = _msg_polegada_tipo_incompativel('OD')
                 else:
-                    msg = 'Informe a medida OD.' if expected_principal == Polegada.TipoMedida.OD else 'Informe a medida NPS.'
+                    msg = _msg_polegada_tipo_incompativel('NPS')
                 raise serializers.ValidationError({'polegada_principal_ref_id': msg})
         if ps is not None:
             expected_sec = expected_types.get('polegada_secundaria_ref_id')
@@ -618,9 +624,9 @@ class ProdutoSerializer(serializers.ModelSerializer):
                 elif familia.tipo_dimensional == FamiliaProduto.TipoDimensional.OD_POLEGADA_X_ROSCA:
                     msg = 'Informe a medida da rosca.'
                 elif expected_sec == Polegada.TipoMedida.OD:
-                    msg = 'Informe a medida OD.'
+                    msg = _msg_polegada_tipo_incompativel('OD')
                 else:
-                    msg = 'Informe a medida NPS.'
+                    msg = _msg_polegada_tipo_incompativel('NPS')
                 raise serializers.ValidationError({'polegada_secundaria_ref_id': msg})
         codigo = montar_codigo_interno(
             f,
@@ -860,8 +866,10 @@ class PreviewCodigoSerializer(serializers.Serializer):
             if expected_principal and pp.tipo_medida != expected_principal:
                 if familia_espigao_x_flange_nps(f):
                     msg = 'Informe a medida do espigão.'
+                elif expected_principal == Polegada.TipoMedida.OD:
+                    msg = _msg_polegada_tipo_incompativel('OD')
                 else:
-                    msg = 'Informe a medida OD.' if expected_principal == Polegada.TipoMedida.OD else 'Informe a medida NPS.'
+                    msg = _msg_polegada_tipo_incompativel('NPS')
                 raise serializers.ValidationError({'polegada_principal_ref_id': msg})
         if ps is not None:
             expected_sec = expected_types.get('polegada_secundaria_ref_id')
@@ -871,9 +879,9 @@ class PreviewCodigoSerializer(serializers.Serializer):
                 elif f.tipo_dimensional == FamiliaProduto.TipoDimensional.OD_POLEGADA_X_ROSCA:
                     msg = 'Informe a medida da rosca.'
                 elif expected_sec == Polegada.TipoMedida.OD:
-                    msg = 'Informe a medida OD.'
+                    msg = _msg_polegada_tipo_incompativel('OD')
                 else:
-                    msg = 'Informe a medida NPS.'
+                    msg = _msg_polegada_tipo_incompativel('NPS')
                 raise serializers.ValidationError({'polegada_secundaria_ref_id': msg})
         codigo = montar_codigo_interno(
             f,

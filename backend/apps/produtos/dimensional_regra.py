@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 def familia_espigao_x_flange_nps(familia: 'FamiliaProduto') -> bool:
-    """Família no fluxo espigão × flange (E…F…): allowlist de polegadas na família é opcional até existir cadastro."""
+    """Família no fluxo espigão × flange (E…F…): duas medidas NPS no produto."""
     from apps.produtos.models import FamiliaProduto
 
     td = FamiliaProduto.TipoDimensional.ESPIGAO_X_FLANGE
@@ -99,6 +99,9 @@ def validar_tipo_dimensional_x_regra(*, tipo_dimensional: str, tipo_regra_codigo
 
     if tipo_dimensional == Td.NPS_X_ROSCA and tipo_regra_codigo != Tr.BASE_ROSCA_POLEGADA:
         return 'NPS x Rosca exige regra 2 (base + rosca + polegada).'
+
+    if tipo_dimensional == Td.ROSCA_X_ROSCA and tipo_regra_codigo != Tr.BASE_ROSCA_DUAS_POLEGADAS:
+        return 'Rosca x Rosca exige regra 4 (base + rosca + duas polegadas).'
 
     if tipo_dimensional == Td.ESPIGAO_X_FLANGE and tipo_regra_codigo != Tr.BASE_ESPIGAO_FLANGE_NPS:
         return 'Espigão x Flange exige a regra Base + espigão NPS + flange NPS (E…F…).'
@@ -184,6 +187,13 @@ def requisitos_efetivos_produto(familia: FamiliaProduto) -> RequisitosEfetivosPr
         r['usa_schedule'] = False
         r['incluir_schedule_na_descricao'] = False
 
+    if td == Td.ROSCA_X_ROSCA:
+        r['usa_rosca_conexao'] = True
+        r['usa_polegada_principal'] = True
+        r['usa_polegada_secundaria'] = True
+        r['usa_schedule'] = False
+        r['incluir_schedule_na_descricao'] = False
+
     if familia_espigao_x_flange_nps(familia):
         r['usa_rosca_conexao'] = False
         r['usa_schedule'] = False
@@ -266,15 +276,15 @@ def validar_campos_obrigatorios_produto_interno(
     errs: dict[str, str] = {}
 
     if req['usa_schedule'] and schedule is None:
-        errs['schedule_ref_id'] = 'Informe o Schedule/Espessura.'
+        errs['schedule_ref_id'] = 'Informe o schedule/espessura.'
     if req['usa_rosca_conexao'] and rosca is None:
-        errs['rosca_conexao_id'] = 'Informe o Tipo de rosca/conexão.'
+        errs['rosca_conexao_id'] = 'Informe a rosca/conexão.'
     if req['usa_polegada_principal'] and polegada_principal is None:
         if espigao_x_flange_efetivo:
             errs['polegada_principal_ref_id'] = 'Informe a medida do espigão.'
         elif td == Td.OD_POLEGADA:
             errs['polegada_principal_ref_id'] = 'Informe a Medida OD.'
-        elif td == Td.NPS_SCHEDULE:
+        elif td in (Td.NPS_SCHEDULE, Td.FLANGE, Td.VALVULA):
             errs['polegada_principal_ref_id'] = 'Informe a polegada nominal (NPS).'
         else:
             errs['polegada_principal_ref_id'] = 'Informe a polegada principal.'
@@ -282,7 +292,7 @@ def validar_campos_obrigatorios_produto_interno(
         if espigao_x_flange_efetivo:
             errs['polegada_secundaria_ref_id'] = 'Informe a medida da flange.'
         elif td == Td.REDUCAO_NPS:
-            errs['polegada_secundaria_ref_id'] = 'Informe a Polegada menor da redução.'
+            errs['polegada_secundaria_ref_id'] = 'Informe a polegada menor da redução.'
         elif td == Td.OD_POLEGADA_X_ROSCA:
             errs['polegada_secundaria_ref_id'] = 'Informe a Medida da rosca.'
         else:

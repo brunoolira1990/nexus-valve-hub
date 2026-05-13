@@ -14,6 +14,36 @@ def _normalize_spaces(text: str) -> str:
     return re.sub(r'\s+', ' ', (text or '').strip())
 
 
+def expandir_siglas_valvula_descricao_base(text: str) -> str:
+    """Apenas VEM/VEB/VET no início da descrição base (planilha) → texto comercial completo."""
+    raw = (text or '').strip()
+    if not raw:
+        return ''
+    upper = raw.upper()
+    # Ordem: prefixos mais longos primeiro (VET/VEB/VEM são distintos).
+    prefixos = (
+        ('VET ', 'VALVULA ESFERA TRIPARTIDA '),
+        ('VEB ', 'VALVULA ESFERA BIPARTIDA '),
+        ('VEM ', 'VALVULA ESFERA MONOBLOCO '),
+    )
+    for pref, repl in prefixos:
+        if upper.startswith(pref):
+            rest = raw[len(pref) :].lstrip()
+            return _normalize_spaces(repl + rest)
+    for token, repl in (
+        ('VET', 'VALVULA ESFERA TRIPARTIDA'),
+        ('VEB', 'VALVULA ESFERA BIPARTIDA'),
+        ('VEM', 'VALVULA ESFERA MONOBLOCO'),
+    ):
+        if upper == token:
+            return repl
+    return raw
+
+
+def _base_descricao_comercial(familia: 'FamiliaProduto') -> str:
+    return _normalize_spaces(expandir_siglas_valvula_descricao_base(familia.descricao_base or ''))
+
+
 def _token_in_text(text: str, token: str) -> bool:
     if not text or not token:
         return False
@@ -285,7 +315,7 @@ def montar_descricao_sugerida(
 
     if td == Td.OD_POLEGADA_X_ROSCA:
         partes_od: list[str] = []
-        base = _normalize_spaces(familia.descricao_base or '')
+        base = _base_descricao_comercial(familia)
         if base:
             partes_od.append(base)
         if polegada_principal and (polegada_principal.descricao or '').strip():
@@ -298,7 +328,7 @@ def montar_descricao_sugerida(
         return _normalize_spaces(' '.join(partes_od))
 
     if familia_espigao_x_flange_nps(familia):
-        base = _normalize_spaces(familia.descricao_base or '')
+        base = _base_descricao_comercial(familia)
         d1 = _normalize_spaces((polegada_principal.descricao or '').strip()) if polegada_principal else ''
         d2 = _normalize_spaces((polegada_secundaria.descricao or '').strip()) if polegada_secundaria else ''
         rx = re.compile(r'\s+X\s+FLANGE\s+', re.IGNORECASE)
@@ -319,7 +349,7 @@ def montar_descricao_sugerida(
         return _normalize_spaces(' '.join(chunks_ef))
 
     if td in (Td.CHAPA_MM, Td.CHAPA_FURO_MM, Td.BARRA_CHATA_MM, Td.METALON_MM, Td.PERFIL_RETANGULAR_MM, Td.CANTONEIRA_MM):
-        base = _normalize_spaces(familia.descricao_base or '')
+        base = _base_descricao_comercial(familia)
         chunks: list[str] = []
         if td == Td.CHAPA_MM:
             for k in ('espessura_mm', 'largura_mm', 'comprimento_mm'):
@@ -360,20 +390,20 @@ def montar_descricao_sugerida(
 
     if td == Td.CANTONEIRA_POLEGADA:
         partes_cp: list[str] = []
-        base = _normalize_spaces(familia.descricao_base or '')
+        base = _base_descricao_comercial(familia)
         if base:
             partes_cp.append(base)
         if polegada_principal and polegada_secundaria:
             partes_cp.append(f'{_normalize_spaces(polegada_principal.descricao)} X {_normalize_spaces(polegada_secundaria.descricao)}')
         return _normalize_spaces(' '.join(partes_cp))
     if td == Td.DIMENSIONAL_LIVRE_CONTROLADO:
-        base = _normalize_spaces(familia.descricao_base or '')
+        base = _base_descricao_comercial(familia)
         dim_desc = _normalize_spaces(str((dimensoes or {}).get('dimensao_descricao') or '')).upper()
         return _normalize_spaces(' '.join([base, dim_desc]))
 
     if td in (Td.OD_MM, Td.OD_MM_X_ESPESSURA, Td.OD_MM_X_ESPESSURA_X_COMPRIMENTO):
         partes_mm: list[str] = []
-        base = _normalize_spaces(familia.descricao_base or '')
+        base = _base_descricao_comercial(familia)
         if base:
             partes_mm.append(base)
         dim_chunks: list[str] = []
@@ -388,7 +418,7 @@ def montar_descricao_sugerida(
         return _normalize_spaces(' '.join(partes_mm))
 
     partes: list[str] = []
-    base = _normalize_spaces(familia.descricao_base or '')
+    base = _base_descricao_comercial(familia)
     base_upper = base.upper()
     if base:
         partes.append(base)
