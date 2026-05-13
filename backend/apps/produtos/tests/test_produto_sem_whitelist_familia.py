@@ -206,3 +206,28 @@ class ProdutoSemWhitelistFamiliaTests(TestCase):
         codigo = ser.validated_data.get('_codigo') or ''
         self.assertIn('E', codigo)
         self.assertIn('F', codigo)
+
+    def test_preview_reducao_sem_acento_descricao_base(self):
+        slug = uuid.uuid4().hex[:5]
+        fam = FamiliaProduto.objects.create(
+            codigo_figura=f'RC{slug}',
+            descricao_base='REDUÇÃO CONCENTRICA ACO CARBONO',
+            tipo_regra_codigo=FamiliaProduto.TipoRegraCodigo.BASE_SCHEDULE_DUAS_POLEGADAS,
+            tipo_dimensional=FamiliaProduto.TipoDimensional.REDUCAO_NPS,
+            categoria_produto=FamiliaProduto.CategoriaProduto.PRODUTO_TECNICO,
+        )
+        sched = ScheduleEspessura.objects.create(codigo_schedule=f'RS{slug}', descricao='SCH 40')
+        ser = PreviewCodigoSerializer(
+            data={
+                'familia_id': fam.id,
+                'schedule_ref_id': sched.id,
+                'polegada_principal_ref_id': self.pol_six.id,
+                'polegada_secundaria_ref_id': self.pol_half.id,
+            },
+        )
+        self.assertTrue(ser.is_valid(), ser.errors)
+        desc = ser.validated_data.get('_descricao') or ''
+        self.assertIn('REDUCAO CONCENTRICA', desc)
+        self.assertNotIn('Ç', desc)
+        self.assertIn('"', desc)
+        self.assertIn(' X ', desc)

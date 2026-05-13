@@ -528,9 +528,13 @@ class ProdutoSerializer(serializers.ModelSerializer):
             if qs.filter(codigo_completo=codigo_in).exists():
                 raise serializers.ValidationError({'codigo_completo': 'Já existe produto com este código.'})
             attrs['codigo_completo'] = codigo_in
+            if attrs.get('descricao'):
+                attrs['descricao'] = normalizar_descricao_produto(attrs['descricao'])
             return attrs
 
         if modo == Produto.ModoCodigo.LEGADO:
+            if attrs.get('descricao'):
+                attrs['descricao'] = normalizar_descricao_produto(attrs['descricao'])
             return attrs
 
         # INTERNO
@@ -701,6 +705,18 @@ class ProdutoSerializer(serializers.ModelSerializer):
         if not (attrs.get('conexao') or '').strip() and (familia.conexao_base or '').strip():
             attrs['conexao'] = familia.conexao_base.strip()
 
+        # Sempre persiste descrição comercial sem acento (merge payload + instância + sugestão acima).
+        eff_desc = (attrs.get('descricao') or '').strip()
+        if not eff_desc and inst:
+            eff_desc = (getattr(inst, 'descricao', None) or '').strip()
+        if eff_desc:
+            attrs['descricao'] = normalizar_descricao_produto(eff_desc)
+        eff_dim = (attrs.get('dimensao_descricao') or '').strip()
+        if not eff_dim and inst:
+            eff_dim = (getattr(inst, 'dimensao_descricao', None) or '').strip()
+        if eff_dim:
+            attrs['dimensao_descricao'] = normalizar_descricao_produto(eff_dim)
+
         return attrs
 
     def create(self, validated_data):
@@ -759,6 +775,10 @@ class ProdutoSerializer(serializers.ModelSerializer):
             if (instance.ncm_especifico or '').strip()
             else []
         )
+        if data.get('descricao'):
+            data['descricao'] = normalizar_descricao_produto(data['descricao'])
+        if data.get('dimensao_descricao'):
+            data['dimensao_descricao'] = normalizar_descricao_produto(data['dimensao_descricao'])
         return data
 
 
@@ -911,7 +931,7 @@ class PreviewCodigoSerializer(serializers.Serializer):
         )
         if not codigo_interno_valido(codigo):
             attrs['_codigo'] = ''
-            attrs['_descricao'] = montar_descricao_sugerida(f, **desc_kwargs)
+            attrs['_descricao'] = normalizar_descricao_produto(montar_descricao_sugerida(f, **desc_kwargs))
             attrs['_mensagem'] = 'Código será gerado após preencher os campos obrigatórios da família.'
             attrs['_ncm_efetivo'] = (f.ncm_padrao.codigo if f.ncm_padrao_id else '')
             attrs['_unidade_efetiva'] = (f.unidade_padrao or '').strip()
@@ -921,7 +941,7 @@ class PreviewCodigoSerializer(serializers.Serializer):
             return attrs
 
         attrs['_codigo'] = codigo
-        attrs['_descricao'] = montar_descricao_sugerida(f, **desc_kwargs)
+        attrs['_descricao'] = normalizar_descricao_produto(montar_descricao_sugerida(f, **desc_kwargs))
         attrs['_mensagem'] = ''
         attrs['_ncm_efetivo'] = (f.ncm_padrao.codigo if f.ncm_padrao_id else '')
         attrs['_unidade_efetiva'] = (f.unidade_padrao or '').strip()
