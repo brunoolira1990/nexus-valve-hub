@@ -31,6 +31,16 @@
   --border: 0.75pt solid #000;
   --thead-bg: #c9c9c9;
   --titulo-bg: #e4e4e4;
+
+  /* Âncoras verticais MOC §3.8.1 (transportador → produtos → rodapé) */
+  --moc-sec-titulo-h: 0.35cm;
+  --moc-top-transp: 13.33cm;
+  --moc-h-transp: 2.42cm;
+  --moc-top-produtos-titulo: calc(var(--moc-top-transp) + var(--moc-h-transp));
+  --moc-top-produtos-bloco: calc(var(--moc-top-produtos-titulo) + var(--moc-sec-titulo-h));
+  --moc-top-adic-titulo: 25.48cm;
+  --moc-top-adic-bloco: calc(var(--moc-top-adic-titulo) + var(--moc-sec-titulo-h));
+  --moc-h-produtos: calc(var(--moc-top-adic-titulo) - var(--moc-top-produtos-bloco));
 }
 
 * {
@@ -568,16 +578,16 @@ body {
 /* —— TRANSPORTADOR —— */
 .moc-transp-titulo {
   left: 0;
-  top: 13.36cm;
+  top: calc(var(--moc-top-transp) - var(--moc-sec-titulo-h));
   width: var(--moc-form-w);
-  height: 0.32cm;
+  height: var(--moc-sec-titulo-h);
 }
 
 .moc-transp-bloco {
   left: 0;
-  top: 13.68cm;
+  top: var(--moc-top-transp);
   width: var(--moc-form-w);
-  height: 2.28cm;
+  height: var(--moc-h-transp);
   padding: 0;
   border: var(--border);
 }
@@ -606,18 +616,7 @@ body {
 .moc-tr-pb { left: calc(16.62cm * var(--moc-scale)); top: 1.72cm; width: calc(1.41cm * var(--moc-scale)); }
 .moc-tr-pl { left: calc(18.03cm * var(--moc-scale)); top: 1.72cm; width: calc(1.41cm * var(--moc-scale)); }
 
-/* —— Produtos + rodapé (MOC §3.8.1 — posição absoluta, sem fluxo extra) —— */
-.moc-body {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 0;
-  height: 0;
-  overflow: visible;
-  padding: 0;
-  margin: 0;
-}
-
+/* —— Produtos + rodapé (MOC §3.8.1 — filhos diretos de .danfe-moc) —— */
 .moc-sec-titulo {
   position: absolute;
   left: 0;
@@ -638,19 +637,19 @@ body {
 }
 
 .moc-produtos-titulo {
-  top: 17.38cm;
+  top: var(--moc-top-produtos-titulo);
 }
 
 .moc-adic-titulo {
-  top: 25.48cm;
+  top: var(--moc-top-adic-titulo);
 }
 
 .moc-sec-produtos {
   position: absolute;
   left: 0;
-  top: 17.70cm;
+  top: var(--moc-top-produtos-bloco);
   width: var(--moc-form-w);
-  height: 6.95cm;
+  height: var(--moc-h-produtos);
   border: var(--border);
   padding: 0;
   overflow: hidden;
@@ -690,7 +689,7 @@ table.produtos {
   position: relative;
   z-index: 1;
   width: 100%;
-  height: 100%;
+  height: auto;
   border-collapse: collapse;
   font-size: var(--font-sm);
   table-layout: fixed;
@@ -790,7 +789,7 @@ col.col-aliq-ipi { width: 4%; }
 .moc-rodape-grid {
   position: absolute;
   left: 0;
-  top: 25.83cm;
+  top: var(--moc-top-adic-bloco);
   display: grid;
   grid-template-columns: 12.95cm 7.62cm;
   width: var(--moc-form-w);

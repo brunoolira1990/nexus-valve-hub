@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -81,6 +82,17 @@ def _nf_um_item() -> NFeSaida:
 )
 class NFeSaida3546DanfePaginacaoTests(TestCase):
     """Caminho real da API (mesmo do navegador) — WeasyPrint HTML."""
+
+    def test_template_sem_wrapper_moc_body(self):
+        """WeasyPrint somava offset se produtos ficavam dentro de .moc-body absoluto."""
+        html_path = (
+            Path(__file__).resolve().parents[1]
+            / 'templates'
+            / 'danfe'
+            / 'modelo55_conferencia.html'
+        )
+        html = html_path.read_text(encoding='utf-8')
+        self.assertNotIn('moc-body', html)
 
     def setUp(self):
         self.user = get_user_model().objects.create_user('nfe3546', 'nfe3546@test.com', 'x')

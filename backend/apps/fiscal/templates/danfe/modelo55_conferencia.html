@@ -249,8 +249,7 @@
       </div>
     </div>
 
-    <!-- Corpo fluído: produtos + rodapé (quebra de página MOC) -->
-    <div class="moc-body">
+    <!-- Produtos + rodapé: filhos diretos de .danfe-moc (evita duplo offset no WeasyPrint) -->
     <div class="moc-sec-titulo moc-produtos-titulo"><span>Dados dos produtos / serviços</span></div>
     <div class="moc-sec-produtos">
       <div class="produtos-watermark" aria-hidden="true">
@@ -349,7 +348,6 @@
       <span>DANFE de conferência — sem valor fiscal</span>
       <span>{% if d.impresso_em %}{{ d.impresso_em }}{% endif %}</span>
       <span>{{ d.sistema|default:"Nexus APP" }}</span>
-    </div>
     </div>
   </div>
 </body>
