@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     'apps.qualidade',
     'apps.apuracao_fiscal',
     'apps.contabil',
+    'apps.core',
 ]
 
 MIDDLEWARE = [
@@ -117,3 +118,12 @@ CORS_ALLOWED_ORIGINS = [
     'http://127.0.0.1:5174',
 ]
 CORS_ALLOW_CREDENTIALS = True
+
+# Propostas: quando True, busca RegraFiscalSaida no cenário padrão antes do fallback legado.
+USE_CENARIO_FISCAL_SAIDA_FOR_PROPOSTAS = os.environ.get(
+    'USE_CENARIO_FISCAL_SAIDA_FOR_PROPOSTAS',
+    'false',
+).lower() in ('1', 'true', 'yes')
+
+# DANFE Conferência 3.5.4.6 POC: html (default) | brazil_fiscal_report | reportlab_fallback
+FISCAL_DANFE_RENDERER = os.environ.get('FISCAL_DANFE_RENDERER', 'html').strip().lower()

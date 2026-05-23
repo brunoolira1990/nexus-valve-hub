@@ -1,0 +1,860 @@
+/*
+ * MOC 7.0 — Anexo II §3.8.1 + Anexo III.02 (coordenadas em cm).
+ * Ajuste final visual (referência DANFE mercado): folha mais densa, cabeçalho compacto,
+ * stub de barcode não escaneável, tabela de produtos alta com grade até o rodapé,
+ * marca d’água centralizada no quadro de produtos — sem chave/barcode/protocolo fake.
+ */
+
+@page {
+  size: A4 portrait;
+  margin: 0.2cm;
+}
+
+:root {
+  --moc-margem: 0.2cm;
+  --moc-form-w: 20.57cm;
+  --moc-form-h: 29.3cm;
+  --moc-scale: 1.0581;
+
+  /* Tipografia MOC p.15 — levemente ampliada para legibilidade em A4 */
+  --font-base: 8.5pt;
+  --font-lbl: 6.5pt;
+  --font-sm: 7.5pt;
+  --font-lg: 9.5pt;
+  --font-xl: 11pt;
+  --font-danfe: 20pt;
+  --font-sec-titulo: 6.5pt;
+  --lh: 1.3;
+  --lh-tight: 1.15;
+  --pad: 1mm 1.3mm;
+  --pad-cell: 1.1mm 1.35mm;
+  --border: 0.75pt solid #000;
+  --thead-bg: #c9c9c9;
+  --titulo-bg: #e4e4e4;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: var(--font-base);
+  line-height: var(--lh);
+  color: #000;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* Folha A4 — altura fixa (1 página); cabeçalho absoluto + produtos/rodapé MOC absolutos */
+.danfe-moc {
+  position: relative;
+  width: var(--moc-form-w);
+  height: var(--moc-form-h);
+  margin: 0;
+  overflow: hidden;
+  page-break-after: avoid;
+}
+
+.moc-field,
+.moc-subfield {
+  position: absolute;
+  z-index: 1;
+  overflow: hidden;
+  border: var(--border);
+  padding: var(--pad);
+}
+
+.moc-subfield {
+  border: var(--border);
+  padding: var(--pad);
+}
+
+.lbl {
+  display: block;
+  font-size: var(--font-lbl);
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-bottom: 0.55mm;
+  line-height: var(--lh-tight);
+  letter-spacing: 0.02em;
+}
+
+.val {
+  display: block;
+  font-size: var(--font-base);
+  word-break: break-word;
+  line-height: var(--lh);
+}
+
+.val-sm {
+  font-size: var(--font-sm);
+}
+
+.val-destaque,
+.val-total {
+  font-size: var(--font-lg);
+  font-weight: 700;
+}
+
+.val-nome {
+  font-size: var(--font-lg);
+  font-weight: 700;
+}
+
+.val-chave {
+  font-size: var(--font-sm);
+  font-weight: 700;
+}
+
+.val-center {
+  text-align: center;
+}
+
+/* Títulos de seção (faixa estreita acima do bloco) */
+.moc-field[class*='-titulo'] {
+  background: var(--titulo-bg);
+  font-size: var(--font-sec-titulo);
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 0.7mm 1.2mm;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  z-index: 2;
+  letter-spacing: 0.03em;
+}
+
+/* —— §3.8.1 CANHOTO —— */
+.moc-canhoto-recebemos {
+  left: 0;
+  top: 0.42cm;
+  width: calc(15.54cm * var(--moc-scale));
+  height: 0.82cm;
+  padding: 0.7mm 1mm;
+}
+
+.moc-canhoto-nfe {
+  left: calc(15.54cm * var(--moc-scale));
+  top: 0.42cm;
+  width: calc(4.5cm * var(--moc-scale));
+  height: 1.7cm;
+  text-align: center;
+  padding: 1mm 0.8mm;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.canhoto-nf-num {
+  margin: 0.5mm 0;
+}
+
+.moc-canhoto-data {
+  left: 0;
+  top: 1.27cm;
+  width: calc(10cm * var(--moc-scale));
+  height: 0.58cm;
+  padding: var(--pad-cell);
+}
+
+.moc-canhoto-assinatura {
+  left: calc(10cm * var(--moc-scale));
+  top: 1.27cm;
+  width: calc(10.04cm * var(--moc-scale));
+  height: 0.58cm;
+  padding: var(--pad-cell);
+}
+
+/* —— EMITENTE / DANFE —— */
+.moc-emitente {
+  left: 0;
+  top: 1.8cm;
+  width: calc(10cm * var(--moc-scale));
+  height: 3.92cm;
+  padding: var(--pad-cell);
+}
+
+.moc-quadro-danfe {
+  left: calc(10cm * var(--moc-scale));
+  top: 1.8cm;
+  width: calc(9.44cm * var(--moc-scale));
+  height: 3.92cm;
+  text-align: center;
+  padding: 1.2mm 1.5mm;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: stretch;
+}
+
+.quadro-danfe-top {
+  flex: 0 0 auto;
+}
+
+.danfe-titulo {
+  font-size: var(--font-danfe);
+  font-weight: 700;
+  letter-spacing: 2px;
+  line-height: 1;
+  margin-bottom: 0.5mm;
+}
+
+.danfe-sub {
+  font-size: 6.5pt;
+  line-height: 1.2;
+}
+
+.danfe-es {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  margin: 0.8mm auto;
+  padding: 1mm 2mm;
+  border: var(--border);
+  background: #fafafa;
+  font-size: var(--font-sm);
+  line-height: 1.35;
+  min-width: 78%;
+  max-width: 92%;
+}
+
+.danfe-es-linha {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+
+.danfe-es-opt {
+  display: inline-block;
+  min-width: 3mm;
+  font-weight: 700;
+  text-align: center;
+}
+
+.danfe-es-saida {
+  margin-top: 0.4mm;
+}
+
+.quadro-danfe-bottom {
+  flex: 0 0 auto;
+}
+
+.danfe-num {
+  font-size: var(--font-lg);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.danfe-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1.5mm 2.5mm;
+  font-size: var(--font-sm);
+  margin-top: 0.6mm;
+  line-height: 1.2;
+}
+
+.danfe-folha {
+  font-weight: 700;
+}
+
+/* Código de barras vertical (referência DANFE mercado — sem barcode escaneável) */
+.moc-barcode-placeholder {
+  left: calc(11.13cm * var(--moc-scale));
+  top: 1.8cm;
+  width: calc(8.31cm * var(--moc-scale));
+  height: 3.88cm;
+  text-align: center;
+  background: #fff;
+  padding: 1mm 1.2mm;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: flex-end;
+  border: none;
+  z-index: 2;
+}
+
+.barcode-reservada-inner {
+  flex: 1 1 auto;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  width: 100%;
+  height: 100%;
+  padding: 0.8mm 0.5mm 0 0;
+}
+
+.barcode-visual-stub {
+  width: 11mm;
+  height: 34mm;
+  border: 0.5pt solid #888;
+  background: repeating-linear-gradient(
+    90deg,
+    #222 0 1.1px,
+    #fff 1.1px 2.6px
+  );
+}
+
+.moc-natureza .val {
+  font-weight: 700;
+  font-size: var(--font-sm);
+}
+
+.moc-chave-acesso {
+  left: 0;
+  top: 5.72cm;
+  width: calc(11.13cm * var(--moc-scale));
+  height: 1.28cm;
+  padding: 0.6mm 1mm 0.5mm;
+  border: var(--border);
+}
+
+.moc-chave-acesso .val-chave {
+  font-size: 7.5pt;
+  line-height: 1.2;
+  margin-bottom: 0.4mm;
+}
+
+.val-consulta {
+  display: block;
+  font-size: 5.75pt;
+  line-height: 1.15;
+  color: #222;
+  font-weight: 400;
+}
+
+.moc-natureza,
+.moc-protocolo,
+.moc-ie,
+.moc-ie-st,
+.moc-cnpj-emit {
+  padding: 0.7mm 1mm;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.moc-natureza {
+  left: 0;
+  top: 6.05cm;
+  width: calc(11.13cm * var(--moc-scale));
+  height: 0.38cm;
+}
+
+.moc-protocolo {
+  left: calc(11.13cm * var(--moc-scale));
+  top: 6.05cm;
+  width: calc(8.31cm * var(--moc-scale));
+  height: 0.38cm;
+}
+
+.moc-protocolo .protocolo-valor {
+  min-height: 2.5mm;
+}
+
+.moc-ie {
+  left: 0;
+  top: 6.38cm;
+  width: calc(6.46cm * var(--moc-scale));
+  height: 0.38cm;
+}
+
+.moc-ie-st {
+  left: calc(6.46cm * var(--moc-scale));
+  top: 6.38cm;
+  width: calc(4.96cm * var(--moc-scale));
+  height: 0.38cm;
+}
+
+.moc-cnpj-emit {
+  left: calc(11.42cm * var(--moc-scale));
+  top: 6.38cm;
+  width: calc(8.02cm * var(--moc-scale));
+  height: 0.38cm;
+}
+
+/* —— DESTINATÁRIO —— */
+.moc-dest-titulo {
+  left: 0;
+  top: 7.36cm;
+  width: var(--moc-form-w);
+  height: 0.35cm;
+}
+
+.moc-dest-bloco {
+  left: 0;
+  top: 7.71cm;
+  width: var(--moc-form-w);
+  height: 3.12cm;
+  border: var(--border);
+  padding: 0;
+}
+
+.moc-dest-bloco .moc-subfield {
+  padding: var(--pad-cell);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.moc-dest-bloco .lbl {
+  margin-bottom: 0.5mm;
+}
+
+.moc-dest-bloco .val {
+  flex: 1 1 auto;
+}
+
+.moc-dest-nome {
+  left: 0;
+  top: 0.66cm;
+  width: calc(11.14cm * var(--moc-scale));
+  height: 0.72cm;
+}
+
+.moc-dest-cnpj,
+.moc-dest-emissao,
+.moc-dest-endereco,
+.moc-dest-bairro,
+.moc-dest-cep,
+.moc-dest-data-saida,
+.moc-dest-municipio,
+.moc-dest-fone,
+.moc-dest-uf,
+.moc-dest-ie,
+.moc-dest-hora {
+  height: 0.72cm;
+}
+
+.moc-dest-cnpj {
+  left: calc(11.14cm * var(--moc-scale));
+  top: 0.66cm;
+  width: calc(4.28cm * var(--moc-scale));
+}
+
+.moc-dest-emissao {
+  left: calc(15.42cm * var(--moc-scale));
+  top: 0.66cm;
+  width: calc(4.02cm * var(--moc-scale));
+}
+
+.moc-dest-endereco {
+  left: 0;
+  top: 1.38cm;
+  width: calc(11.14cm * var(--moc-scale));
+}
+
+.moc-dest-bairro {
+  left: calc(11.14cm * var(--moc-scale));
+  top: 1.38cm;
+  width: calc(4.28cm * var(--moc-scale));
+}
+
+.moc-dest-cep {
+  left: calc(15.42cm * var(--moc-scale));
+  top: 1.38cm;
+  width: calc(4.02cm * var(--moc-scale));
+}
+
+.moc-dest-data-saida {
+  left: 0;
+  top: 2.1cm;
+  width: calc(2.78cm * var(--moc-scale));
+}
+
+.moc-dest-municipio {
+  left: calc(2.78cm * var(--moc-scale));
+  top: 2.1cm;
+  width: calc(7.35cm * var(--moc-scale));
+}
+
+.moc-dest-fone {
+  left: calc(10.13cm * var(--moc-scale));
+  top: 2.1cm;
+  width: calc(5.29cm * var(--moc-scale));
+}
+
+.moc-dest-uf {
+  left: calc(15.42cm * var(--moc-scale));
+  top: 2.1cm;
+  width: calc(1.02cm * var(--moc-scale));
+}
+
+.moc-dest-ie {
+  left: calc(16.44cm * var(--moc-scale));
+  top: 2.1cm;
+  width: calc(3cm * var(--moc-scale));
+}
+
+.moc-dest-hora {
+  left: 0;
+  top: 2.82cm;
+  width: calc(2.78cm * var(--moc-scale));
+}
+
+/* —— FATURA —— */
+.moc-fatura-titulo {
+  left: 0;
+  top: 10.48cm;
+  width: var(--moc-form-w);
+  height: 0.35cm;
+}
+
+.moc-fatura {
+  left: 0;
+  top: 10.83cm;
+  width: var(--moc-form-w);
+  height: 0.83cm;
+  padding: var(--pad-cell);
+}
+
+/* —— IMPOSTO —— */
+.moc-imposto-titulo {
+  left: 0;
+  top: 11.31cm;
+  width: var(--moc-form-w);
+  height: 0.35cm;
+}
+
+.moc-imposto-bloco {
+  left: 0;
+  top: 11.66cm;
+  width: var(--moc-form-w);
+  height: 2.05cm;
+  padding: 0;
+  border: var(--border);
+}
+
+.moc-imposto-bloco .moc-subfield {
+  padding: 0.7mm 1mm;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 0.62cm;
+}
+
+.moc-imp-base-icms { left: 0; top: 0.28cm; width: calc(3.88cm * var(--moc-scale)); }
+.moc-imp-valor-icms { left: calc(3.88cm * var(--moc-scale)); top: 0.28cm; width: calc(3.88cm * var(--moc-scale)); }
+.moc-imp-base-st { left: calc(7.76cm * var(--moc-scale)); top: 0.28cm; width: calc(3.88cm * var(--moc-scale)); }
+.moc-imp-valor-st { left: calc(11.64cm * var(--moc-scale)); top: 0.28cm; width: calc(3.88cm * var(--moc-scale)); }
+.moc-imp-produtos { left: calc(15.52cm * var(--moc-scale)); top: 0.28cm; width: calc(3.92cm * var(--moc-scale)); }
+.moc-imp-frete { left: 0; top: 0.95cm; width: calc(3.88cm * var(--moc-scale)); }
+.moc-imp-seguro { left: calc(3.88cm * var(--moc-scale)); top: 0.95cm; width: calc(3.88cm * var(--moc-scale)); }
+.moc-imp-desconto { left: calc(7.76cm * var(--moc-scale)); top: 0.95cm; width: calc(3.88cm * var(--moc-scale)); }
+.moc-imp-pis { left: calc(11.64cm * var(--moc-scale)); top: 0.95cm; width: calc(3.88cm * var(--moc-scale)); }
+.moc-imp-cofins { left: calc(15.52cm * var(--moc-scale)); top: 0.95cm; width: calc(3.92cm * var(--moc-scale)); }
+.moc-imp-ipi { left: 0; top: 1.62cm; width: calc(3.88cm * var(--moc-scale)); }
+.moc-imp-outras { left: calc(3.88cm * var(--moc-scale)); top: 1.62cm; width: calc(3.88cm * var(--moc-scale)); }
+.moc-imp-total { left: calc(15.52cm * var(--moc-scale)); top: 1.62cm; width: calc(3.92cm * var(--moc-scale)); }
+
+.moc-imposto-bloco .val {
+  font-weight: 700;
+  text-align: right;
+  font-size: var(--font-sm);
+}
+
+.moc-imp-total .val-total {
+  font-size: var(--font-lg);
+}
+
+/* —— TRANSPORTADOR —— */
+.moc-transp-titulo {
+  left: 0;
+  top: 13.36cm;
+  width: var(--moc-form-w);
+  height: 0.32cm;
+}
+
+.moc-transp-bloco {
+  left: 0;
+  top: 13.68cm;
+  width: var(--moc-form-w);
+  height: 2.28cm;
+  padding: 0;
+  border: var(--border);
+}
+
+.moc-transp-bloco .moc-subfield {
+  padding: 0.7mm 1mm;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  height: 0.68cm;
+}
+
+.moc-tr-nome { left: 0; top: 0.28cm; width: calc(9.72cm * var(--moc-scale)); }
+.moc-tr-frete { left: calc(9.72cm * var(--moc-scale)); top: 0.28cm; width: calc(2.54cm * var(--moc-scale)); }
+.moc-tr-antt { left: calc(12.26cm * var(--moc-scale)); top: 0.28cm; width: calc(2.54cm * var(--moc-scale)); }
+.moc-tr-placa { left: calc(14.8cm * var(--moc-scale)); top: 0.28cm; width: calc(2.54cm * var(--moc-scale)); }
+.moc-tr-uf-placa { left: calc(17.34cm * var(--moc-scale)); top: 0.28cm; width: calc(2.1cm * var(--moc-scale)); }
+.moc-tr-cnpj { left: 0; top: 1cm; width: calc(6.46cm * var(--moc-scale)); }
+.moc-tr-endereco { left: calc(6.46cm * var(--moc-scale)); top: 1cm; width: calc(6.46cm * var(--moc-scale)); }
+.moc-tr-municipio { left: calc(12.92cm * var(--moc-scale)); top: 1cm; width: calc(4.28cm * var(--moc-scale)); }
+.moc-tr-uf { left: calc(17.2cm * var(--moc-scale)); top: 1cm; width: calc(2.24cm * var(--moc-scale)); }
+.moc-tr-ie { left: 0; top: 1.72cm; width: calc(6.46cm * var(--moc-scale)); }
+.moc-tr-qtd { left: calc(6.46cm * var(--moc-scale)); top: 1.72cm; width: calc(2.54cm * var(--moc-scale)); }
+.moc-tr-especie { left: calc(9cm * var(--moc-scale)); top: 1.72cm; width: calc(2.54cm * var(--moc-scale)); }
+.moc-tr-marca { left: calc(11.54cm * var(--moc-scale)); top: 1.72cm; width: calc(2.54cm * var(--moc-scale)); }
+.moc-tr-pb { left: calc(16.62cm * var(--moc-scale)); top: 1.72cm; width: calc(1.41cm * var(--moc-scale)); }
+.moc-tr-pl { left: calc(18.03cm * var(--moc-scale)); top: 1.72cm; width: calc(1.41cm * var(--moc-scale)); }
+
+/* —— Produtos + rodapé (MOC §3.8.1 — posição absoluta, sem fluxo extra) —— */
+.moc-body {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  padding: 0;
+  margin: 0;
+}
+
+.moc-sec-titulo {
+  position: absolute;
+  left: 0;
+  z-index: 2;
+  font-size: var(--font-sec-titulo);
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 0.8mm 1.4mm;
+  border: var(--border);
+  border-bottom: none;
+  background: var(--titulo-bg);
+  line-height: 1.2;
+  letter-spacing: 0.03em;
+  width: var(--moc-form-w);
+  height: 0.35cm;
+  display: flex;
+  align-items: center;
+}
+
+.moc-produtos-titulo {
+  top: 17.38cm;
+}
+
+.moc-adic-titulo {
+  top: 25.48cm;
+}
+
+.moc-sec-produtos {
+  position: absolute;
+  left: 0;
+  top: 17.70cm;
+  width: var(--moc-form-w);
+  height: 6.95cm;
+  border: var(--border);
+  padding: 0;
+  overflow: hidden;
+  z-index: 1;
+  background-color: #fff;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(5.5mm - 0.5pt),
+    #bdbdbd calc(5.5mm - 0.5pt),
+    #bdbdbd 5.5mm
+  );
+  background-size: 100% 5.5mm;
+  background-origin: content-box;
+  background-clip: content-box;
+}
+
+.produtos-watermark {
+  position: absolute;
+  top: 52%;
+  left: 50%;
+  width: 94%;
+  transform: translate(-50%, -50%) rotate(-12deg);
+  text-align: center;
+  font-size: 18pt;
+  font-weight: 700;
+  line-height: 1.38;
+  letter-spacing: 0.03em;
+  color: #5a6472;
+  opacity: 0.19;
+  z-index: 0;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+table.produtos {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-sm);
+  table-layout: fixed;
+  background: #fff;
+}
+
+table.produtos thead {
+  display: table-header-group;
+}
+
+table.produtos thead th {
+  border: var(--border);
+  background: var(--thead-bg);
+  padding: 1.3mm 0.6mm;
+  font-size: 5.75pt;
+  font-weight: 700;
+  text-align: center;
+  vertical-align: middle;
+  line-height: 1.15;
+  color: #111;
+}
+
+table.produtos tbody td {
+  border: var(--border);
+  padding: 1.1mm 0.65mm;
+  vertical-align: middle;
+  font-size: 6.75pt;
+  line-height: 1.25;
+}
+
+table.produtos tbody tr.produto-linha-dados {
+  page-break-inside: avoid;
+  break-inside: avoid;
+  background: #fff;
+}
+
+table.produtos tbody tr.produto-linha-dados td {
+  vertical-align: middle;
+}
+
+/* 14 colunas — descrição priorizada; fiscais compactos */
+col.col-cod { width: 6.5%; }
+col.col-desc { width: 28%; }
+col.col-ncm { width: 6.5%; }
+col.col-cst { width: 3.5%; }
+col.col-cfop { width: 4.5%; }
+col.col-un { width: 3.5%; }
+col.col-qtd { width: 5.5%; }
+col.col-vu { width: 6.5%; }
+col.col-vt { width: 6.5%; }
+col.col-bc { width: 6.5%; }
+col.col-vi { width: 5.5%; }
+col.col-vipi { width: 5.5%; }
+col.col-aliq-icms { width: 4.5%; }
+col.col-aliq-ipi { width: 4%; }
+
+.td-desc {
+  text-align: left;
+  vertical-align: middle !important;
+}
+
+.td-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.td-center,
+.td-cod {
+  text-align: center;
+  font-size: 6.5pt;
+}
+
+.td-qtd {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: 6.75pt;
+  font-weight: 600;
+}
+
+.prod-desc-main {
+  font-size: 8pt;
+  font-weight: 700;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.32;
+  color: #000;
+}
+
+.prod-extra {
+  font-size: 6pt;
+  color: #333;
+  margin-top: 0.6mm;
+  line-height: 1.2;
+}
+
+.moc-rodape-grid {
+  position: absolute;
+  left: 0;
+  top: 25.83cm;
+  display: grid;
+  grid-template-columns: 12.95cm 7.62cm;
+  width: var(--moc-form-w);
+  height: 3.22cm;
+  z-index: 2;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+.moc-sec-inf-compl,
+.moc-sec-res-fisco {
+  border: var(--border);
+  padding: 1.35mm 1.55mm 1.2mm;
+  height: 3.22cm;
+  overflow: hidden;
+  vertical-align: top;
+  background: #fff;
+}
+
+.moc-sec-inf-compl .lbl,
+.moc-sec-res-fisco .lbl {
+  margin-bottom: 0.75mm;
+}
+
+.moc-sec-inf-compl .val-sm,
+.moc-sec-res-fisco .val-sm {
+  line-height: 1.4;
+  margin-top: 0.5mm;
+  padding-right: 0.5mm;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 7pt;
+}
+
+.moc-rodape-sys {
+  position: absolute;
+  left: 0;
+  top: 29.08cm;
+  width: var(--moc-form-w);
+  height: 0.12cm;
+  padding: 0;
+  border-top: 0.5pt solid #ccc;
+  font-size: 5.5pt;
+  color: #444;
+  display: flex;
+  justify-content: flex-end;
+  gap: 2.5mm;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  z-index: 2;
+}
+
+.page-break {
+  page-break-before: always;
+}
+
+.continuacao-cab {
+  position: absolute;
+  left: 0;
+  top: 0.42cm;
+  width: var(--moc-form-w);
+  height: 6.96cm;
+  border: var(--border);
+  background: var(--titulo-bg);
+  font-weight: 700;
+  padding: 1mm;
+}

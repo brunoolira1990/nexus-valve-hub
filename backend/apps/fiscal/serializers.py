@@ -8,22 +8,51 @@ from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 
 from apps.cadastros.models import Cliente, Empresa, Fornecedor, Transportadora
+from apps.fiscal.nfe_saida_bloqueio import (
+    CAMPOS_COMPLEMENTARES_ITEM_NFE,
+    CAMPOS_COMPLEMENTARES_NFE,
+    MSG_DADOS_COMPLEMENTARES_BLOQUEADOS,
+    MSG_ITENS_ORIGEM_COMERCIAL,
+    dados_complementares_editaveis,
+    itens_comerciais_editaveis,
+    nf_ja_finalizada_operacionalmente,
+    origem_comercial_travada,
+)
 from apps.comercial.models import ItemPedidoCompra, PedidoCompra, PedidoVenda
 from apps.corridas.models import Corrida
 from apps.produtos.conversao_medidas import ConversaoErro, converter_quantidade_produto
 from apps.produtos.models import Produto
 from apps.produtos.snapshot import build_produto_snapshot
+from apps.regras_fiscais.entrada_fiscal import (
+    avaliar_item_entrada_fiscal,
+    montar_contexto_fiscal_entrada,
+    montar_resumo_fiscal_conferencia,
+)
 from apps.text_normalize import normalize_operational_fields
 from apps.qualidade.certificado_pdf import gerar_certificado_pdf
 from apps.qualidade.models import Certificado
 
+from .atendimento_estoque import (
+    criar_ou_atualizar_atendimento_item_antecipado,
+    montar_resumo_atendimento_estoque_nf,
+    sync_itens_nf_saida_antecipada,
+    validar_troca_modo_atendimento,
+)
 from .estoque_services import (
     aplicar_todos_itens_entrada,
     aplicar_todos_itens_saida,
     reverter_todos_itens_entrada,
     reverter_todos_itens_saida,
 )
+from .atendimento_estoque import (
+    dias_em_aberto_atendimento,
+    listar_vinculos_item_conferencia,
+    quantidade_alocada_item_conferencia,
+    quantidade_disponivel_item_conferencia,
+    quantidade_pendente_atendimento,
+)
 from .models import (
+    AtendimentoEstoque,
     CTeEntrada,
     CTeHistoricoImportado,
     EventoCTeHistoricoImportado,
@@ -39,6 +68,15 @@ from .models import (
     NFeEntradaHistoricaImportada,
     NFeSaida,
     NFeSaidaHistoricaImportada,
+)
+from .conferencia_pedido import (
+    avaliar_elegibilidade_estoque_item_conferencia,
+    build_snapshot_pedido,
+    carregar_certificados_fornecedor_por_item_conferencia,
+    item_pedido_resumo_dict,
+    montar_resumo_elegibilidade_estoque,
+    montar_resumo_pedido_conferencia,
+    sugerir_itens_pedido_linha,
 )
 from .nfe_historica_fiscal import documento_tem_icmstot, extrair_totais_fiscais_documento
 
@@ -301,6 +339,7 @@ class NFeEntradaSerializer(serializers.ModelSerializer):
 
 
 class ItemNFeSaidaSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False, allow_null=True)
     produto_id = serializers.PrimaryKeyRelatedField(queryset=Produto.objects.all(), source='produto')
     corrida_id = serializers.PrimaryKeyRelatedField(
         queryset=Corrida.objects.all(),
@@ -313,7 +352,22 @@ class ItemNFeSaidaSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ItemNFeSaida
-        fields = ('id', 'produto_id', 'produto_nome', 'quantidade', 'valor', 'corrida_id', 'corrida_numero', 'snapshot_produto')
+        fields = (
+            'id',
+            'produto_id',
+            'produto_nome',
+            'quantidade',
+            'valor',
+            'corrida_id',
+            'corrida_numero',
+            'snapshot_produto',
+            'snapshot_fiscal',
+            'snapshot_comercial',
+            'pedido_cliente_numero',
+            'pedido_cliente_item',
+            'observacao_item',
+            'informacao_adicional_item',
+        )
 
     def get_produto_nome(self, obj):
         return obj.produto.descricao
@@ -325,6 +379,11 @@ class ItemNFeSaidaSerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
         data['produto_id'] = instance.produto_id
         data['corrida_id'] = instance.corrida_id
+        snap = instance.snapshot_produto or {}
+        if snap.get('descricao'):
+            data['produto_nome'] = snap['descricao']
+        elif instance.produto_id:
+            data['produto_nome'] = instance.produto.descricao
         return data
 
     def validate(self, attrs):
@@ -349,7 +408,21 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
         allow_null=True,
         required=False,
     )
+    pedido_venda_numero = serializers.SerializerMethodField(read_only=True)
     cliente_nome = serializers.SerializerMethodField(read_only=True)
+    modo_atendimento_estoque_display = serializers.SerializerMethodField(read_only=True)
+    resumo_atendimento_estoque = serializers.SerializerMethodField(read_only=True)
+    origem_comercial_travada = serializers.SerializerMethodField(read_only=True)
+    dados_complementares_editaveis = serializers.SerializerMethodField(read_only=True)
+    itens_comerciais_editaveis = serializers.SerializerMethodField(read_only=True)
+    transportadora_id = serializers.PrimaryKeyRelatedField(
+        queryset=Transportadora.objects.all(),
+        source='transportadora',
+        allow_null=True,
+        required=False,
+    )
+    transportadora_nome = serializers.SerializerMethodField(read_only=True)
+    status_conferencia_display = serializers.SerializerMethodField(read_only=True)
     itens = ItemNFeSaidaSerializer(many=True)
 
     class Meta:
@@ -361,18 +434,269 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
             'cliente_nome',
             'data',
             'valor_total',
+            'modo_atendimento_estoque',
+            'modo_atendimento_estoque_display',
             'status',
+            'status_conferencia',
+            'status_conferencia_display',
+            'conferencia_validada_em',
+            'conferencia_marcada_pronta_em',
+            'conferencia_ultima_mensagem',
             'condicao_pagamento_texto',
             'dias_parcelas',
             'quantidade_parcelas',
             'vencimentos_finais',
             'titulos_receber',
             'pedido_venda_id',
+            'pedido_venda_numero',
+            'faturamento_pedido_venda_id',
+            'observacao_origem',
+            'resumo_atendimento_estoque',
+            'origem_comercial_travada',
+            'dados_complementares_editaveis',
+            'itens_comerciais_editaveis',
+            'transportadora_id',
+            'transportadora_nome',
+            'modalidade_frete',
+            'valor_frete',
+            'quantidade_volumes',
+            'peso_bruto',
+            'peso_liquido',
+            'observacoes_nfe',
+            'informacoes_adicionais',
+            'pedido_cliente_numero',
+            'pedido_cliente_observacao',
+            'informacoes_fisco',
+            'observacoes_internas',
+            'especie_volumes',
+            'marca_volumes',
+            'numeracao_volumes',
+            'placa_veiculo',
+            'uf_veiculo',
             'itens',
         )
+        read_only_fields = (
+            'status_conferencia',
+            'status_conferencia_display',
+            'conferencia_validada_em',
+            'conferencia_marcada_pronta_em',
+            'conferencia_ultima_mensagem',
+        )
+
+    def get_pedido_venda_numero(self, obj):
+        if obj.pedido_venda_id and obj.pedido_venda:
+            return obj.pedido_venda.numero
+        return ''
 
     def get_cliente_nome(self, obj):
         return obj.cliente.razao_social
+
+    def get_modo_atendimento_estoque_display(self, obj):
+        labels = {
+            NFeSaida.ModoAtendimentoEstoque.IMEDIATO: 'Imediato',
+            NFeSaida.ModoAtendimentoEstoque.ANTECIPADO: 'Antecipado',
+        }
+        return labels.get(obj.modo_atendimento_estoque, obj.modo_atendimento_estoque or '')
+
+    def get_origem_comercial_travada(self, obj):
+        return origem_comercial_travada(obj)
+
+    def get_dados_complementares_editaveis(self, obj):
+        return dados_complementares_editaveis(obj)
+
+    def get_itens_comerciais_editaveis(self, obj):
+        return itens_comerciais_editaveis(obj)
+
+    def get_transportadora_nome(self, obj):
+        if obj.transportadora_id and obj.transportadora:
+            return obj.transportadora.razao_social
+        return ''
+
+    def get_status_conferencia_display(self, obj):
+        from apps.fiscal.nfe_saida_prontidao import status_conferencia_display
+
+        return status_conferencia_display(obj.status_conferencia)
+
+    def _cliente_pedido_vinculado(self, nf: NFeSaida):
+        pedido = nf.pedido_venda
+        if not pedido or not pedido.cliente_id:
+            return None
+        return pedido.cliente_id
+
+    def _validar_cliente_origem_comercial(self, nf: NFeSaida, cliente) -> None:
+        if not nf.faturamento_pedido_venda_id and not nf.pedido_venda_id:
+            return
+        esperado = self._cliente_pedido_vinculado(nf)
+        if esperado is None:
+            return
+        if cliente and cliente.pk != esperado:
+            raise serializers.ValidationError(
+                {
+                    'cliente_id': (
+                        'Cliente não pode ser alterado em NF-e originada de pedido/faturamento. '
+                        'Use o cliente do pedido de venda vinculado.'
+                    ),
+                },
+            )
+
+    def validate(self, attrs):
+        instance = getattr(self, 'instance', None)
+        cliente = attrs.get('cliente', instance.cliente if instance else None)
+        nf_ctx = instance or NFeSaida(
+            pedido_venda=attrs.get('pedido_venda'),
+            faturamento_pedido_venda=attrs.get('faturamento_pedido_venda'),
+        )
+        if instance:
+            nf_ctx = instance
+            if 'pedido_venda' in attrs:
+                nf_ctx.pedido_venda = attrs['pedido_venda']
+            if 'faturamento_pedido_venda' in attrs:
+                nf_ctx.faturamento_pedido_venda = attrs['faturamento_pedido_venda']
+        self._validar_cliente_origem_comercial(nf_ctx, cliente)
+        if instance and origem_comercial_travada(instance):
+            self._validar_itens_origem_comercial_travada()
+        if instance and not dados_complementares_editaveis(instance):
+            for campo in CAMPOS_COMPLEMENTARES_NFE:
+                if campo in attrs:
+                    raise serializers.ValidationError(
+                        {campo: MSG_DADOS_COMPLEMENTARES_BLOQUEADOS},
+                    )
+        return super().validate(attrs)
+
+    def get_resumo_atendimento_estoque(self, obj):
+        if obj.modo_atendimento_estoque != NFeSaida.ModoAtendimentoEstoque.ANTECIPADO:
+            return None
+        return montar_resumo_atendimento_estoque_nf(obj)
+
+    def _modo_antecipado(self, modo: str | None) -> bool:
+        return (modo or NFeSaida.ModoAtendimentoEstoque.IMEDIATO) == NFeSaida.ModoAtendimentoEstoque.ANTECIPADO
+
+    _STATUS_NFE_EMITIDA = frozenset({'EMITIDA', 'EMITIDO', 'AUTORIZADA_INTERNA', 'AUTORIZADA'})
+    _STATUS_NFE_CANCELADA = frozenset({'CANCELADA', 'CANCELADO', 'CANCELADA_INTERNA'})
+
+    @staticmethod
+    def _status_nf_normalizado(status: str | None) -> str:
+        return (status or '').strip().upper()
+
+    def _status_nf_apos_update(self, instance: NFeSaida, validated_data: dict) -> str:
+        if 'status' in validated_data:
+            return self._status_nf_normalizado(validated_data['status'])
+        return self._status_nf_normalizado(instance.status)
+
+    @staticmethod
+    def _nf_ja_finalizada_operacionalmente(instance: NFeSaida) -> bool:
+        return nf_ja_finalizada_operacionalmente(instance)
+
+    @staticmethod
+    def _item_sem_id(item: dict) -> dict:
+        return {k: v for k, v in item.items() if k != 'id'}
+
+    def _validar_itens_origem_comercial_travada(self) -> None:
+        raw_itens = (self.initial_data or {}).get('itens')
+        if raw_itens is None:
+            return
+        bloqueados = {'produto', 'produto_id', 'quantidade', 'valor', 'corrida', 'corrida_id'}
+        for row in raw_itens:
+            if not isinstance(row, dict):
+                continue
+            if any(k in row for k in bloqueados):
+                raise serializers.ValidationError({'itens': MSG_ITENS_ORIGEM_COMERCIAL})
+            if row.get('id') in (None, ''):
+                raise serializers.ValidationError(
+                    {
+                        'itens': (
+                            'NF-e de faturamento permite alterar apenas complementos de itens '
+                            'existentes (informe o id de cada item).'
+                        ),
+                    },
+                )
+
+    def _item_ids_from_initial(self) -> list[int | None]:
+        raw_itens = (self.initial_data or {}).get('itens') or []
+        ids: list[int | None] = []
+        for row in raw_itens:
+            if not isinstance(row, dict):
+                ids.append(None)
+                continue
+            raw_id = row.get('id')
+            if raw_id in (None, ''):
+                ids.append(None)
+            else:
+                try:
+                    ids.append(int(raw_id))
+                except (TypeError, ValueError):
+                    ids.append(None)
+        return ids
+
+    def _sincronizar_itens_complementares(self, nf: NFeSaida, itens_data: list[dict]) -> None:
+        """NF-e de faturamento: só campos de pedido do cliente / observação por item."""
+        bloqueados = {'produto', 'produto_id', 'quantidade', 'valor', 'corrida', 'corrida_id'}
+        existentes = {it.id: it for it in nf.itens.all()}
+        for row in itens_data:
+            if not isinstance(row, dict):
+                continue
+            if any(k in row for k in bloqueados):
+                raise ValidationError({'itens': MSG_ITENS_ORIGEM_COMERCIAL})
+            raw_id = row.get('id')
+            if raw_id in (None, ''):
+                raise ValidationError(
+                    {
+                        'itens': (
+                            'NF-e de faturamento permite alterar apenas complementos de itens '
+                            'existentes (informe o id de cada item).'
+                        ),
+                    },
+                )
+            try:
+                pk = int(raw_id)
+            except (TypeError, ValueError):
+                continue
+            item = existentes.get(pk)
+            if item is None:
+                continue
+            update_fields = []
+            for field in CAMPOS_COMPLEMENTARES_ITEM_NFE:
+                if field in row:
+                    setattr(item, field, row.get(field) or '')
+                    update_fields.append(field)
+            if update_fields:
+                item.save(update_fields=update_fields)
+
+    def _persist_itens_imediato(self, nf: NFeSaida, itens_data: list[dict]) -> None:
+        nf.itens.all().delete()
+        for item in itens_data:
+            ItemNFeSaida.objects.create(nf=nf, **self._item_sem_id(item))
+
+    def _persist_itens_antecipado(self, nf: NFeSaida, itens_data: list[dict]) -> None:
+        sync_itens_nf_saida_antecipada(
+            nf,
+            [self._item_sem_id(item) for item in itens_data],
+            item_ids_payload=self._item_ids_from_initial(),
+        )
+
+    def _aplicar_estoque_saida(self, nf: NFeSaida) -> None:
+        if self._modo_antecipado(nf.modo_atendimento_estoque):
+            return
+        try:
+            aplicar_todos_itens_saida(nf)
+        except ValueError as exc:
+            raise ValidationError({'detail': str(exc)}) from exc
+
+    def _finalizar_nf_saida(self, nf: NFeSaida) -> None:
+        recalcular_valor_nf_saida(nf)
+        sincronizar_financeiro_nf_saida(nf)
+        nf.save(
+            update_fields=[
+                'valor_total',
+                'condicao_pagamento_texto',
+                'dias_parcelas',
+                'quantidade_parcelas',
+                'vencimentos_finais',
+                'titulos_receber',
+            ],
+        )
+        self._aplicar_estoque_saida(nf)
+        _gerar_ou_atualizar_certificado(nf)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -381,59 +705,120 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
         data['valor_total'] = float(instance.valor_total)
         data['vencimentos_finais'] = [d.isoformat() for d in instance.vencimentos_finais]
         data['pedido_venda_id'] = instance.pedido_venda_id
+        data['faturamento_pedido_venda_id'] = instance.faturamento_pedido_venda_id
+        data['transportadora_id'] = instance.transportadora_id
+        data['valor_frete'] = float(instance.valor_frete)
+        data['peso_bruto'] = float(instance.peso_bruto)
+        data['peso_liquido'] = float(instance.peso_liquido)
         return data
+
+    def _finalizar_nf_saida_rascunho(self, nf: NFeSaida) -> None:
+        """Rascunho: só totais — sem estoque, financeiro ou certificado."""
+        recalcular_valor_nf_saida(nf)
 
     @transaction.atomic
     def create(self, validated_data):
         itens_data = validated_data.pop('itens')
-        nf = NFeSaida.objects.create(**validated_data)
-        for item in itens_data:
-            ItemNFeSaida.objects.create(nf=nf, **item)
-        recalcular_valor_nf_saida(nf)
-        sincronizar_financeiro_nf_saida(nf)
-        nf.save(
-            update_fields=[
-                'condicao_pagamento_texto',
-                'dias_parcelas',
-                'quantidade_parcelas',
-                'vencimentos_finais',
-                'titulos_receber',
-            ]
+        modo = validated_data.get(
+            'modo_atendimento_estoque',
+            NFeSaida.ModoAtendimentoEstoque.IMEDIATO,
         )
+        status_nf = (validated_data.get('status') or '').strip().upper()
+        nf = NFeSaida.objects.create(**validated_data)
+        if self._modo_antecipado(modo):
+            for item in itens_data:
+                row = ItemNFeSaida.objects.create(nf=nf, **self._item_sem_id(item))
+                criar_ou_atualizar_atendimento_item_antecipado(row)
+        else:
+            for item in itens_data:
+                ItemNFeSaida.objects.create(nf=nf, **self._item_sem_id(item))
         try:
-            aplicar_todos_itens_saida(nf)
+            if status_nf == 'RASCUNHO':
+                self._finalizar_nf_saida_rascunho(nf)
+            else:
+                self._finalizar_nf_saida(nf)
+        except ValidationError:
+            raise
         except ValueError as exc:
             raise ValidationError({'detail': str(exc)}) from exc
-        _gerar_ou_atualizar_certificado(nf)
         return nf
 
     @transaction.atomic
     def update(self, instance, validated_data):
+        if instance.faturamento_pedido_venda_id or instance.pedido_venda_id:
+            validated_data.pop('cliente', None)
+
+        status_nf = self._status_nf_apos_update(instance, validated_data)
+        ja_finalizada = self._nf_ja_finalizada_operacionalmente(instance)
+        if ja_finalizada and status_nf in self._STATUS_NFE_CANCELADA:
+            raise ValidationError({'detail': 'NF-e cancelada não pode ser alterada.'})
+
         itens_data = validated_data.pop('itens', None)
-        reverter_todos_itens_saida(instance)
+        alterou_conferencia = itens_data is not None or any(
+            k in validated_data for k in CAMPOS_COMPLEMENTARES_NFE
+        )
+        if origem_comercial_travada(instance) and itens_data is not None:
+            self._sincronizar_itens_complementares(instance, itens_data)
+            itens_data = None
+        if ja_finalizada and itens_data is not None:
+            raise ValidationError(
+                {'itens': 'NF-e emitida ou autorizada não permite alteração de itens.'},
+            )
+        if ja_finalizada:
+            for campo in list(validated_data.keys()):
+                if campo in CAMPOS_COMPLEMENTARES_NFE:
+                    validated_data.pop(campo)
+
+        novo_modo = validated_data.get('modo_atendimento_estoque', instance.modo_atendimento_estoque)
+        try:
+            validar_troca_modo_atendimento(instance, novo_modo)
+        except ValueError as exc:
+            raise ValidationError({'modo_atendimento_estoque': str(exc)}) from exc
+
+        reverter_estoque = (
+            not ja_finalizada
+            and status_nf == 'RASCUNHO'
+            and instance.modo_atendimento_estoque == NFeSaida.ModoAtendimentoEstoque.IMEDIATO
+        )
+        if reverter_estoque:
+            reverter_todos_itens_saida(instance)
+
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
+
         if itens_data is not None:
-            instance.itens.all().delete()
-            for item in itens_data:
-                ItemNFeSaida.objects.create(nf=instance, **item)
-        recalcular_valor_nf_saida(instance)
-        sincronizar_financeiro_nf_saida(instance)
-        instance.save(
-            update_fields=[
-                'condicao_pagamento_texto',
-                'dias_parcelas',
-                'quantidade_parcelas',
-                'vencimentos_finais',
-                'titulos_receber',
-            ]
-        )
+            if self._modo_antecipado(novo_modo):
+                try:
+                    self._persist_itens_antecipado(instance, itens_data)
+                except ValueError as exc:
+                    raise ValidationError({'itens': str(exc)}) from exc
+            else:
+                self._persist_itens_imediato(instance, itens_data)
+
         try:
-            aplicar_todos_itens_saida(instance)
+            if status_nf == 'RASCUNHO':
+                self._finalizar_nf_saida_rascunho(instance)
+            elif ja_finalizada:
+                pass
+            else:
+                self._finalizar_nf_saida(instance)
+        except ValidationError:
+            raise
         except ValueError as exc:
             raise ValidationError({'detail': str(exc)}) from exc
-        _gerar_ou_atualizar_certificado(instance)
+
+        if alterou_conferencia and dados_complementares_editaveis(instance):
+            from apps.fiscal.nfe_saida_prontidao import processar_prontidao_apos_salvar_conferencia
+
+            request = self.context.get('request')
+            usuario = getattr(request, 'user', None) if request else None
+            processar_prontidao_apos_salvar_conferencia(
+                instance,
+                usuario=usuario,
+                alterou_dados=alterou_conferencia,
+            )
+
         return instance
 
 
@@ -623,7 +1008,21 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
     )
     produto_nome = serializers.SerializerMethodField(read_only=True)
     sugestoes_produto = serializers.SerializerMethodField(read_only=True)
+    sugestoes_item_pedido = serializers.SerializerMethodField(read_only=True)
     dados_nf = serializers.SerializerMethodField(read_only=True)
+    item_pedido_resumo = serializers.SerializerMethodField(read_only=True)
+    pedido_numero = serializers.SerializerMethodField(read_only=True)
+    item_pedido_produto_codigo = serializers.SerializerMethodField(read_only=True)
+    item_pedido_produto_descricao = serializers.SerializerMethodField(read_only=True)
+    item_pedido_quantidade = serializers.SerializerMethodField(read_only=True)
+    item_pedido_unidade = serializers.SerializerMethodField(read_only=True)
+    item_pedido_valor_unitario = serializers.SerializerMethodField(read_only=True)
+    tributos_nf = serializers.SerializerMethodField(read_only=True)
+    resultado_fiscal = serializers.SerializerMethodField(read_only=True)
+    elegibilidade_estoque = serializers.SerializerMethodField(read_only=True)
+    quantidade_alocada_atendimento = serializers.SerializerMethodField(read_only=True)
+    quantidade_disponivel_atendimento = serializers.SerializerMethodField(read_only=True)
+    vinculos_atendimento = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = ItemNFeEntradaConferencia
@@ -633,6 +1032,13 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             'produto_id',
             'produto_nome',
             'item_pedido_compra_id',
+            'item_pedido_resumo',
+            'pedido_numero',
+            'item_pedido_produto_codigo',
+            'item_pedido_produto_descricao',
+            'item_pedido_quantidade',
+            'item_pedido_unidade',
+            'item_pedido_valor_unitario',
             'status',
             'motivo_ignorado',
             'observacao',
@@ -654,14 +1060,137 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             'snapshot_produto',
             'snapshot_pedido',
             'sugestoes_produto',
+            'sugestoes_item_pedido',
             'dados_nf',
+            'tributos_nf',
+            'resultado_fiscal',
+            'elegibilidade_estoque',
+            'quantidade_alocada_atendimento',
+            'quantidade_disponivel_atendimento',
+            'vinculos_atendimento',
         )
+        read_only_fields = (
+            'sugestoes_item_pedido',
+            'item_pedido_resumo',
+            'pedido_numero',
+            'item_pedido_produto_codigo',
+            'item_pedido_produto_descricao',
+            'item_pedido_quantidade',
+            'item_pedido_unidade',
+            'item_pedido_valor_unitario',
+            'tributos_nf',
+            'resultado_fiscal',
+            'elegibilidade_estoque',
+            'quantidade_alocada_atendimento',
+            'quantidade_disponivel_atendimento',
+            'vinculos_atendimento',
+        )
+
+    def get_quantidade_alocada_atendimento(self, obj: ItemNFeEntradaConferencia) -> str:
+        return f'{quantidade_alocada_item_conferencia(obj):.3f}'
+
+    def get_quantidade_disponivel_atendimento(self, obj: ItemNFeEntradaConferencia) -> str:
+        return f'{quantidade_disponivel_item_conferencia(obj):.3f}'
+
+    def get_vinculos_atendimento(self, obj: ItemNFeEntradaConferencia) -> list:
+        return listar_vinculos_item_conferencia(obj)
+
+    def get_tributos_nf(self, obj: ItemNFeEntradaConferencia) -> dict:
+        from apps.fiscal.services.imposto_item_xml import extrair_tributos_item
+
+        prod_json = obj.item_nfe_historico.prod_json or {}
+        imposto_json = obj.item_nfe_historico.imposto_json or {}
+        trib = extrair_tributos_item(prod_json, imposto_json)
+        from apps.regras_fiscais.entrada_fiscal import _montar_impostos_nf
+
+        snap = _montar_impostos_nf(trib)
+        return {
+            'cst_icms': snap.get('cst_icms') or trib.get('cst_icms') or '',
+            'csosn': snap.get('csosn') or trib.get('cst_icms_detalhe') or '',
+            'cst_pis': snap.get('cst_pis') or trib.get('cst_pis') or '',
+            'cst_cofins': snap.get('cst_cofins') or trib.get('cst_cofins') or '',
+            'cst_ipi': snap.get('cst_ipi') or trib.get('cst_ipi') or '',
+            'aliquota_icms': snap.get('aliquota_icms') or '',
+            'aliquota_ipi': snap.get('aliquota_ipi') or '',
+            'aliquota_pis': snap.get('aliquota_pis') or '',
+            'aliquota_cofins': snap.get('aliquota_cofins') or '',
+        }
+
+    def get_resultado_fiscal(self, obj: ItemNFeEntradaConferencia) -> dict:
+        contexto = self.context.get('contexto_fiscal_entrada')
+        regras = self.context.get('regras_fiscais_entrada')
+        if contexto is None or regras is None:
+            conferencia = self.context.get('conferencia')
+            if conferencia is None:
+                conferencia = obj.conferencia
+            if contexto is None:
+                contexto = montar_contexto_fiscal_entrada(conferencia)
+            if regras is None:
+                from apps.regras_fiscais.entrada_fiscal import carregar_regras_fiscais_entrada_ativas
+
+                regras = carregar_regras_fiscais_entrada_ativas()
+        return avaliar_item_entrada_fiscal(obj, contexto, regras)
+
+    def get_elegibilidade_estoque(self, obj: ItemNFeEntradaConferencia) -> dict:
+        cert_map = self.context.get('certificados_fornecedor_por_item') or {}
+        cert_info = cert_map.get(obj.id, {})
+        divergencias_aceitas = bool(self.context.get('divergencias_aceitas_conferencia'))
+        return avaliar_elegibilidade_estoque_item_conferencia(
+            obj,
+            resultado_fiscal=self.get_resultado_fiscal(obj),
+            divergencias_aceitas=divergencias_aceitas,
+            certificado_fornecedor_info=cert_info,
+        )
+
+    def _resumo_pedido(self, obj: ItemNFeEntradaConferencia) -> dict | None:
+        return item_pedido_resumo_dict(obj)
+
+    def get_item_pedido_resumo(self, obj: ItemNFeEntradaConferencia):
+        return self._resumo_pedido(obj)
+
+    def get_pedido_numero(self, obj: ItemNFeEntradaConferencia) -> str:
+        resumo = self._resumo_pedido(obj)
+        return resumo.get('pedido_numero', '') if resumo else ''
+
+    def get_item_pedido_produto_codigo(self, obj: ItemNFeEntradaConferencia) -> str:
+        resumo = self._resumo_pedido(obj)
+        return resumo.get('codigo', '') if resumo else ''
+
+    def get_item_pedido_produto_descricao(self, obj: ItemNFeEntradaConferencia) -> str:
+        resumo = self._resumo_pedido(obj)
+        return resumo.get('descricao', '') if resumo else ''
+
+    def get_item_pedido_quantidade(self, obj: ItemNFeEntradaConferencia) -> str:
+        resumo = self._resumo_pedido(obj)
+        return str(resumo.get('quantidade', '')) if resumo else ''
+
+    def get_item_pedido_unidade(self, obj: ItemNFeEntradaConferencia) -> str:
+        resumo = self._resumo_pedido(obj)
+        return resumo.get('unidade', '') if resumo else ''
+
+    def get_item_pedido_valor_unitario(self, obj: ItemNFeEntradaConferencia) -> str:
+        resumo = self._resumo_pedido(obj)
+        return str(resumo.get('valor_unitario', '')) if resumo else ''
 
     def get_produto_nome(self, obj):
         return obj.produto.descricao if obj.produto_id else ''
 
     def get_dados_nf(self, obj):
         return _extract_prod_fields(obj.item_nfe_historico.prod_json or {})
+
+    def get_sugestoes_item_pedido(self, obj: ItemNFeEntradaConferencia) -> list[dict]:
+        if not self.context.get('pedido_compra_id'):
+            return []
+        itens_pedido = self.context.get('itens_pedido') or []
+        if not itens_pedido:
+            return []
+        vinculados = set(self.context.get('conferencia_itens_vinculos') or [])
+        vinculados_outras = {vid for vid in vinculados if vid != obj.item_pedido_compra_id}
+        return sugerir_itens_pedido_linha(
+            obj,
+            itens_pedido,
+            vinculados_outras_linhas=vinculados_outras,
+        )
 
     def get_sugestoes_produto(self, obj):
         prod = obj.item_nfe_historico.prod_json or {}
@@ -712,7 +1241,9 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
         )
         motivo_ignorado = attrs.get('motivo_ignorado', getattr(self.instance, 'motivo_ignorado', ''))
         if status in {ItemNFeEntradaConferencia.Status.PRODUTO_VINCULADO, ItemNFeEntradaConferencia.Status.CONFERIDO} and not produto:
-            raise serializers.ValidationError({'produto_id': 'Produto Nexus é obrigatório para este status.'})
+            raise serializers.ValidationError(
+                {'produto_id': 'Produto cadastrado no NEXUS APP é obrigatório para este status.'}
+            )
         if status == ItemNFeEntradaConferencia.Status.CONFERIDO:
             if quantidade_estoque <= 0:
                 raise serializers.ValidationError(
@@ -724,6 +1255,31 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'motivo_ignorado': 'Informe o motivo para ignorar o item.'})
         if produto:
             attrs['snapshot_produto'] = build_produto_snapshot(produto)
+
+        item_pedido_in_payload = 'item_pedido_compra' in attrs
+        item_pedido = attrs.get('item_pedido_compra') if item_pedido_in_payload else None
+        if item_pedido_in_payload and item_pedido is None:
+            attrs['snapshot_pedido'] = {}
+        elif item_pedido is not None:
+            pedido_compra_id = self.context.get('pedido_compra_id')
+            if not pedido_compra_id:
+                raise serializers.ValidationError(
+                    {
+                        'item_pedido_compra_id': (
+                            'Selecione o pedido de compra no cabeçalho antes de vincular itens do pedido.'
+                        ),
+                    },
+                )
+            if item_pedido.pedido_id != pedido_compra_id:
+                raise serializers.ValidationError(
+                    {
+                        'item_pedido_compra_id': (
+                            'O item do pedido não pertence ao pedido de compra vinculado à conferência.'
+                        ),
+                    },
+                )
+            attrs['snapshot_pedido'] = build_snapshot_pedido(item_pedido)
+
         return attrs
 
 
@@ -742,6 +1298,9 @@ class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):
     data_emissao = serializers.SerializerMethodField(read_only=True)
     valor_total = serializers.SerializerMethodField(read_only=True)
     pedido_compra_numero = serializers.SerializerMethodField(read_only=True)
+    resumo_pedido = serializers.SerializerMethodField(read_only=True)
+    resumo_fiscal = serializers.SerializerMethodField(read_only=True)
+    resumo_elegibilidade_estoque = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = NFeEntradaConferencia
@@ -756,10 +1315,15 @@ class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             'fornecedor_cnpj',
             'pedido_compra_id',
             'pedido_compra_numero',
+            'resumo_pedido',
+            'resumo_fiscal',
+            'resumo_elegibilidade_estoque',
             'status',
             'divergencias_aceitas',
             'observacao_divergencias',
             'preparado_em',
+            'estoque_aplicado_em',
+            'estoque_aplicado_observacao',
             'itens',
         )
 
@@ -792,10 +1356,102 @@ class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):
         normalize_operational_fields(attrs, {'status', 'observacao_divergencias'})
         return attrs
 
+    def _inject_fiscal_entrada_context(self, conferencia: NFeEntradaConferencia) -> None:
+        from apps.regras_fiscais.entrada_fiscal import carregar_regras_fiscais_entrada_ativas
+
+        contexto = montar_contexto_fiscal_entrada(conferencia)
+        regras = carregar_regras_fiscais_entrada_ativas()
+        item_field = self.fields['itens']
+        item_serializer = item_field.child if hasattr(item_field, 'child') else item_field
+        item_serializer.context['conferencia'] = conferencia
+        item_serializer.context['contexto_fiscal_entrada'] = contexto
+        item_serializer.context['regras_fiscais_entrada'] = regras
+        self._contexto_fiscal_entrada = contexto
+        self._regras_fiscais_entrada = regras
+
+    def _inject_elegibilidade_estoque_context(self, conferencia: NFeEntradaConferencia) -> None:
+        item_ids = [it.id for it in conferencia.itens.all()]
+        cert_map = carregar_certificados_fornecedor_por_item_conferencia(item_ids)
+        item_field = self.fields['itens']
+        item_serializer = item_field.child if hasattr(item_field, 'child') else item_field
+        item_serializer.context['certificados_fornecedor_por_item'] = cert_map
+        item_serializer.context['divergencias_aceitas_conferencia'] = conferencia.divergencias_aceitas
+        self._certificados_fornecedor_por_item = cert_map
+        self._divergencias_aceitas_conferencia = conferencia.divergencias_aceitas
+
+    def _inject_itens_pedido_context(self, conferencia: NFeEntradaConferencia) -> None:
+        pedido_id = conferencia.pedido_compra_id
+        itens_pedido: list[ItemPedidoCompra] = []
+        if pedido_id:
+            prefetched = getattr(conferencia.pedido_compra, 'itens', None) if conferencia.pedido_compra_id else None
+            if prefetched is not None and hasattr(prefetched, 'all'):
+                itens_pedido = list(prefetched.all())
+            else:
+                itens_pedido = list(
+                    ItemPedidoCompra.objects.filter(pedido_id=pedido_id).select_related('produto'),
+                )
+        vinculados = {
+            it.item_pedido_compra_id
+            for it in conferencia.itens.all()
+            if it.item_pedido_compra_id
+        }
+        item_field = self.fields['itens']
+        item_serializer = item_field.child if hasattr(item_field, 'child') else item_field
+        item_serializer.context['pedido_compra_id'] = pedido_id
+        item_serializer.context['itens_pedido'] = itens_pedido
+        item_serializer.context['conferencia_itens_vinculos'] = vinculados
+        self._itens_pedido_cache = itens_pedido
+
+    def get_resumo_pedido(self, obj: NFeEntradaConferencia) -> dict:
+        return montar_resumo_pedido_conferencia(
+            obj,
+            getattr(self, '_itens_pedido_cache', None),
+        )
+
+    def get_resumo_fiscal(self, obj: NFeEntradaConferencia) -> dict:
+        if hasattr(self, '_resumo_fiscal_cache'):
+            return self._resumo_fiscal_cache
+        contexto = getattr(self, '_contexto_fiscal_entrada', None) or montar_contexto_fiscal_entrada(obj)
+        regras = getattr(self, '_regras_fiscais_entrada', None)
+        if regras is None:
+            from apps.regras_fiscais.entrada_fiscal import carregar_regras_fiscais_entrada_ativas
+
+            regras = carregar_regras_fiscais_entrada_ativas()
+        linhas = list(obj.itens.select_related('item_nfe_historico', 'produto').all())
+        ignorados = sum(1 for linha in linhas if linha.status == linha.Status.IGNORADO)
+        resultados = [
+            avaliar_item_entrada_fiscal(linha, contexto, regras)
+            for linha in linhas
+            if linha.status != linha.Status.IGNORADO
+        ]
+        return montar_resumo_fiscal_conferencia(
+            resultados,
+            contexto,
+            linhas_ignoradas=ignorados,
+        )
+
+    def get_resumo_elegibilidade_estoque(self, obj: NFeEntradaConferencia) -> dict:
+        if hasattr(self, '_resumo_elegibilidade_cache'):
+            return self._resumo_elegibilidade_cache
+        return {'aptos': 0, 'aptos_com_alerta': 0, 'bloqueados': 0, 'nao_movimentam': 0}
+
     def to_representation(self, instance):
+        self._inject_fiscal_entrada_context(instance)
+        self._inject_elegibilidade_estoque_context(instance)
+        self._inject_itens_pedido_context(instance)
+        self._resumo_fiscal_cache = self.get_resumo_fiscal(instance)
         data = super().to_representation(instance)
         data['pedido_compra_id'] = instance.pedido_compra_id
         data['preparado_em'] = instance.preparado_em.isoformat() if instance.preparado_em else None
+        data['estoque_aplicado_em'] = (
+            instance.estoque_aplicado_em.isoformat() if instance.estoque_aplicado_em else None
+        )
+        elegibilidades = [
+            (row.get('elegibilidade_estoque') or {})
+            for row in (data.get('itens') or [])
+        ]
+        data['resumo_elegibilidade_estoque'] = montar_resumo_elegibilidade_estoque(elegibilidades)
+        self._resumo_elegibilidade_cache = data['resumo_elegibilidade_estoque']
         return data
 
 class EventoNFeSaidaHistoricaImportadaSerializer(serializers.ModelSerializer):
@@ -1376,4 +2032,58 @@ class CTeHistoricoImportadoSerializer(serializers.ModelSerializer):
         data['dh_emissao'] = instance.dh_emissao.isoformat() if instance.dh_emissao else None
         data['importado_em'] = instance.importado_em.isoformat() if instance.importado_em else None
         data['data_cancelamento'] = instance.data_cancelamento.isoformat() if instance.data_cancelamento else None
+        return data
+
+
+class AtendimentoEstoqueListSerializer(serializers.ModelSerializer):
+    produto_id = serializers.IntegerField(source='produto.id', read_only=True)
+    produto_codigo = serializers.CharField(source='produto.codigo_completo', read_only=True)
+    produto_descricao = serializers.CharField(source='produto.descricao', read_only=True)
+    quantidade_pendente = serializers.SerializerMethodField()
+    nf_saida_id = serializers.IntegerField(source='nf_saida.id', read_only=True)
+    numero_nf_saida = serializers.CharField(source='nf_saida.numero', read_only=True)
+    cliente_id = serializers.SerializerMethodField()
+    cliente_nome = serializers.SerializerMethodField()
+    dias_em_aberto = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AtendimentoEstoque
+        fields = (
+            'id',
+            'status',
+            'produto_id',
+            'produto_codigo',
+            'produto_descricao',
+            'quantidade_comprometida',
+            'quantidade_atendida',
+            'quantidade_pendente',
+            'unidade',
+            'nf_saida_id',
+            'numero_nf_saida',
+            'cliente_id',
+            'cliente_nome',
+            'criado_em',
+            'dias_em_aberto',
+            'estoque_fisico_aplicado',
+        )
+
+    def get_quantidade_pendente(self, obj):
+        return str(quantidade_pendente_atendimento(obj))
+
+    def get_cliente_id(self, obj):
+        return obj.nf_saida.cliente_id if obj.nf_saida_id else None
+
+    def get_cliente_nome(self, obj):
+        if obj.nf_saida_id and obj.nf_saida.cliente_id:
+            return obj.nf_saida.cliente.razao_social
+        return ''
+
+    def get_dias_em_aberto(self, obj):
+        return dias_em_aberto_atendimento(obj)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['quantidade_comprometida'] = f'{instance.quantidade_comprometida:.3f}'
+        data['quantidade_atendida'] = f'{instance.quantidade_atendida:.3f}'
+        data['criado_em'] = instance.criado_em.isoformat() if instance.criado_em else None
         return data

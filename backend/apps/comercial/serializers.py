@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from django.contrib.auth import get_user_model
 from django.db import IntegrityError
 from rest_framework import serializers
 
@@ -9,21 +10,66 @@ from apps.cadastros.models import Cliente, Empresa, Fornecedor
 from apps.corridas.models import Corrida
 from apps.produtos.models import Produto
 from apps.produtos.snapshot import build_produto_snapshot
+from apps.regras_fiscais.models import CenarioFiscalSaida
 from apps.comercial.payment_terms import compute_due_dates, parse_payment_condition
 from apps.comercial.conversao_item_comercial import calcular_item_comercial_com_conversao
 from apps.comercial.pedido_compra_finance import calcular_financeiro_item_pedido_compra
+from apps.comercial.commercial_defaults import aplicar_defaults_pedido_venda, aplicar_defaults_proposta
+from apps.comercial.numbering import (
+    gerar_numero_pedido_venda,
+    gerar_numero_proposta,
+    numero_pedido_venda_vazio,
+    numero_proposta_vazio,
+)
 from apps.comercial.pedido_compra_numero import alocar_numero_pedido_compra
 from apps.text_normalize import normalize_operational_fields, to_operational_upper
 
 from .models import (
+    HomologacaoFiscalPropostaEvento,
     ItemPedidoCompra,
     ItemPedidoVenda,
     ItemProposta,
     PedidoCompra,
     PedidoVenda,
     Proposta,
+    Vendedor,
+)
+from .vendedor_helpers import (
+    aplicar_vendedor_padrao_usuario,
+    nome_vendedor_exibicao,
+    sincronizar_texto_vendedor,
 )
 from . import pricing as price_rules
+
+
+class VendedorSerializer(serializers.ModelSerializer):
+    usuario_id = serializers.PrimaryKeyRelatedField(
+        queryset=get_user_model().objects.all(),
+        source='usuario',
+        allow_null=True,
+        required=False,
+    )
+
+    class Meta:
+        model = Vendedor
+        fields = (
+            'id',
+            'nome',
+            'codigo',
+            'ativo',
+            'usuario_id',
+            'email',
+            'telefone',
+            'observacoes',
+            'criado_em',
+            'atualizado_em',
+        )
+        read_only_fields = ('criado_em', 'atualizado_em')
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['usuario_id'] = instance.usuario_id
+        return data
 
 
 def _dec(v):
@@ -44,7 +90,11 @@ def recalcular_proposta(proposta: Proposta) -> None:
 
 def recalcular_pedido_venda(pedido: PedidoVenda) -> None:
     total = sum(
-        (_dec(it.quantidade_negociada or it.quantidade) * _dec(it.preco_por_unidade_negociada or it.valor_unitario) for it in pedido.itens.all()),
+        (
+            _dec(it.quantidade_negociada or it.quantidade) * _dec(it.preco_por_unidade_negociada or it.valor_unitario)
+            - _dec(it.desconto)
+            for it in pedido.itens.all()
+        ),
         Decimal('0'),
     )
     pedido.valor_total = total
@@ -71,6 +121,13 @@ class ItemPropostaSerializer(serializers.ModelSerializer):
     percentual_saida_total = serializers.SerializerMethodField(read_only=True)
     valor_carga_saida = serializers.SerializerMethodField(read_only=True)
     alertas_conversao = serializers.ListField(child=serializers.CharField(), required=False, read_only=True)
+    origem_regra_fiscal_saida = serializers.SerializerMethodField(read_only=True)
+    regra_fiscal_saida_id = serializers.SerializerMethodField(read_only=True)
+    regra_fiscal_legada_id = serializers.SerializerMethodField(read_only=True)
+    mensagem_regra_fiscal_saida = serializers.SerializerMethodField(read_only=True)
+    pis_cofins_base_deduz_icms = serializers.SerializerMethodField(read_only=True)
+    deduzir_icms_base_pis = serializers.SerializerMethodField(read_only=True)
+    deduzir_icms_base_cofins = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = ItemProposta
@@ -105,6 +162,13 @@ class ItemPropostaSerializer(serializers.ModelSerializer):
             'cofins_saida_percentual',
             'ipi_saida_percentual',
             'regra_fiscal_id',
+            'origem_regra_fiscal_saida',
+            'regra_fiscal_saida_id',
+            'regra_fiscal_legada_id',
+            'mensagem_regra_fiscal_saida',
+            'pis_cofins_base_deduz_icms',
+            'deduzir_icms_base_pis',
+            'deduzir_icms_base_cofins',
             'irpj_estimado_percentual',
             'csll_estimada_percentual',
             'comissao_percentual',
@@ -169,19 +233,20 @@ class ItemPropostaSerializer(serializers.ModelSerializer):
                 attrs.get('ncm_avulso', self.instance.ncm_avulso if self.instance else '') or ''
             ).strip()
 
-        regra = price_rules.find_regra_fiscal(ncm, uf_origem, uf_destino, operacao)
-        if regra:
-            attrs['icms_saida_percentual'] = _round(price_rules.float_to_dec(regra.aliquota_icms))
-            attrs['pis_saida_percentual'] = _round(price_rules.float_to_dec(regra.aliquota_pis))
-            attrs['cofins_saida_percentual'] = _round(price_rules.float_to_dec(regra.aliquota_cofins))
-            attrs['ipi_saida_percentual'] = _round(price_rules.float_to_dec(regra.aliquota_ipi))
-            attrs['regra_fiscal_id'] = regra.pk
-        else:
-            attrs['icms_saida_percentual'] = Decimal('0')
-            attrs['pis_saida_percentual'] = Decimal('0')
-            attrs['cofins_saida_percentual'] = Decimal('0')
-            attrs['ipi_saida_percentual'] = Decimal('0')
-            attrs['regra_fiscal_id'] = None
+        resultado, campos_fiscais = _fiscal_lookup_para_item(
+            ncm=ncm,
+            uf_origem=uf_origem,
+            uf_destino=uf_destino,
+            operacao=operacao,
+            produto_id=produto.pk if produto else None,
+            proposta_inst=proposta_inst,
+            incoming=incoming,
+        )
+        attrs['icms_saida_percentual'] = _round(campos_fiscais['icms_saida_percentual'])
+        attrs['pis_saida_percentual'] = _round(campos_fiscais['pis_saida_percentual'])
+        attrs['cofins_saida_percentual'] = _round(campos_fiscais['cofins_saida_percentual'])
+        attrs['ipi_saida_percentual'] = _round(campos_fiscais['ipi_saida_percentual'])
+        attrs['regra_fiscal_id'] = campos_fiscais.get('regra_fiscal_id')
 
         irpj = _dec(attrs.get('irpj_estimado_percentual', Decimal('0')))
         csll = _dec(attrs.get('csll_estimada_percentual', Decimal('0')))
@@ -189,7 +254,9 @@ class ItemPropostaSerializer(serializers.ModelSerializer):
         frete_saida = _dec(attrs.get('frete_saida', Decimal('0')))
         outras_saida = _dec(attrs.get('outras_despesas_saida', Decimal('0')))
 
-        pct_saida = price_rules.percentual_saida_total(
+        from apps.regras_fiscais.base_pis_cofins_saida import percentual_saida_total_com_deducao_icms
+
+        pct_saida, _msgs_base = percentual_saida_total_com_deducao_icms(
             attrs['icms_saida_percentual'],
             attrs['pis_saida_percentual'],
             attrs['cofins_saida_percentual'],
@@ -197,6 +264,9 @@ class ItemPropostaSerializer(serializers.ModelSerializer):
             irpj,
             csll,
             comissao,
+            origem=resultado['origem'],
+            deduzir_icms_base_pis=bool(campos_fiscais.get('deduzir_icms_base_pis')),
+            deduzir_icms_base_cofins=bool(campos_fiscais.get('deduzir_icms_base_cofins')),
         )
 
         modo_preco = (attrs.get('modo_preco') or 'sugerido').lower().strip()
@@ -235,7 +305,6 @@ class ItemPropostaSerializer(serializers.ModelSerializer):
             preco_por_unidade_negociada=_dec(attrs.get('preco_por_unidade_negociada', preco_final)),
         )
         attrs.update({k: v for k, v in calc.items() if k != 'alertas_conversao' and k != 'valor_total_calculado'})
-        attrs['alertas_conversao'] = calc.get('alertas_conversao', [])
         attrs['custo_final'] = custo_carregado
         attrs['preco_sugerido'] = preco_sugerido
         attrs['preco_final'] = preco_final
@@ -264,6 +333,58 @@ class ItemPropostaSerializer(serializers.ModelSerializer):
             return obj.produto.descricao
         return obj.descricao_avulsa or 'Item avulso'
 
+    def _resultado_fiscal_do_item(self, obj: ItemProposta):
+        cache = self.context.setdefault('_fiscal_item_cache', {})
+        key = obj.pk or id(obj)
+        if key in cache:
+            return cache[key]
+        proposta = obj.proposta
+        incoming = _incoming_proposta(self)
+        if produto := obj.produto:
+            ncm = produto.get_ncm_efetivo_codigo() or ''
+        else:
+            ncm = (obj.ncm_avulso or '').strip()
+        resultado, _ = _fiscal_lookup_para_item(
+            ncm=ncm,
+            uf_origem=_resolve_uf_origem(incoming, proposta),
+            uf_destino=_resolve_uf_destino(incoming, proposta),
+            operacao=_resolve_operacao_fiscal(incoming, proposta),
+            produto_id=obj.produto_id,
+            proposta_inst=proposta,
+            incoming=incoming,
+        )
+        cache[key] = resultado
+        return resultado
+
+    def get_origem_regra_fiscal_saida(self, obj: ItemProposta):
+        return self._resultado_fiscal_do_item(obj)['origem']
+
+    def get_regra_fiscal_saida_id(self, obj: ItemProposta):
+        return self._resultado_fiscal_do_item(obj).get('regra_id')
+
+    def get_regra_fiscal_legada_id(self, obj: ItemProposta):
+        leg = self._resultado_fiscal_do_item(obj).get('regra_legada_id')
+        return leg if leg is not None else obj.regra_fiscal_id
+
+    def get_mensagem_regra_fiscal_saida(self, obj: ItemProposta):
+        from apps.regras_fiscais.saida_fiscal import mensagem_origem_fiscal_saida
+
+        return mensagem_origem_fiscal_saida(self._resultado_fiscal_do_item(obj)['origem'])
+
+    def get_pis_cofins_base_deduz_icms(self, obj: ItemProposta) -> bool:
+        r = self._resultado_fiscal_do_item(obj)
+        if r.get('origem') != 'CENARIO_SAIDA':
+            return False
+        return bool(r.get('deduzir_icms_base_pis') or r.get('deduzir_icms_base_cofins'))
+
+    def get_deduzir_icms_base_pis(self, obj: ItemProposta) -> bool:
+        r = self._resultado_fiscal_do_item(obj)
+        return r.get('origem') == 'CENARIO_SAIDA' and bool(r.get('deduzir_icms_base_pis'))
+
+    def get_deduzir_icms_base_cofins(self, obj: ItemProposta) -> bool:
+        r = self._resultado_fiscal_do_item(obj)
+        return r.get('origem') == 'CENARIO_SAIDA' and bool(r.get('deduzir_icms_base_cofins'))
+
     def _ipi_val_obj(self, obj: ItemProposta) -> Decimal:
         return price_rules.compute_ipi_entrada_valor(
             _dec(obj.custo_utilizado),
@@ -291,7 +412,10 @@ class ItemPropostaSerializer(serializers.ModelSerializer):
         return float(price_rules.compute_preco_base(cc))
 
     def get_percentual_saida_total(self, obj: ItemProposta):
-        t = price_rules.percentual_saida_total(
+        from apps.regras_fiscais.base_pis_cofins_saida import percentual_saida_total_com_deducao_icms
+
+        resultado = self._resultado_fiscal_do_item(obj)
+        t, _ = percentual_saida_total_com_deducao_icms(
             _dec(obj.icms_saida_percentual),
             _dec(obj.pis_saida_percentual),
             _dec(obj.cofins_saida_percentual),
@@ -299,6 +423,9 @@ class ItemPropostaSerializer(serializers.ModelSerializer):
             _dec(obj.irpj_estimado_percentual),
             _dec(obj.csll_estimada_percentual),
             _dec(obj.comissao_percentual),
+            origem=resultado['origem'],
+            deduzir_icms_base_pis=bool(resultado.get('deduzir_icms_base_pis')),
+            deduzir_icms_base_cofins=bool(resultado.get('deduzir_icms_base_cofins')),
         )
         return float(t)
 
@@ -347,6 +474,67 @@ def _proposta_serializer_from_item_child(child):
 
 def _incoming_proposta(child) -> dict:
     return child.context.get('proposta_incoming') or {}
+
+
+def _incoming_proposta_bool(incoming: dict, key: str, proposta_inst: Proposta | None) -> bool | None:
+    if key in incoming:
+        return bool(incoming.get(key))
+    if proposta_inst is not None:
+        return bool(getattr(proposta_inst, key, False))
+    return None
+
+
+def _incoming_cenario_fiscal_saida_id(incoming: dict, proposta_inst: Proposta | None) -> int | None:
+    raw = incoming.get('cenario_fiscal_saida_id')
+    if raw is not None and raw != '':
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return None
+    if proposta_inst is not None and proposta_inst.cenario_fiscal_saida_id:
+        return proposta_inst.cenario_fiscal_saida_id
+    return None
+
+
+def _fiscal_lookup_para_item(
+    *,
+    ncm: str,
+    uf_origem: str,
+    uf_destino: str,
+    operacao: str,
+    produto_id: int | None,
+    proposta_inst: Proposta | None,
+    incoming: dict,
+):
+    from apps.regras_fiscais.saida_fiscal import (
+        aplicar_resultado_busca_em_percentuais,
+        find_regra_fiscal_saida_com_fallback,
+        resolve_cenario_fiscal_id_para_proposta,
+        resolve_usar_cenario_fiscal_para_proposta,
+    )
+
+    usar_cenario = resolve_usar_cenario_fiscal_para_proposta(
+        proposta_inst,
+        incoming_usar_cenario=_incoming_proposta_bool(
+            incoming,
+            'usar_cenario_fiscal_saida',
+            proposta_inst,
+        ),
+    )
+    cenario_id = resolve_cenario_fiscal_id_para_proposta(
+        proposta_inst,
+        incoming_cenario_id=_incoming_cenario_fiscal_saida_id(incoming, proposta_inst),
+    )
+    resultado = find_regra_fiscal_saida_com_fallback(
+        ncm,
+        uf_origem,
+        uf_destino,
+        operacao,
+        produto_id=produto_id,
+        usar_cenario=usar_cenario,
+        cenario_id=cenario_id,
+    )
+    return resultado, aplicar_resultado_busca_em_percentuais(resultado)
 
 
 def _resolve_uf_origem(incoming: dict, proposta_inst: Proposta | None) -> str:
@@ -406,7 +594,42 @@ def _apply_emitente_e_uf_operacao_saida(attrs: dict, instance: Proposta | None) 
     attrs['uf_origem'] = ((emp.uf or '') if emp else '').strip().upper()[:2]
 
 
+class HomologacaoFiscalPropostaEventoSerializer(serializers.ModelSerializer):
+    criado_por_nome = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = HomologacaoFiscalPropostaEvento
+        fields = (
+            'id',
+            'tipo_evento',
+            'status_resultante',
+            'usar_cenario_fiscal_saida',
+            'cenario_fiscal_saida_id',
+            'cenario_fiscal_saida_nome',
+            'observacao',
+            'criado_por_nome',
+            'criado_em',
+            'resumo',
+            'itens',
+        )
+        read_only_fields = fields
+
+    def get_criado_por_nome(self, obj: HomologacaoFiscalPropostaEvento) -> str:
+        from apps.comercial.homologacao_cenario_fiscal import _nome_usuario
+
+        return _nome_usuario(obj.criado_por)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.criado_em:
+            data['criado_em'] = instance.criado_em.isoformat()
+        return data
+
+
 class PropostaSerializer(serializers.ModelSerializer):
+    numero = serializers.CharField(max_length=32, required=False, allow_blank=True)
+    data = serializers.DateField(required=False)
+    validade = serializers.DateField(required=False)
     cliente_id = serializers.PrimaryKeyRelatedField(
         queryset=Cliente.objects.all(),
         source='cliente',
@@ -419,8 +642,26 @@ class PropostaSerializer(serializers.ModelSerializer):
         allow_null=True,
         required=False,
     )
+    cenario_fiscal_saida_id = serializers.PrimaryKeyRelatedField(
+        queryset=CenarioFiscalSaida.objects.filter(ativo=True),
+        source='cenario_fiscal_saida',
+        allow_null=True,
+        required=False,
+    )
     empresa_emitente_nome = serializers.SerializerMethodField(read_only=True)
     cliente_nome = serializers.SerializerMethodField(read_only=True)
+    cenario_fiscal_saida_nome = serializers.SerializerMethodField(read_only=True)
+    origem_fiscal_resumo = serializers.SerializerMethodField(read_only=True)
+    pedido_venda_id = serializers.SerializerMethodField(read_only=True)
+    pedido_venda_numero = serializers.SerializerMethodField(read_only=True)
+    pode_converter_em_pedido = serializers.SerializerMethodField(read_only=True)
+    vendedor_id = serializers.PrimaryKeyRelatedField(
+        queryset=Vendedor.objects.all(),
+        source='vendedor_ref',
+        allow_null=True,
+        required=False,
+    )
+    vendedor_nome = serializers.SerializerMethodField(read_only=True)
     itens = ItemPropostaSerializer(many=True)
 
     class Meta:
@@ -433,15 +674,28 @@ class PropostaSerializer(serializers.ModelSerializer):
             'cliente_avulso_nome',
             'empresa_emitente_id',
             'empresa_emitente_nome',
+            'usar_cenario_fiscal_saida',
+            'cenario_fiscal_saida_id',
+            'cenario_fiscal_saida_nome',
+            'origem_fiscal_resumo',
+            'homologacao_fiscal_status',
+            'homologacao_fiscal_em',
+            'homologacao_fiscal_observacao',
+            'pedido_venda_id',
+            'pedido_venda_numero',
+            'pode_converter_em_pedido',
             'data',
             'validade',
             'vendedor',
+            'vendedor_id',
+            'vendedor_nome',
             'status',
             'condicao_pagamento_texto',
             'dias_parcelas',
             'quantidade_parcelas',
             'vencimentos_previstos',
             'valor_total',
+            'prazo_entrega_texto',
             'uf_origem',
             'uf_destino_avulso',
             'operacao_fiscal',
@@ -463,20 +717,66 @@ class PropostaSerializer(serializers.ModelSerializer):
             return obj.empresa_emitente.razao_social
         return ''
 
+    def get_cenario_fiscal_saida_nome(self, obj):
+        if obj.cenario_fiscal_saida_id and obj.cenario_fiscal_saida:
+            return obj.cenario_fiscal_saida.nome
+        if obj.usar_cenario_fiscal_saida:
+            from apps.regras_fiscais.cenario_fiscal_saida import NOME_CENARIO_PADRAO_SAIDA
+
+            return NOME_CENARIO_PADRAO_SAIDA
+        return ''
+
+    def get_origem_fiscal_resumo(self, obj):
+        from apps.regras_fiscais.saida_fiscal import resolve_usar_cenario_fiscal_para_proposta
+
+        if resolve_usar_cenario_fiscal_para_proposta(obj):
+            nome = self.get_cenario_fiscal_saida_nome(obj) or 'Cenário padrão'
+            return f'Cenário fiscal de saída ({nome})'
+        return 'Regra fiscal legada'
+
+    def get_pedido_venda_id(self, obj):
+        pedido = obj.pedidos_gerados.order_by('id').first()
+        return pedido.pk if pedido else None
+
+    def get_pedido_venda_numero(self, obj):
+        pedido = obj.pedidos_gerados.order_by('id').first()
+        return pedido.numero if pedido else ''
+
+    def get_pode_converter_em_pedido(self, obj):
+        from apps.comercial.converter_proposta_pedido import validar_proposta_para_conversao
+
+        if obj.pedidos_gerados.exists():
+            return False
+        ok, _ = validar_proposta_para_conversao(obj)
+        return ok
+
+    def get_vendedor_nome(self, obj):
+        return nome_vendedor_exibicao(obj)
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data['cliente_id'] = instance.cliente_id
         data['empresa_emitente_id'] = instance.empresa_emitente_id
+        data['cenario_fiscal_saida_id'] = instance.cenario_fiscal_saida_id
+        data['usar_cenario_fiscal_saida'] = bool(instance.usar_cenario_fiscal_saida)
         data['data'] = instance.data.isoformat()
         data['validade'] = instance.validade.isoformat()
         data['vencimentos_previstos'] = [d.isoformat() for d in instance.vencimentos_previstos]
         data['valor_total'] = float(instance.valor_total)
         data['operacao_fiscal'] = 'Saída'
+        em = instance.homologacao_fiscal_em
+        data['homologacao_fiscal_em'] = em.isoformat() if em else None
+        data['homologacao_fiscal_status'] = instance.homologacao_fiscal_status
+        data['homologacao_fiscal_observacao'] = instance.homologacao_fiscal_observacao or ''
+        data['vendedor_id'] = instance.vendedor_ref_id
+        data['vendedor_nome'] = nome_vendedor_exibicao(instance)
         return data
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
         normalize_operational_fields(attrs, {'numero', 'vendedor', 'status', 'condicao_pagamento_texto'})
+        aplicar_vendedor_padrao_usuario(attrs, request=self.context.get('request'), instance=self.instance)
+        sincronizar_texto_vendedor(attrs)
         cliente = attrs.get('cliente', self.instance.cliente if self.instance else None)
         cliente_avulso_nome = to_operational_upper(
             attrs.get('cliente_avulso_nome', self.instance.cliente_avulso_nome if self.instance else '')
@@ -493,12 +793,15 @@ class PropostaSerializer(serializers.ModelSerializer):
         dias = parse_payment_condition(texto)
         attrs['dias_parcelas'] = dias
         attrs['quantidade_parcelas'] = len(dias)
-        attrs['vencimentos_previstos'] = compute_due_dates(data_base, dias)
+        attrs['vencimentos_previstos'] = compute_due_dates(data_base, dias) if data_base else []
         _apply_emitente_e_uf_operacao_saida(attrs, self.instance)
+        aplicar_defaults_proposta(attrs, instance=self.instance)
         return attrs
 
     def create(self, validated_data):
         itens_data = validated_data.pop('itens')
+        if numero_proposta_vazio(validated_data.get('numero')):
+            validated_data['numero'] = gerar_numero_proposta(validated_data.get('data'))
         proposta = Proposta.objects.create(**validated_data)
         for item in itens_data:
             ItemProposta.objects.create(proposta=proposta, **item)
@@ -523,6 +826,12 @@ class ItemPedidoVendaSerializer(serializers.ModelSerializer):
         queryset=Produto.objects.all(),
         source='produto',
     )
+    item_proposta_id = serializers.PrimaryKeyRelatedField(
+        queryset=ItemProposta.objects.all(),
+        source='item_proposta',
+        allow_null=True,
+        required=False,
+    )
     corrida_id = serializers.PrimaryKeyRelatedField(
         queryset=Corrida.objects.all(),
         source='corrida',
@@ -537,7 +846,10 @@ class ItemPedidoVendaSerializer(serializers.ModelSerializer):
         fields = (
             'id',
             'produto_id',
+            'item_proposta_id',
             'produto_nome',
+            'desconto',
+            'snapshot_fiscal',
             'quantidade',
             'unidade_negociada',
             'quantidade_negociada',
@@ -554,6 +866,8 @@ class ItemPedidoVendaSerializer(serializers.ModelSerializer):
             'corrida_id',
             'corrida_numero',
             'snapshot_produto',
+            'quantidade_faturada',
+            'status_item',
         )
 
     def get_produto_nome(self, obj):
@@ -563,14 +877,25 @@ class ItemPedidoVendaSerializer(serializers.ModelSerializer):
         return obj.corrida.numero if obj.corrida_id else None
 
     def to_representation(self, instance):
+        from apps.comercial.faturamento_pedido_venda import quantidade_disponivel_faturar, quantidade_pendente_item, quantidade_pedida_item
+
         data = super().to_representation(instance)
         data['produto_id'] = instance.produto_id
+        data['item_proposta_id'] = instance.item_proposta_id
         data['corrida_id'] = instance.corrida_id
+        data['desconto'] = float(instance.desconto)
+        data['quantidade_faturada'] = float(instance.quantidade_faturada)
+        data['quantidade_pedida'] = float(quantidade_pedida_item(instance))
+        data['quantidade_pendente'] = float(quantidade_pendente_item(instance))
+        data['quantidade_disponivel'] = float(quantidade_disponivel_faturar(instance))
         return data
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
         normalize_operational_fields(attrs, {'unidade_negociada'})
+        incoming = getattr(self, 'initial_data', None) or {}
+        if 'snapshot_fiscal' not in attrs and incoming.get('snapshot_fiscal') is not None:
+            attrs['snapshot_fiscal'] = incoming.get('snapshot_fiscal')
         produto = attrs.get('produto', self.instance.produto if self.instance else None)
         quantidade = _dec(attrs.get('quantidade', self.instance.quantidade if self.instance else Decimal('0')))
         unidade_negociada = (attrs.get('unidade_negociada', self.instance.unidade_negociada if self.instance else '') or '').strip().upper()
@@ -594,6 +919,8 @@ class ItemPedidoVendaSerializer(serializers.ModelSerializer):
 
 
 class PedidoVendaSerializer(serializers.ModelSerializer):
+    numero = serializers.CharField(max_length=32, required=False, allow_blank=True)
+    data = serializers.DateField(required=False)
     cliente_id = serializers.PrimaryKeyRelatedField(
         queryset=Cliente.objects.all(),
         source='cliente',
@@ -612,6 +939,13 @@ class PedidoVendaSerializer(serializers.ModelSerializer):
         required=False,
     )
     cliente_nome = serializers.SerializerMethodField(read_only=True)
+    vendedor_id = serializers.PrimaryKeyRelatedField(
+        queryset=Vendedor.objects.all(),
+        source='vendedor_ref',
+        allow_null=True,
+        required=False,
+    )
+    vendedor_nome = serializers.SerializerMethodField(read_only=True)
     itens = ItemPedidoVendaSerializer(many=True)
 
     class Meta:
@@ -625,14 +959,30 @@ class PedidoVendaSerializer(serializers.ModelSerializer):
             'cliente_nome',
             'data',
             'status',
+            'vendedor',
+            'vendedor_id',
+            'vendedor_nome',
+            'prazo_entrega',
+            'prazo_entrega_texto',
+            'observacoes_comerciais',
+            'observacoes_internas',
+            'snapshot_conversao',
             'condicao_pagamento_texto',
             'dias_parcelas',
             'quantidade_parcelas',
             'vencimentos_previstos',
             'valor_total',
             'proposta_id',
+            'proposta_numero',
             'itens',
         )
+
+    proposta_numero = serializers.SerializerMethodField(read_only=True)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not self.context.get('allow_proposta_vinculo'):
+            self.fields.pop('proposta_id', None)
 
     def get_cliente_nome(self, obj):
         return obj.cliente.razao_social
@@ -642,19 +992,30 @@ class PedidoVendaSerializer(serializers.ModelSerializer):
             return obj.empresa_emitente.razao_social
         return ''
 
+    def get_proposta_numero(self, obj):
+        return obj.proposta.numero if obj.proposta_id and obj.proposta else ''
+
+    def get_vendedor_nome(self, obj):
+        return nome_vendedor_exibicao(obj)
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data['cliente_id'] = instance.cliente_id
         data['empresa_emitente_id'] = instance.empresa_emitente_id
         data['data'] = instance.data.isoformat()
+        data['prazo_entrega'] = instance.prazo_entrega.isoformat() if instance.prazo_entrega else None
         data['vencimentos_previstos'] = [d.isoformat() for d in instance.vencimentos_previstos]
         data['valor_total'] = float(instance.valor_total)
         data['proposta_id'] = instance.proposta_id
+        data['vendedor_id'] = instance.vendedor_ref_id
+        data['vendedor_nome'] = nome_vendedor_exibicao(instance)
         return data
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
-        normalize_operational_fields(attrs, {'numero', 'status', 'condicao_pagamento_texto'})
+        normalize_operational_fields(attrs, {'numero', 'status', 'condicao_pagamento_texto', 'vendedor'})
+        aplicar_vendedor_padrao_usuario(attrs, request=self.context.get('request'), instance=self.instance)
+        sincronizar_texto_vendedor(attrs)
         n = Empresa.objects.count()
         emp = attrs.get('empresa_emitente')
         if emp is None and self.instance and self.instance.empresa_emitente_id:
@@ -687,11 +1048,14 @@ class PedidoVendaSerializer(serializers.ModelSerializer):
         dias = parse_payment_condition(texto)
         attrs['dias_parcelas'] = dias
         attrs['quantidade_parcelas'] = len(dias)
-        attrs['vencimentos_previstos'] = compute_due_dates(data_base, dias)
+        attrs['vencimentos_previstos'] = compute_due_dates(data_base, dias) if data_base else []
+        aplicar_defaults_pedido_venda(attrs, instance=self.instance)
         return attrs
 
     def create(self, validated_data):
         itens_data = validated_data.pop('itens')
+        if numero_pedido_venda_vazio(validated_data.get('numero')):
+            validated_data['numero'] = gerar_numero_pedido_venda(validated_data.get('data'))
         pedido = PedidoVenda.objects.create(**validated_data)
         for item in itens_data:
             ItemPedidoVenda.objects.create(pedido=pedido, **item)
@@ -699,14 +1063,14 @@ class PedidoVendaSerializer(serializers.ModelSerializer):
         return pedido
 
     def update(self, instance, validated_data):
+        from apps.comercial.pedido_venda_bloqueio import sincronizar_itens_pedido_venda
+
         itens_data = validated_data.pop('itens', None)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
         if itens_data is not None:
-            instance.itens.all().delete()
-            for item in itens_data:
-                ItemPedidoVenda.objects.create(pedido=instance, **item)
+            sincronizar_itens_pedido_venda(instance, itens_data)
         recalcular_pedido_venda(instance)
         return instance
 
@@ -762,7 +1126,9 @@ class ItemPedidoCompraSerializer(serializers.ModelSerializer):
         normalize_operational_fields(attrs, {'unidade_negociada'})
         produto = attrs.get('produto', self.instance.produto if self.instance else None)
         if not produto:
-            raise serializers.ValidationError({'produto_id': 'Selecione o produto Nexus para o item.'})
+            raise serializers.ValidationError(
+                {'produto_id': 'Selecione o produto cadastrado no NEXUS APP para o item.'}
+            )
         quantidade = _dec(attrs.get('quantidade', self.instance.quantidade if self.instance else Decimal('0')))
         unidade_negociada = (attrs.get('unidade_negociada', self.instance.unidade_negociada if self.instance else '') or '').strip().upper()
         if not unidade_negociada:
@@ -824,6 +1190,8 @@ class ItemPedidoCompraSerializer(serializers.ModelSerializer):
 
 
 class PedidoCompraSerializer(serializers.ModelSerializer):
+    # Explícito + Meta.read_only_fields: garante que POST/PATCH não exijam número (gerado em create()).
+    numero = serializers.CharField(read_only=True, max_length=32)
     fornecedor_id = serializers.PrimaryKeyRelatedField(
         queryset=Fornecedor.objects.all(),
         source='fornecedor',
@@ -832,7 +1200,6 @@ class PedidoCompraSerializer(serializers.ModelSerializer):
     itens = ItemPedidoCompraSerializer(many=True)
     data_prevista_entrega = serializers.DateField(required=False, allow_null=True)
     resumo_financeiro_pedido = serializers.SerializerMethodField(read_only=True)
-    numero = serializers.CharField(max_length=32, required=False, allow_blank=True)
 
     class Meta:
         model = PedidoCompra
@@ -850,8 +1217,15 @@ class PedidoCompraSerializer(serializers.ModelSerializer):
             'valor_total',
             'prazo_entrega_texto',
             'data_prevista_entrega',
+            'observacoes',
             'resumo_financeiro_pedido',
             'itens',
+        )
+        read_only_fields = (
+            'id',
+            'numero',
+            'fornecedor_nome',
+            'resumo_financeiro_pedido',
         )
 
     def get_fornecedor_nome(self, obj):
@@ -887,19 +1261,6 @@ class PedidoCompraSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
-        if self.instance is not None:
-            attrs.pop('numero', None)
-        else:
-            raw_num = (attrs.get('numero') or '').strip()
-            if raw_num:
-                attrs['numero'] = raw_num
-                if PedidoCompra.objects.filter(numero=raw_num).exists():
-                    raise serializers.ValidationError(
-                        {'numero': ['Já existe um pedido de compra com este número.']}
-                    )
-            else:
-                attrs.pop('numero', None)
-
         normalize_operational_fields(attrs, {'status', 'condicao_pagamento_texto', 'prazo_entrega_texto'})
         texto = attrs.get(
             'condicao_pagamento_texto',
@@ -921,8 +1282,7 @@ class PedidoCompraSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         itens_data = validated_data.pop('itens')
         data_pedido = validated_data['data']
-        if not (validated_data.get('numero') or '').strip():
-            validated_data['numero'] = alocar_numero_pedido_compra(data_pedido)
+        validated_data['numero'] = alocar_numero_pedido_compra(data_pedido)
         try:
             pedido = PedidoCompra.objects.create(**validated_data)
         except IntegrityError:

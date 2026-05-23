@@ -45,6 +45,18 @@ def _first_dict_children(node: Any) -> list[dict[str, Any]]:
     return blocks
 
 
+def _primeiro_bloco_imposto(root: dict[str, Any], key: str) -> dict[str, Any]:
+    """Primeiro bloco filho (ex.: ICMS00) para leitura de campos não agregados."""
+    node = root.get(key)
+    if node is None:
+        return {}
+    if isinstance(node, list):
+        node = node[0] if node else {}
+    node = _dictish(node)
+    blocks = _first_dict_children(node)
+    return blocks[0] if blocks else {}
+
+
 def _merge_icms_like_blocks(root: dict[str, Any], key: str) -> dict[str, Any]:
     """Une vBC, vICMS, pICMS, CST/CSOSN dos blocos ICMS* / PIS* / COFINS* / IPI*."""
     node = root.get(key)
@@ -120,21 +132,67 @@ def extrair_tributos_item(
     cst_icms = str(icms.get('CST') or icms.get('CSOSN') or '').strip()
     cst_pis = str(pis.get('CST') or '').strip()
     cst_cofins = str(cofins.get('CST') or '').strip()
+    cst_ipi = str(ipi.get('CST') or '').strip()
+    icms_blk = _primeiro_bloco_imposto(imp, 'ICMS')
+    ipi_blk = _primeiro_bloco_imposto(imp, 'IPI')
+    pis_blk = _primeiro_bloco_imposto(imp, 'PIS')
+    cofins_blk = _primeiro_bloco_imposto(imp, 'COFINS')
+
+    def _dec_opcional(blk: dict[str, Any], key: str) -> Decimal | None:
+        if blk.get(key) in (None, ''):
+            return None
+        return dec(blk.get(key))
+
+    icms_st_nf = bool(
+        icms_blk.get('pMVAST') not in (None, '')
+        or icms_blk.get('vBCST') not in (None, '')
+        or icms_blk.get('pICMSST') not in (None, '')
+        or icms_blk.get('vICMSST') not in (None, '')
+    )
+    fcp_presente_nf = any(
+        icms_blk.get(tag) not in (None, '')
+        for tag in ('pFCP', 'vFCP', 'pFCPST', 'vFCPST', 'vBCFCP', 'vBCFCPST')
+    )
+
     return {
         'cst_icms': cst_icms,
         'cst_icms_detalhe': str(icms.get('CSOSN') or '').strip() if icms.get('CST') else '',
+        'csosn': str(icms.get('CSOSN') or icms_blk.get('CSOSN') or '').strip(),
         'base_icms': dec(icms.get('vBC')),
         'aliquota_icms': dec(icms.get('pICMS')) if icms.get('pICMS') is not None else None,
         'valor_icms': dec(icms.get('vICMS')),
+        'modalidade_bc_icms': str(icms_blk.get('modBC') or '').strip(),
+        'reducao_bc_icms': _dec_opcional(icms_blk, 'pRedBC'),
+        'motivo_desoneracao_icms': str(icms_blk.get('motDesICMS') or '').strip(),
+        'codigo_beneficio_icms': str(
+            icms_blk.get('cBenefRBC') or icms_blk.get('cBenef') or '',
+        ).strip(),
+        'icms_st_aplicavel_nf': icms_st_nf,
+        'cst_icms_st_nf': str(icms_blk.get('CST') or '').strip() if icms_st_nf else '',
+        'aliquota_icms_st': _dec_opcional(icms_blk, 'pICMSST'),
+        'mva_st': _dec_opcional(icms_blk, 'pMVAST'),
+        'reducao_bc_st': _dec_opcional(icms_blk, 'pRedBCST'),
+        'aliquota_fcp': _dec_opcional(icms_blk, 'pFCP'),
+        'aliquota_fcp_st': _dec_opcional(icms_blk, 'pFCPST'),
+        'reducao_bc_fcp': _dec_opcional(icms_blk, 'pRedBCFCP')
+        or _dec_opcional(icms_blk, 'pRedBCFCPST'),
+        'valor_fcp_unidade': _dec_opcional(icms_blk, 'vFCPUni')
+        or _dec_opcional(icms_blk, 'vFCPSTUni'),
+        'fcp_presente_nf': fcp_presente_nf,
         'base_ipi': dec(ipi.get('vBC')),
         'aliquota_ipi': dec(ipi.get('pIPI')) if ipi.get('pIPI') is not None else None,
         'valor_ipi': dec(ipi.get('vIPI')),
+        'enquadramento_ipi': str(ipi_blk.get('cEnq') or '').strip(),
+        'valor_ipi_unidade': _dec_opcional(ipi_blk, 'vUnid'),
         'base_pis': dec(pis.get('vBC')),
         'aliquota_pis': dec(pis.get('pPIS')) if pis.get('pPIS') is not None else None,
         'valor_pis': dec(pis.get('vPIS')),
+        'reducao_base_pis': _dec_opcional(pis_blk, 'pRedBC'),
         'base_cofins': dec(cofins.get('vBC')),
         'aliquota_cofins': dec(cofins.get('pCOFINS')) if cofins.get('pCOFINS') is not None else None,
         'valor_cofins': dec(cofins.get('vCOFINS')),
+        'reducao_base_cofins': _dec_opcional(cofins_blk, 'pRedBC'),
         'cst_pis': cst_pis,
         'cst_cofins': cst_cofins,
+        'cst_ipi': cst_ipi,
     }
