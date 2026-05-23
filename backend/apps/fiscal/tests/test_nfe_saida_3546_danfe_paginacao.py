@@ -83,8 +83,8 @@ def _nf_um_item() -> NFeSaida:
 class NFeSaida3546DanfePaginacaoTests(TestCase):
     """Caminho real da API (mesmo do navegador) — WeasyPrint HTML."""
 
-    def test_template_sem_wrapper_moc_body(self):
-        """WeasyPrint somava offset se produtos ficavam dentro de .moc-body absoluto."""
+    def test_template_layout_weasyprint_containers(self):
+        """WeasyPrint empilhava altura de muitos absolute soltos — usar áreas cabeçalho/produtos/rodapé."""
         html_path = (
             Path(__file__).resolve().parents[1]
             / 'templates'
@@ -93,6 +93,9 @@ class NFeSaida3546DanfePaginacaoTests(TestCase):
         )
         html = html_path.read_text(encoding='utf-8')
         self.assertNotIn('moc-body', html)
+        self.assertIn('danfe-cabecalho-moc', html)
+        self.assertIn('danfe-area-produtos-moc', html)
+        self.assertIn('danfe-area-rodape-moc', html)
 
     def setUp(self):
         self.user = get_user_model().objects.create_user('nfe3546', 'nfe3546@test.com', 'x')

@@ -32,15 +32,12 @@
   --thead-bg: #c9c9c9;
   --titulo-bg: #e4e4e4;
 
-  /* Âncoras verticais MOC §3.8.1 (transportador → produtos → rodapé) */
+  /* Âncoras verticais MOC §3.8.1 (valores fixos — WeasyPrint evita calc+var em top) */
   --moc-sec-titulo-h: 0.35cm;
   --moc-top-transp: 13.33cm;
   --moc-h-transp: 2.42cm;
-  --moc-top-produtos-titulo: calc(var(--moc-top-transp) + var(--moc-h-transp));
-  --moc-top-produtos-bloco: calc(var(--moc-top-produtos-titulo) + var(--moc-sec-titulo-h));
-  --moc-top-adic-titulo: 25.48cm;
-  --moc-top-adic-bloco: calc(var(--moc-top-adic-titulo) + var(--moc-sec-titulo-h));
-  --moc-h-produtos: calc(var(--moc-top-adic-titulo) - var(--moc-top-produtos-bloco));
+  --moc-top-cabecalho-fim: 15.75cm;
+  --moc-h-rodape: 3.82cm;
 }
 
 * {
@@ -58,7 +55,7 @@ body {
   print-color-adjust: exact;
 }
 
-/* Folha A4 — altura fixa (1 página); cabeçalho absoluto + produtos/rodapé MOC absolutos */
+/* Folha A4 — altura fixa (1 página) */
 .danfe-moc {
   position: relative;
   width: var(--moc-form-w);
@@ -66,6 +63,40 @@ body {
   margin: 0;
   overflow: hidden;
   page-break-after: avoid;
+}
+
+/* Cabeçalho: altura fixa, filhos absolutos não entram no fluxo da página */
+.danfe-cabecalho-moc {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--moc-form-w);
+  height: var(--moc-top-cabecalho-fim);
+  overflow: hidden;
+}
+
+/* Produtos: encosta no fim do cabeçalho até o rodapé (flex) */
+.danfe-area-produtos-moc {
+  position: absolute;
+  top: var(--moc-top-cabecalho-fim);
+  left: 0;
+  width: var(--moc-form-w);
+  bottom: var(--moc-h-rodape);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Rodapé: fixo no pé da folha */
+.danfe-area-rodape-moc {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: var(--moc-form-w);
+  height: var(--moc-h-rodape);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .moc-field,
@@ -636,20 +667,28 @@ body {
   align-items: center;
 }
 
-.moc-produtos-titulo {
-  top: var(--moc-top-produtos-titulo);
+.danfe-area-produtos-moc .moc-produtos-titulo {
+  position: relative;
+  top: auto;
+  left: auto;
+  flex: 0 0 var(--moc-sec-titulo-h);
 }
 
-.moc-adic-titulo {
-  top: var(--moc-top-adic-titulo);
+.danfe-area-rodape-moc .moc-adic-titulo {
+  position: relative;
+  top: auto;
+  left: auto;
+  flex: 0 0 var(--moc-sec-titulo-h);
 }
 
-.moc-sec-produtos {
-  position: absolute;
-  left: 0;
-  top: var(--moc-top-produtos-bloco);
-  width: var(--moc-form-w);
-  height: var(--moc-h-produtos);
+.danfe-area-produtos-moc .moc-sec-produtos {
+  position: relative;
+  top: auto;
+  left: auto;
+  flex: 1 1 auto;
+  width: 100%;
+  height: auto;
+  min-height: 0;
   border: var(--border);
   padding: 0;
   overflow: hidden;
@@ -786,14 +825,16 @@ col.col-aliq-ipi { width: 4%; }
   line-height: 1.2;
 }
 
-.moc-rodape-grid {
-  position: absolute;
-  left: 0;
-  top: var(--moc-top-adic-bloco);
+.danfe-area-rodape-moc .moc-rodape-grid {
+  position: relative;
+  top: auto;
+  left: auto;
+  flex: 1 1 auto;
   display: grid;
   grid-template-columns: 12.95cm 7.62cm;
-  width: var(--moc-form-w);
-  height: 3.22cm;
+  width: 100%;
+  min-height: 0;
+  height: auto;
   z-index: 2;
   page-break-inside: avoid;
   break-inside: avoid;
@@ -803,7 +844,8 @@ col.col-aliq-ipi { width: 4%; }
 .moc-sec-res-fisco {
   border: var(--border);
   padding: 1.35mm 1.55mm 1.2mm;
-  height: 3.22cm;
+  min-height: 2.4cm;
+  height: auto;
   overflow: hidden;
   vertical-align: top;
   background: #fff;
@@ -824,12 +866,14 @@ col.col-aliq-ipi { width: 4%; }
   font-size: 7pt;
 }
 
-.moc-rodape-sys {
-  position: absolute;
-  left: 0;
-  top: 29.08cm;
-  width: var(--moc-form-w);
-  height: 0.12cm;
+.danfe-area-rodape-moc .moc-rodape-sys {
+  position: relative;
+  top: auto;
+  left: auto;
+  flex: 0 0 auto;
+  width: 100%;
+  height: auto;
+  min-height: 0.12cm;
   padding: 0;
   border-top: 0.5pt solid #ccc;
   font-size: 5.5pt;

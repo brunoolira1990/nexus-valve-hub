@@ -7,6 +7,8 @@
 </head>
 <body>
   <div class="danfe danfe-moc">
+    <!-- Cabeçalho MOC: um único bloco (WeasyPrint não empilha altura de dezenas de position:absolute no fluxo) -->
+    <div class="danfe-cabecalho-moc">
     <!-- §3.8.1 — CANHOTO -->
     <div class="moc-field moc-canhoto-recebemos">
       <span class="lbl">Recebemos de {{ emit.x_nome|default:"—" }} os produtos/serviços constantes da NF-e indicada</span>
@@ -248,8 +250,9 @@
         <span class="lbl">Peso líquido</span><span class="val">{{ tr.peso_liquido|default:"0" }}</span>
       </div>
     </div>
+    </div>
 
-    <!-- Produtos + rodapé: filhos diretos de .danfe-moc (evita duplo offset no WeasyPrint) -->
+    <div class="danfe-area-produtos-moc">
     <div class="moc-sec-titulo moc-produtos-titulo"><span>Dados dos produtos / serviços</span></div>
     <div class="moc-sec-produtos">
       <div class="produtos-watermark" aria-hidden="true">
@@ -331,7 +334,9 @@
         </tbody>
       </table>
     </div>
+    </div>
 
+    <div class="danfe-area-rodape-moc">
     <div class="moc-sec-titulo moc-adic-titulo"><span>Dados adicionais</span></div>
     <div class="moc-rodape-grid">
       <div class="moc-sec-inf-compl">
@@ -348,6 +353,7 @@
       <span>DANFE de conferência — sem valor fiscal</span>
       <span>{% if d.impresso_em %}{{ d.impresso_em }}{% endif %}</span>
       <span>{{ d.sistema|default:"Nexus APP" }}</span>
+    </div>
     </div>
   </div>
 </body>
