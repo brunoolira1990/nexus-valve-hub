@@ -138,6 +138,11 @@ class FamiliaProduto(models.Model):
         OD_POLEGADA = 'OD_POLEGADA', 'OD em polegada (não é NPS/SCH)'
         OD_POLEGADA_X_ROSCA = 'OD_POLEGADA_X_ROSCA', 'OD em polegada x Rosca'
         OD_MM = 'OD_MM', 'OD em mm (tubo / dimensional)'
+        DN_MM = 'DN_MM', 'DN / medida em mm (PVC, CPVC, PPR, etc.)'
+        DN_MM_REDUCAO = 'DN_MM_REDUCAO', 'DN mm × DN mm (redução)'
+        BITOLA_POLEGADA = 'BITOLA_POLEGADA', 'Bitola em polegada (condulete / elétrico; tabela oficial)'
+        OD_MM_REDUCAO = 'OD_MM_REDUCAO', 'OD mm maior × menor (PU / pneumático)'
+        OD_MM_X_ROSCA = 'OD_MM_X_ROSCA', 'OD mm × rosca ou bitola (PU / push-in)'
         OD_MM_X_ESPESSURA = 'OD_MM_X_ESPESSURA', 'OD mm + espessura mm'
         OD_MM_X_ESPESSURA_X_COMPRIMENTO = 'OD_MM_X_ESPESSURA_X_COMPRIMENTO', 'OD mm + espessura + comprimento'
         CHAPA_MM = 'CHAPA_MM', 'Chapa em mm (espessura x largura x comprimento)'
@@ -168,6 +173,12 @@ class FamiliaProduto(models.Model):
         )
         UNDERSCORE_POLEGADA = 'UNDERSCORE_POLEGADA', 'Base + underscore + ID polegada (3 dígitos)'
         BASE_OD_MM_ESPESSURA = 'BASE_OD_MM_ESPESSURA', 'Base + OD mm + espessura mm (ex.: 6119OD.1002)'
+        BASE_DN_MM = 'BASE_DN_MM', 'Base + DN/mm (3 dígitos)'
+        BASE_DN_MM_REDUCAO = 'BASE_DN_MM_REDUCAO', 'Base + DN maior × menor (3+3 dígitos)'
+        BASE_BITOLA_POLEGADA = 'BASE_BITOLA_POLEGADA', 'Base + bitola (código da tabela de polegadas)'
+        BASE_OD_MM = 'BASE_OD_MM', 'Base + OD mm (3 dígitos; PU / pneumático)'
+        BASE_OD_MM_REDUCAO = 'BASE_OD_MM_REDUCAO', 'Base + OD mm maior × menor (3+3 dígitos)'
+        BASE_OD_MM_X_ROSCA = 'BASE_OD_MM_X_ROSCA', 'Base + OD mm + rosca e/ou bitola'
         BASE_ESPIGAO_FLANGE_NPS = 'BASE_ESPIGAO_FLANGE_NPS', 'Base + espigão NPS + flange NPS'
         MANUAL_FABRICANTE = 'MANUAL_FABRICANTE', 'Manual / fabricante (sem código automático por família)'
 
@@ -600,3 +611,13 @@ class FamiliaProdutoSchedulePermitido(models.Model):
 
     def __str__(self):
         return f'{self.familia.codigo_figura} - {self.schedule.codigo_schedule}'
+
+
+from apps.produtos.models_equivalencia import (  # noqa: E402, F401
+    FornecedorComposicaoEquivalencia,
+    FornecedorComposicaoEquivalenciaItem,
+    FornecedorProdutoEquivalencia,
+    ProcessoMontagem,
+    ProdutoComposicao,
+    ProdutoComposicaoItem,
+)

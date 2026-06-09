@@ -1,4 +1,10 @@
 import api from './config';
+import {
+  buildListParams,
+  type ListQueryParams,
+  type PaginatedResponse,
+  unwrapListResults,
+} from '@/lib/apiList';
 import type { FamiliaProduto, Polegada, Produto, RoscaConexao, ScheduleEspessura } from '@/types';
 
 const path = 'produtos/';
@@ -79,18 +85,22 @@ export type ConverterMedidaResponse = {
   mensagem?: string;
 };
 
-export type ProdutosListParams = {
-  search?: string;
-  limit?: number;
+export type ProdutosListParams = ListQueryParams & {
+  sem_ncm?: string;
+  material?: string;
 };
 
 export const produtosService = {
+  listPaginated: async (params?: ProdutosListParams) => {
+    const response = await api.get<PaginatedResponse<Produto>>(path, { params: buildListParams(params) });
+    return response.data;
+  },
   getAll: async (params?: ProdutosListParams) => {
-    const q: Record<string, string> = {};
-    const s = params?.search?.trim();
-    if (s) q.search = s;
-    if (params?.limit != null) q.limit = String(params.limit);
-    const response = await api.get<ListResponse<Produto>>(path, { params: Object.keys(q).length ? q : undefined });
+    const response = await api.get<ListResponse<Produto>>(path, {
+      params: buildListParams(
+        params?.page ? params : { ...params, limit: params?.limit ?? (params?.search ? 50 : 100) },
+      ),
+    });
     return unwrapList(response.data);
   },
   getById: async (id: number) => (await api.get<Produto>(`${path}${id}/`)).data,

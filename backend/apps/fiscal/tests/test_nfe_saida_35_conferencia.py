@@ -107,7 +107,7 @@ class NFeSaidaConferencia35Tests(TestCase):
 
     def test_validacao_grupo_reforma(self):
         nf, _item = self._nf_fat()
-        conf = montar_conferencia_nfe_saida(nf)
+        conf = montar_conferencia_nfe_saida(nf, modo='completo', incluir_checklist=True)
         grupos = conf['checklist'].get('grupos', {})
         self.assertIn('reforma_tributaria', grupos)
 

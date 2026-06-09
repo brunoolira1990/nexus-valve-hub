@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  itemPedidoQuantidadeEditavel,
   labelModoAtendimentoEstoque,
   nfeClienteBloqueado,
   nfeItensComerciaisEditaveis,
@@ -11,6 +12,17 @@ describe('nfeSaidaUi', () => {
   it('bloqueia itens do pedido faturado', () => {
     expect(pedidoItensBloqueados('FATURADO')).toBe(true);
     expect(pedidoItensBloqueados('ABERTO')).toBe(false);
+    expect(pedidoItensBloqueados('CANCELADO')).toBe(true);
+  });
+
+  it('quantidade editável em pedido aberto sem item faturado', () => {
+    expect(itemPedidoQuantidadeEditavel({ status_item: 'PENDENTE', quantidade_faturada: 0 }, 'ABERTO')).toBe(
+      true,
+    );
+    expect(itemPedidoQuantidadeEditavel({ status_item: 'FATURADO', quantidade_faturada: 1 }, 'ABERTO')).toBe(
+      false,
+    );
+    expect(itemPedidoQuantidadeEditavel({ status_item: 'PENDENTE' }, 'FATURADO')).toBe(false);
   });
 
   it('bloqueia cliente quando há faturamento vinculado', () => {
@@ -28,6 +40,7 @@ describe('nfeSaidaUi', () => {
 
   it('bloqueia salvar formulário para NF finalizada', () => {
     expect(nfeSalvarFormularioBloqueado('AUTORIZADA_INTERNA')).toBe(true);
+    expect(nfeSalvarFormularioBloqueado('AUTORIZADA_HOMOLOGACAO')).toBe(true);
     expect(nfeSalvarFormularioBloqueado('RASCUNHO')).toBe(false);
   });
 

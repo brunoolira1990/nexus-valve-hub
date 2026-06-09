@@ -18,6 +18,7 @@ import {
   type GrupoAlteracaoImposto,
   type ItemAlteracoesAgrupadas,
 } from '@/lib/nfeSaidaAtualizarImpostos';
+import { enderecoFiscalBloqueado, mensagemEnderecoFiscalResumo } from '@/lib/enderecoFiscal';
 import { apiErrorMessage } from '@/services/api/config';
 import {
   nfeSaidasService,
@@ -137,6 +138,27 @@ export function NFeSaidaAtualizarImpostosModal({
             ) : null}
 
             <ResumoBadges preview={preview} />
+
+            {preview.contexto_fiscal ? (
+              <section className="rounded-md border border-border/70 bg-muted/20 p-3 text-sm space-y-1">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Contexto fiscal consultado
+                </h3>
+                <p>
+                  Origem <strong>{preview.contexto_fiscal.uf_origem || '—'}</strong>
+                  {' → '}
+                  Destino <strong>{preview.contexto_fiscal.uf_destino || '—'}</strong>
+                  {preview.contexto_fiscal.cidade_destino ? (
+                    <span className="text-muted-foreground"> · {preview.contexto_fiscal.cidade_destino}</span>
+                  ) : null}
+                </p>
+                {enderecoFiscalBloqueado(preview.contexto_fiscal.endereco_fiscal) ? (
+                  <p className="text-xs text-amber-800 dark:text-amber-200">
+                    {mensagemEnderecoFiscalResumo(preview.contexto_fiscal.endereco_fiscal)}
+                  </p>
+                ) : null}
+              </section>
+            ) : null}
 
             {avisoPreview ? (
               <p className="text-sm text-amber-800 dark:text-amber-200 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 flex gap-2">
@@ -323,14 +345,19 @@ function SecaoItensSemRegra({
 }) {
   return (
     <section className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
-      <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-100 mb-2">Itens sem regra fiscal</h3>
+      <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-100 mb-2">Pendências fiscais por item</h3>
       <ul className="space-y-2 text-sm">
         {itens.map((it) => (
           <li key={it.item_id}>
             <span className="font-medium">{it.produto_nome}</span>
             {it.ncm ? <span className="text-muted-foreground"> · NCM {it.ncm}</span> : null}
+            {it.diagnostico?.pendencia ? (
+              <p className="text-xs font-medium text-amber-900 dark:text-amber-100 mt-0.5">
+                {it.diagnostico.pendencia}
+              </p>
+            ) : null}
             <p className="text-xs text-amber-800 dark:text-amber-200 mt-0.5">
-              {it.alertas?.[0] || 'Nenhuma regra fiscal de saída encontrada para este item.'}
+              {it.diagnostico?.detalhe || it.alertas?.[0] || 'Nenhuma regra fiscal de saída encontrada para este item.'}
             </p>
           </li>
         ))}

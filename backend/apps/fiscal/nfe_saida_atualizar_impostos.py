@@ -9,6 +9,11 @@ from typing import Any
 from django.db import transaction
 from django.utils import timezone
 
+from apps.cadastros.endereco_fiscal import (
+    EnderecoFiscalResult,
+    mensagem_endereco_inconsistente_nf,
+    validar_endereco_fiscal,
+)
 from apps.cadastros.models import Empresa
 from apps.fiscal.models import ItemNFeSaida, NFeSaida, NFeSaidaEvento
 from apps.fiscal.nfe_saida_bloqueio import (
@@ -17,7 +22,12 @@ from apps.fiscal.nfe_saida_bloqueio import (
     pode_atualizar_impostos_nfe,
 )
 from apps.fiscal.nfe_saida_efeitos import _lock_nfe_saida, _registrar_evento
-from apps.fiscal.snapshot_fiscal_helpers import cfop_from_snapshot_fiscal, normalize_snapshot_fiscal_for_nfe
+from apps.fiscal.snapshot_fiscal_helpers import (
+    cfop_from_snapshot_fiscal,
+    get_reforma_tributaria_snapshot,
+    normalize_snapshot_fiscal_for_nfe,
+)
+from apps.regras_fiscais.reforma_tributaria_config import normalizar_percentual_reforma
 from apps.produtos.snapshot import build_produto_snapshot
 from apps.regras_fiscais.base_pis_cofins_saida import calcular_base_pis_cofins_saida
 from apps.regras_fiscais.models import RegraFiscalSaida
@@ -27,15 +37,18 @@ from apps.fiscal.nfe_saida_textos_fiscais import (
     mesclar_recomendacoes_snapshot,
 )
 from apps.regras_fiscais.recomendacoes_nfe_config import normalizar_recomendacoes_nfe
+from apps.fiscal.nfe_saida_reforma_calculo import (
+    aplicar_reforma_tributaria_item,
+    mensagem_reforma_aplicada,
+)
 from apps.regras_fiscais.reforma_tributaria_config import (
     normalizar_reforma_tributaria,
-    reforma_tributaria_para_snapshot,
     reforma_tributaria_preenchida,
 )
+from apps.comercial.pricing import normalize_ncm
 from apps.regras_fiscais.saida_fiscal import (
     BuscaRegraFiscalSaidaDict,
-    find_regra_fiscal_saida_com_fallback,
-    use_cenario_fiscal_saida_for_propostas,
+    buscar_regra_fiscal_nfe_saida_rascunho,
 )
 
 MSG_BLOQUEIO_STATUS = 'Impostos só podem ser atualizados em NF-e rascunho.'
@@ -66,10 +79,13 @@ _CAMPOS_COMPARACAO: list[tuple[str, str]] = [
 def _dec(v) -> Decimal:
     if v is None or v == '':
         return Decimal('0')
+    s = str(v).strip()
+    if ',' in s:
+        return normalizar_percentual_reforma(v)
     try:
-        return Decimal(str(v))
+        return Decimal(s)
     except Exception:
-        return Decimal('0')
+        return normalizar_percentual_reforma(v)
 
 
 def _q2(v: Decimal) -> str:
@@ -107,15 +123,72 @@ def _uf_origem_nf(nf: NFeSaida) -> str:
     return _text(emp.uf).upper()[:2] if emp else ''
 
 
-def _uf_destino_nf(nf: NFeSaida) -> str:
+def _cliente_nf(nf: NFeSaida):
     if nf.cliente_id and nf.cliente:
-        uf = _text(nf.cliente.uf).upper()[:2]
-        if len(uf) == 2:
-            return uf
+        return nf.cliente
     pedido = nf.pedido_venda
     if pedido and pedido.cliente_id and pedido.cliente:
-        return _text(pedido.cliente.uf).upper()[:2]
+        return pedido.cliente
+    return None
+
+
+def _uf_destino_nf(nf: NFeSaida, endereco_result: EnderecoFiscalResult | None = None) -> str:
+    if endereco_result is not None:
+        if endereco_result.bloqueio_fiscal or not endereco_result.consistente:
+            return ''
+        if endereco_result.uf_destino:
+            return endereco_result.uf_destino
+    cliente = _cliente_nf(nf)
+    if cliente:
+        uf = _text(cliente.uf).upper()[:2]
+        if len(uf) == 2:
+            return uf
     return ''
+
+
+def _mensagem_regra_nao_encontrada(ncm: str, uf_origem: str, uf_destino: str) -> str:
+    ncm_txt = _text(ncm) or '—'
+    ufo = _text(uf_origem).upper()[:2] or '—'
+    ufd = _text(uf_destino).upper()[:2] or '—'
+    if len(ufo) != 2:
+        return 'UF origem incompleta para buscar regra fiscal.'
+    if len(ufd) != 2:
+        return 'UF destino incompleta ou inconsistente para buscar regra fiscal.'
+    return f'Não foi encontrada regra fiscal de saída para NCM {ncm_txt}, origem {ufo} e destino {ufd}.'
+
+
+def _montar_contexto_fiscal_nf(
+    nf: NFeSaida,
+    *,
+    endereco_result: EnderecoFiscalResult | None,
+) -> dict[str, Any]:
+    cliente = _cliente_nf(nf)
+    pedido = nf.pedido_venda
+    emp = pedido.empresa_emitente if pedido and pedido.empresa_emitente_id else None
+    if not emp:
+        emp = Empresa.objects.order_by('pk').first()
+    ufo = _uf_origem_nf(nf)
+    ufd = _uf_destino_nf(nf, endereco_result)
+    from apps.regras_fiscais.cenario_fiscal_saida import garantir_cenario_saida_padrao
+
+    cenario = garantir_cenario_saida_padrao()
+    return {
+        'empresa_emitente_id': emp.pk if emp else None,
+        'empresa_emitente': _text(emp.razao_social) if emp else '',
+        'uf_origem': ufo,
+        'cliente_id': cliente.pk if cliente else None,
+        'cliente_razao_social': _text(cliente.razao_social) if cliente else '',
+        'cnpj_cliente': _text(cliente.cnpj) if cliente else '',
+        'ie_cliente': _text(cliente.ie) if cliente else '',
+        'uf_destino': ufd,
+        'cidade_destino': endereco_result.cidade_destino if endereco_result else (_text(cliente.cidade) if cliente else ''),
+        'operacao': 'VENDA',
+        'tipo_documento': 'NF-e',
+        'ambiente': _text(getattr(nf, 'ambiente', '') or getattr(nf, 'tipo_ambiente', '')),
+        'fonte_consultada': 'CENARIO_SAIDA_PADRAO',
+        'cenario_fiscal_saida_id': cenario.pk if cenario else None,
+        'endereco_fiscal': endereco_result.to_dict() if endereco_result else {},
+    }
 
 
 def _resolver_cenario_id_nf(nf: NFeSaida, item: ItemNFeSaida) -> int | None:
@@ -144,22 +217,9 @@ def _resolver_cenario_id_nf(nf: NFeSaida, item: ItemNFeSaida) -> int | None:
     return cenario.pk if cenario else None
 
 
-def _usar_cenario_nf(nf: NFeSaida) -> bool:
-    if use_cenario_fiscal_saida_for_propostas():
-        return True
-    pedido = nf.pedido_venda
-    if pedido and pedido.proposta_id and pedido.proposta:
-        return bool(pedido.proposta.usar_cenario_fiscal_saida)
-    snap = (pedido.snapshot_conversao or {}) if pedido else {}
-    return bool(snap.get('usar_cenario_fiscal_saida'))
-
-
 def _flatten_compare(snap: dict | None) -> dict[str, str]:
     snap = snap or {}
-    reforma = snap.get('reforma_tributaria') or snap.get('ibs_cbs') or {}
-    if not isinstance(reforma, dict):
-        reforma = {}
-    norm_ref = normalizar_reforma_tributaria(reforma) or {}
+    full_ref = get_reforma_tributaria_snapshot(snap) or {}
     out = {
         'cfop': cfop_from_snapshot_fiscal(snap),
         'cst_icms': _text(snap.get('cst_icms') or snap.get('CSOSN') or snap.get('csosn')),
@@ -174,12 +234,12 @@ def _flatten_compare(snap: dict | None) -> dict[str, str]:
         'cst_cofins': _text(snap.get('cst_cofins')),
         'aliquota_cofins': _text(snap.get('aliquota_cofins') or snap.get('cofins_saida_percentual')),
         'valor_cofins': _text(snap.get('valor_cofins') or snap.get('v_cofins')),
-        'cst_ibs_cbs': _text(norm_ref.get('cst_ibs_cbs')),
-        'classificacao_tributaria': _text(norm_ref.get('classificacao_tributaria')),
-        'aliquota_cbs': _text(norm_ref.get('aliquota_cbs')),
-        'valor_cbs': _text(norm_ref.get('valor_cbs')),
-        'aliquota_ibs_estadual': _text(norm_ref.get('aliquota_ibs_estadual')),
-        'valor_ibs_estadual': _text(norm_ref.get('valor_ibs_estadual') or norm_ref.get('valor_ibs_uf')),
+        'cst_ibs_cbs': _text(full_ref.get('cst_ibs_cbs')),
+        'classificacao_tributaria': _text(full_ref.get('classificacao_tributaria')),
+        'aliquota_cbs': _text(full_ref.get('aliquota_cbs')),
+        'valor_cbs': _text(full_ref.get('valor_cbs')),
+        'aliquota_ibs_estadual': _text(full_ref.get('aliquota_ibs_estadual')),
+        'valor_ibs_estadual': _text(full_ref.get('valor_ibs_estadual') or full_ref.get('valor_ibs_uf')),
     }
     return out
 
@@ -220,26 +280,21 @@ def _montar_reforma_no_snapshot(
     busca: BuscaRegraFiscalSaidaDict,
     *,
     valor_produto: Decimal,
+    valor_icms: Decimal = Decimal('0'),
+    valor_pis: Decimal = Decimal('0'),
+    valor_cofins: Decimal = Decimal('0'),
+    valor_ipi: Decimal = Decimal('0'),
 ) -> dict[str, Any] | None:
     if not busca.get('tem_reforma_configurada') or regra is None:
         return None
-    raw = reforma_tributaria_para_snapshot(regra.reforma_tributaria)
-    if not raw:
-        return None
-    base = valor_produto
-    ali_cbs = _dec(raw.get('aliquota_cbs'))
-    ali_ibs = _dec(raw.get('aliquota_ibs_estadual'))
-    ali_mun = _dec(raw.get('aliquota_ibs_municipal'))
-    v_cbs = (base * ali_cbs / Decimal('100')).quantize(Decimal('0.01')) if ali_cbs else Decimal('0')
-    v_ibs = (base * ali_ibs / Decimal('100')).quantize(Decimal('0.01')) if ali_ibs else Decimal('0')
-    v_mun = (base * ali_mun / Decimal('100')).quantize(Decimal('0.01')) if ali_mun else Decimal('0')
-    out = dict(raw)
-    out['base_cbs'] = _q2(base)
-    out['base_ibs'] = _q2(base)
-    out['valor_cbs'] = _q2(v_cbs)
-    out['valor_ibs_estadual'] = _q2(v_ibs)
-    out['valor_ibs_municipal'] = _q2(v_mun)
-    return out
+    return aplicar_reforma_tributaria_item(
+        regra.reforma_tributaria,
+        valor_produto=valor_produto,
+        valor_icms=valor_icms,
+        valor_pis=valor_pis,
+        valor_cofins=valor_cofins,
+        valor_ipi=valor_ipi,
+    )
 
 
 def montar_snapshot_fiscal_de_regra_atual(
@@ -316,7 +371,15 @@ def montar_snapshot_fiscal_de_regra_atual(
         if regra.icms_st_aplicavel:
             snap['icms_st_aplicavel'] = True
             snap['aliquota_icms_st'] = _q2(_dec(regra.aliquota_icms_st))
-    reforma = _montar_reforma_no_snapshot(regra, busca, valor_produto=v_prod)
+    reforma = _montar_reforma_no_snapshot(
+        regra,
+        busca,
+        valor_produto=v_prod,
+        valor_icms=v_icms,
+        valor_pis=v_pis,
+        valor_cofins=v_cofins,
+        valor_ipi=v_ipi,
+    )
     if reforma:
         snap['reforma_tributaria'] = reforma
     if regra is not None:
@@ -326,15 +389,20 @@ def montar_snapshot_fiscal_de_regra_atual(
     return normalize_snapshot_fiscal_for_nfe(snap)
 
 
-def _buscar_regra_para_item(nf: NFeSaida, item: ItemNFeSaida) -> tuple[BuscaRegraFiscalSaidaDict, RegraFiscalSaida | None, list[str]]:
+def _buscar_regra_para_item(
+    nf: NFeSaida,
+    item: ItemNFeSaida,
+    *,
+    endereco_result: EnderecoFiscalResult | None = None,
+) -> tuple[BuscaRegraFiscalSaidaDict, RegraFiscalSaida | None, list[str], dict[str, Any]]:
     alertas: list[str] = []
     ncm = _ncm_item(item)
     ufo = _uf_origem_nf(nf)
-    ufd = _uf_destino_nf(nf)
-    if len(ncm) < 8:
-        if item.produto_id and not ncm:
-            ncm = _text(item.produto.get_ncm_efetivo_codigo() or item.produto.ncm)
-    if len(ncm) < 8 or len(ufo) != 2 or len(ufd) != 2:
+    ufd = _uf_destino_nf(nf, endereco_result)
+
+    if endereco_result and endereco_result.bloqueio_fiscal:
+        cliente = _cliente_nf(nf)
+        msg = mensagem_endereco_inconsistente_nf(cliente, endereco_result) if cliente else 'Cliente não informado.'
         return (
             {
                 'origem': 'NAO_ENCONTRADA',
@@ -359,30 +427,67 @@ def _buscar_regra_para_item(nf: NFeSaida, item: ItemNFeSaida) -> tuple[BuscaRegr
                 'mensagens': [],
             },
             None,
-            ['NCM ou UF origem/destino incompletos para buscar regra fiscal.'],
+            [msg],
+            {},
         )
 
+    if len(ncm) < 8:
+        if item.produto_id and not ncm:
+            ncm = _text(item.produto.get_ncm_efetivo_codigo() or item.produto.ncm)
+    if len(ncm) < 8 or len(ufo) != 2 or len(ufd) != 2:
+        msg = _mensagem_regra_nao_encontrada(ncm, ufo, ufd)
+        if len(ncm) < 8:
+            msg = 'NCM incompleto para buscar regra fiscal.'
+        return (
+            {
+                'origem': 'NAO_ENCONTRADA',
+                'regra_id': None,
+                'regra_legada_id': None,
+                'cfop': '',
+                'cfop_st': '',
+                'cst_icms': '',
+                'aliquota_icms': '0',
+                'cst_ipi': '',
+                'aliquota_ipi': '0',
+                'cst_pis': '',
+                'aliquota_pis': '0',
+                'cst_cofins': '',
+                'aliquota_cofins': '0',
+                'movimenta_estoque': True,
+                'gera_financeiro': True,
+                'deduzir_icms_base_pis': False,
+                'deduzir_icms_base_cofins': False,
+                'tem_reforma_configurada': False,
+                'tem_recomendacoes_nfe': False,
+                'mensagens': [],
+            },
+            None,
+            [msg],
+            {},
+        )
+
+    ncm_busca = normalize_ncm(ncm)
     cenario_id = _resolver_cenario_id_nf(nf, item)
-    if not cenario_id and _usar_cenario_nf(nf):
-        alertas.append('Cenário fiscal de saída não identificado; tentando busca com cenário padrão.')
 
-    busca = find_regra_fiscal_saida_com_fallback(
-        ncm,
-        ufo,
-        ufd,
-        'Saída',
+    busca, regra, filtros_busca = buscar_regra_fiscal_nfe_saida_rascunho(
         produto_id=item.produto_id,
-        usar_cenario=_usar_cenario_nf(nf),
+        ncm=ncm_busca,
+        uf_origem=ufo,
+        uf_destino=ufd,
         cenario_id=cenario_id,
+        produto=item.produto if item.produto_id else None,
+        tipo_operacao='VENDA',
     )
-    regra: RegraFiscalSaida | None = None
-    if busca.get('regra_id'):
-        regra = (
-            RegraFiscalSaida.objects.select_related('cenario')
-            .filter(pk=busca['regra_id'])
-            .first()
+    if busca['origem'] == 'NAO_ENCONTRADA':
+        alertas.append(_mensagem_regra_nao_encontrada(ncm_busca, ufo, ufd))
+        if filtros_busca.get('regras_descartadas'):
+            alertas.extend(filtros_busca['regras_descartadas'])
+    elif regra is not None:
+        cfop = _text(busca.get('cfop'))
+        alertas.append(
+            f'Regra fiscal aplicada: NCM {ncm_busca} · {ufo}→{ufd} · CFOP {cfop or "—"}.',
         )
-    return busca, regra, alertas
+    return busca, regra, alertas, filtros_busca
 
 
 def _descricao_item(item: ItemNFeSaida) -> str:
@@ -393,23 +498,48 @@ def _descricao_item(item: ItemNFeSaida) -> str:
     return f'Item #{item.pk}'
 
 
-def _processar_item_preview(nf: NFeSaida, item: ItemNFeSaida) -> dict[str, Any]:
+def _processar_item_preview(
+    nf: NFeSaida,
+    item: ItemNFeSaida,
+    *,
+    endereco_result: EnderecoFiscalResult | None = None,
+    contexto_fiscal: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     snap_antes = deepcopy(item.snapshot_fiscal) or {}
-    busca, regra, alertas_ctx = _buscar_regra_para_item(nf, item)
+    busca, regra, alertas_ctx, filtros_busca = _buscar_regra_para_item(nf, item, endereco_result=endereco_result)
     item_alertas = list(alertas_ctx)
     regra_encontrada = busca['origem'] != 'NAO_ENCONTRADA'
+    ncm = _ncm_item(item)
+    ncm_norm = normalize_ncm(ncm)
+    ufo = _uf_origem_nf(nf)
+    ufd = _uf_destino_nf(nf, endereco_result)
 
     if not regra_encontrada:
-        item_alertas.append('Nenhuma regra fiscal de saída encontrada para este item.')
+        if endereco_result and endereco_result.bloqueio_fiscal:
+            diagnostico = {
+                'tipo': 'ENDERECO_INCONSISTENTE',
+                'pendencia': 'Cliente com endereço fiscal inconsistente.',
+                'detalhe': item_alertas[0] if item_alertas else mensagem_endereco_inconsistente_nf(_cliente_nf(nf), endereco_result),
+            }
+        else:
+            detalhe = _mensagem_regra_nao_encontrada(ncm_norm, ufo, ufd)
+            diagnostico = {
+                'tipo': 'REGRA_NAO_ENCONTRADA',
+                'pendencia': 'Regra fiscal não encontrada.',
+                'detalhe': detalhe,
+                'auditoria_busca': filtros_busca,
+            }
         return {
             'item_id': item.pk,
             'produto_nome': _descricao_item(item),
-            'ncm': _ncm_item(item),
+            'ncm': ncm_norm or ncm,
             'regra_encontrada': False,
             'regra_fiscal_saida_id': None,
             'regra_fiscal_saida_nome': '',
             'alteracoes': [],
             'alertas': item_alertas,
+            'contexto_fiscal': contexto_fiscal or {},
+            'diagnostico': diagnostico,
         }
 
     snap_depois = montar_snapshot_fiscal_de_regra_atual(nf, item, busca, regra)
@@ -417,15 +547,27 @@ def _processar_item_preview(nf: NFeSaida, item: ItemNFeSaida) -> dict[str, Any]:
     if busca.get('mensagens'):
         item_alertas.extend(busca['mensagens'])
 
+    cfop = _text(busca.get('cfop'))
+    info = f'Regra fiscal aplicada: NCM {ncm_norm or ncm} · {ufo}→{ufd} · CFOP {cfop or "—"}.'
+    msg_ref = mensagem_reforma_aplicada(snap_depois.get('reforma_tributaria'))
+    if msg_ref:
+        info = f'{info} {msg_ref}'
+        item_alertas.append(msg_ref)
     return {
         'item_id': item.pk,
         'produto_nome': _descricao_item(item),
-        'ncm': _ncm_item(item),
+        'ncm': ncm_norm or ncm,
         'regra_encontrada': True,
         'regra_fiscal_saida_id': busca.get('regra_id'),
         'regra_fiscal_saida_nome': _text(regra.nome) if regra else '',
         'alteracoes': alteracoes,
         'alertas': item_alertas,
+        'contexto_fiscal': contexto_fiscal or {},
+        'diagnostico': {
+            'tipo': 'REGRA_APLICADA',
+            'informacao': info,
+            'auditoria_busca': filtros_busca,
+        },
         '_snapshot_novo': snap_depois,
     }
 
@@ -454,23 +596,45 @@ def preparar_atualizacao_impostos_nfe(nf: NFeSaida, *, usuario=None) -> dict[str
         }
 
     nf = (
-        NFeSaida.objects.select_related('cliente', 'pedido_venda', 'pedido_venda__empresa_emitente', 'pedido_venda__proposta')
+        NFeSaida.objects.select_related('cliente', 'pedido_venda', 'pedido_venda__cliente', 'pedido_venda__empresa_emitente', 'pedido_venda__proposta')
         .prefetch_related('itens__produto')
         .get(pk=nf.pk)
     )
 
+    cep_cache: dict[str, dict[str, str] | None] = {}
+    cliente = _cliente_nf(nf)
+    endereco_result = (
+        validar_endereco_fiscal(cliente, consultar_cep=True, cep_cache=cep_cache)
+        if cliente
+        else EnderecoFiscalResult(
+            consistente=False,
+            bloqueio_fiscal=True,
+            pendencias=['Cliente não informado na NF-e.'],
+        )
+    )
+    contexto_fiscal = _montar_contexto_fiscal_nf(nf, endereco_result=endereco_result)
+
     itens_rows: list[dict[str, Any]] = []
     alertas_globais: list[str] = []
+    if endereco_result.bloqueio_fiscal and cliente:
+        alertas_globais.append(mensagem_endereco_inconsistente_nf(cliente, endereco_result))
+    elif endereco_result.pendencias:
+        alertas_globais.extend(endereco_result.pendencias)
     com_regra = sem_regra = com_alt = sem_alt = reforma_cfg = 0
     regras_coletadas: list[RegraFiscalSaida] = []
 
     for item in nf.itens.all().order_by('pk'):
-        row = _processar_item_preview(nf, item)
+        row = _processar_item_preview(
+            nf,
+            item,
+            endereco_result=endereco_result,
+            contexto_fiscal=contexto_fiscal,
+        )
         snap_novo = row.pop('_snapshot_novo', None) or {}
         itens_rows.append(row)
         if row['regra_encontrada']:
             com_regra += 1
-            _busca, regra, _ = _buscar_regra_para_item(nf, item)
+            _busca, regra, _, _ = _buscar_regra_para_item(nf, item, endereco_result=endereco_result)
             if regra is not None:
                 regras_coletadas.append(regra)
         else:
@@ -493,9 +657,11 @@ def preparar_atualizacao_impostos_nfe(nf: NFeSaida, *, usuario=None) -> dict[str
         any(a.get('campo') == 'recomendacoes_nfe' for a in (row.get('alteracoes') or []))
         for row in itens_rows
     )
-    pode_aplicar = com_regra > 0 and (tem_alteracao_item or tem_textos or tem_rec_snapshot)
+    pode_aplicar = com_regra > 0 and (tem_alteracao_item or tem_textos or tem_rec_snapshot) and not endereco_result.bloqueio_fiscal
 
-    if com_regra and not pode_aplicar:
+    if endereco_result.bloqueio_fiscal:
+        alertas_globais.append('Corrija o endereço fiscal do cliente antes de aplicar regra fiscal.')
+    elif com_regra and not pode_aplicar:
         alertas_globais.append('Nenhuma alteração fiscal ou texto fiscal encontrado com a regra atual.')
     elif tem_textos and not tem_alteracao_item:
         alertas_globais.append('Há textos fiscais/recomendações para aplicar.')
@@ -518,6 +684,12 @@ def preparar_atualizacao_impostos_nfe(nf: NFeSaida, *, usuario=None) -> dict[str
         'itens': itens_rows,
         'textos_fiscais': textos_fiscais,
         'alertas': list(dict.fromkeys(alertas_globais)),
+        'contexto_fiscal': contexto_fiscal,
+        'diagnosticos': [
+            row['diagnostico']
+            for row in itens_rows
+            if row.get('diagnostico')
+        ],
     }
 
 
@@ -555,12 +727,36 @@ def aplicar_atualizacao_impostos_nfe(
         regras_aplicar: list[RegraFiscalSaida] = []
         aplicados = 0
         alteracoes_por_item: list[dict[str, Any]] = []
+        nf_locked = (
+            NFeSaida.objects.select_related('cliente', 'pedido_venda', 'pedido_venda__cliente')
+            .get(pk=nf_locked.pk)
+        )
+        cliente_locked = _cliente_nf(nf_locked)
+        endereco_locked = (
+            validar_endereco_fiscal(cliente_locked, consultar_cep=True)
+            if cliente_locked
+            else EnderecoFiscalResult(bloqueio_fiscal=True)
+        )
+        if endereco_locked.bloqueio_fiscal:
+            raise ValueError(
+                mensagem_endereco_inconsistente_nf(cliente_locked, endereco_locked)
+                if cliente_locked
+                else 'Cliente não informado na NF-e.',
+            )
 
         for item in itens_db:
-            row = _processar_item_preview(nf_locked, item)
+            row = _processar_item_preview(
+                nf_locked,
+                item,
+                endereco_result=endereco_locked,
+            )
             if not row['regra_encontrada']:
                 continue
-            _, regra, _ = _buscar_regra_para_item(nf_locked, item)
+            _, regra, _, filtros_evt = _buscar_regra_para_item(
+                nf_locked,
+                item,
+                endereco_result=endereco_locked,
+            )
             if regra is not None:
                 regras_aplicar.append(regra)
             if not row['alteracoes']:
@@ -572,10 +768,13 @@ def aplicar_atualizacao_impostos_nfe(
             item.snapshot_fiscal = merged
             item.save(update_fields=['snapshot_fiscal'])
             aplicados += 1
+            diag = row.get('diagnostico') or {}
             alteracoes_por_item.append(
                 {
                     'item_id': item.pk,
                     'alteracoes': row['alteracoes'],
+                    'auditoria_busca': diag.get('auditoria_busca') or filtros_evt,
+                    'regra_aplicada': diag.get('informacao', ''),
                 },
             )
 
@@ -583,6 +782,14 @@ def aplicar_atualizacao_impostos_nfe(
         if campos_txt:
             nf_locked.save(update_fields=list(campos_txt.keys()))
 
+        regras_evt = [
+            {
+                'item_id': alt['item_id'],
+                'filtros': alt.get('auditoria_busca'),
+                'regra_aplicada': alt.get('regra_aplicada', ''),
+            }
+            for alt in alteracoes_por_item
+        ]
         resumo_evt = {
             'itens_total': len(itens_db),
             'itens_com_regra': preview['resumo']['itens_com_regra'],
@@ -593,19 +800,33 @@ def aplicar_atualizacao_impostos_nfe(
             'alteracoes_por_item': alteracoes_por_item,
             'textos_fiscais': preview.get('textos_fiscais'),
             'motivo': motivo_txt,
+            'contexto_fiscal': preview.get('contexto_fiscal'),
+            'fonte_consultada': 'CENARIO_SAIDA_PADRAO',
+            'regras_aplicadas': regras_evt,
         }
         from apps.fiscal.nfe_saida_prontidao import invalidar_prontidao_apos_atualizar_fiscal
 
         invalidar_prontidao_apos_atualizar_fiscal(nf_locked, usuario=usuario)
 
+        if aplicados > 0 and preview['resumo']['itens_com_regra'] > 0:
+            obs_evt = (
+                f'Atualização fiscal executada. Regra aplicada no cenário padrão de saída. '
+                f'{aplicados} item(ns) com alteração fiscal. Dados comerciais preservados. {motivo_txt}'
+            )
+        elif preview['resumo']['itens_sem_regra'] > 0:
+            obs_evt = (
+                f'Atualização fiscal executada. Nenhuma regra aplicável no cenário padrão de saída. '
+                f'{preview["resumo"]["itens_sem_regra"]} item(ns) sem regra. {motivo_txt}'
+            )
+        else:
+            obs_evt = (
+                f'Impostos/textos fiscais atualizados. {motivo_txt} · '
+                f'{aplicados} item(ns), {textos_aplicados} texto(s) NF-e.'
+            )
         _registrar_evento(
             nf_locked,
             tipo=NFeSaidaEvento.TipoEvento.IMPOSTOS_ATUALIZADOS,
-            observacao=(
-                f'Impostos/textos fiscais atualizados. {motivo_txt} · '
-                f'{aplicados} item(ns), {textos_aplicados} texto(s) NF-e, '
-                f'{preview["resumo"]["itens_sem_regra"]} sem regra.'
-            ),
+            observacao=obs_evt,
             resumo=resumo_evt,
             usuario=usuario,
         )
@@ -618,7 +839,7 @@ def aplicar_atualizacao_impostos_nfe(
         'aplicado': True,
         'itens_atualizados': aplicados,
         'preview': preview,
-        'conferencia': montar_conferencia_nfe_saida(nf_refresh),
+        'conferencia': montar_conferencia_nfe_saida(nf_refresh, modo='abertura', incluir_checklist=False),
         'mensagem': 'Fiscal e textos atualizados com sucesso.',
     }
     return resultado

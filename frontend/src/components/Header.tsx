@@ -1,5 +1,12 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { LogOut, Menu, User } from 'lucide-react';
+import { LogOut, Menu } from 'lucide-react';
+import { NexusButton } from '@/components/nexus';
+import { clearAuthSession } from '@/services/api/config';
+import { clearAppContextoCache, useAppContexto } from '@/hooks/useAppContexto';
+import { GlobalSearch } from './header/GlobalSearch';
+import { EmpresaAtualBadge } from './header/EmpresaAtualBadge';
+import { AmbienteBadge } from './header/AmbienteBadge';
+import { UserMenu } from './header/UserMenu';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
@@ -8,41 +15,59 @@ interface HeaderProps {
 
 export const Header = ({ onToggleSidebar, breadcrumbs = [] }: HeaderProps) => {
   const navigate = useNavigate();
+  const { contexto } = useAppContexto();
 
   const handleLogout = () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
+    clearAppContextoCache();
+    clearAuthSession();
     navigate('/login');
   };
 
   return (
-    <header className="h-14 bg-card border-b border-border flex items-center justify-between px-4 shrink-0">
-      <div className="flex items-center gap-3">
-        <button onClick={onToggleSidebar} className="erp-btn-ghost erp-btn-sm lg:hidden">
+    <header className="h-14 bg-card/95 backdrop-blur-sm border-b border-border flex items-center gap-2 px-4 lg:px-6 shrink-0 shadow-sm">
+      <div className="flex items-center gap-2 min-w-0 shrink">
+        <NexusButton type="button" variant="ghost" size="icon" className="lg:hidden shrink-0" onClick={onToggleSidebar}>
           <Menu className="h-5 w-5" />
-        </button>
-        <nav className="flex items-center gap-1 text-sm text-muted-foreground">
+        </NexusButton>
+        <nav
+          aria-label="Breadcrumb"
+          className="hidden md:flex items-center gap-1 text-sm text-muted-foreground min-w-0 max-w-[180px] lg:max-w-[240px] truncate"
+        >
           {breadcrumbs.map((bc, i) => (
-            <span key={i} className="flex items-center gap-1">
-              {i > 0 && <span>/</span>}
+            <span key={i} className="flex items-center gap-1 shrink-0 min-w-0">
+              {i > 0 && <span className="text-border">/</span>}
               {bc.path ? (
-                <Link to={bc.path} className="hover:text-foreground transition-colors">{bc.label}</Link>
+                <Link to={bc.path} className="hover:text-foreground transition-colors truncate">
+                  {bc.label}
+                </Link>
               ) : (
-                <span className="text-foreground font-medium">{bc.label}</span>
+                <span className="text-foreground font-medium truncate">{bc.label}</span>
               )}
             </span>
           ))}
         </nav>
       </div>
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2 text-sm">
-          <User className="h-4 w-4 text-muted-foreground" />
-          <span className="hidden sm:inline">Admin</span>
+
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 justify-end">
+        <div className="min-w-0 flex-shrink">
+          <EmpresaAtualBadge empresa={contexto.empresa} />
         </div>
-        <button onClick={handleLogout} className="erp-btn-ghost erp-btn-sm text-destructive" title="Sair">
+        <AmbienteBadge label={contexto.ambiente_label} />
+        <UserMenu usuario={contexto.usuario} />
+        <NexusButton
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={handleLogout}
+          className="text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+          title="Sair"
+        >
           <LogOut className="h-4 w-4" />
           <span className="hidden sm:inline">Sair</span>
-        </button>
+        </NexusButton>
+        <div className="min-w-0 w-8 sm:w-auto sm:max-w-[200px] lg:max-w-xs flex-shrink">
+          <GlobalSearch compact />
+        </div>
       </div>
     </header>
   );

@@ -1,17 +1,25 @@
 import api from './config';
 import type { Transportadora } from '@/types';
+import {
+  buildListParams,
+  type ListQueryParams,
+  type PaginatedResponse,
+  unwrapListResults,
+} from '@/lib/apiList';
 
 const path = 'transportadoras/';
-type ListResponse<T> = T[] | { results?: T[] };
-
-function unwrapList<T>(payload: ListResponse<T>): T[] {
-  if (Array.isArray(payload)) return payload;
-  if (payload && Array.isArray(payload.results)) return payload.results;
-  throw new Error('Resposta inesperada da API.');
-}
 
 export const transportadorasService = {
-  getAll: async () => unwrapList((await api.get<ListResponse<Transportadora>>(path)).data),
+  listPaginated: async (params?: ListQueryParams) => {
+    const response = await api.get<PaginatedResponse<Transportadora>>(path, { params: buildListParams(params) });
+    return response.data;
+  },
+  getAll: async (params?: ListQueryParams) => {
+    const response = await api.get<Transportadora[] | PaginatedResponse<Transportadora>>(path, {
+      params: buildListParams(params?.page ? params : { ...params, limit: params?.limit ?? 100 }),
+    });
+    return unwrapListResults(response.data);
+  },
   getById: async (id: number) => (await api.get<Transportadora>(`${path}${id}/`)).data,
   create: async (data: Omit<Transportadora, 'id'>) => (await api.post<Transportadora>(path, data)).data,
   update: async (id: number, data: Partial<Transportadora>) =>
@@ -20,5 +28,8 @@ export const transportadorasService = {
     await api.delete(`${path}${id}/`);
   },
   search: async (term: string, limit = 20) =>
-    unwrapList((await api.get<ListResponse<Transportadora>>(path, { params: { search: term, limit } })).data),
+    unwrapListResults(
+      (await api.get<Transportadora[] | PaginatedResponse<Transportadora>>(path, { params: { search: term, limit } }))
+        .data,
+    ),
 };

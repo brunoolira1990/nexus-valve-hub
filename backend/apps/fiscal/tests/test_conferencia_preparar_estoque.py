@@ -345,6 +345,9 @@ class ConferenciaPrepararEstoqueFiscalTests(TestCase):
             ativo=True,
             prioridade=10,
             cfop='5102',
+            cfop_entrada='1102',
+            tipo_operacao_fiscal=RegraFiscalEntrada.TipoOperacaoFiscal.COMPRA,
+            cst_icms_esperado='00',
             severidade=RegraFiscalEntrada.Severidade.BLOQUEIO,
             mensagem_padrao='CFOP bloqueado para estoque',
         )
@@ -367,17 +370,21 @@ class ConferenciaPrepararEstoqueFiscalTests(TestCase):
             ativo=True,
             prioridade=10,
             cfop='5102',
+            cfop_entrada='1102',
+            tipo_operacao_fiscal=RegraFiscalEntrada.TipoOperacaoFiscal.COMPRA,
+            cst_icms_esperado='00',
             severidade=RegraFiscalEntrada.Severidade.ALERTA,
         )
         self._salvar_linha1_produto(ctx)
         r_prep = ctx['client'].post(ctx['url_prep'], {}, format='json')
         self.assertEqual(r_prep.status_code, status.HTTP_200_OK, r_prep.content)
 
-    def test_sem_regra_fiscal_nao_impede_preparar(self):
+    def test_sem_regra_fiscal_impede_preparar(self):
         ctx = self._ctx_fiscal('sr')
         self._salvar_linha1_produto(ctx)
         r_prep = ctx['client'].post(ctx['url_prep'], {}, format='json')
-        self.assertEqual(r_prep.status_code, status.HTTP_200_OK, r_prep.content)
+        self.assertEqual(r_prep.status_code, status.HTTP_400_BAD_REQUEST, r_prep.content)
+        self.assertIn('entrada fiscal', str(r_prep.json()).lower())
 
     def test_item_ignorado_com_bloqueio_nao_impede_preparar(self):
         ctx = self._ctx_fiscal('igb')
@@ -386,6 +393,9 @@ class ConferenciaPrepararEstoqueFiscalTests(TestCase):
             ativo=True,
             prioridade=10,
             cfop='5102',
+            cfop_entrada='1102',
+            tipo_operacao_fiscal=RegraFiscalEntrada.TipoOperacaoFiscal.COMPRA,
+            cst_icms_esperado='00',
             severidade=RegraFiscalEntrada.Severidade.BLOQUEIO,
         )
         item_nf1 = ctx['linha1'].item_nfe_historico
@@ -413,6 +423,9 @@ class ConferenciaPrepararEstoqueFiscalTests(TestCase):
             ativo=True,
             prioridade=10,
             cfop='5102',
+            cfop_entrada='1102',
+            tipo_operacao_fiscal=RegraFiscalEntrada.TipoOperacaoFiscal.COMPRA,
+            cst_icms_esperado='00',
             severidade=RegraFiscalEntrada.Severidade.BLOQUEIO,
         )
         r_prep = ctx['client'].post(ctx['url_prep'], {}, format='json')

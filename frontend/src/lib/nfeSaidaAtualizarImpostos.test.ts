@@ -162,9 +162,62 @@ describe('nfeSaidaAtualizarImpostos botão e confirmar', () => {
         reforma_configurada: 0,
       },
       itens: [previewBase.itens[1]],
+      diagnosticos: [
+        {
+          tipo: 'REGRA_NAO_ENCONTRADA',
+          detalhe: 'Não foi encontrada regra fiscal de saída para NCM 73079100, origem SP e destino PA.',
+        },
+      ],
     };
     expect(podeConfirmarAplicarImpostos(semRegra)).toBe(false);
-    expect(mensagemConfirmarDesabilitado(semRegra)).toContain('regra fiscal');
+    expect(mensagemConfirmarDesabilitado(semRegra)).toContain('73079100');
+    expect(mensagemConfirmarDesabilitado(semRegra)).toContain('PA');
+  });
+
+  it('mensagem de regra aplicada usa formato SP→PA', () => {
+    const preview = {
+      ...previewBase,
+      pode_aplicar: true,
+      resumo: {
+        itens_total: 1,
+        itens_com_regra: 1,
+        itens_sem_regra: 0,
+        itens_com_alteracao: 1,
+        itens_sem_alteracao: 0,
+        reforma_configurada: 0,
+      },
+      diagnosticos: [
+        {
+          tipo: 'REGRA_APLICADA',
+          informacao: 'Regra fiscal aplicada: NCM 73079100 · SP→PA · CFOP 6102.',
+        },
+      ],
+    };
+    expect(mensagemConfirmarDesabilitado(preview)).toBe('');
+  });
+
+  it('confirmar desabilitado prioriza endereço inconsistente', () => {
+    const preview = {
+      ...previewBase,
+      pode_aplicar: false,
+      resumo: {
+        itens_total: 1,
+        itens_com_regra: 0,
+        itens_sem_regra: 1,
+        itens_com_alteracao: 0,
+        itens_sem_alteracao: 1,
+        reforma_configurada: 0,
+      },
+      contexto_fiscal: {
+        endereco_fiscal: {
+          bloqueio_fiscal: true,
+          alertas: ['CEP 66630-505 / cidade BELEM não correspondem à UF SP.'],
+        },
+      },
+    };
+    const msg = mensagemConfirmarDesabilitado(preview);
+    expect(msg).toContain('66630-505');
+    expect(msg.toLowerCase()).not.toContain('não há regra fiscal encontrada');
   });
 
   it('tooltip quando bloqueado', () => {

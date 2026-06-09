@@ -3,7 +3,7 @@ from django.core.management.base import BaseCommand
 
 
 class Command(BaseCommand):
-    help = 'Popula medidas NPS nominais com códigos históricos Nexus.'
+    help = 'Popula medidas NPS nominais com códigos históricos (NEXUS APP).'
 
     def handle(self, *args, **options):
         call_command('seed_polegadas')

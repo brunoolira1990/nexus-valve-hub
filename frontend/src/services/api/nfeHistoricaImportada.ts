@@ -1,3 +1,4 @@
+import type { ClassificacaoDfe } from '@/components/fiscal/DfeClassificacaoBadges';
 import type { NFeXmlImportFalhaApi } from '@/utils/nfeXmlImportDiagnostico';
 import api from './config';
 
@@ -125,6 +126,8 @@ export type NFeSaidaHistoricaList = {
   empresa_nome: string;
   papel_empresa: string;
   papel_empresa_no_documento: string;
+  tp_amb?: string;
+  classificacao_dfe?: ClassificacaoDfe;
 };
 
 export type TotaisConsolidadoNFeHist = {

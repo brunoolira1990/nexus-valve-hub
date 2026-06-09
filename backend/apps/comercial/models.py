@@ -355,6 +355,7 @@ class FaturamentoPedidoVenda(models.Model):
         choices=Status.choices,
         default=Status.RASCUNHO,
     )
+    numero_faturamento = models.CharField(max_length=32, blank=True, db_index=True)
     cliente_snapshot = models.JSONField(default=dict, blank=True)
     observacao = models.TextField(blank=True)
     criado_por = models.ForeignKey(
@@ -408,6 +409,7 @@ class SequenciaComercial(models.Model):
     class Tipo(models.TextChoices):
         PROPOSTA = 'PROPOSTA', 'Proposta'
         PEDIDO_VENDA = 'PEDIDO_VENDA', 'Pedido de venda'
+        FATURAMENTO = 'FATURAMENTO', 'Faturamento'
 
     tipo = models.CharField(max_length=32, choices=Tipo.choices, db_index=True)
     data_referencia = models.DateField(db_index=True)

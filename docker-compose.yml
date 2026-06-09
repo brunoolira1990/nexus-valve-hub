@@ -24,7 +24,9 @@ services:
   backend:
     build: ./backend
     # Em WSL/volumes bind mount o autoreload do runserver pode reiniciar o processo
-    # repetidamente, aparentando "queda" do backend.
+    # repetidamente, aparentando "queda" do backend. Por isso usamos --noreload.
+    # IMPORTANTE: alterações em rotas (apps/api_urls.py, views) só entram após reiniciar:
+    #   docker compose restart backend
     command: sh -c "python manage.py fix_migration_history && python manage.py migrate && python manage.py criar_usuario_inicial && python manage.py runserver 0.0.0.0:8000 --noreload"
     restart: unless-stopped
     volumes:

@@ -4,6 +4,8 @@ from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
 from django.db import models
 
+from .modelo_operacional import DestinoFisico, OrigemFisica, StatusEntradaFiscal, TipoAtendimentoItem
+
 
 class EstoqueCorrida(models.Model):
     produto = models.ForeignKey('produtos.Produto', on_delete=models.CASCADE, related_name='estoques_corrida')
@@ -169,6 +171,20 @@ class NFeSaida(models.Model):
     numeracao_volumes = models.CharField(max_length=64, blank=True)
     placa_veiculo = models.CharField(max_length=16, blank=True)
     uf_veiculo = models.CharField(max_length=2, blank=True)
+    ind_final = models.CharField(
+        max_length=1,
+        default='1',
+        help_text='Indicador consumidor final (0=Não, 1=Sim).',
+    )
+    ind_pres = models.CharField(
+        max_length=1,
+        default='1',
+        help_text='Indicador de presença do comprador (tabela NF-e).',
+    )
+    indicadores_fiscais_confirmados = models.BooleanField(
+        default=False,
+        help_text='Usuário confirmou indFinal e indPres na conferência.',
+    )
 
     class StatusConferencia(models.TextChoices):
         EM_CONFERENCIA = 'EM_CONFERENCIA', 'Em conferência'
@@ -198,6 +214,114 @@ class NFeSaida(models.Model):
         related_name='nf_saidas_conferencia_prontas',
     )
     conferencia_ultima_mensagem = models.TextField(blank=True)
+    xml_preliminar = models.TextField(
+        blank=True,
+        help_text='XML NF-e 4.00 preliminar (conferência). Não é XML autorizado/assinado.',
+    )
+    xml_preliminar_gerado_em = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='Última geração do XML preliminar.',
+    )
+    chave_acesso_preliminar = models.CharField(
+        max_length=44,
+        blank=True,
+        db_index=True,
+        help_text='Chave calculada do XML preliminar — sem protocolo SEFAZ.',
+    )
+    serie_fiscal_preliminar = models.CharField(
+        max_length=3,
+        blank=True,
+        help_text='Série fiscal no XML preliminar (homologação).',
+    )
+    numero_fiscal_preliminar = models.CharField(
+        max_length=9,
+        blank=True,
+        help_text='nNF numérico no XML preliminar (não é o número interno RASCUNHO-*).',
+    )
+
+    # NF-e 4.0.2 — emissão SEFAZ (homologação / produção)
+    class AmbienteEmissao(models.TextChoices):
+        HOMOLOGACAO = 'homologacao', 'Homologação'
+        PRODUCAO = 'producao', 'Produção'
+
+    class StatusEmissaoSefaz(models.TextChoices):
+        NUMERACAO_RESERVADA = 'NUMERACAO_RESERVADA', 'Numeração reservada'
+        XML_GERADO = 'XML_GERADO', 'XML oficial gerado'
+        XML_ASSINADO = 'XML_ASSINADO', 'XML assinado'
+        ENVIADA_HOMOLOGACAO = 'ENVIADA_HOMOLOGACAO', 'Enviada homologação'
+        AUTORIZADA_HOMOLOGACAO = 'AUTORIZADA_HOMOLOGACAO', 'Autorizada homologação'
+        REJEITADA_HOMOLOGACAO = 'REJEITADA_HOMOLOGACAO', 'Rejeitada homologação'
+        ERRO_TRANSMISSAO = 'ERRO_TRANSMISSAO', 'Erro transmissão'
+        LOTE_PROCESSADO_SEM_PROTOCOLO = 'LOTE_PROCESSADO_SEM_PROTOCOLO', 'Lote processado sem protocolo'
+        AGUARDANDO_PROCESSAMENTO = 'AGUARDANDO_PROCESSAMENTO', 'Aguardando processamento SEFAZ'
+        ERRO_RETORNO_SEFAZ = 'ERRO_RETORNO_SEFAZ', 'Erro retorno SEFAZ'
+
+    empresa_emitente = models.ForeignKey(
+        'cadastros.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='nf_saidas_emitidas',
+    )
+    ambiente_emissao = models.CharField(
+        max_length=16,
+        choices=AmbienteEmissao.choices,
+        blank=True,
+    )
+    serie_nfe = models.CharField(max_length=3, blank=True)
+    numero_nfe = models.CharField(
+        max_length=9,
+        blank=True,
+        help_text='Número fiscal (nNF) — numérico, distinto do número interno.',
+    )
+    codigo_numerico = models.CharField(max_length=8, blank=True)
+    chave_acesso = models.CharField(max_length=44, blank=True, db_index=True)
+    digito_verificador = models.CharField(max_length=1, blank=True)
+    numero_reservado_em = models.DateTimeField(null=True, blank=True)
+    numero_reservado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='nf_saidas_numeracao_reservada',
+    )
+    status_emissao_sefaz = models.CharField(
+        max_length=32,
+        choices=StatusEmissaoSefaz.choices,
+        blank=True,
+    )
+    xml_assinado = models.TextField(blank=True)
+    xml_envio = models.TextField(blank=True)
+    xml_retorno = models.TextField(blank=True)
+    xml_autorizado = models.TextField(
+        blank=True,
+        help_text='procNFe / XML autorizado com protocolo SEFAZ.',
+    )
+    protocolo_autorizacao = models.CharField(max_length=20, blank=True)
+    autorizada_em = models.DateTimeField(null=True, blank=True)
+    cstat_autorizacao = models.CharField(
+        max_length=4,
+        blank=True,
+        help_text='cStat final da NF-e (infProt), não do lote.',
+    )
+    motivo_autorizacao = models.TextField(
+        blank=True,
+        help_text='xMotivo final da NF-e (infProt), não do lote.',
+    )
+    cstat_lote = models.CharField(max_length=4, blank=True)
+    xmotivo_lote = models.TextField(blank=True)
+    recibo_lote = models.CharField(max_length=20, blank=True)
+    xml_retorno_lote = models.TextField(blank=True)
+    xml_protocolo = models.TextField(blank=True)
+    xml_nfe_gerado = models.TextField(
+        blank=True,
+        help_text='XML NF-e antes da assinatura (emissão oficial).',
+    )
+    xml_envio_lote = models.TextField(
+        blank=True,
+        help_text='XML enviNFe enviado à SEFAZ.',
+    )
 
     class Meta:
         ordering = ['-data', 'numero']
@@ -214,6 +338,11 @@ class NFeSaidaEvento(models.Model):
         CANCELAMENTO_EFEITOS_APLICADOS = 'CANCELAMENTO_EFEITOS_APLICADOS', 'Efeitos de cancelamento aplicados (interno)'
         CANCELADA = 'CANCELADA', 'Cancelada (interno)'
         ESTORNO_FATURAMENTO = 'ESTORNO_FATURAMENTO', 'Estorno de faturamento vinculado'
+        ESTORNO_FATURAMENTO_PRE_AUTORIZACAO_NFE = (
+            'ESTORNO_FATURAMENTO_PRE_AUTORIZACAO_NFE',
+            'Estorno de faturamento antes da autorização SEFAZ',
+        )
+        DESCARTE_RASCUNHO_NFE = 'DESCARTE_RASCUNHO_NFE', 'Descarte interno de NF-e rascunho'
         IMPOSTOS_ATUALIZADOS = 'IMPOSTOS_ATUALIZADOS', 'Impostos atualizados da regra atual'
         CONFERENCIA_SALVA = 'CONFERENCIA_SALVA', 'Conferência salva'
         CONFERENCIA_VALIDADA = 'CONFERENCIA_VALIDADA', 'Conferência validada'
@@ -221,6 +350,14 @@ class NFeSaidaEvento(models.Model):
         PRONTA_PARA_EMISSAO = 'PRONTA_PARA_EMISSAO', 'Pronta para emissão'
         PRONTIDAO_INVALIDADA = 'PRONTIDAO_INVALIDADA', 'Prontidão invalidada'
         OBSERVACAO = 'OBSERVACAO', 'Observação'
+        EMISSAO_HOMOLOGACAO_INICIADA = 'EMISSAO_HOMOLOGACAO_INICIADA', 'Emissão homologação iniciada'
+        NUMERACAO_RESERVADA = 'NUMERACAO_RESERVADA', 'Numeração reservada'
+        XML_OFICIAL_GERADO = 'XML_OFICIAL_GERADO', 'XML oficial gerado'
+        XML_ASSINADO = 'XML_ASSINADO', 'XML assinado'
+        NFE_ENVIADA_HOMOLOGACAO = 'NFE_ENVIADA_HOMOLOGACAO', 'NF-e enviada homologação'
+        NFE_AUTORIZADA_HOMOLOGACAO = 'NFE_AUTORIZADA_HOMOLOGACAO', 'NF-e autorizada homologação'
+        NFE_REJEITADA_HOMOLOGACAO = 'NFE_REJEITADA_HOMOLOGACAO', 'NF-e rejeitada homologação'
+        ERRO_TRANSMISSAO_SEFAZ = 'ERRO_TRANSMISSAO_SEFAZ', 'Erro transmissão SEFAZ'
 
     nfe_saida = models.ForeignKey(
         NFeSaida,
@@ -892,6 +1029,34 @@ class CTeHistoricoImportado(models.Model):
     nome_arquivo = models.CharField(max_length=255, blank=True)
     importado_em = models.DateTimeField(auto_now_add=True)
 
+    class StatusConferencia(models.TextChoices):
+        IMPORTADO = 'IMPORTADO', 'Importado'
+        PROCESSADO = 'PROCESSADO', 'Processado'
+        PREPARADO = 'PREPARADO', 'Preparado'
+        CONFERIDO = 'CONFERIDO', 'Conferido'
+        DIVERGENTE = 'DIVERGENTE', 'Divergente'
+        IGNORADO = 'IGNORADO', 'Ignorado'
+        CANCELADO = 'CANCELADO', 'Cancelado'
+
+    status_conferencia = models.CharField(
+        max_length=16,
+        choices=StatusConferencia.choices,
+        default=StatusConferencia.IMPORTADO,
+    )
+    conferido_em = models.DateTimeField(null=True, blank=True)
+    conferido_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ctes_historicos_conferidos',
+    )
+    observacao_conferencia = models.TextField(blank=True)
+    divergencia_motivo = models.CharField(max_length=500, blank=True)
+    apto_operacional = models.BooleanField(default=False)
+    ignorado_operacionalmente = models.BooleanField(default=False)
+    checklist_conferencia_json = models.JSONField(default=dict, blank=True)
+
     class Meta:
         ordering = ['-dh_emissao', '-id']
         verbose_name = 'CT-e importado (histórico)'
@@ -982,3 +1147,265 @@ class NFeSefazStatusConsulta(models.Model):
 
     def __str__(self):
         return f'{self.empresa_id} {self.uf} {self.ambiente} cStat={self.c_stat or "—"}'
+
+
+class NFeNumeracaoConfiguracao(models.Model):
+    """Numeração fiscal NF-e modelo 55 por empresa e ambiente (homologação/produção separados)."""
+
+    class Ambiente(models.TextChoices):
+        HOMOLOGACAO = 'homologacao', 'Homologação'
+        PRODUCAO = 'producao', 'Produção'
+
+    empresa = models.ForeignKey(
+        'cadastros.Empresa',
+        on_delete=models.CASCADE,
+        related_name='numeracoes_nfe',
+    )
+    modelo_documento = models.CharField(max_length=2, default='55')
+    ambiente = models.CharField(max_length=16, choices=Ambiente.choices)
+    serie = models.CharField(max_length=3, default='0')
+    proximo_numero = models.PositiveIntegerField(default=1)
+    ultimo_numero_reservado = models.PositiveIntegerField(null=True, blank=True)
+    ultimo_numero_autorizado = models.PositiveIntegerField(null=True, blank=True)
+    ativo = models.BooleanField(default=True)
+    observacoes = models.TextField(blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['empresa_id', 'ambiente', 'serie']
+        verbose_name = 'Configuração numeração NF-e'
+        verbose_name_plural = 'Configurações numeração NF-e'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['empresa', 'modelo_documento', 'ambiente', 'serie'],
+                condition=models.Q(ativo=True),
+                name='uniq_nfe_numeracao_ativa_empresa_ambiente_serie',
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f'{self.empresa_id} mod{self.modelo_documento} {self.ambiente} '
+            f'série {self.serie} próx={self.proximo_numero}'
+        )
+
+
+class AlocacaoAtendimento(models.Model):
+    """ERP 4.0.10 — registro de intenção de atendimento por item/quantidade.
+
+    Distinto de AtendimentoEstoque (compromisso NF saída antecipada + vínculo conferência).
+    Campos opcionais; não movimenta estoque nem gera financeiro nesta fase.
+    """
+
+
+    pedido_venda_item = models.ForeignKey(
+        'comercial.ItemPedidoVenda',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='alocacoes_atendimento',
+    )
+    faturamento_item = models.ForeignKey(
+        'comercial.ItemFaturamentoPedidoVenda',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='alocacoes_atendimento',
+    )
+    produto = models.ForeignKey(
+        'produtos.Produto',
+        on_delete=models.PROTECT,
+        related_name='alocacoes_atendimento',
+    )
+    quantidade_necessaria = models.DecimalField(max_digits=14, decimal_places=3, default=Decimal('0'))
+    quantidade_atendida = models.DecimalField(max_digits=14, decimal_places=3, default=Decimal('0'))
+    quantidade_pendente = models.DecimalField(max_digits=14, decimal_places=3, default=Decimal('0'))
+    tipo_atendimento = models.CharField(
+        max_length=40,
+        choices=TipoAtendimentoItem.choices,
+        default=TipoAtendimentoItem.NAO_DEFINIDO,
+    )
+    status_entrada_fiscal = models.CharField(
+        max_length=20,
+        choices=StatusEntradaFiscal.choices,
+        default=StatusEntradaFiscal.NAO_APLICAVEL,
+    )
+    origem_fisica = models.CharField(
+        max_length=20,
+        choices=OrigemFisica.choices,
+        default=OrigemFisica.NAO_DEFINIDA,
+    )
+    destino_fisico = models.CharField(
+        max_length=20,
+        choices=DestinoFisico.choices,
+        default=DestinoFisico.NAO_DEFINIDO,
+    )
+    pedido_compra_item = models.ForeignKey(
+        'comercial.ItemPedidoCompra',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='alocacoes_atendimento',
+    )
+    nf_entrada_item = models.ForeignKey(
+        'fiscal.ItemNFeEntrada',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='alocacoes_atendimento',
+    )
+    nf_entrada_historica_item = models.ForeignKey(
+        'fiscal.ItemNFeEntradaHistoricaImportada',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='alocacoes_atendimento',
+    )
+    cte_historico_importado = models.ForeignKey(
+        'fiscal.CTeHistoricoImportado',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='alocacoes_atendimento',
+    )
+    item_nf_saida = models.ForeignKey(
+        'fiscal.ItemNFeSaida',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='alocacoes_atendimento',
+    )
+    fornecedor = models.ForeignKey(
+        'cadastros.Fornecedor',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='alocacoes_atendimento',
+    )
+    observacao_operacional = models.TextField(blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-criado_em', '-id']
+        verbose_name = 'Alocação de atendimento'
+        verbose_name_plural = 'Alocações de atendimento'
+        indexes = [
+            models.Index(fields=['produto', 'tipo_atendimento']),
+            models.Index(fields=['status_entrada_fiscal']),
+            models.Index(fields=['pedido_venda_item']),
+        ]
+
+    def __str__(self) -> str:
+        return f'Alocação #{self.pk} produto={self.produto_id} tipo={self.tipo_atendimento}'
+
+
+class NFeEntradaAgrupamentoConferencia(models.Model):
+    """Agrupamento conferencial NF-e entrada ↔ produto interno — ERP 4.0.13.7."""
+
+    class TipoAgrupamento(models.TextChoices):
+        EQUIVALENCIA_SIMPLES = 'equivalencia_simples', 'Equivalência simples'
+        EQUIVALENCIA_COMPOSTA = 'equivalencia_composta', 'Equivalência composta'
+        MONTAGEM_PLANEJADA = 'montagem_planejada', 'Montagem planejada'
+        DIVERGENTE = 'divergente', 'Divergente'
+
+    class Status(models.TextChoices):
+        SUGERIDO = 'sugerido', 'Sugerido'
+        CONFIRMADO = 'confirmado', 'Confirmado'
+        REJEITADO = 'rejeitado', 'Rejeitado'
+        DIVERGENTE = 'divergente', 'Divergente'
+
+    conferencia = models.ForeignKey(
+        NFeEntradaConferencia,
+        on_delete=models.CASCADE,
+        related_name='agrupamentos',
+    )
+    pedido_compra = models.ForeignKey(
+        'comercial.PedidoCompra',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='agrupamentos_nfe_entrada',
+    )
+    item_pedido_compra = models.ForeignKey(
+        'comercial.ItemPedidoCompra',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='agrupamentos_nfe_entrada',
+    )
+    produto_interno_resultante = models.ForeignKey(
+        'produtos.Produto',
+        on_delete=models.PROTECT,
+        related_name='agrupamentos_nfe_entrada',
+    )
+    tipo_agrupamento = models.CharField(max_length=32, choices=TipoAgrupamento.choices)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.SUGERIDO)
+    confianca = models.PositiveSmallIntegerField(default=0)
+    quantidade_equivalente = models.DecimalField(max_digits=14, decimal_places=3, default=Decimal('0'))
+    valor_total_agrupado = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
+    valor_pedido_referencia = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
+    diferenca_valor = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
+    diferenca_quantidade = models.DecimalField(max_digits=14, decimal_places=3, default=Decimal('0'))
+    motivo_confirmacao = models.TextField(blank=True)
+    regra_equivalencia_composta = models.ForeignKey(
+        'produtos.FornecedorComposicaoEquivalencia',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='agrupamentos_conferencia',
+    )
+    regra_equivalencia_simples = models.ForeignKey(
+        'produtos.FornecedorProdutoEquivalencia',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='agrupamentos_conferencia',
+    )
+    usuario_confirmacao = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='agrupamentos_nfe_entrada_confirmados',
+    )
+    data_confirmacao = models.DateTimeField(null=True, blank=True)
+    salvar_regra_fornecedor = models.BooleanField(default=False)
+    snapshot_rastreabilidade = models.JSONField(default=dict, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['conferencia_id', '-confianca', 'id']
+
+    def __str__(self) -> str:
+        return f'Agrupamento {self.pk} → produto {self.produto_interno_resultante_id}'
+
+
+class NFeEntradaAgrupamentoItem(models.Model):
+    agrupamento = models.ForeignKey(
+        NFeEntradaAgrupamentoConferencia,
+        on_delete=models.CASCADE,
+        related_name='itens',
+    )
+    item_nfe_conferencia = models.ForeignKey(
+        ItemNFeEntradaConferencia,
+        on_delete=models.CASCADE,
+        related_name='agrupamentos',
+    )
+    quantidade_usada = models.DecimalField(max_digits=14, decimal_places=3, default=Decimal('0'))
+    valor_usado = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
+    observacoes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['agrupamento_id', 'id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['item_nfe_conferencia'],
+                name='uq_nfe_entrada_agrup_item_conf_unico',
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f'Agrup. {self.agrupamento_id} item conf {self.item_nfe_conferencia_id}'

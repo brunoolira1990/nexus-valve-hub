@@ -1,9 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Pencil, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
 import { corridasService } from '@/services/api/corridas';
 import type { Corrida, ComposicaoQuimica, Tracao, Impacto } from '@/types';
+import { usePaginatedList } from '@/hooks/usePaginatedList';
+import { PaginationControls } from '@/components/list/PaginationControls';
+import { EmptyState, ErrorState } from '@/components/list/ListStates';
+import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
+import { TableSkeleton } from '@/components/nexus/Skeleton';
 
 const chemKeys: (keyof ComposicaoQuimica)[] = ['C','Mn','P','S','Si','Ni','Cr','Mo','Cu','V','Nb','Al','Ti','N','Zn','Fe','Sn','Pb','Ca','Ta','W','Li','CO'];
 
@@ -12,8 +17,20 @@ const emptyTrac: Tracao = { norma:'',corpo_prova:'',direcao:'',posicao:'',temper
 const emptyImp: Impacto = { norma:'',corpo_prova:'',direcao:'',posicao:'',temperatura:0,valor_a:0,valor_b:0,valor_c:0,media:0 };
 
 const Corridas = () => {
-  const [items, setItems] = useState<Corrida[]>([]);
-  const [search, setSearch] = useState('');
+  const {
+    items,
+    count,
+    page,
+    pageSize,
+    totalPages,
+    search,
+    setSearch,
+    setPage,
+    setPageSize,
+    loading,
+    error,
+    reload,
+  } = usePaginatedList<Corrida>({ fetchPage: corridasService.listPaginated });
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Corrida | null>(null);
   const [form, setForm] = useState({ numero:'', produto_id:1, produto_nome:'', fornecedor_id:1, fornecedor_nome:'', data_recebimento:'', nf_entrada:'' });
@@ -22,30 +39,48 @@ const Corridas = () => {
   const [imp, setImp] = useState(emptyImp);
   const [sections, setSections] = useState({ quimica: false, tracao: false, impacto: false });
 
-  const load = async () => setItems(await corridasService.getAll());
-  useEffect(() => { load(); }, []);
-
   const openNew = () => { setEditing(null); setForm({ numero:'',produto_id:1,produto_nome:'',fornecedor_id:1,fornecedor_nome:'',data_recebimento:'',nf_entrada:'' }); setComp({...emptyComp}); setTrac({...emptyTrac}); setImp({...emptyImp}); setModalOpen(true); };
   const openEdit = (e: Corrida) => { setEditing(e); setForm(e); setComp(e.composicao_quimica); setTrac(e.tracao); setImp(e.impacto); setModalOpen(true); };
-  const handleDelete = async (id: number) => { if (confirm('Excluir?')) { await corridasService.delete(id); load(); } };
+  const handleDelete = async (id: number) => { if (confirm('Excluir?')) { await corridasService.delete(id); void reload(); } };
   const handleSave = async () => {
     const data = { ...form, composicao_quimica: comp, tracao: trac, impacto: imp };
     if (editing) await corridasService.update(editing.id, data);
     else await corridasService.create(data as Omit<Corrida, 'id'>);
-    setModalOpen(false); load();
+    setModalOpen(false);
+    void reload();
   };
 
   const toggle = (s: keyof typeof sections) => setSections(p => ({ ...p, [s]: !p[s] }));
-  const filtered = items.filter(i => i.numero.toLowerCase().includes(search.toLowerCase()));
 
   return (
     <div>
-      <PageHeader title="Corridas (Lotes)" onAdd={openNew} addLabel="Nova Corrida" searchValue={search} onSearch={setSearch} />
-      <div className="erp-card overflow-x-auto">
-        <table className="erp-table">
-          <thead><tr><th>Número</th><th>Produto</th><th>Fornecedor</th><th>Data Receb.</th><th>NF</th><th className="w-24">Ações</th></tr></thead>
+      <PageHeader
+        title="Corridas / Lotes Técnicos"
+        description="Controle de corridas, lotes técnicos, materiais e rastreabilidade para qualidade."
+        onAdd={openNew}
+        addLabel="Nova corrida"
+        searchValue={search}
+        onSearch={setSearch}
+      />
+      {error ? <ErrorState onRetry={() => void reload()} /> : null}
+      {loading ? <TableSkeleton rows={6} cols={6} /> : null}
+      {!loading && !error ? (
+        <DataTableShell>
+          <DataTable>
+          <thead><tr><th>Número</th><th>Produto</th><th>Fornecedor</th><th>Data receb.</th><th>NF entrada</th><th className="w-24">Ações</th></tr></thead>
           <tbody>
-            {filtered.map(e => (
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan={6}>
+                  <EmptyState
+                    message="Nenhuma corrida ou lote técnico encontrado."
+                    actionLabel="Nova corrida"
+                    onAction={openNew}
+                  />
+                </td>
+              </tr>
+            ) : (
+            items.map(e => (
               <tr key={e.id}>
                 <td className="font-mono font-medium">{e.numero}</td><td>{e.produto_nome}</td><td>{e.fornecedor_nome}</td>
                 <td>{e.data_recebimento}</td><td>{e.nf_entrada}</td>
@@ -54,10 +89,22 @@ const Corridas = () => {
                   <button onClick={() => handleDelete(e.id)} className="erp-btn-ghost erp-btn-sm text-destructive"><Trash2 className="h-4 w-4" /></button>
                 </div></td>
               </tr>
-            ))}
+            ))
+            )}
           </tbody>
-        </table>
-      </div>
+        </DataTable>
+          {count > 0 ? (
+          <PaginationControls
+            page={page}
+            pageSize={pageSize}
+            count={count}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        ) : null}
+        </DataTableShell>
+      ) : null}
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Corrida' : 'Nova Corrida'} size="xl">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div><label className="erp-label">Número da Corrida</label><input className="erp-input mt-1" value={form.numero} onChange={e => setForm(p => ({...p, numero:e.target.value}))} /></div>

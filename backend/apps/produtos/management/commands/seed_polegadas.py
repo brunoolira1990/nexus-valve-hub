@@ -52,7 +52,7 @@ POLEGADAS_OFICIAIS = [
 
 
 class Command(BaseCommand):
-    help = 'Popula medidas NPS (nominais) com códigos oficiais Nexus.'
+    help = 'Popula medidas NPS (nominais) com códigos oficiais (NEXUS APP).'
 
     def handle(self, *args, **options):
         for codigo, descricao in POLEGADAS_OFICIAIS:

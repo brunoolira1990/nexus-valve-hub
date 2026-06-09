@@ -1,28 +1,54 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { AxiosError } from 'axios';
 import { Pencil } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
 import { formatApiErrors } from '@/lib/apiErrors';
-import { certificadosFornecedorService } from '@/services/api/certificadosFornecedor';
+import { certificadoFornecedorStatusBadge } from '@/lib/certificadoStatusUi';
+import {
+  certificadosFornecedorService,
+  corridaLoteEfetivosResultadoFornecedor,
+  mensagemPrincipalBuscaDadosTecnicosFornecedor,
+} from '@/services/api/certificadosFornecedor';
+import { apiErrorMessage } from '@/services/api/config';
 import { nfeEntradasService } from '@/services/api/fiscal';
 import { nfeEntradaHistoricaImportadaService, type NFeEntradaHistoricaList } from '@/services/api/nfeEntradaHistoricaImportada';
 import type {
   CertificadoFornecedorEntrada,
+  CertificadoFornecedorStatus,
   DadosTecnicosFornecedorResultado,
   ItemCertificadoFornecedorEntrada,
   NFeEntrada,
 } from '@/types';
+import { usePaginatedList } from '@/hooks/usePaginatedList';
+import { PaginationControls } from '@/components/list/PaginationControls';
+import { EmptyState, ErrorState } from '@/components/list/ListStates';
+import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
+import { StatusBadge } from '@/components/nexus/StatusBadge';
+import { TableSkeleton } from '@/components/nexus/Skeleton';
+import type { ListQueryParams } from '@/lib/apiList';
+
+/**
+ * Fase E.4 (Qualidade): permissões só no backend; JWT sem codenames Django.
+ * «Novo» some apenas se o GET da lista for 403. Erros de gravação usam `formatApiErrors`
+ * (403 → mensagem de permissão). Evolução: /me/permissions ou claims no token.
+ */
 
 const COMPOSICAO_FIELDS = ['C', 'Mn', 'P', 'S', 'Si', 'Ni', 'Cr', 'Mo', 'Cu', 'V', 'Nb', 'Al', 'Ti', 'N', 'Zn', 'Fe', 'Sn', 'Pb', 'Ca', 'Ta', 'W', 'Li', 'Co'] as const;
 const TRACAO_FIELDS = [
   { key: 'limite_escoamento', label: 'Limite de escoamento' },
-  { key: 'limite_resistencia', label: 'Limite de resistencia' },
+  { key: 'limite_resistencia', label: 'Limite de resistência' },
   { key: 'alongamento', label: 'Alongamento' },
-  { key: 'estriccao', label: 'Estriccao' },
+  { key: 'estriccao', label: 'Estricção' },
   { key: 'dureza', label: 'Dureza' },
-  { key: 'tratamento_termico', label: 'Tratamento termico' },
+  { key: 'tratamento_termico', label: 'Tratamento térmico' },
 ] as const;
 const COMPONENTES_PADRAO_VALVULA = ['CORPO', 'ESFERA', 'HASTE', 'PORCA', 'PRISIONEIRO', 'TAMPA', 'SEDE', 'VEDAÇÃO', 'OUTROS'] as const;
+
+const CONFIRMAR_CANCELAMENTO_CERTIFICADO_FORNECEDOR =
+  'Cancelar este certificado de fornecedor?\n\n'
+  + 'O registro permanece no sistema para rastreabilidade e consulta.\n\n'
+  + 'Deseja continuar?';
 
 type JsonFieldProps = {
   values: Record<string, string>;
@@ -71,6 +97,123 @@ type NFeResumo = {
   chaveAcesso?: string;
 };
 
+type OrigemRastreabilidadeResumo = {
+  temVinculo: boolean;
+  produtoNaConferencia: boolean;
+  origemCompleta: boolean;
+  nfNumero: string;
+  nfSerie: string;
+  itemNf: string;
+  statusConferenciaLabel: string;
+  corridaHerdada: string;
+  loteHerdado: string;
+  pedidoNumero: string;
+  itemPedidoId: string;
+  produtoPedidoCodigo: string;
+  produtoPedidoDescricao: string;
+  quantidadePedido: string;
+  unidadePedido: string;
+  mensagem: string;
+  badgeClass: string;
+  badgeText: string;
+};
+
+const LABEL_STATUS_CONFERENCIA: Record<string, string> = {
+  PENDENTE_PRODUTO: 'Pendente produto',
+  PRODUTO_VINCULADO: 'Produto vinculado',
+  CONFERIDO: 'Conferido',
+  DIVERGENTE: 'Divergente',
+  IGNORADO: 'Ignorado',
+};
+
+function labelStatusConferencia(status: string | null | undefined): string {
+  if (!status) return '—';
+  return LABEL_STATUS_CONFERENCIA[status] || status;
+}
+
+function resumoOrigemItemCf(
+  it: ItemCertificadoFornecedorEntrada,
+  form: Pick<CertificadoFornecedorEntrada, 'numero_nf_entrada' | 'serie_nf_entrada'>,
+): OrigemRastreabilidadeResumo {
+  const temVinculo = Boolean(it.item_conferencia_id);
+  const produtoNaConferencia = Boolean(it.origem_produto_vinculado);
+  const nfNumero = it.origem_nfe_numero || form.numero_nf_entrada || '—';
+  const nfSerie = it.origem_nfe_serie || form.serie_nf_entrada || '—';
+  const itemNf = it.origem_nfe_item_numero != null ? String(it.origem_nfe_item_numero) : '—';
+  const corridaHerdada = (it.corrida || '').trim();
+  const loteHerdado = (it.lote || '').trim();
+  const statusConferenciaLabel = labelStatusConferencia(it.origem_conferencia_status);
+  const origemCompleta = Boolean(it.origem_rastreabilidade_completa);
+  const pedidoNumero = it.pedido_compra_numero || it.item_pedido_resumo?.pedido_numero || '—';
+  const itemPedidoId = it.item_pedido_compra_id != null ? String(it.item_pedido_compra_id) : '—';
+  const produtoPedidoCodigo = it.produto_pedido_codigo || it.item_pedido_resumo?.codigo || '—';
+  const produtoPedidoDescricao = it.produto_pedido_descricao || it.item_pedido_resumo?.descricao || '—';
+  const quantidadePedido = it.quantidade_pedido || it.item_pedido_resumo?.quantidade || '—';
+  const unidadePedido = it.unidade_pedido || it.item_pedido_resumo?.unidade || '—';
+
+  const base = {
+    nfNumero,
+    nfSerie,
+    itemNf,
+    statusConferenciaLabel,
+    corridaHerdada,
+    loteHerdado,
+    pedidoNumero,
+    itemPedidoId,
+    produtoPedidoCodigo,
+    produtoPedidoDescricao,
+    quantidadePedido,
+    unidadePedido,
+  };
+
+  if (!temVinculo) {
+    return {
+      ...base,
+      temVinculo: false,
+      produtoNaConferencia: false,
+      origemCompleta: false,
+      statusConferenciaLabel: '—',
+      mensagem: 'Item sem vínculo com linha da NF/conferência.',
+      badgeClass: 'erp-badge-warning',
+      badgeText: 'Sem rastreio NF',
+    };
+  }
+
+  if (origemCompleta) {
+    return {
+      ...base,
+      temVinculo: true,
+      produtoNaConferencia,
+      origemCompleta: true,
+      mensagem: 'Rastreável pela conferência da NF e pelo Pedido de Compra.',
+      badgeClass: 'erp-badge-success',
+      badgeText: 'Rastreável NF + Pedido',
+    };
+  }
+
+  if (!produtoNaConferencia) {
+    return {
+      ...base,
+      temVinculo: true,
+      produtoNaConferencia: false,
+      origemCompleta: false,
+      mensagem: 'Origem vinculada à NF, mas produto ainda não foi vinculado na conferência.',
+      badgeClass: 'erp-badge-warning',
+      badgeText: 'NF vinculada · sem produto',
+    };
+  }
+
+  return {
+    ...base,
+    temVinculo: true,
+    produtoNaConferencia: true,
+    origemCompleta: false,
+    mensagem: 'Origem vinculada à NF, mas sem item do pedido.',
+    badgeClass: 'erp-badge-success',
+    badgeText: 'Rastreável NF',
+  };
+}
+
 const ensureMap = (v: unknown): Record<string, string> => {
   if (!v || typeof v !== 'object') return {};
   return Object.entries(v as Record<string, unknown>).reduce<Record<string, string>>((acc, [k, val]) => {
@@ -117,10 +260,33 @@ const emptyForm = (): Omit<CertificadoFornecedorEntrada, 'id' | 'criado_em' | 'a
 });
 
 const CertificadosFornecedor = () => {
-  const [items, setItems] = useState<CertificadoFornecedorEntrada[]>([]);
+  const [listForbidden, setListForbidden] = useState(false);
+  const fetchCertificadosPage = useCallback(async (params: ListQueryParams) => {
+    try {
+      const result = await certificadosFornecedorService.listPaginated(params);
+      setListForbidden(false);
+      return result;
+    } catch (e) {
+      if ((e as AxiosError).response?.status === 403) setListForbidden(true);
+      throw e;
+    }
+  }, []);
+  const {
+    items,
+    count,
+    page,
+    pageSize,
+    totalPages,
+    search,
+    setSearch,
+    setPage,
+    setPageSize,
+    loading: listLoading,
+    error: listError,
+    reload: reloadList,
+  } = usePaginatedList<CertificadoFornecedorEntrada>({ fetchPage: fetchCertificadosPage });
   const [nfEntradas, setNfEntradas] = useState<NFeEntrada[]>([]);
   const [nfHistoricas, setNfHistoricas] = useState<NFeEntradaHistoricaList[]>([]);
-  const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<CertificadoFornecedorEntrada | null>(null);
   const [form, setForm] = useState(emptyForm());
@@ -136,18 +302,30 @@ const CertificadosFornecedor = () => {
   const [includeRascunhoBusca, setIncludeRascunhoBusca] = useState(false);
   const [mensagemInfo, setMensagemInfo] = useState<string | null>(null);
 
-  const load = async () => setItems(await certificadosFornecedorService.getAll());
   useEffect(() => {
-    void load();
     nfeEntradasService.getAll().then(setNfEntradas).catch(() => setNfEntradas([]));
     nfeEntradaHistoricaImportadaService.list().then(setNfHistoricas).catch(() => setNfHistoricas([]));
   }, []);
 
-  const filtered = useMemo(
-    () => items.filter((x) =>
-      `${x.fornecedor_nome_snapshot} ${x.numero_nf_entrada || ''} ${x.numero_certificado_fornecedor || ''}`.toLowerCase().includes(search.toLowerCase())),
-    [items, search],
-  );
+  const labelSalvarFornecedorSemRegistrar = (): string => {
+    if (form.status === 'cancelado') {
+      return editing?.status === 'cancelado' ? 'Salvar cancelamento' : 'Confirmar cancelamento';
+    }
+    if (form.status === 'registrado') return 'Salvar como registrado';
+    return 'Salvar rascunho';
+  };
+
+  const titleSalvarFornecedorSemRegistrar = (): string => {
+    if (form.status === 'cancelado') {
+      return editing?.status === 'cancelado'
+        ? 'Grava alterações no cadastro cancelado (o status permanece cancelado).'
+        : 'Confirma o cancelamento: o registro permanece para rastreabilidade e consulta.';
+    }
+    if (form.status === 'registrado') {
+      return 'Grava alterações mantendo o status registrado. Use “Registrar certificado” para validar itens e formalizar o registro.';
+    }
+    return 'Grava sem registrar formalmente (permanece em rascunho).';
+  };
 
   const formatDate = (iso?: string) => {
     if (!iso) return '—';
@@ -330,6 +508,17 @@ const CertificadosFornecedor = () => {
   const salvar = async (registrar = false) => {
     setSaveErrors([]);
     setMensagemInfo(null);
+    if (registrar && form.status === 'cancelado') {
+      setSaveErrors(['Não é possível registrar no status cancelado. Altere o status no campo Status antes de registrar.']);
+      return;
+    }
+    if (!registrar && form.status === 'cancelado') {
+      const anterior = editing?.status;
+      if (anterior !== 'cancelado') {
+        const ok = window.confirm(CONFIRMAR_CANCELAMENTO_CERTIFICADO_FORNECEDOR);
+        if (!ok) return;
+      }
+    }
     if (registrar) {
       const errosFrontend: string[] = [];
       form.itens.forEach((it, idx) => {
@@ -347,7 +536,7 @@ const CertificadosFornecedor = () => {
       if (editing) await certificadosFornecedorService.update(editing.id, payload);
       else await certificadosFornecedorService.create(payload);
       setModalOpen(false);
-      void load();
+      void reloadList();
     } catch (e) {
       setSaveErrors(formatApiErrors(e));
     }
@@ -428,12 +617,13 @@ const CertificadosFornecedor = () => {
 
   const aplicarDadosTecnicosExistentes = (idx: number, src: DadosTecnicosFornecedorResultado, compIdx?: number) => {
     const item = form.itens[idx];
+    const { corrida: crEf, lote: loEf } = corridaLoteEfetivosResultadoFornecedor(src);
     if (compIdx != null) {
       const compAtual = ensureComp(item.componentes?.[compIdx], compIdx + 1);
       updateComponente(idx, compIdx, {
         norma: src.norma || compAtual.norma,
-        corrida: src.corrida || compAtual.corrida,
-        lote: src.lote || compAtual.lote,
+        corrida: crEf || compAtual.corrida,
+        lote: loEf || compAtual.lote,
         composicao_json: ensureMap(src.composicao_json),
         ensaio_tracao_json: ensureMap(src.ensaio_tracao_json),
         ensaio_impacto_json: ensureMap(src.ensaio_impacto_json),
@@ -445,8 +635,8 @@ const CertificadosFornecedor = () => {
     }
     updateItem(idx, {
       norma: src.norma || item.norma,
-      corrida: src.corrida || item.corrida,
-      lote: src.lote || item.lote,
+      corrida: crEf || item.corrida,
+      lote: loEf || item.lote,
       numero_certificado_fornecedor_item:
         src.numero_certificado_fornecedor_item || src.numero_certificado_fornecedor || item.numero_certificado_fornecedor_item,
       tipo_dados_tecnicos: src.tipo_dados_tecnicos || item.tipo_dados_tecnicos,
@@ -470,7 +660,10 @@ const CertificadosFornecedor = () => {
     const fornecedor = form.fornecedor || undefined;
     if (!corrida && !lote) return;
     try {
-      const found = await certificadosFornecedorService.buscarDadosTecnicos({
+      const debugBusca =
+        typeof window !== 'undefined' &&
+        new URLSearchParams(window.location.search).get('debug') === '1';
+      const { resultados: found, dicas_busca } = await certificadosFornecedorService.buscarDadosTecnicos({
         corrida,
         lote,
         fornecedor,
@@ -481,9 +674,13 @@ const CertificadosFornecedor = () => {
         tipo_dados_tecnicos: item.tipo_dados_tecnicos || 'PADRAO_ITEM',
         status: 'registrado',
         include_rascunho: includeRascunhoBusca,
+        ...(debugBusca ? { debug: true } : {}),
       });
       if (!found.length) {
-        if (!auto) setMensagemInfo('Nenhum dado técnico existente encontrado para essa corrida/lote.');
+        if (!auto) {
+          const dicaMsg = mensagemPrincipalBuscaDadosTecnicosFornecedor(dicas_busca);
+          setMensagemInfo(dicaMsg || 'Nenhum dado técnico existente encontrado para essa corrida/lote.');
+        }
         return;
       }
       setFornecedorTargetIdx(idx);
@@ -508,7 +705,10 @@ const CertificadosFornecedor = () => {
       return;
     }
     try {
-      const found = await certificadosFornecedorService.buscarDadosTecnicos({
+      const debugBusca =
+        typeof window !== 'undefined' &&
+        new URLSearchParams(window.location.search).get('debug') === '1';
+      const { resultados: found, dicas_busca } = await certificadosFornecedorService.buscarDadosTecnicos({
         corrida,
         lote,
         fornecedor,
@@ -518,9 +718,11 @@ const CertificadosFornecedor = () => {
         tipo_dados_tecnicos: 'VALVULA_COMPONENTES',
         certificado_fornecedor: comp.numero_certificado_fornecedor_componente || item.numero_certificado_fornecedor_item || form.numero_certificado_fornecedor || '',
         status: 'registrado',
+        ...(debugBusca ? { debug: true } : {}),
       });
       if (!found.length) {
-        setMensagemInfo('Nenhum dado técnico encontrado para a corrida do componente.');
+        const dicaMsg = mensagemPrincipalBuscaDadosTecnicosFornecedor(dicas_busca);
+        setMensagemInfo(dicaMsg || 'Nenhum dado técnico encontrado para a corrida do componente.');
         return;
       }
       setFornecedorTargetIdx(itemIdx);
@@ -534,39 +736,118 @@ const CertificadosFornecedor = () => {
 
   return (
     <div>
-      <PageHeader title="Certificados de Fornecedor" onAdd={openNew} addLabel="Novo Certificado" searchValue={search} onSearch={setSearch} />
-      <div className="erp-card overflow-x-auto">
-        <table className="erp-table">
-          <thead><tr><th>Fornecedor</th><th>NF entrada</th><th>Data</th><th>Certificado</th><th>Itens</th><th>Status</th><th>Acoes</th></tr></thead>
+      <PageHeader
+        title="Certificados de Fornecedor"
+        description="Controle de certificados recebidos de fornecedores e vínculos com produtos, lotes e entradas."
+        onAdd={listForbidden ? undefined : openNew}
+        addLabel="Novo certificado"
+        searchValue={search}
+        onSearch={setSearch}
+      />
+      {listError ? <ErrorState onRetry={() => void reloadList()} /> : null}
+      {listLoading ? <TableSkeleton rows={6} cols={7} /> : null}
+      {!listLoading && !listError ? (
+        <DataTableShell>
+        <DataTable className="text-sm">
+          <thead>
+            <tr>
+              <th>Fornecedor</th>
+              <th className="whitespace-nowrap">NF entrada</th>
+              <th className="whitespace-nowrap">Data</th>
+              <th>Certificado</th>
+              <th className="whitespace-nowrap text-right">Itens</th>
+              <th className="whitespace-nowrap">Status</th>
+              <th className="w-20 text-right whitespace-nowrap">Ações</th>
+            </tr>
+          </thead>
           <tbody>
-            {filtered.map((c) => (
-              <tr key={c.id}>
-                <td>{c.fornecedor_nome_snapshot || '—'}</td>
-                <td>{c.numero_nf_entrada || '—'}</td>
-                <td>{c.data_nf_entrada || '—'}</td>
-                <td>{c.numero_certificado_fornecedor || '—'}</td>
-                <td>{c.quantidade_itens ?? c.itens.length}</td>
-                <td>{c.status}</td>
-                <td><button type="button" className="erp-btn-ghost erp-btn-sm" onClick={() => openEdit(c)}><Pencil className="h-4 w-4" /></button></td>
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan={7}>
+                  <EmptyState
+                    message="Nenhum certificado de fornecedor encontrado."
+                    actionLabel={listForbidden ? undefined : 'Novo certificado'}
+                    onAction={listForbidden ? undefined : openNew}
+                  />
+                </td>
               </tr>
-            ))}
+            ) : (
+              items.map((c) => (
+                  <tr key={c.id}>
+                    <td>{c.fornecedor_nome_snapshot || '—'}</td>
+                    <td>{c.numero_nf_entrada || '—'}</td>
+                    <td>{c.data_nf_entrada || '—'}</td>
+                    <td className="font-mono text-xs">{c.numero_certificado_fornecedor || '—'}</td>
+                    <td className="text-right tabular-nums">{c.quantidade_itens ?? c.itens.length}</td>
+                    <td>
+                      <StatusBadge status={c.status || 'pendente'} />
+                    </td>
+                    <td className="text-right">
+                      <button
+                        type="button"
+                        className="erp-btn-ghost erp-btn-sm"
+                        onClick={() => openEdit(c)}
+                        title="Abrir cadastro do certificado de fornecedor"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+            )}
           </tbody>
-        </table>
-      </div>
+        </DataTable>
+          {count > 0 ? (
+          <PaginationControls
+            page={page}
+            pageSize={pageSize}
+            count={count}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        ) : null}
+        </DataTableShell>
+      ) : null}
 
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Certificado de Fornecedor' : 'Novo Certificado de Fornecedor'} size="xl">
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar certificado de fornecedor' : 'Novo certificado de fornecedor'} size="xl">
         {saveErrors.length ? (
           <div className="mb-2 rounded border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-            <p className="font-medium mb-1">Não foi possível registrar o certificado:</p>
+            <p className="font-medium mb-1">Não foi possível salvar o certificado:</p>
             {saveErrors.map((msg) => <p key={msg}>- {msg}</p>)}
           </div>
         ) : null}
         {mensagemInfo ? <p className="text-sm text-emerald-700 dark:text-emerald-300 mb-2">{mensagemInfo}</p> : null}
+        {editing?.status === 'cancelado' ? (
+          <div className="mb-3 rounded border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            Este certificado de fornecedor está cancelado. O cadastro permanece para rastreabilidade e consulta.
+          </div>
+        ) : null}
+        {editing?.status === 'registrado' ? (
+          <div className="mb-3 rounded border border-amber-300/70 bg-amber-50/90 dark:bg-amber-950/25 px-3 py-2 text-sm text-amber-950 dark:text-amber-100">
+            Certificado já registrado. Alterações podem afetar vínculos usados no certificado de qualidade — revise com cuidado.
+          </div>
+        ) : null}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div><label className="erp-label">Numero certificado fornecedor</label><input className="erp-input mt-1" value={form.numero_certificado_fornecedor || ''} onChange={(e) => setF('numero_certificado_fornecedor', e.target.value)} /></div>
+          <div><label className="erp-label">Número do certificado (fornecedor)</label><input className="erp-input mt-1" value={form.numero_certificado_fornecedor || ''} onChange={(e) => setF('numero_certificado_fornecedor', e.target.value)} /></div>
           <div><label className="erp-label">Fornecedor</label><input className="erp-input mt-1" value={form.fornecedor_nome_snapshot} onChange={(e) => setF('fornecedor_nome_snapshot', e.target.value)} /></div>
           <div><label className="erp-label">CNPJ fornecedor</label><input className="erp-input mt-1" value={form.fornecedor_cnpj_snapshot || ''} onChange={(e) => setF('fornecedor_cnpj_snapshot', e.target.value)} /></div>
-          <div><label className="erp-label">Status</label><select className="erp-select mt-1 w-full" value={form.status} onChange={(e) => setF('status', e.target.value)}><option value="rascunho">Rascunho</option><option value="registrado">Registrado</option><option value="cancelado">Cancelado</option></select></div>
+          <div>
+            <label className="erp-label">Status</label>
+            <select
+              className="erp-select mt-1 w-full"
+              value={form.status}
+              disabled={editing?.status === 'cancelado'}
+              onChange={(e) => setF('status', e.target.value as CertificadoFornecedorStatus)}
+            >
+              <option value="rascunho">Rascunho</option>
+              <option value="registrado">Registrado</option>
+              <option value="cancelado">Cancelado</option>
+            </select>
+            {editing?.status === 'cancelado' ? (
+              <p className="text-xs text-muted-foreground mt-1">Status bloqueado após cancelamento.</p>
+            ) : null}
+          </div>
         </div>
         <div className="mt-2">
           <button type="button" className="erp-btn-outline erp-btn-sm" onClick={aplicarNumeroCabecalhoEmTodosOsItens}>
@@ -663,13 +944,18 @@ const CertificadosFornecedor = () => {
         ) : null}
 
         <div className="mt-4 space-y-3 max-h-[45vh] overflow-auto pr-1">
-          {form.itens.map((it, idx) => (
+          {form.itens.map((it, idx) => {
+            const origem = resumoOrigemItemCf(it, form);
+            return (
             <details key={idx} className="rounded border border-border p-3" open>
               <summary className="cursor-pointer text-sm font-medium">
                 <span className="inline-flex flex-wrap items-center gap-2">
                   <span>Item {it.ordem || idx + 1} - {it.codigo_produto || 'Sem codigo'} - {it.descricao_material || 'Sem descricao'}</span>
                   <span className={(it.tipo_dados_tecnicos || 'PADRAO_ITEM') === 'VALVULA_COMPONENTES' ? 'erp-badge-warning' : 'erp-badge-success'}>
                     {(it.tipo_dados_tecnicos || 'PADRAO_ITEM') === 'VALVULA_COMPONENTES' ? 'Válvula por componentes' : 'Dados por item'}
+                  </span>
+                  <span className={origem.badgeClass} title={origem.mensagem}>
+                    {origem.badgeText}
                   </span>
                   {numeroEfetivoItem(it).numero ? (
                     <span className="erp-badge-success">
@@ -680,6 +966,79 @@ const CertificadosFornecedor = () => {
                   )}
                 </span>
               </summary>
+              <div
+                className={`mb-2 rounded border px-3 py-2 text-xs ${
+                  origem.origemCompleta
+                    ? 'border-emerald-500/30 bg-emerald-500/5 text-muted-foreground'
+                    : 'border-amber-500/35 bg-amber-500/5 text-muted-foreground'
+                }`}
+              >
+                <p
+                  className={
+                    origem.origemCompleta
+                      ? 'font-medium text-emerald-800 dark:text-emerald-300'
+                      : 'font-medium text-amber-800 dark:text-amber-300'
+                  }
+                >
+                  {origem.mensagem}
+                </p>
+                {origem.temVinculo ? (
+                  <dl className="mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-1">
+                    <div>
+                      <dt className="inline font-medium text-foreground/85">NF: </dt>
+                      <dd className="inline">
+                        {origem.nfNumero}/{origem.nfSerie}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="inline font-medium text-foreground/85">Item da NF: </dt>
+                      <dd className="inline">{origem.itemNf}</dd>
+                    </div>
+                    <div>
+                      <dt className="inline font-medium text-foreground/85">Status conferência: </dt>
+                      <dd className="inline">{origem.statusConferenciaLabel}</dd>
+                    </div>
+                    <div>
+                      <dt className="inline font-medium text-foreground/85">Produto na conferência: </dt>
+                      <dd className="inline">{origem.produtoNaConferencia ? 'Sim' : 'Não'}</dd>
+                    </div>
+                    {origem.corridaHerdada ? (
+                      <div>
+                        <dt className="inline font-medium text-foreground/85">Corrida (conferência): </dt>
+                        <dd className="inline">{origem.corridaHerdada}</dd>
+                      </div>
+                    ) : null}
+                    {origem.loteHerdado ? (
+                      <div>
+                        <dt className="inline font-medium text-foreground/85">Lote (conferência): </dt>
+                        <dd className="inline">{origem.loteHerdado}</dd>
+                      </div>
+                    ) : null}
+                    {origem.origemCompleta ? (
+                      <>
+                        <div className="sm:col-span-2 lg:col-span-3">
+                          <dt className="inline font-medium text-foreground/85">Pedido: </dt>
+                          <dd className="inline">
+                            {origem.pedidoNumero} · item do pedido {origem.itemPedidoId}
+                          </dd>
+                        </div>
+                        <div className="sm:col-span-2 lg:col-span-3">
+                          <dt className="inline font-medium text-foreground/85">Produto pedido: </dt>
+                          <dd className="inline">
+                            {origem.produtoPedidoCodigo} · {origem.produtoPedidoDescricao}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="inline font-medium text-foreground/85">Qtd pedido: </dt>
+                          <dd className="inline">
+                            {origem.quantidadePedido} {origem.unidadePedido}
+                          </dd>
+                        </div>
+                      </>
+                    ) : null}
+                  </dl>
+                ) : null}
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-6 gap-2 mt-2">
                 <div><label className="erp-label">Codigo</label><input className="erp-input mt-1" value={it.codigo_produto} onChange={(e) => updateItem(idx, { codigo_produto: e.target.value })} /></div>
                 <div className="md:col-span-2"><label className="erp-label">Descricao</label><input className="erp-input mt-1" value={it.descricao_material} onChange={(e) => updateItem(idx, { descricao_material: e.target.value })} /></div>
@@ -911,14 +1270,30 @@ const CertificadosFornecedor = () => {
                 )}
               </div>
             </details>
-          ))}
+            );
+          })}
         </div>
 
         <div className="mt-4"><label className="erp-label">Observacoes</label><textarea className="erp-input mt-1 h-20" value={form.observacoes || ''} onChange={(e) => setF('observacoes', e.target.value)} /></div>
-        <div className="mt-4 flex justify-end gap-2">
-          <button type="button" className="erp-btn-outline" onClick={() => setModalOpen(false)}>Voltar</button>
-          <button type="button" className="erp-btn-outline" onClick={() => void salvar(false)}>Salvar rascunho</button>
-          <button type="button" className="erp-btn-primary" onClick={() => void salvar(true)}>Registrar certificado</button>
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
+          <button type="button" className="erp-btn-outline" onClick={() => setModalOpen(false)}>Fechar</button>
+          <button
+            type="button"
+            className="erp-btn-outline"
+            onClick={() => void salvar(false)}
+            title={titleSalvarFornecedorSemRegistrar()}
+          >
+            {labelSalvarFornecedorSemRegistrar()}
+          </button>
+          <button
+            type="button"
+            className="erp-btn-primary"
+            disabled={form.status === 'cancelado'}
+            title={form.status === 'cancelado' ? 'Não é possível registrar no status cancelado.' : 'Valida itens e grava como registrado.'}
+            onClick={() => void salvar(true)}
+          >
+            Registrar certificado
+          </button>
         </div>
       </Modal>
 
@@ -935,7 +1310,12 @@ const CertificadosFornecedor = () => {
                 <p><span className="font-medium">Fornecedor:</span> {r.fornecedor_nome || '—'}</p>
                 <p><span className="font-medium">NF entrada:</span> {r.numero_nf_entrada || '—'} {r.data_nf_entrada ? `(${formatDate(r.data_nf_entrada)})` : ''}</p>
                 <p><span className="font-medium">Certificado (item):</span> {r.numero_certificado_fornecedor_item || r.numero_certificado_fornecedor || `#${r.certificado_fornecedor_id}`}</p>
-                <p><span className="font-medium">Status:</span> {r.status_certificado_fornecedor || '—'}</p>
+                <p><span className="font-medium">Status (fornecedor):</span>{' '}
+                  {(() => {
+                    const sb = certificadoFornecedorStatusBadge(r.status_certificado_fornecedor);
+                    return <span className={sb.className}>{sb.label}</span>;
+                  })()}
+                </p>
                 <p><span className="font-medium">Código item:</span> {r.codigo_produto || '—'}</p>
                 <p><span className="font-medium">Descrição:</span> {r.descricao_material || '—'}</p>
                 <p><span className="font-medium">Corrida:</span> {r.corrida || '—'}</p>

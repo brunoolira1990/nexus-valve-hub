@@ -26,6 +26,13 @@ from apps.fiscal.models import (
     NFeSaida,
     NFeSaidaHistoricaImportada,
 )
+from apps.fiscal.dfe_classificacao import (
+    filtrar_queryset_apuracao_cte,
+    filtrar_queryset_apuracao_historica_entrada,
+    filtrar_queryset_apuracao_historica_saida,
+    filtrar_queryset_apuracao_nfe_saida,
+    pode_entrar_apuracao,
+)
 from apps.fiscal.nfe_historica_fiscal import extrair_totais_fiscais_documento
 
 from .imposto_item_xml import dec, extrair_produto_item, extrair_tributos_item
@@ -126,6 +133,11 @@ def _q_autorizada_saida_historica() -> Q:
         | Q(status_documento__iexact='AUTORIZADA')
         | Q(status_documento__iexact='AUTORIZADO')
     )
+
+
+def _q_autorizada_entrada_historica() -> Q:
+    """NF entrada histórica: só cstat (modelo sem status_documento/cancelada)."""
+    return Q(cstat='100') | Q(cstat__iexact='100')
 
 
 def _aplica_filtro_status_saida_historica(qs, status_raw: str):
@@ -703,6 +715,8 @@ def _sped_doc_checks(ctx: ContextoApuracao, nf: Any, modelo: str) -> None:
 
 
 def _process_nota_historica_saida(ctx: ContextoApuracao, nf: NFeSaidaHistoricaImportada, f: FiltrosApuracao) -> None:
+    if not pode_entrar_apuracao(nf, incluir_canceladas=f.incluir_canceladas):
+        return
     itens = list(nf.itens.all())
     itens = _filtra_itens_historicos(itens, f.cfop, f.ncm)
     if (f.cfop or f.ncm) and not itens:
@@ -778,6 +792,8 @@ def _process_nota_historica_saida(ctx: ContextoApuracao, nf: NFeSaidaHistoricaIm
 
 
 def _process_nota_historica_entrada(ctx: ContextoApuracao, nf: NFeEntradaHistoricaImportada, f: FiltrosApuracao) -> None:
+    if not pode_entrar_apuracao(nf, incluir_canceladas=f.incluir_canceladas):
+        return
     itens = list(nf.itens.all())
     itens = _filtra_itens_historicos(itens, f.cfop, f.ncm)
     if (f.cfop or f.ncm) and not itens:
@@ -844,6 +860,8 @@ def _process_nota_historica_entrada(ctx: ContextoApuracao, nf: NFeEntradaHistori
 
 
 def _process_nfe_interna_saida(ctx: ContextoApuracao, nf: NFeSaida, f: FiltrosApuracao) -> None:
+    if not pode_entrar_apuracao(nf, incluir_canceladas=f.incluir_canceladas):
+        return
     if f.cfop:
         return
     if f.modelo_documento and f.modelo_documento.upper() != 'INTERNA':
@@ -1114,8 +1132,16 @@ def build_apuracao_fiscal(query_params: dict[str, Any]) -> dict[str, Any]:
     qs_saida_hist = _filtro_empresa_saida_historica(qs_saida_hist, f)
     qs_entrada_hist = _filtro_empresa_entrada_historica(qs_entrada_hist, f)
 
+    qs_saida_hist = filtrar_queryset_apuracao_historica_saida(qs_saida_hist)
+    qs_entrada_hist = filtrar_queryset_apuracao_historica_entrada(qs_entrada_hist)
+
     qs_saida_hist = qs_saida_hist.filter(dh_emissao__gte=em_ini, dh_emissao__lte=em_fim)
     qs_entrada_hist = qs_entrada_hist.filter(dh_emissao__gte=em_ini, dh_emissao__lte=em_fim)
+
+    # Sem filtro de status explícito: só documentos autorizados em produção (homologação sempre fora).
+    if not f.status:
+        qs_saida_hist = qs_saida_hist.filter(_q_autorizada_saida_historica())
+        qs_entrada_hist = qs_entrada_hist.filter(_q_autorizada_entrada_historica())
 
     if f.cliente_id:
         qs_saida_hist = qs_saida_hist.filter(cliente_id=f.cliente_id)
@@ -1165,6 +1191,7 @@ def build_apuracao_fiscal(query_params: dict[str, Any]) -> dict[str, Any]:
     ctes_escaneados_reforma = 0
     if _apuracao_escaneia_cte_reforma(f):
         qs_cte = CTeHistoricoImportado.objects.filter(dh_emissao__gte=em_ini, dh_emissao__lte=em_fim)
+        qs_cte = filtrar_queryset_apuracao_cte(qs_cte)
         if not f.incluir_canceladas:
             qs_cte = qs_cte.filter(cancelado=False)
         qs_cte = _filtro_empresa_cte_historico(qs_cte, f)
@@ -1178,6 +1205,7 @@ def build_apuracao_fiscal(query_params: dict[str, Any]) -> dict[str, Any]:
 
     qs_ns = NFeSaida.objects.select_related('cliente', 'pedido_venda').prefetch_related('itens')
     qs_ne = NFeEntrada.objects.select_related('fornecedor').prefetch_related('itens')
+    qs_ns = filtrar_queryset_apuracao_nfe_saida(qs_ns)
     qs_ns = qs_ns.filter(data__gte=f.data_inicio, data__lte=f.data_fim)
     qs_ne = qs_ne.filter(data__gte=f.data_inicio, data__lte=f.data_fim)
     if f.empresa_id:

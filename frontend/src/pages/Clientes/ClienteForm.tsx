@@ -1,5 +1,5 @@
 import type { ChangeEventHandler, FocusEvent, KeyboardEvent } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -15,6 +15,12 @@ import {
 } from '@/components/ui/cadastro';
 import { consultaCep, consultaCnpj } from '@/services/api/consulta';
 import { apiErrorMessage } from '@/services/api/config';
+import {
+  enderecoFiscalInconsistenteLocal,
+  mensagemEnderecoFiscalInconsistente,
+  mensagemEnderecoFiscalResumo,
+  type EnderecoFiscalResumo,
+} from '@/lib/enderecoFiscal';
 import { isValidCnpj, normalizeCnpj } from '@/lib/cnpj';
 import { digitsOnly, formatCep, formatCnpj, formatPhone } from '@/lib/masks';
 import { parsePaymentCondition } from '@/lib/paymentTerms';
@@ -62,6 +68,7 @@ const schema = z.object({
   bloqueado: z.boolean(),
   ativo: z.boolean(),
   observacoes: z.string(),
+  informacoes_complementares_nfe: z.string(),
 });
 
 export type ClienteFormInput = z.infer<typeof schema>;
@@ -70,6 +77,7 @@ const TAB_ITEMS = [
   { id: 'dados-gerais', label: 'Dados Gerais' },
   { id: 'endereco', label: 'Endereço' },
   { id: 'contatos', label: 'Contatos' },
+  { id: 'nfe-danfe', label: 'NF-e / DANFE' },
   { id: 'fiscal-financeiro', label: 'Fiscal / Financeiro' },
   { id: 'observacoes', label: 'Observações' },
 ] as const;
@@ -120,6 +128,7 @@ function toApiPayload(values: ClienteFormInput): Omit<Cliente, 'id'> {
     cnae: values.cnae,
     regime_tributario: values.regime_tributario,
     integracao_texto: values.integracao_texto,
+    informacoes_complementares_nfe: values.informacoes_complementares_nfe,
   };
 }
 
@@ -138,7 +147,7 @@ export function clientToFormValues(c: Partial<Cliente>): ClienteFormInput {
     complemento: c.complemento ?? '',
     bairro: c.bairro ?? '',
     cidade: c.cidade ?? '',
-    uf: c.uf ?? 'SP',
+    uf: c.uf ?? '',
     telefone: formatPhone(c.telefone ?? ''),
     telefone_alternativo: formatPhone(c.telefone_alternativo ?? ''),
     celular: formatPhone(c.celular ?? ''),
@@ -160,6 +169,7 @@ export function clientToFormValues(c: Partial<Cliente>): ClienteFormInput {
     cnae: c.cnae ?? '',
     regime_tributario: c.regime_tributario ?? '',
     integracao_texto: c.integracao_texto ?? '',
+    informacoes_complementares_nfe: c.informacoes_complementares_nfe ?? '',
   };
 }
 
@@ -169,9 +179,25 @@ type Props = {
   onSubmit: (payload: Omit<Cliente, 'id'>) => Promise<void>;
   onCancel: () => void;
   saving?: boolean;
+  enderecoFiscalInicial?: EnderecoFiscalResumo | null;
 };
 
-export function ClienteForm({ defaultValues, transportadoras, onSubmit, onCancel, saving }: Props) {
+function AlertaEnderecoFiscal({ mensagem }: { mensagem: string }) {
+  if (!mensagem) return null;
+  return (
+    <div
+      className="md:col-span-2 rounded-md border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100"
+      data-testid="alerta-endereco-fiscal-cliente"
+    >
+      {mensagem}
+      <p className="text-xs mt-1 opacity-90">
+        O cadastro pode ser salvo para uso comercial, mas a NF-e ficará bloqueada até a correção do endereço fiscal.
+      </p>
+    </div>
+  );
+}
+
+export function ClienteForm({ defaultValues, transportadoras, onSubmit, onCancel, saving, enderecoFiscalInicial }: Props) {
   const [tab, setTab] = useState<string>(TAB_ITEMS[0].id);
   const [cnpjLookupLoading, setCnpjLookupLoading] = useState(false);
   const [cnpjLookupMessage, setCnpjLookupMessage] = useState<string | null>(null);
@@ -179,6 +205,9 @@ export function ClienteForm({ defaultValues, transportadoras, onSubmit, onCancel
   const [cepLookupLoading, setCepLookupLoading] = useState(false);
   const [cepLookupMessage, setCepLookupMessage] = useState<string | null>(null);
   const [lastLookupCep, setLastLookupCep] = useState<string | null>(null);
+  const [enderecoFiscalAlerta, setEnderecoFiscalAlerta] = useState(
+    () => mensagemEnderecoFiscalResumo(enderecoFiscalInicial) || '',
+  );
 
   const {
     register,
@@ -207,6 +236,32 @@ export function ClienteForm({ defaultValues, transportadoras, onSubmit, onCancel
     setValue(field, nextValue);
   };
 
+  useEffect(() => {
+    const cep = digitsOnly(defaultValues.cep, 8);
+    if (cep.length !== 8) return;
+    let cancelled = false;
+    void consultaCep(cep)
+      .then(({ data }) => {
+        if (cancelled) return;
+        if (
+          enderecoFiscalInconsistenteLocal(defaultValues.cidade, defaultValues.uf, data)
+        ) {
+          setEnderecoFiscalAlerta(
+            mensagemEnderecoFiscalInconsistente(
+              defaultValues.cidade,
+              defaultValues.cep,
+              defaultValues.uf,
+              data,
+            ),
+          );
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [defaultValues.cep, defaultValues.cidade, defaultValues.uf]);
+
   const runCepLookup = async (rawValue: string, force = false) => {
     const cep = digitsOnly(rawValue, 8);
     if (cep.length !== 8) return;
@@ -217,14 +272,30 @@ export function ClienteForm({ defaultValues, transportadoras, onSubmit, onCancel
     setCepLookupLoading(true);
     try {
       const { data } = await consultaCep(cep);
-      setIfEmpty('logradouro', data.logradouro || '');
-      setIfEmpty('complemento', data.complemento || '');
-      setIfEmpty('bairro', data.bairro || '');
-      setIfEmpty('cidade', data.cidade || '');
-      setIfEmpty('uf', data.uf || '');
+      if (force) {
+        setValue('logradouro', data.logradouro || '');
+        setValue('complemento', data.complemento || '');
+        setValue('bairro', data.bairro || '');
+      } else {
+        setIfEmpty('logradouro', data.logradouro || '');
+        setIfEmpty('complemento', data.complemento || '');
+        setIfEmpty('bairro', data.bairro || '');
+      }
+      setValue('cidade', data.cidade || '');
+      setValue('uf', data.uf || '');
       if (data.cep) setValue('cep', formatCep(data.cep));
       setLastLookupCep(cep);
-      setCepLookupMessage('Endereço encontrado pelo CEP.');
+      const inconsistente = enderecoFiscalInconsistenteLocal(data.cidade, data.uf, data);
+      setEnderecoFiscalAlerta(
+        inconsistente
+          ? mensagemEnderecoFiscalInconsistente(data.cidade, data.cep, data.uf, data)
+          : '',
+      );
+      setCepLookupMessage(
+        inconsistente
+          ? 'CEP consultado, mas há divergência entre cidade/UF informadas.'
+          : 'Endereço encontrado pelo CEP.',
+      );
     } catch (err) {
       const msg = apiErrorMessage(err);
       setCepLookupMessage(msg);
@@ -252,14 +323,15 @@ export function ClienteForm({ defaultValues, transportadoras, onSubmit, onCancel
       const { data } = await consultaCnpj(cnpj);
       setIfEmpty('razao_social', data.razao_social || '');
       setIfEmpty('nome_fantasia', data.nome_fantasia || '');
-      setIfEmpty('logradouro', data.logradouro || '');
-      setIfEmpty('numero', data.numero || '');
+      setValue('logradouro', data.logradouro || getValues('logradouro') || '');
+      setValue('numero', data.numero || getValues('numero') || '');
       setIfEmpty('complemento', data.complemento || '');
-      setIfEmpty('bairro', data.bairro || '');
-      setIfEmpty('cidade', data.cidade || '');
-      setIfEmpty('uf', data.uf || '');
-      setIfEmpty('cep', data.cep || '');
+      setValue('bairro', data.bairro || getValues('bairro') || '');
+      setValue('cidade', data.cidade || '');
+      setValue('uf', data.uf || '');
+      if (data.cep) setValue('cep', formatCep(data.cep));
       setIfEmpty('telefone', formatPhone(data.telefone || ''));
+      setEnderecoFiscalAlerta('');
       setLastLookupCnpj(cnpj);
       setCnpjLookupMessage('Dados do CNPJ consultados com sucesso.');
     } catch (err) {
@@ -353,9 +425,11 @@ export function ClienteForm({ defaultValues, transportadoras, onSubmit, onCancel
             ? 'Localização fiscal e logística para faturamento e entrega.'
             : tab === 'contatos'
               ? 'Canal oficial de relacionamento, cobrança e envio de documentos.'
-              : tab === 'fiscal-financeiro'
-                ? 'Informações fiscais, bancárias e regras comerciais do cadastro.'
-                : 'Observações operacionais para atendimento e equipe interna.'
+              : tab === 'nfe-danfe'
+                ? 'Textos recorrentes deste cliente que saem em Dados Adicionais da NF-e e da DANFE.'
+                : tab === 'fiscal-financeiro'
+                  ? 'Informações fiscais, bancárias e regras comerciais do cadastro.'
+                  : 'Textos para a DANFE (saem na NF-e) e observações internas do ERP (não saem na NF-e).'
       }
     >
       {tab === 'dados-gerais' && (
@@ -397,6 +471,7 @@ export function ClienteForm({ defaultValues, transportadoras, onSubmit, onCancel
 
       {tab === 'endereco' && (
         <>
+          <AlertaEnderecoFiscal mensagem={enderecoFiscalAlerta} />
           <div>
             <InputField label="CEP" {...cepField} onChange={onCepChange} onBlur={onCepBlur} onKeyDown={onCepKeyDown} />
             <div className="mt-1 flex items-center gap-3 text-xs">
@@ -444,6 +519,25 @@ export function ClienteForm({ defaultValues, transportadoras, onSubmit, onCancel
             {...register('email_nf')}
             error={errors.email_nf?.message}
           />
+        </>
+      )}
+
+      {tab === 'nfe-danfe' && (
+        <>
+          <AlertaEnderecoFiscal mensagem={enderecoFiscalAlerta} />
+          <TextareaField
+            label="Informações complementares para NF-e/DANFE"
+            className="min-h-[200px]"
+            placeholder="Ex.: ENDEREÇO DE ENTREGA RUA MIGUEL LANGONE 341 - HORÁRIO DE ENTREGA DAS 7:00 AS 15:00 HORAS"
+            operationalUpper
+            {...register('informacoes_complementares_nfe')}
+          />
+          <p className="text-sm text-muted-foreground md:col-span-2">
+            Use este campo para instruções que devem aparecer nos <strong>Dados Adicionais</strong> de toda NF-e
+            deste cliente (endereço de entrega, horário de recebimento, doca, contato de recebimento, etc.). O texto
+            sai em maiúsculas na DANFE. Não use a aba Observações para isso — aquelas observações são internas do
+            ERP.
+          </p>
         </>
       )}
 
@@ -495,13 +589,31 @@ export function ClienteForm({ defaultValues, transportadoras, onSubmit, onCancel
       )}
 
       {tab === 'observacoes' && (
-        <TextareaField
-          label="Observações / recomendações"
-          className="min-h-[180px]"
-          placeholder="Informações relevantes para vendas, financeiro, logística e pós-venda."
-          operationalUpper
-          {...register('observacoes')}
-        />
+        <>
+          <div className="md:col-span-2 rounded-md border-2 border-primary/30 bg-primary/5 p-3 space-y-3">
+            <p className="text-sm font-semibold text-foreground">
+              Informações que saem na NF-e / DANFE
+            </p>
+            <TextareaField
+              label="Informações complementares para NF-e/DANFE"
+              className="min-h-[160px] bg-background"
+              placeholder="Ex.: ENDEREÇO DE ENTREGA RUA MIGUEL LANGONE 341 - HORÁRIO DE ENTREGA DAS 7:00 AS 15:00 HORAS"
+              operationalUpper
+              {...register('informacoes_complementares_nfe')}
+            />
+            <p className="text-xs text-muted-foreground">
+              Este texto aparece nos <strong>Dados Adicionais</strong> de toda NF-e deste cliente. Também disponível
+              na aba <strong>NF-e / DANFE</strong>.
+            </p>
+          </div>
+          <TextareaField
+            label="Observações internas (não saem na NF-e)"
+            className="min-h-[140px]"
+            placeholder="Uso interno: vendas, financeiro, logística — não imprime na DANFE."
+            operationalUpper
+            {...register('observacoes')}
+          />
+        </>
       )}
     </CadastroSection>
   );

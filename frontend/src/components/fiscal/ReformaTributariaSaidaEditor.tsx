@@ -4,11 +4,15 @@ import {
   AVISO_REFORMA_TRIBUTARIA_SAIDA,
   CLASSIFICACAO_TRIBUTARIA_OPCOES,
   CST_IBS_CBS_OPCOES,
+  FONTE_REGRA_BASE_IBS_CBS_OPCOES,
   HINT_EXCECAO_REFORMA_ESCOPO,
+  MODO_BASE_IBS_CBS_OPCOES,
   REFORMA_CAMPOS_CBS,
   REFORMA_CAMPOS_IBS,
   REFORMA_TRIBUTARIA_LABELS_SAIDA,
 } from '@/lib/catalogosFiscais';
+import { PercentInput } from '@/components/comercial/fields';
+import { decFieldToForm } from '@/lib/regrasFiscaisEntradaHelpers';
 import type { ReformaTributariaForm } from '@/lib/regrasFiscaisSaidaHelpers';
 
 type Props = {
@@ -46,7 +50,41 @@ export const ReformaTributariaSaidaEditor = ({ reforma, onChange }: Props) => {
           onChange={(v) => f('classificacao_tributaria', v)}
           opcoes={CLASSIFICACAO_TRIBUTARIA_OPCOES}
         />
+        <CatalogCodigoFiscalSelect
+          label={REFORMA_TRIBUTARIA_LABELS_SAIDA.modo_base_ibs_cbs}
+          value={reforma.modo_base_ibs_cbs || 'BASE_CHEIA_OPERACAO'}
+          onChange={(v) => f('modo_base_ibs_cbs', v)}
+          opcoes={MODO_BASE_IBS_CBS_OPCOES}
+        />
+        <CatalogCodigoFiscalSelect
+          label={REFORMA_TRIBUTARIA_LABELS_SAIDA.fonte_regra_base_ibs_cbs}
+          value={reforma.fonte_regra_base_ibs_cbs || 'pendente'}
+          onChange={(v) => f('fonte_regra_base_ibs_cbs', v)}
+          opcoes={FONTE_REGRA_BASE_IBS_CBS_OPCOES}
+        />
       </div>
+      {reforma.modo_base_ibs_cbs === 'BASE_CUSTOMIZADA' ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-3 text-xs">
+          {(
+            [
+              'deduzir_icms_base_ibs_cbs',
+              'deduzir_pis_base_ibs_cbs',
+              'deduzir_cofins_base_ibs_cbs',
+              'deduzir_ipi_base_ibs_cbs',
+              'deduzir_iss_base_ibs_cbs',
+            ] as const
+          ).map((key) => (
+            <label key={key} className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={reforma[key] === 'true' || reforma[key] === '1'}
+                onChange={(e) => f(key, e.target.checked ? 'true' : '')}
+              />
+              {REFORMA_TRIBUTARIA_LABELS_SAIDA[key]}
+            </label>
+          ))}
+        </div>
+      ) : null}
       <div className="flex flex-wrap gap-1 mb-3">
         <button
           type="button"
@@ -67,7 +105,11 @@ export const ReformaTributariaSaidaEditor = ({ reforma, onChange }: Props) => {
         {campos.map((key) => (
           <div key={key}>
             <label className="erp-label">{REFORMA_TRIBUTARIA_LABELS_SAIDA[key] ?? key}</label>
-            <input className="erp-input mt-1" value={reforma[key]} onChange={(e) => f(key, e.target.value)} />
+            <PercentInput
+              className="erp-input mt-1 w-full"
+              value={Number(decFieldToForm(reforma[key]).replace(',', '.')) || 0}
+              onChange={(n) => f(key, n > 0 ? String(n) : '')}
+            />
           </div>
         ))}
       </div>

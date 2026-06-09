@@ -1,14 +1,52 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
-import { CheckCircle2, Pencil, RefreshCw, ShoppingCart, Trash2, Plus, X } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { CheckCircle2, Download, ExternalLink, FileDown, MoreVertical, Pencil, RefreshCw, ShoppingCart, Trash2, Plus, X } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { MSG_SALVE_ANTES_PDF } from '@/lib/commercialPdfDownload';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
+import { HomologacaoFiscalPropostaPanel } from '@/components/HomologacaoFiscalPropostaPanel';
 import { propostasService } from '@/services/api/comercial';
 import { clientesService } from '@/services/api/clientes';
 import { produtosService } from '@/services/api/produtos';
 import { empresasService } from '@/services/api/empresas';
 import { regrasFiscaisService } from '@/services/api/regras-fiscais';
+import { cenariosFiscaisSaidaService } from '@/services/api/cenarios-fiscais-saida';
+import { regrasFiscaisSaidaService } from '@/services/api/regras-fiscais-saida';
+import type { CenarioFiscalSaida } from '@/types';
+import { inferItemAvulso } from '@/lib/propostaApiPayload';
+import {
+  formatDecimal,
+  formatMoneyBr,
+  formatPercent,
+  inputNumberValue,
+  toNumber,
+} from '@/lib/numberFormat';
 import { apiErrorMessage } from '@/services/api/config';
 import { buildDueDates, parsePaymentCondition } from '@/lib/paymentTerms';
+import { previewCondicaoPagamento } from '@/lib/condicaoPagamento';
+import { formatDateBr } from '@/lib/dateBr';
+import { DateBrInput } from '@/components/comercial/DateBrInput';
+import { ComercialModalSection } from '@/components/comercial/ComercialModalSection';
+import { CondicaoPagamentoResumo } from '@/components/comercial/CondicaoPagamentoResumo';
+import { ClienteComercialField } from '@/components/comercial/ClienteComercialField';
+import { ProdutoComercialField } from '@/components/comercial/ProdutoComercialField';
+import { VendedorComercialField } from '@/components/comercial/VendedorComercialField';
+import {
+  clienteStubForDisplay,
+  colaboradorStubForDisplay,
+  produtoStubForDisplay,
+  vendedorStubForDisplay,
+} from '@/lib/comercialAutocomplete';
+import { colaboradoresService } from '@/services/api/colaboradores';
+import { vendedoresService } from '@/services/api/vendedores';
+import { ItemComercialMetricasGrid } from '@/components/comercial/ItemComercialMetricasGrid';
 import {
   normalizeNcm,
   ncmFiscalDigitsValid,
@@ -18,12 +56,158 @@ import {
   computeValorCargaSaida,
 } from '@/lib/propostaPricing';
 import { equivalentesPreco, labelPrecoPorUnidade, previewConversaoItem, todasUnidadesPadrao, unidadesNegociacaoProduto } from '@/lib/comercialDimensional';
-import type { Proposta, ItemProposta, Cliente, Produto, Empresa } from '@/types';
+import type {
+  Proposta,
+  ItemProposta,
+  Cliente,
+  Produto,
+  Vendedor,
+  Colaborador,
+  Empresa,
+  BuscaRegraFiscalSaida,
+  OrigemRegraFiscalSaida,
+  ComparativoFiscalSaida,
+  HomologacaoFiscalStatusProposta,
+  StatusComparativoFiscalSaida,
+} from '@/types';
 import { UFS } from '@/types';
+import {
+  CONDICAO_PAGAMENTO_PADRAO,
+  STATUS_PROPOSTA_CONVERTIDA,
+  STATUS_PROPOSTA_INICIAL,
+  dataHojeIso,
+  validadePadraoIso,
+} from '@/lib/comercialFormDefaults';
+import { propostaTemPedidoGerado, statusPropostaUi } from '@/lib/propostaStatus';
+import { usePaginatedList } from '@/hooks/usePaginatedList';
+import { PaginationControls } from '@/components/list/PaginationControls';
+import { FilterBar } from '@/components/list/FilterBar';
+import { EmptyState, ErrorState } from '@/components/list/ListStates';
+import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
+import { StatusBadge } from '@/components/nexus/StatusBadge';
+import { TableSkeleton } from '@/components/nexus/Skeleton';
+import { toast } from 'sonner';
+import {
+  DiscountInput,
+  MoneyInput,
+  QuantityInput,
+  ReadonlyCalculatedField,
+  UnitSelect,
+} from '@/components/comercial/fields';
+
+const USE_CENARIO_FISCAL_SAIDA_FOR_PROPOSTAS =
+  import.meta.env.VITE_USE_CENARIO_FISCAL_SAIDA_FOR_PROPOSTAS === 'true';
+
+const MSG_CONFIRMACAO_CONVERTER_PEDIDO =
+  'Esta ação cria um Pedido de Venda a partir da proposta aprovada. O faturamento/NF-e será tratado em etapa posterior.\n\nDeseja continuar?';
+
+function propostaUsaMotorCenario(
+  form: { usar_cenario_fiscal_saida?: boolean },
+  options?: { isNew?: boolean },
+): boolean {
+  if (USE_CENARIO_FISCAL_SAIDA_FOR_PROPOSTAS) return true;
+  if (options?.isNew) return true;
+  return Boolean(form.usar_cenario_fiscal_saida);
+}
+
+function labelOrigemRegraFiscal(origem?: OrigemRegraFiscalSaida): string {
+  switch (origem) {
+    case 'CENARIO_SAIDA':
+      return 'Cenário fiscal de saída';
+    case 'LEGADO':
+      return 'Regra fiscal legada';
+    case 'NAO_ENCONTRADA':
+      return 'Não encontrada';
+    default:
+      return '';
+  }
+}
+
+function labelStatusComparativo(status: StatusComparativoFiscalSaida): string {
+  switch (status) {
+    case 'IGUAL':
+      return 'Igual';
+    case 'DIVERGENTE':
+      return 'Divergente';
+    case 'CENARIO_NAO_ENCONTRADO':
+      return 'Cenário não encontrado';
+    case 'LEGADO_NAO_ENCONTRADO':
+      return 'Legado não encontrado';
+    case 'AMBOS_NAO_ENCONTRADOS':
+      return 'Nenhum encontrado';
+    default:
+      return status;
+  }
+}
+
+function classeStatusComparativo(status: StatusComparativoFiscalSaida): string {
+  switch (status) {
+    case 'IGUAL':
+      return 'text-emerald-700 dark:text-emerald-400';
+    case 'DIVERGENTE':
+      return 'text-amber-700 dark:text-amber-400';
+    case 'CENARIO_NAO_ENCONTRADO':
+    case 'LEGADO_NAO_ENCONTRADO':
+    case 'AMBOS_NAO_ENCONTRADOS':
+      return 'text-muted-foreground';
+    default:
+      return 'text-muted-foreground';
+  }
+}
+
+function itemFromBuscaRegra(row: ItemProposta, busca: BuscaRegraFiscalSaida): ItemProposta {
+  if (busca.origem === 'NAO_ENCONTRADA') {
+    return {
+      ...row,
+      icms_saida_percentual: 0,
+      pis_saida_percentual: 0,
+      cofins_saida_percentual: 0,
+      ipi_saida_percentual: 0,
+      regra_fiscal_id: null,
+      regra_fiscal_saida_id: null,
+      regra_fiscal_origem: 'NAO_ENCONTRADA',
+    };
+  }
+  return {
+    ...row,
+    icms_saida_percentual: Number(busca.aliquota_icms) || 0,
+    pis_saida_percentual: Number(busca.aliquota_pis) || 0,
+    cofins_saida_percentual: Number(busca.aliquota_cofins) || 0,
+    ipi_saida_percentual: Number(busca.aliquota_ipi) || 0,
+    regra_fiscal_id: busca.regra_legada_id ?? null,
+    regra_fiscal_saida_id: busca.regra_id ?? null,
+    regra_fiscal_origem: busca.origem,
+    deduzir_icms_base_pis: Boolean(busca.deduzir_icms_base_pis),
+    deduzir_icms_base_cofins: Boolean(busca.deduzir_icms_base_cofins),
+    pis_cofins_base_deduz_icms:
+      busca.origem === 'CENARIO_SAIDA' &&
+      Boolean(busca.deduzir_icms_base_pis || busca.deduzir_icms_base_cofins),
+  };
+}
 
 const Propostas = () => {
-  const [items, setItems] = useState<Proposta[]>([]);
-  const [search, setSearch] = useState('');
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const statusUrl = searchParams.get('status') || '';
+  const {
+    items,
+    count,
+    page,
+    pageSize,
+    totalPages,
+    search,
+    setSearch,
+    setPage,
+    setPageSize,
+    filters,
+    setFilter,
+    loading: loadingList,
+    error: loadError,
+    reload: reloadList,
+  } = usePaginatedList<Proposta>({
+    fetchPage: propostasService.listPaginated,
+    initialFilters: statusUrl ? { status: statusUrl } : {},
+  });
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Proposta | null>(null);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
@@ -37,17 +221,27 @@ const Propostas = () => {
     empresa_emitente_id: null as number | null,
     data: '',
     validade: '',
-    vendedor: 'João Silva',
-    status: 'Pendente',
-    condicao_pagamento_texto: '30',
+    vendedor_id: null as number | null,
+    status: STATUS_PROPOSTA_INICIAL,
+    condicao_pagamento_texto: CONDICAO_PAGAMENTO_PADRAO,
+    prazo_entrega_texto: '',
     uf_destino_avulso: '',
+    usar_cenario_fiscal_saida: false,
+    cenario_fiscal_saida_id: null as number | null,
   });
+  const [cenariosSaida, setCenariosSaida] = useState<CenarioFiscalSaida[]>([]);
+  const [homologacaoStatus, setHomologacaoStatus] = useState<HomologacaoFiscalStatusProposta>('NAO_INICIADA');
+  const [homologacaoObservacao, setHomologacaoObservacao] = useState('');
+  const [homologacaoEm, setHomologacaoEm] = useState<string | null>(null);
   const [clienteAvulso, setClienteAvulso] = useState(false);
-  const [clientes, setClientes] = useState<Cliente[]>([]);
-  const [clientesError, setClientesError] = useState<string | null>(null);
-  const [produtos, setProdutos] = useState<Produto[]>([]);
-  const [produtosError, setProdutosError] = useState<string | null>(null);
+  const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
+  const [selectedVendedor, setSelectedVendedor] = useState<Vendedor | null>(null);
+  const [selectedColaboradorVendedor, setSelectedColaboradorVendedor] = useState<Colaborador | null>(null);
+  const [produtoCache, setProdutoCache] = useState<Map<number, Produto>>(() => new Map());
   const [itens, setItens] = useState<ItemProposta[]>([]);
+  const [comparativoFiscal, setComparativoFiscal] = useState<
+    Record<string, ComparativoFiscalSaida | 'loading' | 'error'>
+  >({});
   const [referenciaFrete, setReferenciaFrete] = useState<{
     periodo_utilizado: Record<string, string | undefined>;
     referencia_historica: {
@@ -87,80 +281,123 @@ const Propostas = () => {
     'erp-input h-8 text-sm text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none';
 
   const normalizeItem = (item: Partial<ItemProposta>): ItemProposta => {
+    const itemAvulso = item.item_avulso ?? inferItemAvulso(item);
     const base: ItemProposta = {
       id: item.id ?? Date.now(),
-      produto_id: item.produto_id ?? null,
+      item_avulso: itemAvulso,
+      produto_id: itemAvulso ? null : (item.produto_id ?? null),
       produto_nome: item.produto_nome ?? '',
       descricao_avulsa: item.descricao_avulsa ?? '',
       ncm_avulso: item.ncm_avulso ?? '',
-      quantidade: item.quantidade ?? 1,
+      quantidade: toNumber(item.quantidade, 1),
       unidade_negociada: item.unidade_negociada ?? '',
-      quantidade_negociada: item.quantidade_negociada ?? item.quantidade ?? 1,
+      quantidade_negociada: toNumber(item.quantidade_negociada ?? item.quantidade, 1),
       unidade_estoque_calculada: item.unidade_estoque_calculada ?? '',
-      quantidade_estoque_calculada: item.quantidade_estoque_calculada ?? 0,
-      peso_total_kg: item.peso_total_kg ?? 0,
-      metros_total: item.metros_total ?? 0,
-      barras_total: item.barras_total ?? 0,
-      valor_unitario: item.valor_unitario ?? 0,
-      preco_por_unidade_negociada: item.preco_por_unidade_negociada ?? item.valor_unitario ?? 0,
-      preco_por_kg: item.preco_por_kg ?? 0,
-      preco_por_metro: item.preco_por_metro ?? 0,
-      fator_conversao: item.fator_conversao ?? 0,
-      desconto: item.desconto ?? 0,
-      custo_utilizado: item.custo_utilizado ?? 0,
-      frete: item.frete ?? 0,
-      despesas: item.despesas ?? 0,
-      ipi_entrada_percentual: item.ipi_entrada_percentual ?? 0,
-      ipi_custo: item.ipi_custo ?? 0,
-      st_custo: item.st_custo ?? 0,
-      outros_impostos_custo: item.outros_impostos_custo ?? 0,
-      custo_final: item.custo_final ?? 0,
-      icms_saida_percentual: item.icms_saida_percentual ?? 0,
-      pis_saida_percentual: item.pis_saida_percentual ?? 0,
-      cofins_saida_percentual: item.cofins_saida_percentual ?? 0,
-      ipi_saida_percentual: item.ipi_saida_percentual ?? 0,
+      quantidade_estoque_calculada: toNumber(item.quantidade_estoque_calculada),
+      peso_total_kg: toNumber(item.peso_total_kg),
+      metros_total: toNumber(item.metros_total),
+      barras_total: toNumber(item.barras_total),
+      valor_unitario: toNumber(item.valor_unitario),
+      preco_por_unidade_negociada: toNumber(item.preco_por_unidade_negociada ?? item.valor_unitario),
+      preco_por_kg: toNumber(item.preco_por_kg),
+      preco_por_metro: toNumber(item.preco_por_metro),
+      fator_conversao: toNumber(item.fator_conversao),
+      desconto: toNumber(item.desconto),
+      custo_utilizado: toNumber(item.custo_utilizado),
+      frete: toNumber(item.frete),
+      despesas: toNumber(item.despesas),
+      ipi_entrada_percentual: toNumber(item.ipi_entrada_percentual),
+      ipi_custo: toNumber(item.ipi_custo),
+      st_custo: toNumber(item.st_custo),
+      outros_impostos_custo: toNumber(item.outros_impostos_custo),
+      custo_final: toNumber(item.custo_final),
+      icms_saida_percentual: toNumber(item.icms_saida_percentual),
+      pis_saida_percentual: toNumber(item.pis_saida_percentual),
+      cofins_saida_percentual: toNumber(item.cofins_saida_percentual),
+      ipi_saida_percentual: toNumber(item.ipi_saida_percentual),
       regra_fiscal_id: item.regra_fiscal_id ?? null,
-      irpj_estimado_percentual: item.irpj_estimado_percentual ?? 0,
-      csll_estimada_percentual: item.csll_estimada_percentual ?? 0,
-      comissao_percentual: item.comissao_percentual ?? 0,
-      frete_saida: item.frete_saida ?? 0,
-      outras_despesas_saida: item.outras_despesas_saida ?? 0,
-      modo_preco: item.modo_preco ?? 'sugerido',
-      preco_sugerido: item.preco_sugerido ?? 0,
-      preco_final: item.preco_final ?? item.valor_unitario ?? 0,
-      margem_resultante: item.margem_resultante ?? 0,
-      lucro_resultante: item.lucro_resultante ?? 0,
+      regra_fiscal_origem: item.origem_regra_fiscal_saida ?? item.regra_fiscal_origem,
+      regra_fiscal_saida_id: item.regra_fiscal_saida_id ?? null,
+      deduzir_icms_base_pis: item.deduzir_icms_base_pis ?? false,
+      deduzir_icms_base_cofins: item.deduzir_icms_base_cofins ?? false,
+      pis_cofins_base_deduz_icms: item.pis_cofins_base_deduz_icms ?? false,
+      irpj_estimado_percentual: toNumber(item.irpj_estimado_percentual),
+      csll_estimada_percentual: toNumber(item.csll_estimada_percentual),
+      comissao_percentual: toNumber(item.comissao_percentual),
+      frete_saida: toNumber(item.frete_saida),
+      outras_despesas_saida: toNumber(item.outras_despesas_saida),
+      modo_preco: item.modo_preco === 'manual' ? 'manual' : 'sugerido',
+      preco_sugerido: toNumber(item.preco_sugerido),
+      preco_final: toNumber(item.preco_final ?? item.valor_unitario),
+      margem_resultante: toNumber(item.margem_resultante),
+      lucro_resultante: toNumber(item.lucro_resultante),
     };
     base.quantidade = base.quantidade_negociada ?? base.quantidade;
     base.valor_unitario = base.preco_por_unidade_negociada ?? base.valor_unitario;
     return recalcPropostaItem(base);
   };
 
-  const load = async () => setItems(await propostasService.getAll());
-  const loadClientes = async () => {
-    setClientesError(null);
-    try {
-      const data = await clientesService.getAll();
-      setClientes(data);
-    } catch (e) {
-      setClientes([]);
-      setClientesError(apiErrorMessage(e));
-    }
-  };
-  const loadProdutos = async () => {
-    setProdutosError(null);
-    try {
-      const data = await produtosService.getAll();
-      setProdutos(data);
-    } catch (e) {
-      setProdutos([]);
-      setProdutosError(apiErrorMessage(e));
-    }
-  };
+  const load = reloadList;
+
   useEffect(() => {
-    load();
-    loadClientes();
-    loadProdutos();
+    if (statusUrl) setFilter('status', statusUrl);
+  }, [statusUrl, setFilter]);
+
+  const hydrateCliente = useCallback((clienteId: number | null, nomeFallback?: string) => {
+    if (!clienteId) {
+      setSelectedCliente(null);
+      return;
+    }
+    void clientesService
+      .getById(clienteId)
+      .then(setSelectedCliente)
+      .catch(() => setSelectedCliente(clienteStubForDisplay(clienteId, nomeFallback || '—')));
+  }, []);
+
+  const hydrateVendedor = useCallback((vendedorId: number | null, nomeFallback?: string) => {
+    if (!vendedorId) {
+      setSelectedVendedor(null);
+      setSelectedColaboradorVendedor(null);
+      return;
+    }
+    void vendedoresService
+      .getById(vendedorId)
+      .then((v) => {
+        setSelectedVendedor(v);
+        setSelectedColaboradorVendedor(
+          colaboradorStubForDisplay(v.id, v.nome, v.codigo, v.id),
+        );
+      })
+      .catch(() => {
+        const stub = vendedorStubForDisplay(vendedorId, nomeFallback || '—');
+        setSelectedVendedor(stub);
+        setSelectedColaboradorVendedor(
+          colaboradorStubForDisplay(vendedorId, nomeFallback || '—', '', vendedorId),
+        );
+      });
+  }, []);
+
+  const mergeProdutoCache = useCallback((p: Produto) => {
+    setProdutoCache((prev) => new Map(prev).set(p.id, p));
+  }, []);
+
+  const hydrateProdutosItens = useCallback((lista: ItemProposta[]) => {
+    const stubs = new Map<number, Produto>();
+    for (const it of lista) {
+      if (!it.produto_id) continue;
+      stubs.set(
+        it.produto_id,
+        produtoStubForDisplay(it.produto_id, '', it.produto_nome || it.descricao_avulsa || ''),
+      );
+    }
+    setProdutoCache(stubs);
+    for (const it of lista) {
+      if (!it.produto_id) continue;
+      void produtosService.getById(it.produto_id).then(mergeProdutoCache).catch(() => undefined);
+    }
+  }, [mergeProdutoCache]);
+
+  useEffect(() => {
     empresasService
       .getAll()
       .then((list) => setEmpresas(list))
@@ -168,16 +405,15 @@ const Propostas = () => {
   }, []);
 
   itensRef.current = itens;
-  produtosRef.current = produtos;
+  produtosRef.current = Array.from(produtoCache.values());
   empresasRef.current = empresas;
 
   const resolveUfDestino = useCallback((): string => {
-    if (!clienteAvulso && form.cliente_id) {
-      const c = clientes.find((x) => x.id === form.cliente_id);
-      return (c?.uf || '').toUpperCase().slice(0, 2);
+    if (!clienteAvulso && form.cliente_id && selectedCliente?.id === form.cliente_id) {
+      return (selectedCliente.uf || '').toUpperCase().slice(0, 2);
     }
     return (form.uf_destino_avulso || '').toUpperCase().slice(0, 2);
-  }, [clienteAvulso, form.cliente_id, form.uf_destino_avulso, clientes]);
+  }, [clienteAvulso, form.cliente_id, form.uf_destino_avulso, selectedCliente]);
 
   const resolveUfOrigemEmitente = useCallback((): string => {
     const list = empresasRef.current;
@@ -206,7 +442,40 @@ const Propostas = () => {
           cofins_saida_percentual: 0,
           ipi_saida_percentual: 0,
           regra_fiscal_id: null,
+          regra_fiscal_saida_id: null,
+          regra_fiscal_origem: 'NAO_ENCONTRADA',
         };
+      }
+      if (propostaUsaMotorCenario(form)) {
+        const busca = await regrasFiscaisSaidaService.buscar({
+          ncm,
+          produto_id: row.produto_id ?? undefined,
+          uf_origem: ufOrigem,
+          uf_destino: ufDestino,
+          tipo_operacao: 'VENDA',
+          cenario_id: form.cenario_fiscal_saida_id ?? undefined,
+        });
+        if (!busca) {
+          return itemFromBuscaRegra(row, {
+            origem: 'NAO_ENCONTRADA',
+            regra_id: null,
+            regra_legada_id: null,
+            cfop: '',
+            cfop_st: '',
+            cst_icms: '',
+            aliquota_icms: '0',
+            cst_ipi: '',
+            aliquota_ipi: '0',
+            cst_pis: '',
+            aliquota_pis: '0',
+            cst_cofins: '',
+            aliquota_cofins: '0',
+            movimenta_estoque: true,
+            gera_financeiro: true,
+            mensagens: [],
+          });
+        }
+        return itemFromBuscaRegra(row, busca);
       }
       const regra = await regrasFiscaisService.buscar({
         ncm,
@@ -222,6 +491,7 @@ const Propostas = () => {
           cofins_saida_percentual: 0,
           ipi_saida_percentual: 0,
           regra_fiscal_id: null,
+          regra_fiscal_origem: 'NAO_ENCONTRADA',
         };
       }
       return {
@@ -231,15 +501,52 @@ const Propostas = () => {
         cofins_saida_percentual: regra.aliquota_cofins,
         ipi_saida_percentual: regra.aliquota_ipi,
         regra_fiscal_id: regra.id,
+        regra_fiscal_origem: 'LEGADO',
       };
+    },
+    [resolveUfOrigemEmitente, resolveUfDestino, form.usar_cenario_fiscal_saida, form.cenario_fiscal_saida_id],
+  );
+
+  const runComparativoFiscal = useCallback(
+    async (item: ItemProposta) => {
+      const key = String(item.id);
+      const ufOrigem = resolveUfOrigemEmitente();
+      const ufDestino = resolveUfDestino();
+      let ncm = '';
+      if (item.produto_id) {
+        const prod = produtosRef.current.find((p) => p.id === item.produto_id);
+        ncm = normalizeNcm(prod?.ncm || '');
+      } else {
+        ncm = normalizeNcm(item.ncm_avulso || '');
+      }
+      if (!ncm || ufOrigem.length !== 2 || ufDestino.length !== 2) {
+        return;
+      }
+      setComparativoFiscal((prev) => ({ ...prev, [key]: 'loading' }));
+      try {
+        const resultado = await regrasFiscaisSaidaService.comparar({
+          ncm,
+          produto_id: item.produto_id ?? undefined,
+          uf_origem: ufOrigem,
+          uf_destino: ufDestino,
+          tipo_operacao: 'VENDA',
+        });
+        setComparativoFiscal((prev) => ({ ...prev, [key]: resultado }));
+      } catch {
+        setComparativoFiscal((prev) => ({ ...prev, [key]: 'error' }));
+      }
     },
     [resolveUfOrigemEmitente, resolveUfDestino],
   );
 
   const fiscalTriggerKey = useMemo(
     () =>
-      itens.map((i) => `${i.id}:${i.produto_id ?? ''}:${normalizeNcm(i.ncm_avulso || '')}`).join('|'),
-    [itens],
+      [
+        form.usar_cenario_fiscal_saida ? '1' : '0',
+        form.cenario_fiscal_saida_id ?? '',
+        itens.map((i) => `${i.id}:${i.produto_id ?? ''}:${normalizeNcm(i.ncm_avulso || '')}`).join('|'),
+      ].join('|'),
+    [itens, form.usar_cenario_fiscal_saida, form.cenario_fiscal_saida_id],
   );
 
   const itemRefCusto = useMemo(
@@ -324,13 +631,13 @@ const Propostas = () => {
   }, [modalOpen, form.data, form.empresa_emitente_id, itemRefCusto]);
 
   const addItem = () => {
-    const p0 = produtos[0];
     setItens((p) => [
       ...p,
       normalizeItem({
         id: Date.now(),
-        produto_id: p0?.id ?? null,
-        produto_nome: p0?.descricao ?? '',
+        item_avulso: false,
+        produto_id: null,
+        produto_nome: '',
         descricao_avulsa: '',
       }),
     ]);
@@ -345,29 +652,59 @@ const Propostas = () => {
   const lucroTotal = receitaTotal - custoTotal;
   const margemMedia = receitaTotal > 0 ? (lucroTotal / receitaTotal) * 100 : 0;
   const quantidadeTotalItens = itens.reduce((s, i) => s + (i.quantidade_negociada ?? i.quantidade), 0);
-  const existeAvulsoSemNcm = itens.some((i) => !i.produto_id && !ncmFiscalDigitsValid(i.ncm_avulso || ''));
+  const existeAvulsoSemNcm = itens.some(
+    (i) => (i.item_avulso ?? inferItemAvulso(i)) && !ncmFiscalDigitsValid(i.ncm_avulso || ''),
+  );
 
   const openNew = () => {
+    const hoje = dataHojeIso();
     setEditing(null);
     setClienteAvulso(false);
+    setSelectedCliente(null);
+    setSelectedVendedor(null);
+    setSelectedColaboradorVendedor(null);
+    setProdutoCache(new Map());
     setForm({
       numero: '',
-      cliente_id: clientes[0]?.id ?? null,
+      cliente_id: null,
       cliente_avulso_nome: '',
       empresa_emitente_id: empresas.length === 1 ? empresas[0]?.id ?? null : null,
-      data: '',
-      validade: '',
-      vendedor: 'João Silva',
-      status: 'Pendente',
-      condicao_pagamento_texto: '30',
-      uf_destino_avulso: '',
+      data: hoje,
+      validade: validadePadraoIso(hoje),
+      vendedor_id: null,
+      status: STATUS_PROPOSTA_INICIAL,
+    condicao_pagamento_texto: CONDICAO_PAGAMENTO_PADRAO,
+    prazo_entrega_texto: '',
+    uf_destino_avulso: '',
+      usar_cenario_fiscal_saida: true,
+      cenario_fiscal_saida_id: null,
     });
     setItens([]);
+    setHomologacaoStatus('NAO_INICIADA');
+    setHomologacaoObservacao('');
+    setHomologacaoEm(null);
     setModalOpen(true);
+    void colaboradoresService.getVinculado().then((c) => {
+      if (c?.vendedor_id) {
+        setSelectedColaboradorVendedor(c);
+        setSelectedVendedor({ id: c.vendedor_id, nome: c.nome, codigo: c.codigo, ativo: true });
+        setForm((p) => ({ ...p, vendedor_id: c.vendedor_id! }));
+        return;
+      }
+      void vendedoresService.getVinculado().then((v) => {
+        if (!v) return;
+        setSelectedVendedor(v);
+        setSelectedColaboradorVendedor(colaboradorStubForDisplay(v.id, v.nome, v.codigo, v.id));
+        setForm((p) => ({ ...p, vendedor_id: v.id }));
+      });
+    });
   };
   const openEdit = (e: Proposta) => {
     setEditing(e);
     setClienteAvulso(!e.cliente_id);
+    hydrateCliente(e.cliente_id ?? null, e.cliente_nome);
+    hydrateVendedor(e.vendedor_id ?? null, e.vendedor_nome || e.vendedor);
+    hydrateProdutosItens(e.itens);
     setForm({
       numero: e.numero,
       cliente_id: e.cliente_id ?? null,
@@ -375,37 +712,88 @@ const Propostas = () => {
       empresa_emitente_id: e.empresa_emitente_id ?? (empresas.length === 1 ? empresas[0]?.id ?? null : null),
       data: e.data,
       validade: e.validade,
-      vendedor: e.vendedor,
+      vendedor_id: e.vendedor_id ?? null,
       status: e.status,
       condicao_pagamento_texto: e.condicao_pagamento_texto,
+      prazo_entrega_texto: e.prazo_entrega_texto ?? '',
       uf_destino_avulso: e.uf_destino_avulso ?? '',
+      usar_cenario_fiscal_saida: Boolean(e.usar_cenario_fiscal_saida),
+      cenario_fiscal_saida_id: e.cenario_fiscal_saida_id ?? null,
     });
     setItens(e.itens.map((it) => normalizeItem(it)));
+    setHomologacaoStatus(e.homologacao_fiscal_status ?? 'NAO_INICIADA');
+    setHomologacaoObservacao(e.homologacao_fiscal_observacao ?? '');
+    setHomologacaoEm(e.homologacao_fiscal_em ?? null);
     setModalOpen(true);
   };
+
+  const refreshItensAposHomologacao = useCallback(async () => {
+    if (!editing?.id) return;
+    try {
+      const p = await propostasService.getById(editing.id);
+      setEditing(p);
+      setItens(p.itens.map((it) => normalizeItem(it)));
+      setForm((prev) => ({
+        ...prev,
+        usar_cenario_fiscal_saida: Boolean(p.usar_cenario_fiscal_saida),
+        cenario_fiscal_saida_id: p.cenario_fiscal_saida_id ?? null,
+      }));
+      setHomologacaoStatus(p.homologacao_fiscal_status ?? 'NAO_INICIADA');
+      setHomologacaoObservacao(p.homologacao_fiscal_observacao ?? '');
+      setHomologacaoEm(p.homologacao_fiscal_em ?? null);
+    } catch {
+      /* mantém estado local se falhar refresh */
+    }
+  }, [editing?.id]);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    void cenariosFiscaisSaidaService
+      .getAll()
+      .then(setCenariosSaida)
+      .catch(() => setCenariosSaida([]));
+  }, [modalOpen]);
   const handleDelete = async (id: number) => { if (confirm('Excluir?')) { await propostasService.delete(id); load(); } };
   const handleSave = async () => {
     if (!clienteAvulso && !form.cliente_id) {
-      alert('Selecione um cliente cadastrado ou marque cliente avulso.');
+      toast.error('Selecione um cliente cadastrado ou marque cliente avulso.');
       return;
     }
     if (empresas.length > 1 && !form.empresa_emitente_id) {
-      alert('Selecione a empresa emitente (matriz ou filial).');
+      toast.error('Selecione a empresa emitente (matriz ou filial).');
       return;
     }
-    const dias = parsePaymentCondition(form.condicao_pagamento_texto);
+    const condPreview = previewCondicaoPagamento(form.condicao_pagamento_texto, form.data);
+    if (condPreview.erro) {
+      toast.error(condPreview.erro);
+      return;
+    }
+    const dias = condPreview.prazos ?? [];
     const vencimentos = buildDueDates(form.data, dias);
     const payloadForm = {
       ...form,
+      usar_cenario_fiscal_saida: editing ? form.usar_cenario_fiscal_saida : true,
       cliente_id: clienteAvulso ? null : form.cliente_id,
       cliente_avulso_nome: clienteAvulso ? form.cliente_avulso_nome : '',
       uf_destino_avulso: clienteAvulso ? form.uf_destino_avulso : '',
     };
-    const data = { ...payloadForm, itens, valor_total: total };
+    const data = {
+      ...payloadForm,
+      itens,
+      valor_total: total,
+    };
     const payload = { ...data, dias_parcelas: dias, quantidade_parcelas: dias.length, vencimentos_previstos: vencimentos };
-    if (editing) await propostasService.update(editing.id, payload);
-    else await propostasService.create(payload as Omit<Proposta, 'id'>);
-    setModalOpen(false); load();
+    if (!editing && !form.numero?.trim()) {
+      delete (payload as { numero?: string }).numero;
+    }
+    try {
+      if (editing) await propostasService.update(editing.id, payload);
+      else await propostasService.create(payload as Omit<Proposta, 'id'>);
+      setModalOpen(false);
+      load();
+    } catch (e) {
+      toast.error(apiErrorMessage(e, { fallback: 'Não foi possível salvar a proposta.' }));
+    }
   };
   const refreshProposta = async (id: number) => {
     const updated = await propostasService.getById(id);
@@ -413,7 +801,29 @@ const Propostas = () => {
     return updated;
   };
 
+  const abrirPedidoDaProposta = (proposta: Pick<Proposta, 'pedido_venda_id' | 'pedido_venda_numero'>) => {
+    if (!proposta.pedido_venda_id) return;
+    navigate(`/pedidos-venda?pedido=${proposta.pedido_venda_id}`);
+  };
+
   const startWizard = async (proposta: Proposta) => {
+    if (propostaTemPedidoGerado(proposta)) {
+      if (proposta.pedido_venda_id) {
+        abrirPedidoDaProposta(proposta);
+        return;
+      }
+      try {
+        const current = await propostasService.getById(proposta.id);
+        if (current.pedido_venda_id) {
+          abrirPedidoDaProposta(current);
+          return;
+        }
+      } catch {
+        /* segue para alerta */
+      }
+      alert('Esta proposta já foi convertida em pedido de venda.');
+      return;
+    }
     setWizardOpen(true);
     setWizardStep(1);
     setWizardError(null);
@@ -507,7 +917,8 @@ const Propostas = () => {
         integracao_texto: '',
       });
       await propostasService.update(wizardProposta.id, { cliente_id: cliente.id, cliente_avulso_nome: '' });
-      await Promise.all([refreshProposta(wizardProposta.id), loadClientes()]);
+      await refreshProposta(wizardProposta.id);
+      hydrateCliente(cliente.id, cliente.razao_social);
       setWizardClienteId(cliente.id);
       setWizardStep(2);
     } catch (e) {
@@ -571,7 +982,8 @@ const Propostas = () => {
         it.id === itemId ? { ...it, produto_id: produto.id, descricao_avulsa: '' } : it,
       );
       await propostasService.update(wizardProposta.id, { itens: itensAtualizados });
-      await Promise.all([refreshProposta(wizardProposta.id), loadProdutos()]);
+      mergeProdutoCache(produto);
+      await refreshProposta(wizardProposta.id);
       setItemLinks((prev) => ({ ...prev, [itemId]: produto.id }));
     } catch (e) {
       setWizardError(apiErrorMessage(e, { fallback: 'Não foi possível criar o produto para o item.' }));
@@ -583,17 +995,23 @@ const Propostas = () => {
   const clienteResolvido = Boolean(wizardProposta?.cliente_id);
   const itensPendentes = wizardProposta?.itens.filter((it) => !it.produto_id) ?? [];
   const itensResolvidos = (wizardProposta?.itens.length ?? 0) - itensPendentes.length;
-  const podeConverter = Boolean(wizardProposta && clienteResolvido && itensPendentes.length === 0);
+  const podeConverter = Boolean(
+    wizardProposta &&
+      !propostaTemPedidoGerado(wizardProposta) &&
+      clienteResolvido &&
+      itensPendentes.length === 0,
+  );
 
   const concluirConversao = async () => {
     if (!wizardProposta || !podeConverter) return;
+    if (!confirm(MSG_CONFIRMACAO_CONVERTER_PEDIDO)) return;
     setWizardLoading(true);
     setWizardError(null);
     try {
-      await propostasService.convertToPedido(wizardProposta.id);
+      const r = await propostasService.convertToPedido(wizardProposta.id);
       setWizardOpen(false);
       await load();
-      alert('Proposta convertida em pedido com sucesso.');
+      alert(`Pedido de venda ${r.numero} criado com sucesso (${r.itens_criados} itens).`);
     } catch (e) {
       setWizardError(apiErrorMessage(e, { fallback: 'Não foi possível converter a proposta em pedido.' }));
     } finally {
@@ -601,15 +1019,73 @@ const Propostas = () => {
     }
   };
 
-  const filtered = items.filter(i => i.numero.includes(search) || i.cliente_nome.toLowerCase().includes(search.toLowerCase()));
-  const diasPreview = (() => {
-    try {
-      return parsePaymentCondition(form.condicao_pagamento_texto);
-    } catch {
-      return null;
+  const handleVisualizarPdf = async (proposta: Proposta) => {
+    const id = Number(proposta?.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      alert(MSG_SALVE_ANTES_PDF);
+      return;
     }
-  })();
-  const vencimentosPreview = diasPreview ? buildDueDates(form.data, diasPreview) : [];
+    const previewTab = window.open('about:blank', '_blank');
+    if (!previewTab) {
+      alert('Não foi possível abrir uma nova aba (pop-up bloqueado). Permita pop-ups e tente novamente.');
+      return;
+    }
+    try {
+      await propostasService.visualizarPdf(id, proposta.numero || String(id), previewTab);
+    } catch (e) {
+      previewTab.close();
+      alert(e instanceof Error ? e.message : 'Não foi possível visualizar o PDF da proposta.');
+    }
+  };
+
+  const handleBaixarPdf = async (proposta: Proposta) => {
+    const id = Number(proposta?.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      alert(MSG_SALVE_ANTES_PDF);
+      return;
+    }
+    try {
+      await propostasService.baixarPdf(id, proposta.numero || String(id));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Não foi possível baixar o PDF da proposta.');
+    }
+  };
+
+  const convertirEmPedido = async () => {
+    if (!editing?.id) return;
+    if (!confirm(MSG_CONFIRMACAO_CONVERTER_PEDIDO)) return;
+    try {
+      const r = await propostasService.convertToPedido(editing.id);
+      const p = await propostasService.getById(editing.id);
+      setEditing(p);
+      await load();
+      const extra = r.mensagens?.length ? `\n\n${r.mensagens.join('\n')}` : '';
+      alert(`Pedido de venda ${r.numero} criado com sucesso (${r.itens_criados} itens).${extra}`);
+    } catch (e) {
+      alert(apiErrorMessage(e, { fallback: 'Não foi possível converter a proposta em pedido de venda.' }));
+    }
+  };
+
+  const condicaoPreview = previewCondicaoPagamento(form.condicao_pagamento_texto, form.data);
+  const isNovaProposta = !editing;
+  const usaCenarioUi = propostaUsaMotorCenario(form, { isNew: isNovaProposta });
+  const propostaLegadoFiscal = Boolean(editing && !editing.usar_cenario_fiscal_saida);
+  const statusOpcoesProposta = [
+    { value: 'PENDENTE', label: 'Pendente' },
+    { value: 'Aprovada', label: 'Aprovada' },
+    { value: 'Rejeitada', label: 'Rejeitada' },
+  ];
+  if (editing && propostaTemPedidoGerado(editing)) {
+    statusOpcoesProposta.unshift({ value: STATUS_PROPOSTA_CONVERTIDA, label: 'Convertida' });
+  }
+  if (editing && ['Pendente', 'pendente'].includes(editing.status)) {
+    statusOpcoesProposta.push({ value: 'Pendente', label: 'Pendente (legado)' });
+  }
+  const propostaConvertidaNoModal = Boolean(editing && propostaTemPedidoGerado(editing));
+  const cenarioSelecionado =
+    cenariosSaida.find((c) => c.id === form.cenario_fiscal_saida_id) ??
+    cenariosSaida.find((c) => c.padrao) ??
+    null;
   const margemBadgeClass =
     margemMedia >= 20
       ? 'erp-badge-success'
@@ -708,111 +1184,409 @@ const Propostas = () => {
 
   return (
     <div>
-      <PageHeader title="Propostas" onAdd={openNew} addLabel="Nova Proposta" searchValue={search} onSearch={setSearch} />
-      <div className="erp-card overflow-x-auto">
-        <table className="erp-table">
-          <thead><tr><th>Número</th><th>Cliente</th><th>Data</th><th>Validade</th><th>Vendedor</th><th>Status</th><th>Valor Total</th><th className="w-24">Ações</th></tr></thead>
+      <PageHeader
+        title="Propostas"
+        description="Gestão de propostas comerciais e acompanhamento até conversão em pedido."
+        onAdd={openNew}
+        addLabel="Nova Proposta"
+        searchValue={search}
+        onSearch={setSearch}
+      />
+      <FilterBar
+        filters={[
+          {
+            key: 'status',
+            label: 'Status',
+            value: filters.status || '',
+            options: [
+              { value: 'PENDENTE', label: 'Pendente' },
+              { value: 'Aprovada', label: 'Aprovada' },
+              { value: 'Rejeitada', label: 'Rejeitada' },
+              { value: 'CONVERTIDA', label: 'Convertida' },
+            ],
+          },
+        ]}
+        onChange={setFilter}
+      />
+      {loadError ? <ErrorState onRetry={() => void reloadList()} /> : null}
+      {loadingList ? <TableSkeleton rows={6} cols={8} /> : null}
+      {!loadingList && !loadError ? (
+        <DataTableShell>
+        <DataTable>
+          <thead><tr><th>Número</th><th>Cliente</th><th>Data</th><th>Validade</th><th>Vendedor</th><th>Status</th><th>Valor Total</th><th className="w-36 text-right">Ações</th></tr></thead>
           <tbody>
-            {filtered.map(e => (
-              <tr key={e.id}>
-                <td className="font-medium">{e.numero}</td><td>{e.cliente_nome || e.cliente_avulso_nome || 'Cliente avulso'}</td><td>{e.data}</td><td>{e.validade}</td><td>{e.vendedor}</td>
-                <td><span className={e.status === 'Aprovada' ? 'erp-badge-success' : e.status === 'Pendente' ? 'erp-badge-warning' : 'erp-badge-danger'}>{e.status}</span></td>
-                <td>R$ {e.valor_total.toFixed(2)}</td>
-                <td><div className="flex gap-1">
-                  <button onClick={() => startWizard(e)} className="erp-btn-ghost erp-btn-sm" title="Converter em pedido"><ShoppingCart className="h-4 w-4" /></button>
-                  <button onClick={() => openEdit(e)} className="erp-btn-ghost erp-btn-sm"><Pencil className="h-4 w-4" /></button>
-                  <button onClick={() => handleDelete(e.id)} className="erp-btn-ghost erp-btn-sm text-destructive"><Trash2 className="h-4 w-4" /></button>
-                </div></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Proposta' : 'Nova Proposta'} size="xl">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          <div><label className="erp-label">Número</label><input className="erp-input mt-1" value={form.numero} onChange={e => setForm(p => ({...p,numero:e.target.value}))} /></div>
-          <div>
-            <label className="erp-label">Cliente</label>
-            <div className="mt-1 space-y-2">
-              <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                <input type="checkbox" checked={clienteAvulso} onChange={(e) => setClienteAvulso(e.target.checked)} />
-                Cliente avulso (sem cadastro)
-              </label>
-              {clienteAvulso ? (
-                <div className="space-y-2">
-                  <input
-                    className="erp-input"
-                    placeholder="Nome do cliente avulso"
-                    value={form.cliente_avulso_nome}
-                    onChange={(e) => setForm((p) => ({ ...p, cliente_avulso_nome: e.target.value }))}
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan={8}>
+                  <EmptyState
+                    message="Nenhuma proposta encontrada para os filtros atuais."
+                    actionLabel="Nova proposta"
+                    onAction={openNew}
                   />
-                  <div>
-                    <label className="text-xs text-muted-foreground">UF destino (para regra fiscal)</label>
-                    <select
-                      className="erp-select mt-1 w-full"
-                      value={form.uf_destino_avulso}
-                      onChange={(e) => setForm((p) => ({ ...p, uf_destino_avulso: e.target.value }))}
-                    >
-                      <option value="">Selecione</option>
-                      {UFS.map((u) => (
-                        <option key={u} value={u}>
-                          {u}
-                        </option>
-                      ))}
-                    </select>
+                </td>
+              </tr>
+            ) : (
+            items.map(e => {
+              const statusUi = statusPropostaUi(e);
+              const jaConvertida = propostaTemPedidoGerado(e);
+              return (
+              <tr key={e.id}>
+                <td className="font-medium">{e.numero}</td><td>{e.cliente_nome || e.cliente_avulso_nome || 'Cliente avulso'}</td><td>{formatDateBr(e.data)}</td><td>{formatDateBr(e.validade)}</td><td>{e.vendedor_nome || e.vendedor || '—'}</td>
+                <td><StatusBadge status={statusUi.label} /></td>
+                <td>{formatMoneyBr(e.valor_total)}</td>
+                <td className="text-right">
+                  <div className="flex items-center justify-end gap-1">
+                    {jaConvertida ? (
+                      <button
+                        type="button"
+                        onClick={() => abrirPedidoDaProposta(e)}
+                        className="erp-btn-ghost erp-btn-sm"
+                        title="Abrir pedido de venda"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => startWizard(e)}
+                        className="erp-btn-ghost erp-btn-sm"
+                        title="Converter em pedido"
+                      >
+                        <ShoppingCart className="h-4 w-4" />
+                      </button>
+                    )}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button type="button" className="erp-btn-ghost erp-btn-sm" aria-label="Ações da proposta">
+                          <MoreVertical className="h-4 w-4" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-52" onOpenAutoFocus={(ev) => ev.preventDefault()}>
+                        <DropdownMenuItem className="cursor-pointer" onSelect={() => openEdit(e)}>
+                          <span className="flex items-center gap-2">
+                            <Pencil className="h-4 w-4" />
+                            Editar
+                          </span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer" onSelect={() => void handleVisualizarPdf(e)}>
+                          <span className="flex items-center gap-2">
+                            <FileDown className="h-4 w-4" />
+                            Visualizar PDF
+                          </span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer" onSelect={() => void handleBaixarPdf(e)}>
+                          <span className="flex items-center gap-2">
+                            <Download className="h-4 w-4" />
+                            Baixar PDF
+                          </span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="cursor-pointer text-destructive focus:text-destructive"
+                          onSelect={() => handleDelete(e.id)}
+                        >
+                          <span className="flex items-center gap-2">
+                            <Trash2 className="h-4 w-4" />
+                            Excluir
+                          </span>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </td>
+              </tr>
+            );
+            })
+            )}
+          </tbody>
+        </DataTable>
+          {count > 0 ? (
+          <PaginationControls
+            page={page}
+            pageSize={pageSize}
+            count={count}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        ) : null}
+        </DataTableShell>
+      ) : null}
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Proposta' : 'Nova Proposta'} size="xl">
+        <div className="space-y-4 mb-4">
+          <ComercialModalSection title="Cabeçalho" description="Dados principais da proposta comercial.">
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                  <label className="erp-label">Número</label>
+                  <input
+                    className="erp-input mt-1"
+                    placeholder="Gerado automaticamente no padrão comercial"
+                    value={form.numero}
+                    onChange={(e) => setForm((p) => ({ ...p, numero: e.target.value }))}
+                  />
+                  {!editing ? (
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      Deixe em branco para gerar ao salvar (ex.: PROP-AAAAMMDD-NNNN).
+                    </p>
+                  ) : null}
+                </div>
+                <DateBrInput
+                  label="Data"
+                  valueIso={form.data}
+                  onChangeIso={(iso) =>
+                    setForm((p) => ({
+                      ...p,
+                      data: iso,
+                      validade: p.validade || (iso ? validadePadraoIso(iso) : ''),
+                    }))
+                  }
+                />
+                <DateBrInput label="Validade" valueIso={form.validade} onChangeIso={(iso) => setForm((p) => ({ ...p, validade: iso }))} />
+                <div>
+                  <label className="erp-label">Status</label>
+                  <select
+                    className="erp-select mt-1 w-full"
+                    value={form.status}
+                    disabled={propostaConvertidaNoModal}
+                    onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}
+                  >
+                    {statusOpcoesProposta.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className="lg:col-span-2 min-w-0">
+                  <label className="erp-label">Cliente</label>
+                  <div className="mt-1 space-y-2">
+                    <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={clienteAvulso}
+                        onChange={(e) => {
+                          const avulso = e.target.checked;
+                          setClienteAvulso(avulso);
+                          if (avulso) {
+                            setForm((p) => ({ ...p, cliente_id: null }));
+                            setSelectedCliente(null);
+                          }
+                        }}
+                      />
+                      Cliente avulso (sem cadastro)
+                    </label>
+                    {clienteAvulso ? (
+                      <div className="space-y-2">
+                        <input
+                          className="erp-input w-full"
+                          placeholder="Nome do cliente avulso"
+                          value={form.cliente_avulso_nome}
+                          onChange={(e) => setForm((p) => ({ ...p, cliente_avulso_nome: e.target.value }))}
+                        />
+                        <div>
+                          <label className="text-xs text-muted-foreground">UF destino (para regra fiscal)</label>
+                          <select
+                            className="erp-select mt-1 w-full"
+                            value={form.uf_destino_avulso}
+                            onChange={(e) => setForm((p) => ({ ...p, uf_destino_avulso: e.target.value }))}
+                          >
+                            <option value="">Selecione</option>
+                            {UFS.map((u) => (
+                              <option key={u} value={u}>
+                                {u}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    ) : (
+                      <ClienteComercialField
+                        valueId={form.cliente_id}
+                        selectedCliente={selectedCliente}
+                        onSelect={(c) => {
+                          setForm((p) => ({ ...p, cliente_id: c.id }));
+                          setSelectedCliente(c);
+                        }}
+                        onClear={() => {
+                          setForm((p) => ({ ...p, cliente_id: null }));
+                          setSelectedCliente(null);
+                        }}
+                      />
+                    )}
                   </div>
                 </div>
-              ) : (
-                <select className="erp-select" value={form.cliente_id ?? ''} onChange={e => setForm(p => ({...p,cliente_id:e.target.value ? +e.target.value : null}))}>
-                  <option value="">Selecione um cliente</option>
-                  {clientes.map((cliente) => (
-                    <option key={cliente.id} value={cliente.id}>
-                      {cliente.razao_social}
-                    </option>
-                  ))}
-                </select>
-              )}
-              {clientesError ? <p className="text-xs text-destructive">{clientesError}</p> : null}
+                <div className="min-w-0 lg:max-w-xs">
+                  <label className="erp-label">Vendedor</label>
+                  <VendedorComercialField
+                    valueId={form.vendedor_id}
+                    selectedVendedor={selectedVendedor}
+                    selectedColaborador={selectedColaboradorVendedor}
+                    onSelect={(vendedorId, colab) => {
+                      setForm((p) => ({ ...p, vendedor_id: vendedorId }));
+                      setSelectedColaboradorVendedor(colab);
+                      setSelectedVendedor({ id: vendedorId, nome: colab.nome, codigo: colab.codigo, ativo: true });
+                    }}
+                    onClear={() => {
+                      setForm((p) => ({ ...p, vendedor_id: null }));
+                      setSelectedVendedor(null);
+                      setSelectedColaboradorVendedor(null);
+                    }}
+                  />
+                </div>
+              </div>
+
+              {empresas.length > 1 ? (
+                <div>
+                  <label className="erp-label">Empresa emitente</label>
+                  <select
+                    className="erp-select mt-1 w-full max-w-xl"
+                    value={form.empresa_emitente_id ?? ''}
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, empresa_emitente_id: e.target.value ? Number(e.target.value) : null }))
+                    }
+                  >
+                    <option value="">Selecione matriz ou filial</option>
+                    {empresas.map((em) => (
+                      <option key={em.id} value={em.id}>
+                        {em.razao_social}
+                        {em.uf ? ` (${em.uf})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : empresas.length === 1 ? (
+                <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-sm text-muted-foreground max-w-xl">
+                  Emitente: <span className="font-medium text-foreground">{empresas[0].razao_social}</span>
+                  {empresas[0].uf ? ` · UF origem ${empresas[0].uf}` : ''}
+                </div>
+              ) : null}
             </div>
-          </div>
-          <div><label className="erp-label">Vendedor</label><input className="erp-input mt-1" value={form.vendedor} onChange={e => setForm(p => ({...p,vendedor:e.target.value}))} /></div>
-          <div><label className="erp-label">Data</label><input type="date" className="erp-input mt-1" value={form.data} onChange={e => setForm(p => ({...p,data:e.target.value}))} /></div>
-          <div><label className="erp-label">Validade</label><input type="date" className="erp-input mt-1" value={form.validade} onChange={e => setForm(p => ({...p,validade:e.target.value}))} /></div>
-          <div><label className="erp-label">Status</label><select className="erp-select mt-1" value={form.status} onChange={e => setForm(p => ({...p,status:e.target.value}))}><option>Pendente</option><option>Aprovada</option><option>Rejeitada</option></select></div>
-          <div className="md:col-span-2"><label className="erp-label">Condição de pagamento</label><input className="erp-input mt-1" placeholder='Ex.: 30/45 DDL ou à vista' value={form.condicao_pagamento_texto} onChange={e => setForm(p => ({...p,condicao_pagamento_texto:e.target.value}))} /></div>
-          <div><label className="erp-label">Parcelas</label><div className="erp-input mt-1 h-10 flex items-center">{diasPreview ? diasPreview.join(', ') || '—' : 'Condição inválida'}</div></div>
-          <div className="md:col-span-3"><label className="erp-label">Vencimentos previstos</label><div className="erp-input mt-1 min-h-10 h-auto py-2">{vencimentosPreview.length ? vencimentosPreview.join(' | ') : 'Defina data e condição para visualizar vencimentos'}</div></div>
-          {empresas.length > 1 ? (
-            <div className="md:col-span-2">
-              <label className="erp-label">Empresa emitente</label>
-              <select
-                className="erp-select mt-1"
-                value={form.empresa_emitente_id ?? ''}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, empresa_emitente_id: e.target.value ? Number(e.target.value) : null }))
-                }
-              >
-                <option value="">Selecione matriz ou filial</option>
-                {empresas.map((em) => (
-                  <option key={em.id} value={em.id}>
-                    {em.razao_social}
-                    {em.uf ? ` (${em.uf})` : ''}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-muted-foreground mt-1">
-                A UF de origem para a regra fiscal é obtida automaticamente do cadastro desta empresa. Operação: sempre saída.
+          </ComercialModalSection>
+
+          <ComercialModalSection
+            title="Condições comerciais"
+            description="Informe os prazos em dias separados por vírgula. Ex.: 30,45,60."
+          >
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="erp-label">Condição de pagamento</label>
+                <input
+                  className="erp-input mt-1"
+                  placeholder="Ex.: 30, 45, 60 ou à vista"
+                  value={form.condicao_pagamento_texto}
+                  onChange={(e) => setForm((p) => ({ ...p, condicao_pagamento_texto: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="erp-label">Resumo de parcelas</label>
+                <div className="erp-input mt-1 min-h-10 h-auto py-2 flex items-center">
+                  {condicaoPreview.erro ? '—' : condicaoPreview.resumo}
+                </div>
+              </div>
+              <div>
+                <label className="erp-label">Prazo de entrega</label>
+                <input
+                  className="erp-input mt-1"
+                  placeholder="Ex.: 30 dias após aprovação do pedido"
+                  value={form.prazo_entrega_texto}
+                  onChange={(e) => setForm((p) => ({ ...p, prazo_entrega_texto: e.target.value }))}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="erp-label">Vencimentos previstos</label>
+                <div className="mt-1 rounded-md border border-border bg-muted/10 p-3">
+                  <CondicaoPagamentoResumo condicao={form.condicao_pagamento_texto} dataBaseIso={form.data} />
+                </div>
+              </div>
+              <p className="md:col-span-2 text-xs text-muted-foreground">
+                Validade da proposta: {formatDateBr(form.validade) || '—'} · Prazo de entrega:{' '}
+                {(form.prazo_entrega_texto || '').trim() || '—'}
               </p>
             </div>
-          ) : empresas.length === 1 ? (
-            <div className="md:col-span-2 rounded-md border border-border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-              Emitente: <span className="font-medium text-foreground">{empresas[0].razao_social}</span>
-              {empresas[0].uf ? ` · UF origem ${empresas[0].uf}` : ''} · Operação fiscal: saída (automático)
+          </ComercialModalSection>
+
+          <ComercialModalSection title="Fiscal" description="Fonte fiscal operacional da proposta.">
+            <div className="space-y-3">
+              <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
+                <p className="text-xs font-semibold text-foreground">Fonte fiscal</p>
+                <p className="text-sm font-medium mt-1">Cenário Fiscal de Saída</p>
+                <p className="text-[11px] text-muted-foreground mt-1 leading-snug">
+                  Esta proposta usa o Cenário Fiscal de Saída. Regras legadas permanecem apenas para compatibilidade
+                  histórica no backend.
+                </p>
+              </div>
+              {propostaLegadoFiscal ? (
+                <p className="text-[11px] text-amber-800 dark:text-amber-200 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                  Esta proposta foi criada usando regra fiscal legada. O cálculo histórico é preservado; novas edições
+                  seguem o cenário quando salvas pelo fluxo atual.
+                </p>
+              ) : null}
+              {usaCenarioUi && cenariosSaida.length > 0 ? (
+                <div>
+                  <label className="text-xs text-muted-foreground">Cenário aplicado</label>
+                  <select
+                    className="erp-select mt-1 w-full max-w-md"
+                    value={form.cenario_fiscal_saida_id ?? ''}
+                    onChange={(e) =>
+                      setForm((p) => ({
+                        ...p,
+                        cenario_fiscal_saida_id: e.target.value ? Number(e.target.value) : null,
+                      }))
+                    }
+                  >
+                    <option value="">Cenário padrão de saída</option>
+                    {cenariosSaida.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nome}
+                        {c.padrao ? ' (padrão)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {cenarioSelecionado ? (
+                    <p className="text-[10px] text-muted-foreground mt-1">Selecionado: {cenarioSelecionado.nome}</p>
+                  ) : (
+                    <p className="text-[10px] text-muted-foreground mt-1">Será usado o cenário padrão do sistema.</p>
+                  )}
+                </div>
+              ) : null}
+              {resolveUfOrigemEmitente() && resolveUfDestino() ? (
+                <p className="text-[11px] text-muted-foreground">
+                  UF origem {resolveUfOrigemEmitente()} → UF destino {resolveUfDestino()} · Operação: saída
+                </p>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">Defina emitente e cliente (ou UF avulsa) para o contexto fiscal.</p>
+              )}
             </div>
+          </ComercialModalSection>
+
+          {editing?.id && usaCenarioUi && !USE_CENARIO_FISCAL_SAIDA_FOR_PROPOSTAS ? (
+            <HomologacaoFiscalPropostaPanel
+              propostaId={editing.id}
+              homologacaoStatus={homologacaoStatus}
+              homologacaoObservacao={homologacaoObservacao}
+              homologacaoEm={homologacaoEm}
+              cenariosSaida={cenariosSaida}
+              onPropostaFiscalAtualizada={(patch) => {
+                setHomologacaoStatus(patch.homologacao_fiscal_status);
+                setHomologacaoObservacao(patch.homologacao_fiscal_observacao ?? '');
+                setHomologacaoEm(patch.homologacao_fiscal_em ?? null);
+                setForm((p) => ({
+                  ...p,
+                  usar_cenario_fiscal_saida: patch.usar_cenario_fiscal_saida,
+                  cenario_fiscal_saida_id: patch.cenario_fiscal_saida_id,
+                }));
+              }}
+              onItensRecalculados={refreshItensAposHomologacao}
+            />
           ) : null}
         </div>
 
-        <div className="border border-border rounded-md p-3">
+        <ComercialModalSection title="Itens" className="mb-4">
+        <div className="border border-border rounded-md p-3 -mx-0">
           <div className="flex justify-between items-center mb-3">
             <h3 className="font-medium text-sm">Itens</h3>
             <button onClick={addItem} className="erp-btn-outline erp-btn-sm"><Plus className="h-3 w-3" /> Adicionar Item</button>
@@ -836,20 +1610,33 @@ const Propostas = () => {
               item.margem_resultante >= 15 ? 'erp-badge-success' : item.margem_resultante >= 8 ? 'erp-badge-warning' : 'erp-badge-danger';
             const ufO = resolveUfOrigemEmitente();
             const ufD = resolveUfDestino();
+            const produtoCached = item.produto_id ? produtoCache.get(item.produto_id) : undefined;
             const ncmBusca = item.produto_id
-              ? normalizeNcm(produtos.find((p) => p.id === item.produto_id)?.ncm || '')
+              ? normalizeNcm(produtoCached?.ncm || '')
               : normalizeNcm(item.ncm_avulso || '');
+            const cmpKey = String(item.id);
+            const cmp = comparativoFiscal[cmpKey];
+            const podeComparar =
+              ncmFiscalDigitsValid(ncmBusca) && ufO.length === 2 && ufD.length === 2;
             let msgRegra = '';
-            if (!item.produto_id && !ncmFiscalDigitsValid(item.ncm_avulso || '')) {
+            const itemAvulso = item.item_avulso ?? inferItemAvulso(item);
+            if (itemAvulso && !ncmFiscalDigitsValid(item.ncm_avulso || '')) {
               msgRegra =
                 'Item avulso sem NCM (8 dígitos): tributos de saída zerados. Informe o NCM para buscar a Regra Fiscal ou vincule um produto cadastrado.';
             } else if (ufO.length !== 2 || ufD.length !== 2) {
               msgRegra = 'Defina empresa emitente com UF, cliente com UF ou UF destino (cliente avulso) para localizar a regra fiscal.';
-            } else if (!item.regra_fiscal_id) {
+            } else if (item.regra_fiscal_origem === 'NAO_ENCONTRADA' || (!item.regra_fiscal_id && !item.regra_fiscal_saida_id)) {
               msgRegra =
                 'Não encontramos regra fiscal para este NCM com UF origem/destino e operação saída. Cadastre a regra em Regras fiscais ou revise o NCM.';
             } else {
-              msgRegra = `Regra fiscal aplicada (id ${item.regra_fiscal_id}).`;
+              const origemLabel = labelOrigemRegraFiscal(item.regra_fiscal_origem);
+              const idRef =
+                item.regra_fiscal_origem === 'CENARIO_SAIDA'
+                  ? item.regra_fiscal_saida_id
+                  : item.regra_fiscal_id;
+              msgRegra = origemLabel
+                ? `${origemLabel}${idRef != null ? ` (id ${idRef})` : ''}.`
+                : `Regra fiscal aplicada (id ${item.regra_fiscal_id ?? item.regra_fiscal_saida_id}).`;
             }
             return (
               <div key={item.id} className="mb-4 rounded-md border border-border p-3 space-y-4">
@@ -859,13 +1646,21 @@ const Propostas = () => {
                     <label className="flex items-center gap-2 text-xs text-muted-foreground">
                       <input
                         type="checkbox"
-                        checked={!item.produto_id}
+                        checked={itemAvulso}
                         onChange={(e) =>
                           updateItem(
                             idx,
                             e.target.checked
-                              ? { produto_id: null }
-                              : { produto_id: produtos[0]?.id ?? null, descricao_avulsa: '', ncm_avulso: '' },
+                              ? {
+                                  item_avulso: true,
+                                  produto_id: null,
+                                  produto_nome: '',
+                                }
+                              : {
+                                  item_avulso: false,
+                                  descricao_avulsa: '',
+                                  ncm_avulso: '',
+                                },
                           )
                         }
                       />
@@ -876,7 +1671,7 @@ const Propostas = () => {
                     <X className="h-4 w-4" />
                   </button>
                 </div>
-                {!item.produto_id ? (
+                {itemAvulso ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-w-3xl">
                     <div>
                       <label className="text-xs text-muted-foreground">Descrição (item avulso)</label>
@@ -898,88 +1693,90 @@ const Propostas = () => {
                     </div>
                   </div>
                 ) : (
-                  <select
-                    className="erp-input h-8 text-sm max-w-xl"
-                    value={item.produto_id ?? ''}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      updateItem(idx, { produto_id: v ? +v : null, descricao_avulsa: '', ncm_avulso: '' });
-                    }}
-                  >
-                    <option value="">Selecione o produto</option>
-                    {produtos.map((pr) => (
-                      <option key={pr.id} value={pr.id}>
-                        {pr.codigo_completo ? `${pr.codigo_completo} — ` : ''}
-                        {pr.descricao}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="w-full min-w-0">
+                    <ProdutoComercialField
+                      compact
+                      valueId={item.produto_id}
+                      selectedProduto={produtoCached ?? null}
+                      onSelect={(pr) => {
+                        mergeProdutoCache(pr);
+                        const unidades = unidadesNegociacaoProduto(pr);
+                        updateItem(idx, {
+                          produto_id: pr.id,
+                          produto_nome: pr.descricao,
+                          descricao_avulsa: '',
+                          ncm_avulso: '',
+                          unidade_negociada: unidades[0] || item.unidade_negociada,
+                        });
+                      }}
+                      onClear={() => {
+                        updateItem(idx, { produto_id: null, produto_nome: '', descricao_avulsa: '', ncm_avulso: '' });
+                      }}
+                    />
+                  </div>
                 )}
 
-                <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+                <ItemComercialMetricasGrid>
                   <div>
                     <label className="text-xs text-muted-foreground">Unidade negociada</label>
-                    <select
-                      className={numericClass.replace('text-right', 'text-left')}
+                    <UnitSelect
                       value={item.unidade_negociada || ''}
-                      onChange={(e) => updateItem(idx, { unidade_negociada: e.target.value.toUpperCase() })}
-                    >
-                      <option value="">Selecione</option>
-                      {(() => {
-                        const p = produtos.find((pr) => pr.id === item.produto_id);
-                        const op = p ? unidadesNegociacaoProduto(p) : todasUnidadesPadrao();
-                        return op.map((u) => (
-                          <option key={u} value={u}>
-                            {u}
-                          </option>
-                        ));
+                      className={`${numericClass.replace('text-right', 'text-left')} min-w-[160px] w-full`}
+                      options={(() => {
+                        const p = item.produto_id ? produtoCache.get(item.produto_id) : undefined;
+                        return p ? unidadesNegociacaoProduto(p) : todasUnidadesPadrao();
                       })()}
-                    </select>
+                      onChange={(value) => updateItem(idx, { unidade_negociada: value })}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-muted-foreground">Quantidade negociada</label>
-                    <input
-                      type="number"
-                      inputMode="decimal"
+                    <QuantityInput
+                      value={Number(inputNumberValue(item.quantidade_negociada ?? item.quantidade, 1))}
                       className={numericClass}
-                      value={item.quantidade_negociada ?? item.quantidade}
-                      onChange={(e) => updateItem(idx, { quantidade_negociada: +e.target.value || 0 })}
+                      onChange={(value) => updateItem(idx, { quantidade_negociada: value || 0 })}
                     />
                   </div>
                   <div>
                     <label className="text-xs text-muted-foreground">{labelPrecoPorUnidade(item.unidade_negociada)}</label>
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      step="0.0001"
+                    <MoneyInput
+                      value={Number(inputNumberValue(item.preco_por_unidade_negociada ?? item.preco_final))}
                       className={numericClass}
-                      value={item.preco_por_unidade_negociada ?? item.preco_final}
-                      onChange={(e) => updateItem(idx, { preco_por_unidade_negociada: +e.target.value || 0 })}
+                      step="0.0001"
+                      onChange={(value) => updateItem(idx, { preco_por_unidade_negociada: value || 0 })}
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-muted-foreground">Desc. (R$)</label>
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      step="0.01"
+                    <label className="text-xs text-muted-foreground">Desconto (R$)</label>
+                    <DiscountInput
+                      value={Number(inputNumberValue(item.desconto))}
                       className={numericClass}
-                      value={item.desconto}
-                      onChange={(e) => updateItem(idx, { desconto: +e.target.value || 0 })}
+                      onChange={(value) => updateItem(idx, { desconto: value || 0 })}
                     />
                   </div>
                   <div>
                     <label className="text-xs text-muted-foreground">Valor total</label>
-                    <div className={`${numericClass} flex items-center justify-end`}>R$ {(((item.quantidade_negociada ?? item.quantidade) || 0) * ((item.preco_por_unidade_negociada ?? item.preco_final) || 0)).toFixed(2)}</div>
+                    <ReadonlyCalculatedField
+                      className={`${numericClass} flex items-center justify-end`}
+                      value={formatMoneyBr(
+                        toNumber(item.quantidade_negociada ?? item.quantidade) *
+                          toNumber(item.preco_por_unidade_negociada ?? item.preco_final),
+                      )}
+                    />
                   </div>
-                </div>
+                </ItemComercialMetricasGrid>
                 <p className="text-xs text-muted-foreground">{previewConversaoItem(item)}</p>
                 {equivalentesPreco(item).length ? (
                   <p className="text-xs text-muted-foreground">{equivalentesPreco(item).join(' | ')}</p>
                 ) : null}
 
-                <div className="rounded-md border border-border bg-muted/10 p-3 space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bloco 1 — Custo de entrada</p>
+                <details className="rounded-md border border-border bg-muted/10 group">
+                  <summary className="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground select-none">
+                    Custos e rentabilidade
+                  </summary>
+                  <div className="p-3 pt-0 space-y-3">
+                <div className="space-y-2">
+                  <p className="text-[11px] font-medium text-muted-foreground">Custo de entrada</p>
                   <div className="grid grid-cols-2 md:grid-cols-6 gap-2 items-end">
                     <div>
                       <label className="text-xs text-muted-foreground">Custo do produto</label>
@@ -988,7 +1785,7 @@ const Propostas = () => {
                         inputMode="decimal"
                         step="0.01"
                         className={numericClass}
-                        value={item.custo_utilizado}
+                        value={inputNumberValue(item.custo_utilizado)}
                         onChange={(e) => updateItem(idx, { custo_utilizado: +e.target.value || 0 })}
                       />
                     </div>
@@ -999,7 +1796,7 @@ const Propostas = () => {
                         inputMode="decimal"
                         step="0.01"
                         className={numericClass}
-                        value={item.ipi_entrada_percentual ?? 0}
+                        value={inputNumberValue(item.ipi_entrada_percentual)}
                         onChange={(e) => updateItem(idx, { ipi_entrada_percentual: +e.target.value || 0 })}
                       />
                     </div>
@@ -1010,7 +1807,7 @@ const Propostas = () => {
                         inputMode="decimal"
                         step="0.01"
                         className={numericClass}
-                        value={item.st_custo}
+                        value={inputNumberValue(item.st_custo)}
                         onChange={(e) => updateItem(idx, { st_custo: +e.target.value || 0 })}
                       />
                     </div>
@@ -1021,7 +1818,7 @@ const Propostas = () => {
                         inputMode="decimal"
                         step="0.01"
                         className={numericClass}
-                        value={item.frete}
+                        value={inputNumberValue(item.frete)}
                         onChange={(e) => updateItem(idx, { frete: +e.target.value || 0 })}
                       />
                     </div>
@@ -1032,7 +1829,7 @@ const Propostas = () => {
                         inputMode="decimal"
                         step="0.01"
                         className={numericClass}
-                        value={item.despesas}
+                        value={inputNumberValue(item.despesas)}
                         onChange={(e) => updateItem(idx, { despesas: +e.target.value || 0 })}
                       />
                     </div>
@@ -1043,7 +1840,7 @@ const Propostas = () => {
                         inputMode="decimal"
                         step="0.01"
                         className={numericClass}
-                        value={item.outros_impostos_custo}
+                        value={inputNumberValue(item.outros_impostos_custo)}
                         onChange={(e) => updateItem(idx, { outros_impostos_custo: +e.target.value || 0 })}
                       />
                     </div>
@@ -1055,23 +1852,27 @@ const Propostas = () => {
                         step="0.01"
                         className={numericClass}
                         title="Compatível com propostas antigas: usado só se IPI % = 0"
-                        value={item.ipi_custo}
+                        value={inputNumberValue(item.ipi_custo)}
                         onChange={(e) => updateItem(idx, { ipi_custo: +e.target.value || 0 })}
                       />
                     </div>
                     <div className="md:col-span-2">
                       <label className="text-xs text-muted-foreground">IPI entrada calculado (R$)</label>
-                      <div className="erp-input h-8 text-sm flex items-center">R$ {ipiEntradaVal.toFixed(2)}</div>
+                      <div className="erp-input h-8 text-sm flex items-center">{formatMoneyBr(ipiEntradaVal)}</div>
                     </div>
                     <div className="md:col-span-2">
                       <label className="text-xs text-muted-foreground font-medium">Custo carregado</label>
-                      <div className="erp-input h-8 text-sm flex items-center font-medium">R$ {item.custo_final.toFixed(2)}</div>
+                      <div className="erp-input h-8 text-sm flex items-center font-medium">{formatMoneyBr(item.custo_final)}</div>
                     </div>
                   </div>
                 </div>
 
-                <div className="rounded-md border border-border bg-muted/10 p-3 space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bloco 2 — Tributos e despesas da venda</p>
+                <details className="rounded-md border border-border bg-muted/10 group">
+                  <summary className="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground select-none">
+                    Fiscal aplicado
+                  </summary>
+                  <div className="p-3 pt-0 space-y-2">
+                  <p className="text-[11px] font-medium text-muted-foreground">Tributos e despesas da venda</p>
                   <p className="text-[11px] font-medium text-muted-foreground">Da Regra Fiscal (automático)</p>
                   <p className="text-[11px] text-muted-foreground">
                     ICMS, PIS, COFINS e IPI de saída vêm da regra cadastrada (NCM {ncmBusca || '—'} + UF origem {ufO || '—'} + UF destino{' '}
@@ -1080,22 +1881,95 @@ const Propostas = () => {
                   <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
                     <div>
                       <label className="text-xs text-muted-foreground">ICMS saída %</label>
-                      <div className="erp-input h-8 text-sm flex items-center bg-muted/40">{(item.icms_saida_percentual ?? 0).toFixed(2)}</div>
+                      <div className="erp-input h-8 text-sm flex items-center bg-muted/40">{formatPercent(item.icms_saida_percentual)}</div>
                     </div>
                     <div>
                       <label className="text-xs text-muted-foreground">PIS %</label>
-                      <div className="erp-input h-8 text-sm flex items-center bg-muted/40">{(item.pis_saida_percentual ?? 0).toFixed(2)}</div>
+                      <div className="erp-input h-8 text-sm flex items-center bg-muted/40">{formatPercent(item.pis_saida_percentual)}</div>
                     </div>
                     <div>
                       <label className="text-xs text-muted-foreground">COFINS %</label>
-                      <div className="erp-input h-8 text-sm flex items-center bg-muted/40">{(item.cofins_saida_percentual ?? 0).toFixed(2)}</div>
+                      <div className="erp-input h-8 text-sm flex items-center bg-muted/40">{formatPercent(item.cofins_saida_percentual)}</div>
                     </div>
                     <div>
                       <label className="text-xs text-muted-foreground">IPI saída %</label>
-                      <div className="erp-input h-8 text-sm flex items-center bg-muted/40">{(item.ipi_saida_percentual ?? 0).toFixed(2)}</div>
+                      <div className="erp-input h-8 text-sm flex items-center bg-muted/40">{formatPercent(item.ipi_saida_percentual)}</div>
                     </div>
-                    <div className="md:col-span-2 text-[11px] text-muted-foreground flex items-end leading-snug">{msgRegra}</div>
+                    <div className="md:col-span-2 text-[11px] text-muted-foreground flex flex-col justify-end leading-snug gap-0.5">
+                      <span>{msgRegra}</span>
+                      {item.regra_fiscal_origem === 'CENARIO_SAIDA' && item.pis_cofins_base_deduz_icms ? (
+                        <span className="text-[10px] text-amber-700 dark:text-amber-400">
+                          PIS/COFINS com base deduzida do ICMS
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
+                  <div className="md:col-span-6 space-y-2 border-t border-border/60 pt-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        className="erp-btn-ghost erp-btn-sm h-7 text-xs"
+                        disabled={!podeComparar || cmp === 'loading'}
+                        onClick={() => void runComparativoFiscal(item)}
+                      >
+                        {cmp === 'loading' ? 'Comparando…' : 'Comparar fiscal'}
+                      </button>
+                      <span className="text-[10px] text-muted-foreground">
+                        Comparativo legado × cenário (homologação — não altera o cálculo da proposta)
+                      </span>
+                    </div>
+                    {cmp === 'error' ? (
+                      <p className="text-[11px] text-muted-foreground">
+                        Não foi possível comparar regras fiscais agora.
+                      </p>
+                    ) : null}
+                    {cmp && cmp !== 'loading' && cmp !== 'error' ? (
+                      <div className="rounded border border-border/80 bg-background/80 p-2 space-y-1.5 text-[11px]">
+                        <p className={`font-semibold ${classeStatusComparativo(cmp.status)}`}>
+                          Legado × Cenário: {labelStatusComparativo(cmp.status)}
+                        </p>
+                        {cmp.status === 'CENARIO_NAO_ENCONTRADO' ? (
+                          <p className="text-muted-foreground leading-snug">
+                            Cenário fiscal de saída ainda não possui regra para este item. A proposta continua usando a
+                            regra legada.
+                          </p>
+                        ) : null}
+                        {cmp.legado.encontrado ? (
+                          <p className="text-muted-foreground">
+                            Legado: regra #{cmp.legado.regra_id}
+                            {cmp.legado.cfop ? ` · CFOP ${cmp.legado.cfop}` : ''}
+                            {cmp.legado.aliquota_icms ? ` · ICMS ${cmp.legado.aliquota_icms}%` : ''}
+                          </p>
+                        ) : (
+                          <p className="text-muted-foreground">Legado: não encontrado</p>
+                        )}
+                        {cmp.cenario.encontrado ? (
+                          <p className="text-muted-foreground">
+                            Cenário: regra #{cmp.cenario.regra_id}
+                            {cmp.cenario.cfop ? ` · CFOP ${cmp.cenario.cfop}` : ''}
+                            {cmp.cenario.aliquota_icms ? ` · ICMS ${cmp.cenario.aliquota_icms}%` : ''}
+                          </p>
+                        ) : (
+                          <p className="text-muted-foreground">Cenário: não encontrado</p>
+                        )}
+                        {cmp.divergencias.length > 0 ? (
+                          <ul className="list-disc pl-4 space-y-0.5 text-muted-foreground">
+                            {cmp.divergencias.map((d) => (
+                              <li key={d.campo}>
+                                {d.label}: legado {d.legado} · cenário {d.cenario}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                        {cmp.mensagens.length > 0 ? (
+                          <p className="text-[10px] text-muted-foreground/90">{cmp.mensagens.join(' ')}</p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                  </div>
+                </details>
+
                   <p className="text-[11px] font-medium text-muted-foreground pt-1">Camada gerencial (estimativa de margem — não vem da Regra Fiscal)</p>
                   <div className="grid grid-cols-2 md:grid-cols-6 gap-2 items-end">
                     <div>
@@ -1105,7 +1979,7 @@ const Propostas = () => {
                         inputMode="decimal"
                         step="0.01"
                         className={numericClass}
-                        value={item.irpj_estimado_percentual ?? 0}
+                        value={inputNumberValue(item.irpj_estimado_percentual)}
                         onChange={(e) => updateItem(idx, { irpj_estimado_percentual: +e.target.value || 0 })}
                       />
                     </div>
@@ -1116,7 +1990,7 @@ const Propostas = () => {
                         inputMode="decimal"
                         step="0.01"
                         className={numericClass}
-                        value={item.csll_estimada_percentual ?? 0}
+                        value={inputNumberValue(item.csll_estimada_percentual)}
                         onChange={(e) => updateItem(idx, { csll_estimada_percentual: +e.target.value || 0 })}
                       />
                     </div>
@@ -1127,7 +2001,7 @@ const Propostas = () => {
                         inputMode="decimal"
                         step="0.01"
                         className={numericClass}
-                        value={item.comissao_percentual ?? 0}
+                        value={inputNumberValue(item.comissao_percentual)}
                         onChange={(e) => updateItem(idx, { comissao_percentual: +e.target.value || 0 })}
                       />
                     </div>
@@ -1138,7 +2012,7 @@ const Propostas = () => {
                         inputMode="decimal"
                         step="0.01"
                         className={numericClass}
-                        value={item.frete_saida ?? 0}
+                        value={inputNumberValue(item.frete_saida)}
                         onChange={(e) => updateItem(idx, { frete_saida: +e.target.value || 0 })}
                       />
                     </div>
@@ -1149,23 +2023,22 @@ const Propostas = () => {
                         inputMode="decimal"
                         step="0.01"
                         className={numericClass}
-                        value={item.outras_despesas_saida ?? 0}
+                        value={inputNumberValue(item.outras_despesas_saida)}
                         onChange={(e) => updateItem(idx, { outras_despesas_saida: +e.target.value || 0 })}
                       />
                     </div>
                     <div>
                       <label className="text-xs text-muted-foreground">% carga tributária + gerencial</label>
-                      <div className="erp-input h-8 text-sm flex items-center">{pctSaida.toFixed(2)}%</div>
+                      <div className="erp-input h-8 text-sm flex items-center">{formatPercent(pctSaida)}</div>
                     </div>
                   </div>
-                </div>
 
-                <div className="rounded-md border border-border bg-muted/10 p-3 space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bloco 3 — Resultado</p>
+                <div className="space-y-2">
+                  <p className="text-[11px] font-medium text-muted-foreground">Resultado do item</p>
                   <div className="grid grid-cols-2 md:grid-cols-6 gap-2 items-end">
                     <div>
                       <label className="text-xs text-muted-foreground">Preço base (custo ÷ 0,60)</label>
-                      <div className="erp-input h-8 text-sm flex items-center font-medium">R$ {item.preco_sugerido.toFixed(2)}</div>
+                      <div className="erp-input h-8 text-sm flex items-center font-medium">{formatMoneyBr(item.preco_sugerido)}</div>
                     </div>
                     <div>
                       <label className="text-xs text-muted-foreground">Modo preço</label>
@@ -1186,22 +2059,22 @@ const Propostas = () => {
                         step="0.01"
                         disabled={item.modo_preco !== 'manual'}
                         className={numericClass}
-                        value={item.preco_final}
+                        value={inputNumberValue(item.preco_final)}
                         onChange={(e) => updateItem(idx, { preco_final: +e.target.value || 0 })}
                       />
                     </div>
                     <div>
                       <label className="text-xs text-muted-foreground">Carga da venda (R$)</label>
-                      <div className="erp-input h-8 text-sm flex items-center">R$ {valCarga.toFixed(2)}</div>
+                      <div className="erp-input h-8 text-sm flex items-center">{formatMoneyBr(valCarga)}</div>
                     </div>
                     <div>
                       <label className="text-xs text-muted-foreground">Lucro líquido estimado</label>
-                      <div className="erp-input h-8 text-sm flex items-center">R$ {item.lucro_resultante.toFixed(2)}</div>
+                      <div className="erp-input h-8 text-sm flex items-center">{formatMoneyBr(item.lucro_resultante)}</div>
                     </div>
                     <div>
                       <label className="text-xs text-muted-foreground">Margem líquida estimada</label>
                       <div className="erp-input h-8 text-sm flex items-center gap-2">
-                        <span>{item.margem_resultante.toFixed(2)}%</span>
+                        <span>{formatPercent(item.margem_resultante)}</span>
                         <span className={margemBadge}>
                           {item.margem_resultante >= 15 ? 'OK' : item.margem_resultante >= 8 ? 'Atenção' : 'Risco'}
                         </span>
@@ -1209,35 +2082,41 @@ const Propostas = () => {
                     </div>
                   </div>
                 </div>
+                  </div>
+                </details>
               </div>
             );
           })}
-          <div className="text-right mt-3 pt-3 border-t border-border font-bold">Total da proposta: R$ {total.toFixed(2)}</div>
+        </div>
+        </ComercialModalSection>
+
+        <ComercialModalSection title="Totais" className="mb-4">
+          <div className="text-right text-2xl font-bold text-foreground">Total da proposta: {formatMoneyBr(total)}</div>
           <div className="mt-4 grid grid-cols-1 md:grid-cols-5 gap-3">
             <div className="rounded-md border border-border bg-muted/20 p-3">
               <p className="text-xs text-muted-foreground">Custo total</p>
-              <p className="text-lg font-semibold">R$ {custoTotal.toFixed(2)}</p>
+              <p className="text-lg font-semibold">{formatMoneyBr(custoTotal)}</p>
             </div>
             <div className="rounded-md border border-border bg-muted/20 p-3">
               <p className="text-xs text-muted-foreground">Receita total</p>
-              <p className="text-lg font-semibold">R$ {receitaTotal.toFixed(2)}</p>
+              <p className="text-lg font-semibold">{formatMoneyBr(receitaTotal)}</p>
             </div>
             <div className="rounded-md border border-border bg-muted/20 p-3">
               <p className="text-xs text-muted-foreground">Lucro total</p>
-              <p className="text-lg font-semibold">R$ {lucroTotal.toFixed(2)}</p>
+              <p className="text-lg font-semibold">{formatMoneyBr(lucroTotal)}</p>
             </div>
             <div className="rounded-md border border-border bg-muted/20 p-3">
               <p className="text-xs text-muted-foreground">Margem média</p>
               <div className="mt-1">
-                <span className={margemBadgeClass}>{margemMedia.toFixed(2)}%</span>
+                <span className={margemBadgeClass}>{formatPercent(margemMedia)}</span>
               </div>
             </div>
             <div className="rounded-md border border-border bg-muted/20 p-3">
               <p className="text-xs text-muted-foreground">Quantidade total</p>
-              <p className="text-lg font-semibold">{quantidadeTotalItens.toFixed(3)}</p>
+              <p className="text-lg font-semibold">{formatDecimal(quantidadeTotalItens, 3)}</p>
             </div>
           </div>
-        </div>
+        </ComercialModalSection>
 
         {referenciaFrete && (
           <div className="mt-4 rounded-md border border-border bg-muted/20 p-3">
@@ -1254,7 +2133,7 @@ const Propostas = () => {
                 <div className="font-medium">
                   {referenciaFrete.referencia_historica?.frete_medio_observado == null
                     ? '—'
-                    : `R$ ${referenciaFrete.referencia_historica.frete_medio_observado.toFixed(2)}`}
+                    : formatMoneyBr(referenciaFrete.referencia_historica.frete_medio_observado)}
                 </div>
               </div>
               <div>
@@ -1262,7 +2141,7 @@ const Propostas = () => {
                 <div className="font-medium">
                   {referenciaFrete.referencia_historica?.peso_frete_sobre_faturamento == null
                     ? '—'
-                    : `${(referenciaFrete.referencia_historica.peso_frete_sobre_faturamento).toFixed(2)}%`}
+                    : formatPercent(referenciaFrete.referencia_historica.peso_frete_sobre_faturamento)}
                 </div>
               </div>
               <div>
@@ -1316,7 +2195,7 @@ const Propostas = () => {
                   <div className="font-medium">
                     {referenciaCustoCompra.referencia_historica?.custo_medio_observado == null
                       ? '—'
-                      : `R$ ${referenciaCustoCompra.referencia_historica.custo_medio_observado.toFixed(2)}`}
+                      : formatMoneyBr(referenciaCustoCompra.referencia_historica.custo_medio_observado)}
                   </div>
                 </div>
                 <div>
@@ -1324,7 +2203,7 @@ const Propostas = () => {
                   <div className="font-medium">
                     {referenciaCustoCompra.referencia_historica?.ultimo_custo_observado == null
                       ? '—'
-                      : `R$ ${referenciaCustoCompra.referencia_historica.ultimo_custo_observado.toFixed(2)}`}
+                      : formatMoneyBr(referenciaCustoCompra.referencia_historica.ultimo_custo_observado)}
                   </div>
                 </div>
                 <div>
@@ -1345,8 +2224,69 @@ const Propostas = () => {
           )}
         </div>
 
-        <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
+        {editing?.id ? (
+          <div className="mt-6 rounded-md border border-border bg-muted/30 p-4">
+            <p className="text-sm font-medium">Pedido de venda</p>
+            {propostaTemPedidoGerado(editing) ? (
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <span className="erp-badge-success">Pedido de venda gerado</span>
+                <span className="text-sm text-muted-foreground">
+                  {editing.pedido_venda_numero || (editing.pedido_venda_id ? `PV #${editing.pedido_venda_id}` : '—')}
+                </span>
+                {editing.pedido_venda_id ? (
+                  <button
+                    type="button"
+                    className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1"
+                    onClick={() => abrirPedidoDaProposta(editing)}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Abrir pedido de venda
+                  </button>
+                ) : null}
+              </div>
+            ) : editing.pode_converter_em_pedido ? (
+              <div className="mt-2 space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  Esta ação cria um Pedido de Venda a partir da proposta aprovada. O faturamento/NF-e será tratado em
+                  etapa posterior.
+                </p>
+                <button type="button" className="erp-btn-primary inline-flex items-center gap-2" onClick={convertirEmPedido}>
+                  <ShoppingCart className="h-4 w-4" />
+                  Converter em pedido
+                </button>
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Vincule cliente cadastrado e produtos em todos os itens para habilitar a conversão em pedido de venda.
+              </p>
+            )}
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap justify-end gap-2 mt-6 pt-4 border-t border-border">
           <button onClick={() => setModalOpen(false)} className="erp-btn-outline">Cancelar</button>
+          {editing?.id ? (
+            <>
+              <button
+                type="button"
+                className="erp-btn-outline inline-flex items-center gap-1"
+                onClick={() => void handleVisualizarPdf(editing)}
+              >
+                <FileDown className="h-4 w-4" />
+                Visualizar PDF
+              </button>
+              <button
+                type="button"
+                className="erp-btn-outline inline-flex items-center gap-1"
+                onClick={() => void handleBaixarPdf(editing)}
+              >
+                <Download className="h-4 w-4" />
+                Baixar PDF
+              </button>
+            </>
+          ) : (
+            <span className="text-xs text-muted-foreground self-center mr-2">{MSG_SALVE_ANTES_PDF}</span>
+          )}
           <button onClick={handleSave} className="erp-btn-primary">Salvar</button>
         </div>
       </Modal>
@@ -1394,25 +2334,24 @@ const Propostas = () => {
 
                 {!clienteResolvido ? (
                   <>
-                    <div className="rounded-md border border-border p-3">
-                      <p className="mb-2 text-sm font-medium">Vincular cliente existente</p>
-                      <div className="flex gap-2">
-                        <select
-                          className="erp-select"
-                          value={wizardClienteId ?? ''}
-                          onChange={(e) => setWizardClienteId(e.target.value ? Number(e.target.value) : null)}
-                        >
-                          <option value="">Selecione um cliente</option>
-                          {clientes.map((cliente) => (
-                            <option key={cliente.id} value={cliente.id}>
-                              {cliente.razao_social}
-                            </option>
-                          ))}
-                        </select>
-                        <button type="button" className="erp-btn-outline" disabled={!wizardClienteId || wizardLoading} onClick={vincularClienteExistente}>
-                          Vincular
-                        </button>
-                      </div>
+                    <div className="rounded-md border border-border p-3 space-y-2">
+                      <p className="text-sm font-medium">Vincular cliente existente</p>
+                      <ClienteComercialField
+                        valueId={wizardClienteId}
+                        selectedCliente={
+                          wizardClienteId && selectedCliente?.id === wizardClienteId
+                            ? selectedCliente
+                            : wizardClienteId
+                              ? clienteStubForDisplay(wizardClienteId, wizardProposta?.cliente_nome || '')
+                              : null
+                        }
+                        disabled={wizardLoading}
+                        onSelect={(c) => setWizardClienteId(c.id)}
+                        onClear={() => setWizardClienteId(null)}
+                      />
+                      <button type="button" className="erp-btn-outline" disabled={!wizardClienteId || wizardLoading} onClick={vincularClienteExistente}>
+                        Vincular
+                      </button>
                     </div>
 
                     <div className="rounded-md border border-border p-3">
@@ -1465,24 +2404,24 @@ const Propostas = () => {
                       </div>
                     </div>
                     {!item.produto_id ? (
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                        <select
-                          className="erp-select"
-                          value={itemLinks[item.id] ?? ''}
-                          onChange={(e) => setItemLinks((prev) => ({ ...prev, [item.id]: e.target.value ? Number(e.target.value) : null }))}
-                        >
-                          <option value="">Selecionar produto existente</option>
-                          {produtos.map((produto) => (
-                            <option key={produto.id} value={produto.id}>
-                              {produto.codigo_completo} - {produto.descricao}
-                            </option>
-                          ))}
-                        </select>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <div className="md:col-span-2">
+                          <ProdutoComercialField
+                            compact
+                            valueId={itemLinks[item.id] ?? null}
+                            selectedProduto={
+                              itemLinks[item.id] ? produtoCache.get(itemLinks[item.id]!) ?? null : null
+                            }
+                            disabled={wizardLoading}
+                            onSelect={(pr) => {
+                              mergeProdutoCache(pr);
+                              setItemLinks((prev) => ({ ...prev, [item.id]: pr.id }));
+                            }}
+                            onClear={() => setItemLinks((prev) => ({ ...prev, [item.id]: null }))}
+                          />
+                        </div>
                         <button type="button" className="erp-btn-outline" disabled={!itemLinks[item.id] || wizardLoading} onClick={() => vincularItemExistente(item.id)}>
                           Vincular produto
-                        </button>
-                        <button type="button" className="erp-btn-ghost" disabled={wizardLoading} onClick={loadProdutos}>
-                          <RefreshCw className="h-4 w-4" /> Atualizar produtos
                         </button>
                         <input
                           className="erp-input md:col-span-2"
@@ -1497,7 +2436,6 @@ const Propostas = () => {
                     ) : null}
                   </div>
                 ))}
-                {produtosError ? <p className="text-xs text-destructive">{produtosError}</p> : null}
               </div>
             ) : null}
 

@@ -4,6 +4,10 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from nexus_erp.list_mixins import AutocompleteOrPaginationMixin
+from nexus_erp.view_mixins import FriendlyDestroyMixin
+from nexus_erp.pagination import NexusPageNumberPagination
+
 from apps.produtos.models import (
     FamiliaProduto,
     FamiliaProdutoPolegadaPermitida,
@@ -188,7 +192,8 @@ class FamiliaProdutoSchedulePermitidoViewSet(viewsets.ModelViewSet):
     serializer_class = FamiliaProdutoSchedulePermitidoSerializer
 
 
-class ProdutoViewSet(viewsets.ModelViewSet):
+class ProdutoViewSet(FriendlyDestroyMixin, AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
+    destroy_entity_label = 'produto'
     queryset = Produto.objects.select_related(
         'familia',
         'familia__ncm_padrao',
@@ -198,6 +203,7 @@ class ProdutoViewSet(viewsets.ModelViewSet):
         'polegada_secundaria_ref',
     ).all()
     serializer_class = ProdutoSerializer
+    pagination_class = NexusPageNumberPagination
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -220,18 +226,38 @@ class ProdutoViewSet(viewsets.ModelViewSet):
                 | Q(familia__descricao_base__icontains=search)
                 | Q(familia__ncm_padrao__codigo__icontains=search)
             )
+        if (self.request.query_params.get('sem_ncm') or '').strip() in ('1', 'true', 'True'):
+            qs = qs.filter(Q(ncm='') | Q(ncm__isnull=True))
+        material = (self.request.query_params.get('material') or '').strip()
+        if material:
+            qs = qs.filter(material__icontains=material)
         return qs
 
     def list(self, request, *args, **kwargs):
+        limit = (request.query_params.get('limit') or '').strip()
+        page = (request.query_params.get('page') or '').strip()
+        if limit and not page:
+            qs = self.filter_queryset(self.get_queryset())
+            term = (request.query_params.get('search') or '').strip()
+            try:
+                lim = max(1, min(int(limit), 100))
+            except (TypeError, ValueError):
+                lim = 20
+            rows = list(qs)
+            if term:
+                rows.sort(
+                    key=lambda o: (
+                        _produto_busca_rank(term, o),
+                        natural_codigo_completo_key(o.codigo_completo or ''),
+                    ),
+                )
+            else:
+                rows.sort(key=lambda o: natural_codigo_completo_key(o.codigo_completo or ''))
+            rows = rows[:lim]
+            return Response(self.get_serializer(rows, many=True).data)
+
         qs = self.filter_queryset(self.get_queryset())
         term = (request.query_params.get('search') or '').strip()
-        limit_raw = request.query_params.get('limit')
-        lim = None
-        if limit_raw:
-            try:
-                lim = max(1, min(int(limit_raw), 100))
-            except (TypeError, ValueError):
-                lim = None
         rows = list(qs)
         if term:
             rows.sort(
@@ -242,9 +268,12 @@ class ProdutoViewSet(viewsets.ModelViewSet):
             )
         else:
             rows.sort(key=lambda o: natural_codigo_completo_key(o.codigo_completo or ''))
-        if lim is not None:
-            rows = rows[:lim]
-        return Response(self.get_serializer(rows, many=True).data)
+        page_rows = self.paginate_queryset(rows)
+        if page_rows is not None:
+            serializer = self.get_serializer(page_rows, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(rows, many=True)
+        return Response(serializer.data)
 
     @action(detail=False, methods=['post'], url_path='preview-codigo')
     def preview_codigo(self, request):

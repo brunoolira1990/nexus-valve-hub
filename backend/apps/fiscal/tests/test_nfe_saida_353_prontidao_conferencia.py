@@ -86,9 +86,12 @@ class NFeSaida353ProntidaoConferenciaTests(TestCase):
     def test_lista_inclui_status_conferencia(self):
         nf = self._nf_rascunho()
         lista = self.client.get('/api/nf-saidas/').json()
-        row = next(x for x in lista if x['id'] == nf.pk)
-        self.assertEqual(row['status_conferencia'], 'EM_CONFERENCIA')
-        self.assertTrue(row.get('status_conferencia_display'))
+        rows = lista if isinstance(lista, list) else lista.get('results', [])
+        row = next(x for x in rows if x['id'] == nf.pk)
+        self.assertIn('listagem_resumo', row)
+        det = self.client.get(f'/api/nf-saidas/{nf.pk}/').json()
+        self.assertEqual(det['status_conferencia'], 'EM_CONFERENCIA')
+        self.assertTrue(det.get('status_conferencia_display'))
 
     def test_validar_com_pendencias_marca_com_pendencias(self):
         nf = self._nf_rascunho()
@@ -213,6 +216,6 @@ class NFeSaida353ProntidaoConferenciaTests(TestCase):
     def test_conferencia_payload_permite_marcar_apos_validar(self):
         nf = self._nf_rascunho()
         validar_conferencia_nfe(nf, usuario=self.user)
-        conf = montar_conferencia_nfe_saida(nf)
+        conf = montar_conferencia_nfe_saida(nf, modo='completo', incluir_checklist=True)
         self.assertTrue(conf['permissoes']['pode_marcar_pronta'])
         self.assertEqual(conf['prontidao']['status_conferencia'], 'CONFERIDA')

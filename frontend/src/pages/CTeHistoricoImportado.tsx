@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, FileCheck, FileUp, Info, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { DfeClassificacaoBadges } from '@/components/fiscal/DfeClassificacaoBadges';
+import { CTeHistoricoDetalheModal } from '@/components/fiscal/CTeHistoricoDetalheModal';
 import { PageHeader } from '@/components/PageHeader';
-import { Modal } from '@/components/Modal';
 import { apiErrorMessage } from '@/services/api/config';
 import { empresasService } from '@/services/api/empresas';
 import { transportadorasService } from '@/services/api/transportadoras';
@@ -10,12 +11,19 @@ import type { Empresa, Transportadora } from '@/types';
 import {
   cteHistoricoImportadoService,
   type CTeHistImportResultado,
-  type CTeHistoricoDetalhe,
   type CTeHistoricoList,
   type CTeResumoGerencial,
   type CTeSerieGerencial,
   type CTeTransportadoraGerencial,
 } from '@/services/api/cteHistoricoImportado';
+import { usePaginatedList } from '@/hooks/usePaginatedList';
+import { PaginationControls } from '@/components/list/PaginationControls';
+import { EmptyState, ErrorState } from '@/components/list/ListStates';
+import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
+import { StatusBadge } from '@/components/nexus/StatusBadge';
+import { NexusCard } from '@/components/nexus/NexusCard';
+import { TableSkeleton } from '@/components/nexus/Skeleton';
+import { chaveNfeResumida } from '@/lib/chaveNfeResumida';
 
 type PeriodoTipo = 'mes' | 'trimestre' | 'intervalo';
 
@@ -58,12 +66,6 @@ function buildQuery(
   return qs;
 }
 
-const truncarChave = (chave: string) => {
-  if (!chave) return '—';
-  if (chave.length <= 16) return chave;
-  return `${chave.slice(0, 8)}...${chave.slice(-8)}`;
-};
-
 const toNum = (v: unknown): number => {
   if (v === null || v === undefined || v === '') return 0;
   const n = Number(String(v).replace(',', '.'));
@@ -72,20 +74,32 @@ const toNum = (v: unknown): number => {
 
 const fmtMoney = (v: unknown): string => `R$ ${toNum(v).toFixed(2)}`;
 
-const badgeStatusClass = (statusVisual: string) => {
-  const s = (statusVisual || '').toLowerCase();
-  if (s.includes('cancel')) return 'bg-destructive/10 text-destructive';
-  if (s.includes('pend') || s.includes('erro')) return 'bg-amber-500/10 text-amber-700 dark:text-amber-400';
-  return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400';
-};
+function statusCteHistorico(statusVisual: string): string {
+  const s = (statusVisual || 'autorizado').toLowerCase();
+  if (s.includes('cancel')) return 'cancelado';
+  if (s.includes('pend')) return 'pendente';
+  if (s.includes('erro')) return 'erro_processamento';
+  if (s.includes('import')) return 'importado';
+  return 'processado';
+}
+
+function labelAcaoConferencia(status?: string): string {
+  const s = status || 'IMPORTADO';
+  if (s === 'CONFERIDO') return 'Revisar conferência';
+  if (s === 'DIVERGENTE') return 'Revisar divergência';
+  return 'Conferir';
+}
+
+function mostraAcaoConferir(status?: string): boolean {
+  const s = status || 'IMPORTADO';
+  return ['IMPORTADO', 'PROCESSADO', 'PREPARADO', 'CONFERIDO', 'DIVERGENTE'].includes(s);
+}
 
 const CTeHistoricoImportado = () => {
-  const [search, setSearch] = useState('');
   const [busy, setBusy] = useState(false);
   const [ultimoResultado, setUltimoResultado] = useState<CTeHistImportResultado | null>(null);
   const [erroUpload, setErroUpload] = useState<string | null>(null);
 
-  const [lista, setLista] = useState<CTeHistoricoList[]>([]);
   const [loadingHistorico, setLoadingHistorico] = useState(false);
   const [erroHistorico, setErroHistorico] = useState<string | null>(null);
 
@@ -109,13 +123,70 @@ const CTeHistoricoImportado = () => {
   const [tipoServicoFiltro, setTipoServicoFiltro] = useState('');
   const [serieTipo, setSerieTipo] = useState<'mensal' | 'trimestral'>('mensal');
 
+  const periodFilters = useMemo(() => {
+    const qs = buildQuery(
+      periodoTipo,
+      mes,
+      anoTri,
+      numTri,
+      di,
+      df,
+      transportadoraId,
+      empresaTomadoraId,
+      incluirCancelados,
+      modalFiltro,
+      tipoServicoFiltro,
+    );
+    const out: Record<string, string> = {};
+    qs.forEach((value, key) => {
+      out[key] = value;
+    });
+    return out;
+  }, [
+    periodoTipo,
+    mes,
+    anoTri,
+    numTri,
+    di,
+    df,
+    transportadoraId,
+    empresaTomadoraId,
+    incluirCancelados,
+    modalFiltro,
+    tipoServicoFiltro,
+  ]);
+
+  const {
+    items,
+    count,
+    page,
+    pageSize,
+    totalPages,
+    search,
+    setSearch,
+    setPage,
+    setPageSize,
+    setFilters,
+    loading: loadingList,
+    error: loadError,
+    reload: reloadList,
+  } = usePaginatedList<CTeHistoricoList>({
+    fetchPage: cteHistoricoImportadoService.listPaginated,
+    initialFilters: periodFilters,
+  });
+
+  useEffect(() => {
+    setFilters(periodFilters);
+  }, [periodFilters, setFilters]);
+
   const [resumoGerencial, setResumoGerencial] = useState<CTeResumoGerencial | null>(null);
   const [transportadorasGerencial, setTransportadorasGerencial] = useState<CTeTransportadoraGerencial[]>([]);
   const [serieGerencial, setSerieGerencial] = useState<CTeSerieGerencial[]>([]);
 
-  const [detalhe, setDetalhe] = useState<CTeHistoricoDetalhe | null>(null);
+  const [detalheId, setDetalheId] = useState<number | null>(null);
+  const [detalheRow, setDetalheRow] = useState<CTeHistoricoList | null>(null);
   const [modalDetalhe, setModalDetalhe] = useState(false);
-  const [abaModal, setAbaModal] = useState<'resumo' | 'participantes' | 'totais' | 'docs' | 'eventos' | 'tecnico'>('resumo');
+  const [abaInicialConferencia, setAbaInicialConferencia] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -129,7 +200,7 @@ const CTeHistoricoImportado = () => {
     })();
   }, []);
 
-  const loadHistorico = useCallback(async () => {
+  const loadGerencial = useCallback(async () => {
     setErroHistorico(null);
     setLoadingHistorico(true);
     try {
@@ -146,20 +217,17 @@ const CTeHistoricoImportado = () => {
         modalFiltro,
         tipoServicoFiltro,
       );
-      const [listaData, resumo, porTransportadora, serieMensal, serieTrimestral] = await Promise.all([
-        cteHistoricoImportadoService.list(qs),
+      const [resumo, porTransportadora, serieMensal, serieTrimestral] = await Promise.all([
         cteHistoricoImportadoService.resumoGerencial(qs),
         cteHistoricoImportadoService.transportadorasGerencial(qs),
         cteHistoricoImportadoService.serieMensalGerencial(qs),
         cteHistoricoImportadoService.serieTrimestralGerencial(qs),
       ]);
-      setLista(listaData);
       setResumoGerencial(resumo);
       setTransportadorasGerencial(porTransportadora.transportadoras);
       setSerieGerencial(serieTipo === 'mensal' ? serieMensal.meses : serieTrimestral.trimestres);
     } catch (e) {
       setErroHistorico(apiErrorMessage(e));
-      setLista([]);
       setResumoGerencial(null);
       setTransportadorasGerencial([]);
       setSerieGerencial([]);
@@ -169,8 +237,13 @@ const CTeHistoricoImportado = () => {
   }, [periodoTipo, mes, anoTri, numTri, di, df, transportadoraId, empresaTomadoraId, incluirCancelados, modalFiltro, tipoServicoFiltro, serieTipo]);
 
   useEffect(() => {
-    void loadHistorico();
-  }, [loadHistorico]);
+    void loadGerencial();
+  }, [loadGerencial]);
+
+  const refreshHistorico = useCallback(() => {
+    void reloadList();
+    void loadGerencial();
+  }, [reloadList, loadGerencial]);
 
   const onFiles = async (files: FileList | null) => {
     if (!files?.length) return;
@@ -179,7 +252,7 @@ const CTeHistoricoImportado = () => {
     try {
       const res = await cteHistoricoImportadoService.importarXmls(Array.from(files));
       setUltimoResultado(res);
-      await loadHistorico();
+      await refreshHistorico();
     } catch (e) {
       setErroUpload(apiErrorMessage(e));
     } finally {
@@ -187,24 +260,12 @@ const CTeHistoricoImportado = () => {
     }
   };
 
-  const abrirDetalhe = async (id: number) => {
-    try {
-      const d = await cteHistoricoImportadoService.getById(id);
-      setDetalhe(d);
-      setAbaModal('resumo');
-      setModalDetalhe(true);
-    } catch (e) {
-      setErroUpload(apiErrorMessage(e));
-    }
+  const abrirDetalhe = (row: CTeHistoricoList, irConferencia = false) => {
+    setDetalheId(row.id);
+    setDetalheRow(row);
+    setAbaInicialConferencia(irConferencia);
+    setModalDetalhe(true);
   };
-
-  const filtrados = lista.filter(
-    (r) =>
-      r.numero.includes(search) ||
-      r.chave_acesso.includes(search) ||
-      (r.transportadora_nome || '').toLowerCase().includes(search.toLowerCase()) ||
-      (r.empresa_tomadora_nome || '').toLowerCase().includes(search.toLowerCase()),
-  );
 
   const arquivosProcessados = useMemo(() => {
     if (!ultimoResultado) return [];
@@ -217,7 +278,12 @@ const CTeHistoricoImportado = () => {
 
   return (
     <div>
-      <PageHeader title="CT-e histórico (importação XML)" searchValue={search} onSearch={setSearch} />
+      <PageHeader
+        title="Base de CT-e Importada"
+        description="XMLs de transporte usados para apuração, análise logística, frete médio e precificação. Não geram contas a pagar ou vínculo operacional automaticamente."
+        searchValue={search}
+        onSearch={setSearch}
+      />
 
       <p className="text-sm text-muted-foreground mb-4">
         <Link to="/cte-entrada" className="text-primary underline-offset-4 hover:underline">
@@ -225,7 +291,7 @@ const CTeHistoricoImportado = () => {
         </Link>
       </p>
 
-      <div className="erp-card p-6 mb-6 border-dashed border-2 border-border">
+      <NexusCard className="p-6 mb-6 border-dashed border-2 border-border">
         <div className="flex flex-col md:flex-row md:items-center gap-4">
           <div className="flex-1">
             <h2 className="font-semibold text-foreground flex items-center gap-2">
@@ -233,7 +299,7 @@ const CTeHistoricoImportado = () => {
               Importar XMLs de CT-e
             </h2>
             <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-              Base histórica fiscal/logística/gerencial. Não gera rateio operacional, contas a pagar, contábil nem vínculo obrigatório com NF-e operacional.
+              Alimenta apuração, custo logístico, frete médio e precificação. Sem efeito operacional automático (contas a pagar, expedição, vínculo obrigatório com NF-e).
             </p>
           </div>
           <label className="erp-btn-primary cursor-pointer shrink-0">
@@ -257,7 +323,7 @@ const CTeHistoricoImportado = () => {
             <span>{erroUpload}</span>
           </div>
         )}
-      </div>
+      </NexusCard>
 
       {ultimoResultado && (
         <div className="erp-card p-6 mb-8">
@@ -315,7 +381,7 @@ const CTeHistoricoImportado = () => {
         </div>
       )}
 
-      <div className="erp-card p-4 mb-4">
+      <NexusCard className="p-4 mb-4">
         <p className="text-sm text-muted-foreground flex gap-2 items-start">
           <Info className="h-4 w-4 shrink-0 mt-0.5" />
           <span>
@@ -401,13 +467,13 @@ const CTeHistoricoImportado = () => {
             <input type="checkbox" checked={incluirCancelados} onChange={(e) => setIncluirCancelados(e.target.checked)} />
             Incluir cancelados
           </label>
-          <button type="button" className="erp-btn-primary mt-5" onClick={() => void loadHistorico()} disabled={loadingHistorico}>
+          <button type="button" className="erp-btn-primary mt-5" onClick={() => void refreshHistorico()} disabled={loadingHistorico || loadingList}>
             <RefreshCw className={`h-4 w-4 mr-1 inline ${loadingHistorico ? 'animate-spin' : ''}`} />
             Atualizar
           </button>
         </div>
         {erroHistorico && <p className="text-sm text-destructive mt-3">{erroHistorico}</p>}
-      </div>
+      </NexusCard>
 
       {resumoGerencial && (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
@@ -416,7 +482,7 @@ const CTeHistoricoImportado = () => {
           <div className="erp-card p-3"><div className="text-xs text-muted-foreground">Frete médio</div><div className="font-semibold">{fmtMoney(resumoGerencial.totais.frete_medio)}</div></div>
           <div className="erp-card p-3"><div className="text-xs text-muted-foreground">Peso sobre faturamento</div><div className="font-semibold">{(resumoGerencial.indicadores_gerenciais.peso_frete_sobre_faturamento_pct ?? 0).toFixed(2)}%</div></div>
           <div className="erp-card p-3"><div className="text-xs text-muted-foreground">Peso sobre compras</div><div className="font-semibold">{(resumoGerencial.indicadores_gerenciais.peso_frete_sobre_compras_pct ?? 0).toFixed(2)}%</div></div>
-          <div className="erp-card p-3"><div className="text-xs text-muted-foreground">Faturamento base</div><div className="font-semibold">{fmtMoney(resumoGerencial.base_comparativa.faturamento)}</div></div>
+          <div className="erp-card p-3"><div className="text-xs text-muted-foreground">Faturamento base para comparação</div><div className="font-semibold">{fmtMoney(resumoGerencial.base_comparativa.faturamento)}</div><p className="text-[10px] text-muted-foreground mt-0.5">Peso do frete sobre faturamento (base importada).</p></div>
         </div>
       )}
 
@@ -477,12 +543,16 @@ const CTeHistoricoImportado = () => {
         </div>
       </div>
 
-      <div className="erp-card overflow-x-auto">
-        <table className="erp-table">
+      {loadError ? <ErrorState onRetry={() => void reloadList()} /> : null}
+      {loadingList ? <TableSkeleton rows={6} cols={8} /> : null}
+      {!loadingList && !loadError ? (
+        <DataTableShell>
+          <DataTable>
           <thead>
             <tr>
               <th>Emissão</th>
               <th>CT-e</th>
+              <th>Chave</th>
               <th>Transportadora</th>
               <th>Tomador</th>
               <th>Valor</th>
@@ -491,14 +561,19 @@ const CTeHistoricoImportado = () => {
             </tr>
           </thead>
           <tbody>
-            {filtrados.map((r) => (
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan={8}>
+                  <EmptyState message="Nenhum XML de CT-e encontrado." />
+                </td>
+              </tr>
+            ) : (
+            items.map((r) => (
               <tr key={r.id}>
                 <td className="whitespace-nowrap text-sm">{r.dh_emissao?.slice(0, 16).replace('T', ' ')}</td>
-                <td className="font-medium">
-                  {r.numero}/{r.serie}
-                  <div className="font-mono text-[11px] text-muted-foreground" title={r.chave_acesso}>
-                    {truncarChave(r.chave_acesso)}
-                  </div>
+                <td className="font-medium">{r.numero}/{r.serie}</td>
+                <td className="font-mono text-xs" title={r.chave_acesso}>
+                  {chaveNfeResumida(r.chave_acesso)}
                 </td>
                 <td className="max-w-[220px] truncate" title={r.transportadora_nome}>
                   {r.transportadora_nome || '—'}
@@ -508,216 +583,61 @@ const CTeHistoricoImportado = () => {
                 </td>
                 <td>{fmtMoney(r.valor_total_servico)}</td>
                 <td>
-                  <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${badgeStatusClass(r.status_visual)}`}>
-                    {r.status_visual || 'autorizado'}
-                  </span>
+                  <div className="flex flex-col gap-1 items-start">
+                    <StatusBadge status={statusCteHistorico(r.status_visual)} />
+                    {r.status_conferencia ? (
+                      <StatusBadge status={r.status_conferencia.toLowerCase()} />
+                    ) : null}
+                    <DfeClassificacaoBadges classificacao={r.classificacao_dfe} max={4} />
+                  </div>
                 </td>
                 <td>
-                  <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => void abrirDetalhe(r.id)}>
-                    Detalhes
-                  </button>
+                  <div className="flex flex-col gap-1">
+                    {mostraAcaoConferir(r.status_conferencia) ? (
+                      <button
+                        type="button"
+                        className="erp-btn-primary erp-btn-sm"
+                        onClick={() => abrirDetalhe(r, true)}
+                      >
+                        {labelAcaoConferencia(r.status_conferencia)}
+                      </button>
+                    ) : null}
+                    <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => abrirDetalhe(r)}>
+                      Detalhes
+                    </button>
+                  </div>
                 </td>
               </tr>
-            ))}
+            ))
+            )}
           </tbody>
-        </table>
-        {filtrados.length === 0 && !loadingHistorico && (
-          <p className="p-6 text-sm text-muted-foreground text-center">Nenhum CT-e no período/filtragem selecionados.</p>
-        )}
-      </div>
+          </DataTable>
+        {count > 0 ? (
+          <PaginationControls
+            page={page}
+            pageSize={pageSize}
+            count={count}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        ) : null}
+        </DataTableShell>
+        ) : null}
 
-      <Modal isOpen={modalDetalhe} onClose={() => setModalDetalhe(false)} title="CT-e importado (histórico)" size="xl">
-        {detalhe && (
-          <div className="space-y-4 text-sm max-h-[70vh] overflow-y-auto">
-            <div className="flex flex-wrap gap-2 border-b border-border pb-3">
-              <button type="button" className={`erp-btn-sm ${abaModal === 'resumo' ? 'erp-btn-primary' : 'erp-btn-outline'}`} onClick={() => setAbaModal('resumo')}>
-                Resumo
-              </button>
-              <button type="button" className={`erp-btn-sm ${abaModal === 'participantes' ? 'erp-btn-primary' : 'erp-btn-outline'}`} onClick={() => setAbaModal('participantes')}>
-                Participantes
-              </button>
-              <button type="button" className={`erp-btn-sm ${abaModal === 'totais' ? 'erp-btn-primary' : 'erp-btn-outline'}`} onClick={() => setAbaModal('totais')}>
-                Totais / tributos
-              </button>
-              <button type="button" className={`erp-btn-sm ${abaModal === 'docs' ? 'erp-btn-primary' : 'erp-btn-outline'}`} onClick={() => setAbaModal('docs')}>
-                Documentos vinculados
-              </button>
-              <button type="button" className={`erp-btn-sm ${abaModal === 'eventos' ? 'erp-btn-primary' : 'erp-btn-outline'}`} onClick={() => setAbaModal('eventos')}>
-                Eventos
-              </button>
-              <button type="button" className={`erp-btn-sm ${abaModal === 'tecnico' ? 'erp-btn-primary' : 'erp-btn-outline'}`} onClick={() => setAbaModal('tecnico')}>
-                Técnico / XML
-              </button>
-            </div>
-
-            {abaModal === 'resumo' && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div>
-                  <span className="text-muted-foreground">Chave</span>
-                  <p className="font-mono text-xs break-all">{detalhe.chave_acesso}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">CT-e</span>
-                  <p>
-                    {detalhe.numero}/{detalhe.serie} — mod {detalhe.modelo || '—'}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Emissão</span>
-                  <p>{detalhe.dh_emissao?.replace('T', ' ').slice(0, 19) || '—'}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Modal / serviço</span>
-                  <p>
-                    {detalhe.modal || '—'} / {detalhe.tipo_servico || '—'}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Origem → destino</span>
-                  <p>
-                    {detalhe.municipio_inicio || '—'}-{detalhe.uf_inicio || '—'} → {detalhe.municipio_fim || '—'}-{detalhe.uf_fim || '—'}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Valor total / a receber</span>
-                  <p>
-                    {fmtMoney(detalhe.valor_total_servico)} / {fmtMoney(detalhe.valor_receber)}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Status efetivo</span>
-                  <p>
-                    {detalhe.status_visual || detalhe.status_documento || '—'} — {detalhe.cstat_visual || detalhe.cstat || '—'}{' '}
-                    {detalhe.motivo_visual ? `— ${detalhe.motivo_visual}` : ''}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Protocolo</span>
-                  <p>{detalhe.protocolo || '—'}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Empresa identificada</span>
-                  <p>
-                    {detalhe.empresa_nome || '—'} {detalhe.papel_empresa ? `(${detalhe.papel_empresa})` : ''}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {abaModal === 'participantes' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="erp-card p-3">
-                  <div className="text-xs text-muted-foreground">Emitente (transportadora)</div>
-                  <div className="text-sm font-medium">{detalhe.transportadora_nome || (detalhe.emit_json?.xNome as string) || '—'}</div>
-                  <pre className="mt-2 text-xs overflow-x-auto max-h-40 bg-muted rounded-md p-2">{JSON.stringify(detalhe.emit_json, null, 2)}</pre>
-                </div>
-                <div className="erp-card p-3">
-                  <div className="text-xs text-muted-foreground">Tomador</div>
-                  <div className="text-sm font-medium">{detalhe.empresa_tomadora_nome || '—'}</div>
-                  <pre className="mt-2 text-xs overflow-x-auto max-h-40 bg-muted rounded-md p-2">{JSON.stringify(detalhe.tomador_json, null, 2)}</pre>
-                </div>
-                <div className="erp-card p-3">
-                  <div className="text-xs text-muted-foreground">Remetente</div>
-                  <div className="text-sm font-medium">{detalhe.fornecedor_remetente_nome || '—'}</div>
-                  <pre className="mt-2 text-xs overflow-x-auto max-h-40 bg-muted rounded-md p-2">{JSON.stringify(detalhe.rem_json, null, 2)}</pre>
-                </div>
-                <div className="erp-card p-3">
-                  <div className="text-xs text-muted-foreground">Destinatário</div>
-                  <pre className="mt-2 text-xs overflow-x-auto max-h-40 bg-muted rounded-md p-2">{JSON.stringify(detalhe.dest_json, null, 2)}</pre>
-                </div>
-                <div className="erp-card p-3">
-                  <div className="text-xs text-muted-foreground">Expedidor</div>
-                  <pre className="mt-2 text-xs overflow-x-auto max-h-40 bg-muted rounded-md p-2">{JSON.stringify(detalhe.exped_json, null, 2)}</pre>
-                </div>
-                <div className="erp-card p-3">
-                  <div className="text-xs text-muted-foreground">Recebedor</div>
-                  <pre className="mt-2 text-xs overflow-x-auto max-h-40 bg-muted rounded-md p-2">{JSON.stringify(detalhe.receb_json, null, 2)}</pre>
-                </div>
-              </div>
-            )}
-
-            {abaModal === 'totais' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="erp-card p-3">
-                  <div className="text-xs text-muted-foreground">Valor total do serviço</div>
-                  <div className="text-lg font-semibold">{fmtMoney(detalhe.valor_total_servico)}</div>
-                </div>
-                <div className="erp-card p-3">
-                  <div className="text-xs text-muted-foreground">Valor a receber</div>
-                  <div className="text-lg font-semibold">{fmtMoney(detalhe.valor_receber)}</div>
-                </div>
-                <div className="erp-card p-3">
-                  <div className="text-xs text-muted-foreground">ICMS</div>
-                  <div className="text-sm font-medium">
-                    Base {fmtMoney(detalhe.icms_base)} | Aliq {toNum(detalhe.icms_aliquota).toFixed(4)}% | Valor {fmtMoney(detalhe.icms_valor)}
-                  </div>
-                </div>
-                <div className="erp-card p-3">
-                  <div className="text-xs text-muted-foreground">Componentes do frete</div>
-                  <pre className="mt-2 text-xs overflow-x-auto max-h-40 bg-muted rounded-md p-2">{JSON.stringify(detalhe.componentes_frete_json, null, 2)}</pre>
-                </div>
-              </div>
-            )}
-
-            {abaModal === 'docs' && (
-              <div className="space-y-3">
-                <div className="erp-card p-3">
-                  <div className="text-xs text-muted-foreground">Chaves de NF-e referenciadas</div>
-                  {(detalhe.chaves_nfe_vinculadas || []).length === 0 ? (
-                    <p className="text-sm text-muted-foreground mt-2">Nenhuma chave de NF-e encontrada no XML.</p>
-                  ) : (
-                    <ul className="mt-2 text-xs font-mono text-muted-foreground space-y-1 max-h-48 overflow-y-auto">
-                      {detalhe.chaves_nfe_vinculadas.map((k) => (
-                        <li key={k} title={k}>
-                          {truncarChave(k)}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {abaModal === 'eventos' && (
-              <div className="space-y-3">
-                <span className="text-muted-foreground font-medium">Eventos ({detalhe.eventos?.length ?? 0})</span>
-                {(!detalhe.eventos || detalhe.eventos.length === 0) && (
-                  <p className="text-sm text-muted-foreground">Nenhum evento foi importado para este CT-e (base pronta para evolução futura).</p>
-                )}
-                {detalhe.eventos?.map((ev) => (
-                  <details key={`evento-${ev.id}`} className="erp-card p-3">
-                    <summary className="cursor-pointer font-medium">
-                      Evento {ev.tipo_evento} — protocolo {ev.protocolo_evento || '—'}
-                    </summary>
-                    <pre className="mt-2 p-3 bg-muted rounded-md text-xs overflow-x-auto max-h-40">{JSON.stringify(ev.evento_json, null, 2)}</pre>
-                  </details>
-                ))}
-              </div>
-            )}
-
-            {abaModal === 'tecnico' && (
-              <div className="space-y-3">
-                <details className="erp-card p-3">
-                  <summary className="cursor-pointer font-medium">totais_json</summary>
-                  <pre className="mt-2 p-3 bg-muted rounded-md text-xs overflow-x-auto max-h-40">{JSON.stringify(detalhe.totais_json, null, 2)}</pre>
-                </details>
-                <details className="erp-card p-3">
-                  <summary className="cursor-pointer font-medium">imposto_json</summary>
-                  <pre className="mt-2 p-3 bg-muted rounded-md text-xs overflow-x-auto max-h-40">{JSON.stringify(detalhe.imposto_json, null, 2)}</pre>
-                </details>
-                <details className="erp-card p-3">
-                  <summary className="cursor-pointer font-medium">prot_json</summary>
-                  <pre className="mt-2 p-3 bg-muted rounded-md text-xs overflow-x-auto max-h-40">{JSON.stringify(detalhe.prot_json, null, 2)}</pre>
-                </details>
-                <details className="erp-card p-3">
-                  <summary className="cursor-pointer font-medium">reforma_e_outros_json</summary>
-                  <pre className="mt-2 p-3 bg-muted rounded-md text-xs overflow-x-auto max-h-40">{JSON.stringify(detalhe.reforma_e_outros_json, null, 2)}</pre>
-                </details>
-              </div>
-            )}
-          </div>
-        )}
-      </Modal>
+      <CTeHistoricoDetalheModal
+        open={modalDetalhe}
+        cteId={detalheId}
+        listRow={detalheRow}
+        abaInicial={abaInicialConferencia ? 'conferencia' : 'resumo'}
+        onClose={() => {
+          setModalDetalhe(false);
+          setDetalheId(null);
+          setDetalheRow(null);
+          setAbaInicialConferencia(false);
+        }}
+        onConferenciaAtualizada={() => void reloadList()}
+      />
     </div>
   );
 };

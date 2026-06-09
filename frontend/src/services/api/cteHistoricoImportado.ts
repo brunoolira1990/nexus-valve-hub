@@ -1,4 +1,6 @@
+import type { ClassificacaoDfe } from '@/components/fiscal/DfeClassificacaoBadges';
 import api from './config';
+import { buildListParams, type ListQueryParams, type PaginatedResponse, unwrapListResults } from '@/lib/apiList';
 
 const base = 'cte-historicos-importados/';
 
@@ -60,6 +62,32 @@ export type CTeHistoricoList = {
   importado: boolean;
   origem_externa: boolean;
   historico: boolean;
+  tp_amb?: string;
+  classificacao_dfe?: ClassificacaoDfe;
+  status_conferencia?: string;
+  apto_operacional?: boolean;
+  conferido_em?: string | null;
+  ignorado_operacionalmente?: boolean;
+};
+
+export type CTeConferenciaResposta = {
+  id: number;
+  status_conferencia: string;
+  apto_operacional: boolean;
+  conferido_em: string | null;
+  conferido_por: string;
+  observacao_conferencia: string;
+  divergencia_motivo: string;
+  classificacao_dfe: ClassificacaoDfe;
+};
+
+export type CTeDocumentoVinculadoResumo = {
+  chave_acesso: string;
+  localizada: boolean;
+  origem: string;
+  origem_label: string;
+  documento_id: number | null;
+  status_encontrada: string;
 };
 
 export type CTeHistoricoDetalhe = CTeHistoricoList & {
@@ -81,6 +109,10 @@ export type CTeHistoricoDetalhe = CTeHistoricoList & {
   prot_json: Record<string, unknown>;
   reforma_e_outros_json: Record<string, unknown>;
   chaves_nfe_vinculadas: string[];
+  observacao_conferencia?: string;
+  divergencia_motivo?: string;
+  checklist_conferencia_json?: Record<string, boolean>;
+  documentos_vinculados_resumo?: CTeDocumentoVinculadoResumo[];
   eventos: {
     id: number;
     chave_acesso: string;
@@ -135,10 +167,15 @@ export type CTeSerieGerencial = {
 };
 
 export const cteHistoricoImportadoService = {
-  list: async (query?: URLSearchParams) => {
-    const q = query?.toString();
-    const url = q ? `${base}?${q}` : base;
-    return (await api.get<CTeHistoricoList[]>(url)).data;
+  listPaginated: async (params?: ListQueryParams) => {
+    const response = await api.get<PaginatedResponse<CTeHistoricoList>>(base, { params: buildListParams(params) });
+    return response.data;
+  },
+  list: async (params?: ListQueryParams) => {
+    const response = await api.get<CTeHistoricoList[] | PaginatedResponse<CTeHistoricoList>>(base, {
+      params: buildListParams(params?.page ? params : { ...params, limit: params?.limit ?? 100 }),
+    });
+    return unwrapListResults(response.data);
   },
   getById: async (id: number) => (await api.get<CTeHistoricoDetalhe>(`${base}${id}/`)).data,
   importarXmls: async (files: File[]) => {
@@ -177,5 +214,19 @@ export const cteHistoricoImportadoService = {
     const url = q ? `${base}serie-trimestral-gerencial/?${q}` : `${base}serie-trimestral-gerencial/`;
     return (await api.get<{ trimestres: CTeSerieGerencial[] }>(url)).data;
   },
+  conferir: async (
+    id: number,
+    payload: {
+      observacao?: string;
+      confirmar_tomador: boolean;
+      confirmar_transportadora: boolean;
+      confirmar_valores: boolean;
+      confirmar_documentos_referenciados: boolean;
+    },
+  ) => (await api.post<CTeConferenciaResposta>(`${base}${id}/conferir/`, payload)).data,
+  marcarDivergente: async (id: number, payload: { motivo: string; observacao?: string }) =>
+    (await api.post<CTeConferenciaResposta>(`${base}${id}/marcar-divergente/`, payload)).data,
+  ignorarOperacional: async (id: number, payload: { motivo: string; observacao?: string }) =>
+    (await api.post<CTeConferenciaResposta>(`${base}${id}/ignorar-operacional/`, payload)).data,
 };
 

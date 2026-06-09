@@ -48,7 +48,7 @@ export function mensagemOrientacaoProntidao(status: StatusConferenciaNFe | undef
     return 'Conferência validada sem pendências bloqueantes. Você pode marcar a NF-e como pronta para emissão.';
   }
   if (st === 'PRONTA_PARA_EMISSAO') {
-    return 'NF-e pronta para emissão futura. Esta fase ainda não transmite para SEFAZ. Próxima etapa futura: transmitir para SEFAZ.';
+    return 'Conferência concluída — pronta para transmitir em homologação quando desejar.';
   }
   return 'Salve os dados complementares e use «Validar conferência» para atualizar o status.';
 }

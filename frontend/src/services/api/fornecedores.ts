@@ -1,17 +1,25 @@
 import api from './config';
 import type { Fornecedor } from '@/types';
+import {
+  buildListParams,
+  type ListQueryParams,
+  type PaginatedResponse,
+  unwrapListResults,
+} from '@/lib/apiList';
 
 const path = 'fornecedores/';
-type ListResponse<T> = T[] | { results?: T[] };
-
-function unwrapList<T>(payload: ListResponse<T>): T[] {
-  if (Array.isArray(payload)) return payload;
-  if (payload && Array.isArray(payload.results)) return payload.results;
-  throw new Error('Resposta inesperada da API.');
-}
 
 export const fornecedoresService = {
-  getAll: async () => unwrapList((await api.get<ListResponse<Fornecedor>>(path)).data),
+  listPaginated: async (params?: ListQueryParams) => {
+    const response = await api.get<PaginatedResponse<Fornecedor>>(path, { params: buildListParams(params) });
+    return response.data;
+  },
+  getAll: async (params?: ListQueryParams) => {
+    const response = await api.get<Fornecedor[] | PaginatedResponse<Fornecedor>>(path, {
+      params: buildListParams(params?.page ? params : { ...params, limit: params?.limit ?? 100 }),
+    });
+    return unwrapListResults(response.data);
+  },
   getById: async (id: number) => (await api.get<Fornecedor>(`${path}${id}/`)).data,
   create: async (data: Omit<Fornecedor, 'id'>) => (await api.post<Fornecedor>(path, data)).data,
   update: async (id: number, data: Partial<Fornecedor>) =>
@@ -20,5 +28,7 @@ export const fornecedoresService = {
     await api.delete(`${path}${id}/`);
   },
   search: async (term: string, limit = 20) =>
-    unwrapList((await api.get<ListResponse<Fornecedor>>(path, { params: { search: term, limit } })).data),
+    unwrapListResults(
+      (await api.get<Fornecedor[] | PaginatedResponse<Fornecedor>>(path, { params: { search: term, limit } })).data,
+    ),
 };

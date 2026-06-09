@@ -12,6 +12,7 @@ from apps.fiscal.nfe_saida_bloqueio import (
     origem_comercial_travada,
     pode_atualizar_impostos_nfe,
 )
+from apps.fiscal.nfe_saida_reforma_calculo import diagnosticar_reforma_calculo
 from apps.fiscal.snapshot_fiscal_helpers import (
     cfop_from_snapshot_fiscal,
     get_cofins_snapshot,
@@ -24,22 +25,27 @@ from apps.fiscal.snapshot_fiscal_helpers import (
     reforma_configurada_no_snapshot,
     status_reforma_item,
 )
+from apps.regras_fiscais.reforma_tributaria_config import normalizar_percentual_reforma
 from apps.fiscal.nfe_saida_conferencia_diagnostico import (
     alertas_fiscal_gerais,
     alertas_fiscal_item,
     diagnostico_reforma_item,
 )
-from apps.fiscal.nfe_saida_prontidao import montar_payload_prontidao, pode_marcar_pronta, pode_validar_conferencia
-from apps.fiscal.validacao_nfe_saida import validar_nfe_saida_para_emissao
+from apps.fiscal.nfe_saida_prontidao import montar_payload_prontidao, pode_validar_conferencia
+from apps.fiscal.nfe_emissao.empresa_emitente import resolver_empresa_emitente_nfe
+from apps.fiscal.nfe_emissao.numeracao import NFeNumeracaoError, obter_config_numeracao
 
 
 def _dec(v) -> Decimal:
     if v is None or v == '':
         return Decimal('0')
+    s = str(v).strip()
+    if ',' in s:
+        return normalizar_percentual_reforma(v)
     try:
-        return Decimal(str(v))
+        return Decimal(s)
     except Exception:
-        return Decimal('0')
+        return normalizar_percentual_reforma(v)
 
 
 def _fmt_dec(v: Decimal, places: int = 2) -> str:
@@ -141,7 +147,10 @@ def _montar_item_conferencia(nf: NFeSaida, item: ItemNFeSaida, idx: int) -> dict
         'fiscal_alertas': alertas_fiscal_item(snap_f, fiscal_atual),
         'reforma_tributaria': reforma,
         'reforma_configurada': reforma_configurada_no_snapshot(snap_f),
-        'reforma_diagnostico': diagnostico_reforma_item(nf, item, snap_f, reforma_raw),
+        'reforma_diagnostico': (
+            diagnosticar_reforma_calculo(reforma_raw, valor_produto=v_prod)
+            or diagnostico_reforma_item(nf, item, snap_f, reforma_raw)
+        ),
     }
 
 
@@ -189,8 +198,12 @@ def _resumo_reforma_geral(itens: list[dict]) -> dict[str, Any]:
             status = 'PENDENTE'
         elif any(i.get('status_reforma') == 'ATENCAO' for i in itens):
             status = 'ATENCAO'
-        else:
+        elif any(i.get('status_reforma') == 'SEM_CALCULO' for i in itens):
+            status = 'ATENCAO'
+        elif all(i.get('status_reforma') == 'OK' for i in itens if i.get('reforma_configurada')):
             status = 'OK'
+        else:
+            status = 'ATENCAO'
     return {
         'status': status,
         'itens_com_reforma': com,
@@ -200,124 +213,363 @@ def _resumo_reforma_geral(itens: list[dict]) -> dict[str, Any]:
     }
 
 
-def montar_conferencia_nfe_saida(nf: NFeSaida) -> dict[str, Any]:
-    nf = (
-        NFeSaida.objects.select_related(
-            'cliente',
-            'transportadora',
-            'pedido_venda',
-            'pedido_venda__empresa_emitente',
-            'faturamento_pedido_venda',
-        )
-        .prefetch_related('itens__produto', 'itens__corrida', 'itens__item_faturamento_pedido')
-        .get(pk=nf.pk)
-    )
-    itens_rows = [
-        _montar_item_conferencia(nf, item, idx)
-        for idx, item in enumerate(nf.itens.all().order_by('pk'), start=1)
-    ]
-    totais_fiscais = _somar_totais_fiscais(itens_rows)
-    soma_produtos = sum((_dec(i['valor_total']) for i in itens_rows), Decimal('0'))
-    pedido = nf.pedido_venda
-    empresa = pedido.empresa_emitente if pedido and pedido.empresa_emitente_id else None
-    checklist = validar_nfe_saida_para_emissao(nf)
+_STATUS_EMISSAO_RETRY = frozenset(
+    {
+        NFeSaida.StatusEmissaoSefaz.ERRO_TRANSMISSAO,
+        NFeSaida.StatusEmissaoSefaz.REJEITADA_HOMOLOGACAO,
+        NFeSaida.StatusEmissaoSefaz.NUMERACAO_RESERVADA,
+        NFeSaida.StatusEmissaoSefaz.XML_GERADO,
+        NFeSaida.StatusEmissaoSefaz.XML_ASSINADO,
+        NFeSaida.StatusEmissaoSefaz.ENVIADA_HOMOLOGACAO,
+        'LOTE_PROCESSADO_SEM_PROTOCOLO',
+        'AGUARDANDO_PROCESSAMENTO',
+    },
+)
 
+
+def _emissao_homolog_iniciada_sem_status(nf: NFeSaida) -> bool:
+    """Emissão registrada no histórico, mas sem status SEFAZ persistido (timeout/interrupção)."""
+    if (nf.status_emissao_sefaz or '').strip():
+        return False
+    from apps.fiscal.models import NFeSaidaEvento
+
+    return NFeSaidaEvento.objects.filter(
+        nfe_saida=nf,
+        tipo_evento=NFeSaidaEvento.TipoEvento.EMISSAO_HOMOLOGACAO_INICIADA,
+    ).exists()
+
+
+def _montar_permissoes_emissao_homolog(
+    nf: NFeSaida,
+    checklist: dict[str, Any] | None,
+    *,
+    itens_count: int,
+) -> dict[str, Any]:
+    pronta = nf.status_conferencia == NFeSaida.StatusConferencia.PRONTA_PARA_EMISSAO
+    nao_autorizada = nf.status_emissao_sefaz != NFeSaida.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO
+    pode_tentar = pronta and nao_autorizada
+    checklist_ok = bool((checklist or {}).get('pode_emitir'))
+    # modo abertura não inclui checklist — marcar pronta já validou na hora
+    if not checklist_ok and checklist is None and pronta and nf.conferencia_marcada_pronta_em:
+        checklist_ok = True
+    pront_payload = montar_payload_prontidao(nf, validacao=checklist)
+    emissao_orfa = _emissao_homolog_iniciada_sem_status(nf)
+    retry_sefaz = (nf.status_emissao_sefaz or '') in _STATUS_EMISSAO_RETRY or emissao_orfa
+    pode_emitir = pode_tentar and (checklist_ok or retry_sefaz)
+    motivo = ''
+    if emissao_orfa and pode_tentar:
+        motivo = (
+            'Emissão em homologação foi iniciada, mas não houve retorno SEFAZ registrado. '
+            'Tente emitir novamente.'
+        )
+    elif pode_tentar and not pode_emitir:
+        motivo = 'Resolva as pendências na aba Validação antes de emitir em homologação.'
+    elif not pronta:
+        motivo = 'Marque a NF-e como pronta para emissão na conferência.'
+    elif not nao_autorizada:
+        motivo = 'NF-e já autorizada em homologação.'
     return {
-        'nfe': {
-            'id': nf.pk,
-            'numero': nf.numero,
-            'status': nf.status,
-            'data': nf.data.isoformat(),
-            'valor_total': float(nf.valor_total),
-            'cliente_id': nf.cliente_id,
-            'cliente_nome': nf.cliente.razao_social,
-            'pedido_venda_id': nf.pedido_venda_id,
-            'pedido_venda_numero': pedido.numero if pedido else '',
-            'faturamento_pedido_venda_id': nf.faturamento_pedido_venda_id,
-            'origem': _origem_label(nf),
-            'modo_atendimento_estoque': nf.modo_atendimento_estoque,
-            'observacao_origem': nf.observacao_origem,
-            'pedido_cliente_numero': nf.pedido_cliente_numero,
-            'pedido_cliente_observacao': nf.pedido_cliente_observacao,
-            'empresa_emitente_nome': empresa.razao_social if empresa else '',
-            'empresa_emitente_id': pedido.empresa_emitente_id if pedido else None,
-            'natureza_operacao': 'Venda de mercadoria',
-            'tipo_operacao': 'SAIDA',
-            'finalidade_emissao': 'NORMAL',
-        },
-        'itens': itens_rows,
-        'totais_comerciais': {
-            'total_produtos': _fmt_dec(soma_produtos),
-            'frete': _fmt_dec(nf.valor_frete),
-            'total_nf': _fmt_dec(nf.valor_total),
-            'divergencia_itens_nf': abs(soma_produtos - _dec(nf.valor_total)) > Decimal('0.02'),
-        },
-        'fiscal_atual': {
-            'por_item': [
-                {
-                    'item_id': i['item_id'],
-                    'descricao': i['descricao'],
-                    'ncm': i['ncm'],
-                    'cfop': i['cfop'],
-                    'fiscal': i['fiscal_atual'],
-                    'alertas': i.get('fiscal_alertas') or [],
-                }
-                for i in itens_rows
-            ],
-            'totais': totais_fiscais,
-            'alertas_gerais': alertas_fiscal_gerais(totais_fiscais),
-        },
-        'reforma_tributaria': {
-            'resumo': _resumo_reforma_geral(itens_rows),
-            'totais': {
-                'valor_cbs': totais_fiscais['valor_cbs'],
-                'valor_ibs_estadual': totais_fiscais['valor_ibs_estadual'],
-                'valor_ibs_municipal': totais_fiscais['valor_ibs_municipal'],
-                'total_ibs_cbs': totais_fiscais['total_ibs_cbs'],
-            },
-            'itens': [
-                {
-                    'item_id': i['item_id'],
-                    'descricao': i['descricao'],
-                    'status': i['status_reforma'],
-                    'dados': i['reforma_tributaria'],
-                    'reforma_configurada': i.get('reforma_configurada'),
-                    'diagnostico': i.get('reforma_diagnostico') or '',
-                }
-                for i in itens_rows
-            ],
-        },
-        'transporte': {
-            'transportadora_id': nf.transportadora_id,
-            'transportadora_nome': nf.transportadora.razao_social if nf.transportadora_id else '',
-            'transportadora_cnpj': nf.transportadora.cnpj if nf.transportadora_id else '',
-            'modalidade_frete': nf.modalidade_frete or '9',
-            'valor_frete': float(nf.valor_frete),
-            'quantidade_volumes': nf.quantidade_volumes,
-            'peso_bruto': float(nf.peso_bruto),
-            'peso_liquido': float(nf.peso_liquido),
-            'especie_volumes': nf.especie_volumes,
-            'marca_volumes': nf.marca_volumes,
-            'numeracao_volumes': nf.numeracao_volumes,
-            'placa_veiculo': nf.placa_veiculo,
-            'uf_veiculo': nf.uf_veiculo,
-        },
-        'observacoes': {
-            'observacoes_nfe': nf.observacoes_nfe,
-            'informacoes_adicionais': nf.informacoes_adicionais,
-            'informacoes_fisco': nf.informacoes_fisco,
-            'observacoes_internas': nf.observacoes_internas,
-            'observacao_origem': nf.observacao_origem,
-        },
-        'checklist': checklist,
-        'prontidao': montar_payload_prontidao(nf),
-        'permissoes': {
-            'origem_comercial_travada': origem_comercial_travada(nf),
-            'itens_comerciais_editaveis': itens_comerciais_editaveis(nf),
-            'dados_complementares_editaveis': dados_complementares_editaveis(nf),
-            'fiscal_editavel': itens_comerciais_editaveis(nf) and not origem_comercial_travada(nf),
-            'pode_atualizar_impostos': pode_atualizar_impostos_nfe(nf, itens_count=len(itens_rows)),
-            'pode_validar_conferencia': pode_validar_conferencia(nf),
-            'pode_marcar_pronta': pode_marcar_pronta(nf, checklist),
-        },
+        'origem_comercial_travada': origem_comercial_travada(nf),
+        'itens_comerciais_editaveis': itens_comerciais_editaveis(nf),
+        'dados_complementares_editaveis': dados_complementares_editaveis(nf),
+        'fiscal_editavel': itens_comerciais_editaveis(nf) and not origem_comercial_travada(nf),
+        'pode_atualizar_impostos': pode_atualizar_impostos_nfe(nf, itens_count=itens_count),
+        'pode_validar_conferencia': pode_validar_conferencia(nf) and nao_autorizada,
+        'pode_marcar_pronta': pront_payload['pode_marcar_pronta'] and nao_autorizada,
+        'pode_tentar_emitir_homologacao': pode_tentar,
+        'pode_emitir_homologacao': pode_emitir,
+        'motivo_emitir_homologacao_bloqueado': motivo,
     }
+
+
+def _ultimo_evento_erro_transmissao(nf: NFeSaida) -> dict[str, Any]:
+    from apps.fiscal.models import NFeSaidaEvento
+
+    evt = (
+        NFeSaidaEvento.objects.filter(
+            nfe_saida=nf,
+            tipo_evento=NFeSaidaEvento.TipoEvento.ERRO_TRANSMISSAO_SEFAZ,
+        )
+        .order_by('-pk')
+        .first()
+    )
+    if not evt:
+        return {}
+    resumo = evt.resumo if isinstance(evt.resumo, dict) else {}
+    return {
+        'etapa_falha': resumo.get('etapa') or '',
+        'mensagem_erro': evt.observacao or resumo.get('erro') or '',
+    }
+
+
+def _montar_emissao_sefaz_payload(nf: NFeSaida) -> dict[str, Any]:
+    numeracao_homolog = None
+    try:
+        empresa = resolver_empresa_emitente_nfe(nf)
+        cfg = obter_config_numeracao(empresa.pk, ambiente='homologacao')
+        numeracao_homolog = {
+            'modelo_documento': cfg.modelo_documento,
+            'serie': cfg.serie,
+            'proximo_numero': cfg.proximo_numero,
+        }
+    except NFeNumeracaoError:
+        numeracao_homolog = None
+
+    emissao_orfa = _emissao_homolog_iniciada_sem_status(nf)
+    return {
+        'ambiente_emissao': nf.ambiente_emissao,
+        'serie_nfe': nf.serie_nfe,
+        'numero_nfe': nf.numero_nfe,
+        'chave_acesso': nf.chave_acesso,
+        'status_emissao_sefaz': nf.status_emissao_sefaz,
+        'emissao_iniciada_pendente': emissao_orfa,
+        'mensagem_emissao_pendente': (
+            'Emissão em homologação foi iniciada, mas ainda não há status SEFAZ registrado. '
+            'Aguarde ou use «Tentar emitir novamente em homologação».'
+            if emissao_orfa
+            else ''
+        ),
+        'protocolo_autorizacao': nf.protocolo_autorizacao,
+        'cstat_autorizacao': nf.cstat_autorizacao,
+        'motivo_autorizacao': nf.motivo_autorizacao,
+        'autorizada_em': nf.autorizada_em.isoformat() if nf.autorizada_em else None,
+        'tem_xml_assinado': bool((nf.xml_assinado or '').strip()),
+        'tem_xml_autorizado': bool((nf.xml_autorizado or '').strip()),
+        'tem_xml_nfe_gerado': bool((nf.xml_nfe_gerado or '').strip()),
+        'tem_xml_envio_lote': bool((nf.xml_envio_lote or '').strip()),
+        'tem_xml_retorno': bool((nf.xml_retorno or nf.xml_retorno_lote or '').strip()),
+        'numeracao_homologacao': numeracao_homolog,
+        'lote': {
+            'cstat': nf.cstat_lote or '',
+            'xmotivo': nf.xmotivo_lote or '',
+            'recibo': nf.recibo_lote or '',
+        },
+        'nfe': {
+            'cstat': nf.cstat_autorizacao or '',
+            'xmotivo': nf.motivo_autorizacao or '',
+            'protocolo': nf.protocolo_autorizacao or '',
+            'dh_recbto': nf.autorizada_em.isoformat() if nf.autorizada_em else '',
+        },
+        **_ultimo_evento_erro_transmissao(nf),
+        **_correcao_serie_homologacao_payload(nf),
+        'autorizada_homologacao': nf.status_emissao_sefaz
+        == NFeSaida.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO,
+        'mensagem_status_homologacao': (
+            'NF-e autorizada em homologação pela SEFAZ. Documento sem valor fiscal de produção.'
+            if nf.status_emissao_sefaz == NFeSaida.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO
+            else ''
+        ),
+    }
+
+
+def _correcao_serie_homologacao_payload(nf: NFeSaida) -> dict[str, Any]:
+    from apps.fiscal.nfe_emissao.corrigir_serie_homologacao import pode_corrigir_serie_homologacao
+
+    pode, motivo = pode_corrigir_serie_homologacao(nf)
+    return {
+        'pode_corrigir_serie_homologacao': pode,
+        'motivo_corrigir_serie_bloqueado': motivo if not pode else '',
+        'cstat_serie_invalida': (nf.cstat_autorizacao or '') == '266',
+    }
+
+
+def _resumo_operacional_nfe(nf: NFeSaida) -> dict[str, Any]:
+    from apps.comercial.services.resumo_atendimento_operacional import (
+        obter_resumo_atendimento_operacional,
+    )
+
+    return obter_resumo_atendimento_operacional(nf, contexto='nfe_saida')
+
+
+def _montar_indicadores_fiscais_conferencia(nf: NFeSaida) -> dict[str, Any]:
+    from apps.fiscal.nfe_operacao_fiscal_indicadores import IND_PRES_OPCOES, montar_indicadores_fiscais_payload
+
+    payload = montar_indicadores_fiscais_payload(nf)
+    payload['ind_pres_opcoes'] = [{'valor': k, 'label': v} for k, v in IND_PRES_OPCOES.items()]
+    return payload
+
+
+def _montar_higienizacao_xml_conferencia(nf: NFeSaida) -> dict[str, Any]:
+    from apps.fiscal.nfe_xml_higienizacao import montar_resumo_higienizacao_xml
+
+    return montar_resumo_higienizacao_xml(nf, None)
+
+
+def montar_conferencia_nfe_saida(
+    nf: NFeSaida,
+    *,
+    modo: str = 'abertura',
+    validacao: dict[str, Any] | None = None,
+    incluir_checklist: bool | None = None,
+    incluir_resumo_operacional: bool = True,
+) -> dict[str, Any]:
+    """
+    Monta payload da conferência NF-e.
+
+    modo='abertura' (padrão): leve — sem checklist completo nem validação pesada.
+    modo='completo': inclui checklist (reutiliza `validacao` quando informada).
+    """
+    from apps.fiscal.nfe_perf import medir_nfe_perf
+    from apps.fiscal.nfe_saida_prontidao import montar_payload_prontidao
+    from apps.fiscal.validacao_nfe_saida import (
+        MODO_VALIDACAO_COMPLETO,
+        MODO_VALIDACAO_LEVE,
+        validar_nfe_saida_para_emissao,
+    )
+
+    modo_norm = (modo or 'abertura').strip().lower()
+    abertura = modo_norm == 'abertura'
+    if incluir_checklist is None:
+        incluir_checklist = not abertura
+
+    with medir_nfe_perf('montar_conferencia', nfe_id=nf.pk, modo=modo_norm) as perf:
+        nf = (
+            NFeSaida.objects.select_related(
+                'cliente',
+                'transportadora',
+                'pedido_venda',
+                'pedido_venda__empresa_emitente',
+                'faturamento_pedido_venda',
+            )
+            .prefetch_related('itens__produto', 'itens__corrida', 'itens__item_faturamento_pedido')
+            .get(pk=nf.pk)
+        )
+        perf.marcar('db_ms')
+        itens_rows = [
+            _montar_item_conferencia(nf, item, idx)
+            for idx, item in enumerate(nf.itens.all().order_by('pk'), start=1)
+        ]
+        totais_fiscais = _somar_totais_fiscais(itens_rows)
+        soma_produtos = sum((_dec(i['valor_total']) for i in itens_rows), Decimal('0'))
+        pedido = nf.pedido_venda
+        empresa = pedido.empresa_emitente if pedido and pedido.empresa_emitente_id else None
+
+        checklist: dict[str, Any] | None = None
+        val = validacao
+        if incluir_checklist:
+            if val is None:
+                val = validar_nfe_saida_para_emissao(
+                    nf,
+                    modo=MODO_VALIDACAO_LEVE if abertura else MODO_VALIDACAO_COMPLETO,
+                )
+            checklist = val
+        perf.marcar('checklist_ms')
+
+        resumo_operacional = _resumo_operacional_nfe(nf) if incluir_resumo_operacional else None
+        perf.marcar('resumo_ms')
+
+        from apps.fiscal.nfe_saida_apresentacao import montar_apresentacao_nfe_saida
+
+        prontidao = montar_payload_prontidao(nf, validacao=val if incluir_checklist else None)
+        permissoes = _montar_permissoes_emissao_homolog(
+            nf,
+            checklist,
+            itens_count=len(itens_rows),
+        )
+
+        payload: dict[str, Any] = {
+            'nfe': {
+                'id': nf.pk,
+                'numero': nf.numero,
+                'status': nf.status,
+                'data': nf.data.isoformat(),
+                'valor_total': float(nf.valor_total),
+                'cliente_id': nf.cliente_id,
+                'cliente_nome': nf.cliente.razao_social,
+                'pedido_venda_id': nf.pedido_venda_id,
+                'pedido_venda_numero': pedido.numero if pedido else '',
+                'faturamento_pedido_venda_id': nf.faturamento_pedido_venda_id,
+                'origem': _origem_label(nf),
+                'modo_atendimento_estoque': nf.modo_atendimento_estoque,
+                'observacao_origem': nf.observacao_origem,
+                'pedido_cliente_numero': nf.pedido_cliente_numero,
+                'pedido_cliente_observacao': nf.pedido_cliente_observacao,
+                'cliente_informacoes_complementares_nfe': (
+                    (nf.cliente.informacoes_complementares_nfe or '').strip() if nf.cliente_id else ''
+                ),
+                'empresa_emitente_nome': empresa.razao_social if empresa else '',
+                'empresa_emitente_id': pedido.empresa_emitente_id if pedido else None,
+                'natureza_operacao': 'Venda de mercadoria',
+                'tipo_operacao': 'SAIDA',
+                'finalidade_emissao': 'NORMAL',
+            },
+            'itens': itens_rows,
+            'totais_comerciais': {
+                'total_produtos': _fmt_dec(soma_produtos),
+                'frete': _fmt_dec(nf.valor_frete),
+                'total_nf': _fmt_dec(nf.valor_total),
+                'divergencia_itens_nf': abs(soma_produtos - _dec(nf.valor_total)) > Decimal('0.02'),
+            },
+            'fiscal_atual': {
+                'por_item': [
+                    {
+                        'item_id': i['item_id'],
+                        'descricao': i['descricao'],
+                        'ncm': i['ncm'],
+                        'cfop': i['cfop'],
+                        'fiscal': i['fiscal_atual'],
+                        'alertas': i.get('fiscal_alertas') or [],
+                    }
+                    for i in itens_rows
+                ],
+                'totais': totais_fiscais,
+                'alertas_gerais': alertas_fiscal_gerais(totais_fiscais),
+            },
+            'reforma_tributaria': {
+                'resumo': _resumo_reforma_geral(itens_rows),
+                'totais': {
+                    'valor_cbs': totais_fiscais['valor_cbs'],
+                    'valor_ibs_estadual': totais_fiscais['valor_ibs_estadual'],
+                    'valor_ibs_municipal': totais_fiscais['valor_ibs_municipal'],
+                    'total_ibs_cbs': totais_fiscais['total_ibs_cbs'],
+                },
+                'itens': [
+                    {
+                        'item_id': i['item_id'],
+                        'descricao': i['descricao'],
+                        'status': i['status_reforma'],
+                        'dados': i['reforma_tributaria'],
+                        'reforma_configurada': i.get('reforma_configurada'),
+                        'diagnostico': i.get('reforma_diagnostico') or '',
+                    }
+                    for i in itens_rows
+                ],
+            },
+            'transporte': {
+                'transportadora_id': nf.transportadora_id,
+                'transportadora_nome': nf.transportadora.razao_social if nf.transportadora_id else '',
+                'transportadora_cnpj': nf.transportadora.cnpj if nf.transportadora_id else '',
+                'modalidade_frete': nf.modalidade_frete or '9',
+                'valor_frete': float(nf.valor_frete),
+                'quantidade_volumes': nf.quantidade_volumes,
+                'peso_bruto': float(nf.peso_bruto),
+                'peso_liquido': float(nf.peso_liquido),
+                'especie_volumes': nf.especie_volumes,
+                'marca_volumes': nf.marca_volumes,
+                'numeracao_volumes': nf.numeracao_volumes,
+                'placa_veiculo': nf.placa_veiculo,
+                'uf_veiculo': nf.uf_veiculo,
+            },
+            'observacoes': {
+                'observacoes_nfe': nf.observacoes_nfe,
+                'informacoes_adicionais': nf.informacoes_adicionais,
+                'informacoes_fisco': nf.informacoes_fisco,
+                'observacoes_internas': nf.observacoes_internas,
+                'observacao_origem': nf.observacao_origem,
+            },
+            'checklist': checklist,
+            'checklist_desatualizado': abertura and not incluir_checklist,
+            'prontidao': prontidao,
+            'permissoes': permissoes,
+            'emissao_sefaz': _montar_emissao_sefaz_payload(nf),
+            'apresentacao': montar_apresentacao_nfe_saida(nf),
+            'modo_carregamento': modo_norm,
+            'indicadores_fiscais': _montar_indicadores_fiscais_conferencia(nf),
+            'higienizacao_xml': _montar_higienizacao_xml_conferencia(nf),
+        }
+        if resumo_operacional is not None:
+            payload['nfe']['resumo_atendimento_operacional'] = resumo_operacional
+        from apps.fiscal.nfe_saida_financeiro import montar_flags_financeiro_nfe
+
+        payload['financeiro'] = montar_flags_financeiro_nfe(nf)
+        return payload

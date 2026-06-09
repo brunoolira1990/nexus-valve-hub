@@ -24,6 +24,7 @@ from apps.fiscal.snapshot_fiscal_helpers import (
 )
 from apps.fiscal.nfe_saida_from_faturamento import STATUS_NFE_RASCUNHO
 from apps.fiscal.validacao_nfe_saida import (
+    MODO_VALIDACAO_LEVE,
     STATUS_COM_PENDENCIAS,
     TIPO_ALERTA,
     TIPO_PENDENCIA,
@@ -93,8 +94,11 @@ def _norm_status(status: str | None) -> str:
     return (status or '').strip().upper()
 
 
-def _digits(val: str | None) -> str:
-    return ''.join(c for c in str(val or '') if c.isdigit())
+def _digits(val: str | None, *, max_len: int | None = None) -> str:
+    d = ''.join(c for c in str(val or '') if c.isdigit())
+    if max_len is not None:
+        return d[:max_len]
+    return d
 
 
 def _text(val: str | None) -> str:
@@ -106,6 +110,11 @@ def _dec_str(v, places: int = 2) -> str:
 
 
 def _bloqueio_preview(nf: NFeSaida) -> dict[str, Any] | None:
+    from apps.fiscal.nfe_saida_bloqueio import nf_autorizada_homologacao
+
+    if nf_autorizada_homologacao(nf):
+        return None
+
     st = _norm_status(nf.status)
     if st in ('CANCELADA', 'CANCELADO', 'CANCELADA_INTERNA'):
         return {
@@ -191,6 +200,12 @@ def _valor_linha(item: ItemNFeSaida) -> Decimal:
     if snap_c.get('desconto') not in (None, ''):
         total -= dec(snap_c['desconto'])
     return total
+
+
+def _codigo_municipio_preview(uf: str, cidade: str = '') -> str:
+    from apps.fiscal.nfe_emissao.xml_serializacao import codigo_municipio_ibge
+
+    return codigo_municipio_ibge(uf, cidade=cidade)
 
 
 def _crt_emitente(regime: str) -> str:
@@ -281,13 +296,26 @@ def _ordenar_itens(nf: NFeSaida, itens: list[ItemNFeSaida], recs: dict[str, bool
     return list(itens)
 
 
-def gerar_dados_preview_nfe_saida(nfe_saida: NFeSaida) -> dict[str, Any]:
+def gerar_dados_preview_nfe_saida(
+    nfe_saida: NFeSaida,
+    *,
+    incluir_validacao_emissao: bool = True,
+) -> dict[str, Any]:
+    from apps.fiscal.nfe_saida_xml_nfelib import fone_nfe_digits
+    from apps.fiscal.nfe_transp_bindings import montar_transporte_dados_nfe
+
     nf = nfe_saida
     bloqueio = _bloqueio_preview(nf)
     if bloqueio:
         return {**bloqueio, 'nfe_saida_id': nf.pk, 'numero': nf.numero, 'status': nf.status}
 
-    validacao = validar_nfe_saida_para_emissao(nf)
+    if incluir_validacao_emissao:
+        validacao = validar_nfe_saida_para_emissao(nf)
+    else:
+        validacao = {
+            'status_prontidao': STATUS_COM_PENDENCIAS,
+            'pode_emitir': False,
+        }
     rec_info = obter_recomendacoes_nfe_danfe(nf)
     recs = rec_info['recomendacoes']
 
@@ -382,6 +410,10 @@ def gerar_dados_preview_nfe_saida(nfe_saida: NFeSaida) -> dict[str, Any]:
             'bairro': _text(emp.bairro) if emp else '',
             'cidade': _text(emp.cidade) if emp else '',
             'cep': _text(emp.cep) if emp else '',
+            'telefone': _text(emp.telefone) if emp else '',
+            'fone': fone_nfe_digits(emp.telefone if emp else '') or '',
+            'email': _text(emp.email) if emp else '',
+            'site': _text(emp.site) if emp else '',
             'ender': endereco_cadastro(
                 emp.logradouro if emp else '',
                 emp.numero if emp else '',
@@ -424,7 +456,7 @@ def gerar_dados_preview_nfe_saida(nfe_saida: NFeSaida) -> dict[str, Any]:
             'dh_emi': timezone.localtime(timezone.now()).isoformat(),
             'tp_nf': '1',
             'id_dest': id_dest,
-            'c_mun_fg': UF_IBGE.get(uf_origem, '35') + '00000',
+            'c_mun_fg': _codigo_municipio_preview(uf_origem, emp.cidade if emp else ''),
         },
         'itens': linhas,
         'totais': {
@@ -432,16 +464,7 @@ def gerar_dados_preview_nfe_saida(nfe_saida: NFeSaida) -> dict[str, Any]:
             'v_desc': _dec_str(soma_desc),
             'v_nf': _dec_str(nf.valor_total),
         },
-        'transporte': {
-            'mod_frete': _text(nf.modalidade_frete) or '9',
-            'transportadora_nome': (
-                _text(nf.transportadora.razao_social) if nf.transportadora_id else ''
-            ),
-            'valor_frete': _dec_str(nf.valor_frete),
-            'quantidade_volumes': str(nf.quantidade_volumes or 0),
-            'peso_bruto': _dec_str(nf.peso_bruto),
-            'peso_liquido': _dec_str(nf.peso_liquido),
-        },
+        'transporte': montar_transporte_dados_nfe(nf),
         'origem': {
             'pedido_venda_id': nf.pedido_venda_id,
             'faturamento_id': nf.faturamento_pedido_venda_id,
@@ -482,7 +505,7 @@ def _sub(parent: ET.Element, tag: str, text: str | None = None) -> ET.Element:
     return el
 
 
-def _ender(parent: ET.Element, prefix: str, *, logr, nro, compl, bairro, mun, uf, cep):
+def _ender(parent: ET.Element, prefix: str, *, logr, nro, compl, bairro, mun, uf, cep, fone=None):
     ender = ET.SubElement(parent, prefix)
     _sub(ender, 'xLgr', logr or 'Não informado')
     _sub(ender, 'nro', nro or 'S/N')
@@ -494,6 +517,8 @@ def _ender(parent: ET.Element, prefix: str, *, logr, nro, compl, bairro, mun, uf
     _sub(ender, 'UF', uf or 'SP')
     if cep:
         _sub(ender, 'CEP', _digits(cep))
+    if fone:
+        _sub(ender, 'fone', _digits(fone, max_len=14))
     return ender
 
 
@@ -568,6 +593,7 @@ def _xml_preview_string(dados: dict[str, Any]) -> str:
         mun=emit.get('cidade'),
         uf=emit['uf'],
         cep=emit.get('cep'),
+        fone=emit.get('fone') or emit.get('telefone'),
     )
 
     dest = dados['destinatario']
@@ -618,8 +644,38 @@ def _xml_preview_string(dados: dict[str, Any]) -> str:
     _sub(icms_tot, 'vDesc', dados['totais']['v_desc'])
     _sub(icms_tot, 'vNF', dados['totais']['v_nf'])
 
+    tr = dados.get('transporte') or {}
     transp = ET.SubElement(inf, 'transp')
-    _sub(transp, 'modFrete', dados['transporte']['mod_frete'])
+    _sub(transp, 'modFrete', tr.get('mod_frete', '9'))
+    if _text(tr.get('transportadora_nome')):
+        transporta = ET.SubElement(transp, 'transporta')
+        cnpj = _digits(tr.get('transportadora_cnpj'))
+        if len(cnpj) == 14:
+            _sub(transporta, 'CNPJ', cnpj)
+        _sub(transporta, 'xNome', tr['transportadora_nome'][:60])
+        if _text(tr.get('transportadora_ie')):
+            _sub(transporta, 'IE', tr['transportadora_ie'][:14])
+        if _text(tr.get('transportadora_ender')):
+            _sub(transporta, 'xEnder', tr['transportadora_ender'][:60])
+        if _text(tr.get('transportadora_mun')):
+            _sub(transporta, 'xMun', tr['transportadora_mun'][:60])
+        if _text(tr.get('transportadora_uf')):
+            _sub(transporta, 'UF', tr['transportadora_uf'][:2])
+    q_vol = int(tr.get('quantidade_volumes') or 0)
+    if q_vol or tr.get('peso_bruto') or tr.get('peso_liquido'):
+        vol = ET.SubElement(transp, 'vol')
+        if q_vol:
+            _sub(vol, 'qVol', str(q_vol))
+        if _text(tr.get('especie_volumes')):
+            _sub(vol, 'esp', tr['especie_volumes'][:60])
+        if _text(tr.get('marca_volumes')):
+            _sub(vol, 'marca', tr['marca_volumes'][:60])
+        if _text(tr.get('numeracao_volumes')):
+            _sub(vol, 'nVol', tr['numeracao_volumes'][:60])
+        if Decimal(str(tr.get('peso_bruto') or 0)) > 0:
+            _sub(vol, 'pesoB', tr['peso_bruto'])
+        if Decimal(str(tr.get('peso_liquido') or 0)) > 0:
+            _sub(vol, 'pesoL', tr['peso_liquido'])
 
     inf_adic = ET.SubElement(inf, 'infAdic')
     inf_cpl = [
@@ -675,14 +731,34 @@ def gerar_preview_xml_nfe_saida(nfe_saida: NFeSaida) -> dict[str, Any]:
 
 def gerar_preview_danfe_nfe_saida(nfe_saida: NFeSaida) -> tuple[bytes, dict[str, Any]]:
     """NF-e Saída 3.5.4 — DANFE de conferência em layout real."""
+    from apps.fiscal.nfe_saida_bloqueio import nf_autorizada_homologacao
+
+    if nf_autorizada_homologacao(nfe_saida) and (nfe_saida.xml_autorizado or '').strip():
+        try:
+            from apps.fiscal.nfe_integracao.danfe_brazil_fiscal_report import (
+                DanfeBfrError,
+                DanfeBfrIndisponivelError,
+                brazil_fiscal_report_disponivel,
+                gerar_danfe_bfr_homologacao_autorizada,
+            )
+
+            if brazil_fiscal_report_disponivel():
+                pdf, meta = gerar_danfe_bfr_homologacao_autorizada(nfe_saida)
+                if pdf and not meta.get('bloqueado'):
+                    return pdf, meta
+        except (DanfeBfrError, DanfeBfrIndisponivelError):
+            pass
+        except Exception:
+            pass
+
     from apps.fiscal.danfe_conferencia import gerar_danfe_conferencia_pdf
 
     pdf, meta = gerar_danfe_conferencia_pdf(nfe_saida)
     if meta.get('bloqueado'):
         return pdf, meta
-    validacao = validar_nfe_saida_para_emissao(nfe_saida)
+    validacao = validar_nfe_saida_para_emissao(nfe_saida, modo=MODO_VALIDACAO_LEVE)
     pendencias, alertas = _extrair_pendencias_alertas(validacao)
-    dados = gerar_dados_preview_nfe_saida(nfe_saida)
+    rec_info = obter_recomendacoes_nfe_danfe(nfe_saida)
     meta.update(
         {
             'status_prontidao': validacao.get('status_prontidao'),
@@ -690,8 +766,8 @@ def gerar_preview_danfe_nfe_saida(nfe_saida: NFeSaida) -> tuple[bytes, dict[str,
             'alertas': alertas,
             'mensagens': [MSG_DANFE_PREVIEW]
             + ([MSG_PREVIEW_PENDENCIAS] if validacao.get('status_prontidao') == STATUS_COM_PENDENCIAS else []),
-            'recomendacoes_aplicadas': dados.get('recomendacoes', {}).get('recomendacoes_aplicadas', []),
-            'recomendacoes_nao_aplicadas': dados.get('recomendacoes', {}).get('recomendacoes_nao_aplicadas', []),
+            'recomendacoes_aplicadas': rec_info.get('recomendacoes_aplicadas', []),
+            'recomendacoes_nao_aplicadas': rec_info.get('recomendacoes_nao_aplicadas', []),
         },
     )
     return pdf, meta

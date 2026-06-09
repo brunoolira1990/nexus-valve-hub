@@ -29,8 +29,10 @@ from .models import NFeSaidaHistoricaImportada
 
 
 def queryset_faturamento_nf_saida_historica(qs: QuerySet[NFeSaidaHistoricaImportada]) -> QuerySet[NFeSaidaHistoricaImportada]:
-    """Apenas NF-e cuja empresa emissora no XML bate com o cadastro Empresa (vendas da empresa)."""
-    return qs.filter(empresa_emitente__isnull=False)
+    """Empresa emitente vinculada + produção autorizada (exclui homologação para precificação/gerencial)."""
+    from apps.fiscal.dfe_classificacao import filtrar_queryset_precificacao_historica_saida
+
+    return filtrar_queryset_precificacao_historica_saida(qs.filter(empresa_emitente__isnull=False))
 
 
 def _dec(val: Any) -> Decimal:

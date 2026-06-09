@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FileUp, FileCheck, Copy, AlertCircle, RefreshCw, Info, ClipboardList } from 'lucide-react';
+import { DfeClassificacaoBadges } from '@/components/fiscal/DfeClassificacaoBadges';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
 import { apiErrorMessage } from '@/services/api/config';
@@ -317,7 +318,12 @@ const NFeHistoricaImportada = () => {
 
   return (
     <div>
-      <PageHeader title="NF-e histórica (importação XML)" searchValue={search} onSearch={setSearch} />
+      <PageHeader
+        title="Base de NF-e Saída Importada"
+        description="XMLs de saída emitidos em sistema anterior, usados para apuração fiscal, base contábil, histórico comercial e precificação. Não geram faturamento ERP, contas a receber, estoque ou expedição automaticamente."
+        searchValue={search}
+        onSearch={setSearch}
+      />
 
       <p className="text-sm text-muted-foreground mb-4">
         <Link to="/visao-gerencial-nfe-historica" className="text-primary underline-offset-4 hover:underline">
@@ -333,8 +339,8 @@ const NFeHistoricaImportada = () => {
               Importar XMLs de NF-e e eventos
             </h2>
             <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-              Aceita XML principal da NF-e e XML de evento (ex.: cancelamento). Base exclusiva fiscal/gerencial:
-              sem estoque, sem contas a receber e sem reemissão pelo ERP.
+              Aceita XML principal da NF-e e XML de evento (ex.: cancelamento). Alimenta apuração, contábil, BI e
+              precificação. Sem efeito operacional automático (faturamento, financeiro, estoque, expedição).
             </p>
           </div>
           <label className="erp-btn-primary cursor-pointer shrink-0">
@@ -743,9 +749,12 @@ const NFeHistoricaImportada = () => {
                 <td>{r.cliente_nome || '—'}</td>
                 <td>{fmtMoney(r.valor_total_nf)}</td>
                 <td>
-                  <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${badgeStatusClass(r.status_visual)}`}>
-                    {r.status_visual || 'autorizada'}
-                  </span>
+                  <div className="flex flex-col gap-1 items-start">
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${badgeStatusClass(r.status_visual)}`}>
+                      {r.status_visual || 'autorizada'}
+                    </span>
+                    <DfeClassificacaoBadges classificacao={r.classificacao_dfe} max={3} />
+                  </div>
                 </td>
                 <td>
                   <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => void abrirDetalhe(r.id)}>

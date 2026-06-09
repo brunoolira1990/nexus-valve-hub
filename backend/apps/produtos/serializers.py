@@ -21,6 +21,10 @@ from apps.produtos.conversao_medidas import ConversaoErro, converter_quantidade_
 from apps.produtos.polegadas import aliases_for_polegada, normalize_polegada_label, parse_polegada_to_decimal
 from apps.text_normalize import normalize_operational_fields, to_operational_upper
 from apps.produtos.descricao_norm import normalizar_descricao_produto
+from apps.produtos.material import (
+    material_canonico_de_entrada,
+    material_label_de_valor,
+)
 from apps.produtos.models import (
     FamiliaProdutoPolegadaPermitida,
     FamiliaProdutoRoscaConexaoPermitida,
@@ -508,6 +512,11 @@ class ProdutoSerializer(serializers.ModelSerializer):
             if attrs.get(_k):
                 attrs[_k] = normalizar_descricao_produto(attrs[_k])
 
+        if inst and 'material' in attrs and not (attrs.get('material') or '').strip():
+            attrs.pop('material', None)
+        elif 'material' in attrs:
+            attrs['material'] = material_canonico_de_entrada(attrs.get('material'))
+
         def pick(name: str):
             if name in attrs:
                 return attrs[name]
@@ -561,6 +570,17 @@ class ProdutoSerializer(serializers.ModelSerializer):
         dim_esp_pol = pick('dim_espessura_polegada_ref')
         od_mm = pick('od_mm')
         esp_mm = pick('espessura_mm')
+        td_f = familia.tipo_dimensional
+        if (
+            td_f in (FamiliaProduto.TipoDimensional.DN_MM_REDUCAO, FamiliaProduto.TipoDimensional.OD_MM_REDUCAO)
+            and od_mm is not None
+            and esp_mm is not None
+            and od_mm != esp_mm
+        ):
+            a, b = (od_mm, esp_mm) if od_mm >= esp_mm else (esp_mm, od_mm)
+            attrs['od_mm'] = a
+            attrs['espessura_mm'] = b
+            od_mm, esp_mm = a, b
         comp_in = pick('comprimento_mm')
         dimensoes_json = pick('dimensoes_json') or {}
         dim_values = {
@@ -779,6 +799,10 @@ class ProdutoSerializer(serializers.ModelSerializer):
             data['descricao'] = normalizar_descricao_produto(data['descricao'])
         if data.get('dimensao_descricao'):
             data['dimensao_descricao'] = normalizar_descricao_produto(data['dimensao_descricao'])
+        mat_raw = (instance.material or '').strip()
+        data['material'] = mat_raw or None
+        label = material_label_de_valor(mat_raw)
+        data['material_label'] = label or None
         return data
 
 

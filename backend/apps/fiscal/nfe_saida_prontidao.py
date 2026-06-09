@@ -7,7 +7,7 @@ from typing import Any
 from django.utils import timezone
 
 from apps.fiscal.models import NFeSaida, NFeSaidaEvento
-from apps.fiscal.nfe_saida_bloqueio import STATUS_NFE_RASCUNHO, dados_complementares_editaveis, nf_ja_finalizada_operacionalmente
+from apps.fiscal.nfe_saida_bloqueio import STATUS_NFE_RASCUNHO, dados_complementares_editaveis, nf_autorizada_homologacao, nf_ja_finalizada_operacionalmente
 from apps.fiscal.nfe_saida_efeitos import _registrar_evento
 from apps.fiscal.validacao_nfe_saida import validar_nfe_saida_para_emissao
 
@@ -43,6 +43,8 @@ def tem_pendencias_bloqueantes(validacao: dict[str, Any]) -> bool:
 
 
 def pode_validar_conferencia(nf: NFeSaida) -> bool:
+    if nf_autorizada_homologacao(nf):
+        return False
     if nf_ja_finalizada_operacionalmente(nf):
         return False
     if _norm_status_fiscal(nf.status) != STATUS_NFE_RASCUNHO:
@@ -78,19 +80,31 @@ def avaliar_prontidao_nfe(nf: NFeSaida) -> dict[str, Any]:
     }
 
 
-def montar_payload_prontidao(nf: NFeSaida) -> dict[str, Any]:
-    validacao = validar_nfe_saida_para_emissao(nf)
+def montar_payload_prontidao(nf: NFeSaida, validacao: dict[str, Any] | None = None) -> dict[str, Any]:
     st = nf.status_conferencia or NFeSaida.StatusConferencia.EM_CONFERENCIA
+    if validacao is not None:
+        val = validacao
+        pode_marcar = pode_marcar_pronta(nf, val)
+        total_pendencias = val.get('total_pendencias', 0)
+        total_alertas = val.get('total_alertas', 0)
+        mensagens = val.get('mensagens', [])
+    else:
+        val = None
+        st_upper = st.strip().upper()
+        total_pendencias = 1 if st_upper == NFeSaida.StatusConferencia.COM_PENDENCIAS else 0
+        total_alertas = 0
+        mensagens = [nf.conferencia_ultima_mensagem] if nf.conferencia_ultima_mensagem else []
+        pode_marcar = st_upper == NFeSaida.StatusConferencia.CONFERIDA
     return {
         'nfe_saida_id': nf.pk,
         'status': nf.status,
         'status_conferencia': st,
         'status_conferencia_display': status_conferencia_display(st),
         'pode_validar': pode_validar_conferencia(nf),
-        'pode_marcar_pronta': pode_marcar_pronta(nf, validacao),
-        'total_pendencias': validacao.get('total_pendencias', 0),
-        'total_alertas': validacao.get('total_alertas', 0),
-        'mensagens': validacao.get('mensagens', []),
+        'pode_marcar_pronta': pode_marcar,
+        'total_pendencias': total_pendencias,
+        'total_alertas': total_alertas,
+        'mensagens': mensagens,
         'ultima_validacao_em': (
             nf.conferencia_validada_em.isoformat() if nf.conferencia_validada_em else None
         ),
@@ -98,6 +112,7 @@ def montar_payload_prontidao(nf: NFeSaida) -> dict[str, Any]:
             nf.conferencia_marcada_pronta_em.isoformat() if nf.conferencia_marcada_pronta_em else None
         ),
         'conferencia_ultima_mensagem': nf.conferencia_ultima_mensagem or '',
+        'validacao_cacheada': validacao is None,
     }
 
 
@@ -141,7 +156,7 @@ def processar_prontidao_apos_salvar_conferencia(
     usuario=None,
     alterou_dados: bool = False,
 ) -> NFeSaida:
-    """Após salvar complementos: invalida prontidão se necessário e atualiza status por checklist."""
+    """Após salvar complementos: invalida prontidão se necessário — sem checklist pesado."""
     if not dados_complementares_editaveis(nf):
         return nf
     anterior = nf.status_conferencia
@@ -152,13 +167,11 @@ def processar_prontidao_apos_salvar_conferencia(
             usuario=usuario,
         )
         nf.refresh_from_db()
-    validacao = validar_nfe_saida_para_emissao(nf)
-    novo = (
-        NFeSaida.StatusConferencia.COM_PENDENCIAS
-        if tem_pendencias_bloqueantes(validacao)
-        else NFeSaida.StatusConferencia.CONFERIDA
-    )
-    if (nf.status_conferencia or '').strip().upper() != NFeSaida.StatusConferencia.PRONTA_PARA_EMISSAO:
+    st_atual = (nf.status_conferencia or '').strip().upper()
+    if st_atual == NFeSaida.StatusConferencia.PRONTA_PARA_EMISSAO:
+        return nf
+    if alterou_dados and st_atual != NFeSaida.StatusConferencia.EM_CONFERENCIA:
+        novo = NFeSaida.StatusConferencia.EM_CONFERENCIA
         nf.status_conferencia = novo
         nf.save(update_fields=['status_conferencia'])
         if anterior != novo:
@@ -167,11 +180,8 @@ def processar_prontidao_apos_salvar_conferencia(
                 tipo=NFeSaidaEvento.TipoEvento.CONFERENCIA_SALVA,
                 status_anterior=anterior or '',
                 status_novo=novo,
-                resumo={
-                    'total_pendencias': validacao.get('total_pendencias', 0),
-                    'total_alertas': validacao.get('total_alertas', 0),
-                },
-                observacao='Conferência salva; status de prontidão atualizado.',
+                resumo={'alterou_dados': True},
+                observacao='Conferência salva; validação pendente.',
                 usuario=usuario,
             )
     return nf
@@ -188,54 +198,66 @@ def invalidar_prontidao_apos_atualizar_fiscal(nf: NFeSaida, *, usuario=None) -> 
 
 
 def validar_conferencia_nfe(nf: NFeSaida, *, usuario=None) -> dict[str, Any]:
+    from apps.fiscal.nfe_perf import medir_nfe_perf
+    from apps.fiscal.nfe_saida_conferencia import montar_conferencia_nfe_saida
+    from apps.fiscal.validacao_nfe_saida import MODO_VALIDACAO_COMPLETO, validar_nfe_saida_para_emissao
+
     if not pode_validar_conferencia(nf):
         raise ValueError('NF-e não está em rascunho ou não possui itens para validar conferência.')
-    validacao = validar_nfe_saida_para_emissao(nf)
-    anterior = nf.status_conferencia
-    pendencias = tem_pendencias_bloqueantes(validacao)
-    if pendencias:
-        novo = NFeSaida.StatusConferencia.COM_PENDENCIAS
-        tipo_evt = NFeSaidaEvento.TipoEvento.CONFERENCIA_COM_PENDENCIAS
-        msg = f'Conferência com {validacao.get("total_pendencias", 0)} pendência(s) bloqueante(s).'
-    else:
-        novo = NFeSaida.StatusConferencia.CONFERIDA
-        tipo_evt = NFeSaidaEvento.TipoEvento.CONFERENCIA_VALIDADA
-        msg = 'Conferência validada sem pendências bloqueantes.'
-    agora = timezone.now()
-    nf.status_conferencia = novo
-    nf.conferencia_validada_em = agora
-    nf.conferencia_validada_por = usuario if usuario and getattr(usuario, 'is_authenticated', False) else None
-    nf.conferencia_ultima_mensagem = msg
-    nf.save(
-        update_fields=[
-            'status_conferencia',
-            'conferencia_validada_em',
-            'conferencia_validada_por',
-            'conferencia_ultima_mensagem',
-        ],
-    )
-    _registrar_evento(
-        nf,
-        tipo=tipo_evt,
-        status_anterior=anterior or '',
-        status_novo=novo,
-        resumo={
-            'total_pendencias': validacao.get('total_pendencias', 0),
-            'total_alertas': validacao.get('total_alertas', 0),
-            'grupos': _grupos_com_pendencias(validacao),
-        },
-        observacao=msg,
-        usuario=usuario,
-    )
-    from apps.fiscal.nfe_saida_conferencia import montar_conferencia_nfe_saida
 
-    return {
-        'prontidao': montar_payload_prontidao(nf),
-        'validacao': validacao,
-        'conferencia': montar_conferencia_nfe_saida(nf),
-        'mensagem': msg,
-    }
-
+    with medir_nfe_perf('validar_conferencia', nfe_id=nf.pk) as perf:
+        validacao = validar_nfe_saida_para_emissao(nf, modo=MODO_VALIDACAO_COMPLETO)
+        perf.marcar('checklist_ms')
+        anterior = nf.status_conferencia
+        pendencias = tem_pendencias_bloqueantes(validacao)
+        if pendencias:
+            novo = NFeSaida.StatusConferencia.COM_PENDENCIAS
+            tipo_evt = NFeSaidaEvento.TipoEvento.CONFERENCIA_COM_PENDENCIAS
+            msg = f'Conferência com {validacao.get("total_pendencias", 0)} pendência(s) bloqueante(s).'
+        else:
+            novo = NFeSaida.StatusConferencia.CONFERIDA
+            tipo_evt = NFeSaidaEvento.TipoEvento.CONFERENCIA_VALIDADA
+            msg = 'Conferência validada sem pendências bloqueantes.'
+        agora = timezone.now()
+        nf.status_conferencia = novo
+        nf.conferencia_validada_em = agora
+        nf.conferencia_validada_por = usuario if usuario and getattr(usuario, 'is_authenticated', False) else None
+        nf.conferencia_ultima_mensagem = msg
+        nf.save(
+            update_fields=[
+                'status_conferencia',
+                'conferencia_validada_em',
+                'conferencia_validada_por',
+                'conferencia_ultima_mensagem',
+            ],
+        )
+        _registrar_evento(
+            nf,
+            tipo=tipo_evt,
+            status_anterior=anterior or '',
+            status_novo=novo,
+            resumo={
+                'total_pendencias': validacao.get('total_pendencias', 0),
+                'total_alertas': validacao.get('total_alertas', 0),
+                'grupos': _grupos_com_pendencias(validacao),
+            },
+            observacao=msg,
+            usuario=usuario,
+        )
+        perf.marcar('persist_ms')
+        conferencia = montar_conferencia_nfe_saida(
+            nf,
+            modo='completo',
+            validacao=validacao,
+            incluir_checklist=True,
+        )
+        perf.marcar('conferencia_ms')
+        return {
+            'prontidao': montar_payload_prontidao(nf, validacao=validacao),
+            'validacao': validacao,
+            'conferencia': conferencia,
+            'mensagem': msg,
+        }
 
 def marcar_nfe_pronta_para_emissao(nf: NFeSaida, *, usuario=None) -> dict[str, Any]:
     if nf_ja_finalizada_operacionalmente(nf):
@@ -247,6 +269,15 @@ def marcar_nfe_pronta_para_emissao(nf: NFeSaida, *, usuario=None) -> dict[str, A
     validacao = validar_nfe_saida_para_emissao(nf)
     if tem_pendencias_bloqueantes(validacao):
         raise ValueError(MSG_MARCAR_PRONTA_PENDENCIAS)
+    from django.conf import settings
+
+    if getattr(settings, 'DANFE_BLOCK_EMISSION_IF_BFR_FAILS', True):
+        from apps.fiscal.danfe_render import DanfeBfrRenderError, validar_danfe_bfr_para_emissao
+
+        try:
+            validar_danfe_bfr_para_emissao(nf)
+        except DanfeBfrRenderError as exc:
+            raise ValueError(str(exc)) from exc
     anterior = nf.status_conferencia
     agora = timezone.now()
     nf.status_conferencia = NFeSaida.StatusConferencia.PRONTA_PARA_EMISSAO
@@ -278,8 +309,13 @@ def marcar_nfe_pronta_para_emissao(nf: NFeSaida, *, usuario=None) -> dict[str, A
     from apps.fiscal.nfe_saida_conferencia import montar_conferencia_nfe_saida
 
     return {
-        'prontidao': montar_payload_prontidao(nf),
+        'prontidao': montar_payload_prontidao(nf, validacao=validacao),
         'validacao': validacao,
-        'conferencia': montar_conferencia_nfe_saida(nf),
+        'conferencia': montar_conferencia_nfe_saida(
+            nf,
+            modo='completo',
+            validacao=validacao,
+            incluir_checklist=True,
+        ),
         'mensagem': 'NF-e marcada como pronta para emissão futura.',
     }

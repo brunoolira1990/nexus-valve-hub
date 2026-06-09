@@ -47,8 +47,10 @@ class LinhaConsolidadaCTe:
 
 
 def queryset_cte_historico_logistico(qs: QuerySet[CTeHistoricoImportado]) -> QuerySet[CTeHistoricoImportado]:
-    # Fluxo normal de frete/custo considera somente CT-e em que a Empresa ERP é tomadora.
-    return qs.filter(empresa_tomadora__isnull=False)
+    """Tomadora vinculada + produção autorizada (exclui homologação)."""
+    from apps.fiscal.dfe_classificacao import filtrar_queryset_precificacao_cte
+
+    return filtrar_queryset_precificacao_cte(qs.filter(empresa_tomadora__isnull=False))
 
 
 def consolidar_queryset_cte(qs: QuerySet[CTeHistoricoImportado]) -> LinhaConsolidadaCTe:

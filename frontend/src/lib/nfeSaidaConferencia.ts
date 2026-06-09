@@ -6,6 +6,8 @@ export function badgeStatusConferencia(status: StatusConferencia): { label: stri
   if (st === 'PENDENTE' || st === 'COM_PENDENCIAS') return { label: 'Pendente', className: 'erp-badge-danger' };
   if (st === 'ATENCAO' || st === 'COM_ALERTAS') return { label: 'Atenção', className: 'erp-badge-warning' };
   if (st === 'NAO_CONFIGURADA') return { label: 'Não configurada', className: 'erp-badge-warning' };
+  if (st === 'SEM_CALCULO') return { label: 'Sem cálculo', className: 'erp-badge-warning' };
+  if (st === 'CALCULADA') return { label: 'Calculada', className: 'erp-badge-success' };
   return { label: status || '—', className: 'erp-badge-warning' };
 }
 
@@ -40,4 +42,5 @@ export const GRUPO_VALIDACAO_LABELS: Record<string, string> = {
   reforma_tributaria: 'Reforma Tributária',
   pedido_cliente: 'Pedido do cliente',
   totais: 'Totais',
+  higienizacao_xml: 'Higienização XML',
 };

@@ -84,6 +84,42 @@ def flags_por_tipo_regra(tipo: str) -> FlagsFamilia:
             usa_polegada_principal=False,
             usa_polegada_secundaria=False,
         ),
+        t.BASE_DN_MM: FlagsFamilia(
+            usa_rosca_conexao=False,
+            usa_schedule=False,
+            usa_polegada_principal=False,
+            usa_polegada_secundaria=False,
+        ),
+        t.BASE_DN_MM_REDUCAO: FlagsFamilia(
+            usa_rosca_conexao=False,
+            usa_schedule=False,
+            usa_polegada_principal=False,
+            usa_polegada_secundaria=False,
+        ),
+        t.BASE_BITOLA_POLEGADA: FlagsFamilia(
+            usa_rosca_conexao=False,
+            usa_schedule=False,
+            usa_polegada_principal=True,
+            usa_polegada_secundaria=False,
+        ),
+        t.BASE_OD_MM: FlagsFamilia(
+            usa_rosca_conexao=False,
+            usa_schedule=False,
+            usa_polegada_principal=False,
+            usa_polegada_secundaria=False,
+        ),
+        t.BASE_OD_MM_REDUCAO: FlagsFamilia(
+            usa_rosca_conexao=False,
+            usa_schedule=False,
+            usa_polegada_principal=False,
+            usa_polegada_secundaria=False,
+        ),
+        t.BASE_OD_MM_X_ROSCA: FlagsFamilia(
+            usa_rosca_conexao=True,
+            usa_schedule=False,
+            usa_polegada_principal=True,
+            usa_polegada_secundaria=False,
+        ),
         t.BASE_ESPIGAO_FLANGE_NPS: FlagsFamilia(
             usa_rosca_conexao=False,
             usa_schedule=False,

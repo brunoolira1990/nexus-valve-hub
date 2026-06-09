@@ -18,7 +18,13 @@ from apps.fiscal.nfe_saida_bloqueio import (
     nf_ja_finalizada_operacionalmente,
     origem_comercial_travada,
 )
-from apps.comercial.models import ItemPedidoCompra, PedidoCompra, PedidoVenda
+from apps.comercial.models import (
+    ItemFaturamentoPedidoVenda,
+    ItemPedidoCompra,
+    ItemPedidoVenda,
+    PedidoCompra,
+    PedidoVenda,
+)
 from apps.corridas.models import Corrida
 from apps.produtos.conversao_medidas import ConversaoErro, converter_quantidade_produto
 from apps.produtos.models import Produto
@@ -52,6 +58,7 @@ from .atendimento_estoque import (
     quantidade_pendente_atendimento,
 )
 from .models import (
+    AlocacaoAtendimento,
     AtendimentoEstoque,
     CTeEntrada,
     CTeHistoricoImportado,
@@ -66,6 +73,7 @@ from .models import (
     NFeEntradaConferencia,
     NFeEntrada,
     NFeEntradaHistoricaImportada,
+    NFeNumeracaoConfiguracao,
     NFeSaida,
     NFeSaidaHistoricaImportada,
 )
@@ -412,6 +420,7 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
     cliente_nome = serializers.SerializerMethodField(read_only=True)
     modo_atendimento_estoque_display = serializers.SerializerMethodField(read_only=True)
     resumo_atendimento_estoque = serializers.SerializerMethodField(read_only=True)
+    resumo_atendimento_operacional = serializers.SerializerMethodField(read_only=True)
     origem_comercial_travada = serializers.SerializerMethodField(read_only=True)
     dados_complementares_editaveis = serializers.SerializerMethodField(read_only=True)
     itens_comerciais_editaveis = serializers.SerializerMethodField(read_only=True)
@@ -422,7 +431,17 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
         required=False,
     )
     transportadora_nome = serializers.SerializerMethodField(read_only=True)
-    status_conferencia_display = serializers.SerializerMethodField(read_only=True)
+    status_conferencia_display = serializers.SerializerMethodField()
+    resumo_emissao_sefaz = serializers.SerializerMethodField(read_only=True)
+    apresentacao = serializers.SerializerMethodField(read_only=True)
+    listagem_resumo = serializers.SerializerMethodField(read_only=True)
+    duplicatas_nfe = serializers.SerializerMethodField(read_only=True)
+    reforma_tributaria = serializers.SerializerMethodField(read_only=True)
+    financeiro_gerado = serializers.SerializerMethodField(read_only=True)
+    pode_gerar_contas_receber = serializers.SerializerMethodField(read_only=True)
+    motivo_bloqueio_financeiro = serializers.SerializerMethodField(read_only=True)
+    contas_receber_vinculadas = serializers.SerializerMethodField(read_only=True)
+    nfe_cancelada_com_financeiro = serializers.SerializerMethodField(read_only=True)
     itens = ItemNFeSaidaSerializer(many=True)
 
     class Meta:
@@ -439,6 +458,16 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
             'status',
             'status_conferencia',
             'status_conferencia_display',
+            'resumo_emissao_sefaz',
+            'apresentacao',
+            'listagem_resumo',
+            'duplicatas_nfe',
+            'reforma_tributaria',
+            'financeiro_gerado',
+            'pode_gerar_contas_receber',
+            'motivo_bloqueio_financeiro',
+            'contas_receber_vinculadas',
+            'nfe_cancelada_com_financeiro',
             'conferencia_validada_em',
             'conferencia_marcada_pronta_em',
             'conferencia_ultima_mensagem',
@@ -452,6 +481,7 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
             'faturamento_pedido_venda_id',
             'observacao_origem',
             'resumo_atendimento_estoque',
+            'resumo_atendimento_operacional',
             'origem_comercial_travada',
             'dados_complementares_editaveis',
             'itens_comerciais_editaveis',
@@ -473,11 +503,17 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
             'numeracao_volumes',
             'placa_veiculo',
             'uf_veiculo',
+            'ind_final',
+            'ind_pres',
+            'indicadores_fiscais_confirmados',
             'itens',
         )
         read_only_fields = (
             'status_conferencia',
             'status_conferencia_display',
+            'resumo_emissao_sefaz',
+            'apresentacao',
+            'listagem_resumo',
             'conferencia_validada_em',
             'conferencia_marcada_pronta_em',
             'conferencia_ultima_mensagem',
@@ -516,6 +552,77 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
         from apps.fiscal.nfe_saida_prontidao import status_conferencia_display
 
         return status_conferencia_display(obj.status_conferencia)
+
+    def get_resumo_emissao_sefaz(self, obj):
+        st = (obj.status_emissao_sefaz or '').strip()
+        if not st and not (obj.serie_nfe or obj.numero_nfe or obj.chave_acesso):
+            return None
+        motivo = (obj.motivo_autorizacao or '').strip()
+        if st == NFeSaida.StatusEmissaoSefaz.ERRO_TRANSMISSAO and motivo.startswith('Falha na transmissão:'):
+            motivo = motivo.split(':', 1)[-1].strip()
+        return {
+            'ambiente_emissao': obj.ambiente_emissao or '',
+            'status_emissao_sefaz': st,
+            'serie_nfe': obj.serie_nfe or '',
+            'numero_nfe': obj.numero_nfe or '',
+            'chave_acesso': obj.chave_acesso or '',
+            'lote': {
+                'cstat': obj.cstat_lote or '',
+                'xmotivo': obj.xmotivo_lote or '',
+                'recibo': obj.recibo_lote or '',
+            },
+            'nfe': {
+                'cstat': obj.cstat_autorizacao or '',
+                'xmotivo': motivo,
+                'protocolo': obj.protocolo_autorizacao or '',
+            },
+            'cstat_autorizacao': obj.cstat_autorizacao or '',
+            'motivo_autorizacao': motivo,
+        }
+
+    def get_apresentacao(self, obj):
+        from apps.fiscal.nfe_saida_apresentacao import montar_apresentacao_nfe_saida
+
+        return montar_apresentacao_nfe_saida(obj)
+
+    def get_listagem_resumo(self, obj):
+        from apps.fiscal.nfe_saida_listagem import montar_listagem_resumo_nfe
+
+        return montar_listagem_resumo_nfe(obj)
+
+    def get_duplicatas_nfe(self, obj):
+        from apps.fiscal.nfe_saida_duplicatas import duplicatas_nfe_para_api
+
+        return duplicatas_nfe_para_api(obj)
+
+    def get_reforma_tributaria(self, obj):
+        from apps.fiscal.reforma_tributaria.serializers import montar_payload_reforma_tributaria_nfe
+
+        return montar_payload_reforma_tributaria_nfe(obj)
+
+    def _flags_financeiro_nfe(self, obj):
+        cached = getattr(obj, '_flags_financeiro_cache', None)
+        if cached is None:
+            from apps.fiscal.nfe_saida_financeiro import montar_flags_financeiro_nfe
+
+            cached = montar_flags_financeiro_nfe(obj)
+            obj._flags_financeiro_cache = cached
+        return cached
+
+    def get_financeiro_gerado(self, obj) -> bool:
+        return self._flags_financeiro_nfe(obj)['financeiro_gerado']
+
+    def get_pode_gerar_contas_receber(self, obj) -> bool:
+        return self._flags_financeiro_nfe(obj)['pode_gerar_contas_receber']
+
+    def get_motivo_bloqueio_financeiro(self, obj) -> str:
+        return self._flags_financeiro_nfe(obj)['motivo_bloqueio_financeiro']
+
+    def get_contas_receber_vinculadas(self, obj) -> list:
+        return self._flags_financeiro_nfe(obj)['contas_receber_vinculadas']
+
+    def get_nfe_cancelada_com_financeiro(self, obj) -> bool:
+        return self._flags_financeiro_nfe(obj)['nfe_cancelada_com_financeiro']
 
     def _cliente_pedido_vinculado(self, nf: NFeSaida):
         pedido = nf.pedido_venda
@@ -567,6 +674,19 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
         if obj.modo_atendimento_estoque != NFeSaida.ModoAtendimentoEstoque.ANTECIPADO:
             return None
         return montar_resumo_atendimento_estoque_nf(obj)
+
+    def get_resumo_atendimento_operacional(self, obj):
+        from apps.comercial.services.resumo_atendimento_operacional import (
+            obter_resumo_atendimento_operacional,
+            resumo_enxuto_listagem,
+        )
+
+        if self.context.get('listagem'):
+            resumo = resumo_enxuto_listagem(obj, contexto='nfe_saida')
+            if not resumo.get('tem_alocacao'):
+                return None
+            return resumo
+        return obter_resumo_atendimento_operacional(obj, contexto='nfe_saida')
 
     def _modo_antecipado(self, modo: str | None) -> bool:
         return (modo or NFeSaida.ModoAtendimentoEstoque.IMEDIATO) == NFeSaida.ModoAtendimentoEstoque.ANTECIPADO
@@ -701,15 +821,18 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data['cliente_id'] = instance.cliente_id
-        data['data'] = instance.data.isoformat()
-        data['valor_total'] = float(instance.valor_total)
-        data['vencimentos_finais'] = [d.isoformat() for d in instance.vencimentos_finais]
+        data['data'] = instance.data.isoformat() if instance.data else ''
+        data['valor_total'] = float(instance.valor_total or 0)
+        vencimentos = instance.vencimentos_finais or []
+        data['vencimentos_finais'] = [
+            d.isoformat() for d in vencimentos if hasattr(d, 'isoformat')
+        ]
         data['pedido_venda_id'] = instance.pedido_venda_id
         data['faturamento_pedido_venda_id'] = instance.faturamento_pedido_venda_id
         data['transportadora_id'] = instance.transportadora_id
-        data['valor_frete'] = float(instance.valor_frete)
-        data['peso_bruto'] = float(instance.peso_bruto)
-        data['peso_liquido'] = float(instance.peso_liquido)
+        data['valor_frete'] = float(instance.valor_frete or 0)
+        data['peso_bruto'] = float(instance.peso_bruto or 0)
+        data['peso_liquido'] = float(instance.peso_liquido or 0)
         return data
 
     def _finalizar_nf_saida_rascunho(self, nf: NFeSaida) -> None:
@@ -809,8 +932,14 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
             raise ValidationError({'detail': str(exc)}) from exc
 
         if alterou_conferencia and dados_complementares_editaveis(instance):
+            from apps.fiscal.nfe_integracao.nfe_xml_preliminar import invalidar_xml_preliminar_armazenado
             from apps.fiscal.nfe_saida_prontidao import processar_prontidao_apos_salvar_conferencia
 
+            if any(k in validated_data for k in ('ind_final', 'ind_pres')):
+                instance.indicadores_fiscais_confirmados = True
+                instance.save(update_fields=['indicadores_fiscais_confirmados'])
+
+            invalidar_xml_preliminar_armazenado(instance)
             request = self.context.get('request')
             usuario = getattr(request, 'user', None) if request else None
             processar_prontidao_apos_salvar_conferencia(
@@ -820,6 +949,35 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
             )
 
         return instance
+
+
+class NFeSaidaListSerializer(serializers.ModelSerializer):
+    """Listagem enxuta — sem itens/XML; resumo agrupado para UI compacta."""
+
+    cliente_nome = serializers.SerializerMethodField(read_only=True)
+    listagem_resumo = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = NFeSaida
+        fields = (
+            'id',
+            'numero',
+            'cliente_id',
+            'cliente_nome',
+            'data',
+            'valor_total',
+            'status',
+            'status_emissao_sefaz',
+            'listagem_resumo',
+        )
+
+    def get_cliente_nome(self, obj):
+        return obj.cliente.razao_social
+
+    def get_listagem_resumo(self, obj):
+        from apps.fiscal.nfe_saida_listagem import montar_listagem_resumo_nfe
+
+        return montar_listagem_resumo_nfe(obj)
 
 
 class ItemNFeSaidaHistoricaImportadaSerializer(serializers.ModelSerializer):
@@ -843,6 +1001,7 @@ class NFeEntradaHistoricaImportadaListSerializer(serializers.ModelSerializer):
     fornecedor_id = serializers.SerializerMethodField(read_only=True)
     conferencia_status = serializers.SerializerMethodField(read_only=True)
     conferencia_preparado_em = serializers.SerializerMethodField(read_only=True)
+    classificacao_dfe = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = NFeEntradaHistoricaImportada
@@ -851,6 +1010,7 @@ class NFeEntradaHistoricaImportadaListSerializer(serializers.ModelSerializer):
             'chave_acesso',
             'numero',
             'serie',
+            'tp_amb',
             'dh_emissao',
             'valor_total_nf',
             'valor_produtos',
@@ -876,6 +1036,7 @@ class NFeEntradaHistoricaImportadaListSerializer(serializers.ModelSerializer):
             'historica',
             'conferencia_status',
             'conferencia_preparado_em',
+            'classificacao_dfe',
         )
 
     def get_empresa_id(self, obj):
@@ -903,6 +1064,12 @@ class NFeEntradaHistoricaImportadaListSerializer(serializers.ModelSerializer):
             return obj.conferencia.status
         except ObjectDoesNotExist:
             return None
+
+    def get_classificacao_dfe(self, obj):
+        from apps.fiscal.dfe_classificacao import metadados_classificacao_dfe
+
+        conf_st = self.get_conferencia_status(obj)
+        return metadados_classificacao_dfe(obj, conferencia_status=conf_st)
 
     def get_conferencia_preparado_em(self, obj):
         try:
@@ -1301,6 +1468,9 @@ class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):
     resumo_pedido = serializers.SerializerMethodField(read_only=True)
     resumo_fiscal = serializers.SerializerMethodField(read_only=True)
     resumo_elegibilidade_estoque = serializers.SerializerMethodField(read_only=True)
+    equivalencias = serializers.SerializerMethodField(read_only=True)
+    chave_acesso = serializers.SerializerMethodField(read_only=True)
+    financeiro = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = NFeEntradaConferencia
@@ -1309,6 +1479,7 @@ class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             'nf_entrada_historica',
             'numero',
             'serie',
+            'chave_acesso',
             'data_emissao',
             'valor_total',
             'fornecedor_nome',
@@ -1318,6 +1489,8 @@ class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             'resumo_pedido',
             'resumo_fiscal',
             'resumo_elegibilidade_estoque',
+            'equivalencias',
+            'financeiro',
             'status',
             'divergencias_aceitas',
             'observacao_divergencias',
@@ -1347,6 +1520,14 @@ class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):
 
     def get_valor_total(self, obj):
         return float(obj.nf_entrada_historica.valor_total_nf)
+
+    def get_chave_acesso(self, obj):
+        return obj.nf_entrada_historica.chave_acesso or ''
+
+    def get_financeiro(self, obj):
+        from apps.fiscal.nfe_entrada_financeiro import montar_flags_financeiro_nfe_entrada
+
+        return montar_flags_financeiro_nfe_entrada(obj.nf_entrada_historica, obj)
 
     def get_pedido_compra_numero(self, obj):
         return obj.pedido_compra.numero if obj.pedido_compra_id else ''
@@ -1435,6 +1616,11 @@ class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             return self._resumo_elegibilidade_cache
         return {'aptos': 0, 'aptos_com_alerta': 0, 'bloqueados': 0, 'nao_movimentam': 0}
 
+    def get_equivalencias(self, obj: NFeEntradaConferencia) -> dict:
+        from apps.produtos.equivalencia_sugestao import montar_resumo_equivalencias_conferencia
+
+        return montar_resumo_equivalencias_conferencia(obj)
+
     def to_representation(self, instance):
         self._inject_fiscal_entrada_context(instance)
         self._inject_elegibilidade_estoque_context(instance)
@@ -1512,6 +1698,7 @@ class NFeSaidaHistoricaImportadaListSerializer(serializers.ModelSerializer):
     empresa_id = serializers.SerializerMethodField(read_only=True)
     empresa_nome = serializers.SerializerMethodField(read_only=True)
     papel_empresa = serializers.SerializerMethodField(read_only=True)
+    classificacao_dfe = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = NFeSaidaHistoricaImportada
@@ -1520,6 +1707,7 @@ class NFeSaidaHistoricaImportadaListSerializer(serializers.ModelSerializer):
             'chave_acesso',
             'numero',
             'serie',
+            'tp_amb',
             'dh_emissao',
             'valor_total_nf',
             'valor_produtos',
@@ -1553,6 +1741,7 @@ class NFeSaidaHistoricaImportadaListSerializer(serializers.ModelSerializer):
             'empresa_nome',
             'papel_empresa',
             'papel_empresa_no_documento',
+            'classificacao_dfe',
         )
 
     def get_empresa_emitente_nome(self, obj):
@@ -1591,6 +1780,11 @@ class NFeSaidaHistoricaImportadaListSerializer(serializers.ModelSerializer):
 
     def get_papel_empresa(self, obj):
         return obj.papel_empresa_no_documento or ('emitente' if obj.empresa_emitente_id else '')
+
+    def get_classificacao_dfe(self, obj):
+        from apps.fiscal.dfe_classificacao import metadados_classificacao_dfe
+
+        return metadados_classificacao_dfe(obj, incluir_canceladas=bool(obj.cancelada))
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -1717,6 +1911,67 @@ class NFeSaidaHistoricaImportadaSerializer(serializers.ModelSerializer):
         return data
 
 
+class CTeEntradaOperacionalSerializer(serializers.ModelSerializer):
+    """CT-e conferido na base importada, exposto na tela CT-e Entrada operacional."""
+
+    transportadora_nome = serializers.SerializerMethodField(read_only=True)
+    tomador_nome = serializers.SerializerMethodField(read_only=True)
+    valor_frete = serializers.SerializerMethodField(read_only=True)
+    data = serializers.SerializerMethodField(read_only=True)
+    status_conferencia = serializers.CharField(read_only=True)
+    classificacao_dfe = serializers.SerializerMethodField(read_only=True)
+    cte_historico_id = serializers.IntegerField(source='id', read_only=True)
+
+    class Meta:
+        model = CTeHistoricoImportado
+        fields = (
+            'id',
+            'cte_historico_id',
+            'numero',
+            'serie',
+            'chave_acesso',
+            'transportadora_nome',
+            'tomador_nome',
+            'valor_frete',
+            'data',
+            'status_conferencia',
+            'apto_operacional',
+            'classificacao_dfe',
+        )
+
+    def get_transportadora_nome(self, obj):
+        if obj.transportadora_id:
+            return obj.transportadora.razao_social
+        return (obj.emit_json or {}).get('xNome', '')
+
+    def get_tomador_nome(self, obj):
+        if obj.empresa_tomadora_id:
+            return obj.empresa_tomadora.razao_social
+        return (obj.tomador_json or {}).get('xNome', '')
+
+    def get_valor_frete(self, obj):
+        return float(obj.valor_total_servico or 0)
+
+    def get_data(self, obj):
+        return obj.dh_emissao.date().isoformat() if obj.dh_emissao else None
+
+    def get_classificacao_dfe(self, obj):
+        from apps.fiscal.dfe_classificacao import metadados_classificacao_dfe
+
+        meta = metadados_classificacao_dfe(obj, conferencia_status=obj.status_conferencia)
+        badges = list(meta.get('badges') or [])
+        for extra in ('sem_financeiro_automatico', 'sem_expedicao_automatica'):
+            if extra not in badges:
+                badges.append(extra)
+        meta['badges'] = badges
+        return meta
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['valor_frete'] = float(instance.valor_total_servico or 0)
+        return data
+
+
 class CTeEntradaSerializer(serializers.ModelSerializer):
     transportadora_id = serializers.PrimaryKeyRelatedField(
         queryset=Transportadora.objects.all(),
@@ -1807,6 +2062,7 @@ class CTeHistoricoImportadoListSerializer(serializers.ModelSerializer):
     empresa_nome = serializers.SerializerMethodField(read_only=True)
     papel_empresa = serializers.SerializerMethodField(read_only=True)
     fornecedor_remetente_nome = serializers.SerializerMethodField(read_only=True)
+    classificacao_dfe = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = CTeHistoricoImportado
@@ -1815,6 +2071,7 @@ class CTeHistoricoImportadoListSerializer(serializers.ModelSerializer):
             'chave_acesso',
             'numero',
             'serie',
+            'tp_amb',
             'dh_emissao',
             'valor_total_servico',
             'valor_receber',
@@ -1854,10 +2111,24 @@ class CTeHistoricoImportadoListSerializer(serializers.ModelSerializer):
             'importado',
             'origem_externa',
             'historico',
+            'classificacao_dfe',
+            'status_conferencia',
+            'apto_operacional',
+            'conferido_em',
+            'ignorado_operacionalmente',
         )
 
     def get_transportadora_nome(self, obj):
         return obj.transportadora.razao_social if obj.transportadora_id else (obj.emit_json or {}).get('xNome', '')
+
+    def get_classificacao_dfe(self, obj):
+        from apps.fiscal.dfe_classificacao import metadados_classificacao_dfe
+
+        return metadados_classificacao_dfe(
+            obj,
+            conferencia_status=obj.status_conferencia,
+            incluir_canceladas=bool(obj.cancelado),
+        )
 
     def get_empresa_tomadora_nome(self, obj):
         return obj.empresa_tomadora.razao_social if obj.empresa_tomadora_id else ''
@@ -1903,6 +2174,8 @@ class CTeHistoricoImportadoListSerializer(serializers.ModelSerializer):
         data['dh_emissao'] = instance.dh_emissao.isoformat() if instance.dh_emissao else None
         data['importado_em'] = instance.importado_em.isoformat() if instance.importado_em else None
         data['data_cancelamento'] = instance.data_cancelamento.isoformat() if instance.data_cancelamento else None
+        if instance.conferido_em:
+            data['conferido_em'] = instance.conferido_em.isoformat()
         return data
 
 
@@ -1917,6 +2190,9 @@ class CTeHistoricoImportadoSerializer(serializers.ModelSerializer):
     empresa_nome = serializers.SerializerMethodField(read_only=True)
     papel_empresa = serializers.SerializerMethodField(read_only=True)
     fornecedor_remetente_nome = serializers.SerializerMethodField(read_only=True)
+    classificacao_dfe = serializers.SerializerMethodField(read_only=True)
+    documentos_vinculados_resumo = serializers.SerializerMethodField(read_only=True)
+    conferido_por_nome = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = CTeHistoricoImportado
@@ -1983,10 +2259,41 @@ class CTeHistoricoImportadoSerializer(serializers.ModelSerializer):
             'origem_externa',
             'historico',
             'eventos',
+            'status_conferencia',
+            'apto_operacional',
+            'conferido_em',
+            'conferido_por',
+            'conferido_por_nome',
+            'observacao_conferencia',
+            'divergencia_motivo',
+            'ignorado_operacionalmente',
+            'checklist_conferencia_json',
+            'classificacao_dfe',
+            'documentos_vinculados_resumo',
         )
 
     def get_transportadora_nome(self, obj):
         return obj.transportadora.razao_social if obj.transportadora_id else (obj.emit_json or {}).get('xNome', '')
+
+    def get_classificacao_dfe(self, obj):
+        from apps.fiscal.dfe_classificacao import metadados_classificacao_dfe
+
+        return metadados_classificacao_dfe(
+            obj,
+            conferencia_status=obj.status_conferencia,
+            incluir_canceladas=bool(obj.cancelado),
+        )
+
+    def get_documentos_vinculados_resumo(self, obj):
+        from apps.fiscal.cte_historico_conferencia import resolver_documentos_vinculados
+
+        return resolver_documentos_vinculados(obj)
+
+    def get_conferido_por_nome(self, obj):
+        if not obj.conferido_por_id:
+            return ''
+        u = obj.conferido_por
+        return u.get_full_name() or u.username
 
     def get_empresa_tomadora_nome(self, obj):
         return obj.empresa_tomadora.razao_social if obj.empresa_tomadora_id else ''
@@ -2032,6 +2339,8 @@ class CTeHistoricoImportadoSerializer(serializers.ModelSerializer):
         data['dh_emissao'] = instance.dh_emissao.isoformat() if instance.dh_emissao else None
         data['importado_em'] = instance.importado_em.isoformat() if instance.importado_em else None
         data['data_cancelamento'] = instance.data_cancelamento.isoformat() if instance.data_cancelamento else None
+        if instance.conferido_em:
+            data['conferido_em'] = instance.conferido_em.isoformat()
         return data
 
 
@@ -2087,3 +2396,271 @@ class AtendimentoEstoqueListSerializer(serializers.ModelSerializer):
         data['quantidade_atendida'] = f'{instance.quantidade_atendida:.3f}'
         data['criado_em'] = instance.criado_em.isoformat() if instance.criado_em else None
         return data
+
+
+class NFeNumeracaoConfiguracaoSerializer(serializers.ModelSerializer):
+    empresa_id = serializers.PrimaryKeyRelatedField(
+        queryset=Empresa.objects.all(),
+        source='empresa',
+    )
+
+    class Meta:
+        model = NFeNumeracaoConfiguracao
+        fields = (
+            'id',
+            'empresa_id',
+            'modelo_documento',
+            'ambiente',
+            'serie',
+            'proximo_numero',
+            'ultimo_numero_reservado',
+            'ultimo_numero_autorizado',
+            'ativo',
+            'observacoes',
+            'criado_em',
+            'atualizado_em',
+        )
+        read_only_fields = ('criado_em', 'atualizado_em', 'ultimo_numero_reservado', 'ultimo_numero_autorizado')
+
+    def validate(self, attrs):
+        from apps.fiscal.nfe_emissao.serie_fiscal import (
+            MSG_SERIE_FORA_FAIXA,
+            NFeSerieFiscalError,
+            validar_serie_autorizacao_normal,
+        )
+
+        serie = str(attrs.get('serie') or getattr(self.instance, 'serie', '') or '')
+        if serie and not serie.isdigit():
+            raise ValidationError({'serie': 'Série deve conter apenas dígitos.'})
+        if serie:
+            try:
+                validar_serie_autorizacao_normal(serie)
+            except NFeSerieFiscalError as exc:
+                raise ValidationError({'serie': MSG_SERIE_FORA_FAIXA}) from exc
+        prox = attrs.get('proximo_numero')
+        if prox is not None and int(prox) < 1:
+            raise ValidationError({'proximo_numero': 'Próximo número deve ser >= 1.'})
+        return attrs
+
+    def update(self, instance, validated_data):
+        confirmar = bool(self.context.get('request', {}).data.get('confirmar_alteracao_producao'))
+        if (
+            instance.ambiente == instance.Ambiente.PRODUCAO
+            and 'proximo_numero' in validated_data
+            and validated_data['proximo_numero'] != instance.proximo_numero
+            and not confirmar
+        ):
+            raise ValidationError(
+                {
+                    'proximo_numero': (
+                        'Alteração em produção exige confirmação explícita '
+                        '(confirmar_alteracao_producao=true).'
+                    ),
+                },
+            )
+        return super().update(instance, validated_data)
+
+
+class AlocacaoAtendimentoSerializer(serializers.ModelSerializer):
+    """ERP 4.0.12 — CRUD intenção operacional (read-only fiscal/estoque)."""
+
+    produto_id = serializers.PrimaryKeyRelatedField(
+        queryset=Produto.objects.all(),
+        source='produto',
+    )
+    pedido_venda_item_id = serializers.PrimaryKeyRelatedField(
+        queryset=ItemPedidoVenda.objects.all(),
+        source='pedido_venda_item',
+        allow_null=True,
+        required=False,
+    )
+    faturamento_item_id = serializers.PrimaryKeyRelatedField(
+        queryset=ItemFaturamentoPedidoVenda.objects.all(),
+        source='faturamento_item',
+        allow_null=True,
+        required=False,
+    )
+    item_nf_saida_id = serializers.PrimaryKeyRelatedField(
+        queryset=ItemNFeSaida.objects.all(),
+        source='item_nf_saida',
+        allow_null=True,
+        required=False,
+    )
+    pedido_compra_item_id = serializers.PrimaryKeyRelatedField(
+        queryset=ItemPedidoCompra.objects.all(),
+        source='pedido_compra_item',
+        allow_null=True,
+        required=False,
+    )
+    nf_entrada_item_id = serializers.PrimaryKeyRelatedField(
+        queryset=ItemNFeEntrada.objects.all(),
+        source='nf_entrada_item',
+        allow_null=True,
+        required=False,
+    )
+    nf_entrada_historica_item_id = serializers.PrimaryKeyRelatedField(
+        queryset=ItemNFeEntradaHistoricaImportada.objects.all(),
+        source='nf_entrada_historica_item',
+        allow_null=True,
+        required=False,
+    )
+    cte_historico_importado_id = serializers.PrimaryKeyRelatedField(
+        queryset=CTeHistoricoImportado.objects.all(),
+        source='cte_historico_importado',
+        allow_null=True,
+        required=False,
+    )
+    fornecedor_id = serializers.PrimaryKeyRelatedField(
+        queryset=Fornecedor.objects.all(),
+        source='fornecedor',
+        allow_null=True,
+        required=False,
+    )
+
+    produto_nome = serializers.CharField(source='produto.descricao', read_only=True)
+    produto_codigo = serializers.CharField(source='produto.codigo_completo', read_only=True)
+    pedido_venda_numero = serializers.SerializerMethodField(read_only=True)
+    tipo_atendimento_label = serializers.SerializerMethodField(read_only=True)
+    status_entrada_fiscal_label = serializers.SerializerMethodField(read_only=True)
+    origem_fisica_label = serializers.SerializerMethodField(read_only=True)
+    destino_fisico_label = serializers.SerializerMethodField(read_only=True)
+    badges = serializers.SerializerMethodField(read_only=True)
+    vinculos = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = AlocacaoAtendimento
+        fields = (
+            'id',
+            'pedido_venda_item_id',
+            'faturamento_item_id',
+            'item_nf_saida_id',
+            'produto_id',
+            'produto_nome',
+            'produto_codigo',
+            'pedido_venda_numero',
+            'quantidade_necessaria',
+            'quantidade_atendida',
+            'quantidade_pendente',
+            'tipo_atendimento',
+            'tipo_atendimento_label',
+            'status_entrada_fiscal',
+            'status_entrada_fiscal_label',
+            'origem_fisica',
+            'origem_fisica_label',
+            'destino_fisico',
+            'destino_fisico_label',
+            'pedido_compra_item_id',
+            'nf_entrada_item_id',
+            'nf_entrada_historica_item_id',
+            'cte_historico_importado_id',
+            'fornecedor_id',
+            'observacao_operacional',
+            'badges',
+            'vinculos',
+            'criado_em',
+            'atualizado_em',
+        )
+        read_only_fields = ('id', 'criado_em', 'atualizado_em')
+
+    def get_pedido_venda_numero(self, obj):
+        if obj.pedido_venda_item_id and obj.pedido_venda_item.pedido_id:
+            return obj.pedido_venda_item.pedido.numero
+        return ''
+
+    def _choice_label(self, choices, value: str) -> str:
+        return dict(choices).get(value, value or '')
+
+    def get_tipo_atendimento_label(self, obj):
+        from apps.fiscal.modelo_operacional import TipoAtendimentoItem
+
+        return self._choice_label(TipoAtendimentoItem.choices, obj.tipo_atendimento)
+
+    def get_status_entrada_fiscal_label(self, obj):
+        from apps.fiscal.modelo_operacional import StatusEntradaFiscal
+
+        return self._choice_label(StatusEntradaFiscal.choices, obj.status_entrada_fiscal)
+
+    def get_origem_fisica_label(self, obj):
+        from apps.fiscal.modelo_operacional import OrigemFisica
+
+        return self._choice_label(OrigemFisica.choices, obj.origem_fisica)
+
+    def get_destino_fisico_label(self, obj):
+        from apps.fiscal.modelo_operacional import DestinoFisico
+
+        return self._choice_label(DestinoFisico.choices, obj.destino_fisico)
+
+    def get_badges(self, obj):
+        from apps.comercial.services.resumo_atendimento_operacional import _montar_resumo_from_alocacoes
+
+        return _montar_resumo_from_alocacoes([obj], contexto='documento').get('badges', [])
+
+    def get_vinculos(self, obj):
+        from apps.comercial.services.alocacao_atendimento_vinculos import montar_vinculos_exibicao
+
+        return montar_vinculos_exibicao(obj)
+
+    def validate(self, attrs):
+        from apps.comercial.services.alocacao_atendimento_service import (
+            AlocacaoAtendimentoErro,
+            validar_quantidades_alocacao,
+        )
+        from apps.comercial.services.alocacao_atendimento_vinculos import validar_vinculos_alocacao
+
+        instance = getattr(self, 'instance', None)
+        pvi = attrs.get('pedido_venda_item') or (instance.pedido_venda_item if instance else None)
+        pvi_id = pvi.pk if pvi else None
+        q_nec = attrs.get('quantidade_necessaria', instance.quantidade_necessaria if instance else 0)
+        q_at = attrs.get('quantidade_atendida', instance.quantidade_atendida if instance else 0)
+        q_pen = attrs.get('quantidade_pendente', instance.quantidade_pendente if instance else 0)
+        try:
+            validar_quantidades_alocacao(
+                pedido_venda_item_id=pvi_id,
+                quantidade_necessaria=Decimal(str(q_nec)),
+                quantidade_atendida=Decimal(str(q_at)),
+                quantidade_pendente=Decimal(str(q_pen)),
+                excluir_id=instance.pk if instance else None,
+            )
+        except AlocacaoAtendimentoErro as exc:
+            raise serializers.ValidationError({'detail': str(exc)}) from exc
+        try:
+            validar_vinculos_alocacao(attrs, alocacao=instance)
+        except AlocacaoAtendimentoErro as exc:
+            raise serializers.ValidationError({'detail': str(exc)}) from exc
+        return attrs
+
+    def create(self, validated_data):
+        from apps.comercial.services.alocacao_atendimento_service import criar_alocacao_atendimento
+
+        return criar_alocacao_atendimento(validated_data)
+
+    def update(self, instance, validated_data):
+        from apps.comercial.services.alocacao_atendimento_service import atualizar_alocacao_atendimento
+
+        return atualizar_alocacao_atendimento(instance, validated_data)
+
+
+class NFeGerarContasReceberParcelaSerializer(serializers.Serializer):
+    numero_parcela = serializers.IntegerField(required=False, min_value=1)
+    vencimento = serializers.DateField(required=True)
+    valor = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal('0.01'))
+    observacoes = serializers.CharField(required=False, allow_blank=True, max_length=500)
+
+
+class NFeGerarContasReceberSerializer(serializers.Serializer):
+    parcelas = NFeGerarContasReceberParcelaSerializer(many=True)
+    categoria = serializers.IntegerField(required=False, allow_null=True)
+    centro_custo = serializers.IntegerField(required=False, allow_null=True)
+    forma_pagamento_prevista_codigo = serializers.CharField(required=False, allow_blank=True, max_length=32)
+    conta_financeira_prevista = serializers.IntegerField(required=False, allow_null=True)
+    observacoes = serializers.CharField(required=False, allow_blank=True)
+
+
+class NFeGerarContasPagarSerializer(serializers.Serializer):
+    parcelas = NFeGerarContasReceberParcelaSerializer(many=True)
+    categoria = serializers.IntegerField(required=False, allow_null=True)
+    centro_custo = serializers.IntegerField(required=False, allow_null=True)
+    forma_pagamento_prevista_codigo = serializers.CharField(required=False, allow_blank=True, max_length=32)
+    conta_financeira_prevista = serializers.IntegerField(required=False, allow_null=True)
+    observacoes = serializers.CharField(required=False, allow_blank=True)
+    confirmar_pendencias_operacionais = serializers.BooleanField(required=False, default=False)

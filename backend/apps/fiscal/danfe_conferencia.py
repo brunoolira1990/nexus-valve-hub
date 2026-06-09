@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from apps.core.pdf.formatters import dec, endereco_cadastro, fmt_cnpj, format_currency_br, format_date_br
 from apps.fiscal.models import NFeSaida
+from apps.fiscal.nfe_saida_bloqueio import nf_autorizada_homologacao
 from apps.fiscal.nfe_saida_preview import gerar_dados_preview_nfe_saida
 from apps.fiscal.snapshot_fiscal_helpers import (
     get_cofins_snapshot,
@@ -40,6 +41,11 @@ MODALIDADE_FRETE_LABEL = {
 
 def _text(val: str | None) -> str:
     return (str(val) if val is not None else '').strip()
+
+
+def _fmt_serie_local(serie: str | None) -> str:
+    digits = ''.join(c for c in str(serie or '') if c.isdigit())
+    return str(int(digits)) if digits else str(serie or '').strip()
 
 
 def _money(v) -> str:
@@ -113,59 +119,50 @@ def dados_totais_comerciais(linhas: list[dict], nf: NFeSaida) -> dict[str, str]:
     }
 
 
+def _montar_fatura_resumo(nf: NFeSaida, totais_imp: dict[str, str]) -> dict[str, str]:
+    from apps.fiscal.nfe_saida_duplicatas import numero_fatura_nfe
+
+    v_nf = _money(nf.valor_total)
+    return {
+        'numero': numero_fatura_nfe(nf),
+        'valor_original': totais_imp.get('valor_produtos') or v_nf,
+        'desconto': totais_imp.get('desconto') or _money(0),
+        'valor_liquido': v_nf,
+    }
+
+
 def _montar_duplicatas(nf: NFeSaida) -> list[dict[str, str]]:
+    from apps.fiscal.nfe_saida_duplicatas import (
+        assegurar_duplicatas_nfe_saida,
+        formatar_numero_duplicata_exibicao,
+        formatar_vencimento_duplicata_exibicao,
+    )
+
+    assegurar_duplicatas_nfe_saida(nf, save=bool(nf.pk))
     rows: list[dict[str, str]] = []
     titulos = nf.titulos_receber or []
-    if titulos:
-        for t in titulos:
-            if not isinstance(t, dict):
-                continue
-            rows.append(
-                {
-                    'numero': str(t.get('parcela') or len(rows) + 1),
-                    'vencimento': _text(t.get('vencimento')),
-                    'valor': _money(t.get('valor', 0)),
-                },
-            )
-        return rows
-    vencs = nf.vencimentos_finais or []
-    dias = nf.dias_parcelas or []
-    if vencs:
-        for i, v in enumerate(vencs):
-            rows.append(
-                {
-                    'numero': str(i + 1),
-                    'vencimento': format_date_br(v),
-                    'valor': '—',
-                },
-            )
-    elif dias:
-        for i, d in enumerate(dias):
-            rows.append({'numero': str(i + 1), 'vencimento': f'{d} dias', 'valor': '—'})
+    for idx, t in enumerate(titulos, start=1):
+        if not isinstance(t, dict):
+            continue
+        valor = dec(t.get('valor', 0))
+        if valor <= 0:
+            continue
+        rows.append(
+            {
+                'numero': formatar_numero_duplicata_exibicao(t.get('parcela'), fallback=idx),
+                'vencimento': formatar_vencimento_duplicata_exibicao(t.get('vencimento')),
+                'valor': _money(valor),
+            },
+        )
     return rows
 
 
 def _montar_informacoes_complementares(nf: NFeSaida, dados: dict[str, Any]) -> str:
-    partes: list[str] = []
-    add = _text(nf.informacoes_adicionais)
-    if add:
-        partes.append(add)
-    obs = _text(nf.observacoes_nfe)
-    if obs:
-        partes.append(obs)
-    pc = _text(nf.pedido_cliente_numero)
-    if pc:
-        partes.append(f'Pedido do cliente: {pc}')
-    pobs = _text(nf.pedido_cliente_observacao)
-    if pobs:
-        partes.append(pobs)
-    dest = dados.get('destinatario') or {}
-    if dest.get('exibir_email') and dest.get('email'):
-        partes.append(f'E-mail destinatário: {dest["email"]}')
-    reforma_txt = _text(dados.get('reforma_conferencia_texto'))
-    if reforma_txt:
-        partes.append(reforma_txt)
-    return '\n'.join(partes)
+    from apps.fiscal.nfe_integracao.danfe_xml_adicionais import montar_inf_cpl_nfe
+
+    itens_db = {it.pk: it for it in nf.itens.all()}
+    inf_cpl, _ = montar_inf_cpl_nfe(nf, dados, itens_db=itens_db)
+    return inf_cpl.replace('; ', '\n')
 
 
 def _resumo_reforma_linhas(linhas: list[dict]) -> str:
@@ -198,35 +195,52 @@ def montar_dados_danfe_conferencia(nfe_saida: NFeSaida) -> dict[str, Any]:
         .prefetch_related('itens__produto')
         .get(pk=nfe_saida.pk)
     )
-    dados = gerar_dados_preview_nfe_saida(nf)
+    dados = gerar_dados_preview_nfe_saida(nf, incluir_validacao_emissao=False)
     if dados.get('bloqueado'):
         return dados
 
     linhas = list(dados.get('itens') or [])
-    itens_db = {it.pk: it for it in nf.itens.all()}
+    from apps.fiscal.nfe_integracao.danfe_xml_adicionais import (
+        enriquecer_linhas_xml_nfe,
+        resolver_xped_nitemped_item,
+    )
+
+    itens_db = enriquecer_linhas_xml_nfe(nf, {**dados, 'itens': linhas})
     for linha in linhas:
         item_pk = linha.get('item_id')
         item_db = itens_db.get(item_pk) if item_pk else None
         snap_c = (item_db.snapshot_comercial or {}) if item_db else {}
-        pc_num = _text(item_db.pedido_cliente_numero if item_db else '') or _text(nf.pedido_cliente_numero)
-        pc_item = _text(item_db.pedido_cliente_item if item_db else '')
-        inf_parts = []
-        if item_db:
-            if _text(item_db.observacao_item):
-                inf_parts.append(item_db.observacao_item)
-            if _text(item_db.informacao_adicional_item):
-                inf_parts.append(item_db.informacao_adicional_item)
-        linha['inf_ad_prod'] = '\n'.join(inf_parts)
-        linha['x_ped'] = pc_num
-        linha['n_item_ped'] = pc_item
+        x_ped, n_item = resolver_xped_nitemped_item(item_db, linha)
+        linha['x_ped'] = x_ped
+        linha['n_item_ped'] = n_item
         linha['desconto_item'] = snap_c.get('desconto', 0)
     serie, numero = _serie_numero(dados, nf)
     st_fiscal = (nf.status or '').strip().upper()
-    chave_raw = _text(getattr(nf, 'chave_acesso', '') or '')
-    rascunho_conferencia = st_fiscal == 'RASCUNHO' or not chave_raw
-    serie_exibicao = 'Conferência' if rascunho_conferencia else serie
-    numero_exibicao = f'{numero} (rascunho)' if st_fiscal == 'RASCUNHO' else numero
-    numero_canhoto = f'Nº interno: {numero}' if rascunho_conferencia else f'Nº {numero_exibicao}'
+    autorizada_homolog = nf_autorizada_homologacao(nf)
+    chave_raw = _text(
+        getattr(nf, 'chave_acesso', '')
+        or getattr(nf, 'chave_acesso_preliminar', '')
+        or '',
+    )
+    if autorizada_homolog and nf.numero_nfe:
+        nnf_digits = ''.join(c for c in str(nf.numero_nfe) if c.isdigit())
+        numero = nnf_digits.zfill(9) if nnf_digits else numero
+    if autorizada_homolog and nf.serie_nfe:
+        serie = _fmt_serie_local(nf.serie_nfe) or serie
+    rascunho_conferencia = (
+        st_fiscal == 'RASCUNHO' and not autorizada_homolog
+    ) or (not chave_raw and not autorizada_homolog)
+    serie_exibicao = 'Homologação' if autorizada_homolog else ('Conferência' if rascunho_conferencia else serie)
+    numero_exibicao = (
+        f'{numero} (homologação)'
+        if autorizada_homolog
+        else (f'{numero} (rascunho)' if st_fiscal == 'RASCUNHO' else numero)
+    )
+    numero_canhoto = (
+        f'Nº {numero_exibicao}'
+        if autorizada_homolog
+        else (f'Nº interno: {numero}' if rascunho_conferencia else f'Nº {numero_exibicao}')
+    )
     chave_fmt = formatar_chave_acesso(chave_raw) if chave_raw else ''
 
     transp = dados.get('transporte') or {}
@@ -242,18 +256,33 @@ def montar_dados_danfe_conferencia(nfe_saida: NFeSaida) -> dict[str, Any]:
             'numero_canhoto': numero_canhoto,
             'numero_nf': numero,
             'natureza_operacao': _text(dados.get('ide', {}).get('nat_op')) or 'Venda de mercadoria',
-            'protocolo': '',
-            'protocolo_display': '' if rascunho_conferencia else _text(getattr(nf, 'protocolo_autorizacao', '')),
+            'protocolo': _text(getattr(nf, 'protocolo_autorizacao', '')) if autorizada_homolog else '',
+            'protocolo_display': (
+                _text(getattr(nf, 'protocolo_autorizacao', '')) or '—'
+                if autorizada_homolog
+                else ('' if rascunho_conferencia else _text(getattr(nf, 'protocolo_autorizacao', '')))
+            ),
             'consulta_autenticidade': MSG_CONSULTA_PORTAL,
             'numero_exibicao': numero_exibicao,
-            'autorizada_sefaz': False,
+            'autorizada_sefaz': autorizada_homolog,
+            'homologacao': autorizada_homolog,
             'informacoes_fisco': _text(nf.informacoes_fisco),
             'chave_acesso': chave_raw,
             'chave_formatada': chave_fmt,
-            'chave_display': chave_fmt if chave_fmt else MSG_CHAVE_NAO_GERADA,
+            'chave_display': (
+                chave_fmt
+                if chave_fmt
+                else (
+                    'Pendente — será gerada na autorização SEFAZ'
+                    if rascunho_conferencia
+                    else MSG_CHAVE_NAO_GERADA
+                )
+            ),
             'chave_placeholder_barcode': bool(not chave_fmt),
+            'chave_e_preliminar': bool(chave_fmt and chave_raw),
             'tipo_operacao_saida': True,
             'duplicatas': _montar_duplicatas(nf),
+            'fatura_resumo': _montar_fatura_resumo(nf, totais_imp),
             'totais_imposto': totais_imp,
             'informacoes_complementares': _montar_informacoes_complementares(nf, dados),
             'itens': linhas,
@@ -307,18 +336,28 @@ def montar_dados_danfe_conferencia(nfe_saida: NFeSaida) -> dict[str, Any]:
             'filename': f'danfe-conferencia-nfe-{_text(numero) or nf.pk}.pdf',
             'content_type': 'application/pdf',
             'conferencia': True,
-            'mensagens': [
-                MSG_AVISO_TOPO,
-                'DANFE de conferência — sem transmissão SEFAZ.',
-            ],
+            'mensagens': (
+                [
+                    'DANFE homologação — SEM VALOR FISCAL.',
+                    'Protocolo SEFAZ de homologação.',
+                ]
+                if autorizada_homolog
+                else [
+                    MSG_AVISO_TOPO,
+                    'DANFE de conferência — sem transmissão SEFAZ.',
+                ]
+            ),
         },
     )
+    from apps.fiscal.danfe_conferencia_layout import aplicar_layout_em_dados_danfe
+
+    aplicar_layout_em_dados_danfe(dados, nf)
     return dados
 
 
 
 def gerar_danfe_conferencia_pdf(nfe_saida: NFeSaida) -> tuple[bytes, dict[str, Any]]:
-    """Gera PDF DANFE modelo 55 de conferência (template HTML + WeasyPrint; fallback ReportLab)."""
-    from apps.fiscal.danfe_render import gerar_danfe_modelo55_conferencia_pdf
+    """Gera PDF DANFE modelo 55 de conferência via renderer oficial BFR."""
+    from apps.fiscal.danfe_render import gerar_danfe_bfr_oficial
 
-    return gerar_danfe_modelo55_conferencia_pdf(nfe_saida)
+    return gerar_danfe_bfr_oficial(nfe_saida)

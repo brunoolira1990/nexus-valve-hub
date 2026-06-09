@@ -897,15 +897,26 @@ class ItemPedidoVendaSerializer(serializers.ModelSerializer):
         if 'snapshot_fiscal' not in attrs and incoming.get('snapshot_fiscal') is not None:
             attrs['snapshot_fiscal'] = incoming.get('snapshot_fiscal')
         produto = attrs.get('produto', self.instance.produto if self.instance else None)
+        if not produto:
+            raise serializers.ValidationError({'produto_id': 'Não é possível salvar pedido com item sem produto.'})
         quantidade = _dec(attrs.get('quantidade', self.instance.quantidade if self.instance else Decimal('0')))
+        if quantidade <= 0:
+            raise serializers.ValidationError({'quantidade': 'Quantidade deve ser maior que zero.'})
         unidade_negociada = (attrs.get('unidade_negociada', self.instance.unidade_negociada if self.instance else '') or '').strip().upper()
         quantidade_neg = _dec(attrs.get('quantidade_negociada', quantidade)) or quantidade
+        if quantidade_neg <= 0:
+            raise serializers.ValidationError({'quantidade_negociada': 'Quantidade deve ser maior que zero.'})
         preco = _dec(
             attrs.get(
                 'preco_por_unidade_negociada',
                 attrs.get('valor_unitario', self.instance.valor_unitario if self.instance else Decimal('0')),
             )
         )
+        if preco < 0:
+            raise serializers.ValidationError({'preco_por_unidade_negociada': 'Preço unitário não pode ser negativo.'})
+        desconto = _dec(attrs.get('desconto', self.instance.desconto if self.instance else Decimal('0')))
+        if desconto < 0:
+            raise serializers.ValidationError({'desconto': 'Desconto não pode ser negativo.'})
         calc = calcular_item_comercial_com_conversao(
             produto=produto,
             quantidade_negociada=quantidade_neg,
@@ -946,6 +957,7 @@ class PedidoVendaSerializer(serializers.ModelSerializer):
         required=False,
     )
     vendedor_nome = serializers.SerializerMethodField(read_only=True)
+    resumo_atendimento_operacional = serializers.SerializerMethodField(read_only=True)
     itens = ItemPedidoVendaSerializer(many=True)
 
     class Meta:
@@ -975,6 +987,7 @@ class PedidoVendaSerializer(serializers.ModelSerializer):
             'proposta_id',
             'proposta_numero',
             'itens',
+            'resumo_atendimento_operacional',
         )
 
     proposta_numero = serializers.SerializerMethodField(read_only=True)
@@ -997,6 +1010,18 @@ class PedidoVendaSerializer(serializers.ModelSerializer):
 
     def get_vendedor_nome(self, obj):
         return nome_vendedor_exibicao(obj)
+
+    def get_resumo_atendimento_operacional(self, obj):
+        from apps.comercial.services.resumo_atendimento_operacional import (
+            obter_resumo_atendimento_operacional,
+            resumo_listagem_pedido_venda,
+        )
+
+        if self.context.get('omit_resumo_operacional'):
+            return None
+        if self.context.get('listagem'):
+            return resumo_listagem_pedido_venda(obj)
+        return obter_resumo_atendimento_operacional(obj, contexto='pedido_venda')
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -1062,6 +1087,23 @@ class PedidoVendaSerializer(serializers.ModelSerializer):
         recalcular_pedido_venda(pedido)
         return pedido
 
+    def _itens_payload_com_ids(self, itens_data: list[dict]) -> list[dict]:
+        """Preserva id dos itens vindos do JSON — o nested serializer pode omitir pk no validated_data."""
+        raw_itens = (self.initial_data or {}).get('itens') or []
+        out: list[dict] = []
+        for idx, row in enumerate(itens_data):
+            item = dict(row)
+            prod = item.pop('produto', None)
+            if prod is not None and hasattr(prod, 'pk'):
+                item['produto_id'] = prod.pk
+            if item.get('id') in (None, ''):
+                raw = raw_itens[idx] if idx < len(raw_itens) else {}
+                raw_id = raw.get('id') if isinstance(raw, dict) else None
+                if raw_id not in (None, ''):
+                    item['id'] = raw_id
+            out.append(item)
+        return out
+
     def update(self, instance, validated_data):
         from apps.comercial.pedido_venda_bloqueio import sincronizar_itens_pedido_venda
 
@@ -1070,7 +1112,7 @@ class PedidoVendaSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
         instance.save()
         if itens_data is not None:
-            sincronizar_itens_pedido_venda(instance, itens_data)
+            sincronizar_itens_pedido_venda(instance, self._itens_payload_com_ids(itens_data))
         recalcular_pedido_venda(instance)
         return instance
 

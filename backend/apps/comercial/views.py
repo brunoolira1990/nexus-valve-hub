@@ -14,14 +14,19 @@ from .faturamento_pedido_venda import (
     cancelar_faturamento_pedido,
     confirmar_faturamento_pedido,
     criar_faturamento_pedido,
+    estornar_faturamento_pedido,
     montar_resumo_faturamento,
+    reparar_vinculo_faturamento_nfe,
 )
 from .observed_metrics import (
     montar_apoio_gerencial,
     montar_referencia_comercial_custo_compra,
     montar_referencia_comercial_frete,
 )
-from .models import PedidoCompra, PedidoVenda, Proposta
+from .models import FaturamentoPedidoVenda, PedidoCompra, PedidoVenda, Proposta
+from nexus_erp.list_mixins import AutocompleteOrPaginationMixin, aplicar_ordering
+from nexus_erp.view_mixins import FriendlyDestroyMixin
+from nexus_erp.pagination import NexusPageNumberPagination
 from .comercial_pdf_shared import pdf_http_response
 from .pedido_compra_pdf import gerar_pedido_compra_pdf_bytes
 from .pedido_venda_pdf import gerar_pedido_venda_pdf_bytes
@@ -40,7 +45,7 @@ from .serializers import PedidoCompraSerializer, PedidoVendaSerializer, Proposta
 logger = logging.getLogger(__name__)
 
 
-class PropostaViewSet(viewsets.ModelViewSet):
+class PropostaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
     queryset = (
         Proposta.objects.select_related(
             'cliente', 'empresa_emitente', 'cenario_fiscal_saida', 'vendedor_ref',
@@ -49,9 +54,10 @@ class PropostaViewSet(viewsets.ModelViewSet):
         .all()
     )
     serializer_class = PropostaSerializer
+    pagination_class = NexusPageNumberPagination
 
     def get_queryset(self):
-        qs = super().get_queryset().order_by('-id')
+        qs = super().get_queryset()
         search = (self.request.query_params.get('search') or '').strip()
         if search:
             qs = qs.filter(
@@ -60,13 +66,21 @@ class PropostaViewSet(viewsets.ModelViewSet):
                 | Q(cliente__nome_fantasia__icontains=search)
                 | Q(cliente_avulso_nome__icontains=search),
             )
-        limit = self.request.query_params.get('limit')
-        if limit:
+        status_f = (self.request.query_params.get('status') or '').strip()
+        if status_f:
+            qs = qs.filter(status__icontains=status_f)
+        cliente_id = self.request.query_params.get('cliente_id')
+        if cliente_id:
             try:
-                qs = qs[: max(1, min(int(limit), 100))]
+                qs = qs.filter(cliente_id=int(cliente_id))
             except (TypeError, ValueError):
                 pass
-        return qs
+        return aplicar_ordering(
+            qs,
+            self.request.query_params.get('ordering'),
+            {'data': 'data', 'numero': 'numero', 'valor_total': 'valor_total', 'status': 'status'},
+            '-id',
+        )
 
     @action(detail=False, methods=['get'], url_path='apoio-gerencial')
     def apoio_gerencial(self, request):
@@ -189,7 +203,8 @@ class PropostaViewSet(viewsets.ModelViewSet):
         return pdf_http_response(content, filename=f'proposta-{safe}.pdf')
 
 
-class PedidoVendaViewSet(viewsets.ModelViewSet):
+class PedidoVendaViewSet(FriendlyDestroyMixin, AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
+    destroy_entity_label = 'pedido de venda'
     queryset = (
         PedidoVenda.objects.select_related(
             'cliente', 'proposta', 'empresa_emitente', 'vendedor_ref',
@@ -198,9 +213,29 @@ class PedidoVendaViewSet(viewsets.ModelViewSet):
         .all()
     )
     serializer_class = PedidoVendaSerializer
+    pagination_class = NexusPageNumberPagination
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        if getattr(self, 'action', None) == 'list':
+            ctx['listagem'] = True
+        return ctx
 
     def get_queryset(self):
-        qs = super().get_queryset().order_by('-id')
+        qs = super().get_queryset()
+        if getattr(self, 'action', None) == 'list':
+            from django.db.models import Prefetch
+            from apps.fiscal.models import AlocacaoAtendimento
+
+            qs = qs.prefetch_related(
+                Prefetch(
+                    'itens__alocacoes_atendimento',
+                    queryset=AlocacaoAtendimento.objects.select_related(
+                        'nf_entrada_item__nf',
+                        'pedido_compra_item',
+                    ),
+                ),
+            )
         search = (self.request.query_params.get('search') or '').strip()
         if search:
             qs = qs.filter(
@@ -216,20 +251,19 @@ class PedidoVendaViewSet(viewsets.ModelViewSet):
                 pass
         status_f = (self.request.query_params.get('status') or '').strip()
         if status_f:
-            qs = qs.filter(status__iexact=status_f)
+            qs = qs.filter(status__icontains=status_f)
         proposta_id = self.request.query_params.get('proposta_id')
         if proposta_id:
             try:
                 qs = qs.filter(proposta_id=int(proposta_id))
             except (TypeError, ValueError):
                 pass
-        limit = self.request.query_params.get('limit')
-        if limit:
-            try:
-                qs = qs[: max(1, min(int(limit), 100))]
-            except (TypeError, ValueError):
-                pass
-        return qs
+        return aplicar_ordering(
+            qs,
+            self.request.query_params.get('ordering'),
+            {'data': 'data', 'numero': 'numero', 'valor_total': 'valor_total', 'status': 'status'},
+            '-id',
+        )
 
     @action(detail=False, methods=['get'], url_path='apoio-gerencial')
     def apoio_gerencial(self, request):
@@ -259,6 +293,47 @@ class PedidoVendaViewSet(viewsets.ModelViewSet):
     def resumo_faturamento(self, request, pk=None):
         pedido = self.get_object()
         return Response(montar_resumo_faturamento(pedido))
+
+    @action(detail=True, methods=['post'], url_path='recalcular-totais')
+    def recalcular_totais(self, request, pk=None):
+        from apps.comercial.serializers import recalcular_pedido_venda
+
+        pedido = self.get_object()
+        recalcular_pedido_venda(pedido)
+        pedido.refresh_from_db()
+        return Response(montar_resumo_faturamento(pedido))
+
+    @action(detail=True, methods=['get'], url_path='alocacoes-atendimento')
+    def alocacoes_atendimento(self, request, pk=None):
+        """ERP 4.0.12 — listagem de alocações do PV (opcional ?faturamento_id=)."""
+        from apps.comercial.services.alocacao_atendimento_service import (
+            filtrar_alocacoes,
+            listar_alocacoes_por_pedido_venda,
+        )
+        from apps.comercial.services.resumo_atendimento_operacional import (
+            obter_resumo_atendimento_operacional,
+        )
+        from apps.fiscal.serializers import AlocacaoAtendimentoSerializer
+
+        pedido = self.get_object()
+        fid = request.query_params.get('faturamento_id')
+        if fid:
+            try:
+                qs = filtrar_alocacoes({'pedido_venda': pedido.pk, 'faturamento': int(fid)})
+            except (TypeError, ValueError):
+                return Response({'detail': 'faturamento_id inválido.'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            qs = listar_alocacoes_por_pedido_venda(pedido.pk)
+        return Response(
+            {
+                'alocacoes': AlocacaoAtendimentoSerializer(qs, many=True).data,
+                'count': qs.count(),
+                'resumo_atendimento_operacional': obter_resumo_atendimento_operacional(
+                    pedido,
+                    contexto='pedido_venda',
+                ),
+            },
+        )
 
     @action(detail=True, methods=['post'], url_path='faturamentos')
     def criar_faturamento(self, request, pk=None):
@@ -306,6 +381,45 @@ class PedidoVendaViewSet(viewsets.ModelViewSet):
     @action(
         detail=True,
         methods=['post'],
+        url_path=r'faturamentos/(?P<faturamento_id>[^/.]+)/estornar',
+    )
+    def estornar_faturamento(self, request, pk=None, faturamento_id=None):
+        pedido = self.get_object()
+        try:
+            fid = int(faturamento_id)
+        except (TypeError, ValueError):
+            return Response({'detail': 'faturamento_id inválido.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            resultado = estornar_faturamento_pedido(
+                pedido,
+                fid,
+                motivo=(request.data.get('motivo') or '').strip(),
+                usuario=request.user,
+            )
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(resultado)
+
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path=r'faturamentos/(?P<faturamento_id>[^/.]+)/reparar-vinculo-nfe',
+    )
+    def reparar_vinculo_nfe_faturamento(self, request, pk=None, faturamento_id=None):
+        pedido = self.get_object()
+        try:
+            fid = int(faturamento_id)
+        except (TypeError, ValueError):
+            return Response({'detail': 'faturamento_id inválido.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            resultado = reparar_vinculo_faturamento_nfe(pedido, fid)
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(resultado)
+
+    @action(
+        detail=True,
+        methods=['post'],
         url_path=r'faturamentos/(?P<faturamento_id>[^/.]+)/gerar-nfe-saida',
     )
     def gerar_nfe_saida_faturamento(self, request, pk=None, faturamento_id=None):
@@ -325,6 +439,38 @@ class PedidoVendaViewSet(viewsets.ModelViewSet):
         code = status.HTTP_200_OK if resultado['ja_existia'] else status.HTTP_201_CREATED
         return Response(resultado, status=code)
 
+    @action(detail=True, methods=['post'], url_path='checklist-nfe-homologacao')
+    def checklist_nfe_homologacao(self, request, pk=None):
+        """ERP 4.0.13.5 — checklist fiscal pré-homologação do pedido (sem transmitir)."""
+        from apps.fiscal.nfe_saida_checklist_homologacao import validar_prontidao_nfe_homologacao
+
+        pedido = self.get_object()
+        fid = request.data.get('faturamento_id')
+        fat = None
+        if fid:
+            try:
+                fat = FaturamentoPedidoVenda.objects.get(pk=int(fid), pedido_id=pedido.pk)
+            except (FaturamentoPedidoVenda.DoesNotExist, TypeError, ValueError):
+                return Response({'detail': 'faturamento_id inválido.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(validar_prontidao_nfe_homologacao(pedido_venda=pedido, faturamento=fat))
+
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path=r'faturamentos/(?P<faturamento_id>[^/.]+)/checklist-nfe-homologacao',
+    )
+    def checklist_nfe_homologacao_faturamento(self, request, pk=None, faturamento_id=None):
+        """ERP 4.0.13.5 — checklist fiscal pré-homologação do faturamento."""
+        from apps.fiscal.nfe_saida_checklist_homologacao import validar_prontidao_nfe_homologacao
+
+        pedido = self.get_object()
+        try:
+            fid = int(faturamento_id)
+            fat = FaturamentoPedidoVenda.objects.get(pk=fid, pedido_id=pedido.pk)
+        except (FaturamentoPedidoVenda.DoesNotExist, TypeError, ValueError):
+            return Response({'detail': 'faturamento_id inválido.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(validar_prontidao_nfe_homologacao(pedido_venda=pedido, faturamento=fat))
+
     @action(detail=True, methods=['get'], url_path='pdf')
     def pdf(self, request, pk=None):
         pedido = self.get_object()
@@ -340,27 +486,36 @@ class PedidoVendaViewSet(viewsets.ModelViewSet):
         return pdf_http_response(content, filename=f'pedido-venda-{safe}.pdf')
 
 
-class PedidoCompraViewSet(viewsets.ModelViewSet):
+class PedidoCompraViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
     queryset = PedidoCompra.objects.select_related('fornecedor').prefetch_related('itens__produto').all()
     serializer_class = PedidoCompraSerializer
+    pagination_class = NexusPageNumberPagination
 
     def get_queryset(self):
-        qs = super().get_queryset().order_by('-id')
+        qs = super().get_queryset()
         search = (self.request.query_params.get('search') or '').strip()
         if search:
             qs = qs.filter(
                 Q(numero__icontains=search)
                 | Q(fornecedor__razao_social__icontains=search)
                 | Q(fornecedor__nome_fantasia__icontains=search)
-                | Q(fornecedor__cnpj__icontains=search)
+                | Q(fornecedor__cnpj__icontains=search),
             )
-        limit = self.request.query_params.get('limit')
-        if limit:
+        status_f = (self.request.query_params.get('status') or '').strip()
+        if status_f:
+            qs = qs.filter(status__icontains=status_f)
+        fornecedor_id = self.request.query_params.get('fornecedor_id')
+        if fornecedor_id:
             try:
-                qs = qs[: max(1, min(int(limit), 100))]
+                qs = qs.filter(fornecedor_id=int(fornecedor_id))
             except (TypeError, ValueError):
                 pass
-        return qs
+        return aplicar_ordering(
+            qs,
+            self.request.query_params.get('ordering'),
+            {'data': 'data', 'numero': 'numero', 'valor_total': 'valor_total', 'status': 'status'},
+            '-id',
+        )
 
     @action(detail=True, methods=['get'], url_path='pdf')
     def pdf(self, request, pk=None):

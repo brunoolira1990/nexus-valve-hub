@@ -1,4 +1,5 @@
 import api from './config';
+import { buildListParams, type ListQueryParams, type PaginatedResponse, unwrapListResults } from '@/lib/apiList';
 
 const base = 'nf-entradas-historicas-importadas/';
 
@@ -16,5 +17,16 @@ export type NFeEntradaHistoricaList = {
 };
 
 export const nfeEntradaHistoricaImportadaService = {
-  list: async () => (await api.get<NFeEntradaHistoricaList[]>(base)).data,
+  listPaginated: async (params?: ListQueryParams) => {
+    const response = await api.get<PaginatedResponse<NFeEntradaHistoricaList>>(base, {
+      params: buildListParams(params),
+    });
+    return response.data;
+  },
+  list: async (params?: ListQueryParams) => {
+    const response = await api.get<NFeEntradaHistoricaList[] | PaginatedResponse<NFeEntradaHistoricaList>>(base, {
+      params: buildListParams(params?.page ? params : { ...params, limit: params?.limit ?? 100 }),
+    });
+    return unwrapListResults(response.data);
+  },
 };

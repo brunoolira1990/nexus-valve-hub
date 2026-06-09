@@ -1,5 +1,11 @@
 import { AxiosError } from 'axios';
 import api, { apiErrorMessage } from './config';
+import {
+  buildListParams,
+  type ListQueryParams,
+  type PaginatedResponse,
+  unwrapListResults,
+} from '@/lib/apiList';
 import type { CertificadoQualidade, CorridaDisponivelCertificadoQualidade } from '@/types';
 
 const base = 'certificados-qualidade/';
@@ -110,7 +116,16 @@ async function getPdfBlob(id: number, preview = false): Promise<Blob> {
 }
 
 export const certificadosQualidadeService = {
-  getAll: async () => (await api.get<CertificadoQualidade[]>(base)).data,
+  listPaginated: async (params?: ListQueryParams) => {
+    const response = await api.get<PaginatedResponse<CertificadoQualidade>>(base, { params: buildListParams(params) });
+    return response.data;
+  },
+  getAll: async (params?: ListQueryParams) => {
+    const response = await api.get<CertificadoQualidade[] | PaginatedResponse<CertificadoQualidade>>(base, {
+      params: buildListParams(params?.page ? params : { ...params, limit: params?.limit ?? 100 }),
+    });
+    return unwrapListResults(response.data);
+  },
   getById: async (id: number) => (await api.get<CertificadoQualidade>(`${base}${id}/`)).data,
   create: async (payload: Omit<CertificadoQualidade, 'id' | 'criado_em' | 'atualizado_em' | 'numero_formatado'>) =>
     (await api.post<CertificadoQualidade>(base, payload)).data,

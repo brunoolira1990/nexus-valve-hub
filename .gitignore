@@ -1,5 +1,5 @@
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -10,9 +10,10 @@ lerna-debug.log*
 # Dependencies / build
 node_modules/
 frontend/node_modules/
-dist
-dist-ssr
-*.local
+dist/
+dist-ssr/
+frontend/dist/
+frontend/dist-ssr/
 
 # Env
 .env
@@ -28,27 +29,56 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+.venv/
+venv/
 
 # Django / backend
-backend/.venv
+backend/.venv/
 backend/media/
 backend/staticfiles/
 backend/tmp/
+backend/reports/
+reports/
+
+# Backups locais / banco
+backups/
+*.dump
+*.sql
+*.sqlite3
+*.db
+
+# PDFs e artefatos temporários gerados localmente
+backend/*.pdf
+backend/tmp_*.pdf
+
+# Certificados e chaves privadas
+*.pfx
+*.p12
+*.pem
+*.key
+*.crt
+
+# Windows / WSL
+*:Zone.Identifier
+*.Zone.Identifier
+
+# Frontend tooling
+coverage/
+.vitest/
+frontend/*.tsbuildinfo
 
 # Artefatos locais / temporários
 tmp/
+*.bak
+*.tmp
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
-
-# Frontend tooling
-coverage/
-.vitest/

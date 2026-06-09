@@ -4,6 +4,7 @@
 
 @layer base {
   :root {
+  /* Nexus Design System — tokens base (light; dark-ready via class no futuro) */
     --background: 220 14% 96%;
     --foreground: 222 47% 11%;
     --card: 0 0% 100%;
@@ -11,6 +12,8 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
     --primary: 217 91% 45%;
+    --primary-hover: 217 91% 40%;
+    --primary-soft: 217 91% 96%;
     --primary-foreground: 0 0% 100%;
     --secondary: 210 40% 96%;
     --secondary-foreground: 222 47% 11%;
@@ -20,14 +23,35 @@
     --accent-foreground: 222 47% 11%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
+    --danger: 0 84% 60%;
     --success: 142 71% 45%;
     --success-foreground: 0 0% 100%;
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
+    --info: 199 89% 48%;
+    --info-foreground: 0 0% 100%;
+    --neutral: 215 16% 65%;
     --border: 214 32% 91%;
     --input: 214 32% 91%;
     --ring: 217 91% 45%;
+    --surface: 0 0% 100%;
+    --surface-muted: 210 40% 98%;
+    --text-primary: 222 47% 11%;
+    --text-secondary: 215 16% 35%;
+    --text-muted: 215 16% 47%;
     --radius: 0.5rem;
+    --radius-sm: 0.375rem;
+    --radius-md: 0.5rem;
+    --radius-lg: 0.75rem;
+    --shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.06);
+    --shadow-card: 0 1px 3px 0 rgb(15 23 42 / 0.06), 0 1px 2px -1px rgb(15 23 42 / 0.06);
+    --shadow-modal: 0 20px 25px -5px rgb(15 23 42 / 0.12), 0 8px 10px -6px rgb(15 23 42 / 0.08);
+    --page-padding: 1.5rem;
+    --card-padding: 1.25rem;
+    --section-gap: 1.5rem;
+    --form-gap: 1rem;
+    --table-row-py: 0.75rem;
     --sidebar-bg: 220 26% 14%;
     --sidebar-fg: 210 40% 98%;
     --sidebar-hover: 220 26% 20%;
@@ -35,6 +59,16 @@
     --sidebar-muted: 215 16% 47%;
     --header-bg: 0 0% 100%;
     --header-fg: 222 47% 11%;
+    /* Status semânticos */
+    --status-rascunho: 215 16% 47%;
+    --status-conferencia: 199 89% 48%;
+    --status-pronta: 217 91% 45%;
+    --status-autorizada: 142 71% 45%;
+    --status-rejeitada: 0 84% 60%;
+    --status-cancelada: 215 16% 65%;
+    --status-pendente: 38 92% 50%;
+    --status-concluida: 142 71% 45%;
+    --status-preparacao: 262 83% 58%;
   }
 }
 
@@ -121,5 +155,67 @@
   }
   .erp-badge-danger {
     @apply erp-badge bg-red-100 text-red-700;
+  }
+
+  /* Nexus DS — aliases e extensões (erp-* permanece compatível) */
+  .nexus-card {
+    @apply bg-card text-card-foreground rounded-lg border border-border;
+    box-shadow: var(--shadow-card);
+  }
+  .nexus-card-clickable {
+    @apply nexus-card transition-shadow duration-200 cursor-pointer;
+  }
+  .nexus-card-clickable:hover {
+    box-shadow: var(--shadow-md);
+  }
+  .nexus-table {
+    @apply w-full text-sm;
+  }
+  .nexus-table thead {
+    @apply bg-muted/80;
+  }
+  .nexus-table th {
+    @apply px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground;
+  }
+  .nexus-table td {
+    @apply px-4 border-b border-border align-middle;
+    padding-top: var(--table-row-py);
+    padding-bottom: var(--table-row-py);
+  }
+  .nexus-table tbody tr {
+    @apply transition-colors duration-150;
+  }
+  .nexus-table tbody tr:hover {
+    @apply bg-muted/40;
+  }
+  .nexus-heading-xl {
+    @apply text-3xl font-bold tracking-tight text-foreground;
+  }
+  .nexus-heading-lg {
+    @apply text-2xl font-bold tracking-tight text-foreground;
+  }
+  .nexus-heading-md {
+    @apply text-lg font-semibold text-foreground;
+  }
+  .nexus-body {
+    @apply text-sm text-foreground;
+  }
+  .nexus-body-sm {
+    @apply text-xs text-foreground;
+  }
+  .nexus-caption {
+    @apply text-xs text-muted-foreground;
+  }
+  .nexus-label {
+    @apply text-sm font-medium leading-none text-foreground;
+  }
+  .nexus-numeric {
+    @apply text-sm tabular-nums font-medium;
+  }
+  .nexus-skeleton {
+    @apply animate-pulse rounded-md bg-muted;
+  }
+  .nexus-modal-shadow {
+    box-shadow: var(--shadow-modal);
   }
 }

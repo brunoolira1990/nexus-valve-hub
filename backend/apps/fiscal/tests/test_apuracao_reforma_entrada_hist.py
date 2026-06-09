@@ -44,6 +44,8 @@ class ApuracaoReformaEntradaHistoricaTest(TestCase):
             serie='1',
             modelo='55',
             dh_emissao=dh,
+            tp_amb='1',
+            cstat='100',
             totais_json=totais,
             valor_total_nf=Decimal('710.34'),
         )

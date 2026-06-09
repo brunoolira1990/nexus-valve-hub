@@ -8,6 +8,7 @@ STATUS_NFE_RASCUNHO = 'RASCUNHO'
 
 _STATUS_EMITIDA = frozenset({'EMITIDA', 'EMITIDO', 'AUTORIZADA_INTERNA', 'AUTORIZADA'})
 _STATUS_CANCELADA = frozenset({'CANCELADA', 'CANCELADO', 'CANCELADA_INTERNA'})
+_STATUS_AUTORIZADA_HOMOLOG = frozenset({'AUTORIZADA_HOMOLOGACAO'})
 
 MSG_ITENS_ORIGEM_COMERCIAL = (
     'Itens herdados do faturamento/pedido não podem ser alterados. '
@@ -16,10 +17,14 @@ MSG_ITENS_ORIGEM_COMERCIAL = (
 MSG_DADOS_COMPLEMENTARES_BLOQUEADOS = (
     'NF-e autorizada ou cancelada não permite alteração de dados complementares.'
 )
+MSG_DADOS_COMPLEMENTARES_BLOQUEADOS_HOMOLOG = (
+    'NF-e autorizada em homologação não permite alteração de dados complementares.'
+)
 
 CAMPOS_COMPLEMENTARES_NFE = frozenset(
     {
         'transportadora',
+        'transportadora_id',
         'modalidade_frete',
         'valor_frete',
         'quantidade_volumes',
@@ -36,6 +41,9 @@ CAMPOS_COMPLEMENTARES_NFE = frozenset(
         'observacoes_internas',
         'pedido_cliente_numero',
         'pedido_cliente_observacao',
+        'ind_final',
+        'ind_pres',
+        'indicadores_fiscais_confirmados',
     },
 )
 
@@ -53,13 +61,23 @@ def _status_normalizado(status: str | None) -> str:
     return (status or '').strip().upper()
 
 
+def nf_autorizada_homologacao(nf: NFeSaida) -> bool:
+    if (nf.status_emissao_sefaz or '').strip() == NFeSaida.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO:
+        return True
+    return (nf.status or '').strip().upper() in _STATUS_AUTORIZADA_HOMOLOG
+
+
 def origem_comercial_travada(nf: NFeSaida) -> bool:
     return bool(nf.faturamento_pedido_venda_id or nf.pedido_venda_id)
 
 
 def nf_ja_finalizada_operacionalmente(nf: NFeSaida) -> bool:
+    if nf_autorizada_homologacao(nf):
+        return True
     st = _status_normalizado(nf.status)
     if st in _STATUS_EMITIDA or st in _STATUS_CANCELADA:
+        return True
+    if st in _STATUS_AUTORIZADA_HOMOLOG:
         return True
     return bool(nf.efeitos_autorizacao_aplicados_em)
 

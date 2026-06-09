@@ -14,29 +14,50 @@ from reportlab.pdfgen import canvas
 from reportlab.platypus import KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from apps.cadastros.models import Empresa
+from apps.core.pdf.styles import (
+    C_BRAND_PRIMARY,
+    C_CARD_BG,
+    C_DOC_FRAME,
+    C_FRAME_LIGHT,
+    C_MUTED,
+    C_PRIMARY,
+    C_ROW_ALT,
+    C_SLATE_TEXT,
+    C_TABLE_HEADER_BG,
+    FONT_PDF_SECTION,
+    FONT_PDF_SMALL,
+)
 from apps.fiscal.models import NFeSaida
 from apps.qualidade.models import CertificadoQualidade
 
 logger = logging.getLogger(__name__)
 
+# Paleta alinhada a apps.core.pdf.styles (identidade Nexus); chaves extras só para PDF de certificado.
 PDF_THEME = {
-    'brand_dark': colors.HexColor('#0F172A'),
-    'brand_primary': colors.HexColor('#0F5EDB'),
-    'table_header_bg': colors.HexColor('#E8EEF5'),
-    'border': colors.HexColor('#334155'),
-    'text': colors.HexColor('#0F172A'),
+    'brand_dark': C_PRIMARY,
+    'brand_primary': C_BRAND_PRIMARY,
+    'table_header_bg': C_TABLE_HEADER_BG,
+    'border': C_DOC_FRAME,
+    'border_frame': C_FRAME_LIGHT,
+    'text': C_PRIMARY,
+    'muted': C_MUTED,
     'white': colors.white,
-    'draft_watermark': colors.Color(0.75, 0.1, 0.1, alpha=0.06),
-    'draft_text': colors.HexColor('#9F1239'),
-    'section_title_size': 8.6,
+    'card_bg': C_CARD_BG,
+    'row_alt': C_ROW_ALT,
+    # Rascunho/prévia: marca d'água em tom institucional (azul), sem alterar o texto "PRÉVIA / RASCUNHO".
+    'draft_watermark': colors.Color(15 / 255, 94 / 255, 219 / 255, alpha=0.078),
+    'draft_text': C_BRAND_PRIMARY,
+    'cancel_watermark': colors.Color(0.55, 0.06, 0.06, alpha=0.095),
+    'cancel_text': colors.HexColor('#991B1B'),
+    'section_title_size': FONT_PDF_SECTION - 0.4,
     'header_main_size': 9.4,
     'header_sub_size': 7.8,
     'header_right_title_size': 12,
     'header_right_number_size': 10,
-    'body_size': 7.4,
-    'footer_size': 7.2,
+    'body_size': FONT_PDF_SMALL,
+    'footer_size': FONT_PDF_SMALL - 0.2,
 }
-PDF_TEMPLATE_VERSION = 'certificado-qualidade-v2-template-oficial'
+PDF_TEMPLATE_VERSION = 'certificado-qualidade-v3-visual-nexus'
 
 NEXUS_HEADER_FALLBACK = {
     'razao': 'NEXUS VALVULAS E CONEXOES INDUSTRIAIS LTDA',
@@ -91,13 +112,15 @@ def _draw_table(c: canvas.Canvas, data: list[list[str]], x: float, y_top: float,
     t.setStyle(
         TableStyle(
             [
-                ('GRID', (0, 0), (-1, -1), 0.35, PDF_THEME['border']),
+                ('GRID', (0, 0), (-1, -1), 0.28, PDF_THEME['border']),
                 ('FONT', (0, 0), (-1, 0), 'Helvetica-Bold', 7.1),
                 ('FONT', (0, 1), (-1, -1), 'Helvetica', PDF_THEME['body_size']),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                 ('BACKGROUND', (0, 0), (-1, 0), PDF_THEME['table_header_bg']),
+                ('LINEBELOW', (0, 0), (-1, 0), 0.85, PDF_THEME['brand_primary']),
                 ('TEXTCOLOR', (0, 0), (-1, -1), PDF_THEME['text']),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, PDF_THEME['row_alt']]),
                 ('LEFTPADDING', (0, 0), (-1, -1), 2),
                 ('RIGHTPADDING', (0, 0), (-1, -1), 2),
             ],
@@ -274,6 +297,9 @@ def _item_sources(cert: CertificadoQualidade):
 def _draw_section_title(c: canvas.Canvas, text: str, x: float, y: float, w: float):
     c.setFillColor(PDF_THEME['table_header_bg'])
     c.rect(x, y - 5.8 * mm, w, 5.8 * mm, fill=1, stroke=0)
+    c.setStrokeColor(PDF_THEME['brand_primary'])
+    c.setLineWidth(0.85)
+    c.line(x, y - 5.8 * mm, x + w, y - 5.8 * mm)
     c.setFillColor(PDF_THEME['brand_dark'])
     c.setFont('Helvetica-Bold', PDF_THEME['section_title_size'])
     c.drawString(x + 2 * mm, y - 4.1 * mm, text)
@@ -288,6 +314,7 @@ def _draw_header_block(c: canvas.Canvas, cert: CertificadoQualidade, width: floa
     total_w = right - left
     h = 42 * mm
     c.setStrokeColor(PDF_THEME['border'])
+    c.setLineWidth(0.55)
     c.rect(left, top - h, total_w, h, stroke=1, fill=0)
 
     inner_pad = 2.2 * mm
@@ -319,7 +346,7 @@ def _draw_header_block(c: canvas.Canvas, cert: CertificadoQualidade, width: floa
             company['motivo_fallback_logo'] = f'erro ao abrir imagem: {exc}'
             logo_drawn = False
     if not logo_drawn:
-        logger.warning(
+        logger.info(
             'Fallback logo certificado=%s empresa_id=%s origem=%s logo_name=%s motivo=%s',
             cert.id,
             company.get('empresa_id') or '-',
@@ -331,25 +358,33 @@ def _draw_header_block(c: canvas.Canvas, cert: CertificadoQualidade, width: floa
         c.setFillColor(PDF_THEME['brand_dark'])
         c.rect(logo_x, logo_box_y, logo_box_w, logo_box_h, fill=1, stroke=0)
         c.setFillColor(PDF_THEME['white'])
-        c.setFont('Helvetica-Bold', 14)
-        c.drawCentredString(left + logo_w / 2, top - h / 2 + 2 * mm, 'NEXUS')
+        c.setFont('Helvetica-Bold', 9)
+        c.drawCentredString(left + logo_w / 2, top - h / 2 + 2 * mm, 'NEXUS APP')
         c.setFillColor(PDF_THEME['text'])
 
     info_x = left + logo_w + 4.0 * mm
     info_top = top - 6.8 * mm
     line_h = 4.95 * mm
     c.setFont('Helvetica-Bold', 10.6)
+    c.setFillColor(PDF_THEME['brand_dark'])
     c.drawString(info_x, info_top, company['razao'][:86])
     c.setFont('Helvetica', 7.8)
+    c.setFillColor(PDF_THEME['muted'])
     c.drawString(info_x, info_top - line_h, f"TEL.: {company['tel']}")
     c.drawString(info_x, info_top - (line_h * 2), company['endereco'][:96])
     c.drawString(info_x, info_top - (line_h * 3), f"CNPJ: {company['cnpj']}   I.E: {company['ie']}")
     c.drawString(info_x, info_top - (line_h * 4), f"{company['site']}   {company['email']}")
+    c.setFillColor(PDF_THEME['text'])
 
     cert_w = 67 * mm
     cert_x = right - cert_w - inner_pad
-    c.setStrokeColor(PDF_THEME['border'])
-    c.rect(cert_x, top - h + inner_pad, cert_w, h - (inner_pad * 2), stroke=1, fill=0)
+    cert_inner_h = h - (inner_pad * 2)
+    cert_inner_y = top - h + inner_pad
+    c.setFillColor(PDF_THEME['table_header_bg'])
+    c.rect(cert_x, cert_inner_y, cert_w, cert_inner_h, stroke=0, fill=1)
+    c.setStrokeColor(PDF_THEME['border_frame'])
+    c.setLineWidth(0.55)
+    c.rect(cert_x, cert_inner_y, cert_w, cert_inner_h, stroke=1, fill=0)
     c.setFillColor(PDF_THEME['brand_dark'])
     c.setFont('Helvetica-Bold', 13)
     c.drawCentredString(cert_x + (cert_w / 2), top - 11.2 * mm, 'CERTIFICADO')
@@ -362,11 +397,12 @@ def _draw_header_block(c: canvas.Canvas, cert: CertificadoQualidade, width: floa
 
 
 def gerar_certificado_qualidade_pdf(cert: CertificadoQualidade, preview: bool = False) -> bytes:
-    logger.warning(
-        'PDF Certificado Qualidade template=%s cert_id=%s preview=%s',
+    logger.info(
+        'PDF Certificado Qualidade gerado template=%s cert_id=%s preview=%s status=%s',
         PDF_TEMPLATE_VERSION,
         cert.id,
         preview,
+        cert.status,
     )
     MAX_ITENS_COMUNS_POR_PAGINA = 5
     MAX_COMPONENTES_VALVULA_POR_BLOCO = 8
@@ -385,7 +421,7 @@ def gerar_certificado_qualidade_pdf(cert: CertificadoQualidade, preview: bool = 
         topMargin=52 * mm,
         bottomMargin=19 * mm,
         title=f'Certificado de Qualidade {cert.numero_formatado or cert.numero or cert.id}',
-        author='Nexus',
+        author='NEXUS APP',
     )
     footer_text = cert.texto_padrao or (
         'Os certificados originais encontram-se em nosso poder, à sua disposição, certificamos que o(s) produto(s) '
@@ -408,6 +444,7 @@ def gerar_certificado_qualidade_pdf(cert: CertificadoQualidade, preview: bool = 
                     ('RIGHTPADDING', (0, 0), (-1, -1), 2 * mm),
                     ('TOPPADDING', (0, 0), (-1, -1), 1.3 * mm),
                     ('BOTTOMPADDING', (0, 0), (-1, -1), 0.8 * mm),
+                    ('LINEBELOW', (0, 0), (-1, 0), 1.0, PDF_THEME['brand_primary']),
                 ]
             )
         )
@@ -419,13 +456,15 @@ def gerar_certificado_qualidade_pdf(cert: CertificadoQualidade, preview: bool = 
         t.setStyle(
             TableStyle(
                 [
-                    ('GRID', (0, 0), (-1, -1), 0.35, PDF_THEME['border']),
+                    ('GRID', (0, 0), (-1, -1), 0.28, PDF_THEME['border']),
                     ('FONT', (0, 0), (-1, 0), 'Helvetica-Bold', 7.1),
                     ('FONT', (0, 1), (-1, -1), 'Helvetica', PDF_THEME['body_size']),
                     ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                     ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                     ('BACKGROUND', (0, 0), (-1, 0), PDF_THEME['table_header_bg']),
+                    ('LINEBELOW', (0, 0), (-1, 0), 0.85, PDF_THEME['brand_primary']),
                     ('TEXTCOLOR', (0, 0), (-1, -1), PDF_THEME['text']),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, PDF_THEME['row_alt']]),
                     ('LEFTPADDING', (0, 0), (-1, -1), 2),
                     ('RIGHTPADDING', (0, 0), (-1, -1), 2),
                 ],
@@ -435,36 +474,57 @@ def gerar_certificado_qualidade_pdf(cert: CertificadoQualidade, preview: bool = 
 
     def draw_page_frame(canv: canvas.Canvas, total_pages: int) -> None:
         _draw_header_block(canv, cert, width, height)
-        if preview or cert.status == CertificadoQualidade.Status.RASCUNHO:
+        if cert.status == CertificadoQualidade.Status.CANCELADO:
+            canv.saveState()
+            canv.setFillColor(PDF_THEME['cancel_watermark'])
+            canv.setFont('Helvetica-Bold', 26)
+            canv.translate(width / 2, height / 2)
+            canv.rotate(28)
+            canv.drawCentredString(0, 0, 'CANCELADO')
+            canv.restoreState()
+            canv.setFont('Helvetica', 6.8)
+            canv.setFillColor(PDF_THEME['cancel_text'])
+            canv.drawString(
+                7 * mm,
+                2.6 * mm,
+                'Documento cancelado — sem valor comercial. Mantido apenas para rastreabilidade.',
+            )
+            canv.setFillColor(PDF_THEME['text'])
+        elif preview or cert.status == CertificadoQualidade.Status.RASCUNHO:
             canv.saveState()
             canv.setFillColor(PDF_THEME['draft_watermark'])
-            canv.setFont('Helvetica-Bold', 21)
+            canv.setFont('Helvetica-Bold', 22)
             canv.translate(width / 2, height / 2)
             canv.rotate(28)
             canv.drawCentredString(0, 0, 'PRÉVIA / RASCUNHO')
             canv.restoreState()
-            canv.setFont('Helvetica', 6.4)
+            canv.setFont('Helvetica', 6.75)
             canv.setFillColor(PDF_THEME['draft_text'])
             canv.drawString(7 * mm, 2.6 * mm, 'Prévia sem valor de emissão final')
             canv.setFillColor(PDF_THEME['text'])
-        canv.setStrokeColor(PDF_THEME['border'])
+        canv.setStrokeColor(PDF_THEME['border_frame'])
+        canv.setLineWidth(0.45)
         footer_y = 6 * mm
         footer_h = 10 * mm
-        canv.rect(7 * mm, footer_y, width - 14 * mm, footer_h, stroke=1, fill=0)
+        canv.setFillColor(PDF_THEME['card_bg'])
+        canv.setStrokeColor(PDF_THEME['border_frame'])
+        canv.setLineWidth(0.45)
+        canv.rect(7 * mm, footer_y, width - 14 * mm, footer_h, stroke=1, fill=1)
         footer_style = ParagraphStyle(
             'footer',
             fontName='Helvetica',
-            fontSize=7.5,
-            leading=8.7,
+            fontSize=PDF_THEME['footer_size'],
+            leading=PDF_THEME['footer_size'] + 1.2,
             textColor=PDF_THEME['text'],
         )
         footer_p = Paragraph(footer_text.replace('\n', '<br/>'), footer_style)
         f_w = width - 20 * mm
         _, fh = footer_p.wrap(f_w, 8.2 * mm)
         footer_p.drawOn(canv, 10 * mm, footer_y + footer_h - fh - 1.0 * mm)
-        canv.setFont('Helvetica', 7.0)
-        canv.setFillColor(PDF_THEME['text'])
+        canv.setFont('Helvetica', PDF_THEME['footer_size'])
+        canv.setFillColor(C_SLATE_TEXT)
         canv.drawRightString(width - 9 * mm, footer_y + footer_h + 1.4 * mm, f'Página {canv.getPageNumber()} de {total_pages}')
+        canv.setFillColor(PDF_THEME['text'])
 
     class NumberedCanvas(canvas.Canvas):
         def __init__(self, *args, **kwargs):
@@ -733,7 +793,8 @@ def gerar_certificado_qualidade_pdf(cert: CertificadoQualidade, preview: bool = 
         obs_table.setStyle(
             TableStyle(
                 [
-                    ('GRID', (0, 0), (-1, -1), 0.35, PDF_THEME['border']),
+                    ('GRID', (0, 0), (-1, -1), 0.28, PDF_THEME['border']),
+                    ('BACKGROUND', (0, 0), (-1, -1), colors.white),
                     ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                     ('LEFTPADDING', (0, 0), (-1, -1), 3 * mm),
                     ('RIGHTPADDING', (0, 0), (-1, -1), 3 * mm),

@@ -1,12 +1,13 @@
 """Numeração automática PC-AAAAMMDD-NNNN e imutabilidade do número."""
 
 import uuid
-from decimal import Decimal
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.urls import reverse
+from rest_framework.test import APIClient
 
 from apps.cadastros.models import Fornecedor
-from apps.comercial.models import PedidoCompra
 from apps.comercial.serializers import PedidoCompraSerializer
 from apps.produtos.models import FamiliaProduto, Produto
 
@@ -61,6 +62,28 @@ class PedidoCompraNumeroTests(TestCase):
             p['numero'] = numero
         return p
 
+    def test_payload_sem_chave_numero_e_valido(self):
+        payload = self._payload('2026-06-01')
+        self.assertNotIn('numero', payload)
+        ser = PedidoCompraSerializer(data=payload)
+        self.assertTrue(ser.is_valid(), ser.errors)
+
+    def test_api_post_201_sem_numero(self):
+        user = get_user_model().objects.create_user('pc_num', 'pc_num@test.com', 'secret123')
+        client = APIClient()
+        client.force_authenticate(user=user)
+        body = {
+            'fornecedor_id': self.forn.id,
+            'data': '2026-06-15',
+            'status': 'Pendente',
+            'condicao_pagamento_texto': '30',
+            'itens': self._item_payload(),
+        }
+        self.assertNotIn('numero', body)
+        resp = client.post(reverse('pedidocompra-list'), body, format='json')
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertRegex(resp.data.get('numero', ''), r'^PC-20260615-\d{4}$')
+
     def test_create_sem_numero_gera_pc(self):
         ser = PedidoCompraSerializer(data=self._payload('2026-05-13'))
         self.assertTrue(ser.is_valid(), ser.errors)
@@ -110,12 +133,14 @@ class PedidoCompraNumeroTests(TestCase):
         self.assertEqual(pedido.data.isoformat(), '2026-05-20')
 
     def test_nao_persiste_numero_vazio(self):
+        """Campo numero no POST é ignorado (read-only); geração segue a sequência."""
         ser = PedidoCompraSerializer(data=self._payload('2026-05-13', ''))
         self.assertTrue(ser.is_valid(), ser.errors)
         pedido = ser.save()
         self.assertTrue(pedido.numero.startswith('PC-20260513-'))
 
-    def test_numero_duplicado_explicito_rejeitado(self):
+    def test_numero_explicito_no_post_e_ignorado(self):
+        """Cliente não pode fixar número: valor enviado não substitui a sequência automática."""
         ser1 = PedidoCompraSerializer(data=self._payload('2026-05-13'))
         self.assertTrue(ser1.is_valid(), ser1.errors)
         ser1.save()
@@ -125,8 +150,9 @@ class PedidoCompraNumeroTests(TestCase):
                 'numero': 'PC-20260513-0001',
             }
         )
-        self.assertFalse(ser2.is_valid())
-        self.assertIn('numero', ser2.errors)
+        self.assertTrue(ser2.is_valid(), ser2.errors)
+        p2 = ser2.save()
+        self.assertEqual(p2.numero, 'PC-20260513-0002')
 
     def test_integrity_numero_traduzido_para_validation(self):
         ser1 = PedidoCompraSerializer(data=self._payload('2026-05-13'))

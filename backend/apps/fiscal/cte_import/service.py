@@ -6,6 +6,7 @@ from django.db import transaction
 
 from apps.cadastros.models import Empresa, Fornecedor, Transportadora
 
+from ..cte_historico_conferencia import _status_inicial_importacao
 from ..models import CTeHistoricoImportado
 from ..services.reforma_tributaria import enriquecer_reforma_e_outros_json_cte
 from .parser import parse_cte_xml
@@ -96,6 +97,10 @@ def importar_arquivos_cte(arquivos: list[tuple[str, bytes]]) -> dict[str, Any]:
                 if empresa_tomadora:
                     papel_empresa = 'tomador'
 
+                st_conf = _status_inicial_importacao(
+                    cancelado=bool(parsed.cancelado),
+                    cstat=(parsed.cstat or '')[:8],
+                )
                 cte = CTeHistoricoImportado.objects.create(
                     chave_acesso=parsed.chave_acesso,
                     numero=(parsed.numero or '')[:16],
@@ -146,6 +151,9 @@ def importar_arquivos_cte(arquivos: list[tuple[str, bytes]]) -> dict[str, Any]:
                     fornecedor_remetente=fornecedor_remetente,
                     papel_empresa_no_documento=papel_empresa,
                     nome_arquivo=nome[:255],
+                    status_conferencia=st_conf,
+                    apto_operacional=False,
+                    ignorado_operacionalmente=False,
                 )
         except Exception as e:
             erros.append({'arquivo': nome, 'mensagem': f'Falha ao gravar: {e}'})

@@ -68,7 +68,9 @@ class LinhaConsolidadaEntrada:
 
 
 def queryset_compras_nf_entrada_historica(qs: QuerySet[NFeEntradaHistoricaImportada]) -> QuerySet[NFeEntradaHistoricaImportada]:
-    return qs.filter(empresa_destinataria__isnull=False)
+    from apps.fiscal.dfe_classificacao import filtrar_queryset_precificacao_historica_entrada
+
+    return filtrar_queryset_precificacao_historica_entrada(qs.filter(empresa_destinataria__isnull=False))
 
 
 def consolidar_queryset_entrada(qs: QuerySet[NFeEntradaHistoricaImportada]) -> LinhaConsolidadaEntrada:

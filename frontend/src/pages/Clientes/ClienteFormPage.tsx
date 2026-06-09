@@ -5,6 +5,7 @@ import { clientesService } from '@/services/api/clientes';
 import { transportadorasService } from '@/services/api/transportadoras';
 import { apiErrorMessage } from '@/services/api/config';
 import type { Cliente, Transportadora } from '@/types';
+import type { EnderecoFiscalResumo } from '@/lib/enderecoFiscal';
 import { ClienteForm, clientToFormValues, type ClienteFormInput } from './ClienteForm';
 
 const ClienteFormPage = () => {
@@ -18,6 +19,7 @@ const ClienteFormPage = () => {
   const [formKey, setFormKey] = useState(0);
   const [defaults, setDefaults] = useState<ClienteFormInput>(() => clientToFormValues({}));
   const [transportadoras, setTransportadoras] = useState<Transportadora[]>([]);
+  const [enderecoFiscalInicial, setEnderecoFiscalInicial] = useState<EnderecoFiscalResumo | null>(null);
 
   useEffect(() => {
     transportadorasService.getAll().then(setTransportadoras).catch(() => setTransportadoras([]));
@@ -26,6 +28,7 @@ const ClienteFormPage = () => {
   useEffect(() => {
     if (!isEdit) {
       setDefaults(clientToFormValues({}));
+      setEnderecoFiscalInicial(null);
       setLoading(false);
       return;
     }
@@ -37,6 +40,7 @@ const ClienteFormPage = () => {
         const c = await clientesService.getById(Number(id));
         if (!cancelled) {
           setDefaults(clientToFormValues(c));
+          setEnderecoFiscalInicial(c.endereco_fiscal ?? null);
           setFormKey((k) => k + 1);
         }
       } catch (e) {
@@ -82,6 +86,7 @@ const ClienteFormPage = () => {
           onSubmit={handleSubmit}
           onCancel={() => navigate('/clientes')}
           saving={saving}
+          enderecoFiscalInicial={enderecoFiscalInicial}
         />
       )}
     </div>

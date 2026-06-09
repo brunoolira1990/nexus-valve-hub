@@ -6,10 +6,13 @@ from decimal import Decimal
 from typing import Any
 
 from apps.regras_fiscais.reforma_tributaria_config import (
+    REFORMA_SNAPSHOT_BASE_KEYS,
     REFORMA_TRIBUTARIA_KEYS,
+    normalizar_percentual_reforma,
     normalizar_reforma_tributaria,
     reforma_tributaria_preenchida,
 )
+from apps.fiscal.nfe_saida_reforma_calculo import status_reforma_snapshot
 
 
 def _text(val: Any) -> str:
@@ -21,10 +24,13 @@ def _text(val: Any) -> str:
 def _dec(val: Any) -> Decimal:
     if val is None or val == '':
         return Decimal('0')
+    s = str(val).strip()
+    if ',' in s:
+        return normalizar_percentual_reforma(val)
     try:
-        return Decimal(str(val))
+        return Decimal(s)
     except Exception:
-        return Decimal('0')
+        return normalizar_percentual_reforma(val)
 
 
 def _snap_val(snap: dict | None, *keys: str, default: str = '') -> str:
@@ -66,12 +72,32 @@ def get_ncm_snapshot(snapshot: dict | None) -> str:
     return ''
 
 
+REFORMA_SNAPSHOT_CALCULO_KEYS = (
+    'base_cbs',
+    'base_ibs',
+    'base_ibs_estadual',
+    'base_ibs_municipal',
+    'valor_cbs',
+    'valor_ibs_estadual',
+    'valor_ibs_municipal',
+    'valor_ibs_uf',
+    'valor_ibs_mun',
+    'valor_total_ibs_cbs',
+    *REFORMA_SNAPSHOT_BASE_KEYS,
+    'diagnosticos_base_reforma',
+)
+
+
 def get_reforma_tributaria_snapshot(snapshot: dict | None) -> dict[str, Any] | None:
     snap = snapshot or {}
     raw = snap.get('reforma_tributaria') or snap.get('ibs_cbs')
-    if isinstance(raw, dict):
-        return normalizar_reforma_tributaria(raw) or dict(raw)
-    return None
+    if not isinstance(raw, dict):
+        return None
+    norm = dict(normalizar_reforma_tributaria(raw) or {})
+    for key in REFORMA_SNAPSHOT_CALCULO_KEYS:
+        if key in raw and raw[key] not in (None, ''):
+            norm[key] = raw[key]
+    return norm or None
 
 
 def reforma_configurada_no_snapshot(snapshot: dict | None) -> bool:
@@ -153,15 +179,17 @@ def montar_reforma_item_exibicao(reforma: dict[str, Any] | None, *, valor_produt
     return {
         'cst_ibs_cbs': _text(norm.get('cst_ibs_cbs')),
         'classificacao_tributaria': _text(norm.get('classificacao_tributaria')),
-        'base_cbs': str(base),
+        'base_cbs': str(norm.get('base_cbs') or base),
         'aliquota_cbs': str(ali_cbs),
         'valor_cbs': str(v_cbs),
         'reducao_cbs': _text(norm.get('reducao_cbs')),
         'diferimento_cbs': _text(norm.get('diferimento_cbs')),
         'credito_presumido_cbs': _text(norm.get('credito_presumido_cbs')),
-        'base_ibs': str(base),
+        'base_ibs': str(norm.get('base_ibs') or base),
+        'base_ibs_estadual': str(norm.get('base_ibs_estadual') or norm.get('base_ibs') or base),
         'aliquota_ibs_estadual': str(ali_ibs_uf),
         'valor_ibs_estadual': str(v_ibs_uf),
+        'base_ibs_municipal': str(norm.get('base_ibs_municipal') or base),
         'aliquota_ibs_municipal': str(ali_ibs_mun),
         'valor_ibs_municipal': str(v_ibs_mun),
         'reducao_ibs': _text(norm.get('reducao_ibs')),
@@ -169,16 +197,23 @@ def montar_reforma_item_exibicao(reforma: dict[str, Any] | None, *, valor_produt
         'credito_presumido_ibs': _text(norm.get('credito_presumido_ibs')),
         'observacoes': _text(norm.get('observacoes')),
         'total_ibs_cbs': str(v_cbs + v_ibs_uf + v_ibs_mun),
+        'base_original_reforma': _text(norm.get('base_original_reforma')),
+        'base_ibs_cbs': _text(norm.get('base_ibs_cbs') or norm.get('base_cbs') or base),
+        'modo_base_ibs_cbs': _text(norm.get('modo_base_ibs_cbs')) or 'BASE_CHEIA_OPERACAO',
+        'valor_deduzido_icms': _text(norm.get('valor_deduzido_icms')),
+        'valor_deduzido_pis': _text(norm.get('valor_deduzido_pis')),
+        'valor_deduzido_cofins': _text(norm.get('valor_deduzido_cofins')),
+        'valor_deduzido_ipi': _text(norm.get('valor_deduzido_ipi')),
+        'valor_deduzido_iss': _text(norm.get('valor_deduzido_iss')),
+        'formula_base_ibs_cbs': _text(norm.get('formula_base_ibs_cbs')) or 'vProd',
+        'fonte_regra_base_ibs_cbs': _text(norm.get('fonte_regra_base_ibs_cbs')) or 'pendente',
+        'status_base_reforma': _text(norm.get('status_base_reforma')) or 'pendente_confirmacao',
         'chaves_preenchidas': [k for k in REFORMA_TRIBUTARIA_KEYS if _text(norm.get(k))],
     }
 
 
 def status_reforma_item(reforma: dict[str, Any] | None) -> str:
-    if not reforma_configurada_no_snapshot({'reforma_tributaria': reforma} if reforma else {}):
-        return 'NAO_CONFIGURADA'
-    norm = reforma or {}
-    if not _text(norm.get('cst_ibs_cbs')) or not _text(norm.get('classificacao_tributaria')):
-        return 'PENDENTE'
-    if not _text(norm.get('aliquota_cbs')) and not _text(norm.get('aliquota_ibs_estadual')):
-        return 'ATENCAO'
-    return 'OK'
+    st = status_reforma_snapshot(reforma)
+    if st == 'CALCULADA':
+        return 'OK'
+    return st

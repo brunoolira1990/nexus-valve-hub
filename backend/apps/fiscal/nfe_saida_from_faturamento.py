@@ -79,14 +79,23 @@ def gerar_nfe_saida_from_faturamento(
 
     if fat.nfe_saida_id:
         nf = NFeSaida.objects.prefetch_related('itens__produto').get(pk=fat.nfe_saida_id)
-        return _resposta_gerar(
-            nf,
-            pedido_id=pedido.pk,
-            faturamento_id=fat.pk,
-            itens_criados=nf.itens.count(),
-            mensagens=[MSG_NFE_JA_EXISTE],
-            ja_existia=True,
-        )
+        from apps.fiscal.nfe_saida_ciclo_vida import nf_esta_descartada_ou_inativa
+
+        if nf_esta_descartada_ou_inativa(nf):
+            fat.nfe_saida_id = None
+            fat.nfe_saida_gerada_em = None
+            if fat.status == FaturamentoPedidoVenda.Status.GERADO_NFE:
+                fat.status = FaturamentoPedidoVenda.Status.PRONTO_PARA_NFE
+            fat.save(update_fields=['nfe_saida', 'nfe_saida_gerada_em', 'status', 'atualizado_em'])
+        else:
+            return _resposta_gerar(
+                nf,
+                pedido_id=pedido.pk,
+                faturamento_id=fat.pk,
+                itens_criados=nf.itens.count(),
+                mensagens=[MSG_NFE_JA_EXISTE],
+                ja_existia=True,
+            )
 
     if fat.status == FaturamentoPedidoVenda.Status.CANCELADO:
         raise ValueError('Faturamento cancelado não pode gerar NF-e Saída.')
@@ -172,6 +181,9 @@ def gerar_nfe_saida_from_faturamento(
         criados += 1
 
     recalcular_valor_nf_saida(nf)
+    from apps.fiscal.nfe_saida_duplicatas import aplicar_duplicatas_nfe_saida
+
+    aplicar_duplicatas_nfe_saida(nf)
 
     agora = timezone.now()
     fat.status = FaturamentoPedidoVenda.Status.GERADO_NFE

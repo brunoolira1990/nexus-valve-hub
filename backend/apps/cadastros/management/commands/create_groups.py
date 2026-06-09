@@ -3,7 +3,8 @@ from django.core.management.base import BaseCommand
 
 
 GROUPS_PERMISSIONS = {
-    "admin": None,  # todas as permissões
+    "admin": None,
+    "administrador": None,
     "operador": [
         "add_empresa",
         "change_empresa",
@@ -25,6 +26,48 @@ GROUPS_PERMISSIONS = {
         "add_pedidovenda",
         "change_pedidovenda",
     ],
+    "compras": [
+        "add_pedidocompra",
+        "change_pedidocompra",
+        "add_fornecedor",
+        "change_fornecedor",
+        "add_nfeentrada",
+        "change_nfeentrada",
+    ],
+    "financeiro": [
+        "add_titulofinanceiro",
+        "change_titulofinanceiro",
+        "view_titulofinanceiro",
+        "add_baixafinanceira",
+        "change_baixafinanceira",
+        "add_creditofinanceiro",
+        "change_creditofinanceiro",
+    ],
+    "estoque": [
+        "view_estoque",
+        "change_estoque",
+        "add_produto",
+        "change_produto",
+        "view_produto",
+    ],
+    "produtos": [
+        "add_produto",
+        "change_produto",
+        "view_produto",
+        "add_familiaproduto",
+        "change_familiaproduto",
+    ],
+    "consulta": [
+        "view_cliente",
+        "view_fornecedor",
+        "view_produto",
+        "view_titulofinanceiro",
+        "view_pedidovenda",
+        "view_pedidocompra",
+        "view_proposta",
+        "view_nfesaida",
+        "view_nfeentrada",
+    ],
     "qualidade": [
         "view_certificado",
         "add_certificado",
@@ -34,6 +77,10 @@ GROUPS_PERMISSIONS = {
         "view_regrafiscal",
         "add_regrafiscal",
         "change_regrafiscal",
+        "view_nfesaida",
+        "change_nfesaida",
+        "view_nfeentrada",
+        "change_nfeentrada",
     ],
 }
 

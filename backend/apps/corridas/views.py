@@ -1,16 +1,20 @@
 from rest_framework import viewsets
 from django.db.models import Q
 
+from nexus_erp.list_mixins import AutocompleteOrPaginationMixin, aplicar_ordering
+from nexus_erp.pagination import NexusPageNumberPagination
+
 from .models import Corrida
 from .serializers import CorridaSerializer
 
 
-class CorridaViewSet(viewsets.ModelViewSet):
+class CorridaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
     queryset = Corrida.objects.select_related('produto', 'fornecedor').all()
     serializer_class = CorridaSerializer
+    pagination_class = NexusPageNumberPagination
 
     def get_queryset(self):
-        qs = super().get_queryset().order_by('-id')
+        qs = super().get_queryset()
         search = (self.request.query_params.get('search') or '').strip()
         if search:
             qs = qs.filter(
@@ -18,12 +22,15 @@ class CorridaViewSet(viewsets.ModelViewSet):
                 | Q(produto__descricao__icontains=search)
                 | Q(produto__codigo_completo__icontains=search)
                 | Q(fornecedor__razao_social__icontains=search)
-                | Q(nf_entrada__icontains=search),
+                | Q(nf_entrada__icontains=search)
+                | Q(material__icontains=search),
             )
-        limit = self.request.query_params.get('limit')
-        if limit:
-            try:
-                qs = qs[: max(1, min(int(limit), 100))]
-            except (TypeError, ValueError):
-                pass
-        return qs
+        material = (self.request.query_params.get('material') or '').strip()
+        if material:
+            qs = qs.filter(material__icontains=material)
+        return aplicar_ordering(
+            qs,
+            self.request.query_params.get('ordering'),
+            {'numero': 'numero', 'material': 'material'},
+            '-id',
+        )

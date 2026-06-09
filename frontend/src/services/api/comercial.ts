@@ -1,33 +1,37 @@
+import {
+  baixarCommercialPdf,
+  PEDIDO_COMPRA_PDF_CONFIG,
+  PEDIDO_VENDA_PDF_CONFIG,
+  PROPOSTA_PDF_CONFIG,
+  visualizarCommercialPdf,
+} from '@/lib/commercialPdfDownload';
+import { normalizePedidoVendaRow } from '@/lib/pedidoVendaId';
+import { sanitizePropostaRestForApi, stripPropostaItensForApi } from '@/lib/propostaApiPayload';
 import api from './config';
-import type { ItemPedido, ItemProposta, PedidoCompra, PedidoVenda, Proposta } from '@/types';
-
-function stripPropostaItens(itens: ItemProposta[]) {
-  return itens.map(
-    ({
-      id: _id,
-      produto_nome: _p,
-      estrategia_formacao: _e,
-      alvo_percentual: _a,
-      ipi_entrada_valor: _iev,
-      custo_carregado: _cc,
-      preco_base: _pb,
-      percentual_saida_total: _pst,
-      valor_carga_saida: _vcs,
-      ...rest
-    }) => rest,
-  );
-}
+import {
+  buildListParams,
+  type ListQueryParams,
+  type PaginatedResponse,
+  unwrapListResults,
+} from '@/lib/apiList';
+import type {
+  ConfirmarFaturamentoPedidoResponse,
+  ConverterPropostaPedidoResponse,
+  CriarFaturamentoPedidoResponse,
+  GerarNFeSaidaFaturamentoResponse,
+  HistoricoHomologacaoFiscalProposta,
+  ResumoFaturamentoPedido,
+  HomologacaoFiscalPropostaPayload,
+  ItemPedido,
+  ItemProposta,
+  PedidoCompra,
+  PedidoVenda,
+  Proposta,
+} from '@/types';
 
 function stripPropostaPayload(data: Record<string, unknown>) {
-  const {
-    cliente_nome: _cn,
-    valor_total: _vt,
-    empresa_emitente_nome: _en,
-    uf_origem: _uo,
-    operacao_fiscal: _of,
-    ...rest
-  } = data;
-  return rest;
+  const { valor_total: _vt, ...rest } = data;
+  return sanitizePropostaRestForApi(rest);
 }
 
 function stripPedidoItens(itens: ItemPedido[]) {
@@ -42,6 +46,18 @@ function stripPedidoVendaPayload(data: Record<string, unknown>) {
 const propostasPath = 'propostas/';
 const pvPath = 'pedidos-venda/';
 const pcPath = 'pedidos-compra/';
+
+type ListResponse<T> = T[] | { results?: T[] };
+
+function unwrapPedidoVendaList(payload: ListResponse<PedidoVenda> | null | undefined): PedidoVenda[] {
+  let rows: PedidoVenda[] = [];
+  if (Array.isArray(payload)) {
+    rows = payload;
+  } else if (payload && Array.isArray(payload.results)) {
+    rows = payload.results;
+  }
+  return rows.map((row) => normalizePedidoVendaRow(row));
+}
 
 export type ReferenciaComercialFreteResponse = {
   periodo_utilizado: Record<string, string | undefined>;
@@ -80,28 +96,84 @@ export type ReferenciaComercialCustoCompraResponse = {
 };
 
 export const propostasService = {
-  getAll: async () => (await api.get<Proposta[]>(propostasPath)).data,
+  listPaginated: async (params?: ListQueryParams) => {
+    const response = await api.get<PaginatedResponse<Proposta>>(propostasPath, { params: buildListParams(params) });
+    return response.data;
+  },
+  getAll: async (params?: ListQueryParams) => {
+    const response = await api.get<Proposta[] | PaginatedResponse<Proposta>>(propostasPath, {
+      params: buildListParams(params?.page ? params : { ...params, limit: params?.limit ?? 100 }),
+    });
+    return unwrapListResults(response.data);
+  },
   getById: async (id: number) => (await api.get<Proposta>(`${propostasPath}${id}/`)).data,
   create: async (data: Omit<Proposta, 'id'>) => {
     const { cliente_nome: _cn, valor_total: _vt, itens, ...rest } = data;
     return (
       await api.post<Proposta>(propostasPath, {
         ...stripPropostaPayload(rest as Record<string, unknown>),
-        itens: stripPropostaItens(itens),
+        itens: stripPropostaItensForApi(itens),
       })
     ).data;
   },
   update: async (id: number, data: Partial<Proposta>) => {
     const { cliente_nome: _cn, valor_total: _vt, itens, ...rest } = data;
     const payload: Record<string, unknown> = { ...stripPropostaPayload(rest as Record<string, unknown>) };
-    if (itens) payload.itens = stripPropostaItens(itens);
+    if (itens) payload.itens = stripPropostaItensForApi(itens);
     return (await api.patch<Proposta>(`${propostasPath}${id}/`, payload)).data;
   },
   delete: async (id: number) => {
     await api.delete(`${propostasPath}${id}/`);
   },
   convertToPedido: async (id: number) =>
-    (await api.post<PedidoVenda>(`${propostasPath}${id}/converter-pedido/`, {})).data,
+    (await api.post<ConverterPropostaPedidoResponse>(`${propostasPath}${id}/converter-pedido/`, {})).data,
+  homologacaoFiscalResumo: async (id: number) =>
+    (await api.get<HomologacaoFiscalPropostaPayload>(`${propostasPath}${id}/homologar-cenario-fiscal/resumo/`))
+      .data,
+  homologacaoFiscalIniciar: async (
+    id: number,
+    body: { cenario_fiscal_saida_id?: number | null; observacao?: string },
+  ) =>
+    (
+      await api.post<HomologacaoFiscalPropostaPayload>(
+        `${propostasPath}${id}/homologar-cenario-fiscal/iniciar/`,
+        body,
+      )
+    ).data,
+  homologacaoFiscalAprovar: async (id: number, body: { observacao?: string }) =>
+    (
+      await api.post<HomologacaoFiscalPropostaPayload>(
+        `${propostasPath}${id}/homologar-cenario-fiscal/aprovar/`,
+        body,
+      )
+    ).data,
+  homologacaoFiscalReprovar: async (id: number, body: { observacao?: string }) =>
+    (
+      await api.post<HomologacaoFiscalPropostaPayload>(
+        `${propostasPath}${id}/homologar-cenario-fiscal/reprovar/`,
+        body,
+      )
+    ).data,
+  homologacaoFiscalVoltarLegado: async (id: number, body: { observacao?: string }) =>
+    (
+      await api.post<HomologacaoFiscalPropostaPayload>(
+        `${propostasPath}${id}/homologar-cenario-fiscal/voltar-legado/`,
+        body,
+      )
+    ).data,
+  homologacaoFiscalRecalcular: async (id: number) =>
+    (
+      await api.post<HomologacaoFiscalPropostaPayload>(
+        `${propostasPath}${id}/homologar-cenario-fiscal/recalcular/`,
+        {},
+      )
+    ).data,
+  homologacaoFiscalHistorico: async (id: number) =>
+    (
+      await api.get<HistoricoHomologacaoFiscalProposta>(
+        `${propostasPath}${id}/homologar-cenario-fiscal/historico/`,
+      )
+    ).data,
   apoioGerencial: async (query: URLSearchParams) =>
     (await api.get<{
       referencia_historica: {
@@ -147,10 +219,30 @@ export const propostasService = {
         params: { search: term, limit },
       })
     ).data,
+  visualizarPdf: (id: number, numeroRef: string, previewTab?: Window | null) =>
+    visualizarCommercialPdf(PROPOSTA_PDF_CONFIG, id, numeroRef, previewTab),
+  /** @deprecated use visualizarPdf */
+  gerarPdf: (id: number, numeroRef: string, previewTab?: Window | null) =>
+    visualizarCommercialPdf(PROPOSTA_PDF_CONFIG, id, numeroRef, previewTab),
+  baixarPdf: (id: number, numeroRef: string) => baixarCommercialPdf(PROPOSTA_PDF_CONFIG, id, numeroRef),
 };
 
 export const pedidosVendaService = {
-  getAll: async () => (await api.get<PedidoVenda[]>(pvPath)).data,
+  listPaginated: async (params?: ListQueryParams) => {
+    const response = await api.get<PaginatedResponse<PedidoVenda>>(pvPath, {
+      params: buildListParams(params),
+    });
+    return {
+      ...response.data,
+      results: unwrapPedidoVendaList(response.data),
+    };
+  },
+  getAll: async (params?: ListQueryParams) => {
+    const response = await api.get<ListResponse<PedidoVenda>>(pvPath, {
+      params: buildListParams(params?.page ? params : { ...params, limit: params?.limit ?? 100 }),
+    });
+    return unwrapPedidoVendaList(response.data);
+  },
   getById: async (id: number) => (await api.get<PedidoVenda>(`${pvPath}${id}/`)).data,
   create: async (data: Omit<PedidoVenda, 'id'>) => {
     const { cliente_nome: _cn, valor_total: _vt, itens, ...rest } = data;
@@ -170,6 +262,49 @@ export const pedidosVendaService = {
   delete: async (id: number) => {
     await api.delete(`${pvPath}${id}/`);
   },
+  resumoFaturamento: async (id: number) =>
+    (await api.get<ResumoFaturamentoPedido>(`${pvPath}${id}/resumo-faturamento/`)).data,
+  recalcularTotaisPedido: async (id: number) =>
+    (await api.post<ResumoFaturamentoPedido>(`${pvPath}${id}/recalcular-totais/`, {})).data,
+  criarFaturamento: async (
+    id: number,
+    body: { observacao?: string; itens: { item_pedido_id: number; quantidade: string }[] },
+  ) => (await api.post<CriarFaturamentoPedidoResponse>(`${pvPath}${id}/faturamentos/`, body)).data,
+  confirmarFaturamento: async (pedidoId: number, faturamentoId: number) =>
+    (
+      await api.post<ConfirmarFaturamentoPedidoResponse>(
+        `${pvPath}${pedidoId}/faturamentos/${faturamentoId}/confirmar/`,
+        {},
+      )
+    ).data,
+  cancelarFaturamento: async (pedidoId: number, faturamentoId: number) =>
+    (await api.post<{ mensagens: string[] }>(`${pvPath}${pedidoId}/faturamentos/${faturamentoId}/cancelar/`, {}))
+      .data,
+  estornarFaturamento: async (pedidoId: number, faturamentoId: number, body?: { motivo?: string }) =>
+    (
+      await api.post<{ mensagens: string[]; pedido_status?: string }>(
+        `${pvPath}${pedidoId}/faturamentos/${faturamentoId}/estornar/`,
+        body ?? {},
+      )
+    ).data,
+  repararVinculoNfeFaturamento: async (pedidoId: number, faturamentoId: number) =>
+    (
+      await api.post<{ mensagens: string[]; nfe_saida_id?: number | null; reparado?: boolean }>(
+        `${pvPath}${pedidoId}/faturamentos/${faturamentoId}/reparar-vinculo-nfe/`,
+        {},
+      )
+    ).data,
+  gerarNfeSaidaFaturamento: async (
+    pedidoId: number,
+    faturamentoId: number,
+    body?: { observacao?: string },
+  ) =>
+    (
+      await api.post<GerarNFeSaidaFaturamentoResponse>(
+        `${pvPath}${pedidoId}/faturamentos/${faturamentoId}/gerar-nfe-saida/`,
+        body ?? {},
+      )
+    ).data,
   apoioGerencial: async (query: URLSearchParams) =>
     (await api.get<{
       referencia_historica: {
@@ -214,13 +349,45 @@ export const pedidosVendaService = {
         params: { search: term, limit },
       })
     ).data,
+  visualizarPdf: (
+    id: number,
+    numeroRef: string,
+    previewTab?: Window | null,
+    invalidIdMessage?: string,
+  ) => visualizarCommercialPdf(PEDIDO_VENDA_PDF_CONFIG, id, numeroRef, previewTab, invalidIdMessage),
+  /** @deprecated use visualizarPdf */
+  gerarPdf: (
+    id: number,
+    numeroRef: string,
+    previewTab?: Window | null,
+    invalidIdMessage?: string,
+  ) => visualizarCommercialPdf(PEDIDO_VENDA_PDF_CONFIG, id, numeroRef, previewTab, invalidIdMessage),
+  baixarPdf: (id: number, numeroRef: string, invalidIdMessage?: string) =>
+    baixarCommercialPdf(PEDIDO_VENDA_PDF_CONFIG, id, numeroRef, invalidIdMessage),
 };
 
 export const pedidosCompraService = {
-  getAll: async () => (await api.get<PedidoCompra[]>(pcPath)).data,
+  listPaginated: async (params?: ListQueryParams) => {
+    const response = await api.get<PaginatedResponse<PedidoCompra>>(pcPath, { params: buildListParams(params) });
+    return response.data;
+  },
+  getAll: async (params?: ListQueryParams) => {
+    const response = await api.get<PedidoCompra[] | PaginatedResponse<PedidoCompra>>(pcPath, {
+      params: buildListParams(params?.page ? params : { ...params, limit: params?.limit ?? 100 }),
+    });
+    return unwrapListResults(response.data);
+  },
   getById: async (id: number) => (await api.get<PedidoCompra>(`${pcPath}${id}/`)).data,
   create: async (data: Omit<PedidoCompra, 'id'>) => {
-    const { fornecedor_nome: _fn, valor_total: _vt, itens, ...rest } = data;
+    const {
+      fornecedor_nome: _fn,
+      valor_total: _vt,
+      itens,
+      id: _id,
+      numero: _num,
+      resumo_financeiro_pedido: _rf,
+      ...rest
+    } = data as Omit<PedidoCompra, 'id'> & Record<string, unknown>;
     return (
       await api.post<PedidoCompra>(pcPath, {
         ...rest,
@@ -229,7 +396,14 @@ export const pedidosCompraService = {
     ).data;
   },
   update: async (id: number, data: Partial<PedidoCompra>) => {
-    const { fornecedor_nome: _fn, valor_total: _vt, itens, ...rest } = data;
+    const {
+      fornecedor_nome: _fn,
+      valor_total: _vt,
+      itens,
+      numero: _num,
+      resumo_financeiro_pedido: _rf,
+      ...rest
+    } = data as Partial<PedidoCompra> & Record<string, unknown>;
     const payload: Record<string, unknown> = { ...rest };
     if (itens) payload.itens = stripPedidoItens(itens);
     return (await api.patch<PedidoCompra>(`${pcPath}${id}/`, payload)).data;
@@ -243,4 +417,14 @@ export const pedidosCompraService = {
         params: { search: term, limit },
       })
     ).data,
+  visualizarPdf: (id: number, numeroRef: string, previewTab?: Window | null) =>
+    visualizarCommercialPdf(PEDIDO_COMPRA_PDF_CONFIG, id, numeroRef, previewTab),
+  /** @deprecated use visualizarPdf */
+  gerarPdf: (id: number, numeroRef: string, previewTab?: Window | null) =>
+    visualizarCommercialPdf(PEDIDO_COMPRA_PDF_CONFIG, id, numeroRef, previewTab),
+  baixarPdf: (id: number, numeroRef: string) =>
+    baixarCommercialPdf(PEDIDO_COMPRA_PDF_CONFIG, id, numeroRef),
+  /** @deprecated use visualizarPdf */
+  openPdfInNewTab: (id: number, numeroRef: string, previewTab?: Window | null) =>
+    visualizarCommercialPdf(PEDIDO_COMPRA_PDF_CONFIG, id, numeroRef, previewTab),
 };

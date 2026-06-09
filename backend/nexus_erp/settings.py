@@ -31,6 +31,8 @@ INSTALLED_APPS = [
     'apps.qualidade',
     'apps.apuracao_fiscal',
     'apps.contabil',
+    'apps.financeiro',
+    'apps.relatorios',
     'apps.core',
 ]
 
@@ -125,5 +127,54 @@ USE_CENARIO_FISCAL_SAIDA_FOR_PROPOSTAS = os.environ.get(
     'false',
 ).lower() in ('1', 'true', 'yes')
 
-# DANFE Conferência 3.5.4.6 POC: html (default) | brazil_fiscal_report | reportlab_fallback
-FISCAL_DANFE_RENDERER = os.environ.get('FISCAL_DANFE_RENDERER', 'html').strip().lower()
+# ERP 4.0.13.6.13A — DANFE oficial exclusivamente via BrazilFiscalReport (BFR)
+DANFE_RENDERER_OFICIAL = os.environ.get('DANFE_RENDERER_OFICIAL', 'BFR').strip().upper()
+DANFE_ALLOW_HTML_FALLBACK = os.environ.get('DANFE_ALLOW_HTML_FALLBACK', 'false').lower() in (
+    '1',
+    'true',
+    'yes',
+)
+DANFE_ALLOW_HTML_DIAGNOSTIC = os.environ.get('DANFE_ALLOW_HTML_DIAGNOSTIC', 'false').lower() in (
+    '1',
+    'true',
+    'yes',
+)
+DANFE_BLOCK_EMISSION_IF_BFR_FAILS = os.environ.get('DANFE_BLOCK_EMISSION_IF_BFR_FAILS', 'true').lower() in (
+    '1',
+    'true',
+    'yes',
+)
+DANFE_LOG_RENDERER = os.environ.get('DANFE_LOG_RENDERER', 'true').lower() in ('1', 'true', 'yes')
+FISCAL_NFE_SERIE_PRELIMINAR = os.environ.get('FISCAL_NFE_SERIE_PRELIMINAR', '900').strip()
+FISCAL_PERSISTIR_XML_PRELIMINAR = os.environ.get('FISCAL_PERSISTIR_XML_PRELIMINAR', 'false').lower() in (
+    '1',
+    'true',
+    'yes',
+)
+NFE_PERF_LOGGING = os.environ.get('NFE_PERF_LOGGING', '').lower() in ('1', 'true', 'yes') or DEBUG
+FISCAL_CODIGO_MUNICIPIO_FG = os.environ.get('FISCAL_CODIGO_MUNICIPIO_FG', '3550308').strip()
+
+# Reforma Tributária NF-e (ERP 4.0.13.4) — camada isolada; produção bloqueada por padrão
+REFORMA_TRIBUTARIA_NFE_ENABLED = os.environ.get('REFORMA_TRIBUTARIA_NFE_ENABLED', 'false').lower() in (
+    '1',
+    'true',
+    'yes',
+)
+REFORMA_TRIBUTARIA_NFE_MODO = os.environ.get('REFORMA_TRIBUTARIA_NFE_MODO', 'pesquisa').strip().lower()
+REFORMA_TRIBUTARIA_NFE_AMBIENTE_HOMOLOGACAO = os.environ.get(
+    'REFORMA_TRIBUTARIA_NFE_AMBIENTE_HOMOLOGACAO',
+    'true',
+).lower() in ('1', 'true', 'yes')
+REFORMA_TRIBUTARIA_NFE_INCLUIR_XML = os.environ.get('REFORMA_TRIBUTARIA_NFE_INCLUIR_XML', 'false').lower() in (
+    '1',
+    'true',
+    'yes',
+)
+REFORMA_TRIBUTARIA_NFE_INCLUIR_DANFE = os.environ.get('REFORMA_TRIBUTARIA_NFE_INCLUIR_DANFE', 'false').lower() in (
+    '1',
+    'true',
+    'yes',
+)
+
+# ERP 4.0.13.7.2 — testes só em banco isolado (test_*)
+TEST_RUNNER = 'nexus_erp.test_runner.NexusDiscoverRunner'

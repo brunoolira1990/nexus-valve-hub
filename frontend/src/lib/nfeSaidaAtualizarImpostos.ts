@@ -5,6 +5,7 @@ import type {
   TextoFiscalAlteracao,
   TextosFiscaisPreview,
 } from '@/services/api/fiscal';
+import { mensagemPreviewSemRegra } from '@/lib/enderecoFiscal';
 
 const STATUS_NFE_BLOQUEIA_ATUALIZAR_IMPOSTOS = new Set([
   'AUTORIZADA_INTERNA',
@@ -268,12 +269,7 @@ export function mensagemConfirmarDesabilitado(preview: AtualizarImpostosPreviewR
   if (!preview) return 'Carregando prévia…';
   if (preview.bloqueado) return preview.mensagem || 'Atualização bloqueada.';
   if (!preview.pode_aplicar) {
-    const total = preview.resumo?.itens_total ?? 0;
-    const semRegra = preview.resumo?.itens_sem_regra ?? 0;
-    if (total > 0 && semRegra >= total) {
-      return 'Não há regra fiscal encontrada para aplicar.';
-    }
-    return 'Nenhuma alteração fiscal ou texto fiscal encontrado com a regra atual.';
+    return mensagemPreviewSemRegra(preview);
   }
   return '';
 }

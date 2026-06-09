@@ -49,7 +49,7 @@ Essa separação evita misturar “o que entrou” com “o que vamos emitir” 
 | Remessas | Não iniciado | Média | CFOPs no catálogo auxiliar de saída | Modelo, emissão, retorno, controle pendente | Remessa 1 |
 | Estoque / rastreabilidade | Em evolução | Alta | AtendimentoEstoque, aplicação física, CQ + rastreio | Kardex, estorno, relatório ponta a ponta | Estoque 3.13 |
 | Qualidade | Concluído parcial | Média | CF, CQ, busca corrida, vínculo conferência | Relatório CQ, dashboard pendências | Qualidade 4 |
-| Financeiro | Não iniciado / Futuro | Alta | Referências em pedido compra | AR/AP, parcelas, fluxo de caixa | Financeiro 1 |
+| Financeiro | **Base operacional (4.0.14)** | Alta | CR/CP manual, baixa, estorno | Geração a partir de NF-e (ação explícita), conciliação, DRE | Financeiro 2 |
 | Contábil | Futuro | Baixa | Tela placeholder | Plano de contas, lançamentos, DRE | Contábil 1 |
 | Relatórios / BI / auditoria | Concluído parcial | Média | Apuração fiscal, painéis gerenciais parciais | Dashboards unificados, auditoria de alterações | BI 1 |
 
@@ -324,12 +324,52 @@ Proposta aprovada
 - **NF-e Saída 3.5.4.6b (DANFE paginação 1 item):** correção bloqueante — removidas 16 linhas filler e `min-height` no fluxo; produtos/rodapé em posição absoluta MOC (y=17,97 / 26,08 cm); 1 item = 1 página (`test_nfe_saida_3546_danfe_paginacao`); cache-bust no frontend; headers `Cache-Control` + debug `X-Danfe-*`
 - **NF-e Saída 3.5.4.6 (POC BrazilFiscalReport DANFE 55):** módulo isolado `nfe_integracao/danfe_brazil_fiscal_report.py`; dependência `BrazilFiscalReport==0.7.4` (LGPL-3.0); flag `FISCAL_DANFE_RENDERER` (default `html`); testes `test_danfe_brazil_fiscal_report`; doc `docs/fiscal/brazil-fiscal-report-poc.md`. **Decisão POC:** Opção B — BFR só para DANFE autorizada futura (XML+protocolo reais); conferência permanece HTML/WeasyPrint até customização/licença. Motivo: preview XML Nexus não é drop-in (`nNF` texto, comentários XML); marca d’água conferência não customizável; LGPL exige validação jurídica para SaaS
 - **NF-e Saída 4.0.1 (XML oficial NF-e 4.00 — nfelib):** `nfe_saida_xml_nfelib.py` monta `Tnfe` 4.00 via nfelib/xsdata a partir de `gerar_dados_preview_nfe_saida`; `GET .../preview-xml-oficial/`; `Id=NFePREVIEW{id}` (não é chave); `tpAmb=2`; sem `protNFe`/transmissão/assinatura; testes `test_nfe_saida_401_xml_nfelib`; prévia simplificada (`preview-xml`) mantida
+- **NF-e 4.0.2 (emissão real homologação SEFAZ):** `NFeNumeracaoConfiguracao` por empresa/ambiente (homolog/prod separados); reserva atômica (`nfe_emissao/numeracao.py`); XML oficial com chave/série/nNF reais (`nfe_emissao/xml_oficial.py` + `infCpl` via `danfe_xml_adicionais`); assinatura A1 PyNFe; transmissão `ComunicacaoSefaz.autorizacao` só homologação; protocolo/cStat/xMotivo reais em `NFeSaida`; procNFe em `xml_autorizado`; DANFE homologação via BFR (`danfe-homologacao`); API `emitir-homologacao`, `reservar-numeracao`, CRUD `nfe-numeracoes`; UI conferência + cadastro empresa; **sem produção**, **sem estoque/financeiro real**; testes `test_nfe_saida_402_emissao_homologacao`
+- **NF-e 4.0.3 (pós-autorização homologação — identidade fiscal e FAT):** numeração própria `FAT-YYYYMMDD-NNNN` em `FaturamentoPedidoVenda` (`gerar_numero_faturamento`, migration `0030`); `nfe_saida_apresentacao.py` com `titulo_exibicao`/`subtitulo_exibicao`/badges; NF-e fiscal (série/nº) como identidade principal após `AUTORIZADA_HOMOLOGACAO`; `RASCUNHO-FAT-*` apenas origem interna; UI modal/listagem/resumo/PV corrigidas; modo leitura pós-autorização; **sem produção**, **sem estoque/financeiro real**; testes `test_faturamento_numero_fat`, `test_nfe_saida_402_pos_autorizacao_homolog`, `nfeSaidaApresentacao.test.ts`
+- **NF-e 4.0.4 (sanitização Cursor/teste + apresentação limpa):** `auditoria_limpeza_cursor`, `backup_limpeza_cursor`, `limpar_dados_cursor` (`apps/fiscal/limpeza_cursor/`); dry-run + backup obrigatório; preservação NF-e cStat 100/XML/protocolo; produtos só classificados; UI sem `Origem interna`/`FAT-LEGADO`; migration `0031` normaliza FAT legado; testes `test_nfe_saida_404_limpeza_apresentacao`, `nfeSaida404ApresentacaoLimpa.test.ts`
+- **ERP 4.0.5 (paginação global):** `NexusPageNumberPagination`, `AutocompleteOrPaginationMixin`, busca/ordenação/filtros; endpoints paginados em empresas, clientes, produtos, pedidos venda, NF-e saída; componentes frontend reutilizáveis (`usePaginatedList`, `PaginationControls`, estados vazio/erro/loading); testes `test_paginacao_global`, `apiList.test.ts`
+- **ERP 4.0.6 (dashboard operacional):** `GET /api/dashboard/resumo/` com blocos Comercial, Fiscal, Financeiro (em preparação), Estoque e Alertas; remoção de dados fake no Dashboard; cards clicáveis com filtros; financeiro stub (CR da NF-e saída prod / CP da NF-e entrada — sem gerar títulos nesta fase); testes `test_dashboard_resumo`
+- **ERP 4.0.7 (paginação módulos restantes):** paginação server-side em fornecedores, transportadoras, colaboradores, propostas, pedidos compra, NF-e entrada, NF-e entrada histórica/XML, CT-e entrada, CT-e histórico/XML, regras fiscais (legado), saldos estoque, atendimentos estoque, certificados qualidade/fornecedor e corridas; `AutocompleteOrPaginationMixin` preservado (`limit` sem `page` → array); frontend com `usePaginatedList`, `PaginationControls`, `FilterBar`, estados vazio/erro/loading; dashboard com links filtrados (`/estoque?filtro=baixo_estoque`, `/produtos?sem_ncm=1`, `/pedidos-venda?status=parcialmente_faturado`); **sem financeiro real**, **sem produção NF-e**, **sem estoque real novo**; testes `test_paginacao_407`, `paginacao407.test.ts`
+- **ERP 4.0.8 (BI modular por permissões):** home personalizada `/dashboard` + painéis `/dashboard/{comercial|fiscal|estoque|compras|qualidade|financeiro}`; endpoints `GET /api/dashboard/home/` e por módulo; helper `usuario_pode_ver_dashboard_modulo` (permissoes dos módulos + admin); KPIs, gráficos (recharts), rankings, alertas e drill-down filtrados; filtros período/empresa; backend omite/nega dados sem permissão; financeiro em preparação; compatibilidade `GET /api/dashboard/resumo/`; testes `test_dashboard_bi_408`, `dashboardBi408.test.tsx`
+- **ERP 4.0.8.1 (acabamento visual BI):** período em pt-BR (`Maio/2026`, datas `dd/mm/aaaa`); submenu Dashboard no sidebar por permissão; home executiva com KPI hero e «Ver painel»; painéis com hierarquia (hero KPI, gráficos min 280px, alertas compactos); financeiro com `BIPreparationState`; estados vazios compactos; `GET /api/dashboard/permissoes/`; testes `test_dashboard_bi_408_1`, `dashboardBi4081.test.tsx`
+- **ERP 4.0.9 (Design System Nexus — base visual):** tokens CSS/Tailwind (`index.css`, `design-system/tokens.ts`); componentes Nexus (`PageContainer`, `PageHeader` evoluído, `NexusCard`, `Badge`/`StatusBadge`, `DataTable`, inputs, skeleton, empty/error); app shell modernizado (sidebar, topbar, breadcrumbs); toasts `sonner` no `App`; telas piloto: Dashboard/BI, Produtos, NF-e Saída, Empresas, Clientes, Pedidos de Venda; doc `docs/design-system-nexus.md`; testes `designSystem409.test.tsx`; **sem alteração de regra fiscal, NF-e, financeiro, estoque ou permissões**
+- **ERP 4.0.9.1 (migração visual incremental):** Fornecedores, Transportadoras, Propostas, Pedidos de Compra, NF-e Entrada e Histórico XML de Entrada migrados para `PageHeader`, `DataTableShell`/`DataTable`, `StatusBadge`, `TableSkeleton`, `EmptyState`/`ErrorState`, `NexusButton`/`NexusCard`; paginação server-side e `getAll`/autocomplete preservados; listagem NF-e sem XML completo (`chaveNfeResumida`); testes `designSystem4091.test.tsx`; build OK; **sem alteração de regra de negócio, fiscal, financeiro ou estoque**
+- **ERP 4.0.9.2 (Qualidade/Cadastros):** Colaboradores, Corridas/Lotes Técnicos, Certificados de Qualidade e Certificados de Fornecedor migrados para padrão Nexus; filtros em `NexusCard` (Colaboradores); status de qualidade em `tokens.ts`; testes `designSystem4092.test.tsx`; **sem alteração de regras de qualidade, fiscal ou permissões**
+- **ERP 4.0.9.3 (Estoque/CT-e/Fiscal):** Estoque/Saldos, Atendimentos de Estoque, CT-e Entrada, Histórico XML CT-e e Regras Fiscais (aba legada + header) migrados para padrão Nexus; chaves fiscais resumidas via `chaveNfeResumida` (XML completo só em modal/detalhe); tokens de estoque, atendimento, CT-e e fiscal em `tokens.ts`; testes `designSystem4093.test.tsx`; paginação/autocomplete preservados; **sem alteração de regra fiscal, estoque, CT-e ou permissões**
+- **ERP 4.0.10 (Modelo operacional Nexus):** documentação oficial `docs/modelo-operacional-nexus.md`; enums `TipoAtendimentoItem`, `StatusEntradaFiscal`, `OrigemFisica`, `DestinoFisico`; model `AlocacaoAtendimento` (intenção de atendimento, campos opcionais); helpers read-only em `modelo_operacional.py`; fluxos A/B/C (entrada antes/depois da saída, misto); compra N:1 com vendas; estoque não bloqueia NF-e; financeiro/expedição/conciliação **não implementados**; testes `test_modelo_operacional_4010.py`; tokens operacionais no Design System
+- **ERP 4.0.10.1 (Organização DF-e):** `dfe_classificacao.py` (operacional / base importada / homologação); homologação **excluída** da apuração (`apuracao_fiscal.py`); renomeação conceitual das bases importadas (UI + menu); NF-e Entrada: “Emitir entrada própria” + “Importar XML de fornecedor”; CT-e: “Importar XML CT-e”; correção `listPaginated` na base NF-e entrada importada; `docs/base-dfe-importada.md`; testes `test_dfe_organizacao_40101.py`, `dfeOrganizacao40101.test.tsx`
+- **ERP 4.0.10.1 (Organização DF-e):** `dfe_classificacao.py` (operacional, base importada, homologação); homologação **excluída** da apuração (`apuracao_fiscal.py`); telas renomeadas (Base NF-e/CT-e Importada); UI NF-e Entrada/CT-e; badges homologação/fora apuração; correção `listPaginated` NF-e entrada importada; `docs/base-dfe-importada.md`; testes `test_dfe_organizacao_40101.py`, `dfeOrganizacao40101.test.tsx`
+- **ERP 4.0.10.2 (Importação/recebimento DF-e):** `metadados_classificacao_dfe` + `classificacao_dfe` nas listagens; filtros de precificação excluem homologação; breadcrumbs “Base … Importada”; conferência com aviso sem efeito automático; badges conferida/preparada; KPI CT-e “Faturamento base para comparação”; testes `test_dfe_organizacao_40102.py`, `dfeOrganizacao40102.test.tsx`
+- **ERP 4.0.10.2.1 (Separação UX base × operacional):** CT-e Entrada e NF-e Entrada sem importador duplicado; links para bases importadas; badges DF-e em Base NF-e Saída e Base CT-e; testes `test_dfe_organizacao_401021.py`, `dfeOrganizacao401021.test.tsx`
+- **ERP 4.0.10.2.2 (Conferência segura CT-e importado):** status de conferência no `CTeHistoricoImportado`; endpoints conferir/divergente/ignorar; CT-e Entrada lista conferidos (`apto_operacional`); modal com aba Conferência, participantes formatados, documentos vinculados; sem financeiro/expedição/rateio automático; testes `test_cte_historico_conferencia_401022.py`, `dfeOrganizacao401022.test.tsx`
+- **ERP 4.0.8.3 (Correção dashboards BI):** interceptor Axios para 401 (sessão expirada + redirect login); hooks `useDashboardBI` / `useDashboardPermissoes` / `usePaginatedList` sem Uncaught Promise; fallback seguro de permissões; `BIErrorState` / `BIAccessDenied` para 401/403; `BIKpiHeroCard` sem corte de valor (layout full-width + `break-words`); gráficos Recharts com wrapper `min-h-[280px] h-[320px]` e `BIEmptyChart` sem dados; helpers `biChartData.ts`; testes `dashboardBiBugfix4083.test.tsx`; **sem alteração de regra de negócio, NF-e ou permissões backend**
+- **ERP 4.0.11 (Visibilidade operacional PV/FAT/NF-e):** serviço read-only `resumo_atendimento_operacional.py`; campo `resumo_atendimento_operacional` em serializers PV/NF-e e resumo de faturamento; componentes `AtendimentoOperacionalBadge`, `AtendimentoOperacionalResumo`, `AtendimentoOperacionalInline`; badges informativos (entrada pendente/conciliada, retirada fornecedor, entrega direta, misto, não definido, divergente); listagem NF-e enxuta; detalhe PV/FAT/conferência NF-e; testes `test_resumo_atendimento_operacional_4011.py` + `atendimentoOperacional4011.test.tsx`; **sem CRUD de alocação, sem estoque/financeiro, sem alteração de emissão NF-e/XML/DANFE**
+- **ERP 4.0.12 (Gestão operacional de atendimento por item):** CRUD `AlocacaoAtendimento` (`/api/alocacoes-atendimento/`, actions PV/NF-e); service `alocacao_atendimento_service.py` (validação de quantidades, sem estoque/financeiro/expedição); vínculos opcionais compra/NF-e entrada/CT-e conferido/NF-e histórica; resumo 4.0.11 alimentado por alocações reais; UI aba PV + «Gerenciar atendimento» em faturamento e conferência NF-e; migration `0036`; testes `test_alocacao_atendimento_4012.py` + `alocacaoAtendimento4012.test.tsx`; **sem financeiro, estoque, expedição, apuração, emissão/XML/DANFE ou bloqueio de NF-e por entrada pendente**
+- **ERP 4.0.13 (Busca e vínculo assistido DF-e/compra na AlocacaoAtendimento):** endpoints `opcoes/*` (fornecedor, PC, item PC, NF-e entrada importada, item NF-e, CT-e conferido); validações de homologação/conferência/produto em `alocacao_atendimento_vinculos.py`; autocompletes no formulário (sem IDs manuais); campo `vinculos` legível na API/lista; testes `test_alocacao_atendimento_busca_4013.py` + `alocacaoAtendimento4013.test.tsx`; **vínculo não gera financeiro/estoque/expedição nem promove base importada**
+- **ERP 4.0.13.1 (Atendimentos Operacionais):** tela consolidada de `AlocacaoAtendimento` (`GET /api/atendimentos-operacionais/`, KPIs, filtros operacionais); substitui visualmente «Atendimentos de Estoque» (rota `/atendimentos-estoque` mantida); edição via modal 4.0.12/4.0.13; Saldos de Estoque permanecem em `/estoque`; testes `test_atendimentos_operacionais_40131.py` + `atendimentosOperacionais40131.test.tsx`; **sem estoque/financeiro/expedição/NF-e/apuração**
+- **ERP 4.0.13.2 (Refinamento modal Pedido de Venda):** labels amigáveis NF-e/faturamento na modal PV (Resumo, Faturamento, NF-e/Fiscal, Observações); identidade fiscal (`NF-e Homologação nº …`) em vez de `RASCUNHO-FAT` como título; badges Homologação/Sem valor fiscal/Fora da apuração; PDF do pedido vs DANFE/XML separados; rodapé contextual (Salvar / Fechar / Salvar observações); alerta pedido faturado sem atendimento operacional; `pedidoVendaModalUi.ts` + testes; **sem alteração de emissão NF-e, apuração, financeiro, estoque ou expedição**
+- **ERP 4.0.13.2.1 (Acabamento modal + PDF Pedido de Venda):** mesma linguagem na modal (`pedido_venda_apresentacao.py`, `formatBr.ts`); PDF **comercial** sem seção NF-e vinculada (dados fiscais só no ERP — aba NF-e / Fiscal); valores/quantidades pt-BR; itens faturados read-only; testes `test_pedido_venda_apresentacao_40132.py` + `formatBr.test.ts`; **sem emissão NF-e, apuração, financeiro, estoque ou expedição**
+- **ERP 4.0.13.3 (Duplicatas no XML/DANFE da NF-e Saída):** `nfe_saida_duplicatas.py` gera cobrança comercial/fiscal a partir do pedido/faturamento; grupo `<cobr>/<dup>` no XML preliminar/oficial; DANFE de conferência exibe fatura/duplicatas; aba NF-e / Fiscal na modal PV lista `duplicatas_nfe`; API expõe `duplicatas_nfe` (não título financeiro); testes `test_nfe_saida_40133_duplicatas.py`; **sem contas a receber, boleto, estoque, apuração ou emissão produção**
+- **ERP 4.0.13.4 (Reforma Tributária NF-e — pesquisa/preparação):** `docs/reforma-tributaria-nfe-nexus.md`; pacote `apps.fiscal.reforma_tributaria`; feature flags; helpers cálculo/validação/XML/DANFE stubs; `montar_payload_reforma_tributaria_nfe`; `nfe_saida_listagem.py`; **sem tags RTC no XML/DANFE de emissão; produção bloqueada**
+- **ERP 4.0.13.4.1 (NF-e Saída compacta + Reforma na API/UI):** detalhe com `reforma_tributaria`; listagem com `listagem_resumo`; tela compacta + drawer; helpers pt-BR; testes 401341; **sem RTC no XML, sem financeiro/estoque/expedição**
+- **ERP 4.0.13.5 (Checklist fiscal pré-homologação NF-e):** `nfe_saida_checklist_homologacao.py` + endpoints `POST /api/nf-saidas/checklist-homologacao/`, `POST /api/nf-saidas/{id}/checklist-homologacao/`, `POST /api/pedidos-venda/{id}/checklist-nfe-homologacao/`; modal `NFeChecklistHomologacaoModal`; valida XML/DANFE/duplicatas/apuração/Reforma/efeitos sem transmitir; testes `test_nfe_saida_40135_checklist_homologacao.py` + `nfeChecklistHomologacao.test.tsx`; **não emite NF-e, não gera financeiro/estoque/expedição**
+- **ERP 4.0.13.5.1 (DANFE no checklist pré-homologação):** checklist reutiliza `gerar_preview_danfe_nfe_saida` (mesma base do botão DANFE); homologação autorizada usa XML autorizado via BFR; `_bloqueio_preview` liberado para homologação; modal checklist mais largo com resumo e seções colapsáveis
+- **ERP 4.0.13.5.2 (Material de produtos + higienização teste/dev):** `material`/`material_label` na API; preservação em PATCH; `/produtos` com coluna Material; comando `limpar_dados_teste_nexus` (dry-run + confirmação; bloqueio produção); critérios em `limpeza_cursor/criterios.py`; DELETE amigável (409) em produto/cliente/pedido; testes `test_produto_material_401352.py`, `test_limpar_dados_teste_nexus.py`, `produtoMaterial.test.ts`; **sem inventar material, sem apagar dados reais, sem alterar NF-e/XML autorizado/apuração/financeiro/estoque**
+- **ERP 4.0.13.5.3 (Layout DANFE/NF-e de conferência):** correção visual MOC §3.8.1 — seções FATURA/DUPLICATA, destinatário, imposto e transportador sem sobreposição; marca d'água discreta; duplicatas em tabela própria; coordenadas sem escala 1.058; testes `test_nfe_saida_401353_danfe_layout.py`; **sem transmissão SEFAZ, sem alterar XML autorizado, sem financeiro/estoque**
+- **ERP 4.0.13.6 (Cadastro rápido comercial/compras + quantidade PV):** `ClienteComercialField`, `ProdutoComercialField`, `FornecedorOpcaoField` (Alocação) com modal compacto e seleção automática pós-save; reutiliza `POST /api/clientes/`, `/fornecedores/`, `/produtos/`; correção quantidade editável no Pedido de Venda (`aplicarConversao` com patch, input inline); `itemPedidoQuantidadeEditavel` + aviso read-only quando faturado; testes `test_comercial_40136_quantidade_cadastro_rapido.py`, `cadastroRapido40136.test.ts`, `nfeSaidaUi.test.ts`; **sem financeiro, estoque, expedição, NF-e/XML/DANFE ou apuração**
+- **ERP 4.0.13.6.1 (Estabilização urgente PV/Faturamento/NF-e/DANFE):** hotfix `hotfix/401361-estabilizacao-pedido-faturamento-danfe`; cadastro rápido **suspenso na UI** (autocomplete estável); `valor_faturado` com desconto proporcional; `POST .../faturamentos/{id}/estornar/` e `.../reparar-vinculo-nfe/`; detecção `inconsistencias` no resumo (GERADO_NFE órfão, valor faturado > total); limpeza Cursor corrige status FAT ao remover NF-e; DANFE conferência restaurado ao layout `08a7170`; **PDF comercial PV** usa `calcular_totais_pedido_venda` (não `valor_total` salvo desatualizado); testes `test_comercial_401361_estabilizacao.py`, `test_pedido_venda_pdf_totais.py`; **sem financeiro, estoque, transmissão NF-e ou apuração**
+- **ERP 4.0.13.6.13A (Limpeza renderizadores DANFE — BFR único):** `DANFE_RENDERER_OFICIAL=BFR`; removidos fallback HTML/WeasyPrint, templates `modelo55_conferencia.*`, renderers ReportLab legados de DANFE e flag `FISCAL_DANFE_RENDERER`; `danfe_render.py` só BFR com `DanfeBfrRenderError` (503) e logs `[DANFE_BFR_ERROR]` / `[DANFE_FALLBACK_BLOQUEADO]`; checklist/prontidão bloqueiam emissão se BFR falhar; UI badge «Renderer oficial BFR»; `weasyprint` removido de `requirements.txt` (permanece `reportlab` para PDFs comerciais); **sem alteração fiscal/XML/emissão/estoque/financeiro**
+- **ERP 4.0.14 (Financeiro base operacional):** app `apps.financeiro` — cadastros, CR/CP, parcelas, baixa/estorno, status e origem rastreável; **CP com despesas manuais** (tipo lançamento: fornecedor, despesa, serviço, tributo, outros), **tributos a recolher** (ICMS…FGTS) com **parcelamento manual**, baixa por parcela; UI `ContaPagarDespesaModal` / `ContaPagarTributoModal`; testes `test_financeiro_operacional.py` (9) + `financeiroUi4014.test.tsx`; **sem cálculo automático de imposto, sem apuração fiscal, sem geração a partir de NF-e/XML/Reforma, sem seed de dados**
+- **ERP 4.0.14.0.1 (Correção — remoção de Condições de pagamento do Financeiro):** removido o cadastro/rota/modelo financeiro de `Condição de pagamento`; títulos financeiros não exigem condição; parcelamento segue por parcelas diretas no título (receber/pagar/despesa/tributo); testes financeiros atualizados (10); **sem alteração em Proposta/Pedido/Faturamento/NF-e/XML/DANFE/duplicatas/estoque**.
+- **NF-e Saída 4.0.1b (XML preliminar + DANFE BrazilFiscalReport):** `nfe_integracao/nfe_xml_preliminar.py` + `nfe_chave_acesso.py` + `nfe_numero_fiscal_preliminar.py` (série homologação configurável, `nNF` numérico do pk — nunca `RASCUNHO-FAT-*` como `nNF`); `GET .../preview-xml-preliminar/`; `danfe_brazil_fiscal_report.gerar_danfe_bfr_nfe_preliminar`; campos opcionais `xml_preliminar` / `chave_acesso_preliminar` com `sem_autorizacao`; sem transmissão SEFAZ, sem protocolo fake, sem estoque/financeiro; testes `test_nfe_saida_401_bfr_preliminar` + `test_danfe_brazil_fiscal_report`
+- **NF-e Saída 4.0.1c (acabamento DANFE BFR):** `resolver_marca_dagua_danfe()` + `DanfeNexus` (marca d’água por status — conferência sem «CANCELADA» indevida); `montar_informacoes_complementares_danfe()` (infCpl enxuto; `observacoes_internas` nunca no PDF); logo emitente via `DanfeConfig.logo` + `get_empresa_logo_path_or_none`; `infcpl_semicolon_newline`; testes `test_nfe_saida_401_bfr_acabamento`
 - **NF-e Saída 3.6 (certificado A1 + status SEFAZ):** camada `apps/fiscal/nfe_integracao/adapters/` (nfelib, PyNFe, certificado_a1, sefaz_status_service); modelo `NFeSefazStatusConsulta`; API `POST /api/nfe-sefaz-status/consultar/`, `GET /api/nfe-sefaz-status/`, `GET /api/empresas/{id}/validar-certificado-nfe/`; UI `/nfe-sefaz`; homologação SP via `ComunicacaoSefaz.status_servico('nfe')`; sem emissão NF-e
 - **NF-e Saída 3.5.3 (prontidão da conferência):** `status_conferencia` separado do status fiscal (`EM_CONFERENCIA`, `COM_PENDENCIAS`, `CONFERIDA`, `PRONTA_PARA_EMISSAO`); `GET .../prontidao/`, `POST .../validar-conferencia/`, `POST .../marcar-pronta/`; serviço `nfe_saida_prontidao.py`; eventos `CONFERENCIA_*`, `PRONTA_PARA_EMISSAO`, `PRONTIDAO_INVALIDADA`; UI na conferência e listagem; invalidação ao salvar complementos ou atualizar fiscal; sem SEFAZ/estoque/financeiro; migration `0023`
 
 ### Falta
 
-- Transmissão SEFAZ / XML autorizado / DANFE definitivo
+- Emissão **produção** SEFAZ, contingência, cancelamento/CC-e/inutilização
+- ~~Transmissão homologação / XML autorizado / DANFE homologação~~ — **4.0.2 homologação** (ver item acima; produção fora)
 - NF-e saída aplicando `RegraFiscalSaida` na emissão (recálculo na transmissão)
 - ~~Geração de XML oficial NF-e 4.00 (nfelib) em rascunho~~ — **4.0.1 concluída** (sem transmitir)
 - Assinatura XML e transmissão SEFAZ (fase 4)
@@ -790,3 +830,355 @@ Documentos complementares existentes:
 ---
 
 *Última atualização: maio/2026 — Saída 3.10 (histórico/auditoria homologação), Saída 3.9, roadmap central.*
+
+## ERP 4.0.13.6.2 — Padronização segura dos campos comerciais
+
+- Padronização de inputs de quantidade/moeda/percentual no fluxo comercial.
+- Estabilização de `Pedido de Venda`, `Proposta`, `Pedido de Compra` e `Faturamento`.
+- Linha de item como resumo; edição única no painel expandido/modal.
+- Payload de itens limpo e normalizado para API.
+- Consistência entre total do pedido, resumo financeiro e PDF comercial.
+
+## ERP 4.0.13.6.3 — Segunda passada segura (Propostas e Pedidos de Compra)
+
+- Reaproveito dos componentes comerciais padronizados em `Propostas` e `Pedidos de Compra`.
+- Remoção de inputs genéricos críticos para quantidade/preço/desconto em pontos de edição de item.
+- Padronização de feedback amigável (`toast`) no salvar/validações desses módulos.
+- Build frontend mantido estável após ajustes.
+
+## ERP 4.0.13.7 — Inteligência de equivalência, composição e montagem de produtos
+
+- Equivalência simples e composta por fornecedor; composição/montagem de produto (simples, roscada, soldada, com serviço, terceirizada).
+- Motor de sugestão genérico na conferência NF-e entrada com confiança 0–100; confirmação manual obrigatória.
+- XML de entrada preservado; equivalência não movimenta estoque nem financeiro nesta fase.
+
+## ERP 4.0.13.7.1 — Generalização da estrutura de equivalência, composição e montagem
+
+- Remoção de acoplamento com exemplos operacionais reais (fornecedor/pedido/NF/produto específicos).
+- Modelo revisado: composição com múltiplas origens (comprar pronto + montar + kit); `ProcessoMontagem` cadastral.
+- Heurísticas genéricas: regra cadastrada, composição cadastrada, similaridade textual/agregada, tolerâncias configuráveis.
+- Aba **Composição / Montagem** no cadastro de produto; testes e documentação com dados sintéticos.
+- **Famílias/Figuras permanecem a base** de produtos técnicos; composição/equivalência é camada complementar.
+- Dados sintéticos de teste **somente em banco isolado** (`test_*`); não poluir banco de desenvolvimento.
+- Pendência futura: ordem de montagem com movimentação real de estoque.
+
+## ERP 4.0.13.7.2 — Limpeza segura de produtos artificiais de teste
+
+- Comando `limpar_produtos_teste_401372` com dry-run obrigatório e confirmação explícita.
+- Remove apenas produtos da lista autorizada (código + descrição exata «Fam») sem vínculos operacionais.
+- Preserva famílias/figuras, templates de código e produtos reais.
+- `NexusDiscoverRunner` bloqueia testes no banco de desenvolvimento.
+
+## ERP 4.0.13.6.13 — Higienização final do XML de transmissão NF-e
+
+- XML **preview/conferência** pode conter `NFePREVIEW`, comentários e avisos internos.
+- XML **transmissão** é limpo: Id com chave real, sem marcas de prévia, `dhEmi` com timezone.
+- IE é exibida com máscara na UI, mas serializada **sem máscara** no XML de transmissão.
+- `indFinal` e `indPres` devem ser confirmados na conferência antes da emissão.
+- Validação XSD e checklist incluem grupo **Higienização XML**.
+
+## ERP 4.0.13.6.12 — Performance e UX da conferência NF-e
+
+- Abertura da conferência é **leve** (`GET .../conferencia/?modo=abertura`) — sem checklist completo, sem XML, sem DANFE.
+- XML e DANFE são gerados **sob demanda** (botões dedicados).
+- **Salvar alterações** (`POST .../salvar-conferencia/`) persiste complementos sem validação pesada.
+- **Validar dados salvos** executa checklist completo uma única vez por requisição.
+- **Salvar e validar** (`POST .../salvar-e-validar-conferencia/`) em uma requisição.
+- Checklist **leve** (modo `leve`) vs **completo** (modo `completo`: ViaCEP + Reforma no XML).
+- Cache de XML pré-autorização reutilizado quando `xml_preliminar` persistido e não invalidado.
+- Logs `[NFE_PERF]` em DEBUG/homologação (`NFE_PERF_LOGGING`); produção sem logs verbosos.
+- Validação **não altera** cálculo fiscal, transporte, Reforma ou duplicatas.
+
+## ERP 4.0.13.6.11 — Base IBS/CBS 2026 parametrizada
+
+- Base de cálculo IBS/CBS é **parametrizável** por regra fiscal (`modo_base_ibs_cbs`).
+- Modos: base cheia, sem ICMS, sem ICMS/PIS/COFINS, sem IPI, oficial 2026, customizada.
+- Snapshot registra fórmula, deduções, fonte e status (`pendente_confirmacao` | `confirmada`).
+- XML usa exatamente a base do snapshot — mesma camada central IBSCBS/IBSCBSTot.
+- Produção bloqueia regra pendente; homologação alerta.
+- Comparação com XML externo é diagnóstico — não altera regra automaticamente.
+- Referência normativa: NT 2025.002-RTC / LC 214/2025 — confirmar com contabilidade antes de produção.
+
+## ERP 4.0.13.6.10 — Persistência e validação da aba Transporte na conferência NF-e
+
+- Aba Transporte com **salvamento explícito**; validar conferência usa apenas dados já persistidos.
+- `modFrete = 9` representa ausência de transporte — não pode coexistir com transportadora/volumes/pesos (pendência bloqueante).
+- Botões: **Salvar alterações**, **Salvar e validar**, **Validar dados salvos**, **Marcar pronta para emissão**.
+- Estado de alterações não salvas (dirty form) com aviso inline; validar/marcar pronta bloqueados enquanto houver edição local.
+- Confirmação ao selecionar modalidade 9 com dados preenchidos (limpar transporte ou manter modalidade anterior).
+- XML respeita transporte salvo: `modFrete=9` omite transportadora/volumes no binding nfelib.
+- Transporte não gera financeiro, estoque, expedição nem altera ICMS/PIS/COFINS/Reforma.
+
+## ERP 4.0.13.6.9 — Reforma Tributária em todos os XMLs da NF-e
+
+- Serialização oficial `IBSCBS` / `IBSCBSTot` via nfelib (`TtribNfe`, `TibscbsmonoTot`) a partir do snapshot calculado.
+- Builders centrais reutilizados por preliminar, preview, download, checklist e transmissão.
+- Correção de `cMun` do destinatário (sem reutilizar `cMunFG` do emitente); bloqueio quando cidade/UF/cMun incoerentes.
+- Validação e checklist bloqueiam se Reforma calculada não estiver no XML; XML autorizado não é alterado.
+
+## ERP 4.0.13.6.8 — Estorno seguro de faturamento e descarte de NF-e rascunho (pré-autorização)
+
+- Estorno de faturamento confirmado quando **não** há NF-e autorizada (sem protocolo/cStat 100/XML autorizado).
+- NF-e rascunho marcada como `DESCARTADA_INTERNA` (histórico preservado; não apaga XML/DANFE).
+- Motivo obrigatório (mín. 10 caracteres); eventos `ESTORNO_FATURAMENTO_PRE_AUTORIZACAO_NFE` e `DESCARTE_RASCUNHO_NFE`.
+- Endpoints: `POST .../faturamentos/{id}/estornar/`, `POST /api/nf-saidas/{id}/descartar-rascunho/`.
+- UI: modal com aviso “não envia evento à SEFAZ”; botões Cancelamento/CC-e desabilitados (fases 4.0.13.6.9 / 4.0.13.6.10).
+
+## ERP 4.0.13.6.7 — Ajuste de layout do DANFE de conferência (duplicatas e totais)
+
+- Bloco Fatura/Duplicatas com altura dinâmica, grade 1 ou 2 colunas (até 10 no bloco; excedente em Dados Adicionais).
+- Rótulos longos do quadro Cálculo do Imposto com quebra de linha (`VALOR TOTAL DOS PRODUTOS`, etc.).
+- Somente renderização PDF/HTML; sem alteração de XML, cálculos ou emissão.
+
+## ERP 4.0.13.6.6 — Correção da aplicação e cálculo da Reforma Tributária no snapshot da NF-e rascunho
+
+- Parsing de alíquotas IBS/CBS com vírgula (`0,1` → `0.1`) na persistência da regra e no cálculo do snapshot.
+- Serviço `nfe_saida_reforma_calculo.py`: base × alíquota%, redução/diferimento opcionais, status `CALCULADA` / `ATENCAO`.
+- Conferência NF-e exibe base, alíquota e valor por item; validação alerta `REFORMA_ALIQUOTA_SEM_VALOR` quando aplicável.
+
+## ERP 4.0.13.6.5 — Correção da aplicação de regra fiscal existente no rascunho da NF-e
+
+- `Atualizar fiscal` da NF-e rascunho passa a buscar **sempre** no cenário padrão de saída (`buscar_regra_fiscal_nfe_saida_rascunho`), independente de `USE_CENARIO_FISCAL_SAIDA_FOR_PROPOSTAS`.
+- Corrige caso em que regras apareciam na tela Regras Fiscais mas não eram encontradas no modal (busca só na tabela legada).
+- SP→PA aplicada quando destino é PA; SP→SP não é fallback indevido.
+- Testes `test_nfe_atualizar_fiscal_cenario_401365.py`.
+
+## ERP 4.0.13.6.4 — Consistência fiscal de cliente/endereço + diagnóstico de regra fiscal na NF-e
+
+- Validação de endereço fiscal do cliente (CEP × cidade × UF) com consulta ViaCEP reutilizável.
+- Cadastro comercial pode ser salvo com alerta; bloqueio fiscal na NF-e quando endereço inconsistente.
+- `Atualizar fiscal` usa UF destino real do cliente (via CEP) — não aplica SP→SP se destino fiscal é PA.
+- Diagnóstico explícito: endereço inconsistente vs falta de regra `NCM · origem · destino`.
+- Snapshot fiscal só é gerado quando regra compatível existe; sem mascaramento de erro.
+- Testes `test_endereco_fiscal_nfe_401361.py`, `enderecoFiscal.test.ts`; **sem emissão/transmissão NF-e, financeiro, estoque ou apuração**.
+
+## ERP 4.0.13.8 — Padronização operacional da interface do Nexus
+
+- Camada UX: linguagem de negócio na tela principal; detalhes técnicos em Avançado/Suporte.
+- NF-e Saída: Ver DANFE, Baixar XML, Emitir NF-e; XMLs múltiplos e renderer movidos para seção avançada.
+- Produtos/Famílias: «Modelo de medidas», «Como o código será formado»; enums de composição com labels amigáveis.
+- Pedidos/Propostas/Compras/NF-e Entrada: status e ações comerciais padronizados.
+- Componentes `AdvancedSupportSection`, `OperationalMessage`; dicionário `operationalUi.ts`.
+- **Escopo exclusivo UX** — sem alteração fiscal, XML, DANFE, estoque ou financeiro.
+- Testes frontend: `operationalUi401308.test.ts`; build Vite.
+
+## ERP 4.0.14.1 — Formas fixas de pagamento, créditos e abatimentos por devolução
+
+Escopo operacional do Financeiro para remover cadastro de formas, padronizar lista fixa, criar créditos de cliente/fornecedor, permitir abatimento por devolução, aplicação de crédito e estorno com rastreabilidade.
+
+## ERP 4.0.14.1.1 — Ajuste de Conta Financeira tipo Banco e menu financeiro
+
+- Modal Conta/Caixa com campos bancários condicionais (Tipo = Banco); validação frontend + serializer (`banco` obrigatório).
+- Listagem exibe banco cadastrado; legado sem banco mostra «Não informado».
+- Menu lateral Financeiro: apenas um item ativo por rota (`/financeiro` exato para Visão geral).
+- Testes: `financeiroUi401411.test.tsx` + `test_financeiro_operacional.py` (conta Banco/Caixa).
+- **Sem migration** (campos `banco`/`agencia`/`conta` já existiam); **sem alteração** em NF-e/XML/DANFE/Reforma/pedidos/estoque/baixas/créditos por regra de negócio.
+
+## ERP 4.0.14.1.2 — Ajuste de labels de conta financeira tipo Banco
+
+- Labels e placeholders do modal Conta/Caixa: apelido operacional vs instituição bancária; ordem Banco → Descrição/Apelido.
+- Sem campo novo no model; sem migration; testes `financeiroUi401412.test.tsx`.
+
+## ERP 4.0.14.1.3 — Padronização da busca de fornecedor no Financeiro
+
+- `FornecedorSearchSelect` substitui select simples em Nova conta a pagar e Nova despesa.
+- API: `GET /api/fornecedores/?search=&limit=` (busca por razão social, fantasia, CNPJ).
+- Serializer de título expõe `fornecedor_nome` e `fornecedor_cnpj` para listagem/detalhe.
+- Testes: `financeiroUi401413.test.tsx`, `test_busca_fornecedores.py`.
+
+## ERP 4.0.14.1.4 — Padronização de Cliente em Contas a Receber
+
+- `ClienteSearchSelect` substitui select simples; botão/modal «Nova conta a receber».
+- API: `GET /api/clientes/?search=&limit=` com busca por documento normalizado (dígitos).
+- Serializer de título expõe `cliente_cnpj` para detalhe/listagem.
+- Testes: `financeiroUi401414.test.tsx`, `test_busca_cadastros.py` (cliente).
+
+## ERP 4.0.14.1.5 — Detalhe financeiro por status
+
+- Mensagem e ações do drawer são determinadas por **status**, **saldo em aberto** e **existência de baixas ativas**.
+- Título em aberto permite baixa, edição e cancelamento (conforme flags da API).
+- Título quitado orienta estorno antes de alteração sensível.
+- Título cancelado não aceita novas baixas.
+- Helpers: `getTituloFinanceiroOperationalMessages`, `getTituloFinanceiroAcoes` (`financeiroUi.ts`).
+- Serializer expõe `pode_editar`, `pode_baixar`, `pode_cancelar`, `possui_baixa_ativa`, `pode_estornar_baixa`, `pode_abater`, `pode_aplicar_credito`.
+- Testes: `financeiroUi401415.test.tsx`, `test_financeiro_operacional.py` (flags serializer).
+
+## ERP 4.0.14.2 — Créditos, abatimentos e aplicação operacional
+
+- Modais reais: novo crédito (cliente/fornecedor), aplicar crédito, abater por devolução.
+- Tela `/financeiro/creditos` com listagem, filtros, detalhe e cancelamento.
+- Drawer de título integrado aos modais (substitui toasts informativos).
+- Backend: filtros em `GET /api/financeiro/creditos/`; serializer enriquecido; origens `PAGAMENTO_A_MAIOR`, `OUTROS`.
+- Testes: `financeiroUi40142.test.tsx`, `test_financeiro_creditos_40142.py`.
+
+## ERP 4.0.14.2.1 — Acabamento operacional de Créditos e exclusão segura de lançamentos manuais
+
+- Tela Créditos com empty state limpo e botão único «Novo crédito».
+- Drawer operacional: editar, cancelar (motivo), excluir (motivo), histórico formatado pt-BR.
+- Flags backend: `pode_editar`, `pode_editar_completo`, `pode_excluir`, `possui_movimento`, `origem_manual`, etc.
+- Endpoints: `PATCH /api/financeiro/creditos/{id}/`, `POST .../excluir/`, `POST .../contas-receber|pagar/{id}/excluir/`.
+- Testes: `financeiroUi401421.test.tsx`, `test_financeiro_acabamento_401421.py`.
+
+## ERP 4.0.14.2.2 — Correção de exclusão segura após estorno e refinamento dos drawers financeiros
+
+- `pode_excluir` distingue movimento **ativo** vs **estornado**; saldo reaberto permite exclusão de manual.
+- Flags: `possui_movimento_ativo`, `possui_apenas_movimentos_estornados`, `motivo_bloqueio_exclusao`.
+- Drawers: histórico recolhido, ações agrupadas, títulos operacionais.
+- Testes: `financeiroUi401422.test.tsx`, `test_financeiro_exclusao_401422.py`.
+
+## ERP 4.0.14.3 — Gerar Contas a Receber a partir de NF-e autorizada (confirmação manual)
+
+- Ponte **manual** entre NF-e autorizada e Contas a Receber — **sem automação** ao autorizar NF-e ou faturar.
+- Wizard de preview com parcelas editáveis (duplicatas fiscais → parcelas financeiras).
+- Endpoints: `GET .../financeiro/preview-contas-receber/`, `POST .../gerar-contas-receber/`, `GET .../contas-receber/`.
+- Idempotência por `origem_tipo=NFE_SAIDA` + `origem_id`; título com origem **não excluível**.
+- Cancelamento posterior da NF-e **não apaga** financeiro — alerta nos títulos vinculados.
+- Testes: `test_nfe_saida_40143_gerar_contas_receber.py`, `nfeSaida40143.test.tsx`.
+
+## ERP 4.0.14.4 — Gerar Contas a Pagar a partir de NF-e Entrada (confirmação manual)
+
+- Ponte **manual** entre NF-e Entrada conferida e Contas a Pagar — **sem automação** na importação, vínculo de pedido ou conferência.
+- Wizard de preview com parcelas editáveis (duplicatas/fatura do XML → parcelas financeiras).
+- Endpoints: `GET .../financeiro/preview-contas-pagar/`, `POST .../gerar-contas-pagar/`, `GET .../contas-pagar/` em `nf-entradas-historicas-importadas`.
+- Idempotência por `origem_tipo=NFE_ENTRADA` + `origem_id`; título com origem **não excluível**.
+- Cancelamento posterior da NF-e Entrada **não apaga** financeiro — alerta nos títulos vinculados.
+- Pedido de Compra vinculado é **contexto** — não altera pedido nem estoque.
+- Testes: `test_nfe_entrada_40144_gerar_contas_pagar.py`, `nfeEntrada40144.test.tsx`.
+
+## ERP 4.1 (futuro) — Multiempresa, matriz/filiais e multi-CNPJ
+
+**Não implementado.** Planejado após operação em produção com dados reais.
+
+## ERP 4.0.14.10.2 — Gestão de perfil de acesso do usuário no colaborador
+
+- Badges de acesso na listagem (Superusuário, perfil, Sem perfil, Acesso inativo).
+- Bloco Acesso ao sistema completo + modal **Editar acesso** (`PATCH .../acesso/`).
+- Prontidão: superusuário não gera crítico de sem perfil; mensagem orienta Editar acesso.
+- Testes: `test_colaborador_acesso_4014102.py`, `colaboradores4014102.test.tsx`.
+
+## ERP 4.0.14.10.1 — Regra fiscal de entrada como validação de uso
+
+- Entrada incompleta → aviso na prontidão; saída continua crítica.
+- Bloqueio em preparar/finalizar NF-e Entrada fiscal via `validar_regra_fiscal_entrada_para_uso()`.
+- Checklist separado saída/entrada; badge **Incompleta**; relatório com `avisos_entrada` e `bloqueios_por_fluxo`.
+- Testes: `test_regras_fiscais_minimas_4014101.py`, `regrasFiscais4014101.test.tsx`.
+
+## ERP 4.0.14.10 — Regras fiscais mínimas para produção
+
+- Validação fiscal mínima na prontidão; checklist em `/regras-fiscais`.
+- `GET /api/regras-fiscais/checklist-producao/`; relatório `pre_producao_*.json` com seção fiscal.
+- Sem seed/migration de regra real; sem alteração de NF-e/XML/DANFE/BFR.
+- Testes: `test_regras_fiscais_minimas_401410.py`, `regrasFiscais401410.test.tsx`.
+
+## ERP 4.0.14.9.4.1 — Correção de nome exibido do usuário no Header/UserMenu/Minha conta
+
+- `getUsuarioNomeExibicao` no frontend; invalidação de cache stale; login limpa contexto.
+- Backend reforça `nome_exibicao` = nome do colaborador quando vinculado.
+- Testes: `test_minha_conta_4014941.py`, `usuarioExibicao4014941.test.ts`, `header4014941.test.tsx`.
+
+## ERP 4.0.14.9.4 — Minha conta, nome exibido e cabeçalho refinado
+
+- `GET /api/app/contexto/` — `usuario.nome_exibicao` (colaborador → first+last → username); empresa com razão social no header.
+- `GET/PATCH /api/minha-conta/` — dados da conta; PATCH permite e-mail e telefone (sem perfil/grupo/login).
+- Header: empresa completa quando couber, menu com nome humano, aviso e-mail técnico em Minha conta.
+- **Sem** multiempresa, troca de empresa, matriz/filial ou multi-CNPJ.
+- Testes: `test_minha_conta_401494.py`, `header401494.test.tsx`, `minhaConta401494.test.tsx`.
+
+## ERP 4.0.14.9.3 — Cabeçalho operacional: busca, empresa atual e menu do usuário
+
+- Busca global: `GET /api/busca-global/?q=...` (cadastros, documentos, financeiro).
+- Contexto do app: `GET /api/app/contexto/` — empresa atual (informativa), usuário, ambiente.
+- `GET /api/minha-conta/` — dados da conta (sem alterar permissões).
+- Header: busca funcional, nome da empresa, selo Homologação, menu do usuário (Minha conta / Alterar senha).
+- **Sem** multiempresa, troca de empresa, matriz/filial ou multi-CNPJ.
+- Testes: `test_busca_global_401493.py`, `header401493.test.tsx`.
+
+## ERP 4.1 (futuro) — Fechamento fiscal/contábil e DF-e
+
+**Não implementado nesta fase.** Módulo planejado para após início operacional do ERP com dados reais em produção.
+
+Escopo futuro (referência):
+
+- Central de DF-e; manifestação do destinatário; consulta/download de XMLs.
+- Organização de XMLs de entrada e saída; pacote mensal para contador.
+- Exportação de arquivos fiscais e relatórios contábeis; fechamento mensal.
+- Conferência de documentos fiscais; ZIP por período; relatórios emitidas/recebidas.
+- Integração futura com apuração fiscal; arquivos para contador.
+
+## ERP 4.0.14.9.2 — Criação de usuário com senha inicial e redefinição por Admin
+
+- Criar usuário em Colaboradores com **senha inicial** (hash Django); sem convite/SMTP.
+- Validação e-mail, senha e confirmação (frontend + backend).
+- `POST .../redefinir-senha/` — apenas Admin redefine senha de outro usuário.
+- `POST /api/minha-conta/alterar-senha/` — usuário troca a própria senha com senha atual.
+- Sem obrigatoriedade de troca no primeiro acesso; senha nunca retornada na API.
+- Prontidão: usuário ativo sem senha utilizável, e-mail inválido, sem perfil.
+- Procedimento documentado: `changepassword` / `createsuperuser` se único Admin esquecer senha.
+- Testes: `test_colaborador_senha_401492.py`, `colaboradores401492.test.tsx`.
+
+## ERP 4.0.14.9.1 — Acesso ao sistema na tela de Colaboradores
+
+- Separação UX: **Dados** / **Funções internas** / **Acesso ao sistema** (funções ≠ perfil/grupo Django).
+- Coluna **Acesso** na listagem com badges e ações (Criar usuário, Definir perfil, Desativar, Reenviar convite).
+- Endpoints: `POST .../criar-usuario/` (perfil obrigatório), `.../vincular-usuario/`, `.../definir-perfil-acesso/`, `.../desativar-acesso/`, `.../reenviar-convite/`, `GET .../perfis-acesso/`.
+- Serializer com `acesso_status`, `perfil_acesso_label`, flags `pode_*`, sugestão de perfil.
+- Prontidão: crítico usuário ativo sem perfil com orientação «Cadastros > Colaboradores > Editar > Acesso ao sistema».
+- Testes: `test_colaborador_acesso_401491.py`, `colaboradores401491.test.tsx`; ajuste `test_colaborador_usuario_40148.py`.
+
+## ERP 4.0.14.9 — Pré-produção, limpeza segura e checklist final
+
+- Prontidão ampliada: CR/CP duplicados, usuários sem perfil, admin ausente, e-mails duplicados, produtos, fiscal.
+- Dry-run ampliado: preservados (produtos, NCM, grupos, contas…) e candidatos (financeiro, estoque, comercial, fiscal).
+- Produtos **nunca** candidatos à limpeza; bloqueio explícito na execução.
+- Execução bloqueada sem backup, confirmação, prontidão crítica ou documentos reais.
+- `python manage.py gerar_relatorio_pre_producao` → `reports/pre_producao_YYYYMMDD_HHMMSS.json`.
+- Testes: `test_pre_producao_40149.py`.
+
+## ERP 4.0.14.8 — Preparação para produção: numeração CR/CP, vencimento, usuários e limpeza segura
+
+- Numeração transacional `CR-AAAA-000001` / `CP-AAAA-000001` (`gerar_numero_titulo_financeiro`).
+- Vencimento obrigatório na criação; exibição em relatórios/PDF via `vencimento_exibicao.py` (sem «—» em título válido).
+- Colaboradores: criar usuário (`POST /api/colaboradores/{id}/criar-usuario/`), desativar acesso, status de acesso.
+- Grupos: `create_groups` estendido (financeiro, compras, estoque, produtos, consulta).
+- Comandos: `verificar_prontidao_producao` (leitura), `preparar_limpeza_producao` (dry-run + execução com backup e confirmação `APAGAR_DADOS_TESTE`).
+- Testes: `test_financeiro_40148.py`, `test_colaborador_usuario_40148.py`, `test_prontidao_limpeza_40148.py`.
+
+## ERP 4.0.14.6 — Relatórios financeiros operacionais
+
+- Menu **Financeiro > Relatórios** (`/financeiro/relatorios`).
+- Endpoints: `GET /api/financeiro/relatorios/contas-receber|contas-pagar|fluxo-previsto|categorias|clientes|fornecedores/`.
+- Somente leitura; filtros na URL; baixa via modal existente com confirmação.
+- Exportação CSV: pendência (não obrigatória nesta fase).
+- Testes: `test_financeiro_relatorios_40146.py`, `financeiroRelatorios40146.test.tsx`.
+
+## ERP 4.0.14.7 — Motor central de relatórios e geração de PDF operacional
+
+- `apps.relatorios`: `ReportDefinition`, `ReportPdfRenderer`, `ReportExportService` (ReportLab, isolado do fiscal).
+- PDF financeiro: `GET /api/financeiro/relatorios/*/pdf/` (6 relatórios).
+- Frontend: `RelatorioPdfActions` + `relatorioPdfDownload.ts`.
+- Testes: `test_financeiro_relatorios_pdf_40147.py`, `financeiroRelatorios40147.test.tsx`.
+- Arquitetura documentada para expansão (Fiscal, Comercial, Estoque, etc.) — sem implementar nesta fase.
+
+## ERP 4.0.14.6.1 — Ajustes de consistência dos relatórios financeiros
+
+- Filtros unificados em `RelatorioFiltrosPanel` (sem duplicidade “Filtros avançados” + “Filtros do relatório”).
+- Parâmetros API: `incluir_quitados`, `incluir_cancelados`, `incluir_sem_saldo` (padrão `false`).
+- Exibição padrão prioriza títulos ativos; histórico e linhas zeradas só com flags.
+- Cards de aberto/vencido isolados de cancelados/quitados; categorias com colunas Original / Em aberto / Baixado / Total.
+- Testes: `test_financeiro_relatorios_401461.py`, `financeiroRelatorios401461.test.tsx`.
+
+## ERP 4.0.14.5 — Visão geral financeira, vencimentos e alertas operacionais
+
+- Endpoint `GET /api/financeiro/resumo/` com cards, alertas, resumo por conta/categoria e créditos disponíveis.
+- Tela `/financeiro` como visão geral operacional com período selecionável.
+- Filtros avançados em Contas a Receber e Contas a Pagar (vencimento, origem, categoria, origem fiscal cancelada).
+- Badge «Origem cancelada» na listagem quando NF-e de origem cancelada.
+- Testes: `test_financeiro_resumo_40145.py`, `financeiro40145.test.tsx`.
+
+## ERP 4.0.14.4.1 — Separação pendências operacionais × Contas a Pagar NF-e Entrada
+
+- Financeiro da NF-e Entrada é **independente** da aplicação de estoque e da resolução de equivalências.
+- Pendências operacionais (produto, estoque, pedido, equivalência) **não bloqueiam** Contas a Pagar.
+- Bloqueios financeiros reais: fornecedor, valor, cancelamento, duplicidade, XML inválido.
+- Geração com pendências operacionais exige **ciência explícita** do usuário no wizard.
+- Salvar conferência com pendências mantém divergências abertas e **não gera** financeiro automaticamente.

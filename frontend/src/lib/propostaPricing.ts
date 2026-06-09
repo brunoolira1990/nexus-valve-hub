@@ -1,3 +1,4 @@
+import { toNumber } from '@/lib/numberFormat';
 import type { ItemProposta } from '@/types';
 
 /** Divisor fixo da regra comercial validada (não é markup genérico). */
@@ -17,20 +18,27 @@ export function round2(n: number): number {
 }
 
 export function computeIpiEntradaValor(custoProduto: number, ipiPct: number, ipiLegacy: number): number {
-  if (ipiPct > 0) return round2(custoProduto * (ipiPct / 100));
-  return round2(ipiLegacy);
+  const custo = toNumber(custoProduto);
+  const pct = toNumber(ipiPct);
+  const legacy = toNumber(ipiLegacy);
+  if (pct > 0) return round2(custo * (pct / 100));
+  return round2(legacy);
 }
 
 export function computeCustoCarregado(item: ItemProposta): number {
-  const custo = item.custo_utilizado ?? 0;
-  const ipiVal = computeIpiEntradaValor(custo, item.ipi_entrada_percentual ?? 0, item.ipi_custo ?? 0);
+  const custo = toNumber(item.custo_utilizado);
+  const ipiVal = computeIpiEntradaValor(
+    custo,
+    item.ipi_entrada_percentual,
+    item.ipi_custo,
+  );
   return round2(
     custo +
       ipiVal +
-      (item.st_custo ?? 0) +
-      (item.frete ?? 0) +
-      (item.despesas ?? 0) +
-      (item.outros_impostos_custo ?? 0),
+      toNumber(item.st_custo) +
+      toNumber(item.frete) +
+      toNumber(item.despesas) +
+      toNumber(item.outros_impostos_custo),
   );
 }
 
@@ -40,14 +48,27 @@ export function computePrecoBase(custoCarregado: number): number {
 }
 
 export function percentualSaidaTotal(item: ItemProposta): number {
+  const icms = toNumber(item.icms_saida_percentual);
+  let pis = toNumber(item.pis_saida_percentual);
+  let cofins = toNumber(item.cofins_saida_percentual);
+
+  if (item.regra_fiscal_origem === 'CENARIO_SAIDA' || item.origem_regra_fiscal_saida === 'CENARIO_SAIDA') {
+    if (item.deduzir_icms_base_pis && pis > 0 && icms > 0) {
+      pis = round2((pis * (100 - icms)) / 100);
+    }
+    if (item.deduzir_icms_base_cofins && cofins > 0 && icms > 0) {
+      cofins = round2((cofins * (100 - icms)) / 100);
+    }
+  }
+
   return round2(
-    (item.icms_saida_percentual ?? 0) +
-      (item.pis_saida_percentual ?? 0) +
-      (item.cofins_saida_percentual ?? 0) +
-      (item.ipi_saida_percentual ?? 0) +
-      (item.irpj_estimado_percentual ?? 0) +
-      (item.csll_estimada_percentual ?? 0) +
-      (item.comissao_percentual ?? 0),
+    icms +
+      pis +
+      cofins +
+      toNumber(item.ipi_saida_percentual) +
+      toNumber(item.irpj_estimado_percentual) +
+      toNumber(item.csll_estimada_percentual) +
+      toNumber(item.comissao_percentual),
   );
 }
 
@@ -82,8 +103,8 @@ export function recalcPropostaItem(item: ItemProposta): ItemProposta {
     precoRef,
     custoCarregado,
     valorCarga,
-    item.frete_saida ?? 0,
-    item.outras_despesas_saida ?? 0,
+    toNumber(item.frete_saida),
+    toNumber(item.outras_despesas_saida),
   );
   return {
     ...item,

@@ -237,6 +237,42 @@ def montar_codigo_interno(
             return ''
         return f'{fig}{sep}{dim_code}'
 
+    if rule == t.BASE_DN_MM:
+        mm = _segmento_mm_codigo(od_mm, width=3)
+        return f'{fig}{sep}{mm}' if fig and mm else ''
+
+    if rule == t.BASE_DN_MM_REDUCAO:
+        ma = _segmento_mm_codigo(od_mm, width=3)
+        me = _segmento_mm_codigo(espessura_mm, width=3)
+        if not fig or not ma or not me:
+            return ''
+        return f'{fig}{sep}{ma}{me}'
+
+    if rule == t.BASE_BITOLA_POLEGADA:
+        return f'{fig}{sep}{id1}' if id1 else ''
+
+    if rule == t.BASE_OD_MM:
+        mm = _segmento_mm_codigo(od_mm, width=3)
+        return f'{fig}{sep}{mm}' if fig and mm else ''
+
+    if rule == t.BASE_OD_MM_REDUCAO:
+        ma = _segmento_mm_codigo(od_mm, width=3)
+        me = _segmento_mm_codigo(espessura_mm, width=3)
+        if not fig or not ma or not me:
+            return ''
+        return f'{fig}{sep}{ma}{me}'
+
+    if rule == t.BASE_OD_MM_X_ROSCA:
+        mm = _segmento_mm_codigo(od_mm, width=3)
+        tail = ''
+        if rosca:
+            tail += _codigo_rosca(rosca)
+        if polegada_principal:
+            tail += _codigo_pol(polegada_principal, width=2)
+        if not fig or not mm or not tail:
+            return ''
+        return f'{fig}{sep}{mm}{tail}'
+
     if rule == t.BASE_ESPIGAO_FLANGE_NPS:
         cod_e = _codigo_pol(polegada_principal, width=2)
         cod_f = _codigo_pol(polegada_secundaria, width=2)
@@ -408,6 +444,45 @@ def montar_descricao_sugerida(
         dim_desc = normalizar_descricao_produto(str((dimensoes or {}).get('dimensao_descricao') or ''))
         return _fin(' '.join([base, dim_desc]))
 
+    Tr = FamiliaProduto.TipoRegraCodigo
+    tr = getattr(familia, 'tipo_regra_codigo', '') or ''
+
+    if td == Td.DN_MM:
+        base = _base_descricao_comercial(familia)
+        mm = _format_mm_descricao(od_mm) if od_mm is not None else ''
+        return _fin(' '.join([x for x in (base, mm) if x]))
+
+    if td == Td.DN_MM_REDUCAO:
+        base = _base_descricao_comercial(familia)
+        d1 = _format_mm_descricao(od_mm) if od_mm is not None else ''
+        d2 = _format_mm_descricao(espessura_mm) if espessura_mm is not None else ''
+        if d1 and d2:
+            return _fin(f'{base} {d1} X {d2}'.strip())
+        return _fin(' '.join([x for x in (base, d1, d2) if x]))
+
+    if td == Td.BITOLA_POLEGADA:
+        base = _base_descricao_comercial(familia)
+        pol = _normalize_spaces((polegada_principal.descricao or '').strip()) if polegada_principal else ''
+        return _fin(' '.join([x for x in (base, pol) if x]))
+
+    if td == Td.OD_MM_REDUCAO:
+        base = _base_descricao_comercial(familia)
+        d1 = _format_mm_descricao(od_mm) if od_mm is not None else ''
+        d2 = _format_mm_descricao(espessura_mm) if espessura_mm is not None else ''
+        if d1 and d2:
+            return _fin(f'{base} {d1} X {d2}'.strip())
+        return _fin(' '.join([x for x in (base, d1, d2) if x]))
+
+    if td == Td.OD_MM_X_ROSCA:
+        base = _base_descricao_comercial(familia)
+        mm = _format_mm_descricao(od_mm) if od_mm is not None else ''
+        pol_txt = _normalize_spaces((polegada_principal.descricao or '').strip()) if polegada_principal else ''
+        rosca_txt = _descricao_rosca_comercial(rosca) if rosca else ''
+        tail = pol_txt or rosca_txt
+        if base and mm and tail:
+            return _fin(f'{base} {mm} X {tail}')
+        return _fin(' '.join([x for x in (base, mm, tail) if x]))
+
     if td in (Td.OD_MM, Td.OD_MM_X_ESPESSURA, Td.OD_MM_X_ESPESSURA_X_COMPRIMENTO):
         partes_mm: list[str] = []
         base = _base_descricao_comercial(familia)
@@ -421,7 +496,8 @@ def montar_descricao_sugerida(
         if comprimento_mm is not None:
             dim_chunks.append(_format_mm_descricao(comprimento_mm))
         if dim_chunks:
-            partes_mm.append('OD ' + ' X '.join(dim_chunks))
+            prefix = '' if (td == Td.OD_MM and tr == Tr.BASE_OD_MM) else 'OD '
+            partes_mm.append(prefix + ' X '.join(dim_chunks))
         return _fin(' '.join(partes_mm))
 
     partes: list[str] = []

@@ -605,8 +605,8 @@ function DiagnosticoDasFontesPainel({
           <div>
             <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Candidatas (após filtros)</h4>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-              <ChainMiniCard label="Saída histórica/XML" value={n(fontes.saidas_historicas_candidatas)} />
-              <ChainMiniCard label="Entrada histórica/XML" value={n(fontes.entradas_historicas_candidatas)} />
+              <ChainMiniCard label="Base NF-e saída importada" value={n(fontes.saidas_historicas_candidatas)} />
+              <ChainMiniCard label="Base NF-e entrada importada" value={n(fontes.entradas_historicas_candidatas)} />
               <ChainMiniCard label="Saída operacional" value={n(fontes.saidas_operacionais_candidatas)} />
               <ChainMiniCard label="Entrada operacional" value={n(fontes.entradas_operacionais_candidatas)} />
               <ChainMiniCard label="Saída hist. período (sem empresa)" value={n(fontes.saidas_historicas_periodo_sem_filtro_empresa)} />
@@ -1820,10 +1820,14 @@ const ApuracaoFiscalPage = () => {
               value={fonte}
               onChange={(e) => setFonte(e.target.value as 'TODOS' | 'OPERACIONAIS' | 'HISTORICOS')}
             >
-              <option value="TODOS">Todos (operacionais + históricos/XML)</option>
-              <option value="OPERACIONAIS">Operacionais (ERP)</option>
-              <option value="HISTORICOS">Históricos/XML</option>
+              <option value="TODOS">Todos válidos: operacionais produção + base DF-e importada</option>
+              <option value="OPERACIONAIS">Operacionais produção (ERP)</option>
+              <option value="HISTORICOS">Base DF-e importada (XML)</option>
             </select>
+            <p className="text-xs text-muted-foreground mt-1">
+              A apuração considera apenas documentos de produção, autorizados e fiscalmente válidos. Documentos de
+              homologação são sempre excluídos.
+            </p>
           </div>
           <div>
             <label className="erp-label">Status</label>

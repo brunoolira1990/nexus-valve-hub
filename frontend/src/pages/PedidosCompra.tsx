@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Pencil, Trash2, Plus } from 'lucide-react';
+import { ChevronDown, ChevronRight, Pencil, Trash2, Plus, MoreVertical, FileDown, Download } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { FornecedorPedidoCompraField, fornecedorStubForDisplay } from '@/components/pedidoCompra/FornecedorPedidoCompraField';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import { pedidosCompraService } from '@/services/api/comercial';
@@ -18,6 +25,22 @@ import { sugerirDataPrevistaEntregaIso } from '@/lib/prazoEntrega';
 import { calcularFinanceiroItemPedidoCompra } from '@/lib/pedidoCompraFinanceiro';
 import type { PedidoCompra, ItemPedido, Fornecedor, Produto } from '@/types';
 import { equivalentesPreco, labelPrecoUnitarioPorUnidade, unidadesNegociacaoCompraProduto } from '@/lib/comercialDimensional';
+import { usePaginatedList } from '@/hooks/usePaginatedList';
+import { PaginationControls } from '@/components/list/PaginationControls';
+import { EmptyState, ErrorState } from '@/components/list/ListStates';
+import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
+import { StatusBadge } from '@/components/nexus/StatusBadge';
+import { TableSkeleton } from '@/components/nexus/Skeleton';
+import { toast } from 'sonner';
+import {
+  DiscountInput,
+  MoneyDisplay,
+  MoneyInput,
+  PercentInput,
+  QuantityInput,
+  ReadonlyCalculatedField,
+  UnitSelect,
+} from '@/components/comercial/fields';
 
 const hojeIso = () => new Date().toISOString().slice(0, 10);
 
@@ -63,19 +86,36 @@ function resumoImpostosUmaLinha(it: ItemPedido, fin: ReturnType<typeof calcularF
   return parts.join(' · ');
 }
 
+function numSeguro(v: unknown): number {
+  const x = Number(v);
+  return Number.isFinite(x) ? x : 0;
+}
+
 function linhaConversaoCompacta(item: ItemPedido, pendente: boolean): string {
   if (pendente) return 'Conversão pendente';
-  const qe = item.quantidade_estoque_calculada ?? 0;
+  const qe = numSeguro(item.quantidade_estoque_calculada);
   const ue = (item.unidade_estoque_calculada || '—').toUpperCase();
-  const pk = item.peso_total_kg ?? 0;
-  const m = item.metros_total ?? 0;
-  const b = item.barras_total ?? 0;
+  const pk = numSeguro(item.peso_total_kg);
+  const m = numSeguro(item.metros_total);
+  const b = numSeguro(item.barras_total);
   return `Estoque: ${qe.toFixed(3)} ${ue} · Peso: ${pk.toFixed(3)} KG · Metros: ${m.toFixed(3)} M · Barras: ${b.toFixed(3)} BR`;
 }
 
 const PedidosCompra = () => {
-  const [items, setItems] = useState<PedidoCompra[]>([]);
-  const [search, setSearch] = useState('');
+  const {
+    items,
+    count,
+    page,
+    pageSize,
+    totalPages,
+    search,
+    setSearch,
+    setPage,
+    setPageSize,
+    loading: loadingList,
+    error: loadError,
+    reload: reloadList,
+  } = usePaginatedList<PedidoCompra>({ fetchPage: pedidosCompraService.listPaginated });
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<PedidoCompra | null>(null);
   const [fornecedorSelecionado, setFornecedorSelecionado] = useState<Fornecedor | null>(null);
@@ -115,11 +155,6 @@ const PedidosCompra = () => {
     });
   }, [conversaoPendentePorItemId]);
 
-  const load = async () => setItems(await pedidosCompraService.getAll());
-  useEffect(() => {
-    load();
-  }, []);
-
   const buscarProdutos = useCallback((term: string, limit?: number) => produtosService.search(term, limit ?? 50), []);
 
   const contagensProduto = useMemo(() => {
@@ -142,7 +177,7 @@ const PedidosCompra = () => {
   );
 
   const quantidadeNegociadaTotal = useMemo(
-    () => itens.reduce((s, i) => s + Number(i.quantidade_negociada ?? i.quantidade ?? 0), 0),
+    () => itens.reduce((s, i) => s + numSeguro(i.quantidade_negociada ?? i.quantidade), 0),
     [itens],
   );
 
@@ -436,26 +471,43 @@ const PedidosCompra = () => {
     setModalOpen(true);
   };
 
-  const openEdit = async (e: PedidoCompra) => {
-    setEditing(e);
+  const openEdit = async (pedido: PedidoCompra) => {
+    const pid = Number(pedido?.id);
+    if (!Number.isFinite(pid) || pid <= 0) {
+      toast.error('Pedido sem identificador válido. Recarregue a lista ou entre em contato com o suporte.');
+      return;
+    }
+    const pedidoNormalizado: PedidoCompra = { ...pedido, id: pid };
+    setEditing(pedidoNormalizado);
     setConversaoPendentePorItemId({});
     setDataEntregaTouched(true);
-    prazoEntregaAnterior.current = e.prazo_entrega_texto ?? '';
+    prazoEntregaAnterior.current = pedidoNormalizado.prazo_entrega_texto ?? '';
+    const prevEntrega = pedidoNormalizado.data_prevista_entrega;
+    const prevEntregaStr =
+      typeof prevEntrega === 'string'
+        ? prevEntrega.slice(0, 10)
+        : prevEntrega != null
+          ? String(prevEntrega).slice(0, 10)
+          : '';
     setForm({
-      ...e,
-      fornecedor_id: e.fornecedor_id ?? null,
-      fornecedor_nome: e.fornecedor_nome ?? '',
-      prazo_entrega_texto: e.prazo_entrega_texto ?? '',
-      data_prevista_entrega: e.data_prevista_entrega?.slice(0, 10) ?? '',
+      ...pedidoNormalizado,
+      fornecedor_id: pedidoNormalizado.fornecedor_id ?? null,
+      fornecedor_nome: pedidoNormalizado.fornecedor_nome ?? '',
+      prazo_entrega_texto: pedidoNormalizado.prazo_entrega_texto ?? '',
+      data_prevista_entrega: prevEntregaStr,
     });
     let fornSel: Fornecedor | null = null;
-    try {
-      fornSel = await fornecedoresService.getById(e.fornecedor_id);
-    } catch {
-      fornSel = fornecedorStubForDisplay(e.fornecedor_id, e.fornecedor_nome ?? '');
+    const fornecedorId = pedidoNormalizado.fornecedor_id;
+    if (fornecedorId != null && Number.isFinite(Number(fornecedorId))) {
+      try {
+        fornSel = await fornecedoresService.getById(Number(fornecedorId));
+      } catch {
+        fornSel = fornecedorStubForDisplay(Number(fornecedorId), pedidoNormalizado.fornecedor_nome ?? '');
+      }
     }
     setFornecedorSelecionado(fornSel);
-    const mapped = e.itens.map((it) => ({
+    const listaItens = Array.isArray(pedidoNormalizado.itens) ? pedidoNormalizado.itens : [];
+    const mapped = listaItens.map((it) => ({
       ...it,
       quantidade_negociada: it.quantidade_negociada ?? it.quantidade,
       preco_por_unidade_negociada: it.preco_por_unidade_negociada ?? it.valor_unitario,
@@ -496,9 +548,55 @@ const PedidosCompra = () => {
   };
 
   const handleDelete = async (id: number) => {
+    const nid = Number(id);
+    if (!Number.isFinite(nid) || nid <= 0) {
+      toast.error('Pedido inválido para exclusão. Recarregue a lista.');
+      return;
+    }
     if (confirm('Excluir?')) {
-      await pedidosCompraService.delete(id);
-      load();
+      await pedidosCompraService.delete(nid);
+      void reloadList();
+    }
+  };
+
+  const handleVisualizarPdf = async (pedido: PedidoCompra) => {
+    const rawId = pedido?.id;
+    const id = Number(rawId);
+    if (!Number.isFinite(id) || id <= 0) {
+      console.error('[PedidosCompra] Visualizar PDF: id ausente ou inválido na linha da tabela', pedido);
+      toast.error(
+        'Não foi possível identificar o pedido para gerar o PDF (id inválido). Recarregue a lista ou contate o suporte.',
+      );
+      return;
+    }
+    const previewTab = window.open('about:blank', '_blank');
+    if (!previewTab) {
+      toast.error(
+        'Não foi possível abrir uma nova aba (pop-up bloqueado). Permita pop-ups para este site e tente novamente.',
+      );
+      return;
+    }
+    try {
+      await pedidosCompraService.visualizarPdf(id, pedido.numero || String(id), previewTab);
+    } catch (e) {
+      previewTab.close();
+      toast.error(e instanceof Error ? e.message : 'Não foi possível gerar o PDF do pedido de compra.');
+    }
+  };
+
+  const handleBaixarPdf = async (pedido: PedidoCompra) => {
+    const rawId = pedido?.id;
+    const id = Number(rawId);
+    if (!Number.isFinite(id) || id <= 0) {
+      toast.error(
+        'Não foi possível identificar o pedido para baixar o PDF (id inválido). Recarregue a lista ou contate o suporte.',
+      );
+      return;
+    }
+    try {
+      await pedidosCompraService.baixarPdf(id, pedido.numero || String(id));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Não foi possível baixar o PDF do pedido de compra.');
     }
   };
 
@@ -567,17 +665,17 @@ const PedidosCompra = () => {
         setExpandedItemIds((s) => new Set(s).add(itemIdDestacar));
         setItemDestacadoId(itemIdDestacar);
       }
-      alert(erros.join('\n'));
+      toast.error(erros.join('\n'));
       return;
     }
     setItemDestacadoId(null);
     const pag = parseCondicaoPagamentoPedido(form.condicao_pagamento_texto);
     if (pag.kind === 'invalid') {
-      alert(pag.message);
+      toast.error(pag.message);
       return;
     }
     if (pag.dias.length === 0) {
-      alert(MENSAGEM_CONDICAO_PAGAMENTO_PEDIDO_DEFINIDA);
+      toast.error(MENSAGEM_CONDICAO_PAGAMENTO_PEDIDO_DEFINIDA);
       return;
     }
     const dias = pag.dias;
@@ -602,19 +700,27 @@ const PedidosCompra = () => {
       if (editing) await pedidosCompraService.update(editing.id, payload as Partial<PedidoCompra>);
       else await pedidosCompraService.create(payload as Omit<PedidoCompra, 'id'>);
       setModalOpen(false);
-      load();
+      void reloadList();
     } catch (e: unknown) {
-      alert(alertMessageFromApiError(e));
+      toast.error(alertMessageFromApiError(e));
     }
   };
 
-  const filtered = items.filter((i) => (i.numero || '').toLowerCase().includes(search.toLowerCase()));
-
   return (
     <div>
-      <PageHeader title="Pedidos de Compra" onAdd={openNew} addLabel="Novo Pedido" searchValue={search} onSearch={setSearch} />
-      <div className="erp-card overflow-x-auto">
-        <table className="erp-table">
+      <PageHeader
+        title="Pedidos de Compra"
+        description="Controle de compras, fornecedores e acompanhamento de recebimento."
+        onAdd={openNew}
+        addLabel="Novo Pedido"
+        searchValue={search}
+        onSearch={setSearch}
+      />
+      {loadError ? <ErrorState onRetry={() => void reloadList()} /> : null}
+      {loadingList ? <TableSkeleton rows={6} cols={6} /> : null}
+      {!loadingList && !loadError ? (
+        <DataTableShell>
+        <DataTable>
           <thead>
             <tr>
               <th>Número</th>
@@ -622,34 +728,90 @@ const PedidosCompra = () => {
               <th>Data</th>
               <th>Status</th>
               <th>Valor Total</th>
-              <th className="w-24">Ações</th>
+              <th className="w-36 text-right">Ações</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((e) => (
-              <tr key={e.id}>
-                <td className="font-medium">{e.numero}</td>
-                <td>{e.fornecedor_nome}</td>
-                <td>{e.data}</td>
-                <td>
-                  <span className={e.status === 'Recebido' ? 'erp-badge-success' : 'erp-badge-warning'}>{e.status}</span>
-                </td>
-                <td>R$ {e.valor_total.toFixed(2)}</td>
-                <td>
-                  <div className="flex gap-1">
-                    <button type="button" onClick={() => void openEdit(e)} className="erp-btn-ghost erp-btn-sm">
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button type="button" onClick={() => handleDelete(e.id)} className="erp-btn-ghost erp-btn-sm text-destructive">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan={6}>
+                  <EmptyState
+                    message="Nenhum pedido de compra encontrado."
+                    actionLabel="Novo pedido"
+                    onAction={openNew}
+                  />
                 </td>
               </tr>
-            ))}
+            ) : (
+            items.map((pedido) => (
+              <tr key={pedido.id}>
+                <td className="font-medium">{pedido.numero ?? '—'}</td>
+                <td>{pedido.fornecedor_nome ?? '—'}</td>
+                <td>{pedido.data ?? ''}</td>
+                <td>
+                  <StatusBadge status={pedido.status ?? ''} />
+                </td>
+                <td>R$ {numSeguro(pedido.valor_total).toFixed(2)}</td>
+                <td className="text-right">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button type="button" className="erp-btn-ghost erp-btn-sm" aria-label="Ações do pedido">
+                        <MoreVertical className="h-4 w-4" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="end"
+                      className="w-52"
+                      onOpenAutoFocus={(ev) => ev.preventDefault()}
+                    >
+                      <DropdownMenuItem className="cursor-pointer" onSelect={() => void openEdit(pedido)}>
+                        <span className="flex items-center gap-2">
+                          <Pencil className="h-4 w-4" />
+                          Editar
+                        </span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="cursor-pointer" onSelect={() => void handleVisualizarPdf(pedido)}>
+                        <span className="flex items-center gap-2">
+                          <FileDown className="h-4 w-4" />
+                          Visualizar PDF
+                        </span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="cursor-pointer" onSelect={() => void handleBaixarPdf(pedido)}>
+                        <span className="flex items-center gap-2">
+                          <Download className="h-4 w-4" />
+                          Baixar PDF
+                        </span>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="cursor-pointer text-destructive focus:text-destructive"
+                        onSelect={() => void handleDelete(pedido.id)}
+                      >
+                        <span className="flex items-center gap-2">
+                          <Trash2 className="h-4 w-4" />
+                          Excluir
+                        </span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </td>
+              </tr>
+            ))
+            )}
           </tbody>
-        </table>
-      </div>
+        </DataTable>
+          {count > 0 ? (
+          <PaginationControls
+            page={page}
+            pageSize={pageSize}
+            count={count}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        ) : null}
+        </DataTableShell>
+      ) : null}
       <Modal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
@@ -997,47 +1159,39 @@ const PedidosCompra = () => {
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
                       <div>
                         <label className="text-xs text-muted-foreground">Unidade negociada</label>
-                        <select
+                        <UnitSelect
                           className="erp-select mt-1 w-full"
                           value={item.unidade_negociada || ""}
-                          onChange={(e) => {
-                            updateItem(idx, { unidade_negociada: e.target.value.toUpperCase() });
+                          options={produto ? unidadesNegociacaoCompraProduto(produto) : ["PC"]}
+                          onChange={(value) => {
+                            updateItem(idx, { unidade_negociada: value });
                             setPendenteConversao(item.id, false);
                           }}
-                        >
-                          <option value="">Selecione</option>
-                          {(produto ? unidadesNegociacaoCompraProduto(produto) : ["PC"]).map((u) => (
-                            <option key={u} value={u}>
-                              {u}
-                            </option>
-                          ))}
-                        </select>
+                        />
                       </div>
                       <div>
                         <label className="text-xs text-muted-foreground">Quantidade negociada</label>
-                        <input
-                          type="number"
+                        <QuantityInput
                           className="erp-input mt-1 w-full"
-                          value={item.quantidade_negociada ?? item.quantidade}
-                          onChange={(e) => {
-                            updateItem(idx, { quantidade_negociada: +e.target.value });
+                          value={Number(item.quantidade_negociada ?? item.quantidade ?? 0)}
+                          onChange={(value) => {
+                            updateItem(idx, { quantidade_negociada: value });
                             setPendenteConversao(item.id, false);
                           }}
                         />
                       </div>
                       <div>
                         <label className="text-xs text-muted-foreground">{labelPrecoUnitarioPorUnidade(item.unidade_negociada)}</label>
-                        <input
-                          type="number"
-                          step="0.0001"
+                        <MoneyInput
                           className="erp-input mt-1 w-full"
-                          value={item.preco_por_unidade_negociada ?? item.valor_unitario}
-                          onChange={(e) => updateItem(idx, { preco_por_unidade_negociada: +e.target.value })}
+                          step="0.0001"
+                          value={Number(item.preco_por_unidade_negociada ?? item.valor_unitario ?? 0)}
+                          onChange={(value) => updateItem(idx, { preco_por_unidade_negociada: value })}
                         />
                       </div>
                       <div>
                         <label className="text-xs text-muted-foreground">Valor produtos</label>
-                        <div className="erp-input mt-1 flex h-10 items-center justify-end tabular-nums">R$ {fin.valorProdutos.toFixed(2)}</div>
+                        <ReadonlyCalculatedField value={`R$ ${fin.valorProdutos.toFixed(2)}`} className="erp-input mt-1 flex h-10 items-center justify-end tabular-nums" />
                       </div>
                     </div>
                     <details
@@ -1050,79 +1204,37 @@ const PedidosCompra = () => {
                       <div className="grid grid-cols-1 gap-2 border-t border-border/60 px-2 pb-2 pt-2 sm:grid-cols-2 lg:grid-cols-4">
                         <div>
                           <label className="text-xs text-muted-foreground">IPI %</label>
-                          <input
-                            type="number"
-                            step="0.0001"
-                            className="erp-input mt-1 w-full"
-                            value={item.ipi_percentual ?? 0}
-                            onChange={(e) => updateItem(idx, { ipi_percentual: +e.target.value })}
-                          />
+                          <PercentInput className="erp-input mt-1 w-full" value={item.ipi_percentual ?? 0} onChange={(value) => updateItem(idx, { ipi_percentual: value })} />
                         </div>
                         <div>
                           <label className="text-xs text-muted-foreground">Valor IPI (R$)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            className="erp-input mt-1 w-full"
-                            value={item.ipi_valor ?? 0}
-                            onChange={(e) => updateItem(idx, { ipi_valor: +e.target.value })}
-                          />
+                          <MoneyInput className="erp-input mt-1 w-full" value={item.ipi_valor ?? 0} onChange={(value) => updateItem(idx, { ipi_valor: value })} />
                         </div>
                         <div>
                           <label className="text-xs text-muted-foreground">ICMS ST %</label>
-                          <input
-                            type="number"
-                            step="0.0001"
-                            className="erp-input mt-1 w-full"
-                            value={item.icms_st_percentual ?? 0}
-                            onChange={(e) => updateItem(idx, { icms_st_percentual: +e.target.value })}
-                          />
+                          <PercentInput className="erp-input mt-1 w-full" value={item.icms_st_percentual ?? 0} onChange={(value) => updateItem(idx, { icms_st_percentual: value })} />
                         </div>
                         <div>
                           <label className="text-xs text-muted-foreground">Valor ICMS ST (R$)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            className="erp-input mt-1 w-full"
-                            value={item.icms_st_valor ?? 0}
-                            onChange={(e) => updateItem(idx, { icms_st_valor: +e.target.value })}
-                          />
+                          <MoneyInput className="erp-input mt-1 w-full" value={item.icms_st_valor ?? 0} onChange={(value) => updateItem(idx, { icms_st_valor: value })} />
                         </div>
                         <div>
                           <label className="text-xs text-muted-foreground">Desconto (R$)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            className="erp-input mt-1 w-full"
-                            value={item.desconto_valor ?? 0}
-                            onChange={(e) => updateItem(idx, { desconto_valor: +e.target.value })}
-                          />
+                          <DiscountInput className="erp-input mt-1 w-full" value={item.desconto_valor ?? 0} onChange={(value) => updateItem(idx, { desconto_valor: value })} />
                         </div>
                         <div>
                           <label className="text-xs text-muted-foreground">Frete (R$)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            className="erp-input mt-1 w-full"
-                            value={item.frete_valor ?? 0}
-                            onChange={(e) => updateItem(idx, { frete_valor: +e.target.value })}
-                          />
+                          <MoneyInput className="erp-input mt-1 w-full" value={item.frete_valor ?? 0} onChange={(value) => updateItem(idx, { frete_valor: value })} />
                         </div>
                         <div>
                           <label className="text-xs text-muted-foreground">Outras despesas (R$)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            className="erp-input mt-1 w-full"
-                            value={item.outras_despesas_valor ?? 0}
-                            onChange={(e) => updateItem(idx, { outras_despesas_valor: +e.target.value })}
-                          />
+                          <MoneyInput className="erp-input mt-1 w-full" value={item.outras_despesas_valor ?? 0} onChange={(value) => updateItem(idx, { outras_despesas_valor: value })} />
                         </div>
                       </div>
                     </details>
                     <div className="flex items-center justify-between gap-2 rounded border border-border bg-background/70 px-2 py-1.5 text-sm">
                       <span className="font-medium text-foreground">Valor total do item</span>
-                      <span className="font-semibold tabular-nums">R$ {fin.valorTotalItem.toFixed(2)}</span>
+                      <MoneyDisplay value={fin.valorTotalItem} className="font-semibold tabular-nums" />
                     </div>
                     <p
                       className={`text-xs leading-relaxed ${pendenteConv ? "font-semibold text-destructive" : "text-muted-foreground"}`}
@@ -1138,11 +1250,19 @@ const PedidosCompra = () => {
             );
           })}
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-sm">
-            <div className="rounded-md border border-border bg-muted/20 p-2">Peso total estimado: {itens.reduce((s, i) => s + (i.peso_total_kg ?? 0), 0).toFixed(3)} KG</div>
-            <div className="rounded-md border border-border bg-muted/20 p-2">Metros totais: {itens.reduce((s, i) => s + (i.metros_total ?? 0), 0).toFixed(3)} M</div>
-            <div className="rounded-md border border-border bg-muted/20 p-2">Barras totais: {itens.reduce((s, i) => s + (i.barras_total ?? 0), 0).toFixed(3)} BR</div>
+            <div className="rounded-md border border-border bg-muted/20 p-2">
+              Peso total estimado: {itens.reduce((s, i) => s + numSeguro(i.peso_total_kg), 0).toFixed(3)} KG
+            </div>
+            <div className="rounded-md border border-border bg-muted/20 p-2">
+              Metros totais: {itens.reduce((s, i) => s + numSeguro(i.metros_total), 0).toFixed(3)} M
+            </div>
+            <div className="rounded-md border border-border bg-muted/20 p-2">
+              Barras totais: {itens.reduce((s, i) => s + numSeguro(i.barras_total), 0).toFixed(3)} BR
+            </div>
             <div className="rounded-md border border-border bg-muted/20 p-2">Total de itens: {itens.length}</div>
-            <div className="rounded-md border border-border bg-muted/20 p-2">Quantidade total negociada: {quantidadeNegociadaTotal.toFixed(3)}</div>
+            <div className="rounded-md border border-border bg-muted/20 p-2">
+              Quantidade total negociada: {numSeguro(quantidadeNegociadaTotal).toFixed(3)}
+            </div>
             <div className="rounded-md border border-border bg-muted/20 p-2">Itens com conversão pendente: {itensComConversaoPendente}</div>
             <div className="rounded-md border border-border bg-muted/20 p-2 sm:col-span-2 lg:col-span-3">
               Itens com produto duplicado (linhas): {linhasComProdutoDuplicado}

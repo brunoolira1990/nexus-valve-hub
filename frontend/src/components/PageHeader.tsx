@@ -1,35 +1,91 @@
-import { Plus, Search } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Plus } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { NexusButton } from '@/components/nexus';
+import { SearchInput } from '@/components/nexus/inputs';
+import { Badge } from '@/components/nexus/Badge';
+import { cn } from '@/lib/utils';
+
+export interface BreadcrumbItem {
+  label: string;
+  path?: string;
+}
 
 interface PageHeaderProps {
   title: string;
+  description?: string;
+  breadcrumbs?: BreadcrumbItem[];
+  /** Slot para ações customizadas (prioridade sobre onAdd). */
+  actions?: ReactNode;
+  badges?: ReactNode;
+  meta?: ReactNode;
+  children?: ReactNode;
+  className?: string;
+  /** Compatibilidade legada */
   onAdd?: () => void;
   addLabel?: string;
   searchValue?: string;
   onSearch?: (val: string) => void;
 }
 
-export const PageHeader = ({ title, onAdd, addLabel = 'Novo', searchValue, onSearch }: PageHeaderProps) => (
-  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-    <h1 className="text-2xl font-bold text-foreground">{title}</h1>
-    <div className="flex items-center gap-3">
-      {onSearch && (
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Buscar..."
-            value={searchValue}
-            onChange={e => onSearch(e.target.value)}
-            className="erp-input pl-9 w-48"
-          />
-        </div>
-      )}
-      {onAdd && (
-        <button onClick={onAdd} className="erp-btn-primary">
+export const PageHeader = ({
+  title,
+  description,
+  breadcrumbs,
+  actions,
+  badges,
+  meta,
+  children,
+  className,
+  onAdd,
+  addLabel = 'Novo',
+  searchValue,
+  onSearch,
+}: PageHeaderProps) => {
+  const defaultActions = (
+    <>
+      {onSearch ? <SearchInput value={searchValue} onChange={onSearch} /> : null}
+      {onAdd ? (
+        <NexusButton type="button" onClick={onAdd}>
           <Plus className="h-4 w-4" />
           {addLabel}
-        </button>
-      )}
-    </div>
-  </div>
-);
+        </NexusButton>
+      ) : null}
+    </>
+  );
+
+  return (
+    <header className={cn('mb-[var(--section-gap)] space-y-3', className)}>
+      {breadcrumbs?.length ? (
+        <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-xs text-muted-foreground">
+          {breadcrumbs.map((bc, i) => (
+            <span key={`${bc.label}-${i}`} className="inline-flex items-center gap-1">
+              {i > 0 ? <span className="opacity-50">/</span> : null}
+              {bc.path ? (
+                <Link to={bc.path} className="hover:text-foreground transition-colors">
+                  {bc.label}
+                </Link>
+              ) : (
+                <span className="text-foreground/80">{bc.label}</span>
+              )}
+            </span>
+          ))}
+        </nav>
+      ) : null}
+      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+        <div className="space-y-1.5 min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="nexus-heading-lg">{title}</h1>
+            {badges}
+          </div>
+          {description ? <p className="text-sm text-muted-foreground max-w-3xl">{description}</p> : null}
+          {meta ? <div className="text-xs text-muted-foreground">{meta}</div> : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">{actions ?? defaultActions}</div>
+      </div>
+      {children}
+    </header>
+  );
+};
+
+export { Badge as PageHeaderBadge };

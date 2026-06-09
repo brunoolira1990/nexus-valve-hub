@@ -71,18 +71,46 @@ export function alertasTransporteLocal(opts: {
   quantidade_volumes?: number;
   peso_bruto?: number;
   peso_liquido?: number;
+  valor_frete?: number;
+  placa_veiculo?: string;
+  uf_veiculo?: string;
+  especie_volumes?: string;
+  marca_volumes?: string;
+  numeracao_volumes?: string;
 }): string[] {
   const mod = (opts.modalidade_frete || '9').trim();
   const msgs: string[] = [];
+  const temTransp = Boolean(opts.transportadora_id);
+  const temVol =
+    (opts.quantidade_volumes ?? 0) > 0 ||
+    Boolean((opts.especie_volumes || '').trim()) ||
+    Boolean((opts.marca_volumes || '').trim()) ||
+    Boolean((opts.numeracao_volumes || '').trim());
+  const temPeso = (opts.peso_bruto ?? 0) > 0 || (opts.peso_liquido ?? 0) > 0;
+  const temFrete = (opts.valor_frete ?? 0) > 0;
+  const temVeiculo = Boolean((opts.placa_veiculo || '').trim()) || Boolean((opts.uf_veiculo || '').trim());
+
   if (mod === '9') {
-    msgs.push('Sem ocorrência de transporte — transportadora e frete são opcionais.');
+    if (temTransp || temVol || temPeso || temFrete || temVeiculo) {
+      msgs.push(
+        'Modalidade 9 — Sem ocorrência de transporte não permite transportadora, volumes ou pesos informados.',
+      );
+    } else {
+      msgs.push('Sem ocorrência de transporte — transportadora e frete não se aplicam.');
+    }
     return msgs;
   }
   if (!opts.transportadora_id) {
     msgs.push('Modalidade com frete: informe a transportadora para conferência.');
   }
-  if (!opts.quantidade_volumes && !opts.peso_bruto && !opts.peso_liquido) {
+  if (!temVol && !temPeso) {
     msgs.push('Volumes ou pesos não informados — recomendado preencher para o DANFE.');
+  }
+  if ((opts.placa_veiculo || '').trim() && !(opts.uf_veiculo || '').trim()) {
+    msgs.push('Informe a UF do veículo quando houver placa.');
+  }
+  if ((opts.uf_veiculo || '').trim() && !(opts.placa_veiculo || '').trim()) {
+    msgs.push('Informe a placa do veículo quando houver UF do veículo.');
   }
   return msgs;
 }

@@ -1,7 +1,20 @@
 from django.urls import include, path
+from nexus_erp.dashboard_views import (
+    dashboard_comercial,
+    dashboard_compras,
+    dashboard_estoque,
+    dashboard_financeiro,
+    dashboard_fiscal,
+    dashboard_home,
+    dashboard_permissoes,
+    dashboard_qualidade,
+    dashboard_resumo,
+)
 from rest_framework.routers import DefaultRouter
 
 from apps.apuracao_fiscal.views import ApuracaoView
+from apps.core.app_views import app_contexto, busca_global, minha_conta
+from apps.core.minha_conta_views import alterar_senha
 from apps.cadastros.colaborador_views import ColaboradorViewSet
 from apps.cadastros.usuario_views import UsuarioViewSet
 from apps.cadastros.views import (
@@ -13,9 +26,34 @@ from apps.cadastros.views import (
 from apps.comercial.views import PedidoCompraViewSet, PedidoVendaViewSet, PropostaViewSet
 from apps.comercial.vendedor_views import VendedorViewSet
 from apps.contabil.views import BalanceteView, ContaViewSet, LancamentoViewSet
+from apps.financeiro.views import (
+    BaixaFinanceiraViewSet,
+    CategoriaFinanceiraViewSet,
+    CentroCustoViewSet,
+    ContaFinanceiraViewSet,
+    ContaPagarViewSet,
+    ContaReceberViewSet,
+    CreditoFinanceiroViewSet,
+    financeiro_formas_fixas,
+    financeiro_relatorio_categorias,
+    financeiro_relatorio_categorias_pdf,
+    financeiro_relatorio_clientes,
+    financeiro_relatorio_clientes_pdf,
+    financeiro_relatorio_contas_pagar,
+    financeiro_relatorio_contas_pagar_pdf,
+    financeiro_relatorio_contas_receber,
+    financeiro_relatorio_contas_receber_pdf,
+    financeiro_relatorio_fluxo_previsto,
+    financeiro_relatorio_fluxo_previsto_pdf,
+    financeiro_relatorio_fornecedores,
+    financeiro_relatorio_fornecedores_pdf,
+    financeiro_resumo_operacional,
+)
 from apps.corridas.views import CorridaViewSet
 from apps.fiscal.nfe_integracao.views import NFeSefazIntegracaoViewSet
 from apps.fiscal.views import (
+    AlocacaoAtendimentoViewSet,
+    AtendimentosOperacionaisViewSet,
     AtendimentoEstoqueViewSet,
     CTeEntradaViewSet,
     CTeHistoricoImportadoViewSet,
@@ -25,6 +63,7 @@ from apps.fiscal.views import (
     NFeEntradaViewSet,
     NFeEntradaHistoricaImportadaViewSet,
     NFeSaidaHistoricaImportadaViewSet,
+    NFeNumeracaoConfiguracaoViewSet,
     NFeSaidaViewSet,
     PainelFiscalGerencialHistoricoViewSet,
 )
@@ -38,6 +77,11 @@ from apps.produtos.views import (
     ProdutoViewSet,
     RoscaConexaoViewSet,
     ScheduleEspessuraViewSet,
+)
+from apps.produtos.views_equivalencia import (
+    FornecedorComposicaoEquivalenciaViewSet,
+    FornecedorProdutoEquivalenciaViewSet,
+    ProdutoComposicaoViewSet,
 )
 from apps.qualidade.views import (
     CertificadoFornecedorEntradaViewSet,
@@ -60,6 +104,13 @@ router.register(r'clientes', ClienteViewSet, basename='cliente')
 router.register(r'fornecedores', FornecedorViewSet, basename='fornecedor')
 router.register(r'transportadoras', TransportadoraViewSet, basename='transportadora')
 router.register(r'produtos', ProdutoViewSet, basename='produto')
+router.register(r'produto-composicoes', ProdutoComposicaoViewSet, basename='produto-composicao')
+router.register(r'fornecedor-produto-equivalencias', FornecedorProdutoEquivalenciaViewSet, basename='fornecedor-produto-equivalencia')
+router.register(
+    r'fornecedor-composicao-equivalencias',
+    FornecedorComposicaoEquivalenciaViewSet,
+    basename='fornecedor-composicao-equivalencia',
+)
 router.register(r'familias-produto', FamiliaProdutoViewSet, basename='familiaproduto')
 router.register(r'familias-produto-polegadas-permitidas', FamiliaProdutoPolegadaPermitidaViewSet, basename='familia-polegada-permitida')
 router.register(r'familias-produto-roscas-permitidas', FamiliaProdutoRoscaConexaoPermitidaViewSet, basename='familia-rosca-permitida')
@@ -88,6 +139,7 @@ router.register(r'pedidos-venda', PedidoVendaViewSet, basename='pedidovenda')
 router.register(r'pedidos-compra', PedidoCompraViewSet, basename='pedidocompra')
 router.register(r'nf-entradas', NFeEntradaViewSet, basename='nfentrada')
 router.register(r'nf-saidas', NFeSaidaViewSet, basename='nfsaida')
+router.register(r'nfe-numeracoes', NFeNumeracaoConfiguracaoViewSet, basename='nfe-numeracao')
 router.register(r'nfe-sefaz-status', NFeSefazIntegracaoViewSet, basename='nfe-sefaz-status')
 router.register(
     r'nf-saidas-historicas-importadas',
@@ -110,11 +162,24 @@ router.register(
     basename='estoque-saldos-consolidados',
 )
 router.register(r'atendimentos-estoque', AtendimentoEstoqueViewSet, basename='atendimento-estoque')
+router.register(
+    r'atendimentos-operacionais',
+    AtendimentosOperacionaisViewSet,
+    basename='atendimento-operacional',
+)
+router.register(r'alocacoes-atendimento', AlocacaoAtendimentoViewSet, basename='alocacao-atendimento')
 router.register(r'contas', ContaViewSet, basename='conta')
 router.register(r'lancamentos', LancamentoViewSet, basename='lancamento')
 router.register(r'certificados', CertificadoViewSet, basename='certificado')
 router.register(r'certificados-qualidade', CertificadoQualidadeViewSet, basename='certificado-qualidade')
 router.register(r'certificados-fornecedor', CertificadoFornecedorEntradaViewSet, basename='certificado-fornecedor')
+router.register(r'financeiro/contas', ContaFinanceiraViewSet, basename='financeiro-conta')
+router.register(r'financeiro/categorias', CategoriaFinanceiraViewSet, basename='financeiro-categoria')
+router.register(r'financeiro/centros-custo', CentroCustoViewSet, basename='financeiro-centro-custo')
+router.register(r'financeiro/contas-receber', ContaReceberViewSet, basename='financeiro-conta-receber')
+router.register(r'financeiro/contas-pagar', ContaPagarViewSet, basename='financeiro-conta-pagar')
+router.register(r'financeiro/baixas', BaixaFinanceiraViewSet, basename='financeiro-baixa')
+router.register(r'financeiro/creditos', CreditoFinanceiroViewSet, basename='financeiro-credito')
 
 urlpatterns = [
     # Rotas explícitas: garantem endpoints críticos mesmo com runserver --noreload (Docker).
@@ -145,6 +210,81 @@ urlpatterns = [
         name='cenario-fiscal-saida-matriz-explicit',
     ),
     path('', include(router.urls)),
+    path('dashboard/permissoes/', dashboard_permissoes, name='dashboard-permissoes'),
+    path('dashboard/home/', dashboard_home, name='dashboard-home'),
+    path('dashboard/comercial/', dashboard_comercial, name='dashboard-comercial'),
+    path('dashboard/fiscal/', dashboard_fiscal, name='dashboard-fiscal'),
+    path('dashboard/estoque/', dashboard_estoque, name='dashboard-estoque'),
+    path('dashboard/compras/', dashboard_compras, name='dashboard-compras'),
+    path('dashboard/qualidade/', dashboard_qualidade, name='dashboard-qualidade'),
+    path('dashboard/financeiro/', dashboard_financeiro, name='dashboard-financeiro'),
+    path('financeiro/resumo/', financeiro_resumo_operacional, name='financeiro-resumo'),
+    path('financeiro/formas-fixas/', financeiro_formas_fixas, name='financeiro-formas-fixas'),
+    path(
+        'financeiro/relatorios/contas-receber/',
+        financeiro_relatorio_contas_receber,
+        name='financeiro-relatorio-cr',
+    ),
+    path(
+        'financeiro/relatorios/contas-pagar/',
+        financeiro_relatorio_contas_pagar,
+        name='financeiro-relatorio-cp',
+    ),
+    path(
+        'financeiro/relatorios/fluxo-previsto/',
+        financeiro_relatorio_fluxo_previsto,
+        name='financeiro-relatorio-fluxo',
+    ),
+    path(
+        'financeiro/relatorios/categorias/',
+        financeiro_relatorio_categorias,
+        name='financeiro-relatorio-categorias',
+    ),
+    path(
+        'financeiro/relatorios/clientes/',
+        financeiro_relatorio_clientes,
+        name='financeiro-relatorio-clientes',
+    ),
+    path(
+        'financeiro/relatorios/fornecedores/',
+        financeiro_relatorio_fornecedores,
+        name='financeiro-relatorio-fornecedores',
+    ),
+    path(
+        'financeiro/relatorios/contas-receber/pdf/',
+        financeiro_relatorio_contas_receber_pdf,
+        name='financeiro-relatorio-cr-pdf',
+    ),
+    path(
+        'financeiro/relatorios/contas-pagar/pdf/',
+        financeiro_relatorio_contas_pagar_pdf,
+        name='financeiro-relatorio-cp-pdf',
+    ),
+    path(
+        'financeiro/relatorios/fluxo-previsto/pdf/',
+        financeiro_relatorio_fluxo_previsto_pdf,
+        name='financeiro-relatorio-fluxo-pdf',
+    ),
+    path(
+        'financeiro/relatorios/categorias/pdf/',
+        financeiro_relatorio_categorias_pdf,
+        name='financeiro-relatorio-categorias-pdf',
+    ),
+    path(
+        'financeiro/relatorios/clientes/pdf/',
+        financeiro_relatorio_clientes_pdf,
+        name='financeiro-relatorio-clientes-pdf',
+    ),
+    path(
+        'financeiro/relatorios/fornecedores/pdf/',
+        financeiro_relatorio_fornecedores_pdf,
+        name='financeiro-relatorio-fornecedores-pdf',
+    ),
+    path('app/contexto/', app_contexto, name='app-contexto'),
+    path('busca-global/', busca_global, name='busca-global'),
+    path('minha-conta/', minha_conta, name='minha-conta'),
+    path('minha-conta/alterar-senha/', alterar_senha, name='minha-conta-alterar-senha'),
+    path('dashboard/resumo/', dashboard_resumo, name='dashboard-resumo'),
     path('fiscal/apuracao/', ApuracaoView.as_view(), name='fiscal-apuracao'),
     path('apuracao/', ApuracaoView.as_view(), name='apuracao'),
     path('balancete/', BalanceteView.as_view(), name='balancete'),

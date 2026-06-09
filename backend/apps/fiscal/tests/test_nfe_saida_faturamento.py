@@ -46,7 +46,16 @@ def _produto() -> Produto:
 
 def _pedido_item(*, qtd=Decimal('10'), preco=Decimal('100')) -> tuple[PedidoVenda, ItemPedidoVenda]:
     emp = Empresa.objects.create(razao_social='Emit', cnpj=_cnpj(), uf='SP')
-    cli = Cliente.objects.create(razao_social='Cli', cnpj=_cnpj(), uf='RJ')
+    cli = Cliente.objects.create(
+        razao_social='Cli',
+        cnpj=_cnpj(),
+        uf='RJ',
+        cidade='Rio de Janeiro',
+        cep='20040-020',
+        logradouro='Rua da Assembleia',
+        numero='100',
+        bairro='Centro',
+    )
     pedido = PedidoVenda.objects.create(
         numero=f'PV-{uuid.uuid4().hex[:6]}',
         empresa_emitente=emp,

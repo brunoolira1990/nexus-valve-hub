@@ -11,8 +11,12 @@ import {
   FileCode,
   FileText,
   Copy,
+  Eye,
+  MoreHorizontal,
 } from 'lucide-react';
 import { NFeSaidaConferenciaModal } from '@/components/fiscal/NFeSaidaConferenciaModal';
+import { NFeSaidaDetalheDrawer } from '@/components/fiscal/NFeSaidaDetalheDrawer';
+import { NFeChecklistHomologacaoModal } from '@/components/fiscal/NFeChecklistHomologacaoModal';
 import { NFeSaidaEfeitosPanel } from '@/components/fiscal/NFeSaidaEfeitosPanel';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
@@ -23,15 +27,35 @@ import {
   type ValidacaoNFeSaidaResponse,
 } from '@/services/api/fiscal';
 import {
-  labelModoAtendimentoEstoque,
+  atendimentoResumoBadgeClass,
+  getNfeFiscalSummaryBadge,
+  getNfeOperationalSummaryBadges,
+} from '@/lib/nfeSaidaListagemCompacta';
+import {
+  formatDateBr,
+  formatNfeSubtituloListagem,
+  formatNfeTituloListagem,
+  formatNfeValorListagem,
+} from '@/lib/nfeSaidaApresentacaoFormat';
+import {
   nfeClienteBloqueado,
   nfeDadosComplementaresEditaveis,
   nfeItensComerciaisEditaveis,
   nfeSalvarFormularioBloqueado,
 } from '@/lib/nfeSaidaUi';
-import { badgeStatusConferenciaNFe } from '@/lib/nfeSaidaProntidaoConferencia';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { transportadorasService } from '@/services/api/transportadoras';
-import type { NFeSaida, ItemNFe, ResumoAtendimentoEstoqueNFeSaida, Transportadora } from '@/types';
+import type { NFeSaida, NFeSaidaListItem, ItemNFe, Transportadora } from '@/types';
+import { usePaginatedList } from '@/hooks/usePaginatedList';
+import { PaginationControls } from '@/components/list/PaginationControls';
+import { FilterBar } from '@/components/list/FilterBar';
+import { EmptyState, ErrorState, LoadingState } from '@/components/list/ListStates';
 
 type NFeSaidaFormState = {
   numero: string;
@@ -126,24 +150,32 @@ function badgeProntidao(
   }
 }
 
-function badgeAtendimentoResumo(resumo: ResumoAtendimentoEstoqueNFeSaida | null | undefined): { label: string; className: string } | null {
-  if (!resumo) return null;
-  switch (resumo.status_atendimento_estoque) {
-    case 'PENDENTE':
-      return { label: 'Atendimento pendente', className: 'erp-badge-warning' };
-    case 'PARCIAL':
-      return { label: 'Parcial', className: 'erp-badge-warning' };
-    case 'ATENDIDO':
-      return { label: 'Atendido', className: 'erp-badge-success' };
-    default:
-      return null;
-  }
-}
-
 const NFeSaida = () => {
   const [searchParams] = useSearchParams();
-  const [items, setItems] = useState<NFeSaida[]>([]);
-  const [search, setSearch] = useState('');
+  const statusEmissaoUrl = searchParams.get('status_emissao') || searchParams.get('status') || '';
+  const {
+    items,
+    count,
+    page,
+    pageSize,
+    totalPages,
+    search,
+    setSearch,
+    setPage,
+    setPageSize,
+    filters,
+    setFilter,
+    loading: listLoading,
+    error: listError,
+    reload: load,
+  } = usePaginatedList<NFeSaidaListItem>({
+    fetchPage: nfeSaidasService.listPaginated,
+    initialFilters: statusEmissaoUrl ? { status_emissao: statusEmissaoUrl } : {},
+  });
+  const [detalheNfeId, setDetalheNfeId] = useState<number | null>(null);
+  const [detalheOpen, setDetalheOpen] = useState(false);
+  const [checklistOpen, setChecklistOpen] = useState(false);
+  const [checklistNfeId, setChecklistNfeId] = useState<number | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<NFeSaida | null>(null);
   const [form, setForm] = useState<NFeSaidaFormState>(buildFormFromNfe(null));
@@ -161,10 +193,11 @@ const NFeSaida = () => {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveLoading, setSaveLoading] = useState(false);
   const [transportadoras, setTransportadoras] = useState<Transportadora[]>([]);
-  const load = async () => setItems(await nfeSaidasService.getAll());
+
   useEffect(() => {
-    load();
-  }, []);
+    if (statusEmissaoUrl) setFilter('status_emissao', statusEmissaoUrl);
+  }, [statusEmissaoUrl, setFilter]);
+
   useEffect(() => {
     if (!modalOpen) return;
     void transportadorasService.getAll().then(setTransportadoras).catch(() => setTransportadoras([]));
@@ -175,23 +208,18 @@ const NFeSaida = () => {
     if (!nfeDeepLink) return;
     const id = Number(nfeDeepLink);
     if (!id) return;
-    const found = items.find((i) => i.id === id);
     const abrir = (e: NFeSaida) => {
       setEditing(e);
       setEmitida(false);
       setTitulosGerados(e.titulos_receber ?? []);
       setForm(buildFormFromNfe(e));
-      setItens(e.itens);
+      setItens(e.itens ?? []);
       setValidacao(null);
       setValidacaoError(null);
       setModalOpen(true);
     };
-    if (found) {
-      abrir(found);
-      return;
-    }
     void nfeSaidasService.getById(id).then(abrir).catch(() => undefined);
-  }, [nfeDeepLink, items]);
+  }, [nfeDeepLink]);
 
   const itensEditaveis = nfeItensComerciaisEditaveis(editing, form.status);
   const complementosEditaveis = nfeDadosComplementaresEditaveis(editing, form.status);
@@ -225,7 +253,8 @@ const NFeSaida = () => {
     setItens([]);
     setModalOpen(true);
   };
-  const openEdit = (e: NFeSaida) => {
+  const openEdit = async (row: NFeSaidaListItem | NFeSaida) => {
+    const e = 'itens' in row && row.itens ? (row as NFeSaida) : await nfeSaidasService.getById(row.id);
     setEditing(e);
     setEmitida(false);
     setTitulosGerados(e.titulos_receber ?? []);
@@ -235,8 +264,44 @@ const NFeSaida = () => {
     setPreviewError(null);
     setSaveError(null);
     setForm(buildFormFromNfe(e));
-    setItens(e.itens);
+    setItens(e.itens ?? []);
     setModalOpen(true);
+  };
+
+  const openDetalhe = (id: number) => {
+    setDetalheNfeId(id);
+    setDetalheOpen(true);
+  };
+
+  const openChecklist = (id: number) => {
+    setChecklistNfeId(id);
+    setChecklistOpen(true);
+  };
+
+  const previewDanfeLinha = async (id: number) => {
+    try {
+      const { blob } = await nfeSaidasService.previewDanfeBlob(id);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      alert(apiErrorMessage(err, { fallback: 'Não foi possível visualizar o DANFE.' }));
+    }
+  };
+
+  const previewXmlLinha = async (id: number) => {
+    try {
+      const data = await nfeSaidasService.previewXmlPreliminar(id);
+      const blob = new Blob([data.xml || ''], { type: 'application/xml' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `nfe-${id}-preliminar.xml`;
+      a.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      alert(apiErrorMessage(err, { fallback: 'Não foi possível baixar o XML.' }));
+    }
   };
 
   const handleValidarEmissao = async () => {
@@ -276,7 +341,7 @@ const NFeSaida = () => {
     setDanfeLoading(true);
     setPreviewError(null);
     try {
-      const blob = await nfeSaidasService.previewDanfeBlob(editing.id);
+      const { blob } = await nfeSaidasService.previewDanfeBlob(editing.id);
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank', 'noopener,noreferrer');
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
@@ -295,7 +360,7 @@ const NFeSaida = () => {
       setPreviewError('Não foi possível copiar o XML para a área de transferência.');
     }
   };
-  const handleDelete = async (id: number) => { if (confirm('Excluir?')) { await nfeSaidasService.delete(id); load(); } };
+  const handleDelete = async (id: number) => { if (confirm('Excluir?')) { await nfeSaidasService.delete(id); void load(); } };
   const handleSave = async () => {
     if (nfeSalvarFormularioBloqueado(form.status)) {
       setSaveError(
@@ -348,16 +413,23 @@ const NFeSaida = () => {
     }
   };
 
-  const filtered = items.filter(i => i.numero.includes(search));
-
   if (modalOpen && editing?.id) {
     return (
       <div>
-        <PageHeader title="NF-e Saída" onAdd={openNew} addLabel="Nova NF-e" searchValue={search} onSearch={setSearch} />
+        <PageHeader
+          title="NF-e Saída"
+          description="Emissão, conferência e acompanhamento de notas fiscais de saída."
+          onAdd={openNew}
+          addLabel="Nova NF-e"
+          searchValue={search}
+          onSearch={setSearch}
+        />
         <NFeSaidaConferenciaModal
           nfeId={editing.id}
           onClose={() => setModalOpen(false)}
-          onSaved={() => void load()}
+          onSaved={() => {
+          /* Lista atualizada apenas após validação/marcar pronta via aplicarRespostaProntidao */
+        }}
         />
       </div>
     );
@@ -370,60 +442,220 @@ const NFeSaida = () => {
 
   return (
     <div>
-      <PageHeader title="NF-e Saída" onAdd={openNew} addLabel="Nova NF-e" searchValue={search} onSearch={setSearch} />
+      <PageHeader
+        title="NF-e Saída"
+        description="Emissão e gestão de NF-e de saída. Notas em homologação são teste, sem valor fiscal e fora da apuração."
+        onAdd={openNew}
+        addLabel="Nova NF-e"
+        searchValue={search}
+        onSearch={setSearch}
+      />
+      <FilterBar
+        filters={[
+          {
+            key: 'ambiente',
+            label: 'Ambiente',
+            value: filters.ambiente || '',
+            options: [
+              { value: 'homologacao', label: 'Homologação' },
+              { value: 'producao', label: 'Produção' },
+            ],
+          },
+          {
+            key: 'status_emissao',
+            label: 'Status fiscal',
+            value: filters.status_emissao || '',
+            options: [
+              { value: 'RASCUNHO', label: 'Rascunho' },
+              { value: 'PRONTA_PARA_EMISSAO', label: 'Pronta' },
+              { value: 'AUTORIZADA_HOMOLOGACAO', label: 'Autorizada homologação' },
+              { value: 'REJEITADA_HOMOLOGACAO', label: 'Rejeitada homologação' },
+              { value: 'ERRO_TRANSMISSAO', label: 'Erro transmissão' },
+            ],
+          },
+          {
+            key: 'tem_duplicatas',
+            label: 'Duplicatas',
+            value: filters.tem_duplicatas || '',
+            options: [{ value: 'true', label: 'Com duplicatas' }],
+          },
+          {
+            key: 'reforma_tributaria_status',
+            label: 'Reforma Tributária',
+            value: filters.reforma_tributaria_status || '',
+            options: [
+              { value: 'nao_aplicavel', label: 'Não aplicada' },
+              { value: 'nao_preparada', label: 'Pesquisa/preparação' },
+              { value: 'preparacao', label: 'Preparação' },
+              { value: 'configurada_sem_xml', label: 'Configurada sem XML' },
+              { value: 'homologacao', label: 'Homologação' },
+              { value: 'bloqueada_producao', label: 'Produção bloqueada' },
+            ],
+          },
+        ]}
+        onChange={setFilter}
+      />
+      {listError ? <ErrorState onRetry={() => void load()} /> : null}
       <div className="erp-card overflow-x-auto">
+        {listLoading ? <LoadingState /> : null}
+        {!listLoading && !listError ? (
         <table className="erp-table">
-          <thead><tr><th>Número</th><th>Cliente</th><th>Data</th><th>Status</th><th>Atendimento</th><th>Valor Total</th><th className="w-24">Ações</th></tr></thead>
+          <thead>
+            <tr>
+              <th>NF-e</th>
+              <th>Cliente</th>
+              <th>Emissão</th>
+              <th>Fiscal</th>
+              <th>Atendimento</th>
+              <th>Valor</th>
+              <th className="w-36">Ações</th>
+            </tr>
+          </thead>
           <tbody>
-            {filtered.map(e => {
-              const atendBadge =
-                e.modo_atendimento_estoque === 'ANTECIPADO'
-                  ? badgeAtendimentoResumo(e.resumo_atendimento_estoque)
-                  : null;
-              const atendLabel =
-                e.modo_atendimento_estoque_display ??
-                labelModoAtendimentoEstoque(e.modo_atendimento_estoque);
-              return (
-              <tr key={e.id}>
-                <td className="font-medium">{e.numero}</td><td>{e.cliente_nome}</td><td>{e.data}</td>
-                <td>
-                  <div className="flex flex-col gap-1 items-start">
-                    <span
-                      className={
-                        e.status === 'Emitida' || e.status === 'AUTORIZADA_INTERNA'
-                          ? 'erp-badge-success'
-                          : e.status === 'RASCUNHO'
-                            ? 'erp-badge-warning'
-                            : 'erp-badge-warning'
-                      }
-                    >
-                      {e.status}
-                    </span>
-                    {e.status_conferencia ? (
-                      <span className={badgeStatusConferenciaNFe(e.status_conferencia).className}>
-                        {e.status_conferencia_display ?? badgeStatusConferenciaNFe(e.status_conferencia).label}
-                      </span>
-                    ) : null}
-                  </div>
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan={7}>
+                  <EmptyState message="Nenhuma NF-e encontrada." />
                 </td>
-                <td>
-                  {atendBadge ? (
-                    <span className={atendBadge.className} title={`Pendente: ${e.resumo_atendimento_estoque?.quantidade_pendente_total ?? '0'}`}>
-                      {atendBadge.label}
-                    </span>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">{atendLabel}</span>
-                  )}
-                </td>
-                <td>R$ {e.valor_total.toFixed(2)}</td>
-                <td><div className="flex gap-1">
-                  <button onClick={() => openEdit(e)} className="erp-btn-ghost erp-btn-sm"><Pencil className="h-4 w-4" /></button>
-                  <button onClick={() => handleDelete(e.id)} className="erp-btn-ghost erp-btn-sm text-destructive"><Trash2 className="h-4 w-4" /></button>
-                </div></td>
               </tr>
-            );})}
+            ) : (
+              items.map((e) => {
+                const resumo = e.listagem_resumo;
+                const fiscal = getNfeFiscalSummaryBadge(resumo, e);
+                const atend = getNfeOperationalSummaryBadges(resumo);
+                const titulo = formatNfeTituloListagem(e);
+                const subtitulo = formatNfeSubtituloListagem(e);
+                return (
+                  <tr key={e.id}>
+                    <td className="font-medium max-w-[16rem]">
+                      <div title={e.numero !== titulo ? e.numero : undefined}>{titulo}</div>
+                      {subtitulo ? (
+                        <p className="text-xs text-muted-foreground font-normal mt-0.5">{subtitulo}</p>
+                      ) : null}
+                    </td>
+                    <td>{e.cliente_nome}</td>
+                    <td className="whitespace-nowrap">{formatDateBr(e.data)}</td>
+                    <td>
+                      <div className="flex flex-col gap-0.5 items-start max-w-[14rem]">
+                        {fiscal.hasData ? (
+                          <>
+                            <span className={fiscal.className}>{fiscal.label}</span>
+                            {fiscal.subtexto ? (
+                              <span className="text-xs text-muted-foreground leading-snug">{fiscal.subtexto}</span>
+                            ) : null}
+                          </>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </div>
+                    </td>
+                    <td>
+                      <div className="flex flex-wrap gap-1 items-center max-w-[12rem]">
+                        {atend.badges.length === 0 ? (
+                          <span className="text-xs text-muted-foreground">{atend.vazioLabel}</span>
+                        ) : (
+                          atend.badges.map((b) => (
+                            <span
+                              key={b.label}
+                              className={`${atendimentoResumoBadgeClass(b.variant)} text-[10px] px-1.5 py-0`}
+                            >
+                              {b.label}
+                            </span>
+                          ))
+                        )}
+                        {atend.ocultos > 0 ? (
+                          <span className="text-xs text-muted-foreground font-medium" title="Badges adicionais">
+                            +{atend.ocultos}
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="whitespace-nowrap">{formatNfeValorListagem(e.valor_total)}</td>
+                    <td>
+                      <div className="flex flex-wrap gap-1">
+                        <button
+                          type="button"
+                          className="erp-btn-ghost erp-btn-sm text-xs"
+                          onClick={() => openDetalhe(e.id)}
+                          title="Ver detalhes da NF-e"
+                          aria-label="Ver detalhes da NF-e"
+                        >
+                          <Eye className="h-3.5 w-3.5 mr-0.5" />
+                          Detalhes
+                        </button>
+                        <button
+                          type="button"
+                          className="erp-btn-ghost erp-btn-sm text-xs"
+                          onClick={() => openChecklist(e.id)}
+                          title="Validar pré-homologação"
+                          aria-label="Validar pré-homologação"
+                        >
+                          <ClipboardCheck className="h-3.5 w-3.5 mr-0.5" />
+                          Validar
+                        </button>
+                        <button
+                          type="button"
+                          className="erp-btn-ghost erp-btn-sm p-1"
+                          title="Visualizar DANFE"
+                          aria-label="Visualizar DANFE"
+                          onClick={() => void previewDanfeLinha(e.id)}
+                        >
+                          <FileText className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          className="erp-btn-ghost erp-btn-sm p-1"
+                          title="Baixar XML"
+                          aria-label="Baixar XML"
+                          onClick={() => void previewXmlLinha(e.id)}
+                        >
+                          <FileCode className="h-4 w-4" />
+                        </button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              className="erp-btn-ghost erp-btn-sm p-1"
+                              title="Mais ações"
+                              aria-label="Mais ações"
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-48">
+                            <DropdownMenuItem className="cursor-pointer" onSelect={() => void openEdit(e)}>
+                              <Pencil className="h-3.5 w-3.5 mr-2" />
+                              Abrir NF-e
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="cursor-pointer text-destructive focus:text-destructive"
+                              onSelect={() => void handleDelete(e.id)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5 mr-2" />
+                              Excluir
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
+        ) : null}
+        {!listLoading && !listError && count > 0 ? (
+          <PaginationControls
+            page={page}
+            pageSize={pageSize}
+            count={count}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        ) : null}
       </div>
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar NF-e Saída' : 'Nova NF-e Saída'} size="xl">
         {emitida ? (
@@ -746,7 +978,7 @@ const NFeSaida = () => {
                       ) : (
                         <FileText className="h-3 w-3 mr-1 inline" />
                       )}
-                      DANFE Conferência
+                      Ver DANFE
                     </button>
                   </div>
                   <p className="text-xs text-muted-foreground mt-2 max-w-2xl">
@@ -920,6 +1152,29 @@ const NFeSaida = () => {
           {xmlPreview?.xml ?? ''}
         </pre>
       </Modal>
+
+      <NFeChecklistHomologacaoModal
+        open={checklistOpen}
+        onClose={() => {
+          setChecklistOpen(false);
+          setChecklistNfeId(null);
+        }}
+        nfeSaidaId={checklistNfeId}
+      />
+
+      <NFeSaidaDetalheDrawer
+        nfeId={detalheNfeId}
+        open={detalheOpen}
+        onClose={() => {
+          setDetalheOpen(false);
+          setDetalheNfeId(null);
+        }}
+        onOpenConferencia={(nfe) => {
+          setDetalheOpen(false);
+          setEditing(nfe);
+          setModalOpen(true);
+        }}
+      />
     </div>
   );
 };

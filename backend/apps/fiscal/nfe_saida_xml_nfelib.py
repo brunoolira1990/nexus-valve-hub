@@ -85,30 +85,49 @@ def _id_preview(nfe_saida_id: int) -> str:
     return f'NFePREVIEW{int(nfe_saida_id)}'
 
 
+def fone_nfe_digits(telefone: str | None) -> str | None:
+    """Telefone NF-e (enderEmit/fone): somente dígitos, 8–14 caracteres."""
+    digits = _digits(telefone, max_len=14)
+    if len(digits) < 8:
+        return None
+    return digits
+
+
 def _ender_emit(dados: dict[str, Any]):
     from nfelib.nfe.bindings.v4_0 import leiaute_nfe_v4_00 as layout
 
     emit = dados['emitente']
+    fone = _text(emit.get('fone')) or fone_nfe_digits(emit.get('telefone'))
+    c_mun = (
+        _digits(emit.get('c_mun'), max_len=7)
+        or _digits(dados['ide'].get('c_mun_fg'), max_len=7)
+        or '3550308'
+    )
+    if c_mun == '3500000':
+        from apps.fiscal.nfe_emissao.xml_serializacao import codigo_municipio_ibge
+
+        c_mun = codigo_municipio_ibge(emit.get('uf'), cidade=emit.get('cidade'))
     return layout.TenderEmi(
         xLgr=_text(emit.get('logradouro')) or 'Não informado',
         nro=_text(emit.get('numero')) or 'S/N',
         xCpl=_text(emit.get('complemento')) or None,
         xBairro=_text(emit.get('bairro')) or None,
-        cMun=_digits(dados['ide'].get('c_mun_fg'), max_len=7) or '3550308',
+        cMun=c_mun,
         xMun=_text(emit.get('cidade')) or 'Não informado',
         UF=_text(emit.get('uf')) or 'SP',
         CEP=_digits(emit.get('cep'), max_len=8) or None,
         cPais='1058',
         xPais='Brasil',
-        fone=None,
+        fone=fone or None,
     )
 
 
 def _ender_dest(dados: dict[str, Any]):
     from nfelib.nfe.bindings.v4_0 import leiaute_nfe_v4_00 as layout
+    from apps.fiscal.nfe_endereco_xml import resolver_c_mun_destinatario
 
     dest = dados['destinatario']
-    c_mun = _digits(dest.get('c_mun')) or _digits(dados['ide'].get('c_mun_fg'), max_len=7) or '3550308'
+    c_mun = resolver_c_mun_destinatario(dest)
     return layout.Tendereco(
         xLgr=_text(dest.get('logradouro')) or 'Não informado',
         nro=_text(dest.get('numero')) or 'S/N',
@@ -131,16 +150,16 @@ def _build_icms(snap: dict, linha: dict):
     cst = _text(icms.get('cst_icms') or icms.get('csosn')) or '00'
     orig = _text(snap.get('origem_mercadoria') or snap.get('orig') or '0') or '0'
     icms_wrap = nfe.Tnfe.InfNfe.Det.Imposto.Icms()
-    v_bc = _dec_field(icms.get('base') or linha.get('v_prod'))
-    p_icms = _dec_field(icms.get('aliquota'))
-    v_icms = _dec_field(icms.get('valor'))
 
     if cst in ('40', '41', '50'):
-        icms_wrap.icms40 = nfe.Tnfe.InfNfe.Det.Imposto.Icms.Icms40(orig=orig, CST=cst)
+        icms_wrap.ICMS40 = nfe.Tnfe.InfNfe.Det.Imposto.Icms.Icms40(orig=orig, CST=cst)
     elif cst == '60':
-        icms_wrap.icms60 = nfe.Tnfe.InfNfe.Det.Imposto.Icms.Icms60(orig=orig, CST=cst)
+        icms_wrap.ICMS60 = nfe.Tnfe.InfNfe.Det.Imposto.Icms.Icms60(orig=orig, CST=cst)
     else:
-        icms_wrap.icms00 = nfe.Tnfe.InfNfe.Det.Imposto.Icms.Icms00(
+        v_bc = _dec(icms.get('base') or linha.get('v_prod'))
+        p_icms = _dec(icms.get('aliquota'))
+        v_icms = _dec(icms.get('valor'))
+        icms_wrap.ICMS00 = nfe.Tnfe.InfNfe.Det.Imposto.Icms.Icms00(
             orig=orig,
             CST=cst.zfill(2)[:2],
             modBC='3',
@@ -158,9 +177,9 @@ def _build_pis(snap: dict):
     cst = _text(pis.get('cst')) or '08'
     wrap = nfe.Tnfe.InfNfe.Det.Imposto.Pis()
     if cst in PIS_COFINS_NT_CSTS:
-        wrap.pisnt = nfe.Tnfe.InfNfe.Det.Imposto.Pis.Pisnt(CST=cst)
+        wrap.PISNT = nfe.Tnfe.InfNfe.Det.Imposto.Pis.Pisnt(CST=cst)
     else:
-        wrap.pisaliq = nfe.Tnfe.InfNfe.Det.Imposto.Pis.Pisaliq(
+        wrap.PISAliq = nfe.Tnfe.InfNfe.Det.Imposto.Pis.Pisaliq(
             CST=cst,
             vBC=_dec_field(pis.get('base')),
             pPIS=_dec_field(pis.get('aliquota'), 4),
@@ -176,9 +195,9 @@ def _build_cofins(snap: dict):
     cst = _text(cof.get('cst')) or '08'
     wrap = nfe.Tnfe.InfNfe.Det.Imposto.Cofins()
     if cst in PIS_COFINS_NT_CSTS:
-        wrap.cofinsnt = nfe.Tnfe.InfNfe.Det.Imposto.Cofins.Cofinsnt(CST=cst)
+        wrap.COFINSNT = nfe.Tnfe.InfNfe.Det.Imposto.Cofins.Cofinsnt(CST=cst)
     else:
-        wrap.cofinsaliq = nfe.Tnfe.InfNfe.Det.Imposto.Cofins.Cofinsaliq(
+        wrap.COFINSAliq = nfe.Tnfe.InfNfe.Det.Imposto.Cofins.Cofinsaliq(
             CST=cst,
             vBC=_dec_field(cof.get('base')),
             pCOFINS=_dec_field(cof.get('aliquota'), 4),
@@ -214,6 +233,7 @@ def _build_det(linha: dict) -> Any:
     q = _dec(linha.get('q_com'))
     prod = nfe.Tnfe.InfNfe.Det.Prod(
         cProd=_text(linha.get('c_prod'))[:60] or str(linha.get('item_id')),
+        cEAN='SEM GTIN',
         xProd=_text(linha.get('x_prod'))[:120] or 'Item',
         NCM=_digits(linha.get('ncm'), max_len=8) or '00000000',
         CFOP=_digits(linha.get('cfop'), max_len=4) or '5102',
@@ -224,27 +244,74 @@ def _build_det(linha: dict) -> Any:
         uTrib=_text(linha.get('u_com'))[:6] or 'UN',
         qTrib=q,
         vUnTrib=_dec(linha.get('v_un_com')),
+        cEANTrib='SEM GTIN',
         indTot='1',
     )
     cest = _digits(linha.get('cest'), max_len=7)
     if cest:
         prod.CEST = cest
 
-    ipi = _build_ipi(snap)
-    imposto = nfe.Tnfe.InfNfe.Det.Imposto(
-        ICMS=_build_icms(snap, linha),
-        PIS=_build_pis(snap),
-        COFINS=_build_cofins(snap),
-        IPI=ipi,
-    )
+    x_ped = _text(linha.get('x_ped'))
+    n_item_ped = _text(linha.get('n_item_ped'))
+    if x_ped:
+        prod.xPed = x_ped[:15]
+    if n_item_ped:
+        prod.nItemPed = n_item_ped[:6]
 
-    return nfe.Tnfe.InfNfe.Det(nItem=str(linha.get('n_item')), prod=prod, imposto=imposto)
+    ipi = _build_ipi(snap)
+    from apps.fiscal.reforma_tributaria.xml import build_reforma_tributaria_item_bindings
+
+    imposto_kw: dict[str, Any] = {
+        'ICMS': _build_icms(snap, linha),
+        'PIS': _build_pis(snap),
+        'COFINS': _build_cofins(snap),
+        'IPI': ipi,
+    }
+    ibscbs = build_reforma_tributaria_item_bindings(linha)
+    if ibscbs is not None:
+        imposto_kw['IBSCBS'] = ibscbs
+    imposto = nfe.Tnfe.InfNfe.Det.Imposto(**imposto_kw)
+
+    det_kw: dict[str, Any] = {
+        'nItem': str(linha.get('n_item')),
+        'prod': prod,
+        'imposto': imposto,
+    }
+    inf_ad_prod = _text(linha.get('inf_ad_prod'))
+    if inf_ad_prod:
+        det_kw['infAdProd'] = inf_ad_prod[:500]
+    return nfe.Tnfe.InfNfe.Det(**det_kw)
+
+
+def preparar_dados_serializacao_xml(dados: dict[str, Any]) -> None:
+    """Enriquece municípios e bloqueia endereço fiscal inconsistente do destinatário."""
+    from apps.fiscal.nfe_endereco_xml import enriquecer_municipios_dados_nfe, validar_c_mun_destinatario
+
+    enriquecer_municipios_dados_nfe(dados)
+    erros = validar_c_mun_destinatario(dados)
+    if erros:
+        raise NFeXmlNfelibError(erros[0])
+
+
+def build_total_nfe_bindings(nfe_module: Any, dados: dict[str, Any]) -> Any:
+    """Monta bloco ``Total`` (ICMSTot + IBSCBSTot quando aplicável) — camada central."""
+    from apps.fiscal.nfe_emissao.xml_serializacao import build_icms_tot_bindings
+    from apps.fiscal.reforma_tributaria.xml import build_reforma_tributaria_total_bindings
+
+    tot = dados.get('totais') or {}
+    total_kw: dict[str, Any] = {'ICMSTot': build_icms_tot_bindings(nfe_module, tot)}
+    ibscbs_tot = build_reforma_tributaria_total_bindings(dados.get('itens') or [])
+    if ibscbs_tot is not None:
+        total_kw['IBSCBSTot'] = ibscbs_tot
+    return nfe_module.Tnfe.InfNfe.Total(**total_kw)
 
 
 def montar_tnfe_oficial(dados: dict[str, Any], *, nfe_saida: NFeSaida | None = None) -> Any:
     """Monta ``Tnfe`` nfelib a partir dos dados normalizados do preview."""
     if not nfelib_disponivel():
         raise NFeXmlNfelibError('nfelib não está instalado no ambiente.')
+
+    preparar_dados_serializacao_xml(dados)
 
     from nfelib.nfe.bindings.v4_0 import nfe_v4_00 as nfe
 
@@ -274,6 +341,7 @@ def montar_tnfe_oficial(dados: dict[str, Any], *, nfe_saida: NFeSaida | None = N
         finNFe='1',
         indFinal='1',
         indPres='1',
+        indIntermed='0',
         procEmi='0',
         verProc='NexusERP-4.0.1',
     )
@@ -308,27 +376,11 @@ def montar_tnfe_oficial(dados: dict[str, Any], *, nfe_saida: NFeSaida | None = N
     if not inf.det:
         raise NFeXmlNfelibError('NF-e sem itens: não é possível gerar XML oficial.')
 
-    tot = dados.get('totais') or {}
-    Icmstot = nfe.Tnfe.InfNfe.Total.Icmstot
-    inf.total = nfe.Tnfe.InfNfe.Total(
-        ICMSTot=Icmstot(
-            vBC=_dec_field(tot.get('v_bc')),
-            vICMS=_dec_field(tot.get('v_icms')),
-            vProd=_dec_field(tot.get('v_prod')),
-            vDesc=_dec_field(tot.get('v_desc')),
-            vPIS=_dec_field(tot.get('v_pis')),
-            vCOFINS=_dec_field(tot.get('v_cofins')),
-            vIPI=_dec_field(tot.get('v_ipi')),
-            vNF=_dec_field(tot.get('v_nf')),
-        ),
-    )
+    inf.total = build_total_nfe_bindings(nfe, dados)
 
-    tr = dados.get('transporte') or {}
-    inf.transp = nfe.Tnfe.InfNfe.Transp(modFrete=_text(tr.get('mod_frete')) or '9')
-    if _text(tr.get('transportadora_nome')):
-        inf.transp.transporta = nfe.Tnfe.InfNfe.Transp.Transporta(
-            xNome=_text(tr.get('transportadora_nome'))[:60],
-        )
+    from apps.fiscal.nfe_transp_bindings import aplicar_transp_nfelib
+
+    aplicar_transp_nfelib(inf, nfe, dados.get('transporte'))
 
     inf_cpl: list[str] = [
         'XML OFICIAL NF-e 4.00 (nfelib) — NÃO TRANSMITIR',
@@ -422,6 +474,7 @@ def gerar_xml_oficial_nfe_saida(nfe_saida: NFeSaida) -> dict[str, Any]:
         itens_payload.append(linha)
     dados['itens'] = itens_payload
     _enriquecer_totais_impostos(dados)
+    preparar_dados_serializacao_xml(dados)
 
     try:
         tnfe = montar_tnfe_oficial(dados, nfe_saida=nfe_saida)

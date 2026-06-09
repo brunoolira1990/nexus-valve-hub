@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FileUp, FileCheck, Copy, AlertCircle, ClipboardList } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
@@ -18,32 +18,47 @@ import {
   montarTextoDiagnosticoNfeEntradaXml,
   normalizarFalhaImportacaoXml,
 } from '@/utils/nfeXmlImportDiagnostico';
+import { usePaginatedList } from '@/hooks/usePaginatedList';
+import { PaginationControls } from '@/components/list/PaginationControls';
+import { EmptyState, ErrorState } from '@/components/list/ListStates';
+import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
+import { StatusBadge } from '@/components/nexus/StatusBadge';
+import { DfeClassificacaoBadges } from '@/components/fiscal/DfeClassificacaoBadges';
+import { NexusCard } from '@/components/nexus/NexusCard';
+import { NexusButton } from '@/components/nexus';
+import { TableSkeleton } from '@/components/nexus/Skeleton';
+import { chaveNfeResumida } from '@/lib/chaveNfeResumida';
 
 const NFeHistoricaEntradaImportada = () => {
   const navigate = useNavigate();
-  const [lista, setLista] = useState<NFeEntradaHistoricaList[]>([]);
-  const [search, setSearch] = useState('');
+  const {
+    items,
+    count,
+    page,
+    pageSize,
+    totalPages,
+    search,
+    setSearch,
+    setPage,
+    setPageSize,
+    filters,
+    setFilter,
+    loading,
+    error: loadError,
+    reload,
+  } = usePaginatedList<NFeEntradaHistoricaList>({
+    fetchPage: nfeHistoricaEntradaImportadaService.listPaginated,
+  });
+  const empresaId = filters.empresa_destinataria_id || '';
+  const fornecedorId = filters.fornecedor_id || '';
   const [busy, setBusy] = useState(false);
   const [resultado, setResultado] = useState<NFeEntradaHistoricaImportResultado | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [detalhe, setDetalhe] = useState<NFeEntradaHistoricaDetalhe | null>(null);
   const [modal, setModal] = useState(false);
-  const [empresaId, setEmpresaId] = useState('');
-  const [fornecedorId, setFornecedorId] = useState('');
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [diagCopiado, setDiagCopiado] = useState(false);
-
-  const load = useCallback(async () => {
-    const qs = new URLSearchParams();
-    if (empresaId) qs.set('empresa_destinataria_id', empresaId);
-    if (fornecedorId) qs.set('fornecedor_id', fornecedorId);
-    setLista(await nfeHistoricaEntradaImportadaService.list(qs));
-  }, [empresaId, fornecedorId]);
-
-  useEffect(() => {
-    void load().catch((e) => setErro(apiErrorMessage(e)));
-  }, [load]);
 
   useEffect(() => {
     void (async () => {
@@ -60,15 +75,13 @@ const NFeHistoricaEntradaImportada = () => {
     try {
       const res = await nfeHistoricaEntradaImportadaService.importarXmls(Array.from(files));
       setResultado(res);
-      await load();
+      void reload();
     } catch (e) {
       setErro(apiErrorMessage(e));
     } finally {
       setBusy(false);
     }
   };
-
-  const filtrados = lista.filter((x) => x.chave_acesso.includes(search) || `${x.numero}/${x.serie}`.includes(search) || (x.fornecedor_nome || '').toLowerCase().includes(search.toLowerCase()));
 
   const falhasEntrada = resultado?.erros?.length
     ? resultado.erros.map((raw) => normalizarFalhaImportacaoXml(raw))
@@ -83,21 +96,43 @@ const NFeHistoricaEntradaImportada = () => {
 
   return (
     <div>
-      <PageHeader title="NF-e entrada histórica (importação XML)" searchValue={search} onSearch={setSearch} />
+      <PageHeader
+        title="Base de NF-e Entrada Importada"
+        description="XMLs de entrada usados para apuração fiscal, base contábil, relatórios e precificação. Não geram estoque, contas a pagar ou conciliação operacional automaticamente."
+        searchValue={search}
+        onSearch={setSearch}
+      />
 
-      <div className="erp-card p-6 mb-6 border-dashed border-2 border-border">
+      <NexusCard variant="action" className="mb-6">
         <div className="flex flex-col md:flex-row md:items-center gap-4">
           <div className="flex-1">
-            <h2 className="font-semibold text-foreground flex items-center gap-2"><FileUp className="h-5 w-5" />Importar XMLs de NF-e de entrada</h2>
-            <p className="text-sm text-muted-foreground mt-1">Base histórica fiscal/gerencial, sem gerar movimentação operacional.</p>
+            <h2 className="nexus-heading-md flex items-center gap-2">
+              <FileUp className="h-5 w-5" />
+              Importar XMLs de NF-e de entrada
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Alimenta apuração, contábil, BI e precificação. Sem efeito operacional automático (estoque, financeiro, pedido).
+            </p>
           </div>
-          <label className="erp-btn-primary cursor-pointer shrink-0">
-            <input type="file" accept=".xml,application/xml,text/xml" multiple className="hidden" disabled={busy} onChange={(e) => { void onFiles(e.target.files); e.target.value = ''; }} />
-            {busy ? 'Importando…' : 'Selecionar XMLs'}
-          </label>
+          <NexusButton asChild disabled={busy}>
+            <label className="cursor-pointer shrink-0">
+              <input
+                type="file"
+                accept=".xml,application/xml,text/xml"
+                multiple
+                className="hidden"
+                disabled={busy}
+                onChange={(e) => {
+                  void onFiles(e.target.files);
+                  e.target.value = '';
+                }}
+              />
+              {busy ? 'Importando…' : 'Selecionar XMLs'}
+            </label>
+          </NexusButton>
         </div>
-        {erro && <p className="text-sm text-destructive mt-3">{erro}</p>}
-      </div>
+        {erro ? <p className="text-sm text-destructive mt-3">{erro}</p> : null}
+      </NexusCard>
 
       {resultado && (
         <div className="erp-card p-4 mb-4 space-y-4">
@@ -170,48 +205,91 @@ const NFeHistoricaEntradaImportada = () => {
         </div>
       )}
 
-      <div className="erp-card p-3 mb-4 flex flex-wrap gap-3">
-        <select className="erp-select" value={empresaId} onChange={(e) => setEmpresaId(e.target.value)}>
+      <NexusCard className="mb-4">
+        <div className="flex flex-wrap gap-3">
+        <select className="erp-select" value={empresaId} onChange={(e) => setFilter('empresa_destinataria_id', e.target.value)}>
           <option value="">Empresa destinatária (todas)</option>
           {empresas.map((e) => <option key={e.id} value={e.id}>{e.razao_social}</option>)}
         </select>
-        <select className="erp-select" value={fornecedorId} onChange={(e) => setFornecedorId(e.target.value)}>
+        <select className="erp-select" value={fornecedorId} onChange={(e) => setFilter('fornecedor_id', e.target.value)}>
           <option value="">Fornecedor emitente (todos)</option>
           {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.razao_social}</option>)}
         </select>
-        <button type="button" className="erp-btn-outline" onClick={() => void load()}>Atualizar</button>
-      </div>
+        <NexusButton type="button" variant="outline" onClick={() => void reload()}>Atualizar</NexusButton>
+        </div>
+      </NexusCard>
 
-      <div className="erp-card overflow-x-auto">
-        <table className="erp-table">
-          <thead><tr><th>Emissão</th><th>NF</th><th>Fornecedor</th><th>Empresa (ERP)</th><th>Valor</th><th>Conferência</th><th>Ações</th></tr></thead>
+      {loadError ? <ErrorState onRetry={() => void reload()} /> : null}
+      {loading ? <TableSkeleton rows={6} cols={7} /> : null}
+      {!loading && !loadError ? (
+        <DataTableShell>
+        <DataTable>
+          <thead>
+            <tr>
+              <th>Chave</th>
+              <th>Fornecedor</th>
+              <th>Número</th>
+              <th>Emissão</th>
+              <th>Importado em</th>
+              <th>Status</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
           <tbody>
-            {filtrados.map((r) => (
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan={7}>
+                  <EmptyState message="Nenhuma NF-e de entrada importada encontrada para os filtros atuais." />
+                </td>
+              </tr>
+            ) : (
+            items.map((r) => (
               <tr key={r.id}>
-                <td>{r.dh_emissao?.slice(0, 16).replace('T', ' ')}</td>
-                <td>{r.numero}/{r.serie}</td>
+                <td className="font-mono text-xs" title={r.chave_acesso}>{chaveNfeResumida(r.chave_acesso)}</td>
                 <td>{r.fornecedor_nome || '—'}</td>
-                <td>{r.empresa_nome ? `${r.empresa_nome} (${r.papel_empresa || 'destinatario'})` : '—'}</td>
-                <td>R$ {Number(r.valor_total_nf || 0).toFixed(2)}</td>
-                <td className="text-xs">
-                  <div>{r.conferencia_status ?? '—'}</div>
-                  {r.conferencia_status === 'PREPARADA' ? (
-                    <div className="text-muted-foreground mt-0.5">Estoque operacional ainda não aplicado automaticamente.</div>
-                  ) : null}
+                <td>{r.numero}/{r.serie}</td>
+                <td>{r.dh_emissao?.slice(0, 16).replace('T', ' ') ?? '—'}</td>
+                <td>{r.importado_em?.slice(0, 16).replace('T', ' ') ?? '—'}</td>
+                <td>
+                  <div className="flex flex-col gap-1">
+                    <StatusBadge status={r.conferencia_status || (r.importada ? 'Importada' : 'Pendente')} />
+                    <DfeClassificacaoBadges classificacao={r.classificacao_dfe} max={3} />
+                  </div>
                 </td>
                 <td>
                   <div className="flex gap-2">
-                    <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => {
-                      void nfeHistoricaEntradaImportadaService.getById(r.id).then((d) => { setDetalhe(d); setModal(true); }).catch((e) => setErro(apiErrorMessage(e)));
-                    }}>Detalhes</button>
-                    <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => navigate(`/nfe-entrada/${r.id}/conferencia`)}>Conferir entrada</button>
+                    <NexusButton
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        void nfeHistoricaEntradaImportadaService.getById(r.id).then((d) => { setDetalhe(d); setModal(true); }).catch((e) => setErro(apiErrorMessage(e)));
+                      }}
+                    >
+                      Detalhes
+                    </NexusButton>
+                    <NexusButton type="button" variant="outline" size="sm" onClick={() => navigate(`/nfe-entrada/${r.id}/conferencia`)}>
+                      Conferir entrada
+                    </NexusButton>
                   </div>
                 </td>
               </tr>
-            ))}
+            ))
+            )}
           </tbody>
-        </table>
-      </div>
+        </DataTable>
+          {count > 0 ? (
+          <PaginationControls
+            page={page}
+            pageSize={pageSize}
+            count={count}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        ) : null}
+        </DataTableShell>
+      ) : null}
 
       <Modal isOpen={modal} onClose={() => setModal(false)} title="NF-e de entrada importada (histórico)" size="xl">
         {detalhe && (

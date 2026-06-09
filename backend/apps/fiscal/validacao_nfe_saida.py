@@ -156,6 +156,14 @@ def _impostos_negativos(snapshot_fiscal: dict) -> list[str]:
     return neg
 
 
+def _nf_autorizada_com_xml_historico(nf: NFeSaida) -> bool:
+    """NF-e com XML autorizado da SEFAZ — não regenerar/validar serialização retroativa."""
+    if _text(getattr(nf, 'xml_autorizado', '')):
+        return True
+    sefaz_st = (nf.status_emissao_sefaz or '').strip()
+    return sefaz_st == NFeSaida.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO or _norm_status(nf.status) in STATUS_EMITIDA
+
+
 def _montar_resultado(
     nf: NFeSaida,
     grupos: dict[str, list[ItemValidacao]],
@@ -181,13 +189,49 @@ def _montar_resultado(
     }
 
 
-def validar_nfe_saida_para_emissao(nfe_saida: NFeSaida) -> dict[str, Any]:
+ModoValidacaoNFe = str  # 'completo' | 'leve'
+
+MODO_VALIDACAO_COMPLETO = 'completo'
+MODO_VALIDACAO_LEVE = 'leve'
+
+
+def validar_nfe_saida_para_emissao(
+    nfe_saida: NFeSaida,
+    *,
+    modo: ModoValidacaoNFe = MODO_VALIDACAO_COMPLETO,
+    incluir_higienizacao_xml: bool = True,
+) -> dict[str, Any]:
     """
     Valida NF-e Saída para futura emissão. Não altera banco, estoque, financeiro nem SEFAZ.
+
+    modo='leve': checklist operacional rápido (sem ViaCEP remoto nem montagem XML Reforma).
+    modo='completo': validação pré-transmissão com checagens pesadas.
     """
+    modo_leve = (modo or MODO_VALIDACAO_COMPLETO).strip().lower() == MODO_VALIDACAO_LEVE
+    consultar_cep = not modo_leve
+    validar_reforma_xml = not modo_leve
     nf = nfe_saida
     grupos = _grupos_vazios()
     st = _norm_status(nf.status)
+    sefaz_st = (nf.status_emissao_sefaz or '').strip()
+
+    if sefaz_st == NFeSaida.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO or st == 'AUTORIZADA_HOMOLOGACAO':
+        _add(
+            grupos,
+            tipo=TIPO_INFO,
+            codigo='NFE_AUTORIZADA_HOMOLOG',
+            grupo='origem',
+            mensagem='NF-e autorizada em homologação. Esta autorização não possui valor fiscal de produção.',
+        )
+        return _montar_resultado(
+            nf,
+            grupos,
+            status_prontidao=STATUS_BLOQUEADA,
+            pode_emitir=False,
+            mensagens=[
+                'NF-e autorizada em homologação. Esta autorização não possui valor fiscal de produção.',
+            ],
+        )
 
     if st in STATUS_CANCELADA:
         _add(
@@ -317,6 +361,36 @@ def validar_nfe_saida_para_emissao(nfe_saida: NFeSaida) -> dict[str, Any]:
                 mensagem='Cliente inativo no cadastro.',
             )
 
+        from apps.cadastros.endereco_fiscal import validar_endereco_fiscal
+
+        endereco_fiscal = validar_endereco_fiscal(cli, consultar_cep=consultar_cep, exigir_endereco_completo=True)
+        if endereco_fiscal.bloqueio_fiscal:
+            msg = (
+                endereco_fiscal.alertas[0]
+                if endereco_fiscal.alertas
+                else (
+                    endereco_fiscal.pendencias[0]
+                    if endereco_fiscal.pendencias
+                    else 'Cliente com endereço fiscal inconsistente.'
+                )
+            )
+            _add(
+                grupos,
+                tipo=TIPO_PENDENCIA,
+                codigo='CLIENTE_ENDERECO_FISCAL_INCONSISTENTE',
+                grupo='cliente',
+                mensagem=msg,
+            )
+        elif endereco_fiscal.alertas:
+            for aviso in endereco_fiscal.alertas:
+                _add(
+                    grupos,
+                    tipo=TIPO_ALERTA,
+                    codigo='CLIENTE_ENDERECO_FISCAL_ALERTA',
+                    grupo='cliente',
+                    mensagem=aviso,
+                )
+
     # --- Emitente (via pedido) ---
     pedido = nf.pedido_venda
     emp = pedido.empresa_emitente if pedido and pedido.empresa_emitente_id else None
@@ -363,7 +437,15 @@ def validar_nfe_saida_para_emissao(nfe_saida: NFeSaida) -> dict[str, Any]:
             )
 
     uf_origem = _text(emp.uf) if emp else ''
-    uf_destino = _text(nf.cliente.uf) if nf.cliente_id else ''
+    uf_destino = ''
+    if nf.cliente_id:
+        from apps.cadastros.endereco_fiscal import validar_endereco_fiscal
+
+        endereco_cli = validar_endereco_fiscal(nf.cliente, consultar_cep=consultar_cep, exigir_endereco_completo=True)
+        if endereco_cli.consistente and not endereco_cli.bloqueio_fiscal:
+            uf_destino = endereco_cli.uf_destino or _text(nf.cliente.uf)
+        else:
+            uf_destino = ''
 
     # --- Origem faturamento / manual ---
     de_faturamento = bool(nf.faturamento_pedido_venda_id)
@@ -622,6 +704,61 @@ def validar_nfe_saida_para_emissao(nfe_saida: NFeSaida) -> dict[str, Any]:
                         mensagem=f'{rotulo}: alíquotas CBS/IBS não informadas no snapshot.',
                         item_id=item.pk,
                     )
+                else:
+                    from apps.fiscal.nfe_saida_reforma_calculo import (
+                        reforma_valores_calculados,
+                        status_reforma_snapshot,
+                        tem_aliquota_reforma_configurada,
+                    )
+
+                    if tem_aliquota_reforma_configurada(reforma) and not reforma_valores_calculados(reforma):
+                        _add(
+                            grupos,
+                            tipo=TIPO_ALERTA,
+                            codigo='REFORMA_ALIQUOTA_SEM_VALOR',
+                            grupo='reforma_tributaria',
+                            mensagem=(
+                                f'{rotulo}: Reforma Tributária configurada com alíquota, '
+                                'mas sem valor calculado para o item.'
+                            ),
+                            item_id=item.pk,
+                        )
+                    elif status_reforma_snapshot(reforma) == 'SEM_CALCULO':
+                        _add(
+                            grupos,
+                            tipo=TIPO_INFO,
+                            codigo='REFORMA_SEM_CALCULO',
+                            grupo='reforma_tributaria',
+                            mensagem=f'{rotulo}: Reforma configurada sem alíquotas de cálculo.',
+                            item_id=item.pk,
+                        )
+                    if not _text(reforma.get('formula_base_ibs_cbs')):
+                        _add(
+                            grupos,
+                            tipo=TIPO_ALERTA,
+                            codigo='REFORMA_BASE_SEM_FORMULA',
+                            grupo='reforma_tributaria',
+                            mensagem=f'{rotulo}: base IBS/CBS sem fórmula registrada no snapshot.',
+                            item_id=item.pk,
+                        )
+                    st_base = _text(reforma.get('status_base_reforma'))
+                    fonte_base = _text(reforma.get('fonte_regra_base_ibs_cbs')) or 'pendente'
+                    if st_base == 'pendente_confirmacao' or fonte_base == 'pendente':
+                        from apps.fiscal.reforma_tributaria.config import reforma_nfe_config
+
+                        cfg_ref = reforma_nfe_config()
+                        tipo_base = TIPO_ALERTA if cfg_ref.get('modo') != 'producao' else TIPO_PENDENCIA
+                        _add(
+                            grupos,
+                            tipo=tipo_base,
+                            codigo='REFORMA_BASE_FONTE_PENDENTE',
+                            grupo='reforma_tributaria',
+                            mensagem=(
+                                f'{rotulo}: base IBS/CBS calculada com regra pendente de confirmação '
+                                'oficial/contábil. Valide antes de transmitir em produção.'
+                            ),
+                            item_id=item.pk,
+                        )
             elif snap_f.get('reforma_tributaria') or snap_f.get('ibs_cbs'):
                 _add(
                     grupos,
@@ -731,14 +868,15 @@ def validar_nfe_saida_para_emissao(nfe_saida: NFeSaida) -> dict[str, Any]:
     )
 
     # --- Transporte ---
-    mod_frete = _text(nf.modalidade_frete) or '9'
-    if mod_frete not in ('9', '') and not nf.transportadora_id and _dec(nf.valor_frete) > 0:
+    from apps.fiscal.nfe_transporte_validacao import validar_coerencia_transporte_nfe
+
+    for chk in validar_coerencia_transporte_nfe(nf):
         _add(
             grupos,
-            tipo=TIPO_ALERTA,
-            codigo='FRETE_SEM_TRANSPORTADORA',
+            tipo=chk['tipo'],
+            codigo=chk['codigo'],
             grupo='transporte',
-            mensagem='Frete informado sem transportadora cadastrada.',
+            mensagem=chk['mensagem'],
         )
     if nf.faturamento_pedido_venda_id or nf.pedido_venda_id:
         _add(
@@ -758,6 +896,119 @@ def validar_nfe_saida_para_emissao(nfe_saida: NFeSaida) -> dict[str, Any]:
             grupo='pedido_cliente',
             mensagem='Pedido do cliente (OC) não informado — alerta informativo.',
         )
+
+    # --- Reforma Tributária no XML (snapshot calculado → grupos IBSCBS) ---
+    from apps.fiscal.nfe_saida_reforma_calculo import status_reforma_snapshot
+    from apps.fiscal.snapshot_fiscal_helpers import get_reforma_tributaria_snapshot
+
+    itens_com_reforma = [
+        it
+        for it in itens
+        if status_reforma_snapshot(get_reforma_tributaria_snapshot(it.snapshot_fiscal)) == 'CALCULADA'
+    ]
+    if (
+        itens_com_reforma
+        and not _nf_autorizada_com_xml_historico(nf)
+        and validar_reforma_xml
+    ):
+        from apps.fiscal.reforma_tributaria.validacoes import reforma_deve_serializar_no_xml
+
+        if reforma_deve_serializar_no_xml():
+            try:
+                from apps.fiscal.nfe_saida_preview import gerar_dados_preview_nfe_saida
+                from apps.fiscal.nfe_saida_xml_nfelib import montar_tnfe_oficial, serializar_tnfe
+
+                dados_xml = gerar_dados_preview_nfe_saida(nf, incluir_validacao_emissao=False)
+                if not dados_xml.get('bloqueado'):
+                    for linha in dados_xml.get('itens') or []:
+                        item_id = linha.get('item_id')
+                        if item_id:
+                            item_db = next((i for i in itens if i.pk == item_id), None)
+                            if item_db is not None:
+                                linha['snapshot_fiscal'] = item_db.snapshot_fiscal or {}
+                    tnfe = montar_tnfe_oficial(dados_xml, nfe_saida=nf)
+                    xml_check = serializar_tnfe(tnfe, pretty=False)
+                    from apps.fiscal.reforma_tributaria.xml import validar_reforma_serializada_em_xml
+
+                    for chk in validar_reforma_serializada_em_xml(
+                        xml_check,
+                        itens=dados_xml.get('itens') or [],
+                    ):
+                        _add(
+                            grupos,
+                            tipo=chk['tipo'],
+                            codigo=chk['codigo'],
+                            grupo='reforma_tributaria',
+                            mensagem=chk['mensagem'],
+                        )
+            except Exception as exc:
+                _add(
+                    grupos,
+                    tipo=TIPO_PENDENCIA,
+                    codigo='REFORMA_XML_GERACAO_FALHOU',
+                    grupo='reforma_tributaria',
+                    mensagem=f'Não foi possível validar Reforma no XML: {exc}',
+                )
+
+    # --- Higienização XML transmissão (modo completo) ---
+    if not modo_leve and incluir_higienizacao_xml:
+        from apps.fiscal.nfe_operacao_fiscal_indicadores import montar_indicadores_fiscais_payload
+        from apps.fiscal.nfe_xml_higienizacao import validar_higienizacao_xml_transmissao
+
+        ind_payload = montar_indicadores_fiscais_payload(nf)
+        if not ind_payload['indicadores_fiscais_confirmados']:
+            _add(
+                grupos,
+                tipo=TIPO_PENDENCIA,
+                codigo='INDICADORES_NAO_CONFIRMADOS',
+                grupo='higienizacao_xml',
+                mensagem='Confirme consumidor final (indFinal) e indicador de presença (indPres) na conferência.',
+            )
+        elif ind_payload['ind_final'] == '1' and nf.cliente_id and _text(getattr(nf.cliente, 'ie', None)):
+            _add(
+                grupos,
+                tipo=TIPO_ALERTA,
+                codigo='INDFINAL_CONSUMIDOR_COM_IE',
+                grupo='higienizacao_xml',
+                mensagem=(
+                    'Destinatário contribuinte com IE informado. '
+                    'Confirme se a operação é para consumidor final (indFinal=1).'
+                ),
+            )
+
+        if nf.chave_acesso and ind_payload['indicadores_fiscais_confirmados']:
+            try:
+                from apps.fiscal.nfe_xml_transmissao import gerar_xml_transmissao_homologacao
+
+                xml_tx = gerar_xml_transmissao_homologacao(nf).decode('utf-8')
+                for chk in validar_higienizacao_xml_transmissao(
+                    xml_tx,
+                    nfe_saida=nf,
+                    chave_esperada=nf.chave_acesso,
+                ):
+                    _add(
+                        grupos,
+                        tipo=chk['tipo'],
+                        codigo=chk['codigo'],
+                        grupo=chk.get('grupo') or 'higienizacao_xml',
+                        mensagem=chk['mensagem'],
+                    )
+            except Exception as exc:
+                _add(
+                    grupos,
+                    tipo=TIPO_PENDENCIA,
+                    codigo='XML_TRANSMISSAO_GERACAO_FALHOU',
+                    grupo='higienizacao_xml',
+                    mensagem=f'Não foi possível gerar/validar XML de transmissão: {exc}',
+                )
+        elif not nf.chave_acesso:
+            _add(
+                grupos,
+                tipo=TIPO_INFO,
+                codigo='XML_TRANSMISSAO_AGUARDA_NUMERACAO',
+                grupo='higienizacao_xml',
+                mensagem='Reserve a numeração para validar o XML de transmissão completo.',
+            )
 
     # --- Totais ---
     soma_itens = sum(_dec(it.quantidade) * _dec(it.valor) for it in itens)

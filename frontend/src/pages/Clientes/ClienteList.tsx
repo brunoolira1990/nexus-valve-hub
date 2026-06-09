@@ -1,113 +1,118 @@
-import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Pencil, Trash2 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { clientesService } from '@/services/api/clientes';
 import { apiErrorMessage } from '@/services/api/config';
 import type { Cliente } from '@/types';
+import { usePaginatedList } from '@/hooks/usePaginatedList';
+import { PaginationControls } from '@/components/list/PaginationControls';
+import { EmptyState, ErrorState, LoadingState } from '@/components/list/ListStates';
+import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
 
 const ClienteList = () => {
   const navigate = useNavigate();
-  const [items, setItems] = useState<Cliente[]>([]);
-  const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setItems(await clientesService.getAll());
-    } catch (e) {
-      console.error('Falha ao carregar clientes:', e);
-      setItems([]);
-      setError(
-        apiErrorMessage(e, {
-          fallback: 'Não foi possível carregar os clientes.',
-          preferGeneric: true,
-        }),
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-  useEffect(() => {
-    load();
-  }, []);
+  const {
+    items,
+    count,
+    page,
+    pageSize,
+    totalPages,
+    search,
+    setSearch,
+    setPage,
+    setPageSize,
+    loading,
+    error,
+    reload,
+  } = usePaginatedList<Cliente>({ fetchPage: clientesService.listPaginated });
 
   const handleDelete = async (id: number) => {
-    if (confirm('Excluir?')) {
+    if (!confirm('Excluir este cliente?')) return;
+    try {
       await clientesService.delete(id);
-      load();
+      void reload();
+    } catch (e) {
+      alert(apiErrorMessage(e, { fallback: 'Não foi possível excluir o cliente.' }));
     }
   };
-
-  const filtered = items.filter(
-    (i) => i.razao_social.toLowerCase().includes(search.toLowerCase()) || i.cnpj.includes(search),
-  );
 
   return (
     <div>
       <PageHeader
         title="Clientes"
+        description="Cadastro de clientes e dados comerciais."
         onAdd={() => navigate('/clientes/novo')}
         addLabel="Novo cliente"
         searchValue={search}
         onSearch={setSearch}
       />
-      <div className="erp-card overflow-x-auto">
-        {error ? (
-          <div className="m-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {error}
-          </div>
-        ) : null}
-        <table className="erp-table">
-          <thead>
-            <tr>
-              <th>Razão Social</th>
-              <th>CNPJ</th>
-              <th>Telefone</th>
-              <th>Contato</th>
-              <th className="w-24">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((e) => (
-              <tr key={e.id}>
-                <td className="font-medium">{e.razao_social}</td>
-                <td>{e.cnpj}</td>
-                <td>{e.telefone}</td>
-                <td>{e.contato_responsavel}</td>
-                <td>
-                  <div className="flex gap-1">
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/clientes/${e.id}/edit`)}
-                      className="erp-btn-ghost erp-btn-sm"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(e.id)}
-                      className="erp-btn-ghost erp-btn-sm text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {!loading && !error && filtered.length === 0 ? (
+      <DataTableShell>
+        {error ? <ErrorState onRetry={() => void reload()} /> : null}
+        {loading ? <LoadingState /> : null}
+        {!loading && !error ? (
+          <DataTable>
+            <thead>
               <tr>
-                <td colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
-                  Nenhum cliente encontrado.
-                </td>
+                <th>Razão Social</th>
+                <th>CNPJ</th>
+                <th>Telefone</th>
+                <th>Contato</th>
+                <th className="w-24">Ações</th>
               </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {items.length === 0 ? (
+                <tr>
+                  <td colSpan={5}>
+                    <EmptyState
+                      message="Nenhum cliente encontrado."
+                      actionLabel="Novo cliente"
+                      onAction={() => navigate('/clientes/novo')}
+                    />
+                  </td>
+                </tr>
+              ) : (
+                items.map((e) => (
+                  <tr key={e.id}>
+                    <td className="font-medium">{e.razao_social}</td>
+                    <td>{e.cnpj}</td>
+                    <td>{e.telefone}</td>
+                    <td>{e.contato_responsavel}</td>
+                    <td>
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/clientes/${e.id}/edit`)}
+                          className="erp-btn-ghost erp-btn-sm"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(e.id)}
+                          className="erp-btn-ghost erp-btn-sm text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </DataTable>
+        ) : null}
+        {!loading && !error && count > 0 ? (
+          <PaginationControls
+            page={page}
+            pageSize={pageSize}
+            count={count}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        ) : null}
+      </DataTableShell>
     </div>
   );
 };

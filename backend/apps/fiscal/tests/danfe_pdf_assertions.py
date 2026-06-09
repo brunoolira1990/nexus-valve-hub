@@ -19,7 +19,7 @@ def norm_pdf_text(t: str) -> str:
 
 
 def compact_pdf_text(t: str) -> str:
-    """Normaliza e remove espaços/quebras para asserts estáveis com WeasyPrint."""
+    """Normaliza e remove espaços/quebras para asserts estáveis em texto extraído de PDF."""
     t = norm_pdf_text(t)
     t = re.sub(r'\s+', '', t)
     return t.replace('-', '').replace(':', '').replace('.', '')

@@ -64,6 +64,13 @@ export interface Cliente {
   cnae: string;
   regime_tributario: string;
   integracao_texto: string;
+  informacoes_complementares_nfe?: string;
+  endereco_fiscal?: {
+    consistente?: boolean;
+    bloqueio_fiscal?: boolean;
+    alertas?: string[];
+    pendencias?: string[];
+  };
 }
 
 export interface Fornecedor {
@@ -173,6 +180,12 @@ export type TipoRegraCodigo =
   | 'BASE_ROSCA_SCHEDULE_DUAS_POLEGADAS'
   | 'UNDERSCORE_POLEGADA'
   | 'BASE_OD_MM_ESPESSURA'
+  | 'BASE_DN_MM'
+  | 'BASE_DN_MM_REDUCAO'
+  | 'BASE_BITOLA_POLEGADA'
+  | 'BASE_OD_MM'
+  | 'BASE_OD_MM_REDUCAO'
+  | 'BASE_OD_MM_X_ROSCA'
   | 'BASE_ESPIGAO_FLANGE_NPS'
   | 'MANUAL_FABRICANTE';
 
@@ -187,6 +200,11 @@ export type TipoDimensional =
   | 'OD_POLEGADA'
   | 'OD_POLEGADA_X_ROSCA'
   | 'OD_MM'
+  | 'DN_MM'
+  | 'DN_MM_REDUCAO'
+  | 'BITOLA_POLEGADA'
+  | 'OD_MM_REDUCAO'
+  | 'OD_MM_X_ROSCA'
   | 'OD_MM_X_ESPESSURA'
   | 'OD_MM_X_ESPESSURA_X_COMPRIMENTO'
   | 'CHAPA_MM'
@@ -328,6 +346,7 @@ export interface Produto {
   polegada_secundaria: string;
   descricao: string;
   material: string;
+  material_label?: string | null;
   tipo_peca: string;
   pressao_nominal: string;
   norma: string;
@@ -419,6 +438,14 @@ export interface Corrida {
 
 export type CertificadoQualidadeStatus = 'rascunho' | 'emitido' | 'cancelado';
 export type CertificadoQualidadeTipo = 'PADRAO_POR_NFE' | 'VALVULA_COMPONENTES';
+export type RastreabilidadeCqStatus = 'COMPLETA' | 'PARCIAL' | 'PENDENTE';
+
+export interface ResumoRastreabilidadeCertificadoQualidade {
+  completos: number;
+  parciais: number;
+  pendentes: number;
+  pode_emitir: boolean;
+}
 
 export interface ItemCertificadoQualidade {
   id?: number;
@@ -457,6 +484,15 @@ export interface ItemCertificadoQualidade {
   incluir_no_certificado?: boolean;
   motivo_nao_inclusao?: string;
   observacao_nao_inclusao?: string;
+  rastreabilidade_status?: RastreabilidadeCqStatus;
+  rastreabilidade_label?: string;
+  rastreabilidade_mensagens?: string[];
+  rastreabilidade_motivos?: string[];
+  tem_certificado_fornecedor?: boolean;
+  certificado_fornecedor_status?: string | null;
+  tem_conferencia_origem?: boolean;
+  estoque_aplicado_origem?: boolean;
+  tem_corrida_lote?: boolean;
   componentes?: ItemCertificadoQualidadeComponente[];
 }
 
@@ -523,6 +559,8 @@ export interface CertificadoQualidade {
   tipo_certificado: CertificadoQualidadeTipo;
   criado_em: string;
   atualizado_em: string;
+  resumo_rastreabilidade?: ResumoRastreabilidadeCertificadoQualidade;
+  rastreabilidade_resumo_label?: string;
   itens: ItemCertificadoQualidade[];
 }
 
@@ -569,6 +607,31 @@ export interface ItemCertificadoFornecedorEntrada {
   ensaio_impacto_json?: Record<string, unknown>;
   observacoes_item?: string;
   ativo?: boolean;
+  item_conferencia_id?: number | null;
+  origem_nfe_item_numero?: number | null;
+  origem_vinculada_em?: string | null;
+  origem_nfe_numero?: string | null;
+  origem_nfe_serie?: string | null;
+  origem_display?: string;
+  origem_conferencia_status?: string | null;
+  origem_produto_vinculado?: boolean;
+  pedido_compra_id?: number | null;
+  pedido_compra_numero?: string | null;
+  item_pedido_compra_id?: number | null;
+  item_pedido_resumo?: {
+    pedido_numero?: string;
+    codigo?: string;
+    descricao?: string;
+    quantidade?: string;
+    unidade?: string;
+    valor_unitario?: string;
+  } | null;
+  produto_pedido_codigo?: string | null;
+  produto_pedido_descricao?: string | null;
+  quantidade_pedido?: string | null;
+  unidade_pedido?: string | null;
+  valor_unitario_pedido?: string | null;
+  origem_rastreabilidade_completa?: boolean;
   componentes?: ItemCertificadoFornecedorEntradaComponente[];
 }
 
@@ -604,6 +667,9 @@ export interface DadosTecnicosFornecedorResultado {
   numero_certificado_fornecedor_item?: string;
   status_certificado_fornecedor?: string;
   produto?: number | null;
+  produto_vinculado?: boolean;
+  produto_match_tipo?: 'vinculado' | 'sem_vinculo' | 'outro_produto' | null;
+  aviso_sem_vinculo_produto?: string;
   codigo_produto: string;
   descricao_material: string;
   norma?: string;
@@ -644,9 +710,702 @@ export interface RegraFiscal {
   base_calculo: string;
 }
 
+export type SeveridadeRegraFiscalEntrada = 'INFORMATIVO' | 'ALERTA' | 'BLOQUEIO';
+
+export type TipoOperacaoFiscalEntrada =
+  | 'COMPRA'
+  | 'DEVOLUCAO_VENDA'
+  | 'DEVOLUCAO_COMPRA'
+  | 'REMESSA'
+  | 'BONIFICACAO'
+  | 'USO_CONSUMO'
+  | 'INDUSTRIALIZACAO'
+  | 'OUTROS'
+  | '';
+
+export type StatusFiscalConferenciaEntrada = 'OK' | 'ALERTA' | 'SEM_REGRA' | 'BLOQUEADO';
+
+export type TipoEscopoFiscalEntrada = 'GERAL' | 'NCM' | 'NCM_PREFIXO' | 'PRODUTO';
+
+export interface CenarioFiscalEntrada {
+  id: number;
+  nome: string;
+  empresa_id?: number | null;
+  regime_tributario: string;
+  ativo: boolean;
+  padrao: boolean;
+  observacoes: string;
+  total_escopos?: number;
+  total_configuracoes?: number;
+  escopos?: CenarioFiscalEntradaEscopo[];
+  criado_em?: string;
+  atualizado_em?: string;
+}
+
+export interface CenarioFiscalEntradaEscopo {
+  id: number;
+  cenario: number;
+  tipo_escopo: TipoEscopoFiscalEntrada;
+  ncm: string;
+  produto_id?: number | null;
+  prioridade_escopo: number;
+  ativo: boolean;
+  configuracoes_count?: number;
+  label?: string;
+  criado_em?: string;
+  atualizado_em?: string;
+}
+
+export type StatusConfiguracaoFiscalEntrada = 'CONFIGURADO' | 'INCOMPLETO' | 'SEM_CONFIGURACAO';
+
+export interface ResumoImpostosMatriz {
+  icms: string;
+  ipi: string;
+  pis: string;
+  cofins: string;
+}
+
+export interface ConfiguracaoMatrizFiscalEntrada {
+  id: number;
+  uf_origem: string;
+  uf_destino: string;
+  cfop_origem: string;
+  cfop_entrada: string;
+  status_configuracao: StatusConfiguracaoFiscalEntrada;
+  label_configuracao: string;
+  incompleta?: boolean;
+  pendencias_fiscais?: string[];
+  tem_reforma?: boolean;
+  resumo_impostos: ResumoImpostosMatriz;
+  efeitos: {
+    movimenta_estoque: boolean;
+    exige_certificado_fornecedor: boolean;
+    permite_credito_fiscal: boolean;
+    severidade: SeveridadeRegraFiscalEntrada;
+  };
+  ativo: boolean;
+}
+
+export interface MatrizEscopoFiscalEntrada {
+  escopo: {
+    id: number;
+    tipo_escopo: TipoEscopoFiscalEntrada;
+    ncm: string;
+    produto_id?: number | null;
+    label: string;
+  };
+  configuracoes: ConfiguracaoMatrizFiscalEntrada[];
+  ufs_sem_configuracao: string[];
+}
+
+export interface DestinoCopiaConfiguracaoFiscal {
+  uf_origem?: string;
+  uf_destino?: string;
+  cfop_origem?: string;
+  cfop_entrada?: string;
+}
+
+export interface ResultadoCopiaConfiguracaoFiscal {
+  criados: number[];
+  atualizados: number[];
+  ignorados: Array<{
+    destino: DestinoCopiaConfiguracaoFiscal;
+    regra_id?: number;
+    motivo: string;
+  }>;
+}
+
+export type TipoEscopoFiscalSaida = 'GERAL' | 'NCM' | 'NCM_PREFIXO' | 'PRODUTO';
+
+export type DestinatarioContribuinteSaida = 'CONTRIBUINTE' | 'NAO_CONTRIBUINTE' | 'QUALQUER';
+
+export type TipoOperacaoFiscalSaida =
+  | 'VENDA'
+  | 'DEVOLUCAO'
+  | 'REMESSA'
+  | 'BONIFICACAO'
+  | 'INDUSTRIALIZACAO'
+  | 'OUTROS'
+  | '';
+
+export type StatusConfiguracaoFiscalSaida = 'CONFIGURADO' | 'INCOMPLETO' | 'SEM_CONFIGURACAO';
+
+export interface CenarioFiscalSaida {
+  id: number;
+  nome: string;
+  empresa_id?: number | null;
+  regime_tributario: string;
+  ativo: boolean;
+  padrao: boolean;
+  observacoes: string;
+  total_escopos?: number;
+  total_configuracoes?: number;
+  escopos?: CenarioFiscalSaidaEscopo[];
+  criado_em?: string;
+  atualizado_em?: string;
+}
+
+export interface CenarioFiscalSaidaEscopo {
+  id: number;
+  cenario: number;
+  tipo_escopo: TipoEscopoFiscalSaida;
+  ncm: string;
+  produto_id?: number | null;
+  prioridade_escopo: number;
+  ativo: boolean;
+  configuracoes_count?: number;
+  label?: string;
+  tem_reforma?: boolean;
+  tem_recomendacoes_nfe?: boolean;
+  criado_em?: string;
+  atualizado_em?: string;
+}
+
+export type OrigemRegraFiscalSaida = 'CENARIO_SAIDA' | 'LEGADO' | 'NAO_ENCONTRADA';
+
+export interface BuscaRegraFiscalSaida {
+  origem: OrigemRegraFiscalSaida;
+  regra_id: number | null;
+  regra_legada_id: number | null;
+  cfop: string;
+  cfop_st: string;
+  cst_icms: string;
+  aliquota_icms: string;
+  cst_ipi: string;
+  aliquota_ipi: string;
+  cst_pis: string;
+  aliquota_pis: string;
+  cst_cofins: string;
+  aliquota_cofins: string;
+  movimenta_estoque: boolean;
+  gera_financeiro: boolean;
+  deduzir_icms_base_pis?: boolean;
+  deduzir_icms_base_cofins?: boolean;
+  tem_reforma_configurada?: boolean;
+  tem_recomendacoes_nfe?: boolean;
+  mensagens: string[];
+}
+
+export type StatusComparativoFiscalSaida =
+  | 'IGUAL'
+  | 'DIVERGENTE'
+  | 'CENARIO_NAO_ENCONTRADO'
+  | 'LEGADO_NAO_ENCONTRADO'
+  | 'AMBOS_NAO_ENCONTRADOS';
+
+export interface LadoComparativoFiscal {
+  encontrado: boolean;
+  regra_id: number | null;
+  cfop: string;
+  cfop_st: string;
+  cst_icms: string;
+  aliquota_icms: string;
+  cst_ipi: string;
+  aliquota_ipi: string;
+  cst_pis: string;
+  aliquota_pis: string;
+  cst_cofins: string;
+  aliquota_cofins: string;
+  movimenta_estoque: boolean | null;
+  gera_financeiro: boolean | null;
+  aliquota_fcp: string;
+  aliquota_icms_st: string;
+  deduzir_icms_base_pis?: boolean;
+  deduzir_icms_base_cofins?: boolean;
+}
+
+export interface DivergenciaComparativoFiscal {
+  campo: string;
+  label: string;
+  legado: string;
+  cenario: string;
+}
+
+export type HomologacaoFiscalStatusProposta =
+  | 'NAO_INICIADA'
+  | 'EM_ANALISE'
+  | 'APROVADA'
+  | 'REPROVADA'
+  | 'VOLTOU_LEGADO';
+
+export interface ResumoHomologacaoFiscalProposta {
+  total_itens: number;
+  iguais: number;
+  divergentes: number;
+  cenario_nao_encontrado: number;
+  legado_nao_encontrado: number;
+  ambos_nao_encontrados: number;
+  itens_ignorados_sem_contexto: number;
+  itens_com_deducao_icms_base_pis_cofins: number;
+  itens_com_reforma_configurada: number;
+  itens_com_recomendacoes_nfe: number;
+}
+
+export interface ItemHomologacaoFiscalProposta {
+  item_id: number;
+  produto_codigo: string;
+  produto_descricao: string;
+  ncm: string;
+  origem_oficial: OrigemRegraFiscalSaida;
+  comparativo_status: StatusComparativoFiscalSaida;
+  divergencias: DivergenciaComparativoFiscal[];
+  legado: LadoComparativoFiscal;
+  cenario: LadoComparativoFiscal;
+  regra_fiscal_saida_id: number | null;
+  regra_fiscal_legada_id: number | null;
+  mensagem_regra_fiscal_saida: string;
+  deduzir_icms_base_pis: boolean;
+  deduzir_icms_base_cofins: boolean;
+  tem_reforma_configurada: boolean;
+  tem_recomendacoes_nfe: boolean;
+  ignorado_sem_contexto?: boolean;
+}
+
+export type TipoEventoHomologacaoFiscal =
+  | 'INICIADA'
+  | 'RECALCULADA'
+  | 'APROVADA'
+  | 'REPROVADA'
+  | 'VOLTOU_LEGADO'
+  | 'ALTEROU_CENARIO';
+
+export interface EventoHomologacaoFiscalProposta {
+  id: number;
+  tipo_evento: TipoEventoHomologacaoFiscal;
+  status_resultante: HomologacaoFiscalStatusProposta;
+  usar_cenario_fiscal_saida: boolean;
+  cenario_fiscal_saida_id: number | null;
+  cenario_fiscal_saida_nome: string;
+  observacao: string;
+  criado_por_nome: string;
+  criado_em: string;
+  resumo: ResumoHomologacaoFiscalProposta | null;
+  itens?: ItemHomologacaoFiscalProposta[];
+}
+
+export interface HistoricoHomologacaoFiscalProposta {
+  proposta_id: number;
+  eventos: EventoHomologacaoFiscalProposta[];
+}
+
+export interface UltimoEventoHomologacaoFiscal {
+  id: number;
+  tipo_evento: TipoEventoHomologacaoFiscal;
+  status_resultante: string;
+  criado_em: string;
+  criado_por_nome: string;
+}
+
+export interface HomologacaoFiscalPropostaPayload {
+  status: HomologacaoFiscalStatusProposta;
+  observacao: string;
+  homologacao_fiscal_em: string | null;
+  usar_cenario_fiscal_saida: boolean;
+  cenario_fiscal_saida_id: number | null;
+  resumo: ResumoHomologacaoFiscalProposta;
+  itens: ItemHomologacaoFiscalProposta[];
+  total_eventos_homologacao?: number;
+  ultimo_evento_homologacao?: UltimoEventoHomologacaoFiscal | null;
+}
+
+export interface ComparativoFiscalSaida {
+  status: StatusComparativoFiscalSaida;
+  cenario: LadoComparativoFiscal;
+  legado: LadoComparativoFiscal;
+  divergencias: DivergenciaComparativoFiscal[];
+  mensagens: string[];
+  origem_oficial_proposta: string;
+  origem_se_flag_cenario_ativa: OrigemRegraFiscalSaida;
+}
+
+export interface LadoResumoCobertura {
+  encontrado: boolean;
+  regra_id: number | null;
+  cfop: string;
+}
+
+export interface ResumoCoberturaPropostas {
+  total_itens: number;
+  iguais: number;
+  divergentes: number;
+  cenario_nao_encontrado: number;
+  legado_nao_encontrado: number;
+  ambos_nao_encontrados: number;
+  percentual_cobertura_cenario: string;
+  percentual_iguais_entre_encontrados: string;
+  itens_analisados: number;
+  itens_ignorados_sem_contexto: number;
+}
+
+export interface ItemCoberturaProposta {
+  proposta_id: number;
+  proposta_numero: string;
+  item_id: number;
+  produto_id: number | null;
+  produto_codigo: string;
+  produto_descricao: string;
+  ncm: string;
+  uf_origem: string;
+  uf_destino: string;
+  destinatario_contribuinte: string;
+  consumidor_final: boolean | null;
+  tipo_operacao: string;
+  status: StatusComparativoFiscalSaida;
+  divergencias: DivergenciaComparativoFiscal[];
+  cenario: LadoResumoCobertura;
+  legado: LadoResumoCobertura;
+}
+
+export interface LacunaCoberturaProposta {
+  ncm: string;
+  uf_origem: string;
+  uf_destino: string;
+  destinatario_contribuinte: string;
+  consumidor_final: boolean | null;
+  tipo_operacao: string;
+  quantidade_itens: number;
+  status_predominante: StatusComparativoFiscalSaida;
+  acao_sugerida: string;
+}
+
+export interface CoberturaPropostasFiscalSaida {
+  resumo: ResumoCoberturaPropostas;
+  itens: ItemCoberturaProposta[];
+  lacunas: LacunaCoberturaProposta[];
+  filtros_aplicados: Record<string, unknown>;
+}
+
+export type StatusChecklistAtivacao = 'PODE_ATIVAR' | 'ATENCAO' | 'NAO_RECOMENDADO';
+export type StatusCriterioChecklist = 'OK' | 'ATENCAO' | 'NAO_RECOMENDADO';
+
+export interface ResumoChecklistAtivacao {
+  total_itens: number;
+  iguais: number;
+  divergentes: number;
+  cenario_nao_encontrado: number;
+  legado_nao_encontrado: number;
+  ambos_nao_encontrados: number;
+  percentual_cobertura_cenario: string;
+  percentual_divergentes: string;
+  percentual_sem_cenario: string;
+  percentual_iguais_entre_encontrados: string;
+  itens_ignorados_sem_contexto: number;
+}
+
+export interface CriterioChecklistAtivacao {
+  codigo: string;
+  label: string;
+  status: StatusCriterioChecklist;
+  valor: string;
+  limite: string;
+  mensagem: string;
+}
+
+export interface ChecklistAtivacaoCenarioSaida {
+  status: StatusChecklistAtivacao;
+  label: string;
+  resumo: ResumoChecklistAtivacao;
+  criterios: CriterioChecklistAtivacao[];
+  recomendacoes: string[];
+  lacunas_prioritarias: LacunaCoberturaProposta[];
+  filtros_aplicados: Record<string, unknown>;
+}
+
+export interface ConfiguracaoMatrizFiscalSaida {
+  id: number;
+  uf_origem: string;
+  uf_destino: string;
+  cfop_venda: string;
+  cfop_venda_st: string;
+  destinatario_contribuinte: DestinatarioContribuinteSaida;
+  tipo_operacao: string;
+  status_configuracao: StatusConfiguracaoFiscalSaida;
+  label_configuracao: string;
+  resumo_impostos: ResumoImpostosMatriz;
+  tem_reforma?: boolean;
+  resumo_reforma?: string;
+  tem_recomendacoes_nfe?: boolean;
+  qtd_recomendacoes_nfe?: number;
+  efeitos: {
+    movimenta_estoque: boolean;
+    gera_financeiro: boolean;
+  };
+  ativo: boolean;
+}
+
+export interface MatrizEscopoFiscalSaida {
+  escopo: {
+    id: number;
+    tipo_escopo: TipoEscopoFiscalSaida;
+    ncm: string;
+    produto_id?: number | null;
+    label: string;
+  };
+  configuracoes: ConfiguracaoMatrizFiscalSaida[];
+  ufs_sem_configuracao: string[];
+}
+
+export interface RegraFiscalSaida {
+  id: number;
+  cenario_id?: number | null;
+  escopo_id?: number | null;
+  nome: string;
+  codigo: string;
+  ativo: boolean;
+  prioridade: number;
+  uf_origem: string;
+  uf_destino: string;
+  destinatario_contribuinte: DestinatarioContribuinteSaida;
+  consumidor_final?: boolean | null;
+  cfop_venda: string;
+  cfop_venda_st: string;
+  tipo_operacao: TipoOperacaoFiscalSaida;
+  descricao_cenario: string;
+  label_configuracao?: string;
+  status_configuracao?: StatusConfiguracaoFiscalSaida;
+  resumo_impostos?: ResumoImpostosMatriz;
+  cst_icms: string;
+  csosn: string;
+  modalidade_bc_icms?: string;
+  aliquota_icms?: number | string | null;
+  reducao_bc_icms?: number | string | null;
+  motivo_desoneracao_icms?: string;
+  codigo_beneficio_icms?: string;
+  icms_st_aplicavel?: boolean | null;
+  cst_icms_st?: string;
+  aliquota_icms_st?: number | string | null;
+  mva_st?: number | string | null;
+  reducao_bc_st?: number | string | null;
+  fcp_aplicavel?: boolean | null;
+  aliquota_fcp?: number | string | null;
+  aliquota_fcp_st?: number | string | null;
+  reducao_bc_fcp?: number | string | null;
+  valor_fcp_unidade?: number | string | null;
+  reforma_tributaria?: Record<string, string | number | null> | null;
+  cst_ipi: string;
+  tipo_calculo_ipi?: string;
+  aliquota_ipi?: number | string | null;
+  valor_ipi_unidade?: number | string | null;
+  enquadramento_ipi?: string;
+  cst_pis: string;
+  tipo_calculo_pis?: string;
+  aliquota_pis?: number | string | null;
+  reducao_base_pis?: number | string | null;
+  valor_minimo_pis_unidade?: number | string | null;
+  aliquota_pis_st?: number | string | null;
+  deduzir_icms_base_pis?: boolean;
+  cst_cofins: string;
+  tipo_calculo_cofins?: string;
+  aliquota_cofins?: number | string | null;
+  reducao_base_cofins?: number | string | null;
+  valor_minimo_cofins_unidade?: number | string | null;
+  aliquota_cofins_st?: number | string | null;
+  deduzir_icms_base_cofins?: boolean;
+  movimenta_estoque: boolean;
+  gera_financeiro: boolean;
+  informacoes_complementares: string;
+  observacoes: string;
+  recomendacoes_nfe?: Record<string, boolean> | null;
+  criado_em?: string;
+  atualizado_em?: string;
+}
+
+export interface RegraFiscalEntrada {
+  id: number;
+  cenario_id?: number | null;
+  escopo_id?: number | null;
+  label_configuracao?: string;
+  incompleta?: boolean;
+  pendencias_fiscais?: string[];
+  nome: string;
+  codigo: string;
+  ativo: boolean;
+  prioridade: number;
+  /** Legado: espelha cfop_origem na transição. */
+  cfop: string;
+  cfop_origem: string;
+  cfop_entrada: string;
+  descricao_cenario: string;
+  ncm: string;
+  ncm_prefixo: boolean;
+  uf_origem: string;
+  uf_destino: string;
+  tipo_operacao_fiscal: TipoOperacaoFiscalEntrada;
+  produto_id?: number | null;
+  fornecedor_id?: number | null;
+  cst_icms_esperado: string;
+  csosn_esperado: string;
+  cst_pis_esperado: string;
+  cst_cofins_esperado: string;
+  cst_ipi_esperado: string;
+  modalidade_bc_icms?: string;
+  aliquota_icms?: number | string | null;
+  reducao_bc_icms?: number | string | null;
+  motivo_desoneracao_icms?: string;
+  codigo_beneficio_icms?: string;
+  icms_st_aplicavel?: boolean | null;
+  cst_icms_st_esperado?: string;
+  aliquota_icms_st?: number | string | null;
+  mva_st?: number | string | null;
+  reducao_bc_st?: number | string | null;
+  fcp_aplicavel?: boolean | null;
+  aliquota_fcp?: number | string | null;
+  aliquota_fcp_st?: number | string | null;
+  reducao_bc_fcp?: number | string | null;
+  valor_fcp_unidade?: number | string | null;
+  reforma_tributaria?: Record<string, string | number | null> | null;
+  tipo_calculo_ipi?: string;
+  aliquota_ipi?: number | string | null;
+  valor_ipi_unidade?: number | string | null;
+  enquadramento_ipi?: string;
+  tipo_calculo_pis?: string;
+  aliquota_pis?: number | string | null;
+  reducao_base_pis?: number | string | null;
+  valor_minimo_pis_unidade?: number | string | null;
+  aliquota_pis_st?: number | string | null;
+  tipo_calculo_cofins?: string;
+  aliquota_cofins?: number | string | null;
+  reducao_base_cofins?: number | string | null;
+  valor_minimo_cofins_unidade?: number | string | null;
+  aliquota_cofins_st?: number | string | null;
+  movimenta_estoque: boolean;
+  exige_certificado_fornecedor: boolean;
+  permite_credito_fiscal: boolean;
+  severidade: SeveridadeRegraFiscalEntrada;
+  mensagem_padrao: string;
+  observacoes: string;
+  criado_em?: string;
+  atualizado_em?: string;
+}
+
+export interface ImpostosSnapshotFiscal {
+  cst_icms?: string;
+  csosn?: string;
+  modalidade_bc_icms?: string;
+  aliquota_icms?: string;
+  reducao_bc_icms?: string;
+  motivo_desoneracao_icms?: string;
+  codigo_beneficio_icms?: string;
+  icms_st_aplicavel?: string;
+  cst_icms_st?: string;
+  aliquota_icms_st?: string;
+  mva_st?: string;
+  reducao_bc_st?: string;
+  fcp_aplicavel?: string;
+  aliquota_fcp?: string;
+  aliquota_fcp_st?: string;
+  reducao_bc_fcp?: string;
+  valor_fcp_unidade?: string;
+  cst_ipi?: string;
+  tipo_calculo_ipi?: string;
+  aliquota_ipi?: string;
+  valor_ipi_unidade?: string;
+  enquadramento_ipi?: string;
+  cst_pis?: string;
+  tipo_calculo_pis?: string;
+  aliquota_pis?: string;
+  reducao_base_pis?: string;
+  valor_minimo_pis_unidade?: string;
+  aliquota_pis_st?: string;
+  cst_cofins?: string;
+  tipo_calculo_cofins?: string;
+  aliquota_cofins?: string;
+  reducao_base_cofins?: string;
+  valor_minimo_cofins_unidade?: string;
+  aliquota_cofins_st?: string;
+}
+
+export interface DivergenciaFiscalEntrada {
+  campo: string;
+  label: string;
+  esperado: string;
+  informado: string;
+  mensagem: string;
+}
+
+export interface ResultadoFiscalEntrada {
+  status: StatusFiscalConferenciaEntrada;
+  regra_id: number | null;
+  regra_nome: string;
+  regra_codigo: string;
+  descricao_cenario: string;
+  regra_score_especificidade?: number;
+  regra_prioridade?: number;
+  regra_match_motivos?: string[];
+  severidade: string;
+  mensagens: string[];
+  movimenta_estoque: boolean | null;
+  exige_certificado_fornecedor: boolean | null;
+  permite_credito_fiscal: boolean | null;
+  cfop_nf: string;
+  cfop_entrada_esperado: string;
+  ncm_nf: string;
+  cst_icms_nf: string;
+  csosn_nf: string;
+  cst_pis_nf: string;
+  cst_cofins_nf: string;
+  cst_ipi_nf: string;
+  impostos_nf?: ImpostosSnapshotFiscal;
+  impostos_esperados?: ImpostosSnapshotFiscal;
+  divergencias?: DivergenciaFiscalEntrada[];
+  tem_reforma_configurada?: boolean;
+  reforma_tributaria_esperada?: Record<string, string>;
+}
+
+export interface ResumoFiscalConferencia {
+  total_itens: number;
+  ok: number;
+  alerta: number;
+  sem_regra: number;
+  bloqueado: number;
+  movimenta_estoque: number;
+  exige_certificado_fornecedor: number;
+  ignorados: number;
+  uf_origem: string;
+  uf_destino: string;
+}
+
+export type StatusElegibilidadeEstoqueConferencia =
+  | 'APTO'
+  | 'APTO_COM_ALERTA'
+  | 'BLOQUEADO'
+  | 'NAO_MOVIMENTA';
+
+export interface ElegibilidadeEstoqueConferencia {
+  status: StatusElegibilidadeEstoqueConferencia;
+  label: string;
+  mensagens: string[];
+  motivos: string[];
+  movimenta_estoque: boolean | null;
+  exige_certificado_fornecedor: boolean;
+  tem_certificado_fornecedor: boolean;
+  tem_rastreabilidade_tecnica: boolean;
+}
+
+export interface ResumoElegibilidadeEstoqueConferencia {
+  aptos: number;
+  aptos_com_alerta: number;
+  bloqueados: number;
+  nao_movimentam: number;
+}
+
+export interface TributosNfConferencia {
+  cst_icms: string;
+  csosn: string;
+  cst_pis: string;
+  cst_cofins: string;
+  cst_ipi?: string;
+  aliquota_icms?: string;
+  aliquota_ipi?: string;
+  aliquota_pis?: string;
+  aliquota_cofins?: string;
+}
+
 export interface ItemProposta {
   id: number;
   produto_id?: number | null;
+  /** UI: modo avulso explícito (novo item inicia false). */
+  item_avulso?: boolean;
   produto_nome: string;
   descricao_avulsa?: string;
   /** NCM manual em item avulso (regra fiscal). */
@@ -678,6 +1437,14 @@ export interface ItemProposta {
   cofins_saida_percentual?: number;
   ipi_saida_percentual?: number;
   regra_fiscal_id?: number | null;
+  regra_fiscal_origem?: OrigemRegraFiscalSaida;
+  regra_fiscal_saida_id?: number | null;
+  regra_fiscal_legada_id?: number | null;
+  origem_regra_fiscal_saida?: OrigemRegraFiscalSaida;
+  mensagem_regra_fiscal_saida?: string;
+  pis_cofins_base_deduz_icms?: boolean;
+  deduzir_icms_base_pis?: boolean;
+  deduzir_icms_base_cofins?: boolean;
   irpj_estimado_percentual?: number;
   csll_estimada_percentual?: number;
   comissao_percentual?: number;
@@ -698,6 +1465,103 @@ export interface ItemProposta {
   alvo_percentual?: number;
 }
 
+export type ColaboradorFuncao =
+  | 'vendedor'
+  | 'comprador'
+  | 'fiscal'
+  | 'financeiro'
+  | 'estoque'
+  | 'qualidade'
+  | 'administrador';
+
+export interface Usuario {
+  id: number;
+  username: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  is_active: boolean;
+}
+
+export interface Colaborador {
+  id: number;
+  nome: string;
+  codigo: string;
+  email?: string;
+  telefone?: string;
+  ativo: boolean;
+  usuario_id?: number | null;
+  usuario_login?: string;
+  usuario_email?: string;
+  eh_vendedor: boolean;
+  eh_comprador: boolean;
+  eh_responsavel_fiscal: boolean;
+  eh_responsavel_financeiro: boolean;
+  eh_responsavel_estoque: boolean;
+  eh_responsavel_qualidade: boolean;
+  eh_administrador: boolean;
+  observacoes?: string;
+  /** Preenchido quando eh_vendedor e há registro Vendedor espelhado. */
+  vendedor_id?: number | null;
+  criado_em?: string;
+  atualizado_em?: string;
+  cargo?: string;
+  departamento?: string;
+  /** sem_usuario | usuario_ativo | usuario_inativo | sem_perfil | superusuario */
+  status_acesso?: string;
+  acesso_status?: 'SEM_USUARIO' | 'USUARIO_ATIVO' | 'USUARIO_INATIVO' | 'SEM_PERFIL' | 'SUPERUSUARIO';
+  acesso_status_label?: string;
+  badge_acesso?: string;
+  perfil_acesso?: string;
+  perfil_acesso_label?: string;
+  perfil_sugerido?: string | null;
+  perfil_sugerido_label?: string | null;
+  usuario_ativo?: boolean;
+  usuario_is_staff?: boolean;
+  usuario_is_superuser?: boolean;
+  usuario_grupos?: string[];
+  sem_perfil?: boolean;
+  email_tecnico?: boolean;
+  pode_criar_usuario?: boolean;
+  pode_vincular_usuario?: boolean;
+  pode_desativar_acesso?: boolean;
+  pode_reenviar_convite?: boolean;
+  pode_redefinir_senha?: boolean;
+  pode_definir_perfil?: boolean;
+  pode_editar_acesso?: boolean;
+  motivo_bloqueio_acesso?: string;
+  acesso_sistema?: {
+    tem_usuario?: boolean;
+    usuario_id?: number | null;
+    login?: string;
+    email?: string;
+    ativo?: boolean;
+    is_staff?: boolean;
+    is_superuser?: boolean;
+    perfil_principal?: string;
+    grupos?: string[];
+    sem_perfil?: boolean;
+    email_tecnico?: boolean;
+    pode_editar_acesso?: boolean;
+    pode_redefinir_senha?: boolean;
+    pode_desativar?: boolean;
+  };
+  perfil_acesso_vinculo?: string;
+}
+
+export interface Vendedor {
+  id: number;
+  nome: string;
+  codigo: string;
+  ativo: boolean;
+  usuario_id?: number | null;
+  email?: string;
+  telefone?: string;
+  observacoes?: string;
+  criado_em?: string;
+  atualizado_em?: string;
+}
+
 export interface Proposta {
   id: number;
   numero: string;
@@ -708,9 +1572,13 @@ export interface Proposta {
   empresa_emitente_nome?: string;
   data: string;
   validade: string;
+  /** Texto legado ou espelho do vendedor cadastrado. */
   vendedor: string;
+  vendedor_id?: number | null;
+  vendedor_nome?: string;
   status: string;
   condicao_pagamento_texto: string;
+  prazo_entrega_texto?: string;
   dias_parcelas: number[];
   quantidade_parcelas: number;
   vencimentos_previstos: string[];
@@ -720,7 +1588,30 @@ export interface Proposta {
   uf_destino_avulso?: string;
   /** Fluxo comercial: sempre saída (somente leitura na API). */
   operacao_fiscal?: string;
+  usar_cenario_fiscal_saida?: boolean;
+  cenario_fiscal_saida_id?: number | null;
+  cenario_fiscal_saida_nome?: string;
+  origem_fiscal_resumo?: string;
+  homologacao_fiscal_status?: HomologacaoFiscalStatusProposta;
+  homologacao_fiscal_em?: string | null;
+  homologacao_fiscal_observacao?: string;
+  pedido_venda_id?: number | null;
+  pedido_venda_numero?: string;
+  pode_converter_em_pedido?: boolean;
   itens: ItemProposta[];
+}
+
+/** Resposta de POST /api/propostas/{id}/converter-pedido/ (Propostas 2.1). */
+export interface ConverterPropostaPedidoResponse {
+  pedido_id: number;
+  numero: string;
+  status: string;
+  proposta_id: number;
+  proposta_status: string;
+  itens_criados: number;
+  mensagens: string[];
+  ja_existia: boolean;
+  pedido?: PedidoVenda;
 }
 
 export interface ItemPedido {
@@ -752,6 +1643,189 @@ export interface ItemPedido {
   outras_despesas_valor?: number;
   valor_produtos?: number;
   valor_total_item?: number;
+  quantidade_faturada?: number;
+  quantidade_pedida?: number;
+  quantidade_pendente?: number;
+  quantidade_disponivel?: number;
+  status_item?: 'PENDENTE' | 'PARCIAL' | 'FATURADO' | 'CANCELADO';
+}
+
+export interface ResumoFaturamentoItemPedido {
+  item_pedido_id: number;
+  produto_codigo: string;
+  descricao: string;
+  quantidade_pedida: string;
+  quantidade_faturada: string;
+  quantidade_pendente: string;
+  quantidade_disponivel: string;
+  status_item: string;
+  valor_unitario: string;
+  valor_pendente: string;
+}
+
+export interface DuplicataNfeSaida {
+  numero: string;
+  vencimento: string;
+  vencimento_formatado: string;
+  valor: string;
+  valor_formatado: string;
+}
+
+export interface NFeSaidaListagemResumo {
+  titulo: string;
+  subtitulo: string;
+  fiscal_resumo: {
+    badge: string;
+    variant: string;
+    subtexto: string;
+  };
+  atendimento_resumo: {
+    badges: Array<string | { label: string; variant: string }>;
+    ocultos: number;
+    vazio_label?: string;
+  };
+  tem_duplicatas: boolean;
+  reforma_tributaria_status: string;
+}
+
+export interface NFeSaidaListItem {
+  id: number;
+  numero: string;
+  cliente_id: number;
+  cliente_nome: string;
+  data: string;
+  valor_total: number;
+  status: string;
+  status_emissao_sefaz?: string;
+  listagem_resumo?: NFeSaidaListagemResumo;
+}
+
+export interface NFeReformaTributariaPayload {
+  status: string;
+  status_label: string;
+  config: {
+    enabled: boolean;
+    modo: string;
+    incluir_xml: boolean;
+    incluir_danfe: boolean;
+    producao_bloqueada: boolean;
+  };
+  alerta_homologacao: string | null;
+  itens: Array<{
+    item_id: number;
+    aplicavel?: boolean;
+    cst?: string;
+    classificacao_tributaria?: string;
+    cbs?: { valor?: string };
+    ibs?: { total?: string };
+  }>;
+  totais: {
+    valor_cbs: string;
+    valor_ibs: string;
+    valor_imposto_seletivo: string;
+  };
+}
+
+export interface ResumoFaturamentoPedido {
+  pedido_id: number;
+  status: string;
+  pode_faturar: boolean;
+  motivo_bloqueio: string;
+  total_itens: number;
+  itens_pendentes: number;
+  itens_parciais: number;
+  itens_faturados: number;
+  valor_total_pedido: string;
+  valor_faturado: string;
+  valor_pendente: string;
+  faturamentos_rascunho: {
+    faturamento_id: number;
+    numero_faturamento?: string;
+    status: string;
+    observacao: string;
+    criado_em: string;
+    itens_count: number;
+  }[];
+  faturamentos_nfe: {
+    faturamento_id: number;
+    numero_faturamento?: string;
+    status: string;
+    observacao: string;
+    criado_em: string;
+    itens_count: number;
+    nfe_saida_id: number | null;
+    nfe_saida_numero: string;
+    nfe_saida_status: string;
+    nfe_titulo_exibicao?: string;
+    nfe_numero_fiscal?: string;
+    nfe_serie_fiscal?: string;
+    nfe_status_emissao_sefaz?: string;
+    nfe_cstat?: string;
+    duplicatas_nfe?: DuplicataNfeSaida[];
+    pode_estornar_pre_autorizacao?: boolean;
+    motivo_bloqueio_estorno?: string;
+  }[];
+  historico_nfe_saida?: HistoricoNfeSaidaPedido[];
+  itens: ResumoFaturamentoItemPedido[];
+  resumo_atendimento_operacional?: import('@/types/atendimentoOperacional').ResumoAtendimentoOperacional | null;
+  inconsistencias?: {
+    codigo: string;
+    mensagem: string;
+    faturamento_id?: string;
+    numero_faturamento?: string;
+    bloqueia_geracao_nfe?: boolean;
+  }[];
+  tem_inconsistencia_fiscal?: boolean;
+  tem_inconsistencia_bloqueante_nfe?: boolean;
+  valor_total_pedido_salvo?: string;
+  valor_total_recalculado?: boolean;
+}
+
+export interface HistoricoNfeSaidaPedido {
+  nfe_saida_id: number;
+  numero: string;
+  numero_interno?: string;
+  titulo_exibicao?: string;
+  numero_faturamento?: string;
+  numero_fiscal?: string;
+  serie_fiscal?: string;
+  status_emissao_sefaz?: string;
+  status: string;
+  data: string;
+  faturamento_id: number | null;
+  valor_total: string;
+  cancelada_em: string | null;
+  motivo_cancelamento?: string;
+  efeitos_autorizacao_aplicados_em: string | null;
+  efeitos_cancelamento_aplicados_em?: string | null;
+}
+
+export interface GerarNFeSaidaFaturamentoResponse {
+  nfe_saida_id: number;
+  numero: string;
+  status: string;
+  pedido_id: number;
+  faturamento_id: number;
+  itens_criados: number;
+  mensagens: string[];
+  ja_existia: boolean;
+  nfe_saida?: NFeSaida;
+}
+
+export interface CriarFaturamentoPedidoResponse {
+  faturamento_id: number;
+  pedido_id: number;
+  status: string;
+  itens_criados: number;
+  mensagens: string[];
+}
+
+export interface ConfirmarFaturamentoPedidoResponse {
+  faturamento_id: number;
+  pedido_id: number;
+  status: string;
+  pedido_status: string;
+  mensagens: string[];
 }
 
 export interface PedidoVenda {
@@ -763,13 +1837,22 @@ export interface PedidoVenda {
   cliente_nome: string;
   data: string;
   status: string;
+  vendedor?: string;
+  vendedor_id?: number | null;
+  vendedor_nome?: string;
+  prazo_entrega?: string | null;
+  prazo_entrega_texto?: string;
+  observacoes_comerciais?: string;
+  observacoes_internas?: string;
   condicao_pagamento_texto: string;
   dias_parcelas: number[];
   quantidade_parcelas: number;
   vencimentos_previstos: string[];
   valor_total: number;
   proposta_id?: number;
+  proposta_numero?: string;
   itens: ItemPedido[];
+  resumo_atendimento_operacional?: import('@/types/atendimentoOperacional').ResumoAtendimentoOperacional | null;
 }
 
 export interface PedidoCompra {
@@ -861,6 +1944,137 @@ export interface ItemConferenciaNFeEntrada {
     unidade_nf: string;
   };
   sugestoes_produto?: { id: number; codigo: string; descricao: string; score: number }[];
+  item_pedido_resumo?: {
+    pedido_numero?: string;
+    produto_id?: number;
+    codigo?: string;
+    descricao?: string;
+    quantidade?: string;
+    unidade?: string;
+    valor_unitario?: string;
+  } | null;
+  pedido_numero?: string;
+  item_pedido_produto_codigo?: string;
+  item_pedido_produto_descricao?: string;
+  item_pedido_quantidade?: string;
+  item_pedido_unidade?: string;
+  item_pedido_valor_unitario?: string;
+  sugestoes_item_pedido?: SugestaoItemPedidoConferencia[];
+  tributos_nf?: TributosNfConferencia;
+  resultado_fiscal?: ResultadoFiscalEntrada;
+  elegibilidade_estoque?: ElegibilidadeEstoqueConferencia;
+  quantidade_alocada_atendimento?: string;
+  quantidade_disponivel_atendimento?: string;
+  vinculos_atendimento?: {
+    linha_id: number;
+    atendimento_id: number;
+    numero_nf_saida: string;
+    cliente_nome: string;
+    quantidade: string;
+    status_atendimento: string;
+  }[];
+}
+
+export interface SugestaoItemPedidoConferencia {
+  id: number;
+  produto_codigo: string;
+  descricao: string;
+  quantidade: number;
+  unidade: string;
+  valor_unitario: number;
+  score: number;
+  motivos: string[];
+}
+
+export interface ResumoPedidoConferenciaTotais {
+  itens_pedido: number;
+  itens_nf: number;
+  vinculados: number;
+  faltantes: number;
+  extras: number;
+  itens_parciais: number;
+  itens_excedentes: number;
+  itens_completos: number;
+  itens_duplicados_na_nf: number;
+  itens_pendentes_global: number;
+  itens_parciais_global: number;
+  itens_completos_global: number;
+  itens_excedentes_global: number;
+}
+
+export type StatusQuantitativoPedidoConferencia =
+  | 'nao_vinculado'
+  | 'parcial'
+  | 'completo'
+  | 'excedente';
+
+export interface ResumoQuantitativoLinhaVinculada {
+  id: number;
+  n_item: number;
+}
+
+export interface ResumoQuantitativoItemPedido {
+  item_pedido_id: number;
+  produto_codigo: string;
+  descricao: string;
+  quantidade_pedido: number;
+  quantidade_nf_vinculada: number;
+  saldo_na_nf: number;
+  status_quantitativo: StatusQuantitativoPedidoConferencia;
+  linhas_vinculadas: ResumoQuantitativoLinhaVinculada[];
+  alertas: string[];
+}
+
+export interface ResumoPedidoItemPedidoSemNf {
+  id: number;
+  produto_codigo: string;
+  descricao: string;
+  quantidade: number;
+  unidade: string;
+  valor_unitario: number;
+}
+
+export interface ResumoPedidoItemNfSemPedido {
+  id: number;
+  n_item: number;
+  codigo_fornecedor: string;
+  descricao_fornecedor: string;
+  quantidade: number;
+  unidade: string;
+  valor_unitario: number;
+}
+
+export type StatusSaldoGlobalPedido = 'pendente' | 'parcial' | 'completo' | 'excedente';
+
+export interface ConferenciaRelacionadaSaldo {
+  conferencia_id: number;
+  nf_numero: string;
+  nf_serie: string;
+  quantidade: number;
+  atual: boolean;
+}
+
+export interface SaldoPedidoGlobalItem {
+  item_pedido_id: number;
+  produto_codigo: string;
+  descricao: string;
+  quantidade_pedido: number;
+  quantidade_nf_atual: number;
+  quantidade_outras_nfs: number;
+  quantidade_total_conferida: number;
+  saldo_pedido: number;
+  status_saldo: StatusSaldoGlobalPedido;
+  conferencias_relacionadas: ConferenciaRelacionadaSaldo[];
+}
+
+export interface ResumoPedidoConferencia {
+  pedido_selecionado: boolean;
+  mensagem: string;
+  totais: ResumoPedidoConferenciaTotais;
+  itens_pedido_sem_nf: ResumoPedidoItemPedidoSemNf[];
+  itens_nf_sem_pedido: ResumoPedidoItemNfSemPedido[];
+  resumo_quantitativo: ResumoQuantitativoItemPedido[];
+  saldo_pedido_global: SaldoPedidoGlobalItem[];
 }
 
 export interface NFeEntradaConferencia {
@@ -875,10 +2089,103 @@ export interface NFeEntradaConferencia {
   status: 'PENDENTE' | 'CONFERIDA' | 'PREPARADA' | 'CANCELADA';
   pedido_compra_id?: number | null;
   pedido_compra_numero?: string;
+  resumo_pedido?: ResumoPedidoConferencia;
+  resumo_fiscal?: ResumoFiscalConferencia;
+  resumo_elegibilidade_estoque?: ResumoElegibilidadeEstoqueConferencia;
+  equivalencias?: import('@/lib/conferenciaEquivalencia').EquivalenciasConferenciaPayload;
   divergencias_aceitas: boolean;
   observacao_divergencias?: string;
   preparado_em?: string | null;
+  estoque_aplicado_em?: string | null;
+  estoque_aplicado_observacao?: string;
+  chave_acesso?: string;
+  financeiro?: {
+    financeiro_gerado?: boolean;
+    pode_gerar_contas_pagar?: boolean;
+    motivo_bloqueio_financeiro?: string;
+    possui_pendencias_operacionais?: boolean;
+    pode_gerar_com_pendencias?: boolean;
+    aviso_pendencias_operacionais?: string;
+    motivos_pendencias_operacionais?: string[];
+    contas_pagar_vinculadas?: Array<{ id: number; numero: string; status?: string; cancelado?: boolean }>;
+    nfe_entrada_cancelada_com_financeiro?: boolean;
+  };
   itens: ItemConferenciaNFeEntrada[];
+}
+
+export interface ItemAplicadoEstoqueConferencia {
+  item_conferencia_id: number;
+  produto_id: number;
+  corrida: string;
+  lote: string;
+  quantidade: string;
+  estoque_corrida_id: number;
+  saldo_anterior: string;
+  saldo_novo: string;
+}
+
+export interface ItemIgnoradoAplicacaoEstoque {
+  item_conferencia_id: number;
+  motivo: string;
+}
+
+export interface PendenciaAplicacaoEstoque {
+  item_conferencia_id: number | null;
+  motivo: string;
+}
+
+export interface ResultadoAplicacaoEstoque {
+  aplicado: boolean;
+  conferencia_id: number;
+  itens_aplicados: ItemAplicadoEstoqueConferencia[];
+  itens_ignorados: ItemIgnoradoAplicacaoEstoque[];
+  pendencias: PendenciaAplicacaoEstoque[];
+  alertas: string[];
+  conferencia?: NFeEntradaConferencia;
+  detail?: string;
+}
+
+export type ModoAtendimentoEstoqueNFeSaida = 'IMEDIATO' | 'ANTECIPADO';
+
+export interface ResumoAtendimentoEstoqueNFeSaida {
+  quantidade_comprometida_total: string;
+  quantidade_atendida_total: string;
+  quantidade_pendente_total: string;
+  status_atendimento_estoque: string;
+  total_atendimentos_ativos: number;
+}
+
+export type StatusAtendimentoEstoque = 'PENDENTE' | 'PARCIAL' | 'ATENDIDO' | 'CANCELADO';
+
+export interface AtendimentoEstoqueItem {
+  id: number;
+  status: StatusAtendimentoEstoque;
+  produto_id: number;
+  produto_codigo: string;
+  produto_descricao: string;
+  quantidade_comprometida: string;
+  quantidade_atendida: string;
+  quantidade_pendente: string;
+  unidade: string;
+  nf_saida_id: number;
+  numero_nf_saida: string;
+  cliente_id: number | null;
+  cliente_nome: string;
+  criado_em: string;
+  dias_em_aberto: number;
+  estoque_fisico_aplicado: boolean;
+}
+
+export interface SaldoConsolidadoProduto {
+  produto_id: number;
+  produto_codigo: string;
+  produto_descricao: string;
+  saldo_fisico: string;
+  quantidade_comprometida: string;
+  quantidade_pendente_atendimento: string;
+  quantidade_atendida_sem_fisico: string;
+  saldo_disponivel: string;
+  alertas: string[];
 }
 
 export interface NFeSaida {
@@ -888,7 +2195,22 @@ export interface NFeSaida {
   cliente_nome: string;
   data: string;
   valor_total: number;
+  modo_atendimento_estoque?: ModoAtendimentoEstoqueNFeSaida;
+  modo_atendimento_estoque_display?: string;
+  resumo_atendimento_estoque?: ResumoAtendimentoEstoqueNFeSaida | null;
+  resumo_atendimento_operacional?: import('@/types/atendimentoOperacional').ResumoAtendimentoOperacional | null;
   status: string;
+  status_conferencia?: string;
+  status_conferencia_display?: string;
+  resumo_emissao_sefaz?: import('@/lib/nfeSaidaUi').ResumoEmissaoSefazNfe | null;
+  status_emissao_sefaz?: string;
+  apresentacao?: import('@/lib/nfeSaidaUi').NFeSaidaApresentacao | null;
+  listagem_resumo?: NFeSaidaListagemResumo;
+  duplicatas_nfe?: DuplicataNfeSaida[];
+  reforma_tributaria?: NFeReformaTributariaPayload | null;
+  conferencia_validada_em?: string | null;
+  conferencia_marcada_pronta_em?: string | null;
+  conferencia_ultima_mensagem?: string;
   condicao_pagamento_texto?: string;
   dias_parcelas?: number[];
   quantidade_parcelas?: number;
@@ -901,19 +2223,45 @@ export interface NFeSaida {
     status: string;
   }[];
   pedido_venda_id?: number;
+  pedido_venda_numero?: string;
+  faturamento_pedido_venda_id?: number | null;
+  observacao_origem?: string;
+  origem_comercial_travada?: boolean;
+  dados_complementares_editaveis?: boolean;
+  itens_comerciais_editaveis?: boolean;
+  transportadora_id?: number | null;
+  transportadora_nome?: string;
+  modalidade_frete?: string;
+  valor_frete?: number;
+  quantidade_volumes?: number;
+  peso_bruto?: number;
+  peso_liquido?: number;
+  observacoes_nfe?: string;
+  informacoes_adicionais?: string;
+  financeiro_gerado?: boolean;
+  pode_gerar_contas_receber?: boolean;
+  motivo_bloqueio_financeiro?: string;
+  contas_receber_vinculadas?: Array<{ id: number; numero: string; status: string; cancelado: boolean }>;
+  nfe_cancelada_com_financeiro?: boolean;
   itens: ItemNFe[];
 }
 
 export interface CTeEntrada {
   id: number;
+  cte_historico_id?: number;
   numero: string;
-  transportadora_id: number;
+  serie?: string;
+  chave_acesso?: string;
+  transportadora_id?: number;
   transportadora_nome: string;
-  tomador_id: number;
+  tomador_id?: number;
   tomador_nome: string;
   valor_frete: number;
   data: string;
-  nfe_ids: number[];
+  status_conferencia?: string;
+  apto_operacional?: boolean;
+  classificacao_dfe?: import('@/components/fiscal/DfeClassificacaoBadges').ClassificacaoDfe;
+  nfe_ids?: number[];
 }
 
 export interface EstoqueItem {

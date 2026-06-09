@@ -1,24 +1,81 @@
-import { useState, useEffect } from 'react';
-import { Pencil, Trash2, Plus, X } from 'lucide-react';
-import { PageHeader } from '@/components/PageHeader';
-import { Modal } from '@/components/Modal';
+import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { Download, FileDown, MoreVertical, Pencil, Trash2 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { pedidosVendaService } from '@/services/api/comercial';
+import { PageHeader } from '@/components/PageHeader';
+import { PedidoVendaEditModal } from '@/components/comercial/PedidoVendaEditModal';
 import { clientesService } from '@/services/api/clientes';
 import { empresasService } from '@/services/api/empresas';
 import { produtosService } from '@/services/api/produtos';
-import { buildDueDates, parsePaymentCondition } from '@/lib/paymentTerms';
+import { buildDueDates } from '@/lib/paymentTerms';
+import { previewCondicaoPagamento } from '@/lib/condicaoPagamento';
+import { formatDateBr } from '@/lib/dateBr';
+import {
+  clienteStubForDisplay,
+  colaboradorStubForDisplay,
+  produtoStubForDisplay,
+  vendedorStubForDisplay,
+} from '@/lib/comercialAutocomplete';
+import { colaboradoresService } from '@/services/api/colaboradores';
+import { vendedoresService } from '@/services/api/vendedores';
 import { apiErrorMessage } from '@/services/api/config';
-import type { PedidoVenda, ItemPedido, Cliente, Empresa, Produto } from '@/types';
-import { equivalentesPreco, labelPrecoPorUnidade, previewConversaoItem, todasUnidadesPadrao, unidadesNegociacaoProduto } from '@/lib/comercialDimensional';
-
+import { toast } from 'sonner';
+import type { PedidoVenda, ItemPedido, Cliente, Empresa, Produto, Vendedor, Colaborador } from '@/types';
+import type { ResumoAtendimentoOperacional } from '@/types/atendimentoOperacional';
+import {
+  buildItemPayload,
+  computePedidoTotal,
+  normalizeItemPedidoForForm,
+} from '@/lib/pedidosVendaItems';
+import {
+  CONDICAO_PAGAMENTO_PADRAO,
+  STATUS_PEDIDO_VENDA_INICIAL,
+  dataHojeIso,
+} from '@/lib/comercialFormDefaults';
+import { MSG_PDF_PEDIDO_SEM_ID, resolvePedidoVendaId } from '@/lib/pedidoVendaId';
+import { usePaginatedList } from '@/hooks/usePaginatedList';
+import { PaginationControls } from '@/components/list/PaginationControls';
+import { FilterBar } from '@/components/list/FilterBar';
+import { EmptyState, ErrorState, LoadingState } from '@/components/list/ListStates';
+import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
+import { StatusBadge } from '@/components/nexus/StatusBadge';
+import { AtendimentoOperacionalInline } from '@/components/comercial/AtendimentoOperacionalInline';
 const PedidosVenda = () => {
-  const [items, setItems] = useState<PedidoVenda[]>([]);
-  const [search, setSearch] = useState('');
+  const [searchParams] = useSearchParams();
+  const statusUrl = searchParams.get('status') || '';
+  const {
+    items,
+    count,
+    page,
+    pageSize,
+    totalPages,
+    search,
+    setSearch,
+    setPage,
+    setPageSize,
+    filters,
+    setFilter,
+    loading: loadingList,
+    error: loadError,
+    reload: load,
+  } = usePaginatedList<PedidoVenda>({
+    fetchPage: pedidosVendaService.listPaginated,
+    initialFilters: statusUrl ? { status: statusUrl } : {},
+  });
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<PedidoVenda | null>(null);
-  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
+  const [selectedVendedor, setSelectedVendedor] = useState<Vendedor | null>(null);
+  const [selectedColaboradorVendedor, setSelectedColaboradorVendedor] = useState<Colaborador | null>(null);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [produtoCache, setProdutoCache] = useState<Map<number, Produto>>(() => new Map());
   const [form, setForm] = useState({
     numero: '',
     empresa_emitente_id: null as number | null,
@@ -26,7 +83,11 @@ const PedidosVenda = () => {
     data: '',
     status: 'Pendente',
     proposta_id: undefined as number | undefined,
-    condicao_pagamento_texto: '30',
+    vendedor_id: null as number | null,
+    condicao_pagamento_texto: CONDICAO_PAGAMENTO_PADRAO,
+    prazo_entrega_texto: '',
+    observacoes_comerciais: '',
+    observacoes_internas: '',
   });
   const [itens, setItens] = useState<ItemPedido[]>([]);
   const [referenciaFrete, setReferenciaFrete] = useState<{
@@ -53,13 +114,103 @@ const PedidosVenda = () => {
     tem_base_historica: boolean;
   } | null>(null);
 
-  const load = async () => setItems(await pedidosVendaService.getAll());
+  const [faturamentoRefreshKey, setFaturamentoRefreshKey] = useState(0);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   useEffect(() => {
-    load();
-    clientesService.getAll().then(setClientes).catch(() => setClientes([]));
+    if (statusUrl) setFilter('status', statusUrl);
+  }, [statusUrl, setFilter]);
+
+  useEffect(() => {
     empresasService.getAll().then(setEmpresas).catch(() => setEmpresas([]));
-    produtosService.getAll().then(setProdutos).catch(() => setProdutos([]));
   }, []);
+
+  const pedidoDeepLink = searchParams.get('pedido');
+
+  const hydrateVendedor = (vendedorId: number | null, nomeFallback?: string) => {
+    if (!vendedorId) {
+      setSelectedVendedor(null);
+      setSelectedColaboradorVendedor(null);
+      return;
+    }
+    void Promise.all([
+      vendedoresService.getById(vendedorId).catch(() => null),
+      colaboradoresService.getAll({ funcao: 'vendedor', limit: 200 }).catch(() => []),
+    ]).then(([vendedor, colaboradores]) => {
+      const colab = colaboradores.find((c) => c.vendedor_id === vendedorId);
+      if (colab) {
+        setSelectedColaboradorVendedor(colab);
+        setSelectedVendedor(
+          vendedor ?? vendedorStubForDisplay(vendedorId, colab.nome, colab.codigo),
+        );
+        return;
+      }
+      const nome = vendedor?.nome || nomeFallback || '—';
+      const codigo = vendedor?.codigo || '';
+      setSelectedVendedor(vendedor ?? vendedorStubForDisplay(vendedorId, nome, codigo));
+      setSelectedColaboradorVendedor(null);
+    });
+  };
+
+  const hydrateCliente = (clienteId: number | null, nomeFallback?: string) => {
+    if (!clienteId) {
+      setSelectedCliente(null);
+      return;
+    }
+    void clientesService
+      .getById(clienteId)
+      .then(setSelectedCliente)
+      .catch(() => setSelectedCliente(clienteStubForDisplay(clienteId, nomeFallback || '—')));
+  };
+
+  const mergeProdutoCache = (p: Produto) => {
+    setProdutoCache((prev) => new Map(prev).set(p.id, p));
+  };
+
+  const hydrateProdutosItens = (lista: ItemPedido[] | undefined) => {
+    const stubs = new Map<number, Produto>();
+    for (const it of lista ?? []) {
+      if (!it.produto_id) continue;
+      stubs.set(it.produto_id, produtoStubForDisplay(it.produto_id, '', it.produto_nome || ''));
+    }
+    setProdutoCache(stubs);
+    for (const it of lista ?? []) {
+      if (!it.produto_id) continue;
+      void produtosService.getById(it.produto_id).then(mergeProdutoCache).catch(() => undefined);
+    }
+  };
+
+  useEffect(() => {
+    if (!pedidoDeepLink) return;
+    const id = Number(pedidoDeepLink);
+    if (!id) return;
+    const found = items.find((i) => resolvePedidoVendaId(i) === id);
+    const abrir = (p: PedidoVenda) => {
+      setEditing(p);
+      hydrateCliente(p.cliente_id, p.cliente_nome);
+      hydrateProdutosItens(p.itens ?? []);
+      setForm({
+        numero: p.numero ?? '',
+        empresa_emitente_id: p.empresa_emitente_id ?? (empresas.length === 1 ? empresas[0]?.id ?? null : null),
+        cliente_id: p.cliente_id ?? null,
+        data: p.data ?? '',
+        status: p.status || STATUS_PEDIDO_VENDA_INICIAL,
+        proposta_id: p.proposta_id,
+        vendedor_id: p.vendedor_id ?? null,
+        condicao_pagamento_texto: p.condicao_pagamento_texto ?? CONDICAO_PAGAMENTO_PADRAO,
+        observacoes_comerciais: p.observacoes_comerciais ?? '',
+        observacoes_internas: p.observacoes_internas ?? '',
+      });
+      hydrateVendedor(p.vendedor_id ?? null, p.vendedor_nome || p.vendedor);
+      setItens((p.itens ?? []).map(normalizeItemPedidoForForm));
+      setModalOpen(true);
+    };
+    if (found) {
+      void pedidosVendaService.getById(id).then(abrir).catch(() => abrir(found));
+      return;
+    }
+    void pedidosVendaService.getById(id).then(abrir).catch(() => undefined);
+  }, [pedidoDeepLink, items, empresas]);
 
   useEffect(() => {
     if (!modalOpen || empresas.length !== 1) return;
@@ -91,11 +242,11 @@ const PedidosVenda = () => {
       ...p,
       {
         id: Date.now(),
-        produto_id: produtos[0]?.id ?? 0,
+        produto_id: 0,
         produto_nome: '',
         quantidade: 1,
         quantidade_negociada: 1,
-        unidade_negociada: produtos[0]?.unidade_venda_efetiva || produtos[0]?.unidade || 'PC',
+        unidade_negociada: 'PC',
         valor_unitario: 0,
         preco_por_unidade_negociada: 0,
         corrida_id: undefined,
@@ -103,10 +254,7 @@ const PedidosVenda = () => {
       },
     ]);
   const removeItem = (id: number) => setItens((p) => p.filter((i) => i.id !== id));
-  const total = itens.reduce(
-    (s, i) => s + (i.quantidade_negociada ?? i.quantidade) * (i.preco_por_unidade_negociada ?? i.valor_unitario),
-    0,
-  );
+  const total = computePedidoTotal(itens);
 
   const updateItem = (idx: number, patch: Partial<ItemPedido>) => {
     setItens((prev) => {
@@ -123,10 +271,10 @@ const PedidosVenda = () => {
     });
   };
 
-  const aplicarConversao = async (idx: number) => {
-    const row = itens[idx];
+  const aplicarConversao = async (idx: number, patch?: Partial<ItemPedido>) => {
+    const row = { ...itens[idx], ...patch };
     if (!row?.produto_id) return;
-    const produto = produtos.find((p) => p.id === row.produto_id);
+    const produto = produtoCache.get(row.produto_id);
     if (!produto) return;
     const unidadeNegociada = (row.unidade_negociada || produto.unidade_venda_efetiva || produto.unidade || 'PC').toUpperCase();
     const quantidadeNegociada = Number(row.quantidade_negociada ?? row.quantidade ?? 0);
@@ -168,382 +316,347 @@ const PedidosVenda = () => {
 
   const openNew = () => {
     setEditing(null);
+    setSelectedCliente(null);
+    setSelectedVendedor(null);
+    setSelectedColaboradorVendedor(null);
+    setProdutoCache(new Map());
     setForm({
       numero: '',
       empresa_emitente_id: empresas.length === 1 ? empresas[0]?.id ?? null : null,
-      cliente_id: clientes[0]?.id ?? null,
-      data: '',
-      status: 'Pendente',
+      cliente_id: null,
+      data: dataHojeIso(),
+      status: STATUS_PEDIDO_VENDA_INICIAL,
       proposta_id: undefined,
-      condicao_pagamento_texto: '30',
+      vendedor_id: null,
+      condicao_pagamento_texto: CONDICAO_PAGAMENTO_PADRAO,
+      prazo_entrega_texto: '',
+      observacoes_comerciais: '',
+      observacoes_internas: '',
     });
     setItens([]);
+    setSaveError(null);
     setModalOpen(true);
   };
   const openEdit = (e: PedidoVenda) => {
-    setEditing(e);
-    setForm({
-      numero: e.numero,
-      empresa_emitente_id: e.empresa_emitente_id ?? (empresas.length === 1 ? empresas[0]?.id ?? null : null),
-      cliente_id: e.cliente_id,
-      data: e.data,
-      status: e.status,
-      proposta_id: e.proposta_id,
-      condicao_pagamento_texto: e.condicao_pagamento_texto,
+    void pedidosVendaService.getById(e.id).then((p) => {
+      setEditing(p);
+      hydrateCliente(p.cliente_id, p.cliente_nome);
+      hydrateVendedor(p.vendedor_id ?? null, p.vendedor_nome || p.vendedor);
+      hydrateProdutosItens(p.itens);
+      setForm({
+        numero: p.numero ?? '',
+        empresa_emitente_id: p.empresa_emitente_id ?? (empresas.length === 1 ? empresas[0]?.id ?? null : null),
+        cliente_id: p.cliente_id ?? null,
+        data: p.data ?? '',
+        status: p.status || STATUS_PEDIDO_VENDA_INICIAL,
+        proposta_id: p.proposta_id,
+        vendedor_id: p.vendedor_id ?? null,
+        condicao_pagamento_texto: p.condicao_pagamento_texto ?? CONDICAO_PAGAMENTO_PADRAO,
+        prazo_entrega_texto: p.prazo_entrega_texto ?? '',
+        observacoes_comerciais: p.observacoes_comerciais ?? '',
+        observacoes_internas: p.observacoes_internas ?? '',
+      });
+      setItens((p.itens ?? []).map(normalizeItemPedidoForForm));
+      setSaveError(null);
+      setModalOpen(true);
     });
-    setItens(
-      e.itens.map((it) => ({
-        ...it,
-        quantidade_negociada: it.quantidade_negociada ?? it.quantidade,
-        preco_por_unidade_negociada: it.preco_por_unidade_negociada ?? it.valor_unitario,
-      })),
-    );
-    setModalOpen(true);
   };
-  const handleDelete = async (id: number) => {
-    if (confirm('Excluir?')) {
-      await pedidosVendaService.delete(id);
-      load();
+  const handleVisualizarPdf = async (pedido: PedidoVenda) => {
+    const id = resolvePedidoVendaId(pedido);
+    if (id == null) {
+      console.error('[PedidosVenda] Visualizar PDF: id ausente na linha da listagem', pedido);
+      toast.error(MSG_PDF_PEDIDO_SEM_ID);
+      return;
+    }
+    const previewTab = window.open('about:blank', '_blank');
+    if (!previewTab) {
+      toast.error('Não foi possível abrir uma nova aba (pop-up bloqueado).');
+      return;
+    }
+    try {
+      await pedidosVendaService.visualizarPdf(
+        id,
+        pedido.numero || String(id),
+        previewTab,
+        MSG_PDF_PEDIDO_SEM_ID,
+      );
+    } catch (e) {
+      previewTab.close();
+      toast.error(e instanceof Error ? e.message : 'Não foi possível visualizar o PDF do pedido de venda.');
     }
   };
+
+  const handleBaixarPdf = async (pedido: PedidoVenda) => {
+    const id = resolvePedidoVendaId(pedido);
+    if (id == null) {
+      toast.error(MSG_PDF_PEDIDO_SEM_ID);
+      return;
+    }
+    try {
+      await pedidosVendaService.baixarPdf(
+        id,
+        pedido.numero || String(id),
+        MSG_PDF_PEDIDO_SEM_ID,
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Não foi possível baixar o PDF do pedido de venda.');
+    }
+  };
+
+  const handleDelete = async (pedido: PedidoVenda) => {
+    const id = resolvePedidoVendaId(pedido);
+    if (id == null) {
+      toast.error('Não foi possível identificar o pedido para excluir. Recarregue a lista.');
+      return;
+    }
+    if (!confirm('Excluir este pedido de venda?')) return;
+    try {
+      await pedidosVendaService.delete(id);
+      load();
+    } catch (e) {
+      toast.error(apiErrorMessage(e, { fallback: 'Não foi possível excluir o pedido de venda.' }));
+    }
+  };
+  const buildItensPayload = (): Array<Record<string, unknown>> =>
+    itens.map((it, idx) => buildItemPayload(it, idx));
+
   const handleSave = async () => {
+    setSaveError(null);
     if (!form.cliente_id) {
-      alert('Selecione um cliente.');
+      const msg = 'Selecione um cliente.';
+      setSaveError(msg);
+      toast.error(msg);
       return;
     }
     if (empresas.length > 1 && !form.empresa_emitente_id) {
-      alert('Selecione a empresa emitente (matriz ou filial).');
+      const msg = 'Selecione a empresa emitente (matriz ou filial).';
+      setSaveError(msg);
+      toast.error(msg);
       return;
     }
     try {
-      const dias = parsePaymentCondition(form.condicao_pagamento_texto);
+      const condPreview = previewCondicaoPagamento(form.condicao_pagamento_texto, form.data);
+      if (condPreview.erro) {
+        setSaveError(condPreview.erro);
+        toast.error(condPreview.erro);
+        return;
+      }
+      const dias = condPreview.prazos ?? [];
       const vencimentos = buildDueDates(form.data, dias);
-      const data = { ...form, itens, valor_total: total };
+      const { proposta_id: _propostaId, ...formSemProposta } = form;
+      const itensPayload = buildItensPayload();
+      const data = { ...formSemProposta, itens: itensPayload, valor_total: total };
       const payload = { ...data, dias_parcelas: dias, quantidade_parcelas: dias.length, vencimentos_previstos: vencimentos };
+      if (!form.numero?.trim()) {
+        delete (payload as { numero?: string }).numero;
+      }
       if (editing) await pedidosVendaService.update(editing.id, payload);
       else await pedidosVendaService.create(payload as Omit<PedidoVenda, 'id'>);
       setModalOpen(false);
+      toast.success('Pedido salvo com sucesso.');
       load();
     } catch (err) {
-      alert(apiErrorMessage(err));
+      const msg = apiErrorMessage(err, {
+        fallback: 'Não foi possível salvar o pedido. Verifique os itens informados.',
+      });
+      setSaveError(msg);
+      toast.error(msg);
     }
   };
 
-  const filtered = items.filter(
-    (i) => i.numero.includes(search) || i.cliente_nome.toLowerCase().includes(search.toLowerCase()),
-  );
-  const diasPreview = (() => {
+  const statusLegadoPedido =
+    editing && ['Pendente', 'Em separação', 'Faturado'].includes(editing.status);
+  const statusOpcoesPedido = [
+    { value: 'ABERTO', label: 'Aberto' },
+    { value: 'APROVADO', label: 'Aprovado' },
+    { value: 'EM_FATURAMENTO', label: 'Em faturamento' },
+    { value: 'PARCIALMENTE_FATURADO', label: 'Parcialmente faturado' },
+    { value: 'FATURADO', label: 'Faturado' },
+    { value: 'CANCELADO', label: 'Cancelado' },
+  ];
+  if (statusLegadoPedido) {
+    if (editing?.status === 'Pendente') statusOpcoesPedido.push({ value: 'Pendente', label: 'Pendente (legado)' });
+    if (editing?.status === 'Em separação') statusOpcoesPedido.push({ value: 'Em separação', label: 'Em separação (legado)' });
+    if (editing?.status === 'Faturado') statusOpcoesPedido.push({ value: 'Faturado', label: 'Faturado (legado)' });
+  }
+
+  const onAtendimentoResumoAtualizado = useCallback((resumo: ResumoAtendimentoOperacional | null) => {
+    setEditing((prev) => (prev ? { ...prev, resumo_atendimento_operacional: resumo } : prev));
+  }, []);
+
+  const onFaturamentoAtualizado = useCallback(async () => {
+    const id = editing?.id;
+    if (!id) return;
     try {
-      return parsePaymentCondition(form.condicao_pagamento_texto);
+      setFaturamentoRefreshKey((k) => k + 1);
+      await load();
+      const p = await pedidosVendaService.getById(id);
+      setEditing(p);
+      setForm((f) => ({
+        ...f,
+        status: p.status || f.status,
+        observacoes_comerciais: p.observacoes_comerciais ?? f.observacoes_comerciais,
+        observacoes_internas: p.observacoes_internas ?? f.observacoes_internas,
+      }));
+      setItens((p.itens ?? []).map(normalizeItemPedidoForForm));
     } catch {
-      return null;
+      // Evita rejeição não tratada quando o navegador satura conexões (loop interrompido).
     }
-  })();
-  const vencimentosPreview = diasPreview ? buildDueDates(form.data, diasPreview) : [];
+  }, [editing?.id, load]);
 
   return (
     <div>
-      <PageHeader title="Pedidos de Venda" onAdd={openNew} addLabel="Novo Pedido" searchValue={search} onSearch={setSearch} />
-      <div className="erp-card overflow-x-auto">
-        <table className="erp-table">
+      <PageHeader
+        title="Pedidos de Venda"
+        description="Gestão de pedidos comerciais, status e faturamento."
+        onAdd={openNew}
+        addLabel="Novo Pedido"
+        searchValue={search}
+        onSearch={setSearch}
+      />
+      <FilterBar
+        filters={[
+          {
+            key: 'status',
+            label: 'Status',
+            value: filters.status || '',
+            options: [
+              { value: 'aberto', label: 'Aberto' },
+              { value: 'PARCIAL', label: 'Parcialmente faturado' },
+              { value: 'FATURADO', label: 'Faturado' },
+              { value: 'CANCEL', label: 'Cancelado' },
+            ],
+          },
+        ]}
+        onChange={setFilter}
+      />
+      {loadError ? <ErrorState message={loadError} onRetry={() => void load()} /> : null}
+      <DataTableShell>
+        {loadingList ? <LoadingState message="Carregando pedidos de venda…" /> : null}
+        {!loadingList && !loadError ? (
+        <DataTable>
           <thead>
             <tr>
               <th>Número</th>
               <th>Cliente</th>
               <th>Data</th>
               <th>Status</th>
+              <th>Atendimento</th>
               <th>Valor Total</th>
-              <th className="w-24">Ações</th>
+              <th className="w-36 text-right">Ações</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((e) => (
-              <tr key={e.id}>
-                <td className="font-medium">{e.numero}</td>
-                <td>{e.cliente_nome}</td>
-                <td>{e.data}</td>
-                <td>
-                  <span className={e.status === 'Faturado' ? 'erp-badge-success' : 'erp-badge-warning'}>{e.status}</span>
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan={7}>
+                  <EmptyState message="Nenhum pedido de venda encontrado." actionLabel="Novo pedido" onAction={openNew} />
                 </td>
-                <td>R$ {e.valor_total.toFixed(2)}</td>
+              </tr>
+            ) : null}
+            {!loadingList &&
+              items.map((e) => (
+              <tr key={resolvePedidoVendaId(e) ?? e.numero}>
+                <td className="font-medium">{e.numero || '—'}</td>
+                <td>{e.cliente_nome || '—'}</td>
+                <td>{formatDateBr(e.data)}</td>
                 <td>
-                  <div className="flex gap-1">
-                    <button onClick={() => openEdit(e)} className="erp-btn-ghost erp-btn-sm">
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button onClick={() => handleDelete(e.id)} className="erp-btn-ghost erp-btn-sm text-destructive">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
+                  <StatusBadge status={e.status} />
+                </td>
+                <td>
+                  <AtendimentoOperacionalInline
+                    resumo={e.resumo_atendimento_operacional}
+                    apenasComAlocacao={false}
+                    maxBadges={2}
+                  />
+                </td>
+                <td>R$ {Number(e.valor_total ?? 0).toFixed(2)}</td>
+                <td className="text-right">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button type="button" className="erp-btn-ghost erp-btn-sm" aria-label="Ações do pedido">
+                        <MoreVertical className="h-4 w-4" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52" onOpenAutoFocus={(ev) => ev.preventDefault()}>
+                      <DropdownMenuItem className="cursor-pointer" onSelect={() => openEdit(e)}>
+                        <span className="flex items-center gap-2">
+                          <Pencil className="h-4 w-4" />
+                          Editar
+                        </span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="cursor-pointer" onSelect={() => void handleVisualizarPdf(e)}>
+                        <span className="flex items-center gap-2">
+                          <FileDown className="h-4 w-4" />
+                          Visualizar PDF
+                        </span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="cursor-pointer" onSelect={() => void handleBaixarPdf(e)}>
+                        <span className="flex items-center gap-2">
+                          <Download className="h-4 w-4" />
+                          Baixar PDF
+                        </span>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="cursor-pointer text-destructive focus:text-destructive"
+                        onSelect={() => void handleDelete(e)}
+                      >
+                        <span className="flex items-center gap-2">
+                          <Trash2 className="h-4 w-4" />
+                          Excluir
+                        </span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </td>
               </tr>
             ))}
           </tbody>
-        </table>
-      </div>
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Pedido de Venda' : 'Novo Pedido de Venda'} size="xl">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          <div>
-            <label className="erp-label">Número</label>
-            <input className="erp-input mt-1" value={form.numero} onChange={(e) => setForm((p) => ({ ...p, numero: e.target.value }))} />
-          </div>
-          {empresas.length > 1 ? (
-            <div className="md:col-span-2">
-              <label className="erp-label">Empresa emitente</label>
-              <select
-                className="erp-select mt-1"
-                value={form.empresa_emitente_id ?? ''}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, empresa_emitente_id: e.target.value ? Number(e.target.value) : null }))
-                }
-              >
-                <option value="">Selecione matriz ou filial</option>
-                {empresas.map((em) => (
-                  <option key={em.id} value={em.id}>
-                    {em.razao_social}
-                    {em.uf ? ` (${em.uf})` : ''}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-muted-foreground mt-1">Operação fiscal do fluxo de venda: sempre saída. UF origem vem do cadastro da empresa.</p>
-            </div>
-          ) : empresas.length === 1 ? (
-            <div className="md:col-span-2 rounded-md border border-border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-              Emitente: <span className="font-medium text-foreground">{empresas[0].razao_social}</span>
-              {empresas[0].uf ? ` · UF ${empresas[0].uf}` : ''}
-            </div>
-          ) : null}
-          <div>
-            <label className="erp-label">Cliente</label>
-            <select
-              className="erp-select mt-1"
-              value={form.cliente_id ?? ''}
-              onChange={(e) => setForm((p) => ({ ...p, cliente_id: e.target.value ? Number(e.target.value) : null }))}
-            >
-              <option value="">Selecione</option>
-              {clientes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.razao_social}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="erp-label">Data</label>
-            <input type="date" className="erp-input mt-1" value={form.data} onChange={(e) => setForm((p) => ({ ...p, data: e.target.value }))} />
-          </div>
-          <div>
-            <label className="erp-label">Status</label>
-            <select className="erp-select mt-1" value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}>
-              <option>Pendente</option>
-              <option>Em separação</option>
-              <option>Faturado</option>
-            </select>
-          </div>
-          <div>
-            <label className="erp-label">Proposta vinculada (id)</label>
-            <input
-              className="erp-input mt-1"
-              placeholder="Opcional"
-              value={form.proposta_id ?? ''}
-              onChange={(e) => setForm((p) => ({ ...p, proposta_id: e.target.value ? +e.target.value : undefined }))}
-            />
-          </div>
-          <div className="md:col-span-2">
-            <label className="erp-label">Condição de pagamento</label>
-            <input
-              className="erp-input mt-1"
-              placeholder="Ex.: 30/45 DDL ou à vista"
-              value={form.condicao_pagamento_texto}
-              onChange={(e) => setForm((p) => ({ ...p, condicao_pagamento_texto: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="erp-label">Parcelas</label>
-            <div className="erp-input mt-1 h-10 flex items-center">{diasPreview ? diasPreview.join(', ') || '—' : 'Condição inválida'}</div>
-          </div>
-          <div className="md:col-span-3">
-            <label className="erp-label">Vencimentos previstos</label>
-            <div className="erp-input mt-1 min-h-10 h-auto py-2">
-              {vencimentosPreview.length ? vencimentosPreview.join(' | ') : 'Defina data e condição para visualizar vencimentos'}
-            </div>
-          </div>
-        </div>
-        <div className="border border-border rounded-md p-3">
-          <div className="flex justify-between items-center mb-3">
-            <h3 className="font-medium text-sm">Itens</h3>
-            <button onClick={addItem} className="erp-btn-outline erp-btn-sm">
-              <Plus className="h-3 w-3" /> Item
-            </button>
-          </div>
-          {itens.map((item, idx) => (
-            <div key={item.id} className="grid grid-cols-1 md:grid-cols-5 gap-2 mb-2 items-end">
-              <div>
-                <label className="text-xs text-muted-foreground">Produto</label>
-                <select
-                  className="erp-input h-8 text-sm"
-                  value={item.produto_id || ''}
-                  onChange={(e) => {
-                    updateItem(idx, { produto_id: +e.target.value });
-                    setTimeout(() => void aplicarConversao(idx), 0);
-                  }}
-                >
-                  <option value="">Selecione</option>
-                  {produtos.map((pr) => (
-                    <option key={pr.id} value={pr.id}>
-                      {pr.codigo_completo ? `${pr.codigo_completo} — ` : ''}
-                      {pr.descricao}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground">Unidade negociada</label>
-                <select
-                  className="erp-input h-8 text-sm"
-                  value={item.unidade_negociada || ''}
-                  onChange={(e) => {
-                    updateItem(idx, { unidade_negociada: e.target.value.toUpperCase() });
-                    void aplicarConversao(idx);
-                  }}
-                >
-                  <option value="">Selecione</option>
-                  {(() => {
-                    const p = produtos.find((pr) => pr.id === item.produto_id);
-                    const op = p ? unidadesNegociacaoProduto(p) : todasUnidadesPadrao();
-                    return op.map((u) => (
-                      <option key={u} value={u}>
-                        {u}
-                      </option>
-                    ));
-                  })()}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground">Quantidade negociada</label>
-                <input
-                  type="number"
-                  className="erp-input h-8 text-sm"
-                  value={item.quantidade_negociada ?? item.quantidade}
-                  onChange={(e) => {
-                    updateItem(idx, { quantidade_negociada: +e.target.value });
-                    void aplicarConversao(idx);
-                  }}
-                />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground">{labelPrecoPorUnidade(item.unidade_negociada)}</label>
-                <input
-                  type="number"
-                  step="0.0001"
-                  className="erp-input h-8 text-sm"
-                  value={item.preco_por_unidade_negociada ?? item.valor_unitario}
-                  onChange={(e) => {
-                    updateItem(idx, { preco_por_unidade_negociada: +e.target.value });
-                  }}
-                />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground">Corrida</label>
-                <select
-                  className="erp-input h-8 text-sm"
-                  value={item.corrida_id ?? ''}
-                  onChange={(e) => {
-                    updateItem(idx, { corrida_id: e.target.value ? +e.target.value : undefined });
-                  }}
-                >
-                  <option value="">—</option>
-                </select>
-              </div>
-              <button type="button" onClick={() => removeItem(item.id)} className="erp-btn-ghost erp-btn-sm text-destructive h-8">
-                <X className="h-4 w-4" />
-              </button>
-              <div className="md:col-span-5 text-xs text-muted-foreground">
-                {previewConversaoItem(item)}
-                {equivalentesPreco(item).length ? ` | ${equivalentesPreco(item).join(' | ')}` : ''}
-              </div>
-            </div>
-          ))}
-          <div className="text-right mt-3 pt-3 border-t border-border font-bold">Total: R$ {total.toFixed(2)}</div>
-        </div>
-        {referenciaFrete && (
-          <div className="mt-4 rounded-md border border-border bg-muted/20 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Referência comercial de frete (apoio gerencial)</p>
-            <p className="text-xs text-muted-foreground mt-1">{referenciaFrete.mensagem}</p>
-            <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-              <div>
-                <div className="text-xs text-muted-foreground">Frete médio observado</div>
-                <div className="font-medium">
-                  {referenciaFrete.referencia_historica.frete_medio_observado == null
-                    ? '—'
-                    : `R$ ${referenciaFrete.referencia_historica.frete_medio_observado.toFixed(2)}`}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-muted-foreground">Peso médio do frete</div>
-                <div className="font-medium">{(referenciaFrete.referencia_historica.peso_frete_sobre_faturamento ?? 0).toFixed(2)}%</div>
-              </div>
-              <div>
-                <div className="text-xs text-muted-foreground">CT-es válidos</div>
-                <div className="font-medium">{referenciaFrete.referencia_historica.quantidade_ctes_validos}</div>
-              </div>
-              <div>
-                <div className="text-xs text-muted-foreground">Período da referência</div>
-                <div className="font-medium">
-                  {(referenciaFrete.periodo_utilizado.data_inicio || '—')} a {(referenciaFrete.periodo_utilizado.data_fim || '—')}
-                </div>
-              </div>
-            </div>
-            {referenciaFrete.referencia_historica.transportadora_referencia && (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Referência da transportadora selecionada: {referenciaFrete.referencia_historica.transportadora_referencia.transportadora_nome}.
-              </p>
-            )}
-          </div>
-        )}
-        {referenciaCustoCompra && (
-          <div className="mt-3 rounded-md border border-border bg-muted/20 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Referência comercial de custo de compra (apoio gerencial)</p>
-            <p className="text-xs text-muted-foreground mt-1">{referenciaCustoCompra.mensagem}</p>
-            <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-              <div>
-                <div className="text-xs text-muted-foreground">Custo médio observado</div>
-                <div className="font-medium">
-                  {referenciaCustoCompra.referencia_historica.custo_medio_observado == null
-                    ? '—'
-                    : `R$ ${referenciaCustoCompra.referencia_historica.custo_medio_observado.toFixed(2)}`}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-muted-foreground">Última compra observada</div>
-                <div className="font-medium">
-                  {referenciaCustoCompra.referencia_historica.ultimo_custo_observado == null
-                    ? '—'
-                    : `R$ ${referenciaCustoCompra.referencia_historica.ultimo_custo_observado.toFixed(2)}`}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-muted-foreground">Fornecedor de referência</div>
-                <div className="font-medium">{referenciaCustoCompra.referencia_historica.fornecedor_referencia || '—'}</div>
-              </div>
-              <div>
-                <div className="text-xs text-muted-foreground">Período da referência</div>
-                <div className="font-medium">
-                  {(referenciaCustoCompra.periodo_utilizado.data_inicio || '—')} a {(referenciaCustoCompra.periodo_utilizado.data_fim || '—')}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-        <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
-          <button type="button" onClick={() => setModalOpen(false)} className="erp-btn-outline">
-            Cancelar
-          </button>
-          <button type="button" onClick={handleSave} className="erp-btn-primary">
-            Salvar
-          </button>
-        </div>
-      </Modal>
+        </DataTable>
+        ) : null}
+        {!loadingList && !loadError && count > 0 ? (
+          <PaginationControls
+            page={page}
+            pageSize={pageSize}
+            count={count}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        ) : null}
+      </DataTableShell>
+      <PedidoVendaEditModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        editing={editing}
+        form={form}
+        setForm={setForm}
+        itens={itens}
+        setItens={setItens}
+        empresas={empresas}
+        selectedCliente={selectedCliente}
+        selectedVendedor={selectedVendedor}
+        selectedColaboradorVendedor={selectedColaboradorVendedor}
+        setSelectedCliente={setSelectedCliente}
+        setSelectedVendedor={setSelectedVendedor}
+        setSelectedColaboradorVendedor={setSelectedColaboradorVendedor}
+        produtoCache={produtoCache}
+        mergeProdutoCache={mergeProdutoCache}
+        updateItem={updateItem}
+        aplicarConversao={aplicarConversao}
+        addItem={addItem}
+        removeItem={removeItem}
+        total={total}
+        statusOpcoesPedido={statusOpcoesPedido}
+        referenciaFrete={referenciaFrete}
+        referenciaCustoCompra={referenciaCustoCompra}
+        onSave={handleSave}
+        saveError={saveError}
+        faturamentoRefreshKey={faturamentoRefreshKey}
+        onFaturamentoAtualizado={onFaturamentoAtualizado}
+        onAtendimentoResumoAtualizado={onAtendimentoResumoAtualizado}
+      />
     </div>
   );
 };

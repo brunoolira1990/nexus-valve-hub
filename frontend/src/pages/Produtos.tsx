@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
@@ -10,6 +11,9 @@ import {
   schedulesEspessuraService,
 } from '@/services/api/produtos';
 import { apiErrorMessage } from '@/services/api/config';
+import { usePaginatedList } from '@/hooks/usePaginatedList';
+import { PaginationControls } from '@/components/list/PaginationControls';
+import { EmptyState, ErrorState, LoadingState } from '@/components/list/ListStates';
 import type {
   FamiliaProduto,
   ModoCodigoProduto,
@@ -20,7 +24,12 @@ import type {
   TipoDimensional,
   TipoRegraCodigo,
 } from '@/types';
-import { MATERIAIS } from '@/types';
+import { PRODUTO_UI_LABELS } from '@/lib/operationalUi';
+import {
+  formatProdutoMaterial,
+  materialParaPayload,
+  materialValorParaForm,
+} from '@/lib/produtoMaterial';
 import {
   expandirSiglasValvulaDescricaoBase,
   flagsPorTipoRegra,
@@ -36,6 +45,7 @@ import {
 } from '@/lib/familiaRegra';
 import { normalizarDescricaoProduto } from '@/lib/descricaoProduto';
 import { ConversaoMedidasBlock, type CampoHeranca } from '@/components/produtos/ConversaoMedidasBlock';
+import { ProdutoComposicaoPanel } from '@/components/produtos/ProdutoComposicaoPanel';
 import { NcmAutocomplete, type NcmOption } from '@/components/produtos/NcmAutocomplete';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import { PolegadaAutocomplete } from '@/components/produtos/PolegadaAutocomplete';
@@ -148,6 +158,12 @@ const REGRAS: { value: TipoRegraCodigo; label: string }[] = [
   { value: 'MANUAL_FABRICANTE', label: '10) Manual/fabricante (sem código por família)' },
   { value: 'BASE_OD_MM_ESPESSURA', label: '11) Base + OD mm + espessura mm — {figura}.{od}{esp} (ex.: 6119OD.1002)' },
   { value: 'BASE_ESPIGAO_FLANGE_NPS', label: '12) Base + espigão NPS + flange NPS ({figura}.E{id}F{id})' },
+  { value: 'BASE_DN_MM', label: '13) Base + DN/mm — {figura}.{mm 3 dígitos}' },
+  { value: 'BASE_DN_MM_REDUCAO', label: '14) Base + DN maior×menor — {figura}.{mm}{mm}' },
+  { value: 'BASE_BITOLA_POLEGADA', label: '15) Base + bitola — {figura}.{código polegada}' },
+  { value: 'BASE_OD_MM', label: '16) Base + OD mm (PU) — {figura}.{mm 3 dígitos}' },
+  { value: 'BASE_OD_MM_REDUCAO', label: '17) Base + OD maior×menor — {figura}.{mm}{mm}' },
+  { value: 'BASE_OD_MM_X_ROSCA', label: '18) Base + OD mm + rosca/bitola — {figura}.{mm}{sufixo}' },
 ];
 
 const CATEGORIAS_FAMILIA = [
@@ -164,7 +180,12 @@ const TIPOS_DIMENSIONAIS: { value: TipoDimensional; label: string }[] = [
   { value: 'NPS_X_ROSCA', label: 'NPS x Rosca' },
   { value: 'OD_POLEGADA', label: 'OD em polegada (não é NPS/SCH)' },
   { value: 'OD_POLEGADA_X_ROSCA', label: 'OD em polegada x Rosca' },
-  { value: 'OD_MM', label: 'OD em mm' },
+  { value: 'DN_MM', label: 'DN/mm (PVC/CPVC/PPR — medida única)' },
+  { value: 'DN_MM_REDUCAO', label: 'DN/mm × DN/mm (redução)' },
+  { value: 'BITOLA_POLEGADA', label: 'Bitola em polegada (condulete)' },
+  { value: 'OD_MM', label: 'OD em mm (PU / parede de tubo conforme regra)' },
+  { value: 'OD_MM_REDUCAO', label: 'OD mm × OD mm (PU redução)' },
+  { value: 'OD_MM_X_ROSCA', label: 'OD mm × rosca/bitola (PU push-in)' },
   { value: 'OD_MM_X_ESPESSURA', label: 'OD mm + espessura mm' },
   { value: 'OD_MM_X_ESPESSURA_X_COMPRIMENTO', label: 'OD mm + espessura + comprimento' },
   { value: 'CHAPA_MM', label: 'Chapa mm (espessura x largura x comprimento)' },
@@ -234,9 +255,33 @@ function codigoProdutoIgual(a: string | null | undefined, b: string | null | und
 }
 
 const Produtos = () => {
+  const [searchParams] = useSearchParams();
+  const semNcmUrl = searchParams.get('sem_ncm') || '';
   const [activeTab, setActiveTab] = useState<'produtos' | 'familias'>('produtos');
-  const [items, setItems] = useState<Produto[]>([]);
-  const [search, setSearch] = useState('');
+  const {
+    items,
+    count,
+    page,
+    pageSize,
+    totalPages,
+    search,
+    setSearch,
+    setPage,
+    setPageSize,
+    setFilter,
+    loading: listLoading,
+    error: listError,
+    reload: reloadProdutos,
+  } = usePaginatedList<Produto>({
+    fetchPage: produtosService.listPaginated,
+    enabled: activeTab === 'produtos',
+    initialFilters: semNcmUrl ? { sem_ncm: semNcmUrl } : {},
+  });
+
+  useEffect(() => {
+    if (semNcmUrl) setFilter('sem_ncm', semNcmUrl);
+  }, [semNcmUrl, setFilter]);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [famModalOpen, setFamModalOpen] = useState(false);
   const [editing, setEditing] = useState<Produto | null>(null);
@@ -278,15 +323,9 @@ const Produtos = () => {
   );
 
   const fetchProdutos = useCallback(async (searchOverride?: string) => {
-    const q = (searchOverride !== undefined ? searchOverride : search).trim();
-    try {
-      const data = await produtosService.getAll(q ? { search: q } : undefined);
-      setItems(data);
-    } catch (err) {
-      console.error('Falha ao carregar produtos', err);
-      setItems([]);
-    }
-  }, [search]);
+    if (searchOverride !== undefined) setSearch(searchOverride);
+    await reloadProdutos();
+  }, [reloadProdutos, setSearch]);
 
   const loadBases = useCallback(async () => {
     const [f, r, s] = await Promise.all([
@@ -298,15 +337,6 @@ const Produtos = () => {
     setRoscas(r);
     setSchedules(s);
   }, []);
-
-  useEffect(() => {
-    if (activeTab !== 'produtos') return;
-    const q = search.trim();
-    const t = window.setTimeout(() => {
-      void fetchProdutos();
-    }, q ? 320 : 0);
-    return () => window.clearTimeout(t);
-  }, [search, activeTab, fetchProdutos]);
 
   useEffect(() => {
     if (!listNotice) return;
@@ -363,6 +393,7 @@ const Produtos = () => {
   const tipoMedidaPrincipal = useMemo<'NPS' | 'OD' | undefined>(() => {
     const td = familiaSel?.tipo_dimensional;
     if (!td) return undefined;
+    if (td === 'BITOLA_POLEGADA' || td === 'OD_MM_X_ROSCA') return undefined;
     if (td === 'OD_POLEGADA' || td === 'OD_POLEGADA_X_ROSCA') return 'OD';
     if (
       td === 'NPS' ||
@@ -392,6 +423,22 @@ const Produtos = () => {
     )
       return 'NPS';
     return undefined;
+  }, [familiaSel?.tipo_dimensional]);
+
+  const labelCampoOdPrincipal = useMemo(() => {
+    const td = familiaSel?.tipo_dimensional;
+    if (td === 'DN_MM') return 'Medida DN/MM';
+    if (td === 'DN_MM_REDUCAO') return 'Medida maior DN/MM';
+    if (td === 'OD_MM_REDUCAO') return 'OD maior (mm)';
+    if (td === 'OD_MM' && familiaSel?.tipo_regra_codigo === 'BASE_OD_MM') return 'Medida OD/mm';
+    return 'OD externo (mm)';
+  }, [familiaSel?.tipo_dimensional, familiaSel?.tipo_regra_codigo]);
+
+  const labelCampoEspessuraOuMenor = useMemo(() => {
+    const td = familiaSel?.tipo_dimensional;
+    if (td === 'DN_MM_REDUCAO') return 'Medida menor DN/MM';
+    if (td === 'OD_MM_REDUCAO') return 'OD menor (mm)';
+    return 'Espessura (mm)';
   }, [familiaSel?.tipo_dimensional]);
 
   const famQuickFlags = useMemo(
@@ -647,7 +694,7 @@ const Produtos = () => {
       polegada_principal: e.polegada_principal ?? '',
       polegada_secundaria: e.polegada_secundaria ?? '',
       descricao: e.descricao,
-      material: e.material,
+      material: materialValorParaForm(e),
       tipo_peca: e.tipo_peca,
       pressao_nominal: e.pressao_nominal,
       norma: e.norma,
@@ -757,7 +804,7 @@ const Produtos = () => {
     const body: Partial<Produto> = {
       modo_codigo: form.modo_codigo as ModoCodigoProduto,
       descricao: form.descricao,
-      material: form.material,
+      ...materialParaPayload(form.material, editing),
       tipo_peca: form.tipo_peca,
       pressao_nominal: form.pressao_nominal,
       norma: form.norma,
@@ -936,9 +983,12 @@ const Produtos = () => {
   };
 
   const handleDelete = async (id: number) => {
-    if (confirm('Excluir?')) {
+    if (!confirm('Excluir este produto?')) return;
+    try {
       await produtosService.delete(id);
       await fetchProdutos();
+    } catch (e) {
+      alert(apiErrorMessage(e, { fallback: 'Não foi possível excluir o produto.' }));
     }
   };
 
@@ -1047,7 +1097,12 @@ const Produtos = () => {
         'NPS_X_ROSCA',
         'OD_POLEGADA',
         'OD_POLEGADA_X_ROSCA',
+        'DN_MM',
+        'DN_MM_REDUCAO',
+        'BITOLA_POLEGADA',
         'OD_MM',
+        'OD_MM_REDUCAO',
+        'OD_MM_X_ROSCA',
         'OD_MM_X_ESPESSURA',
         'OD_MM_X_ESPESSURA_X_COMPRIMENTO',
         'FLANGE',
@@ -1217,7 +1272,14 @@ const Produtos = () => {
 
   return (
     <div>
-      <PageHeader title="Produtos" onAdd={openNew} addLabel="Novo Produto" searchValue={search} onSearch={setSearch} />
+      <PageHeader
+        title="Produtos"
+        description="Cadastro de produtos e informações fiscais."
+        onAdd={openNew}
+        addLabel="Novo Produto"
+        searchValue={search}
+        onSearch={setSearch}
+      />
       {listNotice ? <p className="text-sm text-emerald-800 dark:text-emerald-200 mb-3">{listNotice}</p> : null}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <button type="button" onClick={openNewFamilia} className="erp-btn-outline text-sm">
@@ -1256,6 +1318,10 @@ const Produtos = () => {
       ) : null}
       <div className="erp-card overflow-x-auto">
         {activeTab === 'produtos' ? (
+          <>
+            {listError ? <ErrorState onRetry={() => void reloadProdutos()} /> : null}
+            {listLoading ? <LoadingState /> : null}
+            {!listLoading && !listError ? (
           <table className="erp-table">
             <thead>
               <tr>
@@ -1291,7 +1357,7 @@ const Produtos = () => {
                     <td className="font-mono text-xs">{e.codigo_completo}</td>
                     <td className="font-medium">{e.descricao}</td>
                     <td className="text-xs text-muted-foreground">{e.modo_codigo || 'LEGADO'}</td>
-                    <td>{e.material}</td>
+                    <td>{formatProdutoMaterial(e)}</td>
                     <td>{e.ncm_efetivo?.codigo || e.ncm || '—'}</td>
                     <td>R$ {e.preco_venda.toFixed(2)}</td>
                     <td>
@@ -1309,13 +1375,25 @@ const Produtos = () => {
               )}
             </tbody>
           </table>
+            ) : null}
+            {!listLoading && !listError && count > 0 ? (
+              <PaginationControls
+                page={page}
+                pageSize={pageSize}
+                count={count}
+                totalPages={totalPages}
+                onPageChange={setPage}
+                onPageSizeChange={setPageSize}
+              />
+            ) : null}
+          </>
         ) : (
           <table className="erp-table">
             <thead>
               <tr>
                 <th>Código figura/base</th>
                 <th>Descrição base</th>
-                <th>Regra de código</th>
+                <th>{PRODUTO_UI_LABELS.regraCodigo}</th>
                 <th>Rosca</th>
                 <th>Schedule</th>
                 <th>Polegada 1</th>
@@ -1409,8 +1487,8 @@ const Produtos = () => {
               <div className="rounded-md border border-dashed border-border bg-background p-3 text-xs">
                 <p className="font-semibold text-foreground">Produto guiado pela Família/Figura</p>
                 <p>Categoria: {familiaCategoria === 'MATERIAL_DIMENSIONAL' ? 'Material dimensional' : familiaCategoria === 'MANUAL_FABRICANTE' ? 'Produto manual/fabricante' : 'Produto técnico'}</p>
-                <p>Tipo dimensional: {familiaSel.tipo_dimensional || 'SIMPLES'}</p>
-                <p>Regra de código: {regraLabelMap[normalizarTipoRegra(familiaSel.tipo_regra_codigo) || familiaSel.tipo_regra_codigo] || familiaSel.tipo_regra_codigo}</p>
+                <p>{PRODUTO_UI_LABELS.tipoDimensional}: {familiaSel.tipo_dimensional || 'SIMPLES'}</p>
+                <p>{PRODUTO_UI_LABELS.regraCodigo}: {regraLabelMap[normalizarTipoRegra(familiaSel.tipo_regra_codigo) || familiaSel.tipo_regra_codigo] || familiaSel.tipo_regra_codigo}</p>
                 <p>Obrigatórios: {labelsCamposObrigatoriosProduto(familiaSel).join(' · ')}</p>
               </div>
             ) : null}
@@ -1478,7 +1556,7 @@ const Produtos = () => {
                 )}
                 {!familiaEhMaterialDimensional && famReq.exige_od_mm && (
                   <div>
-                    <label className="erp-label">OD externo (mm)</label>
+                    <label className="erp-label">{labelCampoOdPrincipal}</label>
                     <input
                       type="text"
                       inputMode="decimal"
@@ -1495,7 +1573,7 @@ const Produtos = () => {
                 )}
                 {!familiaEhMaterialDimensional && famReq.exige_espessura_mm && (
                   <div>
-                    <label className="erp-label">Espessura (mm)</label>
+                    <label className="erp-label">{labelCampoEspessuraOuMenor}</label>
                     <input
                       type="text"
                       inputMode="decimal"
@@ -1730,6 +1808,9 @@ const Produtos = () => {
           <div>
             <label className="erp-label">Material</label>
             <select className="erp-select mt-1 w-full" value={form.material} onChange={(e) => f('material', e.target.value)}>
+              {form.material && !MATERIAIS.includes(form.material) ? (
+                <option value={form.material}>{form.material}</option>
+              ) : null}
               {MATERIAIS.map((m) => (
                 <option key={m} value={m}>
                   {m}
@@ -1844,6 +1925,16 @@ const Produtos = () => {
           onObservacoesChange={(v) => f('observacoes_conversao', v)}
           heranca={familiaSel ? herancaConv : undefined}
         />
+        {editing?.id ? (
+          <ProdutoComposicaoPanel
+            produtoId={editing.id}
+            produtosOpcoes={items.map((p) => ({
+              id: p.id,
+              codigo_completo: p.codigo_completo,
+              descricao: p.descricao,
+            }))}
+          />
+        ) : null}
         <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
           <button type="button" onClick={() => setModalOpen(false)} className="erp-btn-outline">
             Cancelar
@@ -1914,8 +2005,9 @@ const Produtos = () => {
                       ? 'Produto manual/fabricante'
                       : 'Produto técnico'}
                 </p>
-                <p>Tipo dimensional: {sugestaoFamiliaAuto.tipo_dimensional}</p>
-                <p>Regra de código: {sugestaoFamiliaAuto.tipo_regra_codigo}</p>
+                <p>{PRODUTO_UI_LABELS.tipoDimensional}: {sugestaoFamiliaAuto.tipo_dimensional}</p>
+                <p>{PRODUTO_UI_LABELS.regraCodigo}: {sugestaoFamiliaAuto.tipo_regra_codigo}</p>
+                <p className="text-xs text-muted-foreground mt-1">{PRODUTO_UI_LABELS.sugestaoModelo}</p>
                 <p>Campos que o produto vai pedir: {sugestaoFamiliaAuto.campos_obrigatorios_labels.join(' · ')}</p>
                 {sugestaoFamiliaAuto.observacao ? <p className="text-muted-foreground">{sugestaoFamiliaAuto.observacao}</p> : null}
                 <button
@@ -1971,7 +2063,7 @@ const Produtos = () => {
               </select>
             </div>
             <div className="mt-3">
-              <label className="erp-label">Tipo dimensional</label>
+              <label className="erp-label">{PRODUTO_UI_LABELS.tipoDimensional}</label>
               <select
                 className="erp-select mt-1 w-full"
                 value={famQuick.tipo_dimensional}
@@ -1992,7 +2084,7 @@ const Produtos = () => {
           <div className="rounded-md border border-border p-3">
             <p className="text-xs font-semibold text-muted-foreground mb-2">Regra e campos do produto</p>
             <div>
-            <label className="erp-label">Regra de código</label>
+            <label className="erp-label">{PRODUTO_UI_LABELS.regraCodigo}</label>
             <select
               className="erp-select mt-1 w-full"
               value={famQuick.tipo_regra_codigo}
@@ -2016,7 +2108,7 @@ const Produtos = () => {
             <p className="text-xs text-muted-foreground mt-1">Em UNDERSCORE_POLEGADA o código usa &quot;_&quot; fixo; o separador acima afeta demais regras com ponto.</p>
           </div>
           <div className="rounded-md border border-border bg-muted/30 p-3 text-sm space-y-1 mt-3">
-            <p className="font-medium text-foreground">Campos exigidos no produto (regra de código)</p>
+            <p className="font-medium text-foreground">{PRODUTO_UI_LABELS.camposExigidos}</p>
             <p className="text-muted-foreground">{labelsCamposObrigatorios(famQuickFlags, famQuick.tipo_dimensional).join(' · ')}</p>
             <p className="text-xs text-muted-foreground mt-1">
               O tipo dimensional combina com a regra no cadastro de produto (validação no servidor). {hintTipoDimensional(famQuick.tipo_dimensional)}

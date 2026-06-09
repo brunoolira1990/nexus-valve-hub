@@ -1,9 +1,41 @@
 import axios, { type AxiosError } from 'axios';
+import { clearDashboardPermissoesCache } from './dashboardPermissoesCache';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL?.trim() || 'http://localhost:8000/api',
   headers: { 'Content-Type': 'application/json' },
 });
+
+export const SESSION_EXPIRED_MESSAGE =
+  'Sessão expirada ou acesso não autorizado. Entre novamente para continuar.';
+
+let handling401Redirect = false;
+
+export function getApiErrorStatus(err: unknown): number | undefined {
+  return (err as AxiosError)?.response?.status;
+}
+
+export function isApiUnauthorized(err: unknown): boolean {
+  return getApiErrorStatus(err) === 401;
+}
+
+export function isApiForbidden(err: unknown): boolean {
+  return getApiErrorStatus(err) === 403;
+}
+
+export function clearAuthSession() {
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('refresh_token');
+  clearDashboardPermissoesCache();
+}
+
+function maybeRedirectToLogin() {
+  if (handling401Redirect) return;
+  if (typeof window === 'undefined') return;
+  if (window.location.pathname.startsWith('/login')) return;
+  handling401Redirect = true;
+  window.location.assign('/login');
+}
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('access_token');
@@ -11,14 +43,28 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (isApiUnauthorized(error)) {
+      clearAuthSession();
+      maybeRedirectToLogin();
+    }
+    return Promise.reject(error);
+  },
+);
+
 type ApiErrorMessageOptions = {
   fallback?: string;
   preferGeneric?: boolean;
 };
 
+/** Respostas 403 do DRF (permissões Django). Usado também em `formatApiErrors` (Qualidade). */
+export const PERMISSION_DENIED_MESSAGE = 'Você não tem permissão para executar esta ação.';
+
 function statusMessage(status?: number): string | null {
-  if (status === 401) return 'Sua sessao expirou. Faça login novamente.';
-  if (status === 403) return 'Você não tem permissão para acessar este recurso.';
+  if (status === 401) return SESSION_EXPIRED_MESSAGE;
+  if (status === 403) return PERMISSION_DENIED_MESSAGE;
   if (status === 404) return 'Recurso não encontrado.';
   if (status && status >= 500) return 'Erro interno do servidor. Tente novamente em instantes.';
   return null;
@@ -58,7 +104,11 @@ export function apiErrorMessage(err: unknown, options: ApiErrorMessageOptions = 
     return sanitize(d, fallback);
   }
   if (typeof d.code === 'string' && d.code === 'token_not_valid') {
-    return 'Sua sessao expirou. Faça login novamente.';
+    return SESSION_EXPIRED_MESSAGE;
+  }
+  if (typeof d.mensagem === 'string') return sanitize(d.mensagem, fallback);
+  if (Array.isArray(d.erros) && d.erros.length) {
+    return sanitize(d.erros.map(String).join(' · '), fallback);
   }
   if (typeof d.detail === 'string') return sanitize(d.detail, fallback);
   if (Array.isArray(d.detail)) return sanitize(d.detail.map(String).join(', '), fallback);

@@ -504,13 +504,22 @@ def validar_preparar_estoque_conferencia(
         pendencias.append('Existem divergências pendentes sem aceite.')
 
     from apps.regras_fiscais.entrada_fiscal import validar_bloqueio_fiscal_preparar_conferencia
+    from apps.regras_fiscais.regras_fiscais_minimas import validar_regra_fiscal_entrada_para_uso
+
+    uso_entrada = validar_regra_fiscal_entrada_para_uso()
+    bloqueio_config_entrada = False
+    if not uso_entrada['valida']:
+        bloqueio_config_entrada = True
+        pendencias.insert(0, uso_entrada['bloqueios'][0])
+        if len(uso_entrada['bloqueios']) > 1:
+            pendencias.insert(1, uso_entrada['bloqueios'][1])
 
     bloqueios_fiscais = validar_bloqueio_fiscal_preparar_conferencia(conferencia, itens)
     if bloqueios_fiscais:
         pendencias.append('Itens bloqueados por regra fiscal de entrada (severidade BLOQUEIO):')
         pendencias.extend(bloqueios_fiscais)
 
-    return pendencias, bool(bloqueios_fiscais)
+    return pendencias, bool(bloqueios_fiscais) or bloqueio_config_entrada
 
 
 def carregar_certificados_fornecedor_por_item_conferencia(

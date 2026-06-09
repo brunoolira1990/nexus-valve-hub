@@ -1,89 +1,75 @@
-# POC BrazilFiscalReport 0.7.4 — DANFE modelo 55
+# BrazilFiscalReport — DANFE modelo 55 (renderizador oficial)
 
-## Motivo
+## Status (ERP 4.0.13.6.13A)
 
-A DANFE Conferência atual (HTML/CSS + WeasyPrint) ainda apresenta instabilidade visual; após ajustes de densidade (3.5.4.7), NF-e com um item pode quebrar em duas páginas. Esta POC avalia se **BrazilFiscalReport** pode substituir ou complementar o renderizador.
+**BrazilFiscalReport (BFR) é o único renderizador oficial do DANFE** no Nexus ERP:
+
+- Conferência, rascunho, preview, homologação autorizada e reimpressão usam o mesmo layout BFR.
+- Fallback HTML/WeasyPrint foi **removido** do fluxo oficial (`DANFE_ALLOW_HTML_FALLBACK=false`).
+- Se BFR falhar: erro 503, log `[DANFE_BFR_ERROR]`, emissão bloqueada — **sem** PDF alternativo.
+
+Settings:
+
+| Setting | Default | Descrição |
+|---------|---------|-----------|
+| `DANFE_RENDERER_OFICIAL` | `BFR` | Renderizador único |
+| `DANFE_ALLOW_HTML_FALLBACK` | `false` | Fallback HTML proibido |
+| `DANFE_ALLOW_HTML_DIAGNOSTIC` | `false` | Modo diagnóstico HTML (só DEBUG) |
+| `DANFE_BLOCK_EMISSION_IF_BFR_FAILS` | `true` | Bloqueia «Marcar pronta» se BFR falhar |
+| `DANFE_LOG_RENDERER` | `true` | Logs técnicos de renderização |
 
 ## Instalação (backend Docker)
 
 - Pacote: `BrazilFiscalReport==0.7.4`
 - Dependências pip transitivas: `fpdf2`, `python-barcode`, `phonenumbers`, `defusedxml`
-- **Sem** dependências de sistema extras além do que o `python:3.12-slim` já possui (diferente do WeasyPrint)
+- **Sem** dependências de sistema extras além do `python:3.12-slim`
 - Compatível com Python 3.12 do projeto
-- Não remove `weasyprint`, `reportlab`, `lxml`, `signxml`, `nfelib`, `PyNFe`
+- `reportlab` permanece no projeto para PDFs comerciais (Pedido de Venda, Proposta, Pedido de Compra, certificados) — **não** usado para DANFE oficial
+- `weasyprint` foi removido de `requirements.txt` (era usado apenas para DANFE HTML legado)
 
 ## Licença (LGPL-3.0)
 
 | Item | Conclusão |
 |------|-----------|
-| Licença do pacote | **GNU LGPL v3** (metadado PyPI / arquivo LICENSE no wheel) |
-| Uso em ERP/SaaS fechado | Permitido como **biblioteca vinculada** (import Python), desde que cumpridos requisitos LGPL |
-| Obrigações principais | Permitir substituição da biblioteca pelo usuário; fornecer meios de relink; aviso de uso da LGPL; licença da lib acessível ao usuário final |
-| Impacto Nexus (código fechado) | **Uso em produção é possível**, mas exige processo jurídico/compliance (documentação de dependência, oferta de código-fonte/correspondente da LGPL conforme política do produto) |
-| Alternativa conservadora | Manter só como **referência/POC** até parecer jurídico aprovar LGPL em produção |
+| Licença do pacote | **GNU LGPL v3** |
+| Uso em ERP/SaaS fechado | Permitido como biblioteca vinculada, com due diligence jurídica |
+| Recomendação | Validar com assessoria antes de produção multi-tenant |
 
-**Recomendação jurídica:** validar com assessoria antes de tornar renderizador padrão em SaaS multi-tenant.
-
-## API Nexus (isolada)
+## API Nexus
 
 Módulo: `apps/fiscal/nfe_integracao/danfe_brazil_fiscal_report.py`
 
-- `gerar_danfe_bfr_de_xml_bytes`
-- `gerar_danfe_bfr_de_xml_string`
-- `gerar_danfe_bfr_debug_file`
-- `gerar_danfe_bfr_de_nfe_saida_preview` (XML de prévia + `ajustes_poc`)
+- `gerar_danfe_bfr_de_xml_bytes` / `gerar_danfe_bfr_de_xml_string`
+- `gerar_danfe_bfr_de_nfe_saida_preview` (XML preliminar nfelib)
+- `gerar_danfe_bfr_homologacao_autorizada` (XML autorizado + protocolo)
 
-Feature flag: `FISCAL_DANFE_RENDERER` = `html` | `brazil_fiscal_report` | `reportlab_fallback` (default: `html`).
+Orquestração: `apps/fiscal/danfe_render.py` → `gerar_danfe_bfr_oficial`
 
-## Limitações encontradas na POC
+Logs: `apps/fiscal/danfe_bfr_log.py` — `[DANFE_BFR_ERROR]`, `[DANFE_FALLBACK_BLOQUEADO]`
 
-1. **XML de prévia Nexus:** comentário + segunda declaração `<?xml` (minidom) — exige sanitização.
-2. **Caracteres Unicode:** em-dash em `infCpl` quebra fonte Times — normalizar para ASCII `-`.
-3. **`nNF` não numérico** (ex.: `RASCUNHO-FAT-2`): BFR falha — em POC usa-se `ajustes_poc` com número interno (`pk`), **não** exibir como chave oficial na UI.
-4. **Marca d’água conferência:** não há texto customizado “NF-e CONFERÊNCIA”; com `tpAmb=2` e sem `protNFe` aparece **SEM VALOR FISCAL**; `watermark_cancelled=True` → **CANCELADA - SEM VALOR FISCAL** em homologação (não é o mesmo texto do Nexus).
-5. **Chave / barcode:** derivados de `infNFe@Id`; XML prévia usa `NFePREVIEW{id}` — PDF POC gera barcode da chave derivada (não usar como chave oficial; não escaneável como documento válido).
-6. **Customização:** `DanfeConfig` oferece logo, margens, fontes, `watermark_cancelled`, `footer_stamp` — **não** há hook para “FALTA PROTOCOLO” ou ocultar barcode em conferência.
+## Customização Nexus
 
-## Decisão técnica (POC)
+- `DanfeNexus` + `resolver_marca_dagua_danfe()` — marca d'água por status (conferência vs autorizado)
+- Logo emitente via `DanfeConfig.logo` + `get_empresa_logo_path_or_none`
+- `montar_informacoes_complementares_danfe()` — infCpl enxuto; observações internas nunca no PDF
 
-**Opção B (recomendada):** usar BrazilFiscalReport **somente para DANFE autorizada futura**, com XML oficial assinado/autorizado (chave 44 dígitos, `protNFe`). Manter **HTML/CSS + WeasyPrint** para conferência pré-emissão (textos e layout sob controle do Nexus).
+## Limitações conhecidas
 
-Motivos: conferência exige mensagens e ausência de barcode escaneável fake; BFR não customiza marca/textos de conferência; LGPL exige due diligence; preview XML do Nexus não é drop-in.
+1. XML de prévia exige sanitização (comentários, declaração XML duplicada).
+2. Caracteres Unicode em `infCpl` podem quebrar fonte — normalizar para ASCII.
+3. `nNF` deve ser numérico — prévia usa pk via `nfe_numero_fiscal_preliminar`.
+4. Chave/barcode em prévia derivam de `infNFe@Id` — não são documento fiscal válido até autorização SEFAZ.
 
-**Opção C** permanece válida se a equipe preferir um único motor visual e continuar refinando WeasyPrint (corrigir paginação 1 item → 2 páginas).
+## Renderizadores removidos (4.0.13.6.13A)
 
-## Comparação visual
-
-Gerar localmente (Docker):
-
-```bash
-docker compose exec backend python manage.py shell -c "
-from pathlib import Path
-from django.conf import settings
-from apps.fiscal.models import NFeSaida
-from apps.fiscal.danfe_render import render_danfe_conferencia_pdf
-from apps.fiscal.danfe_conferencia import montar_dados_danfe_conferencia
-from apps.fiscal.nfe_integracao.danfe_brazil_fiscal_report import (
-    XML_NFE_EXEMPLO_POC, gerar_danfe_bfr_debug_file, gerar_danfe_bfr_de_nfe_saida_preview,
-)
-out = Path(settings.MEDIA_ROOT) / 'debug'
-out.mkdir(parents=True, exist_ok=True)
-gerar_danfe_bfr_debug_file(XML_NFE_EXEMPLO_POC, out / 'danfe_bfr_exemplo.pdf')
-nf = NFeSaida.objects.filter(numero__icontains='RASCUNHO-FAT-2').first()
-if nf:
-    pdf, _ = gerar_danfe_bfr_de_nfe_saida_preview(nf)
-    (out / 'danfe_bfr_rascunho.pdf').write_bytes(pdf)
-    dados = montar_dados_danfe_conferencia(nf)
-    html_pdf, _ = render_danfe_conferencia_pdf(dados)
-    (out / 'danfe_html_rascunho.pdf').write_bytes(html_pdf)
-print('PDFs em', out)
-"
-```
-
-Comparar `media/debug/danfe_bfr_*.pdf` com `danfe_html_rascunho.pdf` e o PDF de referência de mercado (anexo externo).
+- `danfe_modelo55_html.py` (WeasyPrint)
+- `danfe_modelo55_conferencia.py` (ReportLab canvas)
+- `danfe_moc_matriz_a4_retrato.py`
+- `templates/danfe/modelo55_conferencia.html` / `.css`
+- Flag `FISCAL_DANFE_RENDERER` e `FISCAL_DANFE_BFR_FALLBACK_HTML`
 
 ## Próximos passos
 
-1. Corrigir paginação WeasyPrint (1 item / 1 página).
-2. Parecer jurídico LGPL antes de `FISCAL_DANFE_RENDERER=brazil_fiscal_report` em produção.
-3. Se aprovado para emitida: integrar após autorização SEFAZ com XML + `protNFe` reais, sem `ajustes_poc`.
+1. Parecer jurídico LGPL para produção SEFAZ.
+2. Modo diagnóstico HTML opcional (endpoint separado, só DEBUG/homologação) se necessário para suporte.
+3. DANFE produção com XML + `protNFe` reais após emissão produção.

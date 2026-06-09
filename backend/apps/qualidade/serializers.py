@@ -1,4 +1,9 @@
+from django.utils import timezone
 from rest_framework import serializers
+from rest_framework.fields import empty
+
+from apps.fiscal.conferencia_pedido import item_pedido_resumo_dict
+from apps.fiscal.models import ItemNFeEntradaConferencia
 from apps.produtos.snapshot import build_produto_snapshot
 from apps.text_normalize import normalize_operational_fields, to_operational_upper
 
@@ -12,6 +17,11 @@ from .models import (
     ItemCertificadoQualidadeComponente,
     _normalize_numero_cq,
     _split_numero_serie,
+)
+from .rastreabilidade_cq import (
+    avaliar_rastreabilidade_item_certificado_qualidade,
+    montar_resumo_rastreabilidade_certificado,
+    validar_rastreabilidade_emissao_certificado_qualidade,
 )
 
 
@@ -61,6 +71,15 @@ class ItemCertificadoQualidadeComponenteSerializer(serializers.ModelSerializer):
 
 class ItemCertificadoQualidadeSerializer(serializers.ModelSerializer):
     componentes = ItemCertificadoQualidadeComponenteSerializer(many=True, required=False)
+    rastreabilidade_status = serializers.SerializerMethodField()
+    rastreabilidade_label = serializers.SerializerMethodField()
+    rastreabilidade_mensagens = serializers.SerializerMethodField()
+    rastreabilidade_motivos = serializers.SerializerMethodField()
+    tem_certificado_fornecedor = serializers.SerializerMethodField()
+    certificado_fornecedor_status = serializers.SerializerMethodField()
+    tem_conferencia_origem = serializers.SerializerMethodField()
+    estoque_aplicado_origem = serializers.SerializerMethodField()
+    tem_corrida_lote = serializers.SerializerMethodField()
 
     class Meta:
         model = ItemCertificadoQualidade
@@ -97,8 +116,62 @@ class ItemCertificadoQualidadeSerializer(serializers.ModelSerializer):
             'incluir_no_certificado',
             'motivo_nao_inclusao',
             'observacao_nao_inclusao',
+            'rastreabilidade_status',
+            'rastreabilidade_label',
+            'rastreabilidade_mensagens',
+            'rastreabilidade_motivos',
+            'tem_certificado_fornecedor',
+            'certificado_fornecedor_status',
+            'tem_conferencia_origem',
+            'estoque_aplicado_origem',
+            'tem_corrida_lote',
             'componentes',
         )
+        read_only_fields = (
+            'rastreabilidade_status',
+            'rastreabilidade_label',
+            'rastreabilidade_mensagens',
+            'rastreabilidade_motivos',
+            'tem_certificado_fornecedor',
+            'certificado_fornecedor_status',
+            'tem_conferencia_origem',
+            'estoque_aplicado_origem',
+            'tem_corrida_lote',
+        )
+
+    def _avaliacao_rastreabilidade(self, obj: ItemCertificadoQualidade) -> dict:
+        cache = self.context.setdefault('_rastreabilidade_item_cache', {})
+        key = obj.pk if obj.pk else id(obj)
+        if key not in cache:
+            cache[key] = avaliar_rastreabilidade_item_certificado_qualidade(obj)
+        return cache[key]
+
+    def get_rastreabilidade_status(self, obj: ItemCertificadoQualidade) -> str:
+        return self._avaliacao_rastreabilidade(obj)['status']
+
+    def get_rastreabilidade_label(self, obj: ItemCertificadoQualidade) -> str:
+        return self._avaliacao_rastreabilidade(obj)['label']
+
+    def get_rastreabilidade_mensagens(self, obj: ItemCertificadoQualidade) -> list[str]:
+        return self._avaliacao_rastreabilidade(obj)['mensagens']
+
+    def get_rastreabilidade_motivos(self, obj: ItemCertificadoQualidade) -> list[str]:
+        return self._avaliacao_rastreabilidade(obj)['motivos']
+
+    def get_tem_certificado_fornecedor(self, obj: ItemCertificadoQualidade) -> bool:
+        return self._avaliacao_rastreabilidade(obj)['tem_certificado_fornecedor']
+
+    def get_certificado_fornecedor_status(self, obj: ItemCertificadoQualidade) -> str | None:
+        return self._avaliacao_rastreabilidade(obj)['certificado_fornecedor_status']
+
+    def get_tem_conferencia_origem(self, obj: ItemCertificadoQualidade) -> bool:
+        return self._avaliacao_rastreabilidade(obj)['tem_conferencia_origem']
+
+    def get_estoque_aplicado_origem(self, obj: ItemCertificadoQualidade) -> bool:
+        return self._avaliacao_rastreabilidade(obj)['estoque_aplicado_origem']
+
+    def get_tem_corrida_lote(self, obj: ItemCertificadoQualidade) -> bool:
+        return self._avaliacao_rastreabilidade(obj)['tem_corrida_lote']
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -141,6 +214,8 @@ class ItemCertificadoQualidadeSerializer(serializers.ModelSerializer):
 class CertificadoQualidadeSerializer(serializers.ModelSerializer):
     itens = ItemCertificadoQualidadeSerializer(many=True)
     numero_formatado = serializers.SerializerMethodField(read_only=True)
+    resumo_rastreabilidade = serializers.SerializerMethodField(read_only=True)
+    rastreabilidade_resumo_label = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = CertificadoQualidade
@@ -163,12 +238,28 @@ class CertificadoQualidadeSerializer(serializers.ModelSerializer):
             'tipo_certificado',
             'criado_em',
             'atualizado_em',
+            'resumo_rastreabilidade',
+            'rastreabilidade_resumo_label',
             'itens',
         )
-        read_only_fields = ('criado_em', 'atualizado_em')
+        read_only_fields = ('criado_em', 'atualizado_em', 'resumo_rastreabilidade', 'rastreabilidade_resumo_label')
 
     def get_numero_formatado(self, obj: CertificadoQualidade) -> str:
         return obj.numero_formatado
+
+    def get_resumo_rastreabilidade(self, obj: CertificadoQualidade) -> dict:
+        itens = list(obj.itens.prefetch_related('componentes').all())
+        return montar_resumo_rastreabilidade_certificado(itens)
+
+    def get_rastreabilidade_resumo_label(self, obj: CertificadoQualidade) -> str:
+        resumo = self.get_resumo_rastreabilidade(obj)
+        if resumo['pode_emitir']:
+            return 'Rastreabilidade completa'
+        if resumo['pendentes'] > 0:
+            return 'Rastreabilidade pendente'
+        if resumo['parciais'] > 0:
+            return 'Rastreabilidade parcial'
+        return 'Rastreabilidade pendente'
 
     def _resolve_data_emissao_from_nf(self, attrs) -> object | None:
         nf = attrs.get('nota_fiscal') if 'nota_fiscal' in attrs else (self.instance.nota_fiscal if self.instance else None)
@@ -193,7 +284,6 @@ class CertificadoQualidadeSerializer(serializers.ModelSerializer):
                 'cliente_cnpj_snapshot',
                 'pedido_cliente',
                 'nota_fiscal_numero',
-                'status',
                 'tipo_certificado',
             },
         )
@@ -259,6 +349,19 @@ class CertificadoQualidadeSerializer(serializers.ModelSerializer):
                     comps = it.get('componentes') if isinstance(it, dict) else None
                     if comps is not None and len(comps) == 0:
                         raise serializers.ValidationError({'itens': f'Item {idx} está marcado como válvula, mas sem componentes.'})
+            itens_para_rastreio = base
+            if itens is None and self.instance:
+                itens_para_rastreio = list(
+                    self.instance.itens.prefetch_related('componentes').all(),
+                )
+            erros_rastreio = validar_rastreabilidade_emissao_certificado_qualidade(itens_para_rastreio)
+            if erros_rastreio:
+                raise serializers.ValidationError(
+                    {
+                        'detail': 'A emissão definitiva exige rastreabilidade completa em todos os itens incluídos.',
+                        'rastreabilidade': erros_rastreio,
+                    },
+                )
         return attrs
 
     def _upsert_itens(self, instance: CertificadoQualidade, itens_data: list[dict]):
@@ -332,8 +435,107 @@ class ComponenteCertificadoFornecedorEntradaSerializer(serializers.ModelSerializ
         return attrs
 
 
+def _origem_pedido_compra_de_item_cf(item_conf: ItemNFeEntradaConferencia | None) -> dict | None:
+    if not item_conf or not item_conf.item_pedido_compra_id:
+        return None
+    item_pc = item_conf.item_pedido_compra
+    if not item_pc:
+        return None
+    resumo = item_pedido_resumo_dict(item_conf) or {}
+    prod = item_pc.produto
+    return {
+        'pedido_compra_id': item_pc.pedido_id,
+        'pedido_compra_numero': resumo.get('pedido_numero') or (item_pc.pedido.numero if item_pc.pedido_id else ''),
+        'item_pedido_compra_id': item_pc.id,
+        'item_pedido_resumo': resumo,
+        'produto_pedido_codigo': resumo.get('codigo') or (prod.codigo_completo if prod else ''),
+        'produto_pedido_descricao': resumo.get('descricao') or (prod.descricao if prod else ''),
+        'quantidade_pedido': resumo.get('quantidade', ''),
+        'unidade_pedido': resumo.get('unidade', ''),
+        'valor_unitario_pedido': resumo.get('valor_unitario', ''),
+    }
+
+
+def _origem_display_item_cf(item_conf: ItemNFeEntradaConferencia | None) -> str:
+    if not item_conf:
+        return ''
+    nf = item_conf.conferencia.nf_entrada_historica
+    n_item = item_conf.item_nfe_historico.n_item if item_conf.item_nfe_historico_id else ''
+    numero = nf.numero if nf else ''
+    serie = nf.serie if nf else ''
+    return f'NF {numero}/{serie} · item {n_item} · Conferência'
+
+
+def _apply_origem_vinculo_item_cf(attrs: dict, item_conf: ItemNFeEntradaConferencia | None, instance=None) -> None:
+    if not item_conf:
+        return
+    if instance is None or instance.item_conferencia_id != item_conf.pk:
+        attrs.setdefault('origem_vinculada_em', timezone.now())
+    if item_conf.item_nfe_historico_id:
+        attrs.setdefault('origem_nfe_item_numero', item_conf.item_nfe_historico.n_item)
+
+
+def _validate_item_conferencia_para_certificado(
+    item_conf: ItemNFeEntradaConferencia,
+    nf_entrada_historica_id: int | None,
+    certificado_fornecedor_id: int | None,
+    *,
+    exclude_item_ids: set[int] | None = None,
+) -> None:
+    if not nf_entrada_historica_id:
+        raise serializers.ValidationError(
+            {'item_conferencia_id': 'Vincule a conferência apenas em certificados com NF-e de entrada histórica.'},
+        )
+    conf_nf_id = (
+        ItemNFeEntradaConferencia.objects.filter(pk=item_conf.pk)
+        .values_list('conferencia__nf_entrada_historica_id', flat=True)
+        .first()
+    )
+    if conf_nf_id != nf_entrada_historica_id:
+        raise serializers.ValidationError(
+            {'item_conferencia_id': 'O item da conferência não pertence à NF-e de entrada deste certificado.'},
+        )
+    qs = ItemCertificadoFornecedorEntrada.objects.filter(item_conferencia=item_conf, ativo=True)
+    if certificado_fornecedor_id:
+        qs = qs.exclude(certificado_fornecedor_id=certificado_fornecedor_id)
+    if exclude_item_ids:
+        qs = qs.exclude(pk__in=exclude_item_ids)
+    if qs.exists():
+        raise serializers.ValidationError(
+            {'item_conferencia_id': 'Esta linha da conferência já está vinculada a outro item ativo do certificado fornecedor.'},
+        )
+
+
 class ItemCertificadoFornecedorEntradaSerializer(serializers.ModelSerializer):
     componentes = ComponenteCertificadoFornecedorEntradaSerializer(many=True, required=False)
+    item_conferencia_id = serializers.PrimaryKeyRelatedField(
+        source='item_conferencia',
+        queryset=ItemNFeEntradaConferencia.objects.select_related(
+            'conferencia__nf_entrada_historica',
+            'item_nfe_historico',
+            'item_pedido_compra__pedido',
+            'item_pedido_compra__produto',
+            'produto',
+        ),
+        required=False,
+        allow_null=True,
+    )
+    origem_nfe_numero = serializers.SerializerMethodField()
+    origem_nfe_serie = serializers.SerializerMethodField()
+    origem_nfe_item_numero = serializers.IntegerField(read_only=True)
+    origem_display = serializers.SerializerMethodField()
+    origem_conferencia_status = serializers.SerializerMethodField()
+    origem_produto_vinculado = serializers.SerializerMethodField()
+    pedido_compra_id = serializers.SerializerMethodField()
+    pedido_compra_numero = serializers.SerializerMethodField()
+    item_pedido_compra_id = serializers.SerializerMethodField()
+    item_pedido_resumo = serializers.SerializerMethodField()
+    produto_pedido_codigo = serializers.SerializerMethodField()
+    produto_pedido_descricao = serializers.SerializerMethodField()
+    quantidade_pedido = serializers.SerializerMethodField()
+    unidade_pedido = serializers.SerializerMethodField()
+    valor_unitario_pedido = serializers.SerializerMethodField()
+    origem_rastreabilidade_completa = serializers.SerializerMethodField()
 
     class Meta:
         model = ItemCertificadoFornecedorEntrada
@@ -359,8 +561,130 @@ class ItemCertificadoFornecedorEntradaSerializer(serializers.ModelSerializer):
             'ensaio_impacto_json',
             'observacoes_item',
             'ativo',
+            'item_conferencia_id',
+            'origem_nfe_item_numero',
+            'origem_vinculada_em',
+            'origem_nfe_numero',
+            'origem_nfe_serie',
+            'origem_display',
+            'origem_conferencia_status',
+            'origem_produto_vinculado',
+            'pedido_compra_id',
+            'pedido_compra_numero',
+            'item_pedido_compra_id',
+            'item_pedido_resumo',
+            'produto_pedido_codigo',
+            'produto_pedido_descricao',
+            'quantidade_pedido',
+            'unidade_pedido',
+            'valor_unitario_pedido',
+            'origem_rastreabilidade_completa',
             'componentes',
         )
+        read_only_fields = (
+            'origem_nfe_numero',
+            'origem_nfe_serie',
+            'origem_nfe_item_numero',
+            'origem_display',
+            'origem_conferencia_status',
+            'origem_produto_vinculado',
+            'pedido_compra_id',
+            'pedido_compra_numero',
+            'item_pedido_compra_id',
+            'item_pedido_resumo',
+            'produto_pedido_codigo',
+            'produto_pedido_descricao',
+            'quantidade_pedido',
+            'unidade_pedido',
+            'valor_unitario_pedido',
+            'origem_rastreabilidade_completa',
+        )
+
+    def get_origem_nfe_numero(self, obj: ItemCertificadoFornecedorEntrada) -> str | None:
+        if not obj.item_conferencia_id:
+            return None
+        nf = obj.item_conferencia.conferencia.nf_entrada_historica
+        return nf.numero if nf else None
+
+    def get_origem_nfe_serie(self, obj: ItemCertificadoFornecedorEntrada) -> str | None:
+        if not obj.item_conferencia_id:
+            return None
+        nf = obj.item_conferencia.conferencia.nf_entrada_historica
+        return nf.serie if nf else None
+
+    def get_origem_display(self, obj: ItemCertificadoFornecedorEntrada) -> str:
+        if not obj.item_conferencia_id:
+            return ''
+        return _origem_display_item_cf(obj.item_conferencia)
+
+    def get_origem_conferencia_status(self, obj: ItemCertificadoFornecedorEntrada) -> str | None:
+        if not obj.item_conferencia_id:
+            return None
+        return obj.item_conferencia.status
+
+    def get_origem_produto_vinculado(self, obj: ItemCertificadoFornecedorEntrada) -> bool:
+        if not obj.item_conferencia_id:
+            return False
+        return bool(obj.item_conferencia.produto_id)
+
+    def get_pedido_compra_id(self, obj: ItemCertificadoFornecedorEntrada) -> int | None:
+        ctx = _origem_pedido_compra_de_item_cf(
+            obj.item_conferencia if obj.item_conferencia_id else None,
+        )
+        return ctx['pedido_compra_id'] if ctx else None
+
+    def get_pedido_compra_numero(self, obj: ItemCertificadoFornecedorEntrada) -> str | None:
+        ctx = _origem_pedido_compra_de_item_cf(
+            obj.item_conferencia if obj.item_conferencia_id else None,
+        )
+        return ctx['pedido_compra_numero'] if ctx else None
+
+    def get_item_pedido_compra_id(self, obj: ItemCertificadoFornecedorEntrada) -> int | None:
+        ctx = _origem_pedido_compra_de_item_cf(
+            obj.item_conferencia if obj.item_conferencia_id else None,
+        )
+        return ctx['item_pedido_compra_id'] if ctx else None
+
+    def get_item_pedido_resumo(self, obj: ItemCertificadoFornecedorEntrada) -> dict | None:
+        ctx = _origem_pedido_compra_de_item_cf(
+            obj.item_conferencia if obj.item_conferencia_id else None,
+        )
+        return ctx['item_pedido_resumo'] if ctx else None
+
+    def get_produto_pedido_codigo(self, obj: ItemCertificadoFornecedorEntrada) -> str | None:
+        ctx = _origem_pedido_compra_de_item_cf(
+            obj.item_conferencia if obj.item_conferencia_id else None,
+        )
+        return ctx['produto_pedido_codigo'] if ctx else None
+
+    def get_produto_pedido_descricao(self, obj: ItemCertificadoFornecedorEntrada) -> str | None:
+        ctx = _origem_pedido_compra_de_item_cf(
+            obj.item_conferencia if obj.item_conferencia_id else None,
+        )
+        return ctx['produto_pedido_descricao'] if ctx else None
+
+    def get_quantidade_pedido(self, obj: ItemCertificadoFornecedorEntrada) -> str | None:
+        ctx = _origem_pedido_compra_de_item_cf(
+            obj.item_conferencia if obj.item_conferencia_id else None,
+        )
+        return ctx['quantidade_pedido'] if ctx else None
+
+    def get_unidade_pedido(self, obj: ItemCertificadoFornecedorEntrada) -> str | None:
+        ctx = _origem_pedido_compra_de_item_cf(
+            obj.item_conferencia if obj.item_conferencia_id else None,
+        )
+        return ctx['unidade_pedido'] if ctx else None
+
+    def get_valor_unitario_pedido(self, obj: ItemCertificadoFornecedorEntrada) -> str | None:
+        ctx = _origem_pedido_compra_de_item_cf(
+            obj.item_conferencia if obj.item_conferencia_id else None,
+        )
+        return ctx['valor_unitario_pedido'] if ctx else None
+
+    def get_origem_rastreabilidade_completa(self, obj: ItemCertificadoFornecedorEntrada) -> bool:
+        if not obj.item_conferencia_id:
+            return False
+        return bool(obj.item_conferencia.item_pedido_compra_id)
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -381,7 +705,29 @@ class ItemCertificadoFornecedorEntradaSerializer(serializers.ModelSerializer):
                 'observacoes_item',
             },
         )
+        if 'item_conferencia' in attrs:
+            item_conf = attrs.get('item_conferencia')
+            cert = self.context.get('certificado_fornecedor')
+            nf_hist_id = self.context.get('nf_entrada_historica_id')
+            if cert is not None and nf_hist_id is None:
+                nf_hist_id = cert.nf_entrada_historica_id
+            if item_conf:
+                _validate_item_conferencia_para_certificado(
+                    item_conf,
+                    nf_hist_id,
+                    cert.pk if cert else None,
+                )
+                _apply_origem_vinculo_item_cf(attrs, item_conf, self.instance)
+            elif self.instance and self.instance.item_conferencia_id:
+                attrs.setdefault('origem_vinculada_em', None)
+                attrs.setdefault('origem_nfe_item_numero', None)
         return attrs
+
+
+def _normalize_cf_status_value(value: str | None) -> str:
+    if value is None or value == '':
+        return ''
+    return str(value).strip().lower()
 
 
 class CertificadoFornecedorEntradaSerializer(serializers.ModelSerializer):
@@ -415,7 +761,18 @@ class CertificadoFornecedorEntradaSerializer(serializers.ModelSerializer):
     def get_quantidade_itens(self, obj: CertificadoFornecedorEntrada) -> int:
         return obj.itens.count()
 
+    def validate_status(self, value):
+        if value is None or value == '':
+            return value
+        canonical = _normalize_cf_status_value(value)
+        allowed = {choice.value for choice in CertificadoFornecedorEntrada.Status}
+        if canonical not in allowed:
+            raise serializers.ValidationError('Status inválido.')
+        return canonical
+
     def validate(self, attrs):
+        if 'status' in attrs and attrs['status'] is not None:
+            attrs['status'] = self.validate_status(attrs['status'])
         normalize_operational_fields(
             attrs,
             {
@@ -424,12 +781,14 @@ class CertificadoFornecedorEntradaSerializer(serializers.ModelSerializer):
                 'fornecedor_cnpj_snapshot',
                 'numero_nf_entrada',
                 'serie_nf_entrada',
-                'status',
             },
         )
-        status_cert = attrs.get('status') or (
-            self.instance.status if self.instance else CertificadoFornecedorEntrada.Status.RASCUNHO
+        status_cert = _normalize_cf_status_value(
+            attrs.get('status')
+            or (self.instance.status if self.instance else CertificadoFornecedorEntrada.Status.RASCUNHO)
         )
+        if 'status' in attrs:
+            attrs['status'] = status_cert
         itens = attrs.get('itens')
         fornecedor_nome = attrs.get('fornecedor_nome_snapshot')
         if status_cert == CertificadoFornecedorEntrada.Status.REGISTRADO:
@@ -535,7 +894,34 @@ class CertificadoFornecedorEntradaSerializer(serializers.ModelSerializer):
                 erros_itens.append(item_errors)
             if any(bool(e) for e in erros_itens):
                 raise serializers.ValidationError({'itens': erros_itens})
+        if itens is not None:
+            vistos: set[int] = set()
+            for idx, item in enumerate(itens):
+                if not isinstance(item, dict):
+                    continue
+                item_conf = item.get('item_conferencia')
+                if not item_conf:
+                    continue
+                ic_id = item_conf.pk
+                if ic_id in vistos:
+                    raise serializers.ValidationError(
+                        {'itens': {idx: {'item_conferencia_id': ['Não repita a mesma linha da conferência em mais de um item.']}}},
+                    )
+                vistos.add(ic_id)
         return attrs
+
+    def run_validation(self, data=empty):
+        if data is not empty and isinstance(data, dict):
+            nf_raw = data.get('nf_entrada_historica')
+            nf_hist_id = nf_raw if isinstance(nf_raw, int) else (
+                getattr(nf_raw, 'pk', None) if nf_raw is not None else None
+            )
+            if nf_hist_id is None and self.instance:
+                nf_hist_id = self.instance.nf_entrada_historica_id
+            self.fields['itens'].child.context.update(
+                self._itens_child_context(self.instance, nf_hist_id),
+            )
+        return super().run_validation(data)
 
     def _upsert_itens(self, instance: CertificadoFornecedorEntrada, itens_data: list[dict]):
         instance.itens.all().delete()
@@ -557,6 +943,12 @@ class CertificadoFornecedorEntradaSerializer(serializers.ModelSerializer):
                     ordem=comp.get('ordem') or j,
                     **comp_data,
                 )
+
+    def _itens_child_context(self, cert: CertificadoFornecedorEntrada | None, nf_hist_id: int | None) -> dict:
+        return {
+            'certificado_fornecedor': cert,
+            'nf_entrada_historica_id': nf_hist_id,
+        }
 
     def create(self, validated_data):
         itens = validated_data.pop('itens', [])

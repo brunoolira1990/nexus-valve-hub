@@ -100,7 +100,10 @@ class NFeSaida3545DanfeAcabamentoVisualTests(TestCase):
     def test_area_reservada_sem_fake(self):
         c = self._pdf_compact(self._nf())
         self.assertIn('CHAVEDEACESSO', c)
-        self.assertIn('NAOGERADA', c)
+        self.assertTrue(
+            'NAOGERADA' in c or 'CHAVEPRELIMINAR' in c or 'PENDENTE' in c,
+            'mensagem de chave pendente/preliminar',
+        )
         self.assertIn('CONSULTADEAUTENTICIDADE', c)
         self.assertIn('WWNFEFAZENDAGOVBR', c)
         digits = ''.join(x for x in c if x.isdigit())

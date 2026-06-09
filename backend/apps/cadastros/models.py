@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -132,6 +133,14 @@ class Cliente(models.Model):
     cnae = models.CharField(max_length=20, blank=True)
     regime_tributario = models.CharField(max_length=64, blank=True)
     integracao_texto = models.TextField(blank=True)
+    informacoes_complementares_nfe = models.TextField(
+        blank=True,
+        default='',
+        help_text=(
+            'Informações recorrentes deste cliente para Dados Adicionais da NF-e/DANFE '
+            '(endereço de entrega, horário de recebimento, instruções externas).'
+        ),
+    )
 
     class Meta:
         ordering = ['razao_social']
@@ -197,6 +206,49 @@ class Fornecedor(models.Model):
         super().clean()
         if self.cnpj and _norm_cnpj(self.cnpj) == '':
             raise ValidationError({'cnpj': 'Informe um CNPJ válido ou deixe em branco.'})
+
+
+class Colaborador(models.Model):
+    """Pessoa interna do ERP (vendedor, comprador, responsáveis por área)."""
+
+    nome = models.CharField(max_length=255)
+    codigo = models.CharField(max_length=32, blank=True, db_index=True)
+    email = models.EmailField(blank=True)
+    telefone = models.CharField(max_length=32, blank=True)
+    ativo = models.BooleanField(default=True)
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='colaborador_vinculado',
+    )
+    eh_vendedor = models.BooleanField(default=False)
+    eh_comprador = models.BooleanField(default=False)
+    eh_responsavel_fiscal = models.BooleanField(default=False)
+    eh_responsavel_financeiro = models.BooleanField(default=False)
+    eh_responsavel_estoque = models.BooleanField(default=False)
+    eh_responsavel_qualidade = models.BooleanField(default=False)
+    eh_administrador = models.BooleanField(default=False)
+    cargo = models.CharField(max_length=120, blank=True)
+    departamento = models.CharField(max_length=120, blank=True)
+    observacoes = models.TextField(blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['nome']
+        verbose_name = 'Colaborador'
+        verbose_name_plural = 'Colaboradores'
+
+    def __str__(self):
+        return self.nome or self.codigo or str(self.pk)
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        from apps.cadastros.colaborador_sync import sincronizar_vendedor_colaborador
+
+        sincronizar_vendedor_colaborador(self)
 
 
 class Transportadora(models.Model):

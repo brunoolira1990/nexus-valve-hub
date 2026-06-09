@@ -1,5 +1,7 @@
 import type { AxiosError } from 'axios';
 
+import { PERMISSION_DENIED_MESSAGE } from '@/services/api/config';
+
 const FIELD_LABELS: Record<string, string> = {
   numero_certificado_fornecedor: 'número do certificado fornecedor',
   numero_certificado_fornecedor_item: 'número do certificado fornecedor do item',
@@ -125,6 +127,10 @@ function walk(node: unknown, out: string[], ctx: PathCtx = {}): void {
 }
 
 export function formatApiErrors(error: unknown): string[] {
+  const ax = error as AxiosError<unknown>;
+  if (ax.response?.status === 403) {
+    return [PERMISSION_DENIED_MESSAGE];
+  }
   const data = extractData(error);
   const out: string[] = [];
   walk(data, out, {});

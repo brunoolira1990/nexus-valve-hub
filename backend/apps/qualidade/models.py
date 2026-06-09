@@ -278,9 +278,25 @@ class ItemCertificadoFornecedorEntrada(models.Model):
     ensaio_impacto_json = models.JSONField(default=dict, blank=True)
     observacoes_item = models.TextField(blank=True)
     ativo = models.BooleanField(default=True)
+    item_conferencia = models.ForeignKey(
+        'fiscal.ItemNFeEntradaConferencia',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='itens_certificado_fornecedor',
+    )
+    origem_nfe_item_numero = models.PositiveSmallIntegerField(null=True, blank=True)
+    origem_vinculada_em = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['ordem', 'id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['item_conferencia'],
+                condition=models.Q(item_conferencia__isnull=False, ativo=True),
+                name='uniq_item_cf_item_conferencia_ativo',
+            ),
+        ]
 
 
 class ComponenteCertificadoFornecedorEntrada(models.Model):

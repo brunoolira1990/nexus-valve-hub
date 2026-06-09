@@ -29,6 +29,12 @@ const TABLE: Record<TipoRegraCodigo, FlagsFamilia> = {
   BASE_ROSCA_SCHEDULE_DUAS_POLEGADAS: { usa_rosca_conexao: true, usa_schedule: true, usa_polegada_principal: true, usa_polegada_secundaria: true },
   UNDERSCORE_POLEGADA: { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: true, usa_polegada_secundaria: false },
   BASE_OD_MM_ESPESSURA: { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: false, usa_polegada_secundaria: false },
+  BASE_DN_MM: { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: false, usa_polegada_secundaria: false },
+  BASE_DN_MM_REDUCAO: { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: false, usa_polegada_secundaria: false },
+  BASE_BITOLA_POLEGADA: { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: true, usa_polegada_secundaria: false },
+  BASE_OD_MM: { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: false, usa_polegada_secundaria: false },
+  BASE_OD_MM_REDUCAO: { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: false, usa_polegada_secundaria: false },
+  BASE_OD_MM_X_ROSCA: { usa_rosca_conexao: true, usa_schedule: false, usa_polegada_principal: true, usa_polegada_secundaria: false },
   BASE_ESPIGAO_FLANGE_NPS: { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: true, usa_polegada_secundaria: true },
   MANUAL_FABRICANTE: { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: false, usa_polegada_secundaria: false },
 };
@@ -64,13 +70,32 @@ export function labelsCamposObrigatorios(flags: FlagsFamilia, td?: TipoDimension
   if (flags.usa_rosca_conexao) r.push('Rosca / conexão');
   if (flags.usa_schedule) r.push('Schedule / espessura');
   if (flags.usa_polegada_principal) {
-    r.push(td === 'ESPIGAO_X_FLANGE' ? 'Medida do espigão (NPS)' : 'Polegada principal (ID)');
+    r.push(
+      td === 'ESPIGAO_X_FLANGE'
+        ? 'Medida do espigão (NPS)'
+        : td === 'BITOLA_POLEGADA' || td === 'OD_MM_X_ROSCA'
+          ? 'Bitola'
+          : 'Polegada principal (ID)',
+    );
   }
   if (flags.usa_polegada_secundaria) {
     r.push(td === 'ESPIGAO_X_FLANGE' ? 'Medida da flange (NPS)' : 'Polegada secundária (ID)');
   }
-  if (r.length === 0) r.push('Nenhum (código manual no produto)');
-  return r;
+  const extra: string[] = [];
+  if (td === 'DN_MM') extra.push('Medida DN/MM');
+  if (td === 'DN_MM_REDUCAO') {
+    extra.push('Medida maior DN/MM');
+    extra.push('Medida menor DN/MM');
+  }
+  if (td === 'OD_MM_REDUCAO') {
+    extra.push('OD maior (mm)');
+    extra.push('OD menor (mm)');
+  }
+  if (td === 'OD_MM') extra.push('Medida OD/mm');
+  if (td === 'OD_MM_X_ROSCA') extra.push('Medida OD/mm');
+  const out = [...r, ...extra];
+  if (out.length === 0) out.push('Nenhum (código manual no produto)');
+  return out;
 }
 
 /** Texto curto explicando o tipo dimensional (UI família/produto). */
@@ -87,6 +112,16 @@ export function hintTipoDimensional(td: TipoDimensional | undefined | null): str
     case 'OD_MM_X_ESPESSURA':
     case 'OD_MM_X_ESPESSURA_X_COMPRIMENTO':
       return 'OD em mm — valores numéricos (mm); use regra 11 no código; sem NPS/SCH.';
+    case 'DN_MM':
+      return 'DN/mm — medida única em milímetros (PVC/CPVC/PPR); sem schedule industrial.';
+    case 'DN_MM_REDUCAO':
+      return 'DN/mm redução — duas medidas em mm (maior × menor); sem schedule industrial.';
+    case 'BITOLA_POLEGADA':
+      return 'Bitola — medida em polegada pela tabela oficial (condulete); rótulo Bitola, não NPS industrial.';
+    case 'OD_MM_REDUCAO':
+      return 'PU / pneumático — OD maior × menor em mm.';
+    case 'OD_MM_X_ROSCA':
+      return 'PU / pneumático — OD em mm com rosca e bitola (push-in); sem NPS/schedule industrial.';
     case 'CHAPA_MM':
       return 'Chapa mm — espessura, largura e comprimento (prévia assistida).';
     case 'CHAPA_FURO_MM':
@@ -116,6 +151,7 @@ export function labelPolegadaPrincipal(td: TipoDimensional | undefined | null): 
   if (td === 'ESPIGAO_X_FLANGE') return 'Medida do espigão';
   if (td === 'OD_POLEGADA' || td === 'OD_POLEGADA_X_ROSCA') return 'Medida OD (cadastro mestre)';
   if (td === 'CANTONEIRA_POLEGADA') return 'Aba em polegada';
+  if (td === 'BITOLA_POLEGADA' || td === 'OD_MM_X_ROSCA') return 'Bitola';
   if (td === 'NPS_SCHEDULE' || td === 'NPS') return 'Polegada nominal (NPS)';
   if (td === 'REDUCAO_NPS') return 'Polegada maior';
   return 'Polegada principal (código oficial)';
@@ -142,8 +178,18 @@ export function labelsCamposObrigatoriosProduto(familia: FamiliaProduto | null):
   if (req.usa_rosca_conexao) r.push('Rosca / conexão');
   if (req.usa_polegada_principal) r.push(labelPolegadaPrincipal(td));
   if (req.usa_polegada_secundaria) r.push(labelPolegadaSecundaria(td));
-  if (req.exige_od_mm) r.push('OD externo (mm)');
-  if (req.exige_espessura_mm) r.push('Espessura (mm)');
+  if (req.exige_od_mm) {
+    if (td === 'DN_MM') r.push('Medida DN/MM');
+    else if (td === 'DN_MM_REDUCAO') r.push('Medida maior DN/MM');
+    else if (td === 'OD_MM_REDUCAO') r.push('OD maior (mm)');
+    else if (td === 'OD_MM' && familia.tipo_regra_codigo === 'BASE_OD_MM') r.push('Medida OD/mm');
+    else r.push('OD externo (mm)');
+  }
+  if (req.exige_espessura_mm) {
+    if (td === 'DN_MM_REDUCAO') r.push('Medida menor DN/MM');
+    else if (td === 'OD_MM_REDUCAO') r.push('OD menor (mm)');
+    else r.push('Espessura (mm)');
+  }
   if (req.exige_comprimento_mm) r.push('Comprimento (mm ou padrão da família)');
   if (r.length === 0) r.push('Nenhum campo automático (ver modo manual)');
   return r;
@@ -184,11 +230,17 @@ export function expandirSiglasValvulaDescricaoBase(descricaoBase: string): strin
 
 /** Coerência tipo dimensional → regra (espelha `regraSugeridaPorTipoDimensional` da página Produtos). */
 export function sugerirTipoRegraPorDimensional(td: TipoDimensional): TipoRegraCodigo {
+  if (td === 'DN_MM') return 'BASE_DN_MM';
+  if (td === 'DN_MM_REDUCAO') return 'BASE_DN_MM_REDUCAO';
+  if (td === 'BITOLA_POLEGADA') return 'BASE_BITOLA_POLEGADA';
+  if (td === 'OD_MM_REDUCAO') return 'BASE_OD_MM_REDUCAO';
+  if (td === 'OD_MM_X_ROSCA') return 'BASE_OD_MM_X_ROSCA';
+  if (td === 'OD_MM') return 'BASE_OD_MM';
   if (td === 'NPS_SCHEDULE') return 'BASE_SCHEDULE_POLEGADA';
   if (td === 'REDUCAO_NPS') return 'BASE_SCHEDULE_DUAS_POLEGADAS';
   if (td === 'OD_POLEGADA') return 'BASE_POLEGADA';
   if (td === 'OD_POLEGADA_X_ROSCA') return 'BASE_ROSCA_DUAS_POLEGADAS';
-  if (td === 'OD_MM' || td === 'OD_MM_X_ESPESSURA' || td === 'OD_MM_X_ESPESSURA_X_COMPRIMENTO') return 'BASE_OD_MM_ESPESSURA';
+  if (td === 'OD_MM_X_ESPESSURA' || td === 'OD_MM_X_ESPESSURA_X_COMPRIMENTO') return 'BASE_OD_MM_ESPESSURA';
   if (td === 'NPS_X_ROSCA') return 'BASE_ROSCA_POLEGADA';
   if (td === 'ESPIGAO_X_FLANGE') return 'BASE_ESPIGAO_FLANGE_NPS';
   if (td === 'CANTONEIRA_POLEGADA') return 'BASE_POLEGADA';
@@ -288,6 +340,62 @@ export function sugerirConfiguracaoFamilia(descricaoBase: string): SugestaoConfi
   }
 
   const roscaKw = /\b(BSP|NPT|ROSCA|M-F|F-M|MACHO|FEMEA|FÊMEA)\b/;
+
+  if (_has(u, /\bCONDULETE\b/)) {
+    const td: TipoDimensional = 'BITOLA_POLEGADA';
+    const tr: TipoRegraCodigo = 'BASE_BITOLA_POLEGADA';
+    return {
+      categoria_produto: 'PRODUTO_TECNICO',
+      tipo_dimensional: td,
+      tipo_regra_codigo: tr,
+      campos_obrigatorios_labels: labelsCamposObrigatorios(flagsPorTipoRegra(tr), td),
+      observacao: 'Condulete — campo Bitola (tabela de polegadas), sem NPS/schedule industrial.',
+    };
+  }
+
+  const puLine =
+    /\b(PU|PUSH-IN|PUSH\s+IN|ENGATE\s+RAPIDO|ENGATE\s+RÁPIDO|DUPLA\s+ANILHA|PNEUMATICO|PNEUMÁTICO|CONECTOR\s+MACHO\s+PU|CONECTOR\s+FEMEA\s+PU|COTOVELO\s+MACHO\s+GIR\s+PU|UNI(AO|ÃO)\s+PU|MANGUEIRA\s+AZUL\s+PU)\b/i;
+  if (_has(u, puLine)) {
+    const reduPu = _has(u, /\b(REDU(CAO|ÇÃO))\b/);
+    const roscaPu = _has(u, roscaKw);
+    let td: TipoDimensional;
+    let tr: TipoRegraCodigo;
+    if (reduPu) {
+      td = 'OD_MM_REDUCAO';
+      tr = 'BASE_OD_MM_REDUCAO';
+    } else if (roscaPu) {
+      td = 'OD_MM_X_ROSCA';
+      tr = 'BASE_OD_MM_X_ROSCA';
+    } else {
+      td = 'OD_MM';
+      tr = 'BASE_OD_MM';
+    }
+    return {
+      categoria_produto: 'PRODUTO_TECNICO',
+      tipo_dimensional: td,
+      tipo_regra_codigo: tr,
+      campos_obrigatorios_labels: labelsCamposObrigatorios(flagsPorTipoRegra(tr), td),
+      observacao: 'Pneumático / PU — medida em mm (sem NPS/schedule industrial).',
+    };
+  }
+
+  const pvcLine = /\b(PVC\s+MARRON|PVC\s+BRANCO|PVC\s+AZUL|CPVC|PPR)\b/i;
+  if (_has(u, pvcLine)) {
+    const reduPvc = _has(u, /\b(LUVA\s+REDUC|BUCHA\s+REDUC|REDU(CAO|ÇÃO)|BUCHA\s+REDU)\b/i);
+    const td: TipoDimensional = reduPvc ? 'DN_MM_REDUCAO' : 'DN_MM';
+    const tr: TipoRegraCodigo = reduPvc ? 'BASE_DN_MM_REDUCAO' : 'BASE_DN_MM';
+    let obs = 'Tubulação leve — medidas DN em mm (sem schedule/rosca industrial).';
+    if (/\bTUBO\b/i.test(u)) obs += ' Unidade comum: PC ou M (ajuste manual).';
+    else if (/\bMANGUEIRA\b/i.test(u)) obs += ' Unidade comum: M (ajuste manual).';
+    return {
+      categoria_produto: 'PRODUTO_TECNICO',
+      tipo_dimensional: td,
+      tipo_regra_codigo: tr,
+      campos_obrigatorios_labels: labelsCamposObrigatorios(flagsPorTipoRegra(tr), td),
+      observacao: obs,
+    };
+  }
+
   const odKw =
     /\b(OD|DUPLA ANILHA|ANILHA|PORCA|INSERT|UNI(AO|ÃO) DUPLA|UNI(AO|ÃO) REDUTORA|CONECTOR MACHO|CONECTOR FEMEA|CONECTOR FÊMEA|ADAPTADOR RETO)\b/;
   if (_has(u, odKw)) {
@@ -476,10 +584,19 @@ export function requisitosMedidasPermitidasModal(
     return { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: false, usa_polegada_secundaria: false };
   }
 
+  if (['BASE_DN_MM', 'BASE_DN_MM_REDUCAO', 'BASE_OD_MM', 'BASE_OD_MM_REDUCAO'].includes(tr || '')) {
+    return { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: false, usa_polegada_secundaria: false };
+  }
+
   const odOuMmSemSchedule: TipoDimensional[] = [
     'OD_POLEGADA',
     'OD_POLEGADA_X_ROSCA',
     'OD_MM',
+    'DN_MM',
+    'DN_MM_REDUCAO',
+    'BITOLA_POLEGADA',
+    'OD_MM_REDUCAO',
+    'OD_MM_X_ROSCA',
     'OD_MM_X_ESPESSURA',
     'OD_MM_X_ESPESSURA_X_COMPRIMENTO',
     'CHAPA_MM',
@@ -529,6 +646,9 @@ export function requisitosMedidasPermitidasModal(
 
   const mmSemPolegadaSchedule: TipoDimensional[] = [
     'OD_MM',
+    'DN_MM',
+    'DN_MM_REDUCAO',
+    'OD_MM_REDUCAO',
     'OD_MM_X_ESPESSURA',
     'OD_MM_X_ESPESSURA_X_COMPRIMENTO',
     'CHAPA_MM',
@@ -543,6 +663,18 @@ export function requisitosMedidasPermitidasModal(
     r.usa_polegada_principal = false;
     r.usa_polegada_secundaria = false;
     r.usa_rosca_conexao = false;
+    r.usa_schedule = false;
+  }
+  if (t === 'BITOLA_POLEGADA') {
+    r.usa_polegada_principal = true;
+    r.usa_polegada_secundaria = false;
+    r.usa_rosca_conexao = false;
+    r.usa_schedule = false;
+  }
+  if (t === 'OD_MM_X_ROSCA') {
+    r.usa_rosca_conexao = true;
+    r.usa_polegada_principal = true;
+    r.usa_polegada_secundaria = false;
     r.usa_schedule = false;
   }
   if (t === 'CANTONEIRA_POLEGADA') {

@@ -1,21 +1,46 @@
-import { useEffect, useMemo, useState } from 'react';
-import { FileText, Pencil, Plus } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { AxiosError } from 'axios';
+import { FileText, Pencil } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
 import { certificadosQualidadeService } from '@/services/api/qualidade';
-import { certificadosFornecedorService } from '@/services/api/certificadosFornecedor';
+import {
+  certificadosFornecedorService,
+  corridaLoteEfetivosResultadoFornecedor,
+  mensagemPrincipalBuscaDadosTecnicosFornecedor,
+} from '@/services/api/certificadosFornecedor';
 import { produtosService } from '@/services/api/produtos';
 import { nfeSaidasService } from '@/services/api/fiscal';
 import { nfeHistoricaImportadaService, type NFeSaidaHistoricaList } from '@/services/api/nfeHistoricaImportada';
 import { apiErrorMessage } from '@/services/api/config';
+import {
+  certificadoFornecedorStatusBadge,
+  rastreabilidadeCqBadge,
+} from '@/lib/certificadoStatusUi';
 import type {
   CertificadoQualidade,
+  CertificadoQualidadeStatus,
   CorridaDisponivelCertificadoQualidade,
   DadosTecnicosFornecedorResultado,
   ItemCertificadoQualidade,
   NFeSaida,
   Produto,
+  ResumoRastreabilidadeCertificadoQualidade,
 } from '@/types';
+import { usePaginatedList } from '@/hooks/usePaginatedList';
+import { PaginationControls } from '@/components/list/PaginationControls';
+import { EmptyState, ErrorState } from '@/components/list/ListStates';
+import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
+import { StatusBadge } from '@/components/nexus/StatusBadge';
+import { TableSkeleton } from '@/components/nexus/Skeleton';
+import type { ListQueryParams } from '@/lib/apiList';
+
+/**
+ * Fase E.4 (Qualidade): o backend aplica permissões Django; o JWT não expõe codenames.
+ * Não escondemos add/change/delete com base em suposições — só ocultamos «Novo» quando
+ * o GET da lista retorna 403 (sem `view_*` para a coleção). Demais ações mostram
+ * mensagem amigável via `apiErrorMessage` / 403. Evolução: endpoint tipo /me/permissions.
+ */
 
 const TEXTO_PADRAO =
   'Os certificados originais encontram-se em nosso poder, à sua disposição, certificamos que o(s) produto(s) supra está(ão) aprovado(s), de acordo com as especificações acima mencionadas. Documento impresso eletronicamente, dispensa assinatura.';
@@ -51,6 +76,11 @@ const MOTIVOS_NAO_INCLUSAO = [
   'Outro',
 ] as const;
 
+const CONFIRMAR_CANCELAMENTO_CERTIFICADO_QUALIDADE =
+  'Cancelar este certificado de qualidade?\n\n'
+  + 'O registro permanece no sistema para rastreabilidade. O PDF passará a exibir a marca CANCELADO e não deve ser usado como documento válido.\n\n'
+  + 'Deseja continuar?';
+
 const emptyForm = (): Omit<CertificadoQualidade, 'id' | 'criado_em' | 'atualizado_em' | 'numero_formatado'> => ({
   numero: '',
   serie: '',
@@ -76,6 +106,48 @@ const ensureMap = (v: unknown): Record<string, string> => {
     return acc;
   }, {});
 };
+
+/** Trim, colapsa espaços e maiúsculas — alinhado ao critério de busca no certificado fornecedor. */
+const normalizeCorridaLoteBusca = (raw: string) => raw.trim().replace(/\s+/g, ' ').toUpperCase();
+
+/** FK `produto` pode vir como número ou (em edge cases) objeto serializado. */
+const coerceProdutoItemId = (produto: ItemCertificadoQualidade['produto']): number | null => {
+  if (produto == null || produto === '') return null;
+  if (typeof produto === 'object' && produto !== null && 'id' in produto) {
+    const id = Number((produto as { id: unknown }).id);
+    return Number.isFinite(id) && id > 0 ? id : null;
+  }
+  const n = Number(produto);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+
+/** Corrida/lote efetivos do CQ (campo manual + snapshots de rastreio); em válvula, complementa pelos componentes. */
+const resolverCorridaLoteBuscaFornecedor = (item: ItemCertificadoQualidade) => {
+  const corridaBruta = String(item.corrida || item.corrida_snapshot || '').trim();
+  const loteBruto = String(item.lote || item.lote_snapshot || '').trim();
+  let corrida = normalizeCorridaLoteBusca(corridaBruta);
+  let lote = normalizeCorridaLoteBusca(loteBruto);
+  if ((item.tipo_dados_tecnicos || 'PADRAO_ITEM') === 'VALVULA_COMPONENTES') {
+    for (const comp of item.componentes || []) {
+      if (!corrida) corrida = normalizeCorridaLoteBusca(String(comp.corrida || '').trim());
+      if (!lote) lote = normalizeCorridaLoteBusca(String(comp.lote || '').trim());
+      if (corrida && lote) break;
+    }
+  }
+  return { corrida, lote };
+};
+
+const itemTemDadosTecnicosPreenchidos = (item: ItemCertificadoQualidade): boolean => {
+  if ((item.norma || '').trim()) return true;
+  if (Object.values(ensureMap(item.composicao_json)).some((v) => String(v || '').trim())) return true;
+  if (Object.values(ensureMap(item.ensaio_tracao_json)).some((v) => String(v || '').trim())) return true;
+  if (Object.values(ensureMap(item.ensaio_impacto_json)).some((v) => String(v || '').trim())) return true;
+  if (item.certificado_fornecedor_origem_id) return true;
+  return false;
+};
+
+const fornecedorResultadoSemProdutoVinculado = (src: DadosTecnicosFornecedorResultado) =>
+  src.produto_match_tipo === 'sem_vinculo';
 
 const normNumeric = (v: string) => v.replace(',', '.');
 const parseBlockValues = (raw: string): string[] => {
@@ -107,14 +179,38 @@ const ensureComp = (raw: unknown, ordem = 1) => {
 };
 
 const Certificados = () => {
-  const [items, setItems] = useState<CertificadoQualidade[]>([]);
+  const [listForbidden, setListForbidden] = useState(false);
+  const fetchCertificadosPage = useCallback(async (params: ListQueryParams) => {
+    try {
+      const result = await certificadosQualidadeService.listPaginated(params);
+      setListForbidden(false);
+      return result;
+    } catch (e) {
+      if ((e as AxiosError).response?.status === 403) setListForbidden(true);
+      throw e;
+    }
+  }, []);
+  const {
+    items,
+    count,
+    page,
+    pageSize,
+    totalPages,
+    search,
+    setSearch,
+    setPage,
+    setPageSize,
+    loading: listLoading,
+    error: listError,
+    reload: reloadList,
+  } = usePaginatedList<CertificadoQualidade>({ fetchPage: fetchCertificadosPage });
   const [nfSaidas, setNfSaidas] = useState<NFeSaida[]>([]);
   const [nfHistoricas, setNfHistoricas] = useState<NFeSaidaHistoricaList[]>([]);
-  const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<CertificadoQualidade | null>(null);
   const [form, setForm] = useState(emptyForm());
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [rastreabilidadeErros, setRastreabilidadeErros] = useState<string[]>([]);
   const [mensagens, setMensagens] = useState<string[]>([]);
   const [pasteCompIdx, setPasteCompIdx] = useState<number | null>(null);
   const [pasteCompText, setPasteCompText] = useState('');
@@ -122,10 +218,17 @@ const Certificados = () => {
   const [fornecedorMatches, setFornecedorMatches] = useState<DadosTecnicosFornecedorResultado[]>([]);
   const [fornecedorTargetIdx, setFornecedorTargetIdx] = useState<number | null>(null);
   const [fornecedorBuscaAvancadaOpen, setFornecedorBuscaAvancadaOpen] = useState(false);
+  /** Índice do item com busca técnica fornecedor em curso (loading local). */
+  const [fornecedorBuscaItemLoading, setFornecedorBuscaItemLoading] = useState<number | null>(null);
+  /** Feedback da busca por item (exibido junto à corrida — evita erro só no topo do modal). */
+  const [fornecedorBuscaItemMsg, setFornecedorBuscaItemMsg] = useState<
+    Record<number, { type: 'error' | 'info'; text: string }>
+  >({});
   const [produtoBusca, setProdutoBusca] = useState<Record<number, string>>({});
   const [produtoResultados, setProdutoResultados] = useState<Record<number, Produto[]>>({});
   const [corridasDisponiveisPorItem, setCorridasDisponiveisPorItem] = useState<Record<number, CorridaDisponivelCertificadoQualidade[]>>({});
-  const [pdfLoading, setPdfLoading] = useState(false);
+  type PdfBusy = null | { kind: 'modal' } | { kind: 'table-row'; id: number };
+  const [pdfBusy, setPdfBusy] = useState<PdfBusy>(null);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [previewPdfTitulo, setPreviewPdfTitulo] = useState('Prévia PDF');
   const [fornecedorFiltro, setFornecedorFiltro] = useState({
@@ -138,6 +241,9 @@ const Certificados = () => {
     descricao: '',
     status: 'registrado',
   });
+
+  const formRef = useRef(form);
+  formRef.current = form;
 
   const componentePreenchido = (comp: ReturnType<typeof ensureComp>) =>
     Boolean(
@@ -152,29 +258,81 @@ const Certificados = () => {
   const incluidosCount = form.itens.filter((it) => it.incluir_no_certificado !== false).length;
   const naoIncluidosCount = totalItens - incluidosCount;
 
-  const load = async () => setItems(await certificadosQualidadeService.getAll());
+  const resumoRastreabilidade = useMemo((): ResumoRastreabilidadeCertificadoQualidade | null => {
+    if (form.resumo_rastreabilidade) return form.resumo_rastreabilidade;
+    const incl = form.itens.filter((it) => it.incluir_no_certificado !== false);
+    if (!incl.some((it) => it.rastreabilidade_status)) return null;
+    let completos = 0;
+    let parciais = 0;
+    let pendentes = 0;
+    incl.forEach((it) => {
+      if (it.rastreabilidade_status === 'COMPLETA') completos += 1;
+      else if (it.rastreabilidade_status === 'PARCIAL') parciais += 1;
+      else pendentes += 1;
+    });
+    return {
+      completos,
+      parciais,
+      pendentes,
+      pode_emitir: incl.length > 0 && parciais === 0 && pendentes === 0,
+    };
+  }, [form.resumo_rastreabilidade, form.itens]);
+
+  const extrairErrosRastreabilidade = (e: unknown): string[] => {
+    const data = (e as AxiosError<{ rastreabilidade?: string[] }>).response?.data;
+    if (data?.rastreabilidade && Array.isArray(data.rastreabilidade)) return data.rastreabilidade;
+    return [];
+  };
+
   useEffect(() => {
-    void load();
     nfeSaidasService.getAll().then(setNfSaidas).catch(() => setNfSaidas([]));
     nfeHistoricaImportadaService.list().then((r) => setNfHistoricas(r)).catch(() => setNfHistoricas([]));
   }, []);
 
-  const filtered = useMemo(
-    () =>
-      items.filter(
-        (x) =>
-          x.numero_formatado.toLowerCase().includes(search.toLowerCase()) ||
-          (x.cliente_nome_snapshot || '').toLowerCase().includes(search.toLowerCase()) ||
-          (x.nota_fiscal_numero || '').toLowerCase().includes(search.toLowerCase()),
-      ),
-    [items, search],
-  );
+  const isRowPdfLoading = (id: number) => pdfBusy?.kind === 'table-row' && pdfBusy.id === id;
+  const isRowPdfBlocked = (id: number) =>
+    pdfBusy !== null && (pdfBusy.kind === 'modal' || (pdfBusy.kind === 'table-row' && pdfBusy.id !== id));
+  const modalPdfBusy = pdfBusy?.kind === 'modal';
+
+  const labelSalvarQualidadeSemEmitir = (): string => {
+    if (form.status === 'cancelado') {
+      return editing?.status === 'cancelado' ? 'Salvar cancelamento' : 'Confirmar cancelamento';
+    }
+    if (form.status === 'emitido') return 'Salvar como emitido';
+    return 'Salvar rascunho';
+  };
+
+  const titleSalvarQualidadeSemEmitir = (): string => {
+    if (form.status === 'cancelado') {
+      return editing?.status === 'cancelado'
+        ? 'Grava alterações no cadastro cancelado (o status permanece cancelado).'
+        : 'Confirma o cancelamento: o registro permanece para rastreabilidade e o PDF passará a exibir CANCELADO.';
+    }
+    if (form.status === 'emitido') {
+      return 'Grava alterações mantendo o status emitido. Use “Emitir / finalizar” para validar itens e concluir a emissão.';
+    }
+    return 'Grava o certificado como rascunho.';
+  };
+
+  const resolvePayloadStatus = (emitir: boolean): CertificadoQualidadeStatus => {
+    if (emitir) return 'emitido';
+    if (form.status === 'cancelado' || form.status === 'emitido' || form.status === 'rascunho') return form.status;
+    return 'rascunho';
+  };
+
+  const closeCertModal = () => {
+    setModalOpen(false);
+    setFornecedorBuscaItemMsg({});
+    setFornecedorBuscaItemLoading(null);
+  };
 
   const openNew = () => {
     setEditing(null);
     setForm(emptyForm());
     setSaveError(null);
+    setRastreabilidadeErros([]);
     setMensagens([]);
+    setFornecedorBuscaItemMsg({});
     setModalOpen(true);
   };
   const openEdit = (c: CertificadoQualidade) => {
@@ -199,8 +357,19 @@ const Certificados = () => {
       })),
     });
     setSaveError(null);
+    setRastreabilidadeErros([]);
     setMensagens([]);
+    setFornecedorBuscaItemMsg({});
     setModalOpen(true);
+  };
+
+  const patchFornecedorBuscaItemMsg = (idx: number, v: { type: 'error' | 'info'; text: string } | null) => {
+    setFornecedorBuscaItemMsg((prev) => {
+      const next = { ...prev };
+      if (v == null) delete next[idx];
+      else next[idx] = v;
+      return next;
+    });
   };
 
   const setF = (k: keyof typeof form, v: unknown) => setForm((p) => ({ ...p, [k]: v }));
@@ -280,9 +449,22 @@ const Certificados = () => {
 
   const salvar = async (emitir = false) => {
     setSaveError(null);
+    setRastreabilidadeErros([]);
+    if (emitir && form.status === 'cancelado') {
+      setSaveError('Não é possível emitir um certificado cancelado.');
+      return;
+    }
+    if (!emitir && form.status === 'cancelado') {
+      const anterior = editing?.status;
+      if (anterior !== 'cancelado') {
+        const ok = window.confirm(CONFIRMAR_CANCELAMENTO_CERTIFICADO_QUALIDADE);
+        if (!ok) return;
+      }
+    }
+    const nextStatus = resolvePayloadStatus(emitir);
     const payload = {
       ...form,
-      status: emitir ? 'emitido' : 'rascunho' as const,
+      status: nextStatus,
       itens: (form.itens || []).map((it) => ({
         ...it,
         status_vinculo_produto: undefined,
@@ -296,10 +478,24 @@ const Certificados = () => {
       if (editing) saved = await certificadosQualidadeService.update(editing.id, payload);
       else saved = await certificadosQualidadeService.create(payload);
       hydrateFromSaved(saved);
-      setMensagens([emitir ? 'Certificado emitido com sucesso.' : 'Rascunho salvo com sucesso.']);
-      void load();
+      setMensagens([
+        emitir
+          ? 'Certificado emitido com sucesso.'
+          : nextStatus === 'cancelado'
+            ? 'Cancelamento registrado com sucesso.'
+            : 'Rascunho salvo com sucesso.',
+      ]);
+      void reloadList();
     } catch (e) {
-      setSaveError(apiErrorMessage(e, { fallback: 'Não foi possível salvar o certificado.' }));
+      const errosRast = extrairErrosRastreabilidade(e);
+      setRastreabilidadeErros(errosRast);
+      setSaveError(
+        apiErrorMessage(e, {
+          fallback: emitir
+            ? 'Não foi possível emitir o certificado. Verifique a rastreabilidade dos itens.'
+            : 'Não foi possível salvar o certificado.',
+        }),
+      );
     }
   };
 
@@ -308,8 +504,9 @@ const Certificados = () => {
     preview = false,
     forcarDownload = false,
     meta?: { numero?: string; cliente?: string; nf?: string },
+    busy: PdfBusy = { kind: 'modal' },
   ) => {
-    setPdfLoading(true);
+    setPdfBusy(busy);
     setSaveError(null);
     try {
       if (forcarDownload) await certificadosQualidadeService.baixarPdf(id, preview, meta);
@@ -317,12 +514,11 @@ const Certificados = () => {
     } catch (e) {
       setSaveError(apiErrorMessage(e, { fallback: 'Não foi possível gerar o PDF. Verifique se o certificado foi salvo como rascunho.' }));
     } finally {
-      setPdfLoading(false);
+      setPdfBusy(null);
     }
   };
 
   const abrirPreviaModal = async (id: number, meta?: { numero?: string; cliente?: string; nf?: string }) => {
-    setPdfLoading(true);
     setSaveError(null);
     try {
       if (previewPdfUrl) URL.revokeObjectURL(previewPdfUrl);
@@ -332,17 +528,16 @@ const Certificados = () => {
       setPreviewPdfTitulo(`Prévia - ${certificadosQualidadeService.buildPdfFilename(meta || {}, true)}`);
     } catch (e) {
       setSaveError(apiErrorMessage(e, { fallback: 'Não foi possível gerar a prévia PDF.' }));
-    } finally {
-      setPdfLoading(false);
     }
   };
 
   const visualizarPreviaPdf = async () => {
     setSaveError(null);
+    setPdfBusy({ kind: 'modal' });
     try {
       const payload = {
         ...form,
-        status: 'rascunho' as const,
+        status: (form.status === 'cancelado' ? 'cancelado' : 'rascunho') as CertificadoQualidadeStatus,
         itens: (form.itens || []).map((it) => ({
           ...it,
           status_vinculo_produto: undefined,
@@ -356,7 +551,7 @@ const Certificados = () => {
         : await certificadosQualidadeService.create(payload);
       hydrateFromSaved(saved);
       setMensagens(['Rascunho salvo/atualizado automaticamente antes da prévia.']);
-      void load();
+      void reloadList();
       await abrirPreviaModal(saved.id, {
         numero: saved.numero_formatado || saved.numero || numeroArquivoAtual(),
         cliente: saved.cliente_nome_snapshot || form.cliente_nome_snapshot,
@@ -364,6 +559,8 @@ const Certificados = () => {
       });
     } catch (e) {
       setSaveError(apiErrorMessage(e, { fallback: 'Não foi possível gerar a prévia PDF.' }));
+    } finally {
+      setPdfBusy(null);
     }
   };
 
@@ -406,16 +603,16 @@ const Certificados = () => {
       if (!corridas.length) {
         setMensagens((m) => [
           ...m,
-          'Nenhuma corrida/lote disponível encontrada para este Produto Nexus. Verifique entrada de estoque, conferência da NF-e de entrada ou certificado fornecedor.',
+          'Nenhuma corrida/lote disponível encontrada para este produto cadastrado. Verifique entrada de estoque, conferência da NF-e de entrada ou certificado fornecedor.',
         ]);
       }
     } catch (e) {
-      setSaveError(apiErrorMessage(e, { fallback: 'Falha ao carregar corridas disponíveis para o Produto Nexus.' }));
+      setSaveError(apiErrorMessage(e, { fallback: 'Falha ao carregar corridas disponíveis para o produto cadastrado.' }));
     }
   };
 
   const carregarCorridasDoItem = async (idx: number) => {
-    const produtoId = form.itens[idx]?.produto;
+    const produtoId = coerceProdutoItemId(formRef.current.itens[idx]?.produto);
     if (!produtoId) return;
     try {
       const corridas = await certificadosQualidadeService.corridasDisponiveisPorProduto(produtoId);
@@ -426,7 +623,7 @@ const Certificados = () => {
   };
 
   const aplicarCorridaDisponivel = (idx: number, valorSelecao: string) => {
-    const item = form.itens[idx];
+    const item = formRef.current.itens[idx];
     const source = (corridasDisponiveisPorItem[idx] || []).find(
       (c) => (c.valor_selecao && c.valor_selecao === valorSelecao) || `${c.corrida}||${c.lote || ''}` === valorSelecao,
     );
@@ -610,8 +807,21 @@ const Certificados = () => {
   };
 
   const aplicarDadosFornecedor = (idx: number, src: DadosTecnicosFornecedorResultado) => {
-    const item = form.itens[idx];
+    if (src.status_certificado_fornecedor === 'rascunho') {
+      const ok = window.confirm(
+        'O certificado fornecedor encontrado ainda está em rascunho. Registre o certificado antes de usar os dados técnicos.\n\nDeseja aplicar os dados mesmo assim?',
+      );
+      if (!ok) return;
+    }
+    if (fornecedorResultadoSemProdutoVinculado(src)) {
+      const ok = window.confirm(
+        'Este dado técnico veio de um certificado fornecedor cujo item não está vinculado a produto cadastrado. Confira código, descrição e corrida antes de aplicar. Deseja continuar?',
+      );
+      if (!ok) return;
+    }
+    const item = formRef.current.itens[idx];
     const isValvula = (src.tipo_dados_tecnicos || item.tipo_dados_tecnicos) === 'VALVULA_COMPONENTES';
+    const { corrida: crEf, lote: loEf } = corridaLoteEfetivosResultadoFornecedor(src);
     const novosComponentes = (src.componentes || []).map((cp, i) => ({
       ...ensureComp(cp, i + 1),
       numero_certificado_fornecedor_componente_snapshot:
@@ -626,6 +836,8 @@ const Certificados = () => {
       }
       updateItem(idx, {
         tipo_dados_tecnicos: 'VALVULA_COMPONENTES',
+        corrida: crEf || item.corrida,
+        lote: loEf || item.lote,
         componentes: novosComponentes,
         certificado_fornecedor_origem_id: src.certificado_fornecedor_id || null,
         item_certificado_fornecedor_origem_id: src.id || null,
@@ -635,14 +847,20 @@ const Certificados = () => {
         descricao_item_fornecedor_snapshot: src.descricao_material || '',
         numero_certificado_fornecedor_item_snapshot:
           src.numero_certificado_fornecedor_item || src.numero_certificado_fornecedor || '',
-        corrida_snapshot: src.corrida || '',
-        lote_snapshot: src.lote || '',
+        corrida_snapshot: crEf || item.corrida_snapshot || '',
+        lote_snapshot: loEf || item.lote_snapshot || '',
       });
     } else {
+      if (itemTemDadosTecnicosPreenchidos(item)) {
+        const ok = window.confirm(
+          'Este item já possui dados técnicos preenchidos. Deseja substituir pelos dados do certificado de fornecedor selecionado?',
+        );
+        if (!ok) return;
+      }
       updateItem(idx, {
         norma: src.norma || item.norma,
-        corrida: src.corrida || item.corrida,
-        lote: src.lote || item.lote || '',
+        corrida: crEf || item.corrida,
+        lote: loEf || item.lote || '',
         composicao_json: ensureMap(src.composicao_json),
         ensaio_tracao_json: ensureMap(src.ensaio_tracao_json),
         ensaio_impacto_json: ensureMap(src.ensaio_impacto_json),
@@ -655,58 +873,93 @@ const Certificados = () => {
         descricao_item_fornecedor_snapshot: src.descricao_material || '',
         numero_certificado_fornecedor_item_snapshot:
           src.numero_certificado_fornecedor_item || src.numero_certificado_fornecedor || '',
-        corrida_snapshot: src.corrida || '',
-        lote_snapshot: src.lote || '',
+        corrida_snapshot: crEf || item.corrida_snapshot || '',
+        lote_snapshot: loEf || item.lote_snapshot || '',
         origem_rastreabilidade_tipo: 'certificado_fornecedor',
         origem_status_tecnico: src.status_certificado_fornecedor || '',
       });
     }
-    const avisos = [];
+    const avisos: string[] = [];
     if (src.aviso_divergencia_codigo) avisos.push(src.aviso_divergencia_codigo);
-    avisos.push(`Dados carregados do certificado de fornecedor #${src.certificado_fornecedor_id}.`);
+    if (fornecedorResultadoSemProdutoVinculado(src)) {
+      avisos.push(
+        'Dados encontrados em certificado fornecedor sem produto vinculado. Confira código, descrição e corrida antes de aplicar.',
+      );
+    } else {
+      avisos.push('Dados técnicos encontrados no certificado fornecedor.');
+    }
+    if (src.status_certificado_fornecedor === 'rascunho') {
+      avisos.push('O certificado fornecedor encontrado ainda está em rascunho. Registre o certificado antes de usar os dados técnicos.');
+    }
+    if (src.aviso_sem_vinculo_produto && !fornecedorResultadoSemProdutoVinculado(src)) {
+      avisos.push(src.aviso_sem_vinculo_produto);
+    }
     setMensagens(avisos);
+    patchFornecedorBuscaItemMsg(idx, null);
   };
 
   const buscarDadosFornecedor = async (idx: number) => {
-    const item = form.itens[idx];
-    const corrida = (item.corrida || '').trim();
+    patchFornecedorBuscaItemMsg(idx, null);
+    const item = formRef.current.itens[idx];
+    if (!item) return;
+    const produtoId = coerceProdutoItemId(item.produto);
     const isValvula = (item.tipo_dados_tecnicos || 'PADRAO_ITEM') === 'VALVULA_COMPONENTES';
-    if (!corrida && !isValvula) {
-      setSaveError('Informe a corrida/lote do item.');
+    const { corrida: corridaBusca, lote: loteBusca } = resolverCorridaLoteBuscaFornecedor(item);
+    if (!corridaBusca && !loteBusca) {
+      patchFornecedorBuscaItemMsg(idx, {
+        type: 'error',
+        text: 'Informe a corrida ou o lote antes de buscar dados do certificado fornecedor.',
+      });
       return;
     }
+    setFornecedorBuscaItemLoading(idx);
     try {
-      const encontrados = await certificadosFornecedorService.buscarDadosTecnicos({
-        corrida: corrida || undefined,
+      const debugBusca =
+        typeof window !== 'undefined' &&
+        new URLSearchParams(window.location.search).get('debug') === '1';
+      const { resultados: encontrados, dicas_busca: dicasBusca } = await certificadosFornecedorService.buscarDadosTecnicos({
+        ...(produtoId ? { produto: produtoId } : {}),
+        corrida: corridaBusca || undefined,
+        lote: loteBusca || undefined,
         codigo_produto: item.codigo_produto || undefined,
         descricao: item.descricao_material || undefined,
         tipo_dados_tecnicos: isValvula ? 'VALVULA_COMPONENTES' : 'PADRAO_ITEM',
         norma: item.norma || undefined,
         status: 'registrado',
+        ...(debugBusca ? { debug: true } : {}),
       });
       if (!encontrados.length) {
-        setSaveError(
-          isValvula
-            ? 'Nenhum certificado fornecedor com componentes foi encontrado para este item/corrida. Você pode lançar manualmente.'
-            : 'Nenhum certificado de fornecedor registrado foi encontrado para esta corrida/lote. Verifique a corrida, o lote ou use a busca avançada por fornecedor/NF/descrição.',
-        );
+        const dicaMsg = mensagemPrincipalBuscaDadosTecnicosFornecedor(dicasBusca);
+        const text =
+          dicaMsg
+          || 'Nenhum certificado fornecedor registrado foi encontrado para esta corrida.';
+        patchFornecedorBuscaItemMsg(idx, { type: 'error', text });
         return;
       }
       if (encontrados.length === 1) {
         aplicarDadosFornecedor(idx, encontrados[0]);
         return;
       }
+      patchFornecedorBuscaItemMsg(idx, null);
       setFornecedorTargetIdx(idx);
       setFornecedorMatches(encontrados);
       setFornecedorMatchModalOpen(true);
     } catch (e) {
-      setSaveError(apiErrorMessage(e, { fallback: 'Falha ao buscar dados tecnicos de entrada.' }));
+      patchFornecedorBuscaItemMsg(idx, {
+        type: 'error',
+        text: apiErrorMessage(e, { fallback: 'Falha ao buscar dados técnicos de entrada.' }),
+      });
+    } finally {
+      setFornecedorBuscaItemLoading(null);
     }
   };
 
   const buscarDadosFornecedorAvancado = async () => {
     try {
-      const resultados = await certificadosFornecedorService.buscarDadosTecnicos({
+      const debugBusca =
+        typeof window !== 'undefined' &&
+        new URLSearchParams(window.location.search).get('debug') === '1';
+      const { resultados, dicas_busca: dicasBusca } = await certificadosFornecedorService.buscarDadosTecnicos({
         corrida: fornecedorFiltro.corrida || undefined,
         lote: fornecedorFiltro.lote || undefined,
         fornecedor: fornecedorFiltro.fornecedor ? Number(fornecedorFiltro.fornecedor) : undefined,
@@ -716,12 +969,17 @@ const Certificados = () => {
         descricao: fornecedorFiltro.descricao || undefined,
         status: fornecedorFiltro.status as 'rascunho' | 'registrado' | 'cancelado',
         include_rascunho: fornecedorFiltro.status === 'rascunho',
+        ...(debugBusca ? { debug: true } : {}),
       });
       setFornecedorMatches(resultados);
       setFornecedorMatchModalOpen(true);
       setFornecedorBuscaAvancadaOpen(false);
       if (!resultados.length) {
-        setSaveError('Nenhum certificado de fornecedor registrado foi encontrado para esta corrida/lote. Verifique a corrida, o lote ou use a busca avançada por fornecedor/NF/descrição.');
+        const dicaMsg = mensagemPrincipalBuscaDadosTecnicosFornecedor(dicasBusca);
+        setSaveError(
+          dicaMsg
+            || 'Nenhum certificado de fornecedor registrado foi encontrado para esta corrida/lote. Verifique a corrida, o lote ou use a busca avançada por fornecedor/NF/descrição.',
+        );
       }
     } catch (e) {
       setSaveError(apiErrorMessage(e, { fallback: 'Falha ao buscar dados técnicos do fornecedor.' }));
@@ -732,81 +990,181 @@ const Certificados = () => {
     <div>
       <PageHeader
         title="Certificados de Qualidade"
-        onAdd={openNew}
-        addLabel="Novo Certificado"
+        description="Emissão e acompanhamento de certificados de qualidade vinculados a produtos, lotes e clientes."
+        onAdd={listForbidden ? undefined : openNew}
+        addLabel="Novo certificado"
         searchValue={search}
         onSearch={setSearch}
       />
-      <div className="erp-card overflow-x-auto">
-        <table className="erp-table">
+      {listError ? <ErrorState onRetry={() => void reloadList()} /> : null}
+      {listLoading ? <TableSkeleton rows={6} cols={6} /> : null}
+      {!listLoading && !listError ? (
+        <DataTableShell>
+        <DataTable className="text-sm">
           <thead>
             <tr>
-              <th>Número</th>
+              <th className="whitespace-nowrap">Número</th>
               <th>Cliente</th>
-              <th>NF</th>
-              <th>Data</th>
-              <th>Status</th>
-              <th className="w-28">Ações</th>
+              <th className="whitespace-nowrap">NF</th>
+              <th className="whitespace-nowrap">Data</th>
+              <th className="whitespace-nowrap">Status</th>
+              <th className="w-44 text-right whitespace-nowrap">Ações</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((c) => (
-              <tr key={c.id}>
-                <td className="font-mono">{c.numero_formatado}</td>
-                <td>{c.cliente_nome_snapshot || '—'}</td>
-                <td>{c.nota_fiscal_numero || '—'}</td>
-                <td>{c.data_emissao || '—'}</td>
-                <td>{c.status}</td>
-                <td>
-                  <div className="flex gap-1">
-                    <button type="button" className="erp-btn-ghost erp-btn-sm" onClick={() => openEdit(c)}>
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className="erp-btn-outline erp-btn-sm"
-                      onClick={() => void visualizarOuBaixarPdf(c.id, c.status !== 'emitido', false, {
-                        numero: c.numero_formatado || c.numero,
-                        cliente: c.cliente_nome_snapshot,
-                        nf: c.nota_fiscal_numero,
-                      })}
-                      disabled={pdfLoading}
-                    >
-                      <FileText className="h-4 w-4 mr-1" />
-                      {pdfLoading ? 'Gerando...' : c.status === 'emitido' ? 'Visualizar PDF' : 'Visualizar Prévia'}
-                    </button>
-                    <button
-                      type="button"
-                      className="erp-btn-outline erp-btn-sm"
-                      onClick={() => void visualizarOuBaixarPdf(c.id, c.status !== 'emitido', true, {
-                        numero: c.numero_formatado || c.numero,
-                        cliente: c.cliente_nome_snapshot,
-                        nf: c.nota_fiscal_numero,
-                      })}
-                      disabled={pdfLoading}
-                    >
-                      Baixar
-                    </button>
-                  </div>
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan={6}>
+                  <EmptyState
+                    message="Nenhum certificado de qualidade encontrado."
+                    actionLabel={listForbidden ? undefined : 'Novo certificado'}
+                    onAction={listForbidden ? undefined : openNew}
+                  />
                 </td>
               </tr>
-            ))}
+            ) : (
+              items.map((c) => {
+                const pdfEhPrevia = c.status === 'rascunho';
+                return (
+                  <tr key={c.id}>
+                    <td className="font-mono whitespace-nowrap">{c.numero_formatado}</td>
+                    <td>{c.cliente_nome_snapshot || '—'}</td>
+                    <td>{c.nota_fiscal_numero || '—'}</td>
+                    <td>{c.data_emissao || '—'}</td>
+                    <td>
+                      <div className="flex flex-col gap-1 items-start">
+                        <StatusBadge status={c.status || 'pendente'} />
+                        {c.status !== 'cancelado' && c.rastreabilidade_resumo_label ? (
+                          <span
+                            className={`${rastreabilidadeCqBadge(
+                              c.resumo_rastreabilidade?.pode_emitir
+                                ? 'COMPLETA'
+                                : (c.resumo_rastreabilidade?.pendentes ?? 0) > 0
+                                  ? 'PENDENTE'
+                                  : 'PARCIAL',
+                            ).className} text-[10px]`}
+                          >
+                            {c.rastreabilidade_resumo_label}
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td>
+                      <div className="flex flex-wrap justify-end gap-1">
+                        <button
+                          type="button"
+                          className="erp-btn-ghost erp-btn-sm"
+                          onClick={() => openEdit(c)}
+                          disabled={c.status === 'cancelado'}
+                          title={c.status === 'cancelado' ? 'Certificado cancelado: use apenas visualizar ou baixar o PDF para consulta.' : 'Editar certificado'}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          className="erp-btn-outline erp-btn-sm"
+                          onClick={() => void visualizarOuBaixarPdf(c.id, pdfEhPrevia, false, {
+                            numero: c.numero_formatado || c.numero,
+                            cliente: c.cliente_nome_snapshot,
+                            nf: c.nota_fiscal_numero,
+                          }, { kind: 'table-row', id: c.id })}
+                          disabled={isRowPdfBlocked(c.id)}
+                          title={
+                            c.status === 'cancelado'
+                              ? 'Abrir PDF do certificado cancelado (marca CANCELADO no documento).'
+                              : pdfEhPrevia
+                                ? 'Pré-visualizar PDF do rascunho.'
+                                : 'Abrir PDF emitido.'
+                          }
+                        >
+                          <FileText className="h-4 w-4 mr-1" />
+                          {isRowPdfLoading(c.id) ? 'Gerando…' : c.status === 'cancelado' ? 'Ver PDF' : pdfEhPrevia ? 'Prévia' : 'Ver PDF'}
+                        </button>
+                        <button
+                          type="button"
+                          className="erp-btn-outline erp-btn-sm"
+                          onClick={() => void visualizarOuBaixarPdf(c.id, pdfEhPrevia, true, {
+                            numero: c.numero_formatado || c.numero,
+                            cliente: c.cliente_nome_snapshot,
+                            nf: c.nota_fiscal_numero,
+                          }, { kind: 'table-row', id: c.id })}
+                          disabled={isRowPdfBlocked(c.id)}
+                          title={
+                            c.status === 'cancelado'
+                              ? 'Baixar PDF do certificado cancelado (marca CANCELADO).'
+                              : 'Baixar PDF.'
+                          }
+                        >
+                          {isRowPdfLoading(c.id) ? '…' : 'Baixar'}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
-        </table>
-      </div>
+        </DataTable>
+          {count > 0 ? (
+          <PaginationControls
+            page={page}
+            pageSize={pageSize}
+            count={count}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        ) : null}
+        </DataTableShell>
+      ) : null}
 
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Certificado' : 'Novo Certificado'} size="xl">
+      <Modal isOpen={modalOpen} onClose={closeCertModal} title={editing ? 'Editar certificado de qualidade' : 'Novo certificado de qualidade'} size="xl">
         {saveError ? <p className="text-sm text-destructive mb-2">{saveError}</p> : null}
+        {rastreabilidadeErros.length > 0 ? (
+          <div className="mb-3 rounded border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            <p className="font-medium mb-1">Rastreabilidade incompleta para emissão definitiva:</p>
+            <ul className="list-disc pl-5 text-xs space-y-0.5">
+              {rastreabilidadeErros.map((msg) => (
+                <li key={msg}>{msg}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         {mensagens.length ? (
           <div className="mb-2 text-xs text-amber-700 dark:text-amber-300">
             {mensagens.map((m) => <p key={m}>{m}</p>)}
+          </div>
+        ) : null}
+        {editing?.status === 'cancelado' ? (
+          <div className="mb-3 rounded border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            Este certificado está cancelado. O registro permanece para rastreabilidade. Use ver ou baixar PDF para consulta — o documento exibe a marca CANCELADO.
+          </div>
+        ) : null}
+        {editing?.status === 'emitido' ? (
+          <div className="mb-3 rounded border border-amber-300/70 bg-amber-50/90 dark:bg-amber-950/25 px-3 py-2 text-sm text-amber-950 dark:text-amber-100">
+            Certificado já emitido. Alterações podem divergir de cópias já enviadas ao cliente — revise com cuidado antes de salvar.
           </div>
         ) : null}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <div><label className="erp-label">Número</label><input className="erp-input mt-1" value={form.numero} onChange={(e) => setF('numero', e.target.value)} /></div>
           <div><label className="erp-label">Série</label><input className="erp-input mt-1" value={form.serie} onChange={(e) => setF('serie', e.target.value)} /></div>
           <div><label className="erp-label">Data</label><input type="date" className="erp-input mt-1" value={form.data_emissao || ''} onChange={(e) => setF('data_emissao', e.target.value)} /></div>
-          <div><label className="erp-label">Status</label><select className="erp-select mt-1 w-full" value={form.status} onChange={(e) => setF('status', e.target.value)}><option value="rascunho">Rascunho</option><option value="emitido">Emitido</option><option value="cancelado">Cancelado</option></select></div>
+          <div>
+            <label className="erp-label">Status</label>
+            <select
+              className="erp-select mt-1 w-full"
+              value={form.status}
+              disabled={editing?.status === 'cancelado'}
+              onChange={(e) => setF('status', e.target.value as CertificadoQualidadeStatus)}
+            >
+              <option value="rascunho">Rascunho</option>
+              <option value="emitido">Emitido</option>
+              <option value="cancelado">Cancelado</option>
+            </select>
+            {editing?.status === 'cancelado' ? (
+              <p className="text-xs text-muted-foreground mt-1">Status bloqueado após cancelamento.</p>
+            ) : null}
+          </div>
           <div className="md:col-span-2"><label className="erp-label">Cliente</label><input className="erp-input mt-1" value={form.cliente_nome_snapshot} onChange={(e) => setF('cliente_nome_snapshot', e.target.value)} /></div>
           <div><label className="erp-label">CNPJ Cliente</label><input className="erp-input mt-1" value={form.cliente_cnpj_snapshot || ''} onChange={(e) => setF('cliente_cnpj_snapshot', e.target.value)} /></div>
           <div><label className="erp-label">Pedido Cliente</label><input className="erp-input mt-1" value={form.pedido_cliente || ''} onChange={(e) => setF('pedido_cliente', e.target.value)} /></div>
@@ -837,6 +1195,30 @@ const Certificados = () => {
           </div>
         </div>
 
+        {form.status !== 'cancelado' ? (
+          <div className="mt-4 rounded border border-border p-3 bg-muted/10">
+            <p className="text-sm font-medium mb-2">Rastreabilidade técnica</p>
+            {resumoRastreabilidade ? (
+              <div className="flex flex-wrap gap-2 text-xs mb-2">
+                <span className="erp-badge-success">Completa: {resumoRastreabilidade.completos}</span>
+                <span className="erp-badge-warning">Parcial: {resumoRastreabilidade.parciais}</span>
+                <span className="erp-badge-danger">Pendente: {resumoRastreabilidade.pendentes}</span>
+                {resumoRastreabilidade.pode_emitir ? (
+                  <span className="text-emerald-700 dark:text-emerald-400">Pronto para emissão definitiva</span>
+                ) : (
+                  <span className="text-amber-800 dark:text-amber-300">
+                    A emissão definitiva exige rastreabilidade completa em todos os itens incluídos.
+                  </span>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground mb-2">
+                Salve o certificado para calcular o resumo de rastreabilidade no servidor.
+              </p>
+            )}
+          </div>
+        ) : null}
+
         <div className="mt-4">
           <p className="text-sm font-medium mb-2">Itens e dados técnicos (manual assistido)</p>
           <div className="mb-2 text-xs">
@@ -865,8 +1247,20 @@ const Certificados = () => {
                     ) : (
                       <span className="erp-badge-success">Incluído</span>
                     )}
+                    {it.incluir_no_certificado !== false && it.rastreabilidade_status ? (
+                      <span className={`${rastreabilidadeCqBadge(it.rastreabilidade_status).className} text-[10px]`}>
+                        {it.rastreabilidade_label || rastreabilidadeCqBadge(it.rastreabilidade_status).label}
+                      </span>
+                    ) : null}
                   </span>
                 </summary>
+                {it.incluir_no_certificado !== false && (it.rastreabilidade_mensagens?.length ?? 0) > 0 ? (
+                  <ul className="text-[11px] text-muted-foreground mt-1 mb-2 list-disc pl-5">
+                    {it.rastreabilidade_mensagens!.map((msg) => (
+                      <li key={msg}>{msg}</li>
+                    ))}
+                  </ul>
+                ) : null}
                 <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
                   <div><label className="erp-label">Ordem</label><input className="erp-input mt-1" value={it.ordem} onChange={(e) => updateItem(idx, { ordem: +e.target.value })} /></div>
                   <div><label className="erp-label">Código</label><input className="erp-input mt-1" value={it.codigo_produto} onChange={(e) => updateItem(idx, { codigo_produto: e.target.value })} /></div>
@@ -888,22 +1282,22 @@ const Certificados = () => {
                     </select>
                   </div>
                   <div className="md:col-span-6 rounded border border-border p-2 bg-muted/10">
-                    <p className="text-xs font-semibold mb-2">Rastreabilidade por Produto Nexus + Corrida/Lote</p>
+                    <p className="text-xs font-semibold mb-2">Rastreabilidade por produto cadastrado + Corrida/Lote</p>
                     {it.produto ? (
                       <div className="text-xs mb-2">
                         <p>
-                          Produto Nexus: {it.produto_codigo || '—'} - {it.produto_descricao || '—'}
+                          Produto cadastrado: {it.produto_codigo || '—'} - {it.produto_descricao || '—'}
                           {it.produto_ncm_efetivo ? ` | NCM efetivo: ${it.produto_ncm_efetivo}` : ''}
                         </p>
                       </div>
                     ) : (
                       <p className="text-xs text-amber-700 dark:text-amber-300 mb-2">
-                        Este item da NF-e ainda não está vinculado a um Produto Nexus. Vincule o produto para listar corridas disponíveis.
+                        Este item da NF-e ainda não está vinculado a um produto cadastrado. Vincule o produto para listar corridas disponíveis.
                       </p>
                     )}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                       <div className="md:col-span-2">
-                        <label className="erp-label">Selecionar Produto Nexus (autocomplete)</label>
+                        <label className="erp-label">Selecionar produto cadastrado (autocomplete)</label>
                         <input
                           className="erp-input mt-1"
                           placeholder="Digite código ou descrição"
@@ -938,8 +1332,12 @@ const Certificados = () => {
                         value={
                           (() => {
                             const list = corridasDisponiveisPorItem[idx] || [];
-                            const match = list.find((c) => c.corrida === it.corrida && (c.lote || '') === (it.lote || ''));
-                            return match?.valor_selecao || `${it.corrida || ''}||${it.lote || ''}`;
+                            const corrEff = it.corrida || it.corrida_snapshot || '';
+                            const loteEff = it.lote || it.lote_snapshot || '';
+                            const match = list.find(
+                              (c) => c.corrida === corrEff && (c.lote || '') === (loteEff || ''),
+                            );
+                            return match?.valor_selecao || `${corrEff}||${loteEff}`;
                           })()
                         }
                         onChange={(e) => {
@@ -952,39 +1350,101 @@ const Certificados = () => {
                           updateItem(idx, { corrida: cPart || '', lote: lPart || '' });
                           aplicarCorridaDisponivel(idx, selected);
                         }}
-                        disabled={!it.produto}
+                        disabled={!coerceProdutoItemId(it.produto)}
                       >
                         <option value="">Selecione a corrida disponível...</option>
-                        {(corridasDisponiveisPorItem[idx] || []).map((c) => (
-                          <option
-                            key={c.valor_selecao || `${c.corrida}-${c.lote || ''}`}
-                            value={c.valor_selecao || `${c.corrida}||${c.lote || ''}`}
-                          >
-                            {c.corrida}
-                            {c.lote ? `/${c.lote}` : ''}
-                            {c.saldo ? ` - Saldo: ${c.saldo} ${c.unidade || ''}` : ''}
-                            {c.fornecedor ? ` - ${c.fornecedor}` : ''}
-                            {c.nf_entrada ? ` - NF ${c.nf_entrada}` : ''}
-                            {c.certificado_fornecedor ? ` - Cert. Forn. ${c.certificado_fornecedor}` : ''}
-                            {c.status_certificado_fornecedor === 'rascunho' ? ' - Rascunho' : ''}
-                          </option>
-                        ))}
+                        {(() => {
+                          const list = corridasDisponiveisPorItem[idx] || [];
+                          const corrEff = it.corrida || it.corrida_snapshot || '';
+                          const loteEff = it.lote || it.lote_snapshot || '';
+                          const manualVal = `${corrEff}||${loteEff}`;
+                          const inList = list.some(
+                            (c) => (c.valor_selecao || `${c.corrida}||${c.lote || ''}`) === manualVal,
+                          );
+                          const extra =
+                            corrEff || loteEff
+                              ? !inList && manualVal !== '||'
+                                ? (
+                                    <option key={`__manual_cq__-${idx}`} value={manualVal}>
+                                      Corrida/lote manual: {corrEff}
+                                      {loteEff ? ` / ${loteEff}` : ''}
+                                    </option>
+                                  )
+                                : null
+                              : null;
+                          return (
+                            <>
+                              {extra}
+                              {list.map((c) => (
+                                <option
+                                  key={c.valor_selecao || `${c.corrida}-${c.lote || ''}`}
+                                  value={c.valor_selecao || `${c.corrida}||${c.lote || ''}`}
+                                >
+                                  {c.corrida}
+                                  {c.lote ? `/${c.lote}` : ''}
+                                  {c.saldo ? ` - Saldo: ${c.saldo} ${c.unidade || ''}` : ''}
+                                  {c.fornecedor ? ` - ${c.fornecedor}` : ''}
+                                  {c.nf_entrada ? ` - NF ${c.nf_entrada}` : ''}
+                                  {c.certificado_fornecedor ? ` - Cert. Forn. ${c.certificado_fornecedor}` : ''}
+                                  {c.status_certificado_fornecedor === 'rascunho' ? ' - Rascunho' : ''}
+                                </option>
+                              ))}
+                            </>
+                          );
+                        })()}
                       </select>
-                      {!it.produto ? null : (corridasDisponiveisPorItem[idx] || []).length === 0 ? (
+                      {!coerceProdutoItemId(it.produto) ? null : (corridasDisponiveisPorItem[idx] || []).length === 0 ? (
                         <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
-                          Nenhuma corrida/lote disponível encontrada para este Produto Nexus.
+                          Nenhuma corrida/lote disponível encontrada para este produto cadastrado.
                           Verifique entrada de estoque, conferência da NF-e de entrada ou certificado fornecedor.
                         </p>
                       ) : null}
                       <p className="text-xs text-muted-foreground mt-1">
-                        Se necessário, você ainda pode informar corrida manualmente. Isso será tratado como rastreabilidade manual/incompleta.
+                        Se necessário, informe corrida e lote manualmente (campos acima e abaixo). Use «Buscar dados do fornecedor» com produto + corrida/lote para carregar dados técnicos do certificado de fornecedor registrado. Se o item do fornecedor não tiver produto vinculado, será exibido aviso para conferência antes de aplicar. Não é obrigatório escolher na lista de corridas disponíveis.
                       </p>
-                      <input
-                        className="erp-input mt-1"
-                        placeholder="Corrida manual"
-                        value={it.corrida || ''}
-                        onChange={(e) => updateItem(idx, { corrida: e.target.value, origem_rastreabilidade_tipo: 'manual' })}
-                      />
+                      <div className="flex flex-col sm:flex-row gap-2 mt-1 sm:items-end">
+                        <div className="flex-1">
+                          <label className="erp-label">Corrida manual</label>
+                          <input
+                            className="erp-input mt-1"
+                            placeholder="Ex.: HEN-001"
+                            value={it.corrida || it.corrida_snapshot || ''}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              updateItem(idx, {
+                                corrida: v,
+                                origem_rastreabilidade_tipo: 'manual',
+                                ...(v.trim() === '' ? { corrida_snapshot: '' } : {}),
+                              });
+                            }}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          className="erp-btn-outline shrink-0"
+                          disabled={fornecedorBuscaItemLoading === idx || editing?.status === 'cancelado'}
+                          title={
+                            editing?.status === 'cancelado'
+                              ? 'Certificado cancelado: apenas consulta.'
+                              : 'Busca por produto + corrida/lote (e código/descrição do item). Itens do fornecedor sem produto vinculado exigem confirmação antes de aplicar.'
+                          }
+                          onClick={() => void buscarDadosFornecedor(idx)}
+                        >
+                          {fornecedorBuscaItemLoading === idx ? 'Buscando…' : 'Buscar dados do fornecedor'}
+                        </button>
+                      </div>
+                      {fornecedorBuscaItemMsg[idx] ? (
+                        <p
+                          className={
+                            fornecedorBuscaItemMsg[idx].type === 'error'
+                              ? 'text-sm text-destructive mt-2'
+                              : 'text-sm text-amber-800 dark:text-amber-200 mt-2'
+                          }
+                          role={fornecedorBuscaItemMsg[idx].type === 'error' ? 'alert' : 'status'}
+                        >
+                          {fornecedorBuscaItemMsg[idx].text}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                   <div className="md:col-span-6 rounded border border-border p-2">
@@ -1025,6 +1485,9 @@ const Certificados = () => {
                   </div>
                   {it.incluir_no_certificado !== false && it.tipo_dados_tecnicos === 'VALVULA_COMPONENTES' && (
                     <div className="md:col-span-6 rounded border border-border p-2 bg-muted/10">
+                      <p className="text-xs text-muted-foreground mb-2">
+                        Para buscar componentes no certificado de fornecedor, informe corrida/lote no item (acima) ou corrida nos componentes e use «Buscar dados do fornecedor» na seção Rastreabilidade.
+                      </p>
                       <div className="flex flex-wrap gap-2 items-center justify-between mb-2">
                         <p className="text-xs font-semibold">Componentes da válvula</p>
                         <div className="flex gap-2">
@@ -1119,10 +1582,7 @@ const Certificados = () => {
                   {it.incluir_no_certificado !== false && it.tipo_dados_tecnicos !== 'VALVULA_COMPONENTES' && (
                     <>
                   <div className="md:col-span-6 flex flex-wrap gap-2 mt-1">
-                    <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => void buscarDadosFornecedor(idx)}>
-                      {(it.tipo_dados_tecnicos || 'PADRAO_ITEM') === 'VALVULA_COMPONENTES' ? 'Usar componentes do certificado fornecedor' : 'Usar certificado de fornecedor'}
-                    </button>
-                    <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => { setFornecedorTargetIdx(idx); setFornecedorFiltro((p) => ({ ...p, corrida: form.itens[idx].corrida || '' })); setFornecedorBuscaAvancadaOpen(true); }}>
+                    <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => { setFornecedorTargetIdx(idx); const cq = formRef.current.itens[idx]; setFornecedorFiltro((p) => ({ ...p, corrida: cq?.corrida || cq?.corrida_snapshot || '' })); setFornecedorBuscaAvancadaOpen(true); }}>
                       Buscar dados técnicos avançado
                     </button>
                     <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => copyTecnicoFromPrevious(idx)}>Copiar dados técnicos do item anterior</button>
@@ -1254,22 +1714,49 @@ const Certificados = () => {
           <textarea className="erp-input mt-1 h-20" value={form.texto_padrao || ''} onChange={(e) => setF('texto_padrao', e.target.value)} />
         </div>
 
-        <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
-          <button type="button" className="erp-btn-outline" onClick={() => setModalOpen(false)}>Cancelar</button>
-          <button type="button" className="erp-btn-outline" onClick={() => void salvar(false)}>Salvar rascunho</button>
-          <button type="button" className="erp-btn-outline" onClick={() => void visualizarPreviaPdf()} disabled={pdfLoading}>
-            {pdfLoading ? 'Gerando prévia...' : 'Visualizar prévia PDF'}
+        <div className="flex flex-wrap justify-end gap-2 mt-6 pt-4 border-t border-border">
+          <button type="button" className="erp-btn-outline" onClick={closeCertModal}>Fechar</button>
+          <button
+            type="button"
+            className="erp-btn-outline"
+            onClick={() => void salvar(false)}
+            title={titleSalvarQualidadeSemEmitir()}
+          >
+            {labelSalvarQualidadeSemEmitir()}
           </button>
+          <button
+            type="button"
+            className="erp-btn-outline"
+            onClick={() => void visualizarPreviaPdf()}
+            disabled={modalPdfBusy || editing?.status === 'cancelado'}
+            title={
+              editing?.status === 'cancelado'
+                ? 'Prévia indisponível para certificado cancelado.'
+                : 'Gera prévia a partir do rascunho atual (salva automaticamente antes). Prévia permitida mesmo com rastreabilidade pendente.'
+            }
+          >
+            {modalPdfBusy ? 'Gerando prévia…' : 'Prévia PDF (rascunho)'}
+          </button>
+          {form.status !== 'cancelado' && resumoRastreabilidade && !resumoRastreabilidade.pode_emitir ? (
+            <p className="w-full text-xs text-amber-800 dark:text-amber-300 text-right mt-1">
+              Prévia permitida. A emissão definitiva exige rastreabilidade completa.
+            </p>
+          ) : null}
           {editing?.id ? (
             <button
               type="button"
               className="erp-btn-outline"
-              onClick={() => void visualizarOuBaixarPdf(editing.id, form.status !== 'emitido', true, {
+              onClick={() => void visualizarOuBaixarPdf(editing.id, form.status === 'rascunho', true, {
                 numero: numeroArquivoAtual(),
                 cliente: form.cliente_nome_snapshot,
                 nf: form.nota_fiscal_numero,
               })}
-              disabled={pdfLoading}
+              disabled={modalPdfBusy}
+              title={
+                form.status === 'cancelado'
+                  ? 'Baixar PDF do certificado cancelado (marca CANCELADO).'
+                  : 'Baixar PDF conforme o status atual.'
+              }
             >
               Baixar PDF
             </button>
@@ -1277,10 +1764,12 @@ const Certificados = () => {
           <button
             type="button"
             className="erp-btn-primary"
+            disabled={form.status === 'cancelado' || modalPdfBusy}
+            title={form.status === 'cancelado' ? 'Não é possível emitir um certificado cancelado.' : 'Valida itens incluídos e grava como emitido.'}
             onClick={() => {
               const itensIncluidos = form.itens.filter((it) => it.incluir_no_certificado !== false);
               if (!itensIncluidos.length) {
-                setSaveError('O certificado precisa ter pelo menos um item incluído.');
+                setSaveError('Inclua ao menos um item no certificado antes de emitir.');
                 return;
               }
               const existemNaoIncluidos = form.itens.some((it) => it.incluir_no_certificado === false);
@@ -1290,15 +1779,10 @@ const Certificados = () => {
                 );
                 if (!okParcial) return;
               }
-              const incompleto = itensIncluidos.some((it) => !it.corrida || !it.norma);
-              if (incompleto) {
-                const ok = window.confirm('Existem dados técnicos incompletos. Deseja emitir mesmo assim?');
-                if (!ok) return;
-              }
               void salvar(true);
             }}
           >
-            Emitir/finalizar
+            Emitir / finalizar
           </button>
         </div>
       </Modal>
@@ -1340,11 +1824,24 @@ const Certificados = () => {
         <div className="space-y-2 max-h-[55vh] overflow-auto pr-1">
           {fornecedorMatches.map((r) => (
             <div key={`${r.certificado_fornecedor_id}-${r.id}`} className="rounded border border-border p-3">
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                {r.produto_match_tipo === 'sem_vinculo' ? (
+                  <span className="erp-badge-warning text-xs">Item CF sem produto vinculado</span>
+                ) : null}
+                {r.produto_match_tipo === 'vinculado' ? (
+                  <span className="erp-badge-success text-xs">Produto CF = produto CQ</span>
+                ) : null}
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-1 text-sm">
                 <p><span className="font-medium">Fornecedor:</span> {r.fornecedor_nome || '—'}</p>
                 <p><span className="font-medium">NF entrada:</span> {r.numero_nf_entrada || '—'}</p>
                 <p><span className="font-medium">Certificado:</span> {r.numero_certificado_fornecedor || `#${r.certificado_fornecedor_id}`}</p>
-                <p><span className="font-medium">Status:</span> {r.status_certificado_fornecedor || '—'}</p>
+                <p><span className="font-medium">Status (fornecedor):</span>{' '}
+                  {(() => {
+                    const sb = certificadoFornecedorStatusBadge(r.status_certificado_fornecedor);
+                    return <span className={sb.className}>{sb.label}</span>;
+                  })()}
+                </p>
                 <p><span className="font-medium">Código item fornecedor:</span> {r.codigo_produto || '—'}</p>
                 <p><span className="font-medium">Descrição:</span> {r.descricao_material || '—'}</p>
                 <p><span className="font-medium">Corrida:</span> {r.corrida || '—'}</p>
@@ -1360,6 +1857,9 @@ const Certificados = () => {
                   </p>
                 ) : null}
               </div>
+              {r.aviso_sem_vinculo_produto ? (
+                <p className="text-xs text-amber-800 dark:text-amber-200 mt-2">{r.aviso_sem_vinculo_produto}</p>
+              ) : null}
               {r.aviso_divergencia_codigo ? <p className="text-xs text-amber-700 dark:text-amber-300 mt-2">{r.aviso_divergencia_codigo}</p> : null}
               <div className="flex justify-end mt-2">
                 <button

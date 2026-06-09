@@ -146,7 +146,7 @@ class NFeSaida352AtualizarImpostosTests(TestCase):
         prev = preparar_atualizacao_impostos_nfe(nf)
         self.assertFalse(prev['pode_aplicar'])
         self.assertEqual(prev['resumo']['itens_sem_regra'], 1)
-        self.assertIn('Nenhuma regra fiscal', prev['itens'][0]['alertas'][0])
+        self.assertIn('regra fiscal de saída', prev['itens'][0]['alertas'][0].lower())
 
     def test_bloqueio_autorizada_interna(self):
         nf, _ = self._nf_rascunho_snapshot_vazio()
