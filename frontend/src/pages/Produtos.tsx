@@ -54,6 +54,19 @@ import type { AxiosError } from 'axios';
 
 type FormState = Omit<Produto, 'id'> & { id?: number };
 
+const MATERIAIS = [
+  "Aço carbono",
+  "Aço inox",
+  "Alumínio",
+  "Bronze",
+  "Ferro fundido",
+  "Latão",
+  "PVC",
+  "PTFE",
+  "Borracha",
+  "Outro",
+];
+
 const emptyForm = (): FormState => ({
   modo_codigo: 'INTERNO',
   familia_id: null,
@@ -1808,6 +1821,7 @@ const Produtos = () => {
           <div>
             <label className="erp-label">Material</label>
             <select className="erp-select mt-1 w-full" value={form.material} onChange={(e) => f('material', e.target.value)}>
+              <option value="">Selecione...</option>
               {form.material && !MATERIAIS.includes(form.material) ? (
                 <option value={form.material}>{form.material}</option>
               ) : null}
