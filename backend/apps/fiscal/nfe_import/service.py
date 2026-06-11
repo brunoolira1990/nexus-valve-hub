@@ -13,10 +13,12 @@ from ..models import (
     ItemNFeSaidaHistoricaImportada,
     NFeSaidaHistoricaImportada,
 )
-from ..nfe_historica_classificacao import classificar_por_empresa, norm_digits
+from ..nfe_historica_classificacao import classificar_por_empresa, eh_entrada_propria_ja_emitida, norm_digits
+from .service_entrada_propria import mensagem_rejeicao_entrada_propria_em_outro_fluxo
 from ..services.reforma_tributaria import enriquecer_reforma_e_outros_json_nf
 from .falha_xml import falha_com_traceback, montar_falha_importacao_xml, normalizar_tipo_documento_api
 from .parser import ParsedNFeEvento, ParsedNFeImport, extract_dest_documento, parse_xml_nfe_importacao
+from .parser_entrada import parse_nfe_entrada_xml
 
 
 def _chave_from_parsed(parsed: ParsedNFeImport) -> str:
@@ -278,6 +280,27 @@ def importar_arquivos(arquivos: list[tuple[str, bytes]]) -> dict[str, Any]:
         nome = nome or 'sem_nome.xml'
         parsed = parse_xml_nfe_importacao(conteudo)
         if parsed.erro:
+            if parsed.tipo_documento == 'nfe':
+                entrada_parsed = parse_nfe_entrada_xml(conteudo)
+                if not entrada_parsed.erro:
+                    is_propria, _emp = eh_entrada_propria_ja_emitida(
+                        entrada_parsed.emit_json,
+                        entrada_parsed.dest_json,
+                        tp_nf=entrada_parsed.tp_nf,
+                    )
+                    if is_propria:
+                        msg, acao = mensagem_rejeicao_entrada_propria_em_outro_fluxo()
+                        erros.append(
+                            montar_falha_importacao_xml(
+                                arquivo=nome,
+                                chave=entrada_parsed.chave_acesso,
+                                tipo_documento='NFE',
+                                tipo_erro='Classificação / cadastro',
+                                mensagem_completa=msg,
+                                acao_sugerida=acao,
+                            )
+                        )
+                        continue
             ch = _chave_from_parsed(parsed)
             td = _tipo_doc_api(parsed)
             te = (
@@ -345,6 +368,24 @@ def importar_arquivos(arquivos: list[tuple[str, bytes]]) -> dict[str, Any]:
             continue
 
         classificacao = classificar_por_empresa(parsed.nfe.emit_json, parsed.nfe.dest_json)
+        is_propria, _emp = eh_entrada_propria_ja_emitida(
+            parsed.nfe.emit_json,
+            parsed.nfe.dest_json,
+            tp_nf=parsed.nfe.tp_nf,
+        )
+        if is_propria:
+            msg, acao = mensagem_rejeicao_entrada_propria_em_outro_fluxo()
+            erros.append(
+                montar_falha_importacao_xml(
+                    arquivo=nome,
+                    chave=parsed.nfe.chave_acesso,
+                    tipo_documento='NFE',
+                    tipo_erro='Classificação / cadastro',
+                    mensagem_completa=msg,
+                    acao_sugerida=acao,
+                )
+            )
+            continue
         if classificacao.tipo_fluxo == 'entrada':
             erros.append(
                 montar_falha_importacao_xml(

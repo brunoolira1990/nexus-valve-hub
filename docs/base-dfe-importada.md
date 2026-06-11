@@ -32,7 +32,7 @@ A importação de XML ocorre **somente** nas telas de base importada:
 
 Telas operacionais **não** duplicam o importador: exibem link “Ir para Base … Importada” e empty states que orientam o usuário.
 
-- **NF-e Entrada:** “Emitir entrada própria” permanece na tela operacional; XML de fornecedor → base importada.
+- **NF-e Entrada:** “Emitir entrada própria” e **«Importar entrada própria já emitida»** permanecem na tela operacional; XML de fornecedor → base importada; XML de entrada própria já emitida **não** vai para as bases importadas (rejeição orientativa).
 - **CT-e Entrada:** não é emissão manual de CT-e; XML → base importada.
 
 Promoção de documento importado para operacional será ação explícita futura (fora desta fase).

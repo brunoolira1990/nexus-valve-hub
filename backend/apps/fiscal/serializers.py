@@ -258,10 +258,82 @@ class ItemNFeEntradaSerializer(serializers.ModelSerializer):
         return data
 
 
+class NFeEntradaListSerializer(serializers.ModelSerializer):
+    """Listagem operacional — sem XML bruto."""
+
+    fornecedor_nome = serializers.SerializerMethodField(read_only=True)
+    fornecedor_cnpj = serializers.SerializerMethodField(read_only=True)
+    tipo_origem_label = serializers.SerializerMethodField(read_only=True)
+    status_operacional_label = serializers.SerializerMethodField(read_only=True)
+    destinatario_nome = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = NFeEntrada
+        fields = (
+            'id',
+            'numero',
+            'serie',
+            'chave_acesso',
+            'fornecedor_id',
+            'fornecedor_nome',
+            'fornecedor_cnpj',
+            'destinatario_nome',
+            'data',
+            'valor_total',
+            'tipo_origem',
+            'tipo_origem_label',
+            'status_operacional',
+            'status_operacional_label',
+            'pedido_compra_id',
+            'cte_id',
+            'importado_em',
+        )
+
+    def get_fornecedor_nome(self, obj):
+        if obj.fornecedor_id and obj.fornecedor:
+            return obj.fornecedor.razao_social
+        if obj.empresa_emitente_id and obj.empresa_emitente:
+            return obj.empresa_emitente.razao_social
+        emit = obj.emit_json or {}
+        return emit.get('xNome') or emit.get('xFant') or '—'
+
+    def get_fornecedor_cnpj(self, obj):
+        if obj.fornecedor_id and obj.fornecedor:
+            return obj.fornecedor.cnpj
+        if obj.empresa_emitente_id and obj.empresa_emitente:
+            return obj.empresa_emitente.cnpj
+        emit = obj.emit_json or {}
+        return emit.get('CNPJ') or emit.get('CPF') or ''
+
+    def get_destinatario_nome(self, obj):
+        if obj.cliente_destinatario_id and obj.cliente_destinatario:
+            return obj.cliente_destinatario.razao_social
+        dest = obj.dest_json or {}
+        return dest.get('xNome') or dest.get('xFant') or ''
+
+    def get_tipo_origem_label(self, obj):
+        if obj.tipo_origem == NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_IMPORTADA:
+            return 'Entrada própria'
+        return obj.get_tipo_origem_display()
+
+    def get_status_operacional_label(self, obj):
+        return obj.get_status_operacional_display()
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['data'] = instance.data.isoformat()
+        data['valor_total'] = float(instance.valor_total)
+        if instance.importado_em:
+            data['importado_em'] = instance.importado_em.isoformat()
+        return data
+
+
 class NFeEntradaSerializer(serializers.ModelSerializer):
     fornecedor_id = serializers.PrimaryKeyRelatedField(
         queryset=Fornecedor.objects.all(),
         source='fornecedor',
+        allow_null=True,
+        required=False,
     )
     pedido_compra_id = serializers.PrimaryKeyRelatedField(
         queryset=PedidoCompra.objects.all(),
@@ -277,32 +349,71 @@ class NFeEntradaSerializer(serializers.ModelSerializer):
     )
     fornecedor_nome = serializers.SerializerMethodField(read_only=True)
     fornecedor_cnpj = serializers.SerializerMethodField(read_only=True)
-    itens = ItemNFeEntradaSerializer(many=True)
+    tipo_origem_label = serializers.SerializerMethodField(read_only=True)
+    status_operacional_label = serializers.SerializerMethodField(read_only=True)
+    destinatario_nome = serializers.SerializerMethodField(read_only=True)
+    itens = ItemNFeEntradaSerializer(many=True, required=False)
 
     class Meta:
         model = NFeEntrada
         fields = (
             'id',
             'numero',
+            'serie',
+            'chave_acesso',
             'fornecedor_id',
             'fornecedor_nome',
             'fornecedor_cnpj',
+            'destinatario_nome',
             'data',
             'valor_total',
+            'tipo_origem',
+            'tipo_origem_label',
+            'status_operacional',
+            'status_operacional_label',
             'pedido_compra_id',
             'cte_id',
             'itens',
+            'itens_json',
+            'importado_em',
+            'nome_arquivo',
+        )
+        read_only_fields = (
+            'tipo_origem',
+            'status_operacional',
+            'chave_acesso',
+            'serie',
+            'itens_json',
+            'importado_em',
+            'nome_arquivo',
         )
 
     def get_fornecedor_nome(self, obj):
-        return obj.fornecedor.razao_social
+        return NFeEntradaListSerializer().get_fornecedor_nome(obj)
 
     def get_fornecedor_cnpj(self, obj):
-        return obj.fornecedor.cnpj
+        return NFeEntradaListSerializer().get_fornecedor_cnpj(obj)
+
+    def get_destinatario_nome(self, obj):
+        return NFeEntradaListSerializer().get_destinatario_nome(obj)
+
+    def get_tipo_origem_label(self, obj):
+        return NFeEntradaListSerializer().get_tipo_origem_label(obj)
+
+    def get_status_operacional_label(self, obj):
+        return NFeEntradaListSerializer().get_status_operacional_label(obj)
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
         normalize_operational_fields(attrs, {'numero'})
+        tipo = (
+            attrs.get('tipo_origem')
+            or (self.instance.tipo_origem if self.instance else NFeEntrada.TipoOrigem.MANUAL)
+        )
+        if tipo == NFeEntrada.TipoOrigem.MANUAL:
+            forn = attrs.get('fornecedor')
+            if forn is None and not (self.instance and self.instance.fornecedor_id):
+                raise ValidationError({'fornecedor_id': 'Fornecedor obrigatório para entrada manual.'})
         return attrs
 
     def to_representation(self, instance):
@@ -312,23 +423,37 @@ class NFeEntradaSerializer(serializers.ModelSerializer):
         data['valor_total'] = float(instance.valor_total)
         data['pedido_compra_id'] = instance.pedido_compra_id
         data['cte_id'] = instance.cte_id
+        if instance.importado_em:
+            data['importado_em'] = instance.importado_em.isoformat()
+        if instance.tipo_origem == NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_IMPORTADA:
+            data['itens'] = []
         return data
 
-    @transaction.atomic
-    def create(self, validated_data):
-        itens_data = validated_data.pop('itens')
-        nf = NFeEntrada.objects.create(**validated_data)
-        for item in itens_data:
-            ItemNFeEntrada.objects.create(nf=nf, **item)
-        recalcular_valor_nf_entrada(nf)
+    @staticmethod
+    def _aplicar_estoque_se_manual(nf: NFeEntrada) -> None:
+        if nf.tipo_origem == NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_IMPORTADA:
+            return
         try:
             aplicar_todos_itens_entrada(nf)
         except ValueError as exc:
             raise ValidationError({'detail': str(exc)}) from exc
+
+    @transaction.atomic
+    def create(self, validated_data):
+        itens_data = validated_data.pop('itens', [])
+        validated_data.setdefault('tipo_origem', NFeEntrada.TipoOrigem.MANUAL)
+        validated_data.setdefault('status_operacional', NFeEntrada.StatusOperacional.RASCUNHO)
+        nf = NFeEntrada.objects.create(**validated_data)
+        for item in itens_data:
+            ItemNFeEntrada.objects.create(nf=nf, **item)
+        recalcular_valor_nf_entrada(nf)
+        self._aplicar_estoque_se_manual(nf)
         return nf
 
     @transaction.atomic
     def update(self, instance, validated_data):
+        if instance.tipo_origem == NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_IMPORTADA:
+            raise ValidationError({'detail': 'NF-e de entrada própria importada não pode ser editada por este formulário.'})
         itens_data = validated_data.pop('itens', None)
         reverter_todos_itens_entrada(instance)
         for attr, value in validated_data.items():

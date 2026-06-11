@@ -5,7 +5,14 @@ import {
   type PaginatedResponse,
   unwrapListResults,
 } from '@/lib/apiList';
-import type { CTeEntrada, ItemNFe, NFeEntrada, NFeSaida, NFeSaidaListItem } from '@/types';
+import type {
+  CTeEntrada,
+  ItemNFe,
+  NFeEntrada,
+  NFeEntradaPropriaImportResultado,
+  NFeSaida,
+  NFeSaidaListItem,
+} from '@/types';
 import type { DiagnosticoFiscalPreview, EnderecoFiscalResumo } from '@/lib/enderecoFiscal';
 
 /** Remove campos só de UI; em PATCH mantém `id` (obrigatório em NF-e de faturamento). */
@@ -54,6 +61,15 @@ export const nfeEntradasService = {
   },
   delete: async (id: number) => {
     await api.delete(`${nfEnt}${id}/`);
+  },
+  importarEntradaPropriaEmitida: async (files: File[]) => {
+    const fd = new FormData();
+    files.forEach((f) => fd.append('arquivos', f));
+    return (
+      await api.post<NFeEntradaPropriaImportResultado>(`${nfEnt}importar-entrada-propria-emitida/`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+    ).data;
   },
 };
 

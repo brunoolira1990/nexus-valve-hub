@@ -18,14 +18,59 @@ class EstoqueCorrida(models.Model):
 
 
 class NFeEntrada(models.Model):
+    class TipoOrigem(models.TextChoices):
+        MANUAL = 'MANUAL', 'Manual'
+        ENTRADA_PROPRIA_IMPORTADA = 'ENTRADA_PROPRIA_IMPORTADA', 'Entrada própria importada'
+
+    class StatusOperacional(models.TextChoices):
+        RASCUNHO = 'RASCUNHO', 'Rascunho'
+        IMPORTADA_PENDENTE_CONFERENCIA = (
+            'IMPORTADA_PENDENTE_CONFERENCIA',
+            'Importada — pendente conferência',
+        )
+
     numero = models.CharField(max_length=64)
+    serie = models.CharField(max_length=4, blank=True)
+    chave_acesso = models.CharField(max_length=44, blank=True, db_index=True)
     fornecedor = models.ForeignKey(
         'cadastros.Fornecedor',
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name='nf_entradas',
+    )
+    empresa_emitente = models.ForeignKey(
+        'cadastros.Empresa',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='nf_entradas_proprias_emitidas',
+    )
+    cliente_destinatario = models.ForeignKey(
+        'cadastros.Cliente',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='nf_entradas_proprias_destinatario',
     )
     data = models.DateField()
     valor_total = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
+    tipo_origem = models.CharField(
+        max_length=32,
+        choices=TipoOrigem.choices,
+        default=TipoOrigem.MANUAL,
+    )
+    status_operacional = models.CharField(
+        max_length=40,
+        choices=StatusOperacional.choices,
+        default=StatusOperacional.RASCUNHO,
+    )
+    emit_json = models.JSONField(default=dict, blank=True)
+    dest_json = models.JSONField(default=dict, blank=True)
+    itens_json = models.JSONField(default=list, blank=True)
+    xml_importado = models.TextField(blank=True)
+    nome_arquivo = models.CharField(max_length=255, blank=True)
+    importado_em = models.DateTimeField(null=True, blank=True)
     pedido_compra = models.ForeignKey(
         'comercial.PedidoCompra',
         on_delete=models.SET_NULL,
@@ -44,6 +89,13 @@ class NFeEntrada(models.Model):
     class Meta:
         ordering = ['-data', 'numero']
         verbose_name = 'NF entrada'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['chave_acesso'],
+                condition=~models.Q(chave_acesso=''),
+                name='uniq_nf_entrada_chave_acesso_nao_vazia',
+            ),
+        ]
 
 
 class ItemNFeEntrada(models.Model):
