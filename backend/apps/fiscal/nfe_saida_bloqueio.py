@@ -7,6 +7,7 @@ from apps.fiscal.models import NFeSaida
 STATUS_NFE_RASCUNHO = 'RASCUNHO'
 
 _STATUS_EMITIDA = frozenset({'EMITIDA', 'EMITIDO', 'AUTORIZADA_INTERNA', 'AUTORIZADA'})
+_STATUS_AUTORIZADA_TRAVA = frozenset({'AUTORIZADA_INTERNA', 'AUTORIZADA'})
 _STATUS_CANCELADA = frozenset({'CANCELADA', 'CANCELADO', 'CANCELADA_INTERNA'})
 _STATUS_AUTORIZADA_HOMOLOG = frozenset({'AUTORIZADA_HOMOLOGACAO'})
 
@@ -72,12 +73,13 @@ def origem_comercial_travada(nf: NFeSaida) -> bool:
 
 
 def nf_ja_finalizada_operacionalmente(nf: NFeSaida) -> bool:
+    """Trava edição estrutural após autorização real — não confunde status legado EMITIDA com SEFAZ."""
     if nf_autorizada_homologacao(nf):
         return True
     st = _status_normalizado(nf.status)
-    if st in _STATUS_EMITIDA or st in _STATUS_CANCELADA:
+    if st in _STATUS_CANCELADA:
         return True
-    if st in _STATUS_AUTORIZADA_HOMOLOG:
+    if st in _STATUS_AUTORIZADA_TRAVA or st in _STATUS_AUTORIZADA_HOMOLOG:
         return True
     return bool(nf.efeitos_autorizacao_aplicados_em)
 

@@ -107,7 +107,7 @@ class NFePerf4013612Tests(TestCase):
         mock_cep.return_value = {'cidade': 'BELEM', 'uf': 'PA', 'cep': '66630-505'}
         nf = self._nf_pronta()
         with patch(
-            'apps.fiscal.nfe_saida_prontidao.validar_nfe_saida_para_emissao',
+            'apps.fiscal.validacao_nfe_saida.validar_nfe_saida_para_emissao',
             wraps=validar_nfe_saida_para_emissao,
         ) as mock_val:
             validar_conferencia_nfe(nf, usuario=self.user)
