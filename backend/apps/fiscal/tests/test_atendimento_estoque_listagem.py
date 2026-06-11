@@ -52,6 +52,13 @@ def _setup(suffix: str, *, saldo_fisico: Decimal = Decimal('20')):
     return cliente, produto, corrida
 
 
+def _api_results(res):
+    data = res.data
+    if isinstance(data, list):
+        return data
+    return data.get('results', [])
+
+
 def _criar_nf_antecipada(cliente, produto, numero: str, qtd: str = '10.000'):
     ser = NFeSaidaSerializer(
         data={
@@ -79,8 +86,9 @@ class AtendimentoEstoqueListagemTests(TestCase):
         url = reverse('atendimento-estoque-list')
         res = self.client.get(url, {'pendentes': 'true'})
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(len(res.data), 1)
-        self.assertEqual(res.data[0]['status'], AtendimentoEstoque.Status.PENDENTE)
+        results = _api_results(res)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]['status'], AtendimentoEstoque.Status.PENDENTE)
 
     def test_filtrar_por_status(self):
         atend = AtendimentoEstoque.objects.get(nf_saida=self.nf)
@@ -89,7 +97,7 @@ class AtendimentoEstoqueListagemTests(TestCase):
         url = reverse('atendimento-estoque-list')
         res = self.client.get(url, {'status': AtendimentoEstoque.Status.PENDENTE})
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(len(res.data), 0)
+        self.assertEqual(len(_api_results(res)), 0)
 
     def test_saldo_consolidado_soma_fisico_estoque_corrida(self):
         saldo = montar_saldo_consolidado_produto(self.produto)

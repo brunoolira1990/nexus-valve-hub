@@ -5,7 +5,7 @@ from typing import Any
 
 from django.db import transaction
 
-from apps.cadastros.models import Empresa, Fornecedor
+from apps.cadastros.models import Cliente, Empresa, Fornecedor
 
 from .models import (
     ItemNFeEntradaHistoricaImportada,
@@ -35,6 +35,26 @@ def resolve_empresa_from_party(party: dict[str, Any] | None) -> Empresa | None:
     return None
 
 
+ACAO_IMPORTAR_ENTRADA_PROPRIA_EMITIDA = (
+    'Em NF-e Entrada, use a ação «Importar entrada própria já emitida».'
+)
+
+MSG_ENTRADA_PROPRIA_JA_EMITIDA = (
+    'NF-e de entrada própria já emitida pela Empresa (ex.: devolução ou recusa de cliente). '
+    'Não use a base histórica de saída nem a de entrada de fornecedor.'
+)
+
+
+def resolve_cliente_from_party(party: dict[str, Any] | None) -> Cliente | None:
+    doc = documento_party(party)
+    if len(doc) != 14:
+        return None
+    for cli in Cliente.objects.only('id', 'cnpj'):
+        if norm_digits(cli.cnpj) == doc:
+            return cli
+    return None
+
+
 def resolve_fornecedor_from_party(party: dict[str, Any] | None) -> Fornecedor | None:
     doc = documento_party(party)
     if len(doc) != 14:
@@ -50,6 +70,21 @@ class ClassificacaoNFe:
     empresa_emitente: Empresa | None
     empresa_destinataria: Empresa | None
     tipo_fluxo: str
+
+
+def eh_entrada_propria_ja_emitida(
+    emit_json: dict[str, Any],
+    dest_json: dict[str, Any],
+    *,
+    tp_nf: str | None,
+) -> tuple[bool, Empresa | None]:
+    """Emitente = Empresa cadastrada e tpNF=0 (entrada própria já emitida, não venda histórica)."""
+    empresa_emitente = resolve_empresa_from_party(emit_json)
+    if not empresa_emitente:
+        return False, None
+    if str(tp_nf or '').strip() != '0':
+        return False, empresa_emitente
+    return True, empresa_emitente
 
 
 def classificar_por_empresa(emit_json: dict[str, Any], dest_json: dict[str, Any]) -> ClassificacaoNFe:

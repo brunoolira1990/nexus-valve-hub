@@ -543,7 +543,7 @@ Detalhamento: `docs/base-dfe-importada.md`.
 ### ERP 4.0.10.2.1 — separação UX importação
 
 - **Base importada** = único ponto de “Selecionar XMLs” (NF-e entrada/saída, CT-e).
-- **NF-e Entrada operacional** = entradas conferidas/promovidas + **entrada própria** (diferente de XML de fornecedor).
+- **NF-e Entrada operacional** = entradas conferidas/promovidas + **entrada própria** (diferente de XML de fornecedor). XML de **entrada própria já emitida** pela empresa (ex.: devolução/recusa) importa por ação dedicada «Importar entrada própria já emitida» — status importada/pendente de conferência, **sem** financeiro, estoque ou expedição automáticos.
 - **CT-e Entrada operacional** = acompanhamento operacional; **não** é emissão manual de CT-e nem importador XML.
 - **CT-e importado (base)** = XML na base; alimenta apuração/BI/precificação quando produção/autorizado.
 - **CT-e conferido** = revisado na base (`status_conferencia=CONFERIDO`, `apto_operacional=true`); aparece em CT-e Entrada; **sem** financeiro, expedição ou rateio automático.

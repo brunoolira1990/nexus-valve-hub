@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, X, ExternalLink } from 'lucide-react';
+import { Plus, X, ExternalLink, FileUp, AlertCircle, Copy } from 'lucide-react';
 import { NexusButton } from '@/components/nexus';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
+import { StatusBadge } from '@/components/nexus/StatusBadge';
 import { nfeEntradasService } from '@/services/api/fiscal';
-import type { NFeEntrada, ItemNFe } from '@/types';
+import { apiErrorMessage } from '@/services/api/config';
+import type { NFeEntrada, ItemNFe, NFeEntradaPropriaImportResultado } from '@/types';
 import { usePaginatedList } from '@/hooks/usePaginatedList';
 import { PaginationControls } from '@/components/list/PaginationControls';
 import { ErrorState } from '@/components/list/ListStates';
@@ -13,6 +15,11 @@ import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
 import { TableSkeleton } from '@/components/nexus/Skeleton';
 import { chaveNfeResumida } from '@/lib/chaveNfeResumida';
 import { formatDateBr } from '@/lib/dateBr';
+import {
+  copiarTextoParaAreaDeTransferencia,
+  montarTextoDiagnosticoNfeEntradaXml,
+  normalizarFalhaImportacaoXml,
+} from '@/utils/nfeXmlImportDiagnostico';
 
 const BASE_NFE_ENTRADA_IMPORTADA_PATH = '/nfe-entrada-historica-importada';
 
@@ -33,6 +40,11 @@ const NFeEntrada = () => {
     reload,
   } = usePaginatedList<NFeEntrada>({ fetchPage: nfeEntradasService.listPaginated });
   const [modalOpen, setModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importErro, setImportErro] = useState<string | null>(null);
+  const [importResultado, setImportResultado] = useState<NFeEntradaPropriaImportResultado | null>(null);
+  const [diagCopiado, setDiagCopiado] = useState(false);
   const [editing, setEditing] = useState<NFeEntrada | null>(null);
   const [form, setForm] = useState({
     numero: '',
@@ -56,12 +68,64 @@ const NFeEntrada = () => {
     setModalOpen(true);
   };
 
+  const openImportEntradaPropria = () => {
+    setImportErro(null);
+    setImportResultado(null);
+    setImportModalOpen(true);
+  };
+
+  const onImportFiles = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setImportErro(null);
+    setImportBusy(true);
+    try {
+      const res = await nfeEntradasService.importarEntradaPropriaEmitida(Array.from(files));
+      setImportResultado(res);
+      void reload();
+    } catch (e) {
+      setImportErro(apiErrorMessage(e));
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
+  const falhasImport = importResultado?.erros?.length
+    ? importResultado.erros.map((raw) => normalizarFalhaImportacaoXml(raw))
+    : [];
+
+  const copiarDiagnostico = async () => {
+    if (!importResultado) return;
+    await copiarTextoParaAreaDeTransferencia(
+      montarTextoDiagnosticoNfeEntradaXml({
+        importadas: importResultado.importadas.map((i) => ({
+          arquivo: i.arquivo,
+          id: i.id,
+          chave_acesso: i.chave_acesso,
+          numero: i.numero,
+          serie: i.serie,
+        })),
+        duplicadas: importResultado.duplicadas,
+        erros: importResultado.erros,
+        resumo: importResultado.resumo,
+      }),
+    );
+    setDiagCopiado(true);
+    window.setTimeout(() => setDiagCopiado(false), 2500);
+  };
+
   const handleSave = async () => {
     const data = { ...form, itens, valor_total: total };
     if (editing) await nfeEntradasService.update(editing.id, data);
     else await nfeEntradasService.create(data as Omit<NFeEntrada, 'id'>);
     setModalOpen(false);
     void reload();
+  };
+
+  const emitenteLabel = (e: NFeEntrada) => {
+    if (e.tipo_origem === 'ENTRADA_PROPRIA_IMPORTADA') {
+      return e.destinatario_nome ? `${e.fornecedor_nome} → ${e.destinatario_nome}` : e.fornecedor_nome;
+    }
+    return e.fornecedor_nome;
   };
 
   return (
@@ -77,6 +141,10 @@ const NFeEntrada = () => {
               <ExternalLink className="h-4 w-4" />
               Ir para Base NF-e Entrada Importada
             </NexusButton>
+            <NexusButton type="button" variant="outline" onClick={openImportEntradaPropria}>
+              <FileUp className="h-4 w-4" />
+              Importar entrada própria já emitida
+            </NexusButton>
             <NexusButton type="button" onClick={openEntradaPropria}>
               <Plus className="h-4 w-4" />
               Emitir entrada própria
@@ -85,34 +153,40 @@ const NFeEntrada = () => {
         }
       />
       {error ? <ErrorState onRetry={() => void reload()} /> : null}
-      {loading ? <TableSkeleton rows={6} cols={7} /> : null}
+      {loading ? <TableSkeleton rows={6} cols={8} /> : null}
       {!loading && !error ? (
         <DataTableShell>
           <DataTable>
             <thead>
               <tr>
-                <th>Fornecedor</th>
+                <th>Emitente / Destinatário</th>
+                <th>Tipo</th>
                 <th>Número</th>
                 <th>Série</th>
                 <th>Chave</th>
                 <th>Emissão</th>
+                <th>Status</th>
                 <th>Valor</th>
               </tr>
             </thead>
             <tbody>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={6}>
+                  <td colSpan={8}>
                     <div className="py-10 px-4 text-center">
                       <p className="text-sm font-medium text-foreground">Nenhuma NF-e de entrada operacional encontrada.</p>
                       <p className="text-sm text-muted-foreground mt-2 max-w-xl mx-auto">
-                        Importe XMLs de fornecedores na Base NF-e Entrada Importada ou emita uma entrada própria quando
-                        necessário.
+                        Importe XMLs de fornecedores na Base NF-e Entrada Importada, importe entrada própria já emitida
+                        (ex.: devolução) ou emita uma entrada própria manualmente.
                       </p>
                       <div className="flex flex-wrap justify-center gap-2 mt-4">
                         <NexusButton type="button" variant="outline" onClick={() => navigate(BASE_NFE_ENTRADA_IMPORTADA_PATH)}>
                           <ExternalLink className="h-4 w-4" />
-                          Ir para Base NF-e Entrada Importada
+                          Base NF-e Entrada Importada
+                        </NexusButton>
+                        <NexusButton type="button" variant="outline" onClick={openImportEntradaPropria}>
+                          <FileUp className="h-4 w-4" />
+                          Importar entrada própria já emitida
                         </NexusButton>
                         <NexusButton type="button" onClick={openEntradaPropria}>
                           <Plus className="h-4 w-4" />
@@ -125,13 +199,27 @@ const NFeEntrada = () => {
               ) : (
                 items.map((e) => (
                   <tr key={e.id}>
-                    <td className="font-medium">{e.fornecedor_nome}</td>
+                    <td className="font-medium">{emitenteLabel(e)}</td>
+                    <td>
+                      {e.tipo_origem === 'ENTRADA_PROPRIA_IMPORTADA' ? (
+                        <StatusBadge status={e.tipo_origem_label || 'Entrada própria'} />
+                      ) : (
+                        <span className="text-sm text-muted-foreground">Manual</span>
+                      )}
+                    </td>
                     <td>{e.numero}</td>
                     <td>{e.serie || '—'}</td>
                     <td className="font-mono text-xs" title={e.chave_acesso || undefined}>
                       {chaveNfeResumida(e.chave_acesso)}
                     </td>
                     <td>{e.data ? formatDateBr(e.data) : '—'}</td>
+                    <td>
+                      {e.status_operacional_label ? (
+                        <StatusBadge status={e.status_operacional_label} />
+                      ) : (
+                        '—'
+                      )}
+                    </td>
                     <td className="nexus-numeric">R$ {e.valor_total.toFixed(2)}</td>
                   </tr>
                 ))
@@ -150,6 +238,69 @@ const NFeEntrada = () => {
           ) : null}
         </DataTableShell>
       ) : null}
+
+      <Modal
+        isOpen={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        title="Importar entrada própria já emitida"
+        size="lg"
+      >
+        <p className="text-sm text-muted-foreground mb-4">
+          XML de NF-e de entrada própria já emitida pela empresa (ex.: devolução ou recusa de cliente). Não gera
+          financeiro, estoque ou transmissão SEFAZ.
+        </p>
+        <label className="flex flex-col items-center justify-center gap-2 border border-dashed border-border rounded-lg p-8 cursor-pointer hover:bg-muted/40">
+          <FileUp className="h-8 w-8 text-muted-foreground" />
+          <span className="text-sm font-medium">Selecionar XMLs</span>
+          <input
+            type="file"
+            accept=".xml,application/xml,text/xml"
+            multiple
+            className="hidden"
+            disabled={importBusy}
+            onChange={(ev) => void onImportFiles(ev.target.files)}
+          />
+        </label>
+        {importBusy ? <p className="text-sm text-muted-foreground mt-3">Importando…</p> : null}
+        {importErro ? (
+          <p className="text-sm text-destructive mt-3 flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            {importErro}
+          </p>
+        ) : null}
+        {importResultado ? (
+          <div className="mt-4 space-y-3 text-sm">
+            <p>
+              <strong>{importResultado.resumo.importadas}</strong> importada(s),{' '}
+              <strong>{importResultado.resumo.duplicadas}</strong> duplicada(s),{' '}
+              <strong>{importResultado.resumo.erros}</strong> erro(s).
+            </p>
+            {importResultado.duplicadas.length > 0 ? (
+              <ul className="list-disc pl-5 text-muted-foreground">
+                {importResultado.duplicadas.map((d) => (
+                  <li key={d.chave_acesso}>{d.arquivo}: {d.mensagem}</li>
+                ))}
+              </ul>
+            ) : null}
+            {falhasImport.length > 0 ? (
+              <ul className="space-y-2">
+                {falhasImport.map((f) => (
+                  <li key={`${f.arquivo}-${f.chave}`} className="border border-border rounded p-2">
+                    <p className="font-medium">{f.arquivo}</p>
+                    <p className="text-destructive">{f.erroCurto}</p>
+                    <p className="text-muted-foreground text-xs mt-1">{f.acaoSugerida}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <NexusButton type="button" variant="outline" size="sm" onClick={() => void copiarDiagnostico()}>
+              <Copy className="h-4 w-4" />
+              {diagCopiado ? 'Diagnóstico copiado' : 'Copiar diagnóstico'}
+            </NexusButton>
+          </div>
+        ) : null}
+      </Modal>
+
       <Modal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
@@ -211,8 +362,8 @@ const NFeEntrada = () => {
                     setItens(n);
                   }}
                 >
-                  <option value={1}>Válvula Gaveta 2"</option>
-                  <option value={2}>Válvula Esfera 4"</option>
+                  <option value={1}>Válvula Gaveta 2&quot;</option>
+                  <option value={2}>Válvula Esfera 4&quot;</option>
                 </select>
               </div>
               <div>

@@ -1891,20 +1891,45 @@ export interface ItemNFe {
   corrida_numero?: string;
 }
 
+export type NFeEntradaTipoOrigem = 'MANUAL' | 'ENTRADA_PROPRIA_IMPORTADA';
+
+export type NFeEntradaStatusOperacional = 'RASCUNHO' | 'IMPORTADA_PENDENTE_CONFERENCIA';
+
 export interface NFeEntrada {
   id: number;
   numero: string;
-  fornecedor_id: number;
+  fornecedor_id?: number | null;
   fornecedor_nome: string;
   fornecedor_cnpj?: string;
+  destinatario_nome?: string;
   data: string;
   valor_total: number;
   serie?: string;
   chave_acesso?: string;
+  tipo_origem?: NFeEntradaTipoOrigem;
+  tipo_origem_label?: string;
+  status_operacional?: NFeEntradaStatusOperacional;
+  status_operacional_label?: string;
   pedido_compra_id?: number;
   cte_id?: number;
+  importado_em?: string | null;
   itens: ItemNFe[];
 }
+
+export type NFeEntradaPropriaImportResultado = {
+  importadas: {
+    arquivo: string;
+    id: number;
+    chave_acesso: string;
+    numero: string;
+    serie: string;
+    tipo_origem: string;
+    status_operacional: string;
+  }[];
+  duplicadas: { arquivo: string; chave_acesso: string; mensagem: string }[];
+  erros: import('@/utils/nfeXmlImportDiagnostico').NFeXmlImportFalhaApi[];
+  resumo: { total_arquivos: number; importadas: number; duplicadas: number; erros: number };
+};
 
 export type StatusItemConferenciaNFeEntrada =
   | 'PENDENTE_PRODUTO'

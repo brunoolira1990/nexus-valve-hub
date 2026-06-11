@@ -128,7 +128,13 @@ def _extract_item_nf(prod_json: dict) -> dict:
 
 class NFeEntradaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
     queryset = (
-        NFeEntrada.objects.select_related('fornecedor', 'pedido_compra', 'cte')
+        NFeEntrada.objects.select_related(
+            'fornecedor',
+            'empresa_emitente',
+            'cliente_destinatario',
+            'pedido_compra',
+            'cte',
+        )
         .prefetch_related('itens__produto', 'itens__corrida')
         .all()
     )
@@ -136,14 +142,24 @@ class NFeEntradaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     pagination_class = NexusPageNumberPagination
 
+    def get_serializer_class(self):
+        if getattr(self, 'action', None) == 'list':
+            from .serializers import NFeEntradaListSerializer
+
+            return NFeEntradaListSerializer
+        return NFeEntradaSerializer
+
     def get_queryset(self):
         qs = super().get_queryset()
         search = (self.request.query_params.get('search') or '').strip()
         if search:
             qs = qs.filter(
                 Q(numero__icontains=search)
+                | Q(chave_acesso__icontains=search)
                 | Q(fornecedor__razao_social__icontains=search)
-                | Q(fornecedor__cnpj__icontains=search),
+                | Q(fornecedor__cnpj__icontains=search)
+                | Q(empresa_emitente__razao_social__icontains=search)
+                | Q(cliente_destinatario__razao_social__icontains=search),
             )
         fornecedor_id = self.request.query_params.get('fornecedor_id')
         if fornecedor_id:
@@ -159,8 +175,37 @@ class NFeEntradaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         )
 
     def perform_destroy(self, instance):
+        if instance.tipo_origem == NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_IMPORTADA:
+            instance.delete()
+            return
         reverter_todos_itens_entrada(instance)
         instance.delete()
+
+    @action(
+        detail=False,
+        methods=['post'],
+        url_path='importar-entrada-propria-emitida',
+        parser_classes=[MultiPartParser],
+    )
+    def importar_entrada_propria_emitida(self, request):
+        from .nfe_import.service_entrada_propria import importar_arquivos_entrada_propria_emitida
+
+        files = request.FILES.getlist('arquivos')
+        if not files:
+            single = request.FILES.get('arquivo')
+            if single:
+                files = [single]
+        if not files:
+            return response.Response(
+                {'detail': 'Envie um ou mais arquivos no campo "arquivos" (multipart/form-data).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        batch: list[tuple[str, bytes]] = []
+        for f in files:
+            raw = f.read()
+            batch.append((getattr(f, 'name', '') or 'entrada_propria.xml', raw))
+        result = importar_arquivos_entrada_propria_emitida(batch)
+        return response.Response(result, status=status.HTTP_200_OK)
 
 
 class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):

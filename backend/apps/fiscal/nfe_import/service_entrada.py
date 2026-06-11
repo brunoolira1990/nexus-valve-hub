@@ -7,10 +7,12 @@ from django.db import transaction
 from ..models import ItemNFeEntradaHistoricaImportada, NFeEntradaHistoricaImportada, NFeSaidaHistoricaImportada
 from ..nfe_historica_classificacao import (
     classificar_por_empresa,
+    eh_entrada_propria_ja_emitida,
     norm_digits,
     reclassificar_saida_para_entrada,
     resolve_fornecedor_from_party,
 )
+from .service_entrada_propria import mensagem_rejeicao_entrada_propria_em_outro_fluxo
 from ..services.reforma_tributaria import enriquecer_reforma_e_outros_json_nf
 from .falha_xml import falha_com_traceback, montar_falha_importacao_xml
 from .parser_entrada import parse_nfe_entrada_xml
@@ -78,6 +80,24 @@ def importar_arquivos_entrada(arquivos: list[tuple[str, bytes]]) -> dict[str, An
             continue
 
         classificacao = classificar_por_empresa(parsed.emit_json, parsed.dest_json)
+        is_propria, _emp = eh_entrada_propria_ja_emitida(
+            parsed.emit_json,
+            parsed.dest_json,
+            tp_nf=parsed.tp_nf,
+        )
+        if is_propria:
+            msg, acao = mensagem_rejeicao_entrada_propria_em_outro_fluxo()
+            erros.append(
+                montar_falha_importacao_xml(
+                    arquivo=nome,
+                    chave=parsed.chave_acesso,
+                    tipo_documento='NFE',
+                    tipo_erro='Classificação / cadastro',
+                    mensagem_completa=msg,
+                    acao_sugerida=acao,
+                )
+            )
+            continue
         if classificacao.tipo_fluxo == 'saida' and classificacao.empresa_emitente:
             erros.append(
                 montar_falha_importacao_xml(
@@ -86,7 +106,7 @@ def importar_arquivos_entrada(arquivos: list[tuple[str, bytes]]) -> dict[str, An
                     tipo_documento='NFE',
                     tipo_erro='Classificação / cadastro',
                     mensagem_completa=(
-                        'Emitente do XML corresponde à Empresa cadastrada (emissão própria). '
+                        'Emitente do XML corresponde à Empresa cadastrada (emissão própria de saída/venda). '
                         'Para faturamento/vendas use o importador de NF-e de saída histórica.'
                     ),
                     acao_sugerida=(

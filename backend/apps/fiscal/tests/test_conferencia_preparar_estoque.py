@@ -31,6 +31,26 @@ def _cnpj() -> str:
     return f'{h % 90 + 10:02d}.{h // 100 % 900 + 100:03d}.{h // 100000 % 900 + 100:03d}/0001-{h % 97:02d}'
 
 
+def _criar_regra_fiscal_entrada_minima() -> RegraFiscalEntrada:
+    """Regra genérica válida exigida pelo fluxo de preparar estoque (ERP 4.0.14.10.1+)."""
+    regra, created = RegraFiscalEntrada.objects.get_or_create(
+        nome='Regra entrada mínima — teste conferência',
+        defaults={
+            'ativo': True,
+            'prioridade': 1,
+            'cfop': '5102',
+            'cfop_entrada': '1102',
+            'tipo_operacao_fiscal': RegraFiscalEntrada.TipoOperacaoFiscal.COMPRA,
+            'cst_icms_esperado': '00',
+            'severidade': RegraFiscalEntrada.Severidade.ALERTA,
+        },
+    )
+    if not created and not regra.ativo:
+        regra.ativo = True
+        regra.save(update_fields=['ativo'])
+    return regra
+
+
 def _setup_conferencia(suffix: str, *, com_pedido: bool = True):
     forn = Fornecedor.objects.create(razao_social=f'Forn {suffix}', cnpj=_cnpj())
     fam = FamiliaProduto.objects.create(
@@ -136,6 +156,9 @@ def _setup_conferencia(suffix: str, *, com_pedido: bool = True):
 
 
 class ConferenciaPrepararEstoqueTests(TestCase):
+    def setUp(self):
+        _criar_regra_fiscal_entrada_minima()
+
     def test_preparar_sem_pedido_com_produto_vinculado(self):
         ctx = _setup_conferencia('np', com_pedido=False)
         r_save = ctx['client'].post(
