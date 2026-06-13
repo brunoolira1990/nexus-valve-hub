@@ -1184,3 +1184,140 @@ Nenhum número foi reservado nem alterado nesta auditoria. Validação contador/
 - [x] Nenhum secret/senha/caminho de certificado exposto
 - [x] Bloqueios e pendências registrados
 - [x] Sequência T0 futura documentada
+
+---
+
+## 16. Operação T0 — Fechamento pendências pré-produção (sem emitir)
+
+> **Não é emissão produção.** Read-only + registro operacional. Flag **permaneceu desligada**.
+
+| Campo | Valor |
+|-------|--------|
+| **Data** | 13/06/2026 |
+| **Commits de referência** | `2ab0009` (fiscal), `f3a6e60` (docs Gate T0) |
+| **Resultado desta operação** | **BLOQUEADO** para T0 — **APTO COM PENDÊNCIAS** na base técnica |
+| **`NFE_PRODUCAO_HABILITADA`** | `false` (inalterado) |
+| **NF-e produção transmitida** | Nenhuma |
+| **Número produção reservado** | Nenhum |
+
+### 16.1 Escopo executado / não executado
+
+**Executado (somente leitura):**
+
+- `manage.py check` — 0 issues
+- `verificar_prontidao_producao` — sem críticos
+- Releitura ambiente, certificado, SEFAZ produção, numeração, permissões, NF candidata (container local)
+- Atualização status checklist §11 abaixo
+
+**Não executado (aguarda operador ou bloqueado):**
+
+- SSH / confirmação `.env` do **servidor operacional real**
+- Registro de backup formal (operador não informou evidência)
+- Criação grupo `fiscal_nfe_producao` (responsável autorizado não informado)
+- Preparação NF-e real candidata T0 (novo pedido/faturamento)
+- `emitir-producao` / ligar flag / reservar número / alterar `.env`
+
+### 16.2 Status checklist §11 (evidência em 13/06/2026)
+
+| Item §11 | Status | Evidência / observação |
+|----------|--------|------------------------|
+| `NFE_PRODUCAO_HABILITADA=false` | **OK** | Confirmado no container auditado |
+| Backup formal registrado | **PENDENTE** | Operador deve preencher §11 «Registro de backup» |
+| Certificado A1 válido | **OK** | Válido até 2027-01-21; CNPJ compatível |
+| SEFAZ produção SP cStat 107 | **OK** | Consulta somente status (13/06/2026) |
+| `DEBUG=False` servidor operacional | **PENDENTE / BLOQUEIO** | Container local: `DEBUG=true`; operador **não conferiu** servidor real (13/06/2026) |
+| Numeração produção (série 1 / nº 1) | **PENDENTE** | Lida: ativa, modelo 55 — **confirmação contador/fiscal ausente** |
+| Grupo `fiscal_nfe_producao` | **PENDENTE** | Grupo inexistente; responsável não informado |
+| NF-e candidata T0 pronta | **PENDENTE** | NF 17 = homolog (não reutilizar); NF 15 = fixture incompleta |
+| `verificar_prontidao_producao` sem críticos | **OK** | Executado 13/06/2026 |
+| Contador/fiscal presente | **PENDENTE** | Janela T0 |
+| Autorização formal direção | **PENDENTE** | Janela T0 |
+| Checklist §11 assinado | **PENDENTE** | Assinaturas operador/fiscal/técnico/direção |
+
+### 16.3 Parte 1 — Ambiente (container auditado)
+
+| Variável | Valor auditado | Bloqueio T0? |
+|----------|----------------|--------------|
+| `DEBUG` | `true` | **Sim** — se servidor operacional igual, bloqueia T0 |
+| `NEXUS_APP_AMBIENTE` | não definido | Pendente no servidor |
+| `NFE_AMBIENTE` | não definido | Documental |
+| `NFE_PRODUCAO_HABILITADA` | `false` | OK (intencional) |
+| `ALLOWED_HOSTS` | 4 entradas | Revisar no servidor |
+| `CSRF_TRUSTED_ORIGINS` | 0 | Revisar no servidor |
+| `CORS_ALLOWED_ORIGINS` | 4 | Revisar no servidor |
+
+**Ação operador no servidor (sem expor secrets):**
+
+```bash
+grep -E '^(DEBUG|NEXUS_APP_AMBIENTE|NFE_AMBIENTE|NFE_PRODUCAO_HABILITADA)=' .env
+docker compose exec -T backend python manage.py shell -c "from django.conf import settings; print('DEBUG', settings.DEBUG)"
+```
+
+### 16.4 Parte 2 — Backup formal
+
+| Status | **BLOQUEADO** até registro |
+|--------|---------------------------|
+| Evidência nesta tarefa | Nenhuma |
+| Confirmação operador (13/06/2026) | **Backup ainda não realizado** — manter bloqueio T0 |
+| Próximo passo | Preencher §11 «Registro de backup» (data, responsável, tipo, validação mínima) |
+
+Sem backup formal registrado: **não avançar para T0**.
+
+### 16.5 Parte 3 — Numeração produção (somente leitura)
+
+| Campo | Valor (empresa id=1) |
+|-------|----------------------|
+| Modelo | 55 |
+| Ambiente | produção |
+| Série | 1 |
+| Próximo número | 1 |
+| Último autorizado | — |
+| Ativa | Sim |
+
+Nenhum número reservado nem alterado. **Confirmação contador/fiscal pendente.**
+
+### 16.6 Parte 4 — Permissão `fiscal_nfe_producao`
+
+| Item | Status |
+|------|--------|
+| Grupo existe | **Não** |
+| Usuários com permissão hoje | `admin` (superuser), `comercial04` (admin) — **não adequados para T0 operacional** |
+| Alteração nesta tarefa | **Nenhuma** — operador informará username na próxima etapa |
+
+**Próximo passo:** operador informar username do responsável → criar grupo e atribuir **somente** a esse usuário.
+
+### 16.7 Parte 5 — NF-e candidata T0
+
+| NF | Uso T0 |
+|----|--------|
+| **17** | Homologação autorizada — **proibida** para produção |
+| **15** | Fixture/rascunho — `EM_CONFERENCIA`, endereço inconsistente — **não pronta** |
+
+**Próximo passo:** criar NF-e **nova** a partir de pedido/faturamento real → conferência completa → «Pronta para emissão» → `GET .../validar-emissao-producao/` sem pendências (sem transmitir).
+
+### 16.8 Pendências fechadas nesta operação
+
+- [x] Reconfirmado `NFE_PRODUCAO_HABILITADA=false`
+- [x] Reconfirmado certificado válido e SEFAZ 107
+- [x] Reconfirmado `manage.py check` e `verificar_prontidao_producao`
+- [x] Numeração produção documentada (somente leitura)
+- [x] Status checklist §11 atualizado com evidência real
+
+### 16.9 Pendências restantes (bloqueiam T0)
+
+1. Confirmar `DEBUG=false` no **servidor operacional real**
+2. Registrar backup formal (§11)
+3. Contador/fiscal validar série 1 / próximo número 1
+4. Informar responsável autorizado → criar `fiscal_nfe_producao`
+5. Preparar NF-e real candidata T0
+6. Assinar checklist §11 + autorização direção
+7. Janela T0 com contador/fiscal presente
+
+### 16.10 Confirmações desta operação
+
+- [x] Não ligou `NFE_PRODUCAO_HABILITADA=true`
+- [x] Nenhuma NF-e produção transmitida
+- [x] Nenhum número reservado
+- [x] Não alterou `.env`, certificado, numeração, regra fiscal, código fiscal
+- [x] Não expôs secrets/certificado/senha
+- [x] Não rodou suítes longas (4015/402)
