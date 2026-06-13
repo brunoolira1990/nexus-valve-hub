@@ -36,6 +36,10 @@ services:
       - "${BACKEND_PORT:-8000}:8000"
     env_file:
       - .env
+    environment:
+      # Evita proxy do host/WSL desviar chamadas SEFAZ para página HTML em dev/local.
+      NO_PROXY: ${NO_PROXY:-.fazenda.gov.br,.fazenda.sp.gov.br,.sefaz.rs.gov.br,localhost,127.0.0.1,backend,db}
+      no_proxy: ${no_proxy:-.fazenda.gov.br,.fazenda.sp.gov.br,.sefaz.rs.gov.br,localhost,127.0.0.1,backend,db}
     depends_on:
       db:
         condition: service_healthy

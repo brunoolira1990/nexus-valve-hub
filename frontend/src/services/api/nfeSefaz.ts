@@ -14,6 +14,10 @@ export type CertificadoNfeValidacao = {
   expira_em_dias?: number | null;
   mensagens?: string[];
   erro?: string | null;
+  empresa_fixture_teste?: boolean;
+  consulta_sefaz_permitida?: boolean;
+  consulta_sefaz_motivo?: string;
+  consulta_sefaz_tipo_erro?: string;
 };
 
 export type NFeSefazStatusConsulta = {
@@ -42,6 +46,15 @@ export type NFeSefazStatusConsulta = {
   xml_retorno?: string;
   mensagens: string[];
   consultado_em: string;
+  endpoint_sefaz?: string;
+  diagnostico_http?: {
+    http_status?: string;
+    content_type?: string;
+    html_titulo?: string;
+  };
+  empresa_fixture_teste?: boolean;
+  consulta_sefaz_permitida?: boolean;
+  consulta_sefaz_motivo?: string;
   resultado?: Record<string, unknown>;
 };
 

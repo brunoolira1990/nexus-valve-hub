@@ -70,7 +70,7 @@ class DanfeBfrAcabamentoTests(TestCase):
         self.assertNotIn('SEM VALOR FISCAL', inf_cpl.upper())
         self.assertNotIn('SEM PROTOCOLO', inf_cpl.upper())
         self.assertNotIn('CST/CSOSN', inf_cpl.upper())
-        self.assertIn('PEDIDO DO CLIENTE: 5050', inf_cpl)
+        self.assertIn('PEDIDO DE COMPRA: 5050', inf_cpl)
         self.assertIn('TEXTO FISCAL PERMITIDO', inf_cpl)
         self.assertIn('INSTRUÇÃO MANUAL'.replace('Ç', 'C'), inf_cpl.replace('Ç', 'C'))
         self.assertLess(len(inf_cpl), 420)
@@ -107,7 +107,7 @@ class DanfeBfrAcabamentoTests(TestCase):
             inf_cpl = m_cpl.group(1)
             self.assertNotIn('Observacao especifica', inf_cpl)
             self.assertNotIn('Condição de pagamento', inf_cpl)
-            self.assertNotIn('Pedido do cliente', inf_cpl)
+            self.assertNotIn('Observacao especifica', inf_cpl)
 
     def test_inf_ad_prod_nao_contem_pagamento(self):
         nf = _nf_pronta()
@@ -123,7 +123,7 @@ class DanfeBfrAcabamentoTests(TestCase):
         nf.observacoes_internas = 'NAO DEVE SAIR'
         nf.save(update_fields=['pedido_cliente_numero', 'observacoes_internas'])
         xml = gerar_xml_nfe_preliminar(nf).decode('utf-8')
-        self.assertIn('PEDIDO DO CLIENTE: 5050', xml)
+        self.assertIn('PEDIDO DE COMPRA: 5050', xml)
         m = re.search(r'<[\w:]*infCpl>([^<]*)</[\w:]*infCpl>', xml, flags=re.IGNORECASE)
         self.assertIsNotNone(m)
         inf_cpl = m.group(1)

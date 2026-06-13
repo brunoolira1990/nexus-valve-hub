@@ -22,7 +22,12 @@ from apps.fiscal.nfe_integracao.adapters.certificado_a1 import (
     CertificadoA1Error,
     validar_certificado_pfx,
 )
+from apps.fiscal.nfe_integracao.adapters.pynfe_adapter import (
+    requests_sem_proxy_ambiente,
+    resolver_url_status_servico,
+)
 from apps.fiscal.nfe_integracao.adapters.status_servico_parser import (
+    motivo_resposta_html_sefaz,
     normalizar_xml_bruto,
     parse_status_servico_response,
 )
@@ -153,6 +158,52 @@ class StatusServicoParser361Tests(TestCase):
         self.assertEqual(r['c_stat'], '999')
         self.assertEqual(r['x_motivo'], 'Rejeicao teste')
 
+    def test_html_marca_resposta_html(self):
+        r = parse_status_servico_response('<html><body>proxy</body></html>')
+        self.assertTrue(r['erro_parse'])
+        self.assertTrue(r['resposta_html'])
+
+    def test_motivo_html_inclui_contexto_seguro(self):
+        msg = motivo_resposta_html_sefaz(
+            uf='SP',
+            ambiente='homologacao',
+            empresa='Emitente Teste',
+            endpoint='https://homologacao.nfe.fazenda.sp.gov.br/ws/nfestatusservico4.asmx',
+        )
+        self.assertIn('homologacao', msg)
+        self.assertIn('SP', msg)
+        self.assertIn('Emitente Teste', msg)
+        self.assertIn('proxy', msg.lower())
+
+    def test_normalizar_prefere_content_quando_text_html(self):
+        resp = MagicMock()
+        resp.text = '<html><body>proxy</body></html>'
+        resp.content = XML_NS.encode('utf-8')
+        txt = normalizar_xml_bruto(resp)
+        self.assertIn('cStat', txt)
+        self.assertNotIn('<html', txt.lower())
+
+    def test_requests_sem_proxy_forca_proxies_none(self):
+        import requests
+
+        with patch.object(requests, 'post') as mock_post:
+            mock_post.return_value = MagicMock(status_code=200, text='ok', content=b'ok')
+            with requests_sem_proxy_ambiente():
+                requests.post(
+                    'https://homologacao.nfe.fazenda.sp.gov.br/ws/nfestatusservico4.asmx',
+                    data='x',
+                    proxies={'http': 'http://proxy.local:8080', 'https': 'http://proxy.local:8080'},
+                )
+        kwargs = mock_post.call_args.kwargs
+        self.assertIsNone(kwargs['proxies']['http'])
+        self.assertIsNone(kwargs['proxies']['https'])
+
+    def test_resolver_url_status_servico(self):
+        comunicacao = MagicMock()
+        comunicacao._get_url.return_value = 'https://homologacao.nfe.fazenda.sp.gov.br/ws/nfestatusservico4.asmx'
+        url = resolver_url_status_servico(comunicacao, modelo='nfe')
+        self.assertIn('nfestatusservico', url.lower())
+
 
 class StatusServicoIntegracao361Tests(TestCase):
     def setUp(self):
@@ -173,7 +224,9 @@ class StatusServicoIntegracao361Tests(TestCase):
     @patch('apps.fiscal.nfe_integracao.adapters.sefaz_status_service.criar_comunicacao_sefaz')
     def test_executar_salva_motivo_em_falha_parse(self, mock_criar, mock_status):
         mock_status.return_value = MagicMock(text='<html><body>erro</body></html>')
-        mock_criar.return_value = MagicMock()
+        mock_com = MagicMock()
+        mock_com._get_url.return_value = 'https://homologacao.nfe.fazenda.sp.gov.br/ws/nfestatusservico4.asmx'
+        mock_criar.return_value = mock_com
         reg, res = executar_status_servico(self.empresa, homologacao=True)
         self.assertFalse(res.sucesso)
         self.assertTrue(reg.x_motivo)
@@ -181,6 +234,9 @@ class StatusServicoIntegracao361Tests(TestCase):
         self.assertEqual(reg.tipo_erro, TIPO_ERRO_PARSE)
         self.assertIsNotNone(reg.c_stat)
         self.assertEqual(reg.c_stat, '')
+        self.assertIn('homologacao', reg.x_motivo)
+        self.assertIn('SP', reg.x_motivo)
+        self.assertIn('proxy', reg.x_motivo.lower())
 
     @patch('apps.fiscal.nfe_integracao.adapters.sefaz_status_service.status_servico_nfe')
     @patch('apps.fiscal.nfe_integracao.adapters.sefaz_status_service.criar_comunicacao_sefaz')
@@ -208,6 +264,23 @@ class StatusServicoIntegracao361Tests(TestCase):
         self.assertTrue(res.data['ok'])
         self.assertEqual(res.data['cstat'], '107')
         self.assertIn('Operacao', res.data['motivo'])
+
+    @patch('apps.fiscal.nfe_integracao.adapters.sefaz_status_service.status_servico_nfe')
+    @patch('apps.fiscal.nfe_integracao.adapters.sefaz_status_service.criar_comunicacao_sefaz')
+    def test_api_homologacao_false_usa_ambiente_producao(self, mock_criar, mock_status):
+        mock_com = MagicMock()
+        mock_com._get_url.return_value = 'https://nfe.fazenda.sp.gov.br/ws/nfestatusservico4.asmx'
+        mock_criar.return_value = mock_com
+        mock_status.return_value = MagicMock(text=XML_NS)
+        res = self.client.post(
+            '/api/nfe-sefaz-status/consultar/',
+            {'empresa_id': self.empresa.pk, 'homologacao': False, 'uf': 'SP'},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data['ambiente'], 'producao')
+        mock_criar.assert_called_once()
+        self.assertFalse(mock_criar.call_args.kwargs['homologacao'])
 
     def test_charfield_nunca_null(self):
         reg = NFeSefazStatusConsulta.objects.create(

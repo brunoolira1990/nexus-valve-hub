@@ -1,20 +1,25 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, X, ExternalLink, FileUp, AlertCircle, Copy } from 'lucide-react';
+import { Plus, X, ExternalLink, FileUp, AlertCircle, Copy, FileSearch, Eye } from 'lucide-react';
+import { toast } from 'sonner';
 import { NexusButton } from '@/components/nexus';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
 import { StatusBadge } from '@/components/nexus/StatusBadge';
+import { NFeEntradaDetalheDrawer } from '@/components/fiscal/NFeEntradaDetalheDrawer';
+import { NFeEntradaRevisaoDrawer } from '@/components/fiscal/NFeEntradaRevisaoDrawer';
 import { nfeEntradasService } from '@/services/api/fiscal';
 import { apiErrorMessage } from '@/services/api/config';
 import type { NFeEntrada, ItemNFe, NFeEntradaPropriaImportResultado } from '@/types';
 import { usePaginatedList } from '@/hooks/usePaginatedList';
 import { PaginationControls } from '@/components/list/PaginationControls';
-import { ErrorState } from '@/components/list/ListStates';
+import { EmptyState, ErrorState } from '@/components/list/ListStates';
 import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
 import { TableSkeleton } from '@/components/nexus/Skeleton';
 import { chaveNfeResumida } from '@/lib/chaveNfeResumida';
 import { formatDateBr } from '@/lib/dateBr';
+import { formatMoneyBRL } from '@/lib/money';
+import { labelStatusOperacionalNfeEntrada, labelTipoOrigemNfeEntrada, exibirAcaoRevisarDados } from '@/lib/nfeEntradaOperacionalLabels';
 import {
   copiarTextoParaAreaDeTransferencia,
   montarTextoDiagnosticoNfeEntradaXml,
@@ -55,6 +60,44 @@ const NFeEntrada = () => {
     cte_id: undefined as number | undefined,
   });
   const [itens, setItens] = useState<ItemNFe[]>([]);
+  const [detalheId, setDetalheId] = useState<number | null>(null);
+  const [detalheOpen, setDetalheOpen] = useState(false);
+  const [revisaoId, setRevisaoId] = useState<number | null>(null);
+  const [revisaoOpen, setRevisaoOpen] = useState(false);
+
+  const abrirDetalhe = (id: number) => {
+    setDetalheId(id);
+    setDetalheOpen(true);
+  };
+
+  const fecharDetalhe = () => {
+    setDetalheOpen(false);
+    setDetalheId(null);
+  };
+
+  const abrirRevisao = (id: number) => {
+    setRevisaoId(id);
+    setRevisaoOpen(true);
+  };
+
+  const fecharRevisao = () => {
+    setRevisaoOpen(false);
+    setRevisaoId(null);
+  };
+
+  const copiarChaveNfe = async (chave?: string | null) => {
+    const texto = (chave || '').trim();
+    if (!texto) {
+      toast.error('Esta NF-e não possui chave de acesso.');
+      return;
+    }
+    try {
+      await copiarTextoParaAreaDeTransferencia(texto);
+      toast.success('Chave NF-e copiada para a área de transferência.');
+    } catch {
+      toast.error('Não foi possível copiar a chave. Tente novamente.');
+    }
+  };
 
   const addItem = () =>
     setItens((p) => [...p, { id: Date.now(), produto_id: 1, produto_nome: '', quantidade: 1, valor: 0, corrida_id: undefined }]);
@@ -153,7 +196,7 @@ const NFeEntrada = () => {
         }
       />
       {error ? <ErrorState onRetry={() => void reload()} /> : null}
-      {loading ? <TableSkeleton rows={6} cols={8} /> : null}
+      {loading ? <TableSkeleton rows={6} cols={9} /> : null}
       {!loading && !error ? (
         <DataTableShell>
           <DataTable>
@@ -167,33 +210,17 @@ const NFeEntrada = () => {
                 <th>Emissão</th>
                 <th>Status</th>
                 <th>Valor</th>
+                <th>Ações</th>
               </tr>
             </thead>
             <tbody>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={8}>
-                    <div className="py-10 px-4 text-center">
-                      <p className="text-sm font-medium text-foreground">Nenhuma NF-e de entrada operacional encontrada.</p>
-                      <p className="text-sm text-muted-foreground mt-2 max-w-xl mx-auto">
-                        Importe XMLs de fornecedores na Base NF-e Entrada Importada, importe entrada própria já emitida
-                        (ex.: devolução) ou emita uma entrada própria manualmente.
-                      </p>
-                      <div className="flex flex-wrap justify-center gap-2 mt-4">
-                        <NexusButton type="button" variant="outline" onClick={() => navigate(BASE_NFE_ENTRADA_IMPORTADA_PATH)}>
-                          <ExternalLink className="h-4 w-4" />
-                          Base NF-e Entrada Importada
-                        </NexusButton>
-                        <NexusButton type="button" variant="outline" onClick={openImportEntradaPropria}>
-                          <FileUp className="h-4 w-4" />
-                          Importar entrada própria já emitida
-                        </NexusButton>
-                        <NexusButton type="button" onClick={openEntradaPropria}>
-                          <Plus className="h-4 w-4" />
-                          Emitir entrada própria
-                        </NexusButton>
-                      </div>
-                    </div>
+                  <td colSpan={9}>
+                    <EmptyState
+                      title="Nenhuma NF-e de entrada operacional encontrada."
+                      message="Importe XMLs de fornecedores na Base NF-e Entrada Importada, importe entrada própria já emitida (ex.: devolução) ou emita uma entrada própria manualmente."
+                    />
                   </td>
                 </tr>
               ) : (
@@ -201,11 +228,7 @@ const NFeEntrada = () => {
                   <tr key={e.id}>
                     <td className="font-medium">{emitenteLabel(e)}</td>
                     <td>
-                      {e.tipo_origem === 'ENTRADA_PROPRIA_IMPORTADA' ? (
-                        <StatusBadge status={e.tipo_origem_label || 'Entrada própria'} />
-                      ) : (
-                        <span className="text-sm text-muted-foreground">Manual</span>
-                      )}
+                      <StatusBadge status={labelTipoOrigemNfeEntrada(e)} />
                     </td>
                     <td>{e.numero}</td>
                     <td>{e.serie || '—'}</td>
@@ -214,13 +237,47 @@ const NFeEntrada = () => {
                     </td>
                     <td>{e.data ? formatDateBr(e.data) : '—'}</td>
                     <td>
-                      {e.status_operacional_label ? (
-                        <StatusBadge status={e.status_operacional_label} />
-                      ) : (
-                        '—'
-                      )}
+                      <StatusBadge
+                        status={labelStatusOperacionalNfeEntrada(e.status_operacional, e.status_operacional_label)}
+                      />
                     </td>
-                    <td className="nexus-numeric">R$ {e.valor_total.toFixed(2)}</td>
+                    <td className="nexus-numeric whitespace-nowrap">{formatMoneyBRL(e.valor_total)}</td>
+                    <td>
+                      <div className="flex flex-wrap gap-1">
+                        {exibirAcaoRevisarDados(e) ? (
+                          <button
+                            type="button"
+                            className="erp-btn-ghost erp-btn-sm text-xs"
+                            title="Revisar dados importados (somente leitura)"
+                            aria-label="Revisar dados da NF-e"
+                            onClick={() => abrirRevisao(e.id)}
+                          >
+                            <FileSearch className="h-3.5 w-3.5 mr-0.5" />
+                            Revisar dados
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="erp-btn-ghost erp-btn-sm text-xs"
+                          title="Copiar chave NF-e"
+                          aria-label="Copiar chave NF-e"
+                          onClick={() => void copiarChaveNfe(e.chave_acesso)}
+                        >
+                          <Copy className="h-3.5 w-3.5 mr-0.5" />
+                          Copiar chave
+                        </button>
+                        <button
+                          type="button"
+                          className="erp-btn-ghost erp-btn-sm text-xs"
+                          title="Ver detalhes da NF-e"
+                          aria-label="Ver detalhes da NF-e"
+                          onClick={() => abrirDetalhe(e.id)}
+                        >
+                          <Eye className="h-3.5 w-3.5 mr-0.5" />
+                          Ver detalhes
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}
@@ -425,6 +482,9 @@ const NFeEntrada = () => {
           </button>
         </div>
       </Modal>
+
+      <NFeEntradaDetalheDrawer nfeId={detalheId} open={detalheOpen} onClose={fecharDetalhe} />
+      <NFeEntradaRevisaoDrawer nfeId={revisaoId} open={revisaoOpen} onClose={fecharRevisao} />
     </div>
   );
 };

@@ -13,6 +13,7 @@ from apps.fiscal.nfe_integracao.adapters.sefaz_status_service import (
     ResultadoStatusServico,
     consultar_status_servico_empresa,
 )
+from apps.fiscal.nfe_integracao.prontidao_consulta_sefaz import metadados_empresa_consulta_sefaz
 
 
 def _campo_texto(valor: str | None) -> str:
@@ -35,8 +36,27 @@ def _motivo_exibicao(resultado: ResultadoStatusServico) -> str:
 
 
 def validar_certificado_empresa(empresa: Empresa) -> dict[str, Any]:
-    info = carregar_certificado_empresa(empresa)
-    return {
+    meta = metadados_empresa_consulta_sefaz(empresa)
+    try:
+        info = carregar_certificado_empresa(empresa)
+    except Exception:
+        return {
+            'valido': False,
+            'titular': None,
+            'cnpj': None,
+            'cpf': None,
+            'razao_social': None,
+            'validade_inicio': None,
+            'validade_fim': None,
+            'vencido': False,
+            'dias_para_vencimento': None,
+            'expirado': False,
+            'expira_em_dias': None,
+            'mensagens': [],
+            'erro': meta.get('consulta_sefaz_motivo') or 'Certificado indisponível.',
+            **meta,
+        }
+    payload = {
         'valido': info.valido,
         'titular': info.razao_social,
         'cnpj': info.cnpj,
@@ -51,6 +71,11 @@ def validar_certificado_empresa(empresa: Empresa) -> dict[str, Any]:
         'mensagens': info.mensagens,
         'erro': None if info.valido else '; '.join(info.mensagens) or 'Certificado inválido.',
     }
+    payload.update(meta)
+    if not meta.get('consulta_sefaz_permitida'):
+        payload['valido'] = False
+        payload['erro'] = meta.get('consulta_sefaz_motivo') or payload['erro']
+    return payload
 
 
 def executar_status_servico(
@@ -120,6 +145,8 @@ def resposta_api_consulta(
         'xml_resposta': registro.xml_resposta,
         'raw_response': registro.raw_response,
         'servico_operacional': registro.servico_operacional,
+        'endpoint_sefaz': resultado.endpoint_sefaz,
+        'diagnostico_http': resultado.diagnostico_http,
         'id': registro.id,
         'consultado_em': registro.consultado_em.isoformat() if registro.consultado_em else None,
         'resultado': resultado.to_dict(),

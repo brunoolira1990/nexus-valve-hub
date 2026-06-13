@@ -321,6 +321,37 @@ export type NFeSaidaConferenciaPayload = {
     pode_emitir_homologacao?: boolean;
     pode_tentar_emitir_homologacao?: boolean;
     motivo_emitir_homologacao_bloqueado?: string;
+    producao_habilitada?: boolean;
+    usuario_pode_emitir_producao?: boolean;
+    pode_emitir_producao?: boolean;
+    pode_tentar_emitir_producao?: boolean;
+    motivo_emitir_producao_bloqueado?: string;
+    motivos_bloqueio_producao?: string[];
+  };
+  emissao_producao?: {
+    habilitada?: boolean;
+    usuario_pode_emitir?: boolean;
+    pode_emitir?: boolean;
+    pode_tentar_emitir?: boolean;
+    motivo_bloqueio?: string;
+    motivos_bloqueio?: string[];
+    ambiente_label?: string;
+    pronta?: boolean;
+    pendencias?: Array<{ codigo?: string; mensagem?: string; severidade?: string }>;
+    alertas?: Array<{ codigo?: string; mensagem?: string; severidade?: string }>;
+    emitente?: { id?: number | null; nome?: string };
+    destinatario?: { id?: number | null; nome?: string };
+    valor_total?: number;
+    serie_nfe?: string;
+    numero_nfe?: string;
+    numeracao_producao?: { serie?: string; proximo_numero?: number } | null;
+    status_emissao_sefaz?: string;
+    autorizada_producao?: boolean;
+    protocolo_autorizacao?: string;
+    cstat_autorizacao?: string;
+    motivo_autorizacao?: string;
+    chave_acesso?: string;
+    tem_xml_autorizado?: boolean;
   };
   apresentacao?: import('@/lib/nfeSaidaUi').NFeSaidaApresentacao;
   emissao_sefaz?: {
@@ -404,6 +435,10 @@ export type NFeEmissaoHomologacaoResponse = {
     dh_recbto?: string;
   };
   etapa?: string;
+};
+
+export type NFeEmissaoProducaoResponse = NFeEmissaoHomologacaoResponse & {
+  ambiente?: 'producao';
 };
 
 export type NFeNumeracaoConfig = {
@@ -600,6 +635,29 @@ export const nfeSaidasService = {
     const res = await api.post<NFeEmissaoHomologacaoResponse>(
       `${nfSai}${id}/emitir-homologacao/`,
       {},
+      {
+        timeout: 120_000,
+        validateStatus: (s) => s >= 200 && s < 500,
+      },
+    );
+    return res.data;
+  },
+  validarEmissaoProducao: async (id: number) =>
+    (
+      await api.get<{
+        pronta: boolean;
+        pendencias: Array<{ codigo?: string; mensagem?: string }>;
+        alertas: Array<{ codigo?: string; mensagem?: string }>;
+        producao_habilitada?: boolean;
+      }>(`${nfSai}${id}/validar-emissao-producao/`)
+    ).data,
+  emitirProducao: async (
+    id: number,
+    payload: { confirmar_emissao_producao: boolean; confirmar_ambiente: string },
+  ) => {
+    const res = await api.post<NFeEmissaoProducaoResponse>(
+      `${nfSai}${id}/emitir-producao/`,
+      payload,
       {
         timeout: 120_000,
         validateStatus: (s) => s >= 200 && s < 500,

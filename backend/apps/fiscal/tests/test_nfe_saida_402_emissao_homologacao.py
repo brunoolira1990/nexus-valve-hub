@@ -83,6 +83,7 @@ def _ensure_numeracao_empresa(empresa: Empresa) -> None:
     hom = NFeNumeracaoConfiguracao.objects.filter(
         empresa=empresa,
         ambiente='homologacao',
+        tipo_operacao=NFeNumeracaoConfiguracao.TipoOperacao.SAIDA,
         serie='0',
     ).first()
     if hom and hom.proximo_numero < 2:
@@ -131,7 +132,7 @@ def _pedido_nf() -> tuple[PedidoVenda, ItemPedidoVenda, NFeSaida]:
         razao_social='Cliente 402',
         cnpj=_cnpj(),
         uf='RJ',
-        cidade='Rio',
+        cidade='Rio de Janeiro',
         logradouro='Rua B',
         numero='2',
         bairro='Centro',
@@ -202,10 +203,12 @@ class NFe402EmissaoHomologacaoTests(TestCase):
         hom = NFeNumeracaoConfiguracao.objects.filter(
             empresa=self.empresa,
             ambiente='homologacao',
+            tipo_operacao=NFeNumeracaoConfiguracao.TipoOperacao.SAIDA,
         ).first()
         prod = NFeNumeracaoConfiguracao.objects.filter(
             empresa=self.empresa,
             ambiente='producao',
+            tipo_operacao=NFeNumeracaoConfiguracao.TipoOperacao.SAIDA,
         ).first()
         self.assertIsNotNone(hom)
         self.assertIsNotNone(prod)
@@ -213,8 +216,18 @@ class NFe402EmissaoHomologacaoTests(TestCase):
         self.assertEqual(prod.serie, '1')
 
     def test_sequencias_homolog_producao_separadas(self):
-        hom = NFeNumeracaoConfiguracao.objects.get(empresa=self.empresa, ambiente='homologacao', serie='0')
-        prod = NFeNumeracaoConfiguracao.objects.get(empresa=self.empresa, ambiente='producao', serie='1')
+        hom = NFeNumeracaoConfiguracao.objects.get(
+            empresa=self.empresa,
+            ambiente='homologacao',
+            tipo_operacao=NFeNumeracaoConfiguracao.TipoOperacao.SAIDA,
+            serie='0',
+        )
+        prod = NFeNumeracaoConfiguracao.objects.get(
+            empresa=self.empresa,
+            ambiente='producao',
+            tipo_operacao=NFeNumeracaoConfiguracao.TipoOperacao.SAIDA,
+            serie='1',
+        )
         hom.proximo_numero = 10
         hom.save(update_fields=['proximo_numero'])
         self.assertNotEqual(hom.proximo_numero, prod.proximo_numero)

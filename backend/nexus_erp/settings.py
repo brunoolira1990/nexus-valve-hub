@@ -176,5 +176,12 @@ REFORMA_TRIBUTARIA_NFE_INCLUIR_DANFE = os.environ.get('REFORMA_TRIBUTARIA_NFE_IN
     'yes',
 )
 
+# ERP 4.0.15.x Fase 3B — emissão NF-e Saída produção SEFAZ (default desligado)
+NFE_PRODUCAO_HABILITADA = os.environ.get('NFE_PRODUCAO_HABILITADA', 'false').lower() in (
+    '1',
+    'true',
+    'yes',
+)
+
 # ERP 4.0.13.7.2 — testes só em banco isolado (test_*)
 TEST_RUNNER = 'nexus_erp.test_runner.NexusDiscoverRunner'

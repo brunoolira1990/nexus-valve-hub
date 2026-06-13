@@ -250,6 +250,7 @@ def validar_conferencia_nfe(nf: NFeSaida, *, usuario=None) -> dict[str, Any]:
             modo='completo',
             validacao=validacao,
             incluir_checklist=True,
+            usuario=usuario,
         )
         perf.marcar('conferencia_ms')
         return {
@@ -316,6 +317,7 @@ def marcar_nfe_pronta_para_emissao(nf: NFeSaida, *, usuario=None) -> dict[str, A
             modo='completo',
             validacao=validacao,
             incluir_checklist=True,
+            usuario=usuario,
         ),
         'mensagem': 'NF-e marcada como pronta para emissão futura.',
     }

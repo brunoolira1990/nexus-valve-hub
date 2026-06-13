@@ -207,6 +207,97 @@ class NFeEntradaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         result = importar_arquivos_entrada_propria_emitida(batch)
         return response.Response(result, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=['get'], url_path='validar-emissao-homologacao')
+    def validar_emissao_homologacao(self, request, pk=None):
+        from apps.fiscal.nfe_entrada_emissao.resposta import montar_resposta_validacao_entrada
+        from apps.fiscal.nfe_entrada_emissao.validacao import validar_pre_emissao_homologacao_entrada
+
+        nf = self.get_object()
+        validacao = validar_pre_emissao_homologacao_entrada(nf, exigir_numeracao=False)
+        payload = montar_resposta_validacao_entrada(validacao, nf=nf)
+        status_code = status.HTTP_200_OK if payload['ok'] else status.HTTP_409_CONFLICT
+        return response.Response(payload, status=status_code)
+
+    @action(detail=True, methods=['get'], url_path='preview-xml-oficial')
+    def preview_xml_oficial(self, request, pk=None):
+        from apps.fiscal.nfe_entrada_emissao.xml_oficial import gerar_preview_xml_oficial_nfe_entrada
+
+        nf = self.get_object()
+        payload = gerar_preview_xml_oficial_nfe_entrada(nf)
+        if payload.get('bloqueado'):
+            return response.Response(payload, status=status.HTTP_409_CONFLICT)
+        if str(request.query_params.get('download', '')).lower() in ('1', 'true', 'yes'):
+            from django.http import HttpResponse
+
+            return HttpResponse(
+                payload.get('xml', ''),
+                content_type='application/xml; charset=utf-8',
+                headers={
+                    'Content-Disposition': f'attachment; filename="nf-entrada-oficial-previa-{nf.pk}.xml"',
+                },
+            )
+        return response.Response(payload)
+
+    @action(detail=True, methods=['post'], url_path='gerar-xml-oficial-emissao')
+    def gerar_xml_oficial_emissao(self, request, pk=None):
+        from apps.fiscal.nfe_entrada_emissao.xml_oficial import gerar_xml_oficial_nfe_entrada
+
+        nf = self.get_object()
+        payload = gerar_xml_oficial_nfe_entrada(nf, persistir=True)
+        if payload.get('bloqueado'):
+            return response.Response(payload, status=status.HTTP_409_CONFLICT)
+        return response.Response(payload)
+
+    @action(detail=True, methods=['get'], url_path='xml-gerado')
+    def xml_gerado(self, request, pk=None):
+        nf = self.get_object()
+        xml = (nf.xml_nfe_gerado or '').strip()
+        if not xml:
+            return response.Response(
+                {'detail': 'Nenhum XML oficial gerado para esta NF-e entrada.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if str(request.query_params.get('download', '')).lower() in ('1', 'true', 'yes'):
+            from django.http import HttpResponse
+
+            return HttpResponse(
+                xml,
+                content_type='application/xml; charset=utf-8',
+                headers={
+                    'Content-Disposition': f'attachment; filename="nf-entrada-gerado-{nf.pk}.xml"',
+                },
+            )
+        return response.Response(
+            {
+                'nf_entrada_id': nf.pk,
+                'xml': xml,
+                'status_emissao_sefaz': nf.status_emissao_sefaz or '',
+                'sem_autorizacao': True,
+            },
+        )
+
+    @action(detail=True, methods=['post'], url_path='reservar-numeracao')
+    def reservar_numeracao(self, request, pk=None):
+        from apps.fiscal.nfe_emissao.numeracao import NFeNumeracaoError
+        from apps.fiscal.nfe_entrada_emissao.numeracao import reservar_numeracao_nfe_entrada
+
+        nf = self.get_object()
+        try:
+            num = reservar_numeracao_nfe_entrada(nf, usuario=request.user)
+        except NFeNumeracaoError as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        nf.refresh_from_db()
+        return response.Response(
+            {
+                'ok': True,
+                'nf_entrada_id': nf.pk,
+                'serie_nfe': num.serie,
+                'numero_nfe': num.nnf,
+                'chave_acesso': nf.chave_acesso,
+                'status_emissao_sefaz': nf.status_emissao_sefaz,
+            },
+        )
+
 
 class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
     queryset = (
@@ -404,6 +495,7 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
                 nf,
                 modo=modo,
                 incluir_checklist=incluir_checklist if incluir_checklist else None,
+                usuario=request.user,
             )
         return response.Response(payload)
 
@@ -419,7 +511,7 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         with medir_nfe_perf('salvar_conferencia', nfe_id=nf.pk):
             serializer.save()
         nf.refresh_from_db()
-        conf = montar_conferencia_nfe_saida(nf, modo='abertura', incluir_checklist=False)
+        conf = montar_conferencia_nfe_saida(nf, modo='abertura', incluir_checklist=False, usuario=request.user)
         return response.Response({'conferencia': conf, 'prontidao': conf.get('prontidao')})
 
     @action(detail=True, methods=['post'], url_path='salvar-e-validar-conferencia')
@@ -757,6 +849,142 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
                 nf,
                 ok=False,
                 mensagem='Erro técnico ao transmitir para a SEFAZ. Tente novamente ou contate o suporte.',
+                erros=['erro_tecnico'],
+            )
+            return response.Response(payload, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        code = status.HTTP_200_OK if payload.get('ok') else status.HTTP_422_UNPROCESSABLE_ENTITY
+        return response.Response(payload, status=code)
+
+    @action(detail=True, methods=['get'], url_path='validar-emissao-producao')
+    def validar_emissao_producao(self, request, pk=None):
+        """Checklist read-only pré-emissão produção SEFAZ (Fase 3B — sem transmitir)."""
+        from apps.fiscal.nfe_emissao.validacao_producao import montar_validacao_emissao_producao
+
+        nf = self.get_object()
+        return response.Response(montar_validacao_emissao_producao(nf))
+
+    @action(detail=True, methods=['post'], url_path='emitir-producao')
+    def emitir_producao(self, request, pk=None):
+        """NF-e 4.0.15.x Fase 3B — emissão produção SEFAZ (flag + confirmação; sem UI)."""
+        import logging
+
+        from apps.fiscal.nfe_emissao.assinatura import NFeAssinaturaError
+        from apps.fiscal.nfe_emissao.config_producao import (
+            MSG_PRODUCAO_NAO_HABILITADA,
+            NFeProducaoConfirmacaoError,
+            NFeProducaoDesabilitadaError,
+            nfe_producao_habilitada,
+        )
+        from apps.fiscal.nfe_emissao.permissoes_producao import (
+            MSG_SEM_PERMISSAO_USUARIO,
+            usuario_pode_emitir_nfe_producao,
+        )
+        from apps.fiscal.nfe_emissao.numeracao import NFeNumeracaoError
+        from apps.fiscal.nfe_emissao.resposta_producao import montar_resposta_emissao_producao
+        from apps.fiscal.nfe_emissao.servico_producao import NFeEmissaoProducaoError, emitir_nfe_producao
+        from apps.fiscal.nfe_emissao.transmissao_producao import NFeTransmissaoProducaoError
+        from apps.fiscal.nfe_emissao.validacao import NFeEmissaoValidacaoError
+        from apps.fiscal.nfe_emissao.xml_oficial import NFeXmlEmissaoError
+        from apps.fiscal.nfe_integracao.adapters.exceptions import CertificadoA1Error
+
+        log = logging.getLogger(__name__)
+        nf = self.get_object()
+
+        if not nfe_producao_habilitada():
+            payload = montar_resposta_emissao_producao(
+                nf,
+                ok=False,
+                mensagem=MSG_PRODUCAO_NAO_HABILITADA,
+                erros=[MSG_PRODUCAO_NAO_HABILITADA],
+            )
+            return response.Response(payload, status=status.HTTP_403_FORBIDDEN)
+
+        if not usuario_pode_emitir_nfe_producao(request.user):
+            payload = montar_resposta_emissao_producao(
+                nf,
+                ok=False,
+                mensagem=MSG_SEM_PERMISSAO_USUARIO,
+                erros=[MSG_SEM_PERMISSAO_USUARIO],
+            )
+            return response.Response(payload, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            payload = emitir_nfe_producao(
+                nf,
+                usuario=request.user,
+                confirmacao_payload=request.data if isinstance(request.data, dict) else {},
+            )
+        except NFeProducaoDesabilitadaError as exc:
+            payload = montar_resposta_emissao_producao(
+                nf,
+                ok=False,
+                mensagem=str(exc),
+                erros=[str(exc)],
+            )
+            return response.Response(payload, status=status.HTTP_403_FORBIDDEN)
+        except NFeProducaoConfirmacaoError as exc:
+            payload = montar_resposta_emissao_producao(
+                nf,
+                ok=False,
+                mensagem=str(exc),
+                erros=[str(exc)],
+                etapa='CONFIRMACAO',
+            )
+            return response.Response(payload, status=status.HTTP_400_BAD_REQUEST)
+        except NFeEmissaoValidacaoError as exc:
+            payload = montar_resposta_emissao_producao(
+                nf,
+                ok=False,
+                mensagem=exc.mensagens[0] if exc.mensagens else str(exc),
+                erros=exc.mensagens,
+            )
+            return response.Response(payload, status=status.HTTP_400_BAD_REQUEST)
+        except NFeEmissaoProducaoError as exc:
+            det = getattr(exc, 'detalhes', None) or {}
+            erros = det.get('erros') or [str(exc)]
+            etapa = str(det.get('etapa') or getattr(exc, 'etapa', '') or '')
+            nf.refresh_from_db()
+            payload = montar_resposta_emissao_producao(
+                nf,
+                ok=False,
+                mensagem=str(exc),
+                erros=erros if isinstance(erros, list) else [str(erros)],
+                cstat=str(det.get('cStat') or det.get('cstat') or nf.cstat_autorizacao or ''),
+                xmotivo=str(det.get('xMotivo') or det.get('xmotivo') or nf.motivo_autorizacao or ''),
+                etapa=etapa,
+            )
+            payload.update(
+                {
+                    'numero_nfe': nf.numero_nfe or payload.get('numero_nfe'),
+                    'serie_nfe': nf.serie_nfe or payload.get('serie_nfe'),
+                    'chave_acesso': nf.chave_acesso or payload.get('chave_acesso'),
+                },
+            )
+            if det.get('validacao_xsd'):
+                payload['validacao_xsd'] = det['validacao_xsd']
+            payload['status'] = nf.status_emissao_sefaz or nf.status
+            return response.Response(payload, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        except (NFeXmlEmissaoError, NFeAssinaturaError, NFeNumeracaoError, NFeTransmissaoProducaoError, CertificadoA1Error) as exc:
+            etapa = getattr(exc, 'etapa', '') or 'PRE_TRANSMISSAO'
+            log.warning('Emissão produção bloqueada nfe_id=%s etapa=%s: %s', pk, etapa, exc)
+            nf.refresh_from_db()
+            payload = montar_resposta_emissao_producao(
+                nf,
+                ok=False,
+                mensagem=str(exc),
+                erros=[str(exc)],
+                etapa=etapa,
+            )
+            return response.Response(payload, status=status.HTTP_400_BAD_REQUEST)
+        except ValueError as exc:
+            payload = montar_resposta_emissao_producao(nf, ok=False, mensagem=str(exc), erros=[str(exc)])
+            return response.Response(payload, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            log.exception('Erro técnico emissão produção nfe_id=%s', pk)
+            payload = montar_resposta_emissao_producao(
+                nf,
+                ok=False,
+                mensagem='Erro técnico ao transmitir NF-e produção. Tente novamente ou contate o suporte.',
                 erros=['erro_tecnico'],
             )
             return response.Response(payload, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

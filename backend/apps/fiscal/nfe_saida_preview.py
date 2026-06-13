@@ -379,6 +379,8 @@ def gerar_dados_preview_nfe_saida(
                 'reforma_tributaria': snap_f.get('reforma_tributaria') or snap_f.get('ibs_cbs'),
                 'pedido_compra': _text(snap_c.get('pedido_compra') or snap_c.get('numero_pedido_compra')),
                 'pedido_cliente': pedido_cli,
+                'pedido_cliente_numero': pc_num,
+                'pedido_cliente_item': pc_item,
             },
         )
 

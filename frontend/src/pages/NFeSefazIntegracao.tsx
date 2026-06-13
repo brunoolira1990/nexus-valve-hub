@@ -9,12 +9,20 @@ import {
 } from '@/services/api/nfeSefaz';
 import { apiErrorMessage } from '@/services/api/config';
 import {
+  ambienteLabel,
   cStatExibicao,
   consultaFalhou,
   consultaOk,
+  empresaPareceFixture,
+  escolherEmpresaInicial,
   erroHistoricoResumo,
+  formatAmbienteUf,
+  mensagemEmpresaBloqueada,
   motivoExibicao,
   resultadoHistoricoLabel,
+  rotuloEmpresaSefaz,
+  subtituloPaginaSefaz,
+  tituloPaginaSefaz,
   tituloUltimoRetorno,
 } from '@/lib/nfeSefazUx';
 import type { Empresa } from '@/types';
@@ -40,12 +48,20 @@ const NFeSefazIntegracao = () => {
     ]);
     setEmpresas(emps);
     setHistorico(hist);
-    if (emps.length && !empresaId) setEmpresaId(emps[0].id);
+    if (emps.length && !empresaId) setEmpresaId(escolherEmpresaInicial(emps));
   };
 
   useEffect(() => {
     load().catch((e) => setErro(apiErrorMessage(e)));
   }, []);
+
+  const empresaSelecionada = empresas.find((e) => e.id === empresaId);
+  const empresaFixture = empresaSelecionada ? empresaPareceFixture(empresaSelecionada) : false;
+  const consultaBloqueada =
+    empresaFixture ||
+    !empresaSelecionada?.certificado_arquivo ||
+    certInfo?.consulta_sefaz_permitida === false ||
+    certInfo?.empresa_fixture_teste === true;
 
   const handleValidarCert = async () => {
     if (!empresaId) return;
@@ -64,6 +80,14 @@ const NFeSefazIntegracao = () => {
 
   const handleConsultar = async () => {
     if (!empresaId) return;
+    if (empresaFixture) {
+      setErro(mensagemEmpresaBloqueada({ tipo_erro: 'EMPRESA_BLOQUEADA' }));
+      return;
+    }
+    if (certInfo?.consulta_sefaz_permitida === false) {
+      setErro(certInfo.consulta_sefaz_motivo || mensagemEmpresaBloqueada({ tipo_erro: 'EMPRESA_BLOQUEADA' }));
+      return;
+    }
     setLoading(true);
     setErro(null);
     setMostrarErroTecnico(false);
@@ -78,6 +102,8 @@ const NFeSefazIntegracao = () => {
         ok: r.ok ?? r.sucesso,
         c_stat: r.c_stat || r.cstat || '',
         x_motivo: r.motivo || r.x_motivo || '',
+        empresa_razao_social:
+          r.empresa_razao_social || empresaSelecionada?.razao_social || '',
       };
       setUltimo(normalizado);
       await load();
@@ -98,8 +124,8 @@ const NFeSefazIntegracao = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="NF-e — SEFAZ (homologação)"
-        subtitle="Fase 3.6.1: certificado A1, status do serviço via PyNFe e diagnóstico completo. Não emite NF-e."
+        title={tituloPaginaSefaz(homologacao)}
+        subtitle={subtituloPaginaSefaz(homologacao)}
       />
 
       {erro ? (
@@ -116,15 +142,28 @@ const NFeSefazIntegracao = () => {
             <select
               className="erp-select mt-1 w-full"
               value={empresaId}
-              onChange={(e) => setEmpresaId(e.target.value ? Number(e.target.value) : '')}
+              onChange={(e) => {
+                setEmpresaId(e.target.value ? Number(e.target.value) : '');
+                setCertInfo(null);
+              }}
             >
               <option value="">Selecione</option>
               {empresas.map((e) => (
                 <option key={e.id} value={e.id}>
-                  {e.razao_social} — {e.cnpj}
+                  {rotuloEmpresaSefaz(e)}
                 </option>
               ))}
             </select>
+            {empresaFixture ? (
+              <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                Empresa de teste (fixture). Selecione a empresa real com certificado A1 válido.
+              </p>
+            ) : null}
+            {empresaSelecionada && !empresaSelecionada.certificado_arquivo ? (
+              <p className="mt-1 text-xs text-destructive">
+                Esta empresa não possui certificado A1 cadastrado.
+              </p>
+            ) : null}
           </div>
           <div>
             <label className="erp-label">UF SEFAZ</label>
@@ -159,7 +198,7 @@ const NFeSefazIntegracao = () => {
           <button
             type="button"
             className="erp-btn-primary"
-            disabled={!empresaId || loading}
+            disabled={!empresaId || loading || consultaBloqueada}
             onClick={handleConsultar}
           >
             {loading ? 'Consultando SEFAZ…' : 'Consultar status do serviço (PyNFe)'}
@@ -208,20 +247,57 @@ const NFeSefazIntegracao = () => {
             {tituloUltimoRetorno(ultimo)}
           </h2>
           {cardFalha ? (
-            <p className="text-sm">
-              <span className="font-medium">Motivo:</span> {motivoExibicao(ultimo)}
-            </p>
+            <div className="text-sm space-y-1">
+              <p>
+                <span className="font-medium">Tipo de erro:</span>{' '}
+                {ultimo.tipo_erro || 'FALHA'}
+              </p>
+              {ultimo.empresa_razao_social ? (
+                <p>
+                  <span className="font-medium">Empresa:</span> {ultimo.empresa_razao_social}
+                </p>
+              ) : null}
+              <p>{formatAmbienteUf(ultimo.ambiente || ambienteLabel(homologacao), ultimo.uf)}</p>
+              <p>
+                <span className="font-medium">Motivo:</span> {motivoExibicao(ultimo)}
+              </p>
+              {ultimo.tipo_erro === 'PARSE_ERROR' ? (
+                <p className="text-xs text-muted-foreground">
+                  A resposta não veio como XML/SOAP SEFAZ. Confira endpoint, certificado A1, rede e
+                  proxy local (HTTP_PROXY/HTTPS_PROXY).
+                </p>
+              ) : null}
+            </div>
           ) : null}
           <p className="text-sm">
             <span className="font-medium">cStat:</span>{' '}
             {cStatExibicao(ultimo) || (cardFalha ? '—' : '—')}
-            <span className="font-medium ml-3">Motivo SEFAZ:</span> {motivoExibicao(ultimo)}
+            {!cardFalha ? (
+              <>
+                <span className="font-medium ml-3">Motivo SEFAZ:</span> {motivoExibicao(ultimo)}
+              </>
+            ) : null}
           </p>
           <p className="text-sm text-muted-foreground">
             UF {ultimo.uf} · {ultimo.ambiente} · {ultimo.consultado_em}
             {consultaOk(ultimo) ? ' · Serviço em operação' : ''}
             {ultimo.tipo_erro ? ` · ${ultimo.tipo_erro}` : ''}
           </p>
+          {ultimo.endpoint_sefaz ? (
+            <p className="text-xs text-muted-foreground break-all">Endpoint: {ultimo.endpoint_sefaz}</p>
+          ) : null}
+          {ultimo.diagnostico_http?.http_status || ultimo.diagnostico_http?.content_type ? (
+            <p className="text-xs text-muted-foreground">
+              {ultimo.diagnostico_http.http_status ? `HTTP ${ultimo.diagnostico_http.http_status}` : ''}
+              {ultimo.diagnostico_http.http_status && ultimo.diagnostico_http.content_type ? ' · ' : ''}
+              {ultimo.diagnostico_http.content_type
+                ? `Content-Type: ${ultimo.diagnostico_http.content_type}`
+                : ''}
+              {ultimo.diagnostico_http.html_titulo
+                ? ` · título: ${ultimo.diagnostico_http.html_titulo}`
+                : ''}
+            </p>
+          ) : null}
           {ultimo.ver_aplic ? <p className="text-xs text-muted-foreground">verAplic: {ultimo.ver_aplic}</p> : null}
           {ultimo.erro_tecnico ? (
             <div>

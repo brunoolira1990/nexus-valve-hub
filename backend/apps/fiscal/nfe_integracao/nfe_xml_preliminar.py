@@ -293,11 +293,30 @@ def _persistir_preliminar_no_modelo(
     )
 
 
+def _xml_preliminar_cache_valido(nfe_saida: NFeSaida, xml_cache: str) -> bool:
+    """Invalida cache antigo sem pedido de compra / xPed quando a NF-e já tem esses dados."""
+    if not xml_cache:
+        return False
+    ped_cab = _text(nfe_saida.pedido_cliente_numero)
+    if ped_cab:
+        ped_tag = ped_cab[:15]
+        if ped_tag not in xml_cache and 'PEDIDO DE COMPRA' not in xml_cache.upper():
+            return False
+    for item in nfe_saida.itens.all():
+        pc = _text(item.pedido_cliente_numero) or ped_cab
+        pi = _text(item.pedido_cliente_item)
+        if pc and pc[:15] not in xml_cache:
+            return False
+        if pi and pi[:6] not in xml_cache:
+            return False
+    return True
+
+
 def gerar_xml_nfe_preliminar(nfe_saida: NFeSaida, *, persistir: bool | None = None) -> bytes:
     """Gera XML NF-e 4.00 preliminar com chave de acesso calculada (homologação tpAmb=2)."""
     xml_cache = _text(getattr(nfe_saida, 'xml_preliminar', ''))
     chave_cache = _text(getattr(nfe_saida, 'chave_acesso_preliminar', ''))
-    if xml_cache and chave_cache:
+    if xml_cache and chave_cache and _xml_preliminar_cache_valido(nfe_saida, xml_cache):
         return xml_cache.encode('utf-8')
 
     bloqueio = _bloqueio_preview(nfe_saida)

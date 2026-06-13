@@ -59,6 +59,7 @@ def obter_config_numeracao(
             empresa_id=empresa_id,
             ambiente=ambiente,
             modelo_documento=modelo,
+            tipo_operacao=NFeNumeracaoConfiguracao.TipoOperacao.SAIDA,
             ativo=True,
         )
         .order_by('serie')
@@ -85,7 +86,12 @@ def reservar_numeracao_nfe(
     usuario=None,
 ) -> NumeracaoReservada:
     if ambiente == NFeSaida.AmbienteEmissao.PRODUCAO:
-        raise NFeNumeracaoError('Emissão em produção não está habilitada nesta fase.')
+        from apps.fiscal.nfe_emissao.config_producao import exigir_producao_habilitada
+
+        try:
+            exigir_producao_habilitada()
+        except PermissionError as exc:
+            raise NFeNumeracaoError(str(exc)) from exc
 
     nf = _lock_nfe_saida(nfe_saida.pk)
     if nf.numero_nfe and nf.serie_nfe and nf.chave_acesso:
@@ -125,7 +131,8 @@ def reservar_numeracao_nfe(
     if nnf_int < 1 or nnf_int > 999_999_999:
         raise NFeNumeracaoError('Próximo número fiscal fora do intervalo permitido.')
 
-    validar_serie_autorizacao_normal(cfg.serie)
+    if ambiente != NFeSaida.AmbienteEmissao.PRODUCAO:
+        validar_serie_autorizacao_normal(cfg.serie)
     serie = _serie_digits(cfg.serie)
     serie_chave = serie_para_chave(cfg.serie)
     nnf = _nnf_str(nnf_int)

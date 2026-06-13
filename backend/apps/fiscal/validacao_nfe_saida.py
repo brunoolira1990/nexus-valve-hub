@@ -670,6 +670,22 @@ def validar_nfe_saida_para_emissao(
                     mensagem=f'{rotulo} com imposto negativo no snapshot ({", ".join(neg)}).',
                     item_id=item.pk,
                 )
+            from apps.fiscal.nfe_cbenef_sp import pendencia_cbenef_sp_item
+
+            msg_cbenef = pendencia_cbenef_sp_item(
+                snap_f,
+                uf_emitente=uf_origem,
+                rotulo_item=rotulo,
+            )
+            if msg_cbenef:
+                _add(
+                    grupos,
+                    tipo=TIPO_PENDENCIA,
+                    codigo='CBENEF_SP_CST20_AUSENTE',
+                    grupo='fiscal',
+                    mensagem=msg_cbenef,
+                    item_id=item.pk,
+                )
             from apps.fiscal.snapshot_fiscal_helpers import (
                 get_reforma_tributaria_snapshot,
                 reforma_configurada_no_snapshot,

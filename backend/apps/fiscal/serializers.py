@@ -235,7 +235,22 @@ class ItemNFeEntradaSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ItemNFeEntrada
-        fields = ('id', 'produto_id', 'produto_nome', 'quantidade', 'valor', 'corrida_id', 'corrida_numero', 'snapshot_produto')
+        fields = (
+            'id',
+            'produto_id',
+            'produto_nome',
+            'quantidade',
+            'valor',
+            'corrida_id',
+            'corrida_numero',
+            'snapshot_produto',
+            'numero_item',
+            'ncm',
+            'cfop',
+            'unidade',
+            'descricao_xml',
+            'impostos_json',
+        )
 
     def get_produto_nome(self, obj):
         return obj.produto.descricao
@@ -249,6 +264,23 @@ class ItemNFeEntradaSerializer(serializers.ModelSerializer):
         produto = attrs.get('produto', self.instance.produto if self.instance else None)
         if produto:
             attrs['snapshot_produto'] = build_produto_snapshot(produto)
+
+        nf = None
+        if self.instance:
+            nf = self.instance.nf
+        elif self.parent and getattr(self.parent, 'instance', None):
+            nf = self.parent.instance
+
+        if nf and nf.tipo_origem == NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_EMITIDA:
+            ncm = (attrs.get('ncm') or (self.instance.ncm if self.instance else '') or '').strip()
+            cfop = (attrs.get('cfop') or (self.instance.cfop if self.instance else '') or '').strip()
+            unidade = (attrs.get('unidade') or (self.instance.unidade if self.instance else '') or '').strip()
+            if not ncm:
+                raise ValidationError({'ncm': 'NCM obrigatório para entrada própria emitida.'})
+            if not cfop:
+                raise ValidationError({'cfop': 'CFOP obrigatório para entrada própria emitida.'})
+            if not unidade:
+                raise ValidationError({'unidade': 'Unidade obrigatória para entrada própria emitida.'})
         return attrs
 
     def to_representation(self, instance):
@@ -314,6 +346,8 @@ class NFeEntradaListSerializer(serializers.ModelSerializer):
     def get_tipo_origem_label(self, obj):
         if obj.tipo_origem == NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_IMPORTADA:
             return 'Entrada própria'
+        if obj.tipo_origem == NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_EMITIDA:
+            return 'Entrada própria emitida'
         return obj.get_tipo_origem_display()
 
     def get_status_operacional_label(self, obj):
@@ -332,6 +366,18 @@ class NFeEntradaSerializer(serializers.ModelSerializer):
     fornecedor_id = serializers.PrimaryKeyRelatedField(
         queryset=Fornecedor.objects.all(),
         source='fornecedor',
+        allow_null=True,
+        required=False,
+    )
+    empresa_emitente_id = serializers.PrimaryKeyRelatedField(
+        queryset=Empresa.objects.all(),
+        source='empresa_emitente',
+        allow_null=True,
+        required=False,
+    )
+    cliente_destinatario_id = serializers.PrimaryKeyRelatedField(
+        queryset=Cliente.objects.all(),
+        source='cliente_destinatario',
         allow_null=True,
         required=False,
     )
@@ -364,6 +410,8 @@ class NFeEntradaSerializer(serializers.ModelSerializer):
             'fornecedor_id',
             'fornecedor_nome',
             'fornecedor_cnpj',
+            'empresa_emitente_id',
+            'cliente_destinatario_id',
             'destinatario_nome',
             'data',
             'valor_total',
@@ -371,6 +419,15 @@ class NFeEntradaSerializer(serializers.ModelSerializer):
             'tipo_origem_label',
             'status_operacional',
             'status_operacional_label',
+            'ambiente_emissao',
+            'fin_nfe',
+            'nat_op',
+            'chave_nfe_referenciada',
+            'serie_nfe',
+            'numero_nfe',
+            'codigo_numerico',
+            'digito_verificador',
+            'status_emissao_sefaz',
             'pedido_compra_id',
             'cte_id',
             'itens',
@@ -383,6 +440,11 @@ class NFeEntradaSerializer(serializers.ModelSerializer):
             'status_operacional',
             'chave_acesso',
             'serie',
+            'serie_nfe',
+            'numero_nfe',
+            'codigo_numerico',
+            'digito_verificador',
+            'status_emissao_sefaz',
             'itens_json',
             'importado_em',
             'nome_arquivo',
@@ -414,6 +476,21 @@ class NFeEntradaSerializer(serializers.ModelSerializer):
             forn = attrs.get('fornecedor')
             if forn is None and not (self.instance and self.instance.fornecedor_id):
                 raise ValidationError({'fornecedor_id': 'Fornecedor obrigatório para entrada manual.'})
+        if self.instance and self.instance.tipo_origem == NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_EMITIDA:
+            from apps.fiscal.nfe_entrada_emissao.validacao import (
+                NFeEntradaEmissaoValidationError,
+                validar_destinatario_entrada_propria_emitida,
+            )
+
+            nf_ctx = self.instance
+            if 'fornecedor' in attrs:
+                nf_ctx.fornecedor = attrs['fornecedor']
+            if 'cliente_destinatario' in attrs:
+                nf_ctx.cliente_destinatario = attrs['cliente_destinatario']
+            try:
+                validar_destinatario_entrada_propria_emitida(nf_ctx)
+            except NFeEntradaEmissaoValidationError as exc:
+                raise ValidationError({'detail': str(exc)}) from exc
         return attrs
 
     def to_representation(self, instance):
@@ -431,7 +508,10 @@ class NFeEntradaSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def _aplicar_estoque_se_manual(nf: NFeEntrada) -> None:
-        if nf.tipo_origem == NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_IMPORTADA:
+        if nf.tipo_origem in (
+            NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_IMPORTADA,
+            NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_EMITIDA,
+        ):
             return
         try:
             aplicar_todos_itens_entrada(nf)
@@ -2536,6 +2616,7 @@ class NFeNumeracaoConfiguracaoSerializer(serializers.ModelSerializer):
             'empresa_id',
             'modelo_documento',
             'ambiente',
+            'tipo_operacao',
             'serie',
             'proximo_numero',
             'ultimo_numero_reservado',

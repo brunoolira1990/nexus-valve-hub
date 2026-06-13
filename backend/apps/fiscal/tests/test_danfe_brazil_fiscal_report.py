@@ -111,6 +111,28 @@ class DanfeBrazilFiscalReportPocTests(TestCase):
         pdf = gerar_danfe_bfr_de_xml_string(limpo)
         self.assertTrue(pdf.startswith(b'%PDF'))
 
+    def test_danfe_oculta_sem_cbenef_mantem_pedido_e_codigo_especifico(self):
+        xml = XML_NFE_EXEMPLO_POC.replace(
+            '<xProd>Produto POC BrazilFiscalReport</xProd>',
+            '<xProd>Produto POC BrazilFiscalReport</xProd><cBenef>SEM CBENEF</cBenef>',
+            1,
+        ).replace(
+            '</prod>',
+            '</prod><infAdProd>Pedido de compra: 55005050 - Item: 01</infAdProd>',
+            1,
+        )
+        self.assertIn('<cBenef>SEM CBENEF</cBenef>', xml)
+        pdf = gerar_danfe_bfr_de_xml_string(xml)
+        texto = compact_pdf_text(pdf_text(pdf))
+        self.assertNotIn('SEM CBENEF', texto)
+        self.assertNotIn('CBENEF:SEM', texto.replace(' ', ''))
+        self.assertIn('PEDIDODECOMPRA', texto.replace(' ', ''))
+
+        xml_codigo = xml.replace('<cBenef>SEM CBENEF</cBenef>', '<cBenef>SP123456</cBenef>', 1)
+        pdf2 = gerar_danfe_bfr_de_xml_string(xml_codigo)
+        texto2 = compact_pdf_text(pdf_text(pdf2))
+        self.assertIn('SP123456', texto2)
+
     @mock.patch(
         'apps.fiscal.nfe_integracao.danfe_brazil_fiscal_report.gerar_danfe_bfr_de_nfe_saida_preview',
     )

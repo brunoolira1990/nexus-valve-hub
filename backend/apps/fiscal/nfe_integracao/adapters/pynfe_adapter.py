@@ -2,13 +2,83 @@
 
 from __future__ import annotations
 
-from typing import Any
+import logging
+from contextlib import contextmanager
+from typing import Any, Iterator
 
 from apps.fiscal.nfe_integracao.adapters.exceptions import PyNFeComunicacaoError
 from apps.fiscal.nfe_integracao.adapters.status_servico_parser import (
     log_diagnostico_resposta,
     normalizar_xml_bruto,
 )
+
+logger = logging.getLogger(__name__)
+
+
+_PROXY_ENV_KEYS = (
+    'HTTP_PROXY',
+    'HTTPS_PROXY',
+    'http_proxy',
+    'https_proxy',
+    'ALL_PROXY',
+    'all_proxy',
+)
+
+
+@contextmanager
+def requests_sem_proxy_ambiente() -> Iterator[None]:
+    """
+    Evita que HTTP(S)_PROXY do host (WSL/Docker/corporativo) desvie chamadas SEFAZ
+    para páginas HTML de proxy/captive portal em dev/local.
+    """
+    import os
+
+    import requests
+
+    proxy_backup = {key: os.environ.pop(key, None) for key in _PROXY_ENV_KEYS}
+    original_post = requests.post
+    original_session_request = requests.Session.request
+    original_session_init = requests.Session.__init__
+
+    def post_sem_proxy(*args: Any, **kwargs: Any) -> Any:
+        proxies = dict(kwargs.get('proxies') or {})
+        proxies.setdefault('http', None)
+        proxies.setdefault('https', None)
+        kwargs['proxies'] = proxies
+        return original_post(*args, **kwargs)
+
+    def session_request_sem_proxy(self: Any, method: str, url: str, **kwargs: Any) -> Any:
+        proxies = dict(kwargs.get('proxies') or {})
+        proxies.setdefault('http', None)
+        proxies.setdefault('https', None)
+        kwargs['proxies'] = proxies
+        return original_session_request(self, method, url, **kwargs)
+
+    def session_init_sem_proxy(self: Any, *args: Any, **kwargs: Any) -> None:
+        original_session_init(self, *args, **kwargs)
+        self.trust_env = False
+
+    requests.post = post_sem_proxy  # type: ignore[method-assign]
+    requests.Session.request = session_request_sem_proxy  # type: ignore[method-assign]
+    requests.Session.__init__ = session_init_sem_proxy  # type: ignore[method-assign]
+    try:
+        yield
+    finally:
+        requests.post = original_post  # type: ignore[method-assign]
+        requests.Session.request = original_session_request  # type: ignore[method-assign]
+        requests.Session.__init__ = original_session_init  # type: ignore[method-assign]
+        for key, value in proxy_backup.items():
+            if value is not None:
+                os.environ[key] = value
+
+
+def resolver_url_status_servico(comunicacao: Any, *, modelo: str = 'nfe') -> str:
+    """Resolve URL pública do webservice NFeStatusServico4 (sem dados sensíveis)."""
+    try:
+        return str(comunicacao._get_url(modelo, 'STATUS') or '')
+    except Exception as exc:
+        logger.debug('Falha ao resolver URL status_servico: %s', exc)
+        return ''
 
 
 def criar_comunicacao_sefaz(
@@ -51,7 +121,8 @@ def status_servico_nfe(
     Retorna objeto Response-like do requests com .text / .content.
     """
     try:
-        return comunicacao.status_servico(modelo, timeout=timeout)
+        with requests_sem_proxy_ambiente():
+            return comunicacao.status_servico(modelo, timeout=timeout)
     except Exception as exc:
         msg = str(exc).lower()
         if 'timeout' in msg or 'timed out' in msg:

@@ -2,6 +2,7 @@ from django.db.models import Count
 from rest_framework import serializers
 
 from apps.cadastros.models import Empresa, Fornecedor
+from apps.fiscal.nfe_cbenef_sp import normalizar_codigo_beneficio_icms
 from apps.produtos.models import Produto
 
 from .cenario_fiscal_entrada import gerar_label_configuracao_fiscal, label_escopo
@@ -582,6 +583,9 @@ class RegraFiscalSaidaSerializer(serializers.ModelSerializer):
         if not isinstance(value, dict):
             raise serializers.ValidationError('recomendacoes_nfe deve ser um objeto JSON.')
         return normalizar_recomendacoes_nfe(value)
+
+    def validate_codigo_beneficio_icms(self, value):
+        return normalizar_codigo_beneficio_icms(value)
 
     def validate(self, attrs):
         inst = self.instance

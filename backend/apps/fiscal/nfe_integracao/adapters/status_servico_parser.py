@@ -17,6 +17,65 @@ TIPO_ERRO_PYNFE = 'PYNFE_ERROR'
 TIPO_ERRO_RESPOSTA_VAZIA = 'RESPOSTA_VAZIA'
 TIPO_ERRO_CONEXAO = 'CONEXAO_ERROR'
 
+_RE_HTML = re.compile(r'(?i)<!DOCTYPE\s+html|<html[\s>]')
+
+
+def parece_resposta_html(texto: str) -> bool:
+    return bool(texto and _RE_HTML.search(texto))
+
+
+def extrair_diagnostico_http_resposta(raw: Any) -> dict[str, str]:
+    """Metadados seguros da resposta HTTP (sem corpo sensível)."""
+    diag: dict[str, str] = {
+        'http_status': '',
+        'content_type': '',
+        'html_titulo': '',
+    }
+    status = getattr(raw, 'status_code', None)
+    if status is not None:
+        diag['http_status'] = str(status)
+
+    headers = getattr(raw, 'headers', None)
+    if headers is not None:
+        ct = headers.get('Content-Type') or headers.get('content-type')
+        if ct:
+            diag['content_type'] = str(ct).split(';')[0].strip()
+
+    corpo = normalizar_xml_bruto(raw)
+    if parece_resposta_html(corpo):
+        titulo = re.search(r'(?is)<title[^>]*>(.*?)</title>', corpo)
+        if titulo:
+            diag['html_titulo'] = re.sub(r'\s+', ' ', titulo.group(1)).strip()[:120]
+    return diag
+
+
+def motivo_resposta_html_sefaz(
+    *,
+    uf: str,
+    ambiente: str,
+    empresa: str = '',
+    endpoint: str = '',
+    diagnostico_http: dict[str, str] | None = None,
+) -> str:
+    empresa_part = f', empresa: {empresa}' if empresa else ''
+    endpoint_part = f' Endpoint: {endpoint}.' if endpoint else ''
+    diag_part = ''
+    if diagnostico_http:
+        partes = []
+        if diagnostico_http.get('http_status'):
+            partes.append(f'HTTP {diagnostico_http["http_status"]}')
+        if diagnostico_http.get('content_type'):
+            partes.append(f'Content-Type: {diagnostico_http["content_type"]}')
+        if diagnostico_http.get('html_titulo'):
+            partes.append(f'título HTML: {diagnostico_http["html_titulo"]}')
+        if partes:
+            diag_part = f' ({"; ".join(partes)}).'
+    return (
+        f'Resposta HTML recebida — não é XML SEFAZ '
+        f'(ambiente: {ambiente}, UF: {uf}{empresa_part}).{endpoint_part}{diag_part} '
+        'Verifique endpoint SEFAZ, certificado A1, rede, proxy ou firewall.'
+    )
+
 
 def _tipo_resposta_bruto(raw: Any) -> str:
     if raw is None:
@@ -108,23 +167,30 @@ def normalizar_xml_bruto(raw: Any) -> str:
     except Exception:
         pass
 
-    for attr in ('xml', 'text', 'content', 'body', 'data'):
+    texto_http = getattr(raw, 'text', None)
+    content_http = getattr(raw, 'content', None)
+    if texto_http is not None or content_http is not None:
+        texto = str(texto_http or '').strip()
+        if isinstance(content_http, bytes):
+            conteudo = content_http.decode('utf-8', errors='replace').strip()
+        elif content_http is not None:
+            conteudo = str(content_http).strip()
+        else:
+            conteudo = ''
+        if texto and parece_resposta_html(texto) and conteudo and not parece_resposta_html(conteudo):
+            return conteudo
+        if texto:
+            return texto
+        if conteudo:
+            return conteudo
+
+    for attr in ('xml', 'body', 'data'):
         val = getattr(raw, attr, None)
         if val is not None and not callable(val):
-            if attr == 'content' and isinstance(val, bytes):
+            if isinstance(val, bytes):
                 return val.decode('utf-8', errors='replace').strip()
             if isinstance(val, str) and val.strip():
                 return val.strip()
-
-    texto = getattr(raw, 'text', None)
-    if texto and str(texto).strip():
-        return str(texto).strip()
-
-    content = getattr(raw, 'content', None)
-    if content:
-        if isinstance(content, bytes):
-            return content.decode('utf-8', errors='replace').strip()
-        return str(content).strip()
 
     s = str(raw).strip()
     if s.startswith('<') or 'cStat' in s or 'retConsStatServ' in s:
@@ -193,10 +259,11 @@ def parse_status_servico_response(raw_response: Any) -> dict[str, Any]:
         base['motivo_erro'] = 'PyNFe retornou resposta vazia.'
         return base
 
-    if re.search(r'(?i)<!DOCTYPE\s+html|<html[\s>]', xml_raw):
+    if parece_resposta_html(xml_raw):
         base['erro_parse'] = True
         base['motivo_erro'] = 'Resposta HTML recebida (não é XML SEFAZ).'
         base['x_motivo'] = base['motivo_erro']
+        base['resposta_html'] = True
         return base
 
     try:

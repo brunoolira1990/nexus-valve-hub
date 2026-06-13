@@ -38,6 +38,16 @@ export const MODALIDADE_BC_ICMS_OPCOES: OpcaoCatalogo[] = [
   { value: '3', label: '3 — Valor da operação' },
 ];
 
+export const CBENEF_SEM_CODIGO_LITERAL = 'SEM CBENEF';
+
+export const CODIGO_BENEFICIO_ICMS_OPCOES: OpcaoCatalogo[] = [
+  OPCAO_VAZIA,
+  {
+    value: CBENEF_SEM_CODIGO_LITERAL,
+    label: 'Sem código específico — enviar SEM CBENEF',
+  },
+];
+
 export const MOTIVO_DESONERACAO_ICMS_OPCOES: OpcaoCatalogo[] = [
   { value: '1', label: '1 — Táxi' },
   { value: '3', label: '3 — Produtor agropecuário' },

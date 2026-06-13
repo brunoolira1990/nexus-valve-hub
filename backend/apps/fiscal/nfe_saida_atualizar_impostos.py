@@ -29,6 +29,8 @@ from apps.fiscal.snapshot_fiscal_helpers import (
 )
 from apps.regras_fiscais.reforma_tributaria_config import normalizar_percentual_reforma
 from apps.produtos.snapshot import build_produto_snapshot
+from apps.fiscal.nfe_cbenef_sp import normalizar_codigo_beneficio_icms
+from apps.fiscal.nfe_icms_calculo import calcular_base_valor_icms_saida
 from apps.regras_fiscais.base_pis_cofins_saida import calcular_base_pis_cofins_saida
 from apps.regras_fiscais.models import RegraFiscalSaida
 from apps.fiscal.nfe_saida_textos_fiscais import (
@@ -56,8 +58,13 @@ MSG_BLOQUEIO_STATUS = 'Impostos só podem ser atualizados em NF-e rascunho.'
 _CAMPOS_COMPARACAO: list[tuple[str, str]] = [
     ('cfop', 'CFOP'),
     ('cst_icms', 'CST ICMS'),
+    ('modalidade_bc_icms', 'Modalidade BC ICMS'),
+    ('reducao_bc_icms', 'Redução BC ICMS (%)'),
+    ('base_icms', 'Base ICMS'),
     ('aliquota_icms', 'Alíquota ICMS'),
     ('valor_icms', 'Valor ICMS'),
+    ('codigo_beneficio_icms', 'Cód. benefício ICMS'),
+    ('motivo_desoneracao_icms', 'Motivo desoneração ICMS'),
     ('cst_ipi', 'CST IPI'),
     ('aliquota_ipi', 'Alíquota IPI'),
     ('valor_ipi', 'Valor IPI'),
@@ -223,8 +230,13 @@ def _flatten_compare(snap: dict | None) -> dict[str, str]:
     out = {
         'cfop': cfop_from_snapshot_fiscal(snap),
         'cst_icms': _text(snap.get('cst_icms') or snap.get('CSOSN') or snap.get('csosn')),
+        'modalidade_bc_icms': _text(snap.get('modalidade_bc_icms') or snap.get('mod_bc_icms')),
+        'reducao_bc_icms': _text(snap.get('reducao_bc_icms') or snap.get('p_red_bc')),
+        'base_icms': _text(snap.get('base_icms') or snap.get('v_bc_icms')),
         'aliquota_icms': _text(snap.get('aliquota_icms') or snap.get('icms_saida_percentual')),
         'valor_icms': _text(snap.get('valor_icms') or snap.get('v_icms')),
+        'codigo_beneficio_icms': _text(snap.get('codigo_beneficio_icms')),
+        'motivo_desoneracao_icms': _text(snap.get('motivo_desoneracao_icms')),
         'cst_ipi': _text(snap.get('cst_ipi')),
         'aliquota_ipi': _text(snap.get('aliquota_ipi') or snap.get('ipi_saida_percentual')),
         'valor_ipi': _text(snap.get('valor_ipi') or snap.get('v_ipi')),
@@ -305,12 +317,20 @@ def montar_snapshot_fiscal_de_regra_atual(
 ) -> dict[str, Any]:
     v_prod = _valor_produto_item(item)
     ncm = _ncm_item(item)
+    cst_icms = _text(busca.get('cst_icms'))
     icms_ali = _dec(busca.get('aliquota_icms'))
+    reducao_bc = _dec(busca.get('reducao_bc_icms')) if busca.get('reducao_bc_icms') else None
+    modalidade_bc = _text(busca.get('modalidade_bc_icms'))
     ipi_ali = _dec(busca.get('aliquota_ipi'))
     pis_ali = _dec(busca.get('aliquota_pis'))
     cofins_ali = _dec(busca.get('aliquota_cofins'))
 
-    v_icms = (v_prod * icms_ali / Decimal('100')).quantize(Decimal('0.01')) if icms_ali else Decimal('0')
+    base_icms, v_icms = calcular_base_valor_icms_saida(
+        v_prod,
+        icms_ali,
+        reducao_bc_pct=reducao_bc,
+        cst_icms=cst_icms,
+    )
     v_ipi = (v_prod * ipi_ali / Decimal('100')).quantize(Decimal('0.01')) if ipi_ali else Decimal('0')
 
     base_pis, base_cofins, _msgs = calcular_base_pis_cofins_saida(
@@ -333,11 +353,15 @@ def montar_snapshot_fiscal_de_regra_atual(
         'cfop_venda': cfop,
         'cfop_saida': cfop,
         'cfop_st': _text(busca.get('cfop_st')),
-        'cst_icms': _text(busca.get('cst_icms')),
-        'csosn': _text(busca.get('cst_icms')),
+        'cst_icms': cst_icms,
+        'csosn': cst_icms,
+        'modalidade_bc_icms': modalidade_bc,
+        'reducao_bc_icms': _text(busca.get('reducao_bc_icms')),
+        'codigo_beneficio_icms': normalizar_codigo_beneficio_icms(busca.get('codigo_beneficio_icms')),
+        'motivo_desoneracao_icms': _text(busca.get('motivo_desoneracao_icms')),
         'icms_saida_percentual': _text(busca.get('aliquota_icms')),
         'aliquota_icms': _text(busca.get('aliquota_icms')),
-        'base_icms': _q2(v_prod),
+        'base_icms': _q2(base_icms),
         'valor_icms': _q2(v_icms),
         'cst_ipi': _text(busca.get('cst_ipi')),
         'ipi_saida_percentual': _text(busca.get('aliquota_ipi')),
@@ -411,6 +435,8 @@ def _buscar_regra_para_item(
                 'cfop': '',
                 'cfop_st': '',
                 'cst_icms': '',
+                'modalidade_bc_icms': '',
+                'reducao_bc_icms': '',
                 'aliquota_icms': '0',
                 'cst_ipi': '',
                 'aliquota_ipi': '0',
@@ -446,6 +472,8 @@ def _buscar_regra_para_item(
                 'cfop': '',
                 'cfop_st': '',
                 'cst_icms': '',
+                'modalidade_bc_icms': '',
+                'reducao_bc_icms': '',
                 'aliquota_icms': '0',
                 'cst_ipi': '',
                 'aliquota_ipi': '0',
@@ -804,8 +832,10 @@ def aplicar_atualizacao_impostos_nfe(
             'fonte_consultada': 'CENARIO_SAIDA_PADRAO',
             'regras_aplicadas': regras_evt,
         }
+        from apps.fiscal.nfe_integracao.nfe_xml_preliminar import invalidar_xml_preliminar_armazenado
         from apps.fiscal.nfe_saida_prontidao import invalidar_prontidao_apos_atualizar_fiscal
 
+        invalidar_xml_preliminar_armazenado(nf_locked)
         invalidar_prontidao_apos_atualizar_fiscal(nf_locked, usuario=usuario)
 
         if aplicados > 0 and preview['resumo']['itens_com_regra'] > 0:

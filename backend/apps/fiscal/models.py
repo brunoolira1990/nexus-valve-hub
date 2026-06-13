@@ -21,13 +21,32 @@ class NFeEntrada(models.Model):
     class TipoOrigem(models.TextChoices):
         MANUAL = 'MANUAL', 'Manual'
         ENTRADA_PROPRIA_IMPORTADA = 'ENTRADA_PROPRIA_IMPORTADA', 'Entrada própria importada'
+        ENTRADA_PROPRIA_EMITIDA = 'ENTRADA_PROPRIA_EMITIDA', 'Entrada própria emitida'
 
     class StatusOperacional(models.TextChoices):
         RASCUNHO = 'RASCUNHO', 'Rascunho'
+        EM_CONFERENCIA = 'EM_CONFERENCIA', 'Em conferência'
+        PRONTA_HOMOLOGACAO = 'PRONTA_HOMOLOGACAO', 'Pronta homologação'
+        AUTORIZADA_HOMOLOGACAO = 'AUTORIZADA_HOMOLOGACAO', 'Autorizada homologação'
+        REJEITADA = 'REJEITADA', 'Rejeitada'
+        ERRO_TRANSMISSAO = 'ERRO_TRANSMISSAO', 'Erro transmissão'
         IMPORTADA_PENDENTE_CONFERENCIA = (
             'IMPORTADA_PENDENTE_CONFERENCIA',
             'Importada — pendente conferência',
         )
+
+    class AmbienteEmissao(models.TextChoices):
+        HOMOLOGACAO = 'homologacao', 'Homologação'
+        PRODUCAO = 'producao', 'Produção'
+
+    class StatusEmissaoSefaz(models.TextChoices):
+        NUMERACAO_RESERVADA = 'NUMERACAO_RESERVADA', 'Numeração reservada'
+        XML_GERADO = 'XML_GERADO', 'XML oficial gerado'
+        XML_ASSINADO = 'XML_ASSINADO', 'XML assinado'
+        ENVIADA_HOMOLOGACAO = 'ENVIADA_HOMOLOGACAO', 'Enviada homologação'
+        AUTORIZADA_HOMOLOGACAO = 'AUTORIZADA_HOMOLOGACAO', 'Autorizada homologação'
+        REJEITADA_HOMOLOGACAO = 'REJEITADA_HOMOLOGACAO', 'Rejeitada homologação'
+        ERRO_TRANSMISSAO = 'ERRO_TRANSMISSAO', 'Erro transmissão'
 
     numero = models.CharField(max_length=64)
     serie = models.CharField(max_length=4, blank=True)
@@ -86,6 +105,53 @@ class NFeEntrada(models.Model):
         related_name='nf_entradas_vinculadas',
     )
 
+    # ERP 4.0.15.0 — emissão entrada própria (fundação; sem transmissão nesta fase)
+    ambiente_emissao = models.CharField(
+        max_length=16,
+        choices=AmbienteEmissao.choices,
+        default=AmbienteEmissao.HOMOLOGACAO,
+        blank=True,
+    )
+    fin_nfe = models.CharField(max_length=1, blank=True)
+    nat_op = models.CharField(max_length=60, blank=True)
+    chave_nfe_referenciada = models.CharField(max_length=44, blank=True)
+    serie_nfe = models.CharField(max_length=3, blank=True)
+    numero_nfe = models.CharField(
+        max_length=9,
+        blank=True,
+        help_text='Número fiscal (nNF) — distinto do número interno.',
+    )
+    codigo_numerico = models.CharField(max_length=8, blank=True)
+    digito_verificador = models.CharField(max_length=1, blank=True)
+    numero_reservado_em = models.DateTimeField(null=True, blank=True)
+    numero_reservado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='nf_entradas_numeracao_reservada',
+    )
+    status_emissao_sefaz = models.CharField(
+        max_length=32,
+        choices=StatusEmissaoSefaz.choices,
+        blank=True,
+    )
+    xml_nfe_gerado = models.TextField(blank=True)
+    xml_assinado = models.TextField(blank=True)
+    xml_envio = models.TextField(blank=True)
+    xml_retorno = models.TextField(blank=True)
+    xml_autorizado = models.TextField(blank=True)
+    xml_retorno_lote = models.TextField(blank=True)
+    xml_protocolo = models.TextField(blank=True)
+    xml_envio_lote = models.TextField(blank=True)
+    protocolo_autorizacao = models.CharField(max_length=20, blank=True)
+    autorizada_em = models.DateTimeField(null=True, blank=True)
+    cstat_autorizacao = models.CharField(max_length=4, blank=True)
+    motivo_autorizacao = models.TextField(blank=True)
+    cstat_lote = models.CharField(max_length=4, blank=True)
+    xmotivo_lote = models.TextField(blank=True)
+    recibo_lote = models.CharField(max_length=20, blank=True)
+
     class Meta:
         ordering = ['-data', 'numero']
         verbose_name = 'NF entrada'
@@ -110,6 +176,12 @@ class ItemNFeEntrada(models.Model):
         blank=True,
     )
     snapshot_produto = models.JSONField(default=dict, blank=True)
+    numero_item = models.PositiveSmallIntegerField(null=True, blank=True)
+    ncm = models.CharField(max_length=8, blank=True)
+    cfop = models.CharField(max_length=4, blank=True)
+    unidade = models.CharField(max_length=6, blank=True)
+    descricao_xml = models.CharField(max_length=120, blank=True)
+    impostos_json = models.JSONField(default=dict, blank=True)
 
 
 class NFeSaida(models.Model):
@@ -304,6 +376,9 @@ class NFeSaida(models.Model):
         ENVIADA_HOMOLOGACAO = 'ENVIADA_HOMOLOGACAO', 'Enviada homologação'
         AUTORIZADA_HOMOLOGACAO = 'AUTORIZADA_HOMOLOGACAO', 'Autorizada homologação'
         REJEITADA_HOMOLOGACAO = 'REJEITADA_HOMOLOGACAO', 'Rejeitada homologação'
+        ENVIADA_PRODUCAO = 'ENVIADA_PRODUCAO', 'Enviada produção'
+        AUTORIZADA_PRODUCAO = 'AUTORIZADA_PRODUCAO', 'Autorizada produção'
+        REJEITADA_PRODUCAO = 'REJEITADA_PRODUCAO', 'Rejeitada produção'
         ERRO_TRANSMISSAO = 'ERRO_TRANSMISSAO', 'Erro transmissão'
         LOTE_PROCESSADO_SEM_PROTOCOLO = 'LOTE_PROCESSADO_SEM_PROTOCOLO', 'Lote processado sem protocolo'
         AGUARDANDO_PROCESSAMENTO = 'AGUARDANDO_PROCESSAMENTO', 'Aguardando processamento SEFAZ'
@@ -409,6 +484,10 @@ class NFeSaidaEvento(models.Model):
         NFE_ENVIADA_HOMOLOGACAO = 'NFE_ENVIADA_HOMOLOGACAO', 'NF-e enviada homologação'
         NFE_AUTORIZADA_HOMOLOGACAO = 'NFE_AUTORIZADA_HOMOLOGACAO', 'NF-e autorizada homologação'
         NFE_REJEITADA_HOMOLOGACAO = 'NFE_REJEITADA_HOMOLOGACAO', 'NF-e rejeitada homologação'
+        EMISSAO_PRODUCAO_INICIADA = 'EMISSAO_PRODUCAO_INICIADA', 'Emissão produção iniciada'
+        NFE_ENVIADA_PRODUCAO = 'NFE_ENVIADA_PRODUCAO', 'NF-e enviada produção'
+        NFE_AUTORIZADA_PRODUCAO = 'NFE_AUTORIZADA_PRODUCAO', 'NF-e autorizada produção'
+        NFE_REJEITADA_PRODUCAO = 'NFE_REJEITADA_PRODUCAO', 'NF-e rejeitada produção'
         ERRO_TRANSMISSAO_SEFAZ = 'ERRO_TRANSMISSAO_SEFAZ', 'Erro transmissão SEFAZ'
 
     nfe_saida = models.ForeignKey(
@@ -1208,6 +1287,10 @@ class NFeNumeracaoConfiguracao(models.Model):
         HOMOLOGACAO = 'homologacao', 'Homologação'
         PRODUCAO = 'producao', 'Produção'
 
+    class TipoOperacao(models.TextChoices):
+        SAIDA = 'saida', 'Saída'
+        ENTRADA_PROPRIA = 'entrada_propria', 'Entrada própria'
+
     empresa = models.ForeignKey(
         'cadastros.Empresa',
         on_delete=models.CASCADE,
@@ -1215,6 +1298,11 @@ class NFeNumeracaoConfiguracao(models.Model):
     )
     modelo_documento = models.CharField(max_length=2, default='55')
     ambiente = models.CharField(max_length=16, choices=Ambiente.choices)
+    tipo_operacao = models.CharField(
+        max_length=20,
+        choices=TipoOperacao.choices,
+        default=TipoOperacao.SAIDA,
+    )
     serie = models.CharField(max_length=3, default='0')
     proximo_numero = models.PositiveIntegerField(default=1)
     ultimo_numero_reservado = models.PositiveIntegerField(null=True, blank=True)
@@ -1230,16 +1318,16 @@ class NFeNumeracaoConfiguracao(models.Model):
         verbose_name_plural = 'Configurações numeração NF-e'
         constraints = [
             models.UniqueConstraint(
-                fields=['empresa', 'modelo_documento', 'ambiente', 'serie'],
+                fields=['empresa', 'modelo_documento', 'ambiente', 'tipo_operacao', 'serie'],
                 condition=models.Q(ativo=True),
-                name='uniq_nfe_numeracao_ativa_empresa_ambiente_serie',
+                name='uniq_nfe_numeracao_ativa_empresa_ambiente_tipo_serie',
             ),
         ]
 
     def __str__(self) -> str:
         return (
             f'{self.empresa_id} mod{self.modelo_documento} {self.ambiente} '
-            f'série {self.serie} próx={self.proximo_numero}'
+            f'{self.tipo_operacao} série {self.serie} próx={self.proximo_numero}'
         )
 
 

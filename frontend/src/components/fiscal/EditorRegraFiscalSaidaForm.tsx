@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CatalogCodigoFiscalSelect } from '@/components/fiscal/CatalogCodigoFiscalSelect';
 import { CatalogCfopSearchSelect } from '@/components/fiscal/CatalogCfopSearchSelect';
 import { RecomendacoesNfeSaidaEditor } from '@/components/fiscal/RecomendacoesNfeSaidaEditor';
@@ -8,6 +8,7 @@ import {
   BOOL_TRI_OPCOES,
   CONSUMIDOR_FINAL_OPCOES,
   CAMPOS_ICMS_PRESET,
+  CBENEF_SEM_CODIGO_LITERAL,
   CST_ICMS_OPCOES,
   CST_IPI_OPCOES,
   CST_PIS_COFINS_OPCOES,
@@ -42,8 +43,21 @@ function icmsPresetConflita(form: FormRegraFiscalSaida, patch: PatchPresetIcms):
   });
 }
 
+function resolveModoCodigoBeneficio(val: string): '' | typeof CBENEF_SEM_CODIGO_LITERAL | '__CUSTOM__' {
+  if (val === CBENEF_SEM_CODIGO_LITERAL) return CBENEF_SEM_CODIGO_LITERAL;
+  if (val) return '__CUSTOM__';
+  return '';
+}
+
 export const EditorRegraFiscalSaidaForm = ({ abaForm, form, setForm }: Props) => {
   const [presetAviso, setPresetAviso] = useState('');
+  const [modoCodigoBeneficio, setModoCodigoBeneficio] = useState<
+    '' | typeof CBENEF_SEM_CODIGO_LITERAL | '__CUSTOM__'
+  >(() => resolveModoCodigoBeneficio(form.codigo_beneficio_icms));
+
+  useEffect(() => {
+    setModoCodigoBeneficio(resolveModoCodigoBeneficio(form.codigo_beneficio_icms));
+  }, [form.codigo, form.codigo_beneficio_icms]);
 
   const f = <K extends keyof FormRegraFiscalSaida>(k: K, v: FormRegraFiscalSaida[K]) =>
     setForm((p) => ({ ...p, [k]: v }));
@@ -233,9 +247,35 @@ export const EditorRegraFiscalSaidaForm = ({ abaForm, form, setForm }: Props) =>
               onChange={(v) => f('motivo_desoneracao_icms', v)}
               opcoes={MOTIVO_DESONERACAO_ICMS_OPCOES}
             />
-            <div>
-              <label className="erp-label">Cód. benefício</label>
-              <input className="erp-input mt-1" value={form.codigo_beneficio_icms} onChange={(e) => f('codigo_beneficio_icms', e.target.value)} />
+            <div className="md:col-span-2">
+              <label className="erp-label">Cód. benefício ICMS (cBenef)</label>
+              <select
+                className="erp-select mt-1"
+                value={modoCodigoBeneficio}
+                onChange={(e) => {
+                  const v = e.target.value as '' | typeof CBENEF_SEM_CODIGO_LITERAL | '__CUSTOM__';
+                  setModoCodigoBeneficio(v);
+                  if (v === '') f('codigo_beneficio_icms', '');
+                  else if (v === CBENEF_SEM_CODIGO_LITERAL) f('codigo_beneficio_icms', CBENEF_SEM_CODIGO_LITERAL);
+                  else if (form.codigo_beneficio_icms === CBENEF_SEM_CODIGO_LITERAL) {
+                    f('codigo_beneficio_icms', '');
+                  }
+                }}
+              >
+                <option value="">— Não informar —</option>
+                <option value={CBENEF_SEM_CODIGO_LITERAL}>
+                  Sem código específico — enviar SEM CBENEF
+                </option>
+                <option value="__CUSTOM__">Código específico (contador)</option>
+              </select>
+              {modoCodigoBeneficio === '__CUSTOM__' ? (
+                <input
+                  className="erp-input mt-2"
+                  value={form.codigo_beneficio_icms}
+                  onChange={(e) => f('codigo_beneficio_icms', e.target.value)}
+                  placeholder="Ex.: SP012345 (informado pelo contador)"
+                />
+              ) : null}
             </div>
             <div>
               <label className="erp-label">ICMS ST aplicável</label>

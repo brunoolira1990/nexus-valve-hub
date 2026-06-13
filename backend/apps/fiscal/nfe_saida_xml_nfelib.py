@@ -10,7 +10,10 @@ import re
 from decimal import Decimal
 from typing import Any
 
-from apps.fiscal.models import NFeSaida
+from apps.fiscal.nfe_cbenef_sp import (
+    codigo_beneficio_icms_preenchido,
+    normalizar_codigo_beneficio_icms,
+)
 from apps.fiscal.nfe_integracao.adapters.exceptions import NFeIntegracaoError
 from apps.fiscal.nfe_integracao.adapters.nfelib_adapter import nfelib_disponivel
 from apps.fiscal.nfe_saida_preview import (
@@ -148,21 +151,44 @@ def _build_icms(snap: dict, linha: dict):
 
     icms = get_icms_snapshot(snap)
     cst = _text(icms.get('cst_icms') or icms.get('csosn')) or '00'
+    cst = cst.zfill(2)[:2]
     orig = _text(snap.get('origem_mercadoria') or snap.get('orig') or '0') or '0'
+    mod_bc = _text(icms.get('modalidade_bc')) or '3'
     icms_wrap = nfe.Tnfe.InfNfe.Det.Imposto.Icms()
 
     if cst in ('40', '41', '50'):
         icms_wrap.ICMS40 = nfe.Tnfe.InfNfe.Det.Imposto.Icms.Icms40(orig=orig, CST=cst)
     elif cst == '60':
         icms_wrap.ICMS60 = nfe.Tnfe.InfNfe.Det.Imposto.Icms.Icms60(orig=orig, CST=cst)
+    elif cst == '20':
+        v_bc = _dec(icms.get('base') or linha.get('v_prod'))
+        p_icms = _dec(icms.get('aliquota'))
+        v_icms = _dec(icms.get('valor'))
+        p_red_bc = _dec(icms.get('reducao_bc'))
+        icms20_kwargs: dict[str, Any] = {
+            'orig': orig,
+            'CST': cst,
+            'modBC': mod_bc,
+            'vBC': v_bc,
+            'pICMS': p_icms,
+            'vICMS': v_icms,
+        }
+        if p_red_bc > 0:
+            icms20_kwargs['pRedBC'] = p_red_bc
+        mot_des = _text(icms.get('motivo_desoneracao'))
+        v_icms_deson = _dec(icms.get('valor_icms_deson'))
+        if mot_des and v_icms_deson > 0:
+            icms20_kwargs['vICMSDeson'] = v_icms_deson
+            icms20_kwargs['motDesICMS'] = mot_des[:2]
+        icms_wrap.ICMS20 = nfe.Tnfe.InfNfe.Det.Imposto.Icms.Icms20(**icms20_kwargs)
     else:
         v_bc = _dec(icms.get('base') or linha.get('v_prod'))
         p_icms = _dec(icms.get('aliquota'))
         v_icms = _dec(icms.get('valor'))
         icms_wrap.ICMS00 = nfe.Tnfe.InfNfe.Det.Imposto.Icms.Icms00(
             orig=orig,
-            CST=cst.zfill(2)[:2],
-            modBC='3',
+            CST=cst,
+            modBC=mod_bc,
             vBC=v_bc,
             pICMS=p_icms,
             vICMS=v_icms,
@@ -250,6 +276,11 @@ def _build_det(linha: dict) -> Any:
     cest = _digits(linha.get('cest'), max_len=7)
     if cest:
         prod.CEST = cest
+
+    icms_snap = get_icms_snapshot(snap)
+    c_benef = normalizar_codigo_beneficio_icms(icms_snap.get('codigo_beneficio'))
+    if codigo_beneficio_icms_preenchido(c_benef):
+        prod.cBenef = c_benef[:16]
 
     x_ped = _text(linha.get('x_ped'))
     n_item_ped = _text(linha.get('n_item_ped'))
@@ -382,26 +413,20 @@ def montar_tnfe_oficial(dados: dict[str, Any], *, nfe_saida: NFeSaida | None = N
 
     aplicar_transp_nfelib(inf, nfe, dados.get('transporte'))
 
-    inf_cpl: list[str] = [
-        'XML OFICIAL NF-e 4.00 (nfelib) — NÃO TRANSMITIR',
-        'Rascunho não autorizado — sem protocolo SEFAZ',
-    ]
+    inf_adic_kw: dict[str, Any] = {}
     if nfe_saida:
-        if _text(nfe_saida.informacoes_adicionais):
-            inf_cpl.append(_text(nfe_saida.informacoes_adicionais))
-        if _text(nfe_saida.observacoes_nfe):
-            inf_cpl.append(_text(nfe_saida.observacoes_nfe))
-        if _text(nfe_saida.pedido_cliente_numero):
-            inf_cpl.append(f'Pedido do cliente: {_text(nfe_saida.pedido_cliente_numero)}')
-    elif dados.get('observacoes'):
-        inf_cpl.append(_text(dados['observacoes']))
-    for av in dados.get('avisos') or []:
-        inf_cpl.append(_text(av))
+        from apps.fiscal.nfe_integracao.danfe_xml_adicionais import montar_inf_cpl_nfe
 
-    inf_adic_kw: dict[str, Any] = {'infCpl': ' | '.join(x for x in inf_cpl if x)[:5000]}
-    if nfe_saida and _text(nfe_saida.informacoes_fisco):
-        inf_adic_kw['infAdFisco'] = _text(nfe_saida.informacoes_fisco)[:2000]
-    inf.infAdic = nfe.Tnfe.InfNfe.InfAdic(**inf_adic_kw)
+        itens_db = {it.pk: it for it in nfe_saida.itens.all()}
+        inf_cpl, inf_fisco = montar_inf_cpl_nfe(nfe_saida, dados, itens_db=itens_db)
+        if inf_cpl:
+            inf_adic_kw['infCpl'] = inf_cpl
+        if inf_fisco:
+            inf_adic_kw['infAdFisco'] = inf_fisco
+    elif dados.get('observacoes'):
+        inf_adic_kw['infCpl'] = _text(dados['observacoes'])[:5000]
+    if inf_adic_kw:
+        inf.infAdic = nfe.Tnfe.InfNfe.InfAdic(**inf_adic_kw)
 
     return nfe.Tnfe(infNFe=inf)
 
@@ -473,6 +498,9 @@ def gerar_xml_oficial_nfe_saida(nfe_saida: NFeSaida) -> dict[str, Any]:
                 linha['snapshot_fiscal'] = {}
         itens_payload.append(linha)
     dados['itens'] = itens_payload
+    from apps.fiscal.nfe_integracao.danfe_xml_adicionais import enriquecer_linhas_xml_nfe
+
+    enriquecer_linhas_xml_nfe(nfe_saida, dados)
     _enriquecer_totais_impostos(dados)
     preparar_dados_serializacao_xml(dados)
 

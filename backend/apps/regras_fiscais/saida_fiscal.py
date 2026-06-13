@@ -14,6 +14,7 @@ from django.utils.dateparse import parse_date
 
 from apps.comercial.models import ItemProposta
 from apps.comercial.pricing import find_regra_fiscal, normalize_ncm
+from apps.fiscal.nfe_cbenef_sp import normalizar_codigo_beneficio_icms
 from apps.regras_fiscais.cenario_fiscal_saida import garantir_cenario_saida_padrao
 from apps.regras_fiscais.models import CenarioFiscalSaidaEscopo, RegraFiscal, RegraFiscalSaida
 
@@ -27,6 +28,10 @@ class BuscaRegraFiscalSaidaDict(TypedDict):
     cfop: str
     cfop_st: str
     cst_icms: str
+    modalidade_bc_icms: str
+    reducao_bc_icms: str
+    codigo_beneficio_icms: str
+    motivo_desoneracao_icms: str
     aliquota_icms: str
     cst_ipi: str
     aliquota_ipi: str
@@ -138,6 +143,15 @@ def _fmt_aliquota(val: float | Decimal | None) -> str:
         return '0'
     d = Decimal(str(val))
     return f'{d.quantize(Decimal("0.01")):.2f}'
+
+
+def _fmt_reducao_bc(val: float | Decimal | None) -> str:
+    if val is None:
+        return ''
+    d = Decimal(str(val))
+    if d == 0:
+        return ''
+    return f'{d.quantize(Decimal("0.0001")):.4f}'
 
 
 def _resolve_cenario(cenario_id: int | None) -> int:
@@ -304,6 +318,10 @@ def _resultado_de_regra_saida(regra: RegraFiscalSaida) -> BuscaRegraFiscalSaidaD
         'cfop': _only_digits_cfop(regra.cfop_venda),
         'cfop_st': _only_digits_cfop(regra.cfop_venda_st),
         'cst_icms': (regra.cst_icms or regra.csosn or '').strip(),
+        'modalidade_bc_icms': (regra.modalidade_bc_icms or '').strip(),
+        'reducao_bc_icms': _fmt_reducao_bc(regra.reducao_bc_icms),
+        'codigo_beneficio_icms': normalizar_codigo_beneficio_icms(regra.codigo_beneficio_icms),
+        'motivo_desoneracao_icms': (regra.motivo_desoneracao_icms or '').strip(),
         'aliquota_icms': _fmt_aliquota(regra.aliquota_icms),
         'cst_ipi': (regra.cst_ipi or '').strip(),
         'aliquota_ipi': _fmt_aliquota(regra.aliquota_ipi),
@@ -329,6 +347,10 @@ def _resultado_de_regra_legada(regra: RegraFiscal) -> BuscaRegraFiscalSaidaDict:
         'cfop': _only_digits_cfop(regra.cfop),
         'cfop_st': '',
         'cst_icms': (regra.cst_icms or '').strip(),
+        'modalidade_bc_icms': '',
+        'reducao_bc_icms': '',
+        'codigo_beneficio_icms': '',
+        'motivo_desoneracao_icms': '',
         'aliquota_icms': _fmt_aliquota(regra.aliquota_icms),
         'cst_ipi': (regra.cst_ipi or '').strip(),
         'aliquota_ipi': _fmt_aliquota(regra.aliquota_ipi),
@@ -354,6 +376,10 @@ def _resultado_nao_encontrada(*, mensagens: list[str] | None = None) -> BuscaReg
         'cfop': '',
         'cfop_st': '',
         'cst_icms': '',
+        'modalidade_bc_icms': '',
+        'reducao_bc_icms': '',
+        'codigo_beneficio_icms': '',
+        'motivo_desoneracao_icms': '',
         'aliquota_icms': '0',
         'cst_ipi': '',
         'aliquota_ipi': '0',

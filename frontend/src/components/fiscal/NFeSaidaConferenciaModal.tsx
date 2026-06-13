@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, ClipboardCheck, Loader2, Save, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { BotaoAtualizarImpostosNFe } from '@/components/fiscal/NFeSaidaAtualizarImpostosModal';
+import { NFeSaidaEmissaoProducaoPanel } from '@/components/fiscal/NFeSaidaEmissaoProducaoPanel';
 import { NFeSaidaEfeitosPanel } from '@/components/fiscal/NFeSaidaEfeitosPanel';
 import { TransportadoraNFeField } from '@/components/fiscal/TransportadoraNFeField';
 import { AlocacaoAtendimentoGerenciarSection } from '@/components/comercial/AlocacaoAtendimentoGerenciarPanel';
@@ -1401,6 +1402,20 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                 onApplied={handleImpostosAtualizados}
               />
             </NFeSaidaAcoesOperacionais>
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Emissão produção SEFAZ
+              </p>
+              <NFeSaidaEmissaoProducaoPanel
+                nfeId={nfeId}
+                emissaoProducao={conf.emissao_producao}
+                permissoes={permissoes}
+                onEmissaoConcluida={async () => {
+                  await load();
+                  setHistoricoRefreshKey((k) => k + 1);
+                }}
+              />
+            </div>
             <div className="rounded-md border border-border p-3 space-y-2">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Ações financeiras</p>
               <NFeFinanceiroAcoes

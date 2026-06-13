@@ -12,6 +12,7 @@ def ensure_numeracao_padrao_nfe(empresa: Empresa | int) -> None:
         empresa_id=emp_id,
         modelo_documento='55',
         ambiente=NFeNumeracaoConfiguracao.Ambiente.HOMOLOGACAO,
+        tipo_operacao=NFeNumeracaoConfiguracao.TipoOperacao.SAIDA,
         serie='0',
         defaults={'proximo_numero': 2, 'ativo': True},
     )
@@ -19,6 +20,7 @@ def ensure_numeracao_padrao_nfe(empresa: Empresa | int) -> None:
         empresa_id=emp_id,
         modelo_documento='55',
         ambiente=NFeNumeracaoConfiguracao.Ambiente.PRODUCAO,
+        tipo_operacao=NFeNumeracaoConfiguracao.TipoOperacao.SAIDA,
         serie='1',
         defaults={'proximo_numero': 1, 'ativo': True},
     )

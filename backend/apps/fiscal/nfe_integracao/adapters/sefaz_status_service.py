@@ -23,19 +23,28 @@ from apps.fiscal.nfe_integracao.adapters.nfelib_adapter import RetornoStatusServ
 from apps.fiscal.nfe_integracao.adapters.pynfe_adapter import (
     criar_comunicacao_sefaz,
     extrair_xml_resposta,
+    resolver_url_status_servico,
     status_servico_nfe,
 )
 from apps.fiscal.nfe_integracao.adapters.status_servico_parser import (
+    extrair_diagnostico_http_resposta,
+    motivo_resposta_html_sefaz,
     parse_status_servico_response,
 )
 from apps.fiscal.nfe_integracao.adapters.tipos_erro import (
     TIPO_ERRO_CERTIFICADO,
     TIPO_ERRO_CONEXAO,
+    TIPO_ERRO_EMPRESA_BLOQUEADA,
     TIPO_ERRO_GENERICO,
     TIPO_ERRO_PARSE,
     TIPO_ERRO_PYNFE,
     TIPO_ERRO_RESPOSTA_VAZIA,
     TIPO_ERRO_SEFAZ,
+)
+from apps.fiscal.nfe_integracao.prontidao_consulta_sefaz import (
+    MSG_EMPRESA_TESTE,
+    certificado_parece_fixture_teste,
+    validar_prontidao_consulta_sefaz,
 )
 
 logger = logging.getLogger(__name__)
@@ -58,6 +67,8 @@ class ResultadoStatusServico:
     mensagens: list[str] = field(default_factory=list)
     consultado_em: str | None = None
     traceback_resumido: str = ''
+    endpoint_sefaz: str = ''
+    diagnostico_http: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         cert = self.certificado
@@ -80,6 +91,8 @@ class ResultadoStatusServico:
             'xml_retorno': self.xml_resposta,
             'raw_response': self.raw_response,
             'traceback_resumido': self.traceback_resumido,
+            'endpoint_sefaz': self.endpoint_sefaz,
+            'diagnostico_http': dict(self.diagnostico_http),
             'certificado': None
             if not cert
             else {
@@ -145,6 +158,8 @@ def _falha(
     retorno: RetornoStatusServicoParsed | None = None,
     mensagens_extra: list[str] | None = None,
     traceback_resumido: str = '',
+    endpoint_sefaz: str = '',
+    diagnostico_http: dict[str, str] | None = None,
 ) -> ResultadoStatusServico:
     msgs = list(certificado.mensagens) if certificado else []
     if mensagens_extra:
@@ -167,6 +182,8 @@ def _falha(
         mensagens=msgs,
         consultado_em=agora,
         traceback_resumido=traceback_resumido,
+        endpoint_sefaz=endpoint_sefaz,
+        diagnostico_http=dict(diagnostico_http or {}),
     )
 
 
@@ -184,6 +201,20 @@ def consultar_status_servico_empresa(
     uf_uso = (uf or getattr(empresa, 'uf', None) or 'SP').strip().upper()
     ambiente = 'homologacao' if homologacao else 'producao'
     agora = timezone.localtime(timezone.now()).isoformat()
+    empresa_nome = (getattr(empresa, 'razao_social', '') or '').strip()
+
+    pode_consultar, motivo_bloqueio, tipo_bloqueio = validar_prontidao_consulta_sefaz(empresa)
+    if not pode_consultar:
+        return _falha(
+            uf=uf_uso,
+            ambiente=ambiente,
+            modelo=modelo,
+            certificado=None,
+            motivo=motivo_bloqueio,
+            erro_tecnico=motivo_bloqueio,
+            tipo_erro=tipo_bloqueio or TIPO_ERRO_EMPRESA_BLOQUEADA,
+            agora=agora,
+        )
 
     try:
         cert_info = carregar_certificado_empresa(empresa)
@@ -200,6 +231,19 @@ def consultar_status_servico_empresa(
             agora=agora,
         )
 
+    if certificado_parece_fixture_teste(cert_info.razao_social):
+        return _falha(
+            uf=uf_uso,
+            ambiente=ambiente,
+            modelo=modelo,
+            certificado=cert_info,
+            motivo=MSG_EMPRESA_TESTE,
+            erro_tecnico=MSG_EMPRESA_TESTE,
+            tipo_erro=TIPO_ERRO_EMPRESA_BLOQUEADA,
+            agora=agora,
+            mensagens_extra=list(cert_info.mensagens),
+        )
+
     if not cert_info.valido:
         motivo = 'Certificado A1 inválido ou expirado.'
         return _falha(
@@ -214,6 +258,7 @@ def consultar_status_servico_empresa(
             mensagens_extra=list(cert_info.mensagens),
         )
 
+    endpoint_sefaz = ''
     try:
         comunicacao = criar_comunicacao_sefaz(
             uf_uso,
@@ -221,6 +266,14 @@ def consultar_status_servico_empresa(
             (getattr(empresa, 'senha_certificado', '') or '').strip(),
             homologacao=homologacao,
         )
+        endpoint_sefaz = resolver_url_status_servico(comunicacao, modelo=modelo)
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(
+                'SEFAZ status_servico uf=%s ambiente=%s endpoint=%s',
+                uf_uso,
+                ambiente,
+                endpoint_sefaz,
+            )
         resposta_bruta = status_servico_nfe(comunicacao, modelo=modelo, timeout=timeout)
         parsed_dict = parse_status_servico_response(resposta_bruta)
         xml_text = parsed_dict.get('xml_raw') or extrair_xml_resposta(resposta_bruta)
@@ -274,9 +327,18 @@ def consultar_status_servico_empresa(
 
     parsed = _parsed_from_dict(parsed_dict)
     raw_norm = parsed_dict.get('xml_raw') or xml_text
+    diag_http = extrair_diagnostico_http_resposta(resposta_bruta)
 
     if parsed_dict.get('erro_parse'):
         motivo = parsed_dict.get('motivo_erro') or 'Resposta SEFAZ sem cStat/xMotivo.'
+        if parsed_dict.get('resposta_html'):
+            motivo = motivo_resposta_html_sefaz(
+                uf=uf_uso,
+                ambiente=ambiente,
+                empresa=empresa_nome,
+                endpoint=endpoint_sefaz,
+                diagnostico_http=diag_http,
+            )
         tipo = TIPO_ERRO_RESPOSTA_VAZIA if 'vazia' in motivo.lower() else TIPO_ERRO_PARSE
         ret = parsed if parsed.c_stat or parsed.x_motivo else None
         return _falha(
@@ -292,6 +354,8 @@ def consultar_status_servico_empresa(
             raw_response=raw_norm,
             retorno=ret,
             mensagens_extra=list(cert_info.mensagens),
+            endpoint_sefaz=endpoint_sefaz,
+            diagnostico_http=diag_http,
         )
 
     msgs = list(cert_info.mensagens)
@@ -319,4 +383,6 @@ def consultar_status_servico_empresa(
         motivo=motivo,
         mensagens=msgs,
         consultado_em=agora,
+        endpoint_sefaz=endpoint_sefaz,
+        diagnostico_http=diag_http,
     )

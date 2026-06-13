@@ -402,6 +402,7 @@ def montar_conferencia_nfe_saida(
     validacao: dict[str, Any] | None = None,
     incluir_checklist: bool | None = None,
     incluir_resumo_operacional: bool = True,
+    usuario=None,
 ) -> dict[str, Any]:
     """
     Monta payload da conferência NF-e.
@@ -466,6 +467,13 @@ def montar_conferencia_nfe_saida(
             checklist,
             itens_count=len(itens_rows),
         )
+        from apps.fiscal.nfe_emissao.conferencia_producao import (
+            montar_emissao_producao_conferencia,
+            montar_permissoes_emissao_producao,
+        )
+
+        perm_prod = montar_permissoes_emissao_producao(nf, usuario=usuario)
+        permissoes.update(perm_prod)
 
         payload: dict[str, Any] = {
             'nfe': {
@@ -562,6 +570,7 @@ def montar_conferencia_nfe_saida(
             'prontidao': prontidao,
             'permissoes': permissoes,
             'emissao_sefaz': _montar_emissao_sefaz_payload(nf),
+            'emissao_producao': montar_emissao_producao_conferencia(nf, usuario=usuario),
             'apresentacao': montar_apresentacao_nfe_saida(nf),
             'modo_carregamento': modo_norm,
             'indicadores_fiscais': _montar_indicadores_fiscais_conferencia(nf),

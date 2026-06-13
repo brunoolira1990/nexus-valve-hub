@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ambienteLabel,
   cStatExibicao,
   consultaFalhou,
   consultaOk,
   erroHistoricoResumo,
+  mensagemErroParse,
   motivoExibicao,
   resultadoHistoricoLabel,
+  subtituloPaginaSefaz,
+  tituloPaginaSefaz,
   tituloUltimoRetorno,
 } from '@/lib/nfeSefazUx';
 
@@ -37,5 +41,26 @@ describe('nfeSefazUx', () => {
 
   it('certificado válido — motivo da SEFAZ', () => {
     expect(motivoExibicao({ ok: true, motivo: 'Servico em Operacao' })).toBe('Servico em Operacao');
+  });
+
+  it('título da página reflete ambiente selecionado', () => {
+    expect(tituloPaginaSefaz(true)).toBe('NF-e — SEFAZ (homologação)');
+    expect(tituloPaginaSefaz(false)).toBe('NF-e — SEFAZ (produção)');
+    expect(subtituloPaginaSefaz(false)).toContain('produção');
+    expect(ambienteLabel(true)).toBe('homologação');
+  });
+
+  it('PARSE_ERROR HTML exibe mensagem amigável com contexto', () => {
+    const ctx = {
+      ok: false,
+      tipo_erro: 'PARSE_ERROR',
+      motivo: 'Resposta HTML recebida',
+      uf: 'SP',
+      ambiente: 'homologacao',
+      empresa_razao_social: 'Emitente SP',
+    };
+    expect(motivoExibicao(ctx)).toBe(mensagemErroParse(ctx));
+    expect(mensagemErroParse(ctx)).toContain('proxy');
+    expect(mensagemErroParse(ctx)).not.toContain('senha');
   });
 });

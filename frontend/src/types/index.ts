@@ -1895,6 +1895,8 @@ export type NFeEntradaTipoOrigem = 'MANUAL' | 'ENTRADA_PROPRIA_IMPORTADA';
 
 export type NFeEntradaStatusOperacional = 'RASCUNHO' | 'IMPORTADA_PENDENTE_CONFERENCIA';
 
+export type NFeEntradaItemJsonRaw = import('@/lib/nfeEntradaItensJson').NFeEntradaItemJsonRaw;
+
 export interface NFeEntrada {
   id: number;
   numero: string;
@@ -1913,7 +1915,10 @@ export interface NFeEntrada {
   pedido_compra_id?: number;
   cte_id?: number;
   importado_em?: string | null;
+  /** Itens operacionais vinculados (relacional) — vazio para entrada própria importada. */
   itens: ItemNFe[];
+  /** Itens parseados do XML importado (somente leitura). */
+  itens_json?: NFeEntradaItemJsonRaw[];
 }
 
 export type NFeEntradaPropriaImportResultado = {

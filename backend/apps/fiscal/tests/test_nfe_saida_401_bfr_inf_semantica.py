@@ -68,7 +68,7 @@ class DanfeBfrInfSemanticaTests(TestCase):
         self.assertIn('COMUNICACAO PREVIA', linhas[0])
         self.assertIn('MIGUEL LANGONE', linhas[1])
         self.assertIn('INSTRU', linhas[2])
-        self.assertEqual(linhas[3], 'PEDIDO DO CLIENTE: 5050')
+        self.assertEqual(linhas[3], 'PEDIDO DE COMPRA: 5050')
         self.assertEqual(inf_cpl, inf_cpl.upper())
 
     def test_inf_cpl_contem_informacoes_complementares_regra(self):
@@ -97,7 +97,7 @@ class DanfeBfrInfSemanticaTests(TestCase):
         nf.pedido_cliente_numero = '5050'
         nf.save(update_fields=['pedido_cliente_numero'])
         inf_cpl, _ = montar_inf_cpl_nfe(nf)
-        self.assertIn('PEDIDO DO CLIENTE: 5050', inf_cpl)
+        self.assertIn('PEDIDO DE COMPRA: 5050', inf_cpl)
         self.assertIn('\n', inf_cpl + '\n')  # pode ser linha única se só pedido
 
     def test_inf_cpl_nao_contem_cst_csosn(self):
@@ -147,9 +147,9 @@ class DanfeBfrInfSemanticaTests(TestCase):
         nf.pedido_cliente_numero = '5050'
         nf.save(update_fields=['pedido_cliente_numero'])
         inf_cpl = _inf_cpl_xml(nf)
-        self.assertIn('PEDIDO DO CLIENTE: 5050', inf_cpl)
+        self.assertIn('PEDIDO DE COMPRA: 5050', inf_cpl)
         xml = gerar_xml_nfe_preliminar(nf).decode('utf-8')
-        self.assertNotRegex(xml, r'<[\w:]*xPed>5050</[\w:]*xPed>')
+        self.assertRegex(xml, r'<[\w:]*xPed>5050</[\w:]*xPed>')
 
     def test_inf_ad_prod_sem_pedido_cabecalho(self):
         nf = _nf_pronta()
@@ -169,8 +169,8 @@ class DanfeBfrInfSemanticaTests(TestCase):
         item.observacao_item = 'Lote conferência A1'
         item.save(update_fields=['pedido_cliente_numero', 'pedido_cliente_item', 'observacao_item'])
         texto = montar_inf_ad_prod_item(nf, {'item_id': item.pk}, item)
-        self.assertIn('xPed: 5050', texto)
-        self.assertNotIn('PEDIDO DO CLIENTE', _inf_cpl_xml(nf))
+        self.assertIn('Pedido de compra: 5050', texto)
+        self.assertIn('Item: 3', texto)
 
     def test_campo_manual_aparece_na_conferencia(self):
         nf = _nf_pronta()
