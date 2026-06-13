@@ -932,8 +932,12 @@ Até lá: `NFE_PRODUCAO_HABILITADA=false`, sem transmissão NF-e produção, sem
 | Campo | Valor |
 |-------|--------|
 | **Versão ERP** | 4.0.15.x |
-| **Branch alvo** | `producao-local` |
-| **Commit base (pré-deploy local)** | `74eb586` — *alterações fiscais/DANFE pendentes de commit no working tree* |
+| **Branch** | `producao-local` |
+| **Commit implantado** | `2ab0009` — *ERP 4.0.15.x: corrigir NF-e saída CST20 cBenef DANFE e SEFAZ status* |
+| **Commit anterior** | `74eb586` |
+| **Data deploy + validação servidor** | **13/06/2026** |
+| **Ambiente validado** | Servidor operacional (smoke manual curto) |
+| **Resultado** | **Aprovado em homologação** |
 | **`NFE_PRODUCAO_HABILITADA`** | `false` (inalterado) |
 | **NF-e produção transmitida** | Nenhuma |
 | **Impacto estoque/financeiro/apuração** | Nenhum |
@@ -945,11 +949,12 @@ Até lá: `NFE_PRODUCAO_HABILITADA=false`, sem transmissão NF-e produção, sem
 | CST 20 → grupo **ICMS20** | XML oficial (`nfe_saida_xml_nfelib.py`, `nfe_icms_calculo.py`) |
 | Redução BC da regra fiscal | Snapshot + modal «Atualizar fiscal» |
 | **cBenef SP** — literal `SEM CBENEF` | `nfe_cbenef_sp.py`, regra fiscal, validação pré-emissão |
+| Validação preventiva SP + CST 20 + redução sem cBenef específico | `validacao_nfe_saida.py`, `nfe_cbenef_sp.py` |
 | **DANFE** — ocultar `SEM CBENEF` visualmente | `ocultar_sem_cbenef_para_danfe()` em `sanitizar_xml_para_bfr()` |
 | Pedido de compra no XML/DANFE | `danfe_xml_adicionais.py` |
 | Consulta SEFAZ dev/local | `pynfe_adapter.py`, parser, UX `/nfe-sefaz` |
 
-### 14.2 Validação local (NF homologação id=17)
+### 14.2 Validação local (pré-deploy — NF homologação id=17)
 
 | Item | Resultado |
 |------|-----------|
@@ -961,18 +966,18 @@ Até lá: `NFE_PRODUCAO_HABILITADA=false`, sem transmissão NF-e produção, sem
 | infCpl (pedido + endereço entrega) | OK |
 | `manage.py check` | OK |
 
-### 14.3 Procedimento de deploy no servidor (operador)
+### 14.3 Procedimento de deploy no servidor (executado)
 
-**Pré-requisitos:** backup do banco; `.env` real **não** versionado; certificado/senha **fora** do git.
+**Pré-requisitos atendidos:** backup do banco; `.env` real **não** versionado; certificado/senha **fora** do git.
 
 ```bash
-# No servidor (diretório do projeto)
+# No servidor (diretório do projeto) — executado em 13/06/2026
 git fetch origin
 git checkout producao-local
-git pull origin producao-local   # após commit/push das alterações locais
+git pull origin producao-local   # 2ab0009
 
 # Confirmar flag (não alterar para true)
-grep -E '^NFE_PRODUCAO_HABILITADA=' .env   # deve ser false
+grep -E '^NFE_PRODUCAO_HABILITADA=' .env   # false
 
 docker compose build backend frontend
 docker compose up -d backend frontend
@@ -980,18 +985,202 @@ docker compose exec -T backend python manage.py migrate --noinput
 docker compose exec -T backend python manage.py check
 ```
 
-**Smoke curto pós-deploy:**
+### 14.4 Validação pós-deploy no servidor (13/06/2026)
 
-1. Login no app.
-2. `/nfe-sefaz` → consulta status **produção** (somente serviço) → esperar cStat **107** se SEFAZ SP normal.
-3. NF-e Saída → conferência → confirmar painel produção **desabilitado** (flag off).
-4. Se existir NF homologação autorizada: regerar DANFE → confirmar ausência visual de `SEM CBENEF`; pedido de compra e infCpl intactos.
+**Tipo:** smoke manual curto — operador.
 
-### 14.4 Confirmações deste deploy
+| Item | Resultado servidor |
+|------|-------------------|
+| App atualizado | OK (`2ab0009` em `producao-local`) |
+| NF-e Saída homologação | Validada |
+| Pendência cBenef (rejeição 930) | Resolvida com `SEM CBENEF` na regra fiscal |
+| XML `<cBenef>SEM CBENEF</cBenef>` | Mantido no XML autorizado |
+| DANFE sem `SEM CBENEF` visual | OK |
+| Pedido de compra no XML/DANFE | OK |
+| NF-e homologação | Autorizada/validada no servidor |
+| Painel emissão produção | Desabilitado (flag off) |
+| `NFE_PRODUCAO_HABILITADA` | `false` |
+| NF-e produção transmitida | Nenhuma |
 
+**Smoke executado:**
+
+1. Login no app — OK.
+2. `/nfe-sefaz` → consulta status produção (somente serviço) — OK.
+3. NF-e Saída → painel produção **desabilitado** — OK.
+4. NF homologação autorizada → regerar DANFE → sem `SEM CBENEF` visual; pedido de compra e infCpl intactos — OK.
+
+### 14.5 Confirmações deste deploy
+
+- [x] Commit `2ab0009` implantado no servidor operacional
+- [x] Smoke manual curto aprovado (13/06/2026)
+- [x] Validação em **homologação** — não é go-live fiscal
 - [x] Produção SEFAZ permaneceu desligada (`NFE_PRODUCAO_HABILITADA=false`)
-- [x] Nenhuma NF-e produção transmitida nesta tarefa
+- [x] Nenhuma NF-e produção transmitida
 - [x] `SEM CBENEF` mantido no XML fiscal; oculto apenas no DANFE
 - [x] Nenhum secret / certificado / `.env` real exposto em commit ou documentação
-- [ ] Deploy no servidor executado pelo operador (requer push + acesso SSH ao host)
-- [ ] Smoke servidor registrado (cStat 107, DANFE sem `SEM CBENEF`)
+- [x] Nenhuma alteração de numeração, estoque, financeiro ou apuração
+
+### 14.6 Pendência futura — gate T0 produção SEFAZ
+
+A emissão **produção** SEFAZ real continua **bloqueada**. Ativação consciente de `NFE_PRODUCAO_HABILITADA=true` depende de:
+
+1. Backup formal registrado (§11)
+2. `DEBUG=False` no ambiente operacional
+3. Certificado A1 validado com contador/fiscal
+4. Série e próximo número de produção validados (contador/SEFAZ)
+5. Permissão `fiscal_nfe_producao` atribuída somente ao responsável autorizado
+6. Contador/fiscal presentes na janela
+7. Autorização formal da direção
+8. Checklist §11 assinado
+
+Até declarar «T0 liberada»: **sem** ligar flag, **sem** transmissão NF-e produção, **sem** impacto fiscal em produção.
+
+---
+
+## 15. Gate T0 Produção SEFAZ — Auditoria de prontidão
+
+> **Não é go-live fiscal.** Registro de auditoria read-only para avaliar prontidão da 1ª NF-e produção SEFAZ.
+
+| Campo | Valor |
+|-------|--------|
+| **Versão ERP** | 4.0.15.x |
+| **Data da auditoria** | 13/06/2026 |
+| **Escopo** | `manage.py check`, `verificar_prontidao_producao`, shell Django read-only, consulta SEFAZ produção (somente status), certificado, numeração, permissões, NF-e candidata |
+| **Ambiente auditado** | Container Docker local (banco do projeto) — complementa homologação validada no servidor (`2ab0009`, §14) |
+| **Resultado final** | **APTO COM PENDÊNCIAS** |
+| **Decisão** | **NÃO AUTORIZADO** ligar `NFE_PRODUCAO_HABILITADA=true` |
+| **`NFE_PRODUCAO_HABILITADA`** | `false` (inalterado) |
+| **NF-e produção transmitida** | Nenhuma |
+| **Número produção reservado** | Nenhum |
+| **Alteração `.env`/certificado/numeração/regra fiscal** | Nenhuma |
+
+### 15.1 Escopo executado / não executado
+
+**Executado (somente leitura):**
+
+- `docker compose exec -T backend python manage.py check`
+- `docker compose exec -T backend python manage.py verificar_prontidao_producao`
+- Auditoria T0 via `manage.py shell` (ambiente, certificado, SEFAZ, numeração, permissões, NF candidata)
+- Consulta status serviço SEFAZ **produção** SP (sem emissão)
+
+**Não executado:**
+
+- Ligar `NFE_PRODUCAO_HABILITADA=true`
+- Transmitir ou emitir NF-e produção
+- Alterar `.env`, certificado, numeração, regra fiscal ou código
+- Rodar suíte longa, deploy ou SSH
+- Expor senha, caminho de certificado ou secrets
+
+### 15.2 Pontos positivos
+
+| Item | Resultado |
+|------|-----------|
+| Certificado A1 | Configurado; **válido até 2027-01-21** |
+| CNPJ certificado × emitente | Compatível (empresa id=1 — NEXUS) |
+| SEFAZ produção SP | **cStat 107** — Serviço em Operação |
+| `manage.py check` | 0 issues |
+| `verificar_prontidao_producao` | **Sem críticos** |
+| Homologação servidor | Commit `2ab0009` validada anteriormente (§14) |
+| Flag produção | Bloqueio correto — `NFE_PRODUCAO_HABILITADA=false` |
+| Grupo `fiscal` genérico | Não concede emissão produção (comportamento esperado) |
+
+### 15.3 Bloqueios atuais (impedem T0 agora)
+
+| # | Bloqueio |
+|---|----------|
+| 1 | `NFE_PRODUCAO_HABILITADA=false` — bloqueio intencional até go-live formal |
+| 2 | `DEBUG=true` no ambiente auditado — servidor operacional precisa ser confirmado com `DEBUG=false` |
+| 3 | `NEXUS_APP_AMBIENTE` não definido no container auditado |
+| 4 | `NFE_AMBIENTE` não definido no container auditado |
+| 5 | Backup formal não registrado (§11) |
+| 6 | Checklist §11 não assinado |
+| 7 | Grupo `fiscal_nfe_producao` **inexistente** no banco |
+| 8 | Responsável dedicado de emissão produção ainda não atribuído |
+| 9 | Numeração produção (série **1**, próximo número **1**) **não validada** com contador/fiscal |
+| 10 | **Nenhuma NF-e real pronta** para T0 |
+| 11 | NF **17** — homologação autorizada; **não reutilizar** para produção |
+| 12 | NF **id=15** — rascunho/fixture; conferência incompleta; endereço fiscal inconsistente |
+
+### 15.4 NF-e candidata T0 (análise read-only)
+
+**NF 17 (referência homologação):**
+
+- Status: `AUTORIZADA_HOMOLOGACAO`
+- Uso T0: **proibido** — documento de homologação, não 1ª produção real
+
+**NF id=15 (melhor candidata disponível na auditoria):**
+
+| Campo | Valor |
+|-------|--------|
+| Status | `RASCUNHO` |
+| Conferência | `EM_CONFERENCIA` (não «Pronta para emissão») |
+| Cliente | Cliente 402 (fixture) |
+| Bloqueio fiscal | Cidade «Rio» diverge do CEP «Rio de Janeiro» |
+| `montar_validacao_emissao_producao` | **Não pronta** |
+
+Pendências automáticas da pré-validação: `producao_desabilitada`, `conferencia_nao_pronta`, `validacao_fiscal` (endereço).
+
+### 15.5 Numeração produção (somente leitura — empresa id=1)
+
+| Campo | Valor |
+|-------|--------|
+| Modelo | 55 |
+| Série | 1 |
+| Próximo número | 1 |
+| Último autorizado | — |
+| Ativa | Sim |
+
+Nenhum número foi reservado nem alterado nesta auditoria. Validação contador/SEFAZ **pendente**.
+
+### 15.6 Permissões (somente leitura)
+
+| Item | Resultado |
+|------|-----------|
+| Grupo `fiscal_nfe_producao` | Não existe |
+| Usuários com permissão produção hoje | `admin` (superuser), `comercial04` (grupo `admin`) |
+| Perfis autorizados pelo sistema | `admin`, `administrador`, `fiscal_nfe_producao` |
+
+**Pendência:** criar `fiscal_nfe_producao` e atribuir **somente** ao responsável autorizado — não usar `admin` operacional na janela T0.
+
+### 15.7 Pendências antes do T0
+
+1. Confirmar `DEBUG=false` no servidor operacional real
+2. Revisar `ALLOWED_HOSTS` / `CSRF_TRUSTED_ORIGINS` / `CORS` do servidor
+3. Registrar backup formal com data e responsável (§11)
+4. Validar série e próximo número produção com contador e SEFAZ
+5. Criar grupo/permissão `fiscal_nfe_producao`
+6. Atribuir permissão somente ao responsável autorizado
+7. Preparar **NF-e real nova** (não reutilizar NF 17)
+8. Conferir cliente, endereço, CNPJ/IE, município/UF
+9. Conferir produtos, NCM, CFOP, CST, cBenef, PIS/COFINS, valores
+10. Deixar NF-e candidata como «Pronta para emissão»
+11. Executar `GET .../validar-emissao-producao/` sem pendências fiscais
+12. Garantir contador/fiscal presente na janela
+13. Obter autorização formal da direção
+14. Assinar checklist §11
+15. **Só então** considerar ligar `NFE_PRODUCAO_HABILITADA=true`
+
+### 15.8 Sequência futura sugerida (T0)
+
+1. Fechar pendências do §11 e §14.6
+2. Confirmar servidor real com `DEBUG=false`
+3. Validar numeração produção com contador
+4. Criar permissão dedicada `fiscal_nfe_producao`
+5. Preparar NF-e real candidata T0
+6. Validar emissão produção **sem transmitir** (`validar-emissao-producao`)
+7. Fazer backup formal
+8. Ter contador/fiscal e direção acompanhando a janela
+9. Ligar flag **somente** na janela T0 controlada
+10. Emitir **uma única** NF-e produção — 1ª emissão real
+
+### 15.9 Confirmações desta auditoria
+
+- [x] Status documentado: **APTO COM PENDÊNCIAS**
+- [x] Produção fiscal **NÃO autorizada** nesta tarefa
+- [x] `NFE_PRODUCAO_HABILITADA=false` — inalterado
+- [x] Nenhuma NF-e produção transmitida
+- [x] Nenhum número produção reservado
+- [x] Nenhuma alteração em `.env`, certificado, numeração ou regra fiscal
+- [x] Nenhum secret/senha/caminho de certificado exposto
+- [x] Bloqueios e pendências registrados
+- [x] Sequência T0 futura documentada

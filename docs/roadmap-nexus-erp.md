@@ -367,7 +367,7 @@ Proposta aprovada
 - **ERP 4.0.15.x Fase 3D-prep (NF-e Saída produção — runbook 1ª emissão real):** runbook §3D + checklist operador §11 em `docs/go-live-nfe-saida-producao.md`; **sem ligar flag, sem transmissão real**
 - **ERP 4.0.15.x Saneamento pré-T0 (NF-e Saída produção):** crítico usuário sem perfil resolvido (`nfe402` desativado); `verificar_prontidao_producao` sem críticos; §13 em `docs/go-live-nfe-saida-producao.md`; **DEBUG/backup/fiscal/checklist §11 ainda pendentes**; produção desligada
 - **ERP 4.0.15.x Fase 3B (NF-e Saída produção SEFAZ — backend, flag desligada):** `NFE_PRODUCAO_HABILITADA=false`; `config_producao.py`, `validacao_producao.py`, `transmissao_producao.py`, `servico_producao.py`, `aplicar_resultado_sefaz_producao()`; endpoints `POST emitir-producao/` (403 sem flag, confirmação payload), `GET validar-emissao-producao/`; status `AUTORIZADA_PRODUCAO`/`REJEITADA_PRODUCAO`; testes `test_nfe_saida_producao_4015.py` (17); doc `docs/go-live-nfe-saida-producao.md` atualizado; **sem transmissão real, sem estoque/financeiro/apuração automática**; homologação 402 intacta
-- **ERP 4.0.15.x Homologação fiscal NF-e Saída (CST 20 / cBenef / pedido / DANFE):** ICMS20 + redução BC (`nfe_icms_calculo.py`); cBenef SP com literal `SEM CBENEF` (`nfe_cbenef_sp.py`); pedido de compra no XML/DANFE (`danfe_xml_adicionais.py`); DANFE BFR oculta `SEM CBENEF` visualmente mantendo tag no XML (`sanitizar_xml_para_bfr`); NF homologação id=17 autorizada (cStat 100); consulta SEFAZ dev/local corrigida; **produção SEFAZ desligada**; registro deploy §14 em `docs/go-live-nfe-saida-producao.md`
+- **ERP 4.0.15.x Homologação fiscal NF-e Saída (CST 20 / cBenef / pedido / DANFE):** ICMS20 + redução BC (`nfe_icms_calculo.py`); cBenef SP com literal `SEM CBENEF` (`nfe_cbenef_sp.py`); validação preventiva SP+CST20+redução; pedido de compra no XML/DANFE (`danfe_xml_adicionais.py`); DANFE BFR oculta `SEM CBENEF` visualmente mantendo tag no XML (`sanitizar_xml_para_bfr`); consulta SEFAZ dev/local corrigida; commit `2ab0009` implantado e **validado no servidor operacional em 13/06/2026** (smoke homologação aprovado); **produção SEFAZ desligada** (`NFE_PRODUCAO_HABILITADA=false`); registro §14 em `docs/go-live-nfe-saida-producao.md`; **gate T0 produção permanece pendente**
 - **ERP 4.0.14.0.1 (Correção — remoção de Condições de pagamento do Financeiro):** removido o cadastro/rota/modelo financeiro de `Condição de pagamento`; títulos financeiros não exigem condição; parcelamento segue por parcelas diretas no título (receber/pagar/despesa/tributo); testes financeiros atualizados (10); **sem alteração em Proposta/Pedido/Faturamento/NF-e/XML/DANFE/duplicatas/estoque**.
 - **NF-e Saída 4.0.1b (XML preliminar + DANFE BrazilFiscalReport):** `nfe_integracao/nfe_xml_preliminar.py` + `nfe_chave_acesso.py` + `nfe_numero_fiscal_preliminar.py` (série homologação configurável, `nNF` numérico do pk — nunca `RASCUNHO-FAT-*` como `nNF`); `GET .../preview-xml-preliminar/`; `danfe_brazil_fiscal_report.gerar_danfe_bfr_nfe_preliminar`; campos opcionais `xml_preliminar` / `chave_acesso_preliminar` com `sem_autorizacao`; sem transmissão SEFAZ, sem protocolo fake, sem estoque/financeiro; testes `test_nfe_saida_401_bfr_preliminar` + `test_danfe_brazil_fiscal_report`
 - **NF-e Saída 4.0.1c (acabamento DANFE BFR):** `resolver_marca_dagua_danfe()` + `DanfeNexus` (marca d’água por status — conferência sem «CANCELADA» indevida); `montar_informacoes_complementares_danfe()` (infCpl enxuto; `observacoes_internas` nunca no PDF); logo emitente via `DanfeConfig.logo` + `get_empresa_logo_path_or_none`; `infcpl_semicolon_newline`; testes `test_nfe_saida_401_bfr_acabamento`
@@ -376,7 +376,7 @@ Proposta aprovada
 
 ### Falta
 
-- Emissão **produção** SEFAZ 1ª NF real — **T0 abortada 2026-06-02**; aguarda saneamento §3D.9 + declaração «T0 liberada»; flag default false
+- Emissão **produção** SEFAZ 1ª NF real — **T0 abortada 2026-06-02**; correções homologação 4.0.15.x validadas no servidor (13/06/2026, commit `2ab0009`); aguarda gate T0 (§14.6 go-live doc) + declaração «T0 liberada»; flag default false
 - Contingência, cancelamento/CC-e/inutilização produção
 - ~~Transmissão homologação / XML autorizado / DANFE homologação~~ — **4.0.2 homologação** (ver item acima; produção fora)
 - NF-e saída aplicando `RegraFiscalSaida` na emissão (recálculo na transmissão)
@@ -838,7 +838,7 @@ Documentos complementares existentes:
 
 ---
 
-*Última atualização: jun/2026 — Homologação fiscal NF-e Saída (CST 20, SEM CBENEF, pedido compra, DANFE); deploy controlado §14 go-live doc.*
+*Última atualização: 13/06/2026 — ERP 4.0.15.x homologação fiscal validada no servidor (commit 2ab0009); produção SEFAZ desligada; gate T0 pendente.*
 
 ## ERP 4.0.13.6.2 — Padronização segura dos campos comerciais
 
