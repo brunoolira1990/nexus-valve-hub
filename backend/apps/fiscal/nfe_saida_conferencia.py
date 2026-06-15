@@ -363,6 +363,7 @@ def _montar_emissao_sefaz_payload(nf: NFeSaida) -> dict[str, Any]:
     emissao_orfa = _emissao_homolog_iniciada_sem_status(nf)
     return {
         'ambiente_emissao': nf.ambiente_emissao,
+        'status_conferencia': nf.status_conferencia or '',
         'serie_nfe': nf.serie_nfe,
         'numero_nfe': nf.numero_nfe,
         'chave_acesso': nf.chave_acesso,

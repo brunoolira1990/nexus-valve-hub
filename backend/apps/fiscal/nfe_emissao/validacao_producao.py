@@ -117,16 +117,25 @@ def montar_validacao_emissao_producao(nfe_saida: NFeSaida) -> dict[str, Any]:
         for msg in validar_xml_emissao_producao_local(nfe_saida.xml_assinado, nfe_saida=nfe_saida):
             pendencias.append(_pendencia('xml_producao', msg))
 
-    from apps.fiscal.danfe_render import emissao_bloqueada_se_bfr_falhar
-
     if emissao_bloqueada_se_bfr_falhar():
-        alertas.append(
-            _pendencia(
-                'danfe_bfr_obrigatorio',
-                'DANFE oficial BFR obrigatório — falha no renderer bloqueia emissão.',
-                severidade='alerta',
-            ),
-        )
+        from apps.fiscal.danfe_render import DanfeBfrRenderError, validar_danfe_bfr_para_emissao
+
+        try:
+            validar_danfe_bfr_para_emissao(nfe_saida)
+        except DanfeBfrRenderError as exc:
+            detalhe = str(exc).strip() or 'Falha no renderizador oficial BFR.'
+            if getattr(exc, 'trace_id', None):
+                detalhe = f'{detalhe} (trace: {exc.trace_id})'
+            if getattr(exc, 'erro_tipo', None):
+                detalhe = f'{detalhe} [{exc.erro_tipo}]'
+            pendencias.append(_pendencia('danfe_bfr_obrigatorio', f'DANFE oficial BFR: {detalhe}'))
+        except Exception as exc:
+            pendencias.append(
+                _pendencia(
+                    'danfe_bfr_obrigatorio',
+                    f'DANFE oficial BFR indisponível: {str(exc).strip()[:500]}',
+                ),
+            )
 
     pronta = len(pendencias) == 0
     return {

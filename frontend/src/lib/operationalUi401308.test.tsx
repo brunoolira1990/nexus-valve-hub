@@ -6,6 +6,7 @@ import { labelTipoComposicao, labelTipoEquivalencia } from '@/lib/conferenciaEqu
 import {
   ACTION_LABELS,
   friendlyOperationalMessage,
+  labelNfeStatusConferenciaOperacional,
   labelNfeStatusOperacional,
   labelPedidoStatusOperacional,
   PRODUTO_UI_LABELS,
@@ -28,6 +29,11 @@ describe('operationalUi 4.0.13.8', () => {
   it('status NF-e em linguagem de negócio', () => {
     expect(labelNfeStatusOperacional('AUTORIZADA_HOMOLOGACAO')).toBe('NF-e autorizada');
     expect(labelNfeStatusOperacional('REJEITADA_HOMOLOGACAO')).toBe('NF-e rejeitada');
+    expect(labelNfeStatusConferenciaOperacional('', 'PRONTA_PARA_EMISSAO')).toBe('Pronta para emissão');
+    expect(labelNfeStatusConferenciaOperacional(undefined, 'EM_CONFERENCIA')).toBe('Em conferência');
+    expect(labelNfeStatusConferenciaOperacional('ENVIADA_PRODUCAO', 'PRONTA_PARA_EMISSAO')).toBe(
+      labelNfeStatusOperacional('ENVIADA_PRODUCAO'),
+    );
   });
 
   it('status pedido operacional', () => {

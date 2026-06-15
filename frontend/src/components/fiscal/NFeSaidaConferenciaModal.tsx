@@ -1442,6 +1442,11 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
               nfeId={nfeId}
               autorizadaHomolog={autorizadaHomolog}
               autorizadaProducao={contextoAcao.autorizadaProducao}
+              statusConferencia={
+                prontidao.status_conferencia ??
+                conf.emissao_sefaz?.status_conferencia ??
+                conf.emissao_producao?.status_conferencia
+              }
               emissaoLoading={emissaoLoading}
               danfeLoading={danfeLoading}
               validarXmlLoading={validarXmlLoading}
@@ -1492,6 +1497,12 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                 nfeId={nfeId}
                 emissaoProducao={conf.emissao_producao}
                 permissoes={permissoes}
+                statusConferencia={
+                  prontidao.status_conferencia ??
+                  conf.emissao_sefaz?.status_conferencia ??
+                  conf.emissao_producao?.status_conferencia
+                }
+                marcadaProntaEm={prontidao.marcada_pronta_em}
                 onEmissaoConcluida={async () => {
                   await load();
                   setHistoricoRefreshKey((k) => k + 1);

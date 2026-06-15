@@ -10,6 +10,7 @@ from apps.fiscal.nfe_emissao.empresa_emitente import resolver_empresa_emitente_n
 from apps.fiscal.nfe_emissao.numeracao import NFeNumeracaoError, obter_config_numeracao
 from apps.fiscal.nfe_emissao.permissoes_producao import MSG_SEM_PERMISSAO_USUARIO, usuario_pode_emitir_nfe_producao
 from apps.fiscal.nfe_emissao.validacao_producao import montar_validacao_emissao_producao
+from apps.fiscal.nfe_saida_prontidao import status_conferencia_display
 
 
 def _numeracao_producao_resumo(nf: NFeSaida) -> dict[str, Any] | None:
@@ -113,6 +114,8 @@ def montar_emissao_producao_conferencia(nf: NFeSaida, usuario=None) -> dict[str,
         'motivos_bloqueio': perm['motivos_bloqueio_producao'],
         'ambiente_label': 'Produção SEFAZ',
         'ambiente_emissao_nfe': nf.ambiente_emissao or '',
+        'status_conferencia': nf.status_conferencia or '',
+        'status_conferencia_display': status_conferencia_display(nf.status_conferencia),
         'status_producao_label': _status_producao_label(nf),
         'pronta': bool(val.get('pronta')),
         'pendencias': val.get('pendencias') or [],

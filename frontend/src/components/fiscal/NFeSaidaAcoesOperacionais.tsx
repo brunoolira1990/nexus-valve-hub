@@ -1,7 +1,7 @@
 import { Loader2, Copy } from 'lucide-react';
 import { AdvancedSupportSection } from '@/components/nexus/AdvancedSupportSection';
 import { OperationalMessage } from '@/components/nexus/OperationalMessage';
-import { ACTION_LABELS, TECHNICAL_DOWNLOAD_LABELS, labelNfeStatusOperacional } from '@/lib/operationalUi';
+import { ACTION_LABELS, TECHNICAL_DOWNLOAD_LABELS, labelNfeStatusConferenciaOperacional } from '@/lib/operationalUi';
 import { AVISO_HOMOLOG_SEM_VALOR_FISCAL } from '@/lib/nfeSaidaAcoesMatriz';
 import {
   nfeSaidasService,
@@ -28,6 +28,7 @@ type Props = {
   nfeId: number;
   autorizadaHomolog: boolean;
   autorizadaProducao?: boolean;
+  statusConferencia?: string | null;
   emissaoLoading: boolean;
   danfeLoading: boolean;
   validarXmlLoading: boolean;
@@ -51,6 +52,7 @@ export function NFeSaidaAcoesOperacionais({
   nfeId,
   autorizadaHomolog,
   autorizadaProducao = false,
+  statusConferencia,
   emissaoLoading,
   danfeLoading,
   validarXmlLoading,
@@ -103,7 +105,10 @@ export function NFeSaidaAcoesOperacionais({
     }
   };
 
-  const statusLabel = labelNfeStatusOperacional(emissaoSefaz?.status_emissao_sefaz);
+  const statusLabel = labelNfeStatusConferenciaOperacional(
+    emissaoSefaz?.status_emissao_sefaz,
+    statusConferencia,
+  );
   const autorizada = autorizadaHomolog || autorizadaProducao;
 
   return (

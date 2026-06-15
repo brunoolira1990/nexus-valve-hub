@@ -34,6 +34,8 @@ type Props = {
   nfeId: number;
   emissaoProducao?: NFeEmissaoProducaoConferencia | null;
   permissoes?: NFeEmissaoProducaoPermissoes | null;
+  statusConferencia?: string | null;
+  marcadaProntaEm?: string | null;
   onEmissaoConcluida: () => void | Promise<void>;
 };
 
@@ -41,6 +43,8 @@ export function NFeSaidaEmissaoProducaoPanel({
   nfeId,
   emissaoProducao,
   permissoes,
+  statusConferencia,
+  marcadaProntaEm,
   onEmissaoConcluida,
 }: Props) {
   const [modalOpen, setModalOpen] = useState(false);
@@ -81,14 +85,35 @@ export function NFeSaidaEmissaoProducaoPanel({
     return () => {
       cancelled = true;
     };
-  }, [nfeId, permissoes?.producao_habilitada, permissoes?.usuario_pode_emitir_producao, autorizada]);
+  }, [
+    nfeId,
+    permissoes?.producao_habilitada,
+    permissoes?.usuario_pode_emitir_producao,
+    autorizada,
+    statusConferencia,
+    marcadaProntaEm,
+  ]);
 
   const checklist = useMemo(() => {
-    const pendencias = checklistApi?.pendencias ?? emissaoProducao?.pendencias ?? [];
+    const statusPronta = (statusConferencia || '').trim().toUpperCase() === 'PRONTA_PARA_EMISSAO';
+    const filtrarPendencias = (items: Array<{ codigo?: string; mensagem?: string }>) =>
+      statusPronta ? items.filter((p) => p.codigo !== 'conferencia_nao_pronta') : items;
+
+    const pendenciasApi = filtrarPendencias(checklistApi?.pendencias ?? []);
+    const pendenciasConf = filtrarPendencias(emissaoProducao?.pendencias ?? []);
+    const apiObsoleta =
+      statusPronta &&
+      (checklistApi?.pendencias ?? []).some((p) => p.codigo === 'conferencia_nao_pronta');
+
+    const pendencias = apiObsoleta || checklistApi == null ? pendenciasConf : pendenciasApi;
     const alertas = checklistApi?.alertas ?? emissaoProducao?.alertas ?? [];
-    const pronta = checklistApi?.pronta ?? emissaoProducao?.pronta;
+    const prontaApi = checklistApi?.pronta;
+    const prontaConf = emissaoProducao?.pronta;
+    const pronta =
+      pendencias.length === 0 &&
+      (apiObsoleta || checklistApi == null ? Boolean(prontaConf) : Boolean(prontaApi ?? prontaConf));
     return { pendencias, alertas, pronta };
-  }, [checklistApi, emissaoProducao]);
+  }, [checklistApi, emissaoProducao, statusConferencia]);
 
   if (!exibirBlocoProducaoSefaz(emissaoProducao, permissoes)) {
     return (

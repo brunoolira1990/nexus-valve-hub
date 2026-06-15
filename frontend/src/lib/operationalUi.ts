@@ -46,6 +46,16 @@ export function labelNfeStatusOperacional(status: string | null | undefined): st
   return NFE_STATUS_LABELS[key] ?? status ?? 'Em conferência';
 }
 
+/** Status operacional na conferência — prioriza SEFAZ; senão usa status_conferencia. */
+export function labelNfeStatusConferenciaOperacional(
+  statusEmissaoSefaz: string | null | undefined,
+  statusConferencia: string | null | undefined,
+): string {
+  const sefaz = (statusEmissaoSefaz || '').trim();
+  if (sefaz) return labelNfeStatusOperacional(sefaz);
+  return labelNfeStatusOperacional(statusConferencia || 'EM_CONFERENCIA');
+}
+
 /** Status pedido de venda. */
 export const PEDIDO_STATUS_LABELS: Record<string, string> = {
   ABERTO: 'Aberto',

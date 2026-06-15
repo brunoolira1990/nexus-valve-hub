@@ -338,6 +338,9 @@ export type NFeSaidaConferenciaPayload = {
     motivo_bloqueio?: string;
     motivos_bloqueio?: string[];
     ambiente_label?: string;
+    ambiente_emissao_nfe?: string;
+    status_conferencia?: string;
+    status_conferencia_display?: string;
     pronta?: boolean;
     pendencias?: Array<{ codigo?: string; mensagem?: string; severidade?: string }>;
     alertas?: Array<{ codigo?: string; mensagem?: string; severidade?: string }>;
@@ -358,6 +361,7 @@ export type NFeSaidaConferenciaPayload = {
   apresentacao?: import('@/lib/nfeSaidaUi').NFeSaidaApresentacao;
   emissao_sefaz?: {
     ambiente_emissao?: string;
+    status_conferencia?: string;
     serie_nfe?: string;
     numero_nfe?: string;
     chave_acesso?: string;
