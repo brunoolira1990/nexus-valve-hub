@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, CheckCircle2, ExternalLink, FileText, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   AlertDialog,
@@ -16,10 +16,15 @@ import {
   MSG_CONFIRMACAO_TRANSMISSAO_CCE,
   MSG_O_QUE_CCE_NAO_PODE_CORRIGIR,
   MSG_PREVIA_SEM_TRANSMISSAO,
-  buildCartaCorrecaoContextoFromNfe,
+  mapCartaCorrecaoDadosToContexto,
+  openCcePdfBlob,
   type NFeCartaCorrecaoContexto,
 } from '@/lib/nfeCartaCorrecaoPreview';
-import { nfeSaidasService, type NFeCartaCorrecaoResponse } from '@/services/api/fiscal';
+import {
+  nfeSaidasService,
+  type NFeCartaCorrecaoAnterior,
+  type NFeCartaCorrecaoResponse,
+} from '@/services/api/fiscal';
 import { apiErrorMessage } from '@/services/api/config';
 import { formatDateTimeBr } from '@/lib/nfeSaidaUi';
 
@@ -90,6 +95,78 @@ function CampoPrevia({ label, value, mono }: { label: string; value: string; mon
   );
 }
 
+function ListaCceAnteriores({
+  anteriores,
+  nfeId,
+}: {
+  anteriores: NFeCartaCorrecaoAnterior[];
+  nfeId: number;
+}) {
+  const [abrindoId, setAbrindoId] = useState<number | null>(null);
+
+  const abrirComprovante = async (ev: NFeCartaCorrecaoAnterior) => {
+    if (!ev.tem_comprovante) return;
+    setAbrindoId(ev.evento_id);
+    try {
+      const blob = await nfeSaidasService.comprovanteCartaCorrecaoPdfBlob(nfeId, ev.evento_id);
+      openCcePdfBlob(blob, `comprovante-cce-seq-${ev.sequencia}.pdf`);
+    } catch (e) {
+      toast.error(apiErrorMessage(e, { fallback: 'Não foi possível abrir o comprovante da CC-e.' }));
+    } finally {
+      setAbrindoId(null);
+    }
+  };
+
+  if (!anteriores.length) return null;
+
+  return (
+    <div className="rounded-md border border-border bg-muted/10 p-3 space-y-2">
+      <p className="text-xs font-semibold">Cartas de Correção já emitidas nesta NF-e</p>
+      <ul className="space-y-2">
+        {anteriores.map((ev) => (
+          <li
+            key={ev.evento_id}
+            className="text-xs rounded border bg-background p-2 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2"
+          >
+            <div className="space-y-0.5 min-w-0">
+              <p>
+                <span className="font-medium">Seq. {ev.sequencia}</span>
+                {' · '}
+                {formatDateTimeBr(ev.emitido_em)}
+                {ev.protocolo ? ` · prot. ${ev.protocolo}` : ''}
+              </p>
+              <p className="text-muted-foreground">
+                cStat {ev.cstat || '—'}
+                {ev.xmotivo ? ` — ${ev.xmotivo}` : ''}
+              </p>
+              {ev.texto_resumo ? (
+                <p className="text-muted-foreground truncate" title={ev.texto_correcao}>
+                  {ev.texto_resumo}
+                </p>
+              ) : null}
+            </div>
+            {ev.tem_comprovante ? (
+              <button
+                type="button"
+                className="erp-btn-outline erp-btn-xs shrink-0 inline-flex items-center gap-1"
+                disabled={abrindoId === ev.evento_id}
+                onClick={() => void abrirComprovante(ev)}
+              >
+                {abrindoId === ev.evento_id ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <FileText className="h-3 w-3" />
+                )}
+                Comprovante
+              </button>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function BlocoPreviaCce({
   contexto,
   textoCorrecao,
@@ -119,7 +196,15 @@ function BlocoPreviaCce({
         {contexto.homologacao ? MSG_AVISO_CCE_HOMOLOG : MSG_AVISO_CCE_PRODUCAO}
       </p>
 
-      <p className="text-xs text-muted-foreground border border-dashed rounded px-2 py-1.5">{MSG_PREVIA_SEM_TRANSMISSAO}</p>
+      <p className="text-xs font-medium text-amber-800 dark:text-amber-200 border border-amber-500/40 bg-amber-500/10 rounded px-2 py-1.5">
+        {MSG_PREVIA_SEM_TRANSMISSAO}
+      </p>
+
+      {contexto.mensagemMultiplas ? (
+        <p className="text-xs rounded-md border border-blue-500/30 bg-blue-500/5 px-2 py-1.5">
+          {contexto.mensagemMultiplas}
+        </p>
+      ) : null}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <CampoPrevia label="Emitente" value={contexto.emitente} />
@@ -156,6 +241,7 @@ export function NFeCartaCorrecaoModal({
   const [etapa, setEtapa] = useState<Etapa>('redigir');
   const [texto, setTexto] = useState('');
   const [loading, setLoading] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
   const [contexto, setContexto] = useState<NFeCartaCorrecaoContexto | null>(contextoInicial ?? null);
   const [contextoLoading, setContextoLoading] = useState(false);
   const [previaGeradaEm, setPreviaGeradaEm] = useState('');
@@ -166,11 +252,30 @@ export function NFeCartaCorrecaoModal({
   const tamanho = textoLimpo.length;
   const textoValido = tamanho >= TAMANHO_MINIMO_CORRECAO && texto.length <= TAMANHO_MAXIMO_CORRECAO;
 
+  const carregarDados = useCallback(async () => {
+    if (!nfeId) return;
+    setContextoLoading(true);
+    try {
+      const dados = await nfeSaidasService.cartaCorrecaoDados(nfeId);
+      if (!dados.ok) {
+        toast.error(dados.mensagem || 'Não foi possível carregar dados da CC-e.');
+        return;
+      }
+      setContexto(mapCartaCorrecaoDadosToContexto(dados));
+    } catch (e) {
+      if (!contextoInicial) setContexto(null);
+      toast.error(apiErrorMessage(e, { fallback: 'Não foi possível carregar dados da CC-e.' }));
+    } finally {
+      setContextoLoading(false);
+    }
+  }, [nfeId, contextoInicial]);
+
   useEffect(() => {
     if (!open) {
       setEtapa('redigir');
       setTexto('');
       setLoading(false);
+      setPdfLoading(false);
       setContexto(contextoInicial ?? null);
       setContextoLoading(false);
       setPreviaGeradaEm('');
@@ -182,25 +287,8 @@ export function NFeCartaCorrecaoModal({
   useEffect(() => {
     if (!open || !nfeId) return;
     if (contextoInicial) setContexto(contextoInicial);
-
-    let cancelado = false;
-    setContextoLoading(true);
-    void Promise.all([nfeSaidasService.getById(nfeId), nfeSaidasService.eventosNFeSaida(nfeId)])
-      .then(([nfe, ev]) => {
-        if (cancelado) return;
-        setContexto(buildCartaCorrecaoContextoFromNfe(nfe, { homologacao, eventos: ev.eventos }));
-      })
-      .catch(() => {
-        if (!cancelado && !contextoInicial) setContexto(null);
-      })
-      .finally(() => {
-        if (!cancelado) setContextoLoading(false);
-      });
-
-    return () => {
-      cancelado = true;
-    };
-  }, [open, nfeId, homologacao, contextoInicial]);
+    void carregarDados();
+  }, [open, nfeId, contextoInicial, carregarDados]);
 
   const executarTransmissao = async () => {
     if (!nfeId || loading || !textoValido) return;
@@ -230,14 +318,54 @@ export function NFeCartaCorrecaoModal({
     }
   };
 
+  const abrirPdfPrevia = async () => {
+    if (!nfeId || !textoValido || pdfLoading) return;
+    setPdfLoading(true);
+    try {
+      const blob = await nfeSaidasService.previaCartaCorrecaoPdfBlob(nfeId, { texto_correcao: textoLimpo });
+      openCcePdfBlob(blob, `previa-cce-nfe-${nfeId}.pdf`);
+    } catch (e) {
+      toast.error(apiErrorMessage(e, { fallback: 'Não foi possível gerar o PDF da prévia.' }));
+    } finally {
+      setPdfLoading(false);
+    }
+  };
+
+  const abrirComprovanteResultado = async () => {
+    if (!nfeId || !resultado?.evento_id || pdfLoading) return;
+    setPdfLoading(true);
+    try {
+      const blob = await nfeSaidasService.comprovanteCartaCorrecaoPdfBlob(nfeId, resultado.evento_id);
+      openCcePdfBlob(blob, `comprovante-cce-nfe-${nfeId}.pdf`);
+    } catch (e) {
+      toast.error(apiErrorMessage(e, { fallback: 'Não foi possível abrir o comprovante da CC-e.' }));
+    } finally {
+      setPdfLoading(false);
+    }
+  };
+
   const handleOpenChange = (next: boolean) => {
     if (!next && etapa !== 'transmitindo') onClose();
   };
 
-  const irParaPrevia = () => {
-    setPreviaGeradaEm(new Date().toISOString());
+  const irParaPrevia = async () => {
+    if (!nfeId || !textoValido) return;
     setErroTransmissao(null);
-    setEtapa('previa');
+    setLoading(true);
+    try {
+      const previa = await nfeSaidasService.previaCartaCorrecao(nfeId, { texto_correcao: textoLimpo });
+      if (!previa.ok) {
+        toast.error(previa.mensagem || 'Não foi possível montar a prévia da CC-e.');
+        return;
+      }
+      setContexto(mapCartaCorrecaoDadosToContexto(previa));
+      setPreviaGeradaEm(previa.previa_em || new Date().toISOString());
+      setEtapa('previa');
+    } catch (e) {
+      toast.error(apiErrorMessage(e, { fallback: 'Não foi possível montar a prévia da CC-e.' }));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -249,12 +377,27 @@ export function NFeCartaCorrecaoModal({
             <div className="space-y-3 text-sm text-left text-foreground">
               <IndicadorEtapas etapa={etapa} />
 
+              {contextoLoading && etapa === 'redigir' ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Carregando dados da NF-e…
+                </div>
+              ) : null}
+
               {etapa === 'redigir' ? (
                 <>
                   <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
                     <strong>Evento fiscal SEFAZ (110110).</strong> Redija a correção, pré-visualize o conteúdo e só
                     então transmita à SEFAZ. Nada é enviado antes da confirmação explícita.
                   </p>
+                  {contexto?.mensagemMultiplas ? (
+                    <p className="text-xs rounded-md border border-blue-500/30 bg-blue-500/5 px-2 py-1.5">
+                      {contexto.mensagemMultiplas}
+                    </p>
+                  ) : null}
+                  {contexto?.cceAnteriores?.length && nfeId ? (
+                    <ListaCceAnteriores anteriores={contexto.cceAnteriores} nfeId={nfeId} />
+                  ) : null}
                   <p className="text-xs text-muted-foreground">{MSG_LIMITES_CCE}</p>
                   <div className="space-y-1.5">
                     <label htmlFor="cce-texto" className="text-sm font-medium">
@@ -282,7 +425,16 @@ export function NFeCartaCorrecaoModal({
               ) : null}
 
               {etapa === 'previa' && contexto ? (
-                <BlocoPreviaCce contexto={contexto} textoCorrecao={textoLimpo} geradoEm={previaGeradaEm} />
+                <>
+                  <BlocoPreviaCce
+                    contexto={contexto}
+                    textoCorrecao={textoLimpo}
+                    geradoEm={previaGeradaEm || contexto.previaEm || new Date().toISOString()}
+                  />
+                  {contexto.cceAnteriores?.length && nfeId ? (
+                    <ListaCceAnteriores anteriores={contexto.cceAnteriores} nfeId={nfeId} />
+                  ) : null}
+                </>
               ) : null}
 
               {etapa === 'previa' && contextoLoading && !contexto ? (
@@ -306,7 +458,7 @@ export function NFeCartaCorrecaoModal({
                     <BlocoPreviaCce
                       contexto={contexto}
                       textoCorrecao={textoLimpo}
-                      geradoEm={previaGeradaEm || new Date().toISOString()}
+                      geradoEm={previaGeradaEm || contexto.previaEm || new Date().toISOString()}
                     />
                   ) : null}
                 </div>
@@ -351,6 +503,21 @@ export function NFeCartaCorrecaoModal({
                       <span className="font-medium text-foreground">Texto transmitido:</span> {resultado.texto_correcao}
                     </div>
                   ) : null}
+                  {resultado.evento_id ? (
+                    <button
+                      type="button"
+                      className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1.5"
+                      disabled={pdfLoading}
+                      onClick={() => void abrirComprovanteResultado()}
+                    >
+                      {pdfLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <ExternalLink className="h-4 w-4" />
+                      )}
+                      Abrir comprovante da CC-e
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -382,8 +549,9 @@ export function NFeCartaCorrecaoModal({
                 type="button"
                 className="erp-btn-primary erp-btn-sm"
                 disabled={loading || !nfeId || !textoValido}
-                onClick={irParaPrevia}
+                onClick={() => void irParaPrevia()}
               >
+                {loading ? <Loader2 className="h-4 w-4 animate-spin mr-1 inline" /> : null}
                 Pré-visualizar CC-e
               </button>
             </>
@@ -394,10 +562,23 @@ export function NFeCartaCorrecaoModal({
               <button
                 type="button"
                 className="erp-btn-outline erp-btn-sm"
-                disabled={loading}
+                disabled={loading || pdfLoading}
                 onClick={() => setEtapa('redigir')}
               >
                 Voltar à redação
+              </button>
+              <button
+                type="button"
+                className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1"
+                disabled={loading || pdfLoading || !nfeId || !textoValido}
+                onClick={() => void abrirPdfPrevia()}
+              >
+                {pdfLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FileText className="h-4 w-4" />
+                )}
+                Visualizar PDF da prévia
               </button>
               <button
                 type="button"

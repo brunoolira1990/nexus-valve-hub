@@ -1086,6 +1086,136 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         code = status.HTTP_200_OK if payload.get('ok') else status.HTTP_422_UNPROCESSABLE_ENTITY
         return response.Response(payload, status=code)
 
+    def _nf_cce_com_relacionamentos(self, pk=None):
+        return (
+            NFeSaida.objects.select_related('cliente', 'empresa_emitente', 'pedido_venda')
+            .filter(pk=pk or self.kwargs.get('pk'))
+            .first()
+        )
+
+    @action(detail=True, methods=['get'], url_path='carta-correcao/dados')
+    def carta_correcao_dados(self, request, pk=None):
+        """Contexto read-only da CC-e (emitente, sequência prevista, CC-e anteriores) — sem transmissão."""
+        from apps.fiscal.nfe_emissao.carta_correcao import NFeCartaCorrecaoError, pode_emitir_carta_correcao
+        from apps.fiscal.nfe_emissao.carta_correcao_dados import (
+            NFeCartaCorrecaoDadosError,
+            montar_dados_contexto_cce,
+        )
+
+        nf = self._nf_cce_com_relacionamentos(pk) or self.get_object()
+        pode, motivo = pode_emitir_carta_correcao(nf)
+        if not pode:
+            return response.Response({'ok': False, 'mensagem': motivo}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            payload = montar_dados_contexto_cce(nf)
+        except NFeCartaCorrecaoDadosError as exc:
+            return response.Response({'ok': False, 'mensagem': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return response.Response(payload)
+
+    @action(detail=True, methods=['post'], url_path='previa-carta-correcao')
+    def previa_carta_correcao(self, request, pk=None):
+        """Prévia read-only da CC-e — valida texto e retorna dados confiáveis; não transmite à SEFAZ."""
+        from apps.fiscal.nfe_emissao.carta_correcao import NFeCartaCorrecaoError, pode_emitir_carta_correcao
+        from apps.fiscal.nfe_emissao.carta_correcao_dados import (
+            NFeCartaCorrecaoDadosError,
+            montar_dados_previa_cce,
+        )
+
+        nf = self._nf_cce_com_relacionamentos(pk) or self.get_object()
+        pode, motivo = pode_emitir_carta_correcao(nf)
+        if not pode:
+            return response.Response({'ok': False, 'mensagem': motivo}, status=status.HTTP_400_BAD_REQUEST)
+        texto = request.data.get('texto_correcao', request.data.get('correcao', ''))
+        try:
+            payload = montar_dados_previa_cce(nf, texto_correcao=texto)
+        except NFeCartaCorrecaoError as exc:
+            return response.Response({'ok': False, 'mensagem': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except NFeCartaCorrecaoDadosError as exc:
+            return response.Response({'ok': False, 'mensagem': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return response.Response(payload)
+
+    @action(detail=True, methods=['post'], url_path='previa-carta-correcao/pdf')
+    def previa_carta_correcao_pdf(self, request, pk=None):
+        """PDF de prévia da CC-e — somente leitura, sem transmissão à SEFAZ."""
+        from django.http import HttpResponse
+
+        from apps.fiscal.nfe_emissao.carta_correcao import NFeCartaCorrecaoError, pode_emitir_carta_correcao
+        from apps.fiscal.nfe_emissao.carta_correcao_dados import (
+            NFeCartaCorrecaoDadosError,
+            montar_dados_previa_cce,
+        )
+        from apps.fiscal.nfe_emissao.carta_correcao_pdf import gerar_pdf_previa_cce
+
+        nf = self._nf_cce_com_relacionamentos(pk) or self.get_object()
+        pode, motivo = pode_emitir_carta_correcao(nf)
+        if not pode:
+            return response.Response({'ok': False, 'mensagem': motivo}, status=status.HTTP_400_BAD_REQUEST)
+        texto = request.data.get('texto_correcao', request.data.get('correcao', ''))
+        try:
+            dados = montar_dados_previa_cce(nf, texto_correcao=texto)
+            pdf = gerar_pdf_previa_cce(dados)
+        except NFeCartaCorrecaoError as exc:
+            return response.Response({'ok': False, 'mensagem': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except NFeCartaCorrecaoDadosError as exc:
+            return response.Response({'ok': False, 'mensagem': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        filename = f'previa-cce-nfe-{nf.numero or nf.pk}.pdf'
+        return HttpResponse(
+            pdf,
+            content_type='application/pdf',
+            headers={
+                'Content-Disposition': f'inline; filename="{filename}"',
+                'Cache-Control': 'no-store, no-cache, must-revalidate',
+                'Pragma': 'no-cache',
+                'X-Cce-Pdf-Tipo': 'previa',
+            },
+        )
+
+    @action(
+        detail=True,
+        methods=['get'],
+        url_path=r'comprovante-carta-correcao/(?P<evento_id>[^/.]+)',
+    )
+    def comprovante_carta_correcao_pdf(self, request, pk=None, evento_id=None):
+        """PDF comprovante de CC-e já transmitida — não é DANFE."""
+        from django.http import HttpResponse
+
+        from apps.fiscal.models import NFeSaidaEvento
+        from apps.fiscal.nfe_emissao.carta_correcao_dados import (
+            NFeCartaCorrecaoDadosError,
+            montar_dados_comprovante_cce,
+        )
+        from apps.fiscal.nfe_emissao.carta_correcao_pdf import gerar_pdf_comprovante_cce
+
+        nf = self.get_object()
+        try:
+            evento_pk = int(evento_id)
+        except (TypeError, ValueError):
+            return response.Response({'detail': 'Evento inválido.'}, status=status.HTTP_400_BAD_REQUEST)
+        evento = (
+            NFeSaidaEvento.objects.select_related('nfe_saida', 'nfe_saida__cliente', 'criado_por')
+            .filter(pk=evento_pk, nfe_saida_id=nf.pk)
+            .first()
+        )
+        if not evento:
+            return response.Response({'detail': 'Evento de CC-e não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            dados = montar_dados_comprovante_cce(evento)
+            pdf = gerar_pdf_comprovante_cce(dados)
+        except NFeCartaCorrecaoDadosError as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        seq = dados.get('sequencia_evento') or evento_pk
+        filename = f'comprovante-cce-nfe-{nf.numero or nf.pk}-seq-{seq}.pdf'
+        return HttpResponse(
+            pdf,
+            content_type='application/pdf',
+            headers={
+                'Content-Disposition': f'inline; filename="{filename}"',
+                'Cache-Control': 'no-store, no-cache, must-revalidate',
+                'Pragma': 'no-cache',
+                'X-Cce-Pdf-Tipo': 'comprovante',
+            },
+        )
+
     @action(detail=True, methods=['post'], url_path='emitir-carta-correcao')
     def emitir_carta_correcao(self, request, pk=None):
         """Emite Carta de Correção Eletrônica (CC-e) — evento SEFAZ, sem alterar XML autorizado."""

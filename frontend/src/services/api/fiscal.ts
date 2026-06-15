@@ -466,10 +466,52 @@ export type NFeConsultaSituacaoSefazResponse = {
   };
 };
 
+export type NFeCartaCorrecaoAnterior = {
+  evento_id: number;
+  sequencia: number;
+  cstat: string;
+  xmotivo: string;
+  protocolo: string;
+  emitido_em: string;
+  texto_correcao: string;
+  texto_resumo: string;
+  usuario_nome?: string;
+  ambiente?: string;
+  tem_comprovante?: boolean;
+};
+
+export type NFeCartaCorrecaoDadosResponse = {
+  ok: boolean;
+  mensagem?: string;
+  nfe_saida_id: number;
+  ambiente: string;
+  ambiente_label: string;
+  homologacao: boolean;
+  emitente: string;
+  emitente_cnpj?: string;
+  destinatario: string;
+  chave_acesso: string;
+  numero_nfe: string;
+  serie_nfe: string;
+  sequencia_prevista: number;
+  total_cce_anteriores: number;
+  mensagem_multiplas: string;
+  cce_anteriores: NFeCartaCorrecaoAnterior[];
+  o_que_nao_pode_corrigir?: string;
+};
+
+export type NFeCartaCorrecaoPreviaResponse = NFeCartaCorrecaoDadosResponse & {
+  texto_correcao: string;
+  previa_em: string;
+  somente_leitura: boolean;
+  transmitido: boolean;
+};
+
 export type NFeCartaCorrecaoResponse = {
   ok: boolean;
   mensagem?: string;
   nfe_saida_id?: number;
+  evento_id?: number;
   ambiente?: string;
   ambiente_label?: string;
   chave_acesso?: string;
@@ -743,6 +785,30 @@ export const nfeSaidasService = {
         validateStatus: (s) => s >= 200 && s < 500,
       },
     );
+    return res.data;
+  },
+  cartaCorrecaoDados: async (id: number) =>
+    (await api.get<NFeCartaCorrecaoDadosResponse>(`${nfSai}${id}/carta-correcao/dados/`)).data,
+  previaCartaCorrecao: async (id: number, payload: { texto_correcao: string }) =>
+    (
+      await api.post<NFeCartaCorrecaoPreviaResponse>(`${nfSai}${id}/previa-carta-correcao/`, payload, {
+        validateStatus: (s) => s >= 200 && s < 500,
+      })
+    ).data,
+  previaCartaCorrecaoPdfBlob: async (id: number, payload: { texto_correcao: string }) => {
+    const res = await api.post<Blob>(`${nfSai}${id}/previa-carta-correcao/pdf/`, payload, {
+      responseType: 'blob',
+      headers: { Accept: 'application/pdf, application/json' },
+      validateStatus: (s) => s >= 200 && s < 500,
+    });
+    return res.data;
+  },
+  comprovanteCartaCorrecaoPdfBlob: async (nfeId: number, eventoId: number) => {
+    const res = await api.get<Blob>(`${nfSai}${nfeId}/comprovante-carta-correcao/${eventoId}/`, {
+      responseType: 'blob',
+      headers: { Accept: 'application/pdf, application/json' },
+      params: { t: Date.now() },
+    });
     return res.data;
   },
   downloadXmlAssinadoUrl: (id: number) => `${api.defaults.baseURL}${nfSai}${id}/xml-assinado/`,

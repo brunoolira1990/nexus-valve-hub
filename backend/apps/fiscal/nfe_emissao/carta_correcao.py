@@ -8,9 +8,8 @@ import re
 from typing import Any
 
 from django.db import transaction
-from django.db.models import Q
-
 from apps.fiscal.models import NFeSaida, NFeSaidaEvento
+from apps.fiscal.nfe_emissao.carta_correcao_dados import proxima_sequencia_cce
 from apps.fiscal.nfe_emissao.consulta_situacao import (
     _homologacao_da_nfe,
     pode_consultar_situacao_sefaz,
@@ -18,7 +17,6 @@ from apps.fiscal.nfe_emissao.consulta_situacao import (
 from apps.fiscal.nfe_emissao.empresa_emitente import resolver_empresa_emitente_nfe
 from apps.fiscal.nfe_emissao.resposta_carta_correcao import montar_resposta_carta_correcao
 from apps.fiscal.nfe_integracao.adapters.carta_correcao_parser import (
-    CSTAT_EVENTO_REGISTRADO,
     parse_carta_correcao_resposta,
 )
 from apps.fiscal.nfe_integracao.adapters.certificado_a1 import carregar_certificado_empresa
@@ -85,17 +83,6 @@ def pode_emitir_carta_correcao(nf: NFeSaida) -> tuple[bool, str]:
     return True, ''
 
 
-def _proxima_sequencia_cce(nf: NFeSaida) -> int:
-    qs = NFeSaidaEvento.objects.filter(
-        nfe_saida=nf,
-        tipo_evento=NFeSaidaEvento.TipoEvento.CARTA_CORRECAO_EMITIDA,
-    ).filter(
-        Q(resumo__cStat__in=list(CSTAT_EVENTO_REGISTRADO))
-        | Q(resumo__cstat__in=list(CSTAT_EVENTO_REGISTRADO)),
-    )
-    return qs.count() + 1
-
-
 def _montar_assinar_evento_cce(
     *,
     cnpj: str,
@@ -149,7 +136,7 @@ def emitir_carta_correcao_nfe_saida(
     empresa = resolver_empresa_emitente_nfe(nf)
     homolog = _homologacao_da_nfe(nf)
     ambiente_label = 'homologacao' if homolog else 'producao'
-    sequencia = _proxima_sequencia_cce(nf)
+    sequencia = proxima_sequencia_cce(nf)
 
     cnpj = _somente_digitos(empresa.cnpj or '')
     if len(cnpj) not in (11, 14):
@@ -196,7 +183,7 @@ def emitir_carta_correcao_nfe_saida(
         raise NFeCartaCorrecaoError(str(exc), etapa='COMUNICACAO_SEFAZ') from exc
 
     emitido_em = datetime.datetime.now().astimezone()
-    _registrar_evento(
+    evento = _registrar_evento(
         nf,
         tipo=NFeSaidaEvento.TipoEvento.CARTA_CORRECAO_EMITIDA,
         status_anterior=nf.status or '',
@@ -233,4 +220,5 @@ def emitir_carta_correcao_nfe_saida(
         ok=resultado.ok,
         texto_correcao=texto,
         sequencia_evento=sequencia,
+        evento_id=evento.pk,
     )

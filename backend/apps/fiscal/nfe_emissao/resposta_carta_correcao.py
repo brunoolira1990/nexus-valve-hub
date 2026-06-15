@@ -18,6 +18,7 @@ def montar_resposta_carta_correcao(
     mensagem: str = '',
     texto_correcao: str = '',
     sequencia_evento: int | None = None,
+    evento_id: int | None = None,
 ) -> dict[str, Any]:
     ambiente = (nf.ambiente_emissao or '').strip() or 'homologacao'
     emitido_em = timezone.now().isoformat()
@@ -36,6 +37,7 @@ def montar_resposta_carta_correcao(
         'chave_acesso': nf.chave_acesso or resultado.chave_acesso,
         'texto_correcao': texto_correcao,
         'sequencia_evento': sequencia_evento or (int(resultado.n_seq_evento) if resultado.n_seq_evento.isdigit() else None),
+        'evento_id': evento_id,
         'cstat': resultado.c_stat,
         'cStat': resultado.c_stat,
         'xmotivo': resultado.x_motivo,

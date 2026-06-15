@@ -1,4 +1,9 @@
-import type { NFeSaidaEfeitosEvento } from '@/services/api/fiscal';
+import type {
+  NFeCartaCorrecaoAnterior,
+  NFeCartaCorrecaoDadosResponse,
+  NFeCartaCorrecaoPreviaResponse,
+  NFeSaidaEfeitosEvento,
+} from '@/services/api/fiscal';
 import type { NFeSaidaConferenciaPayload } from '@/services/api/fiscal';
 import type { NFeSaidaApresentacao } from '@/lib/nfeSaidaUi';
 import type { NFeSaida } from '@/types';
@@ -12,6 +17,10 @@ export type NFeCartaCorrecaoContexto = {
   numero: string;
   serie: string;
   sequenciaPrevista: number;
+  mensagemMultiplas?: string;
+  totalCceAnteriores?: number;
+  cceAnteriores?: NFeCartaCorrecaoAnterior[];
+  previaEm?: string;
 };
 
 export const CSTAT_CCE_REGISTRADO = new Set(['135', '136']);
@@ -24,7 +33,7 @@ export const MSG_CONFIRMACAO_TRANSMISSAO_CCE =
   'Esta ação transmite uma Carta de Correção Eletrônica para a SEFAZ.';
 
 export const MSG_PREVIA_SEM_TRANSMISSAO =
-  'Esta é apenas uma pré-visualização. Nenhum evento foi transmitido, assinado ou registrado na SEFAZ.';
+  'Este PDF é uma prévia. Nenhum evento foi transmitido, assinado ou registrado na SEFAZ.';
 
 const CSTAT_OK = CSTAT_CCE_REGISTRADO;
 
@@ -35,6 +44,25 @@ export function calcularSequenciaPrevistaCce(eventos: NFeSaidaEfeitosEvento[]): 
     return !cstat || CSTAT_OK.has(cstat);
   }).length;
   return registradas + 1;
+}
+
+export function mapCartaCorrecaoDadosToContexto(
+  dados: NFeCartaCorrecaoDadosResponse | NFeCartaCorrecaoPreviaResponse,
+): NFeCartaCorrecaoContexto {
+  return {
+    homologacao: dados.homologacao,
+    ambienteLabel: dados.ambiente_label,
+    emitente: dados.emitente || '—',
+    destinatario: dados.destinatario || '—',
+    chaveAcesso: dados.chave_acesso || '',
+    numero: dados.numero_nfe || '—',
+    serie: dados.serie_nfe || '—',
+    sequenciaPrevista: dados.sequencia_prevista,
+    mensagemMultiplas: dados.mensagem_multiplas || undefined,
+    totalCceAnteriores: dados.total_cce_anteriores,
+    cceAnteriores: dados.cce_anteriores ?? [],
+    previaEm: 'previa_em' in dados ? dados.previa_em : undefined,
+  };
 }
 
 function resolverHomologacao(
@@ -86,4 +114,11 @@ export function buildCartaCorrecaoContextoFromConferencia(
     serie: (ap?.serie_fiscal ?? em?.serie_nfe ?? '—').trim() || '—',
     sequenciaPrevista: calcularSequenciaPrevistaCce(eventos),
   };
+}
+
+export function openCcePdfBlob(blob: Blob, filename: string): void {
+  const file = new File([blob], filename, { type: 'application/pdf' });
+  const url = URL.createObjectURL(file);
+  window.open(url, '_blank', 'noopener,noreferrer');
+  window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
 }
