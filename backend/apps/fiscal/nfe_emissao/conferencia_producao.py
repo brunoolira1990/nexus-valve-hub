@@ -31,12 +31,19 @@ def montar_permissoes_emissao_producao(
     nf: NFeSaida,
     usuario=None,
 ) -> dict[str, Any]:
+    from apps.fiscal.nfe_emissao.ambiente_emissao_nfe import (
+        MSG_AMBIENTE_NAO_DEFINIDO,
+        ambiente_emissao_nfe_definido,
+    )
+
     habilitada = nfe_producao_habilitada()
     tem_permissao = usuario_pode_emitir_nfe_producao(usuario)
     validacao = montar_validacao_emissao_producao(nf) if habilitada else None
 
     motivos: list[str] = []
-    if not habilitada:
+    if not ambiente_emissao_nfe_definido(nf):
+        motivos.append(MSG_AMBIENTE_NAO_DEFINIDO)
+    elif not habilitada:
         motivos.append(MSG_PRODUCAO_NAO_HABILITADA)
     elif not tem_permissao:
         motivos.append(MSG_SEM_PERMISSAO_USUARIO)
@@ -46,12 +53,17 @@ def montar_permissoes_emissao_producao(
     pronta = nf.status_conferencia == NFeSaida.StatusConferencia.PRONTA_PARA_EMISSAO
     nao_autorizada_prod = nf.status_emissao_sefaz != NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO
     ambiente_prod = nf.ambiente_emissao == NFeSaida.AmbienteEmissao.PRODUCAO
-    pode_tentar = habilitada and tem_permissao and pronta and nao_autorizada_prod and ambiente_prod
+    ambiente_definido = ambiente_emissao_nfe_definido(nf)
+    pode_tentar = (
+        habilitada and tem_permissao and pronta and nao_autorizada_prod and ambiente_prod and ambiente_definido
+    )
     checklist_ok = bool(validacao and validacao.get('pronta'))
     pode_emitir = pode_tentar and checklist_ok
 
     motivo = ''
-    if not ambiente_prod:
+    if not ambiente_definido:
+        motivo = MSG_AMBIENTE_NAO_DEFINIDO
+    elif not ambiente_prod:
         motivo = 'NF-e não está configurada para ambiente de produção SEFAZ.'
     elif not habilitada:
         motivo = 'Emissão produção SEFAZ desabilitada neste ambiente.'

@@ -318,6 +318,8 @@ export type NFeSaidaConferenciaPayload = {
     pode_atualizar_impostos?: boolean;
     pode_validar_conferencia?: boolean;
     pode_marcar_pronta?: boolean;
+    motivo_marcar_pronta_bloqueado?: string;
+    ambiente_emissao_definido?: boolean;
     pode_emitir_homologacao?: boolean;
     pode_tentar_emitir_homologacao?: boolean;
     motivo_emitir_homologacao_bloqueado?: string;
@@ -372,6 +374,11 @@ export type NFeSaidaConferenciaPayload = {
     tem_xml_envio_lote?: boolean;
     tem_xml_retorno?: boolean;
     numeracao_homologacao?: {
+      modelo_documento?: string;
+      serie?: string;
+      proximo_numero?: number;
+    } | null;
+    numeracao_producao?: {
       modelo_documento?: string;
       serie?: string;
       proximo_numero?: number;

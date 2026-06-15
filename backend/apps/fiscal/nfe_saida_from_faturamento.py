@@ -72,7 +72,9 @@ def gerar_nfe_saida_from_faturamento(
     observacao: str = '',
 ) -> GerarNFeSaidaFaturamentoDict:
     fat = (
-        FaturamentoPedidoVenda.objects.select_related('pedido', 'pedido__cliente', 'nfe_saida')
+        FaturamentoPedidoVenda.objects.select_related(
+            'pedido', 'pedido__cliente', 'pedido__empresa_emitente', 'nfe_saida',
+        )
         .prefetch_related('itens__produto', 'itens__item_pedido')
         .get(pk=faturamento_id, pedido_id=pedido.pk)
     )
@@ -130,12 +132,19 @@ def gerar_nfe_saida_from_faturamento(
     if not pedido.cliente_id:
         raise ValueError('Pedido de venda sem cliente cadastrado; não é possível gerar NF-e Saída.')
 
+    ambiente_emissao = ''
+    if pedido.empresa_emitente_id and pedido.empresa_emitente:
+        from apps.cadastros.nfe_ambiente import obter_nfe_ambiente_empresa
+
+        ambiente_emissao = obter_nfe_ambiente_empresa(pedido.empresa_emitente)
+
     nf = NFeSaida.objects.create(
         numero=_numero_rascunho_faturamento(fat.pk),
         cliente_id=pedido.cliente_id,
         data=date.today(),
         status=STATUS_NFE_RASCUNHO,
         valor_total=Decimal('0'),
+        ambiente_emissao=ambiente_emissao,
         modo_atendimento_estoque=NFeSaida.ModoAtendimentoEstoque.IMEDIATO,
         pedido_venda=pedido,
         faturamento_pedido_venda=fat,

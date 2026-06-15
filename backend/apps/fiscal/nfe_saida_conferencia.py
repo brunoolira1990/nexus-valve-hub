@@ -245,10 +245,16 @@ def _montar_permissoes_emissao_homolog(
     *,
     itens_count: int,
 ) -> dict[str, Any]:
+    from apps.fiscal.nfe_emissao.ambiente_emissao_nfe import (
+        MSG_AMBIENTE_NAO_DEFINIDO,
+        ambiente_emissao_nfe_definido,
+    )
+
     ambiente_prod = nf.ambiente_emissao == NFeSaida.AmbienteEmissao.PRODUCAO
+    ambiente_definido = ambiente_emissao_nfe_definido(nf)
     pronta = nf.status_conferencia == NFeSaida.StatusConferencia.PRONTA_PARA_EMISSAO
     nao_autorizada = nf.status_emissao_sefaz != NFeSaida.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO
-    pode_tentar = pronta and nao_autorizada and not ambiente_prod
+    pode_tentar = pronta and nao_autorizada and not ambiente_prod and ambiente_definido
     checklist_ok = bool((checklist or {}).get('pode_emitir'))
     # modo abertura não inclui checklist — marcar pronta já validou na hora
     if not checklist_ok and checklist is None and pronta and nf.conferencia_marcada_pronta_em:
@@ -258,7 +264,9 @@ def _montar_permissoes_emissao_homolog(
     retry_sefaz = (nf.status_emissao_sefaz or '') in _STATUS_EMISSAO_RETRY or emissao_orfa
     pode_emitir = pode_tentar and (checklist_ok or retry_sefaz)
     motivo = ''
-    if emissao_orfa and pode_tentar:
+    if not ambiente_definido:
+        motivo = MSG_AMBIENTE_NAO_DEFINIDO
+    elif emissao_orfa and pode_tentar:
         motivo = (
             'Emissão em homologação foi iniciada, mas não houve retorno SEFAZ registrado. '
             'Tente emitir novamente.'
@@ -271,6 +279,25 @@ def _montar_permissoes_emissao_homolog(
         motivo = 'NF-e configurada para produção SEFAZ. Use o fluxo de emissão em produção.'
     elif not nao_autorizada:
         motivo = 'NF-e já autorizada em homologação.'
+
+    pode_marcar = pront_payload['pode_marcar_pronta'] and nao_autorizada
+    motivo_marcar = ''
+    if not ambiente_definido:
+        pode_marcar = False
+        motivo_marcar = MSG_AMBIENTE_NAO_DEFINIDO
+    elif pode_marcar and ambiente_prod:
+        from apps.fiscal.nfe_emissao.validacao_producao import montar_validacao_preparacao_producao
+
+        prep = montar_validacao_preparacao_producao(nf)
+        if not prep.get('pronta'):
+            pode_marcar = False
+            pends = prep.get('pendencias') or []
+            motivo_marcar = (
+                pends[0].get('mensagem') if pends else 'Checklist produção pendente.'
+            )
+    elif not pode_marcar:
+        motivo_marcar = 'Resolva as pendências bloqueantes antes de marcar pronta.'
+
     return {
         'origem_comercial_travada': origem_comercial_travada(nf),
         'itens_comerciais_editaveis': itens_comerciais_editaveis(nf),
@@ -278,7 +305,9 @@ def _montar_permissoes_emissao_homolog(
         'fiscal_editavel': itens_comerciais_editaveis(nf) and not origem_comercial_travada(nf),
         'pode_atualizar_impostos': pode_atualizar_impostos_nfe(nf, itens_count=itens_count),
         'pode_validar_conferencia': pode_validar_conferencia(nf) and nao_autorizada,
-        'pode_marcar_pronta': pront_payload['pode_marcar_pronta'] and nao_autorizada,
+        'pode_marcar_pronta': pode_marcar,
+        'motivo_marcar_pronta_bloqueado': motivo_marcar,
+        'ambiente_emissao_definido': ambiente_definido,
         'pode_tentar_emitir_homologacao': pode_tentar,
         'pode_emitir_homologacao': pode_emitir,
         'motivo_emitir_homologacao_bloqueado': motivo,
@@ -305,18 +334,31 @@ def _ultimo_evento_erro_transmissao(nf: NFeSaida) -> dict[str, Any]:
     }
 
 
-def _montar_emissao_sefaz_payload(nf: NFeSaida) -> dict[str, Any]:
-    numeracao_homolog = None
+def _numeracao_cadastro_resumo(empresa_pk: int, ambiente: str) -> dict[str, Any] | None:
     try:
-        empresa = resolver_empresa_emitente_nfe(nf)
-        cfg = obter_config_numeracao(empresa.pk, ambiente='homologacao')
-        numeracao_homolog = {
+        cfg = obter_config_numeracao(empresa_pk, ambiente=ambiente)
+        return {
             'modelo_documento': cfg.modelo_documento,
             'serie': cfg.serie,
             'proximo_numero': cfg.proximo_numero,
         }
     except NFeNumeracaoError:
+        return None
+
+
+def _montar_emissao_sefaz_payload(nf: NFeSaida) -> dict[str, Any]:
+    ambiente = (nf.ambiente_emissao or '').strip()
+    numeracao_homolog = None
+    numeracao_producao = None
+    try:
+        empresa = resolver_empresa_emitente_nfe(nf)
+        if ambiente == NFeSaida.AmbienteEmissao.HOMOLOGACAO:
+            numeracao_homolog = _numeracao_cadastro_resumo(empresa.pk, 'homologacao')
+        elif ambiente == NFeSaida.AmbienteEmissao.PRODUCAO:
+            numeracao_producao = _numeracao_cadastro_resumo(empresa.pk, 'producao')
+    except (NFeNumeracaoError, ValueError):
         numeracao_homolog = None
+        numeracao_producao = None
 
     emissao_orfa = _emissao_homolog_iniciada_sem_status(nf)
     return {
@@ -342,6 +384,7 @@ def _montar_emissao_sefaz_payload(nf: NFeSaida) -> dict[str, Any]:
         'tem_xml_envio_lote': bool((nf.xml_envio_lote or '').strip()),
         'tem_xml_retorno': bool((nf.xml_retorno or nf.xml_retorno_lote or '').strip()),
         'numeracao_homologacao': numeracao_homolog,
+        'numeracao_producao': numeracao_producao,
         'lote': {
             'cstat': nf.cstat_lote or '',
             'xmotivo': nf.xmotivo_lote or '',
@@ -439,6 +482,9 @@ def montar_conferencia_nfe_saida(
             .get(pk=nf.pk)
         )
         perf.marcar('db_ms')
+        from apps.fiscal.nfe_emissao.ambiente_emissao_nfe import garantir_ambiente_emissao_nfe_saida
+
+        nf = garantir_ambiente_emissao_nfe_saida(nf)
         itens_rows = [
             _montar_item_conferencia(nf, item, idx)
             for idx, item in enumerate(nf.itens.all().order_by('pk'), start=1)

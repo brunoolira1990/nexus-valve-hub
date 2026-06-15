@@ -85,6 +85,13 @@ import {
 } from '@/lib/nfeSaidaAcoesMatriz';
 import { podeExibirBotaoEmitirProducao } from '@/lib/nfeSaidaEmissaoProducao';
 import { isNfeAmbienteProducao } from '@/lib/empresaNfeAmbiente';
+import {
+  ambienteEmissaoNfeDefinido,
+  labelProximaNumeracaoCadastro,
+  MSG_AMBIENTE_NAO_DEFINIDO,
+  resolverAmbienteEmissaoNfeConferencia,
+  resolverNumeracaoCadastroConferencia,
+} from '@/lib/nfeSaidaAmbienteEmissao';
 import { ACTION_LABELS } from '@/lib/operationalUi';
 
 type ConferenciaItem = NFeSaidaConferenciaPayload['itens'][number] & {
@@ -219,7 +226,9 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
         {
           status: conf?.nfe?.status,
           status_emissao_sefaz: conf?.emissao_sefaz?.status_emissao_sefaz,
-          ambiente_emissao: conf?.apresentacao?.ambiente_emissao || conf?.emissao_sefaz?.ambiente_emissao,
+          ambiente_emissao: conf
+            ? resolverAmbienteEmissaoNfeConferencia(conf)
+            : undefined,
           chave_acesso: conf?.apresentacao?.chave_acesso || conf?.emissao_sefaz?.chave_acesso,
           tem_xml_autorizado: conf?.emissao_sefaz?.tem_xml_autorizado,
           autorizada_producao: conf?.emissao_producao?.autorizada_producao,
@@ -526,24 +535,22 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
     { status: String(nfe.status) },
     conf.emissao_sefaz ?? null,
   );
-  const ambienteEmissaoNfe =
-    conf.apresentacao?.ambiente_emissao ??
-    conf.emissao_sefaz?.ambiente_emissao ??
-    conf.emissao_producao?.ambiente_emissao_nfe ??
-    contextoAcao.ambienteRaw ??
-    '';
+  const ambienteEmissaoNfe = resolverAmbienteEmissaoNfeConferencia(conf);
+  const ambienteEmissaoDefinido =
+    Boolean(permissoes.ambiente_emissao_definido) || ambienteEmissaoNfeDefinido(ambienteEmissaoNfe);
   const isAmbienteProducaoNfe = isNfeAmbienteProducao(ambienteEmissaoNfe);
   const prontidaoBadge = badgeStatusConferenciaNFe(prontidao.status_conferencia);
   const orientacaoProntidao = mensagemOrientacaoProntidao(prontidao.status_conferencia, ambienteEmissaoNfe);
   const exibirMensagemPronta = deveExibirMensagemProntaEmissao(prontidao.status_conferencia, autorizadaHomolog);
   const podeValidarConferencia = Boolean(permissoes.pode_validar_conferencia ?? prontidao.pode_validar);
   const podeMarcarPronta = Boolean(permissoes.pode_marcar_pronta ?? prontidao.pode_marcar_pronta);
+  const motivoMarcarProntaBloqueado = permissoes.motivo_marcar_pronta_bloqueado ?? '';
   const podeTentarEmitirHomolog =
     Boolean(permissoes.pode_tentar_emitir_homologacao) && !isAmbienteProducaoNfe;
   const podeEmitirHomolog = Boolean(permissoes.pode_emitir_homologacao);
   const motivoEmitirHomologBloqueado = permissoes.motivo_emitir_homologacao_bloqueado ?? '';
   const emissaoSefazBadge = badgeNfeSaidaEmissaoSefaz(conf.emissao_sefaz ?? null);
-  const numeracaoHomolog = conf.emissao_sefaz?.numeracao_homologacao;
+  const numeracaoCadastro = resolverNumeracaoCadastroConferencia(conf, ambienteEmissaoNfe);
   const transporte = conf.transporte as Record<string, unknown>;
   const modalidadeFrete = String(transporte.modalidade_frete ?? '9');
   const alertasTransp = alertasTransporteLocal({
@@ -733,7 +740,8 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
               alteracoesNaoSalvas
                 ? 'Salve as alterações antes de marcar pronta.'
                 : !podeMarcarPronta
-                  ? 'Resolva as pendências bloqueantes antes de marcar pronta.'
+                  ? motivoMarcarProntaBloqueado ||
+                    'Resolva as pendências bloqueantes antes de marcar pronta.'
                   : undefined
             }
             onClick={() => void handleMarcarPronta()}
@@ -1419,6 +1427,11 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
               </div>
             </div>
             <NFeSaidaAcoesContextoBanner contexto={contextoAcao} />
+            {!ambienteEmissaoDefinido ? (
+              <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-100">
+                {MSG_AMBIENTE_NAO_DEFINIDO}
+              </div>
+            ) : null}
             <div className="space-y-2">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 {autorizadaHomolog || contextoAcao.autorizadaProducao
@@ -1653,10 +1666,10 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                 ) : null}
               </div>
             ) : null}
-            {numeracaoHomolog ? (
+            {numeracaoCadastro && ambienteEmissaoDefinido ? (
               <p className="text-xs text-muted-foreground">
-                Próxima numeração homologação (cadastro): série {numeracaoHomolog.serie}, nº{' '}
-                {numeracaoHomolog.proximo_numero}
+                {labelProximaNumeracaoCadastro(ambienteEmissaoNfe)}: série {numeracaoCadastro.serie}, nº{' '}
+                {numeracaoCadastro.proximo_numero}
               </p>
             ) : null}
             {emissaoMsg ? <p className="text-sm text-muted-foreground">{emissaoMsg}</p> : null}

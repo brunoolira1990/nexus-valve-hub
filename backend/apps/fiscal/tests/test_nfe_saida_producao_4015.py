@@ -137,6 +137,7 @@ def _pedido_nf() -> tuple[PedidoVenda, NFeSaida]:
         cep='01001000',
         ie='123456789012',
         senha_certificado='test123',
+        nfe_ambiente=Empresa.NfeAmbiente.PRODUCAO,
     )
     pfx = _criar_pfx()
     with open(pfx, 'rb') as fh:

@@ -138,6 +138,21 @@ def montar_validacao_emissao_producao(nfe_saida: NFeSaida) -> dict[str, Any]:
     }
 
 
+def montar_validacao_preparacao_producao(nfe_saida: NFeSaida) -> dict[str, Any]:
+    """Checklist produção aplicável antes de marcar pronta (sem exigir status pronta)."""
+    payload = montar_validacao_emissao_producao(nfe_saida)
+    pendencias = [
+        p for p in payload.get('pendencias', [])
+        if p.get('codigo') != 'conferencia_nao_pronta'
+    ]
+    pronta = len(pendencias) == 0
+    return {
+        'pronta': pronta,
+        'pendencias': pendencias,
+        'alertas': payload.get('alertas') or [],
+    }
+
+
 def validar_pre_emissao_producao(nfe_saida: NFeSaida) -> dict[str, Any]:
     """Validação bloqueante antes de reservar/transmitir produção."""
     from apps.fiscal.nfe_emissao.config_producao import exigir_producao_habilitada
