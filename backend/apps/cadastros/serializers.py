@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
@@ -19,6 +20,7 @@ class EmpresaSerializer(serializers.ModelSerializer):
         allow_null=True,
         required=False,
     )
+    nfe_producao_habilitada = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Empresa
@@ -26,6 +28,17 @@ class EmpresaSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'senha_certificado': {'write_only': True, 'required': False, 'allow_blank': True},
         }
+        read_only_fields = ('nfe_producao_habilitada',)
+
+    def get_nfe_producao_habilitada(self, obj) -> bool:
+        return bool(getattr(settings, 'NFE_PRODUCAO_HABILITADA', False))
+
+    def validate_nfe_ambiente(self, value):
+        valor = (value or '').strip().lower()
+        validos = {c[0] for c in Empresa.NfeAmbiente.choices}
+        if valor not in validos:
+            raise serializers.ValidationError('Ambiente NF-e inválido. Use homologacao ou producao.')
+        return valor
 
     def validate(self, attrs):
         normalize_operational_fields(

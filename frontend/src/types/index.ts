@@ -17,6 +17,10 @@ export interface Empresa {
   email: string;
   site: string;
   empresa_pai_id: number | null;
+  /** Ambiente NF-e desejado: homologacao | producao */
+  nfe_ambiente?: 'homologacao' | 'producao';
+  /** Espelha settings.NFE_PRODUCAO_HABILITADA (somente leitura). */
+  nfe_producao_habilitada?: boolean;
   certificado_arquivo?: File | string | null;
   certificado_validade?: string | null;
   logotipo?: File | string | null;

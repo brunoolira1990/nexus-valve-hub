@@ -88,6 +88,16 @@ def montar_validacao_emissao_producao(nfe_saida: NFeSaida) -> dict[str, Any]:
 
     try:
         empresa = resolver_empresa_emitente_nfe(nfe_saida)
+        from apps.cadastros.nfe_ambiente import empresa_configurada_para_producao
+
+        if not empresa_configurada_para_producao(empresa):
+            pendencias.append(
+                _pendencia(
+                    'empresa_ambiente_homolog',
+                    'Empresa configurada para Homologação. '
+                    'Altere o ambiente NF-e no cadastro da empresa para Produção.',
+                ),
+            )
         for msg in _validar_empresa_emitente(empresa):
             pendencias.append(_pendencia('empresa_emitente', msg))
         try:

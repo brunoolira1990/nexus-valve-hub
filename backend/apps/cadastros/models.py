@@ -19,6 +19,10 @@ def _norm_cnpj(val: str) -> str:
 
 
 class Empresa(models.Model):
+    class NfeAmbiente(models.TextChoices):
+        HOMOLOGACAO = 'homologacao', 'Homologação'
+        PRODUCAO = 'producao', 'Produção'
+
     razao_social = models.CharField(max_length=255)
     nome_fantasia = models.CharField(max_length=255, blank=True)
     cnpj = models.CharField(max_length=20, unique=True, validators=[validar_cnpj_django])
@@ -46,6 +50,12 @@ class Empresa(models.Model):
     senha_certificado = models.CharField(max_length=128, blank=True)
     certificado_validade = models.DateField(null=True, blank=True)
     logotipo = models.ImageField(upload_to='logos/', null=True, blank=True)
+    nfe_ambiente = models.CharField(
+        max_length=16,
+        choices=NfeAmbiente.choices,
+        default=NfeAmbiente.HOMOLOGACAO,
+        help_text='Ambiente fiscal NF-e desejado para emissão desta empresa.',
+    )
     criado_em = models.DateTimeField(auto_now_add=True, null=True, blank=True)
     atualizado_em = models.DateTimeField(auto_now=True, null=True, blank=True)
 

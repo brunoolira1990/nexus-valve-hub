@@ -49,6 +49,18 @@ def validar_pre_emissao_homologacao(nfe_saida: NFeSaida) -> dict[str, Any]:
     if nfe_saida.ambiente_emissao == NFeSaida.AmbienteEmissao.PRODUCAO:
         erros.append('Emissão em produção não está habilitada nesta fase.')
 
+    try:
+        from apps.cadastros.nfe_ambiente import empresa_configurada_para_producao
+
+        empresa = resolver_empresa_emitente_nfe(nfe_saida)
+        if empresa_configurada_para_producao(empresa):
+            erros.append(
+                'Empresa configurada para ambiente Produção. '
+                'Altere o ambiente NF-e no cadastro da empresa ou use o fluxo de emissão produção.',
+            )
+    except Exception:
+        pass
+
     if nfe_saida.status_emissao_sefaz == NFeSaida.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO:
         erros.append('NF-e já autorizada em homologação.')
 

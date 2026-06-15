@@ -13,11 +13,14 @@ import { usePaginatedList } from '@/hooks/usePaginatedList';
 import { PaginationControls } from '@/components/list/PaginationControls';
 import { EmptyState, ErrorState, LoadingState } from '@/components/list/ListStates';
 import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
+import { EmpresaNfeAmbienteSelector } from '@/components/cadastros/EmpresaNfeAmbienteSelector';
+import type { NfeAmbienteEmpresa } from '@/lib/empresaNfeAmbiente';
 
 const emptyEmpresa: Omit<Empresa, 'id'> = {
   razao_social:'', nome_fantasia:'', cnpj:'', ie:'', im:'', regime_tributario:'Lucro Presumido',
   logradouro:'', numero:'', complemento:'', bairro:'', cidade:'', uf:'SC', cep:'',
   telefone:'', email:'', site:'', empresa_pai_id:null, senha_certificado:'',
+  nfe_ambiente: 'homologacao',
 };
 
 const Empresas = () => {
@@ -78,7 +81,11 @@ const Empresas = () => {
   };
   const openEdit = (e: Empresa) => {
     setEditing(e);
-    setForm({ ...e, senha_certificado: '' });
+    setForm({
+      ...e,
+      senha_certificado: '',
+      nfe_ambiente: (e.nfe_ambiente || 'homologacao') as NfeAmbienteEmpresa,
+    });
     setCertFile(null);
     setLogoFile(null);
     setLogoPreview(typeof e.logotipo === 'string' ? e.logotipo : null);
@@ -295,6 +302,11 @@ const Empresas = () => {
               <p className="text-sm text-muted-foreground">Salve a empresa para configurar a numeração NF-e.</p>
             ) : (
               <>
+                <EmpresaNfeAmbienteSelector
+                  value={(form.nfe_ambiente || 'homologacao') as NfeAmbienteEmpresa}
+                  producaoHabilitada={Boolean(form.nfe_producao_habilitada)}
+                  onChange={(ambiente) => f('nfe_ambiente', ambiente)}
+                />
                 <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100">
                   A alteração de série ou próximo número pode causar duplicidade, rejeição ou necessidade de
                   inutilização. Revise com o contador antes de alterar.
