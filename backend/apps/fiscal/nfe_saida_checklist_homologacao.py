@@ -377,14 +377,21 @@ def _formatar_erro_danfe_checklist(exc: BaseException) -> tuple[str, str]:
 
 
 def _validar_danfe_checklist(nf: NFeSaida) -> list[dict[str, str]]:
-    """Valida DANFE com o mesmo fluxo do botão preview-danfe / danfe-homologacao."""
+    """Valida DANFE com o mesmo fluxo dos botões preview-danfe / danfe-autorizado."""
     secao = 'danfe'
     itens: list[dict[str, str]] = []
-    from apps.fiscal.nfe_saida_preview import gerar_preview_danfe_nfe_saida
+    from apps.fiscal.nfe_saida_bloqueio import nf_autorizada_homologacao, nf_autorizada_producao
     from apps.fiscal.danfe_conferencia import montar_dados_danfe_conferencia
 
     try:
-        pdf, meta = gerar_preview_danfe_nfe_saida(nf)
+        if nf_autorizada_homologacao(nf) or nf_autorizada_producao(nf):
+            from apps.fiscal.nfe_saida_danfe_autorizado import gerar_danfe_autorizado_nfe_saida
+
+            pdf, meta = gerar_danfe_autorizado_nfe_saida(nf)
+        else:
+            from apps.fiscal.nfe_saida_preview import gerar_preview_danfe_nfe_saida
+
+            pdf, meta = gerar_preview_danfe_nfe_saida(nf)
         if meta.get('bloqueado'):
             msg_bloq = (meta.get('mensagens') or ['DANFE bloqueado pelo renderer.'])[0]
             amigavel, tecnico = _formatar_erro_danfe_checklist(ValueError(msg_bloq))
