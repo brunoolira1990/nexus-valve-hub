@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
+import { extrairErrosXsd, formatNfeErrosLista } from '@/lib/nfeXsdErros';
 import { apiErrorMessage } from '@/services/api/config';
 import {
   nfeSaidasService,
@@ -364,11 +365,10 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
       const cstatNfe = res.nfe?.cstat ?? res.cstat ?? res.cStat ?? '';
       const cstatLote = res.lote?.cstat ?? '';
       const xmotivoNfe = res.nfe?.xmotivo ?? res.xmotivo ?? res.xMotivo ?? '';
-      const errosTxt = (res.erros ?? []).filter(Boolean).join(' · ');
+      const xsdExtraidos = extrairErrosXsd(res);
+      const errosTxt = formatNfeErrosLista(xsdExtraidos.length ? xsdExtraidos : res.erros);
       const etapaTxt = res.etapa ? `Etapa: ${res.etapa}. ` : '';
-      const xsdLista = (
-        (res.validacao_xsd as { erros?: Array<Record<string, unknown>> } | undefined)?.erros ?? []
-      ) as Array<Record<string, unknown>>;
+      const xsdLista = xsdExtraidos as Array<Record<string, unknown>>;
       if (xsdLista.length) {
         setValidacaoXsdErros(xsdLista);
       } else {

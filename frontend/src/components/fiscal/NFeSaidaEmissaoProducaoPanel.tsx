@@ -27,6 +27,7 @@ import {
   type NFeEmissaoProducaoPermissoes,
 } from '@/lib/nfeSaidaEmissaoProducao';
 import { fmtMoeda } from '@/lib/nfeSaidaConferencia';
+import { extrairErrosXsd, formatNfeXsdErro, type NFeXsdErro } from '@/lib/nfeXsdErros';
 import { nfeSaidasService, type NFeEmissaoProducaoResponse } from '@/services/api/fiscal';
 import { apiErrorMessage } from '@/services/api/config';
 
@@ -57,6 +58,7 @@ export function NFeSaidaEmissaoProducaoPanel({
     pendencias?: Array<{ codigo?: string; mensagem?: string }>;
     alertas?: Array<{ codigo?: string; mensagem?: string }>;
   } | null>(null);
+  const [xsdErros, setXsdErros] = useState<NFeXsdErro[]>([]);
   const [resultadoMsg, setResultadoMsg] = useState<string | null>(null);
   const [resultadoTipo, setResultadoTipo] = useState<'sucesso' | 'rejeicao' | 'tecnico' | 'lote_sem_prot' | null>(
     null,
@@ -146,11 +148,13 @@ export function NFeSaidaEmissaoProducaoPanel({
     setLoading(true);
     setResultadoMsg(null);
     setResultadoTipo(null);
+    setXsdErros([]);
     try {
       const res: NFeEmissaoProducaoResponse = await nfeSaidasService.emitirProducao(
         nfeId,
         montarPayloadEmitirProducao(),
       );
+      setXsdErros(extrairErrosXsd(res));
       const parsed = mensagemEmissaoProducaoResposta(res);
       setResultadoTipo(parsed.tipo);
       setResultadoMsg(parsed.texto);
@@ -168,6 +172,9 @@ export function NFeSaidaEmissaoProducaoPanel({
       }
       await onEmissaoConcluida();
     } catch (err) {
+      const ax = err as { response?: { data?: NFeEmissaoProducaoResponse } };
+      const data = ax.response?.data;
+      if (data) setXsdErros(extrairErrosXsd(data));
       const msg = apiErrorMessage(err, {
         fallback: 'Falha ao emitir em produção SEFAZ. Verifique certificado, numeração e pendências.',
       });
@@ -336,6 +343,13 @@ export function NFeSaidaEmissaoProducaoPanel({
           data-testid="nfe-producao-resultado"
         >
           {resultadoMsg}
+          {xsdErros.length ? (
+            <ul className="mt-2 list-disc pl-4 space-y-1 text-[11px] font-normal text-destructive">
+              {xsdErros.map((e, i) => (
+                <li key={`xsd-prod-${i}`}>{formatNfeXsdErro(e)}</li>
+              ))}
+            </ul>
+          ) : null}
         </div>
       ) : null}
 

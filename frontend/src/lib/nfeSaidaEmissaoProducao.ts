@@ -1,6 +1,7 @@
 /** Helpers UI — emissão NF-e Saída produção SEFAZ (Fase 3C). */
 
 import { isNfeAmbienteProducao } from '@/lib/empresaNfeAmbiente';
+import { extrairErrosXsd, formatNfeErrosLista, type NFeRespostaValidacaoXsd } from '@/lib/nfeXsdErros';
 
 export const TEXTO_CONFIRMACAO_PRODUCAO = 'PRODUCAO SEFAZ';
 export const CONFIRMACAO_AMBIENTE_PRODUCAO = 'PRODUCAO_SEFAZ';
@@ -100,7 +101,9 @@ export function mensagemEmissaoProducaoResposta(res: {
   xmotivo?: string;
   xMotivo?: string;
   mensagem?: string;
-  erros?: string[];
+  erros?: unknown[];
+  erros_xsd?: NFeRespostaValidacaoXsd['erros_xsd'];
+  validacao_xsd?: NFeRespostaValidacaoXsd['validacao_xsd'];
   etapa?: string;
   protocolo?: string;
   protocolo_autorizacao?: string;
@@ -110,7 +113,10 @@ export function mensagemEmissaoProducaoResposta(res: {
   const cstatNfe = res.nfe?.cstat ?? res.cstat ?? res.cStat ?? '';
   const cstatLote = res.lote?.cstat ?? '';
   const xmotivoNfe = res.nfe?.xmotivo ?? res.xmotivo ?? res.xMotivo ?? '';
-  const errosTxt = (res.erros ?? []).filter(Boolean).join(' · ');
+  const errosXsd = extrairErrosXsd(res);
+  const errosTxt = errosXsd.length
+    ? formatNfeErrosLista(errosXsd)
+    : formatNfeErrosLista(res.erros);
   const msgBase = res.mensagem || xmotivoNfe || errosTxt || 'Emissão produção não concluída.';
   if (res.ok || res.autorizado) {
     const proto = res.protocolo || res.protocolo_autorizacao || res.nfe?.protocolo || '';
@@ -126,7 +132,8 @@ export function mensagemEmissaoProducaoResposta(res: {
     return { tipo: 'lote_sem_prot', texto: `Lote processado (cStat 104) sem protocolo NF-e. ${msgBase}`.trim() };
   }
   const etapaTxt = res.etapa ? `Etapa: ${res.etapa}. ` : '';
-  return { tipo: 'tecnico', texto: `${etapaTxt}${msgBase}${errosTxt ? ` (${errosTxt})` : ''}`.trim() };
+  const detalheXsd = errosTxt && !msgBase.includes(errosTxt) ? ` (${errosTxt})` : errosTxt && msgBase.includes(errosTxt) ? '' : '';
+  return { tipo: 'tecnico', texto: `${etapaTxt}${msgBase}${detalheXsd}`.trim() };
 }
 
 export function avisoProducaoDesabilitada(

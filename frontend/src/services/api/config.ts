@@ -1,4 +1,5 @@
 import axios, { type AxiosError } from 'axios';
+import { extrairErrosXsd, formatNfeErrosLista } from '@/lib/nfeXsdErros';
 import { clearDashboardPermissoesCache } from './dashboardPermissoesCache';
 
 const api = axios.create({
@@ -107,8 +108,13 @@ export function apiErrorMessage(err: unknown, options: ApiErrorMessageOptions = 
     return SESSION_EXPIRED_MESSAGE;
   }
   if (typeof d.mensagem === 'string') return sanitize(d.mensagem, fallback);
+  if (d && typeof d === 'object') {
+    const errosXsd = formatNfeErrosLista(extrairErrosXsd(d as Record<string, unknown>));
+    if (errosXsd) return sanitize(errosXsd, fallback);
+  }
   if (Array.isArray(d.erros) && d.erros.length) {
-    return sanitize(d.erros.map(String).join(' · '), fallback);
+    const formatted = formatNfeErrosLista(d.erros);
+    if (formatted) return sanitize(formatted, fallback);
   }
   if (typeof d.detail === 'string') return sanitize(d.detail, fallback);
   if (Array.isArray(d.detail)) return sanitize(d.detail.map(String).join(', '), fallback);

@@ -30,6 +30,7 @@ from apps.fiscal.nfe_emissao.validacao_producao import (
     validar_pre_emissao_producao,
     validar_xml_emissao_producao_local,
 )
+from apps.fiscal.nfe_emissao.xsd_erros import resumo_erros_xsd_log
 from apps.fiscal.nfe_emissao.xml_oficial import NFeXmlEmissaoError, gerar_xml_oficial_emissao
 from apps.fiscal.nfe_saida_efeitos import _lock_nfe_saida, _registrar_evento
 
@@ -62,10 +63,11 @@ def _validar_xmls_antes_transmissao(
     )
     if not resultado.get('ok'):
         logger.warning(
-            'VALIDACAO_PRE_TRANSMISSAO_PRODUCAO_FALHOU nfe_id=%s tipo=%s erros=%s',
+            'VALIDACAO_PRE_TRANSMISSAO_PRODUCAO_FALHOU nfe_id=%s tipo=%s erros=%s detalhe=%s',
             nf.pk,
             resultado.get('tipo'),
             len(resultado.get('erros') or []),
+            resumo_erros_xsd_log(resultado.get('erros') or []),
         )
     return resultado
 

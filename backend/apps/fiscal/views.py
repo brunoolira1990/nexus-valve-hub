@@ -824,8 +824,9 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
                     'chave_acesso': nf.chave_acesso or payload.get('chave_acesso'),
                 },
             )
-            if det.get('validacao_xsd'):
-                payload['validacao_xsd'] = det['validacao_xsd']
+            from apps.fiscal.nfe_emissao.xsd_erros import aplicar_erros_validacao_no_payload
+
+            aplicar_erros_validacao_no_payload(payload, det, mensagem=str(exc))
             payload['status'] = nf.status_emissao_sefaz or nf.status
             return response.Response(payload, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
         except (NFeXmlEmissaoError, NFeAssinaturaError, NFeNumeracaoError, NFeTransmissaoError, CertificadoA1Error) as exc:
@@ -960,8 +961,9 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
                     'chave_acesso': nf.chave_acesso or payload.get('chave_acesso'),
                 },
             )
-            if det.get('validacao_xsd'):
-                payload['validacao_xsd'] = det['validacao_xsd']
+            from apps.fiscal.nfe_emissao.xsd_erros import aplicar_erros_validacao_no_payload
+
+            aplicar_erros_validacao_no_payload(payload, det, mensagem=str(exc))
             payload['status'] = nf.status_emissao_sefaz or nf.status
             return response.Response(payload, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
         except (NFeXmlEmissaoError, NFeAssinaturaError, NFeNumeracaoError, NFeTransmissaoProducaoError, CertificadoA1Error) as exc:

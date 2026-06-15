@@ -148,7 +148,8 @@ def validar_emissao_completa(
         res = validar_xml_nfe_schema(conteudo, tipo)
         validacoes[tipo] = res
         if not res.get('ok'):
-            erros.extend(res.get('erros') or [])
+            for e in res.get('erros') or []:
+                erros.append({**e, 'contexto': tipo})
             return {
                 'ok': False,
                 'tipo': res.get('tipo'),

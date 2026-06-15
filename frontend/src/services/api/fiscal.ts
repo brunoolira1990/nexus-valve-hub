@@ -473,6 +473,25 @@ export type NFeEmissaoHomologacaoResponse = {
     dh_recbto?: string;
   };
   etapa?: string;
+  erros_xsd?: Array<{
+    linha?: number;
+    coluna?: number;
+    elemento?: string;
+    mensagem?: string;
+    contexto?: string;
+  }>;
+  validacao_xsd?: {
+    ok?: boolean;
+    tipo?: string;
+    erros?: Array<{
+      linha?: number;
+      coluna?: number;
+      elemento?: string;
+      mensagem?: string;
+      contexto?: string;
+    }>;
+  };
+  sefaz_transmitida?: boolean;
 };
 
 export type NFeConsultaSituacaoSefazResponse = {

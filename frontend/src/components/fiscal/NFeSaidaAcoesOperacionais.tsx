@@ -4,6 +4,7 @@ import { OperationalMessage } from '@/components/nexus/OperationalMessage';
 import { ACTION_LABELS, TECHNICAL_DOWNLOAD_LABELS, labelNfeStatusConferenciaOperacional } from '@/lib/operationalUi';
 import { AVISO_HOMOLOG_SEM_VALOR_FISCAL } from '@/lib/nfeSaidaAcoesMatriz';
 import { openBlobInNewTab } from '@/lib/downloadBlobFile';
+import { formatNfeXsdErro } from '@/lib/nfeXsdErros';
 import {
   nfeSaidasService,
   type DanfePreviewMeta,
@@ -324,7 +325,7 @@ export function NFeSaidaAcoesOperacionais({
             <ul className="list-disc pl-4 space-y-0.5">
               {validacaoXsdErros.map((e, i) => (
                 <li key={`xsd-adv-${i}`}>
-                  L{String(e.linha ?? '?')}: {String(e.mensagem ?? e.message ?? '—')}
+                  L{String(e.linha ?? '?')}: {formatNfeXsdErro(e)}
                 </li>
               ))}
             </ul>
