@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from apps.fiscal.models import NFeSaida
+from apps.fiscal.nfe_emissao.ambiente_emissao_nfe import MSG_AMBIENTE_NAO_DEFINIDO, ambiente_emissao_nfe_definido
 from apps.fiscal.nfe_emissao.config_producao import MSG_PRODUCAO_NAO_HABILITADA, nfe_producao_habilitada
 from apps.fiscal.nfe_emissao.empresa_emitente import resolver_empresa_emitente_nfe
 from apps.fiscal.nfe_emissao.numeracao import NFeNumeracaoError, obter_config_numeracao
@@ -32,6 +33,16 @@ def montar_validacao_emissao_producao(nfe_saida: NFeSaida) -> dict[str, Any]:
 
     if not nfe_producao_habilitada():
         pendencias.append(_pendencia('producao_desabilitada', MSG_PRODUCAO_NAO_HABILITADA))
+
+    if not ambiente_emissao_nfe_definido(nfe_saida):
+        pendencias.append(_pendencia('ambiente_emissao_indefinido', MSG_AMBIENTE_NAO_DEFINIDO))
+    elif nfe_saida.ambiente_emissao != NFeSaida.AmbienteEmissao.PRODUCAO:
+        pendencias.append(
+            _pendencia(
+                'ambiente_emissao_nao_producao',
+                'NF-e não está marcada para emissão em produção SEFAZ.',
+            ),
+        )
 
     if nfe_saida.status_emissao_sefaz == NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO:
         pendencias.append(_pendencia('ja_autorizada_producao', 'NF-e já autorizada em produção SEFAZ.'))

@@ -11,6 +11,12 @@ from django.conf import settings
 from django.utils import timezone
 
 from apps.fiscal.models import ItemNFeSaida, NFeSaida
+from apps.fiscal.nfe_emissao.ambiente_emissao_nfe import (
+    MSG_AMBIENTE_NAO_DEFINIDO,
+    ambiente_emissao_nfe_definido,
+    resolver_ambiente_emissao_nfe,
+    tp_amb_xml_de_ambiente_emissao,
+)
 from apps.fiscal.nfe_integracao.adapters.exceptions import NFeIntegracaoError
 from apps.fiscal.nfe_integracao.adapters.nfelib_adapter import nfelib_disponivel
 from apps.fiscal.nfe_integracao.nfe_chave_acesso import ChaveAcessoNFe, aamm_da_emissao, montar_chave_acesso_nfe
@@ -143,6 +149,7 @@ def montar_tnfe_preliminar(
     nfe_saida: NFeSaida,
     chave: ChaveAcessoNFe,
     numeracao,
+    tp_amb: str = '2',
 ) -> Any:
     if not nfelib_disponivel():
         raise NFeXmlPreliminarError('nfelib não está instalado no ambiente.')
@@ -171,7 +178,7 @@ def montar_tnfe_preliminar(
         tpImp='1',
         tpEmis='1',
         cDV=chave.digito_verificador,
-        tpAmb='2',
+        tpAmb=tp_amb,
         finNFe='1',
         indFinal=normalizar_ind_final(nfe_saida.ind_final),
         indPres=normalizar_ind_pres(nfe_saida.ind_pres),
@@ -306,9 +313,40 @@ def _xml_tem_tag_valor(xml_cache: str, tag: str, valor: str) -> bool:
     )
 
 
-def _xml_preliminar_cache_valido(nfe_saida: NFeSaida, xml_cache: str) -> bool:
-    """Invalida cache antigo sem tags xPed/nItemPed quando a NF-e já tem pedido do cliente."""
+def _xml_tag_inteiro(xml_cache: str, tag: str) -> int | None:
+    m = re.search(
+        rf'<(?:[\w]{{1,20}}:)?{tag}>([^<]+)</(?:[\w]{{1,20}}:)?{tag}>',
+        xml_cache,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    digits = ''.join(c for c in m.group(1) if c.isdigit())
+    return int(digits) if digits else None
+
+
+def _xml_preliminar_numeracao_bate(nfe_saida: NFeSaida, xml_cache: str) -> bool:
+    try:
+        numeracao = resolver_numero_fiscal_preliminar(nfe_saida)
+    except NumeroFiscalPreliminarError:
+        return False
+    serie_xml = _xml_tag_inteiro(xml_cache, 'serie')
+    nnf_xml = _xml_tag_inteiro(xml_cache, 'nNF')
+    if serie_xml is None or nnf_xml is None:
+        return False
+    serie_esperada = int(''.join(c for c in numeracao.serie if c.isdigit()) or '0')
+    nnf_esperada = int(''.join(c for c in numeracao.nnf if c.isdigit()) or '0')
+    return serie_xml == serie_esperada and nnf_xml == nnf_esperada
+
+
+def _xml_preliminar_cache_valido(nfe_saida: NFeSaida, xml_cache: str, *, tp_amb_esperado: str) -> bool:
+    """Invalida cache antigo sem tags xPed/nItemPed ou ambiente/numeração divergentes."""
     if not xml_cache:
+        return False
+    m_amb = re.search(r'<(?:[\w]{1,20}:)?tpAmb>([12])</(?:[\w]{1,20}:)?tpAmb>', xml_cache, flags=re.IGNORECASE)
+    if not m_amb or m_amb.group(1) != tp_amb_esperado:
+        return False
+    if not _xml_preliminar_numeracao_bate(nfe_saida, xml_cache):
         return False
     ped_cab = _text(nfe_saida.pedido_cliente_numero)
     tags_xped: set[str] = set()
@@ -336,10 +374,23 @@ def _xml_preliminar_cache_valido(nfe_saida: NFeSaida, xml_cache: str) -> bool:
 
 
 def gerar_xml_nfe_preliminar(nfe_saida: NFeSaida, *, persistir: bool | None = None) -> bytes:
-    """Gera XML NF-e 4.00 preliminar com chave de acesso calculada (homologação tpAmb=2)."""
+    """Gera XML NF-e 4.00 preliminar com chave calculada (tpAmb conforme ambiente_emissao)."""
+    if not ambiente_emissao_nfe_definido(nfe_saida):
+        raise NFeXmlPreliminarError(MSG_AMBIENTE_NAO_DEFINIDO)
+
+    try:
+        ambiente = resolver_ambiente_emissao_nfe(nfe_saida)
+    except ValueError as exc:
+        raise NFeXmlPreliminarError(str(exc)) from exc
+    tp_amb = tp_amb_xml_de_ambiente_emissao(ambiente)
+
     xml_cache = _text(getattr(nfe_saida, 'xml_preliminar', ''))
     chave_cache = _text(getattr(nfe_saida, 'chave_acesso_preliminar', ''))
-    if xml_cache and chave_cache and _xml_preliminar_cache_valido(nfe_saida, xml_cache):
+    if xml_cache and chave_cache and _xml_preliminar_cache_valido(
+        nfe_saida,
+        xml_cache,
+        tp_amb_esperado=tp_amb,
+    ):
         return xml_cache.encode('utf-8')
 
     bloqueio = _bloqueio_preview(nfe_saida)
@@ -391,6 +442,7 @@ def gerar_xml_nfe_preliminar(nfe_saida: NFeSaida, *, persistir: bool | None = No
             nfe_saida=nfe_saida,
             chave=chave,
             numeracao=numeracao,
+            tp_amb=tp_amb,
         )
         xml = serializar_tnfe_preliminar(tnfe)
     except NFeXmlNfelibError as exc:
@@ -424,6 +476,10 @@ def gerar_xml_nfe_preliminar(nfe_saida: NFeSaida, *, persistir: bool | None = No
 
 def gerar_resultado_xml_preliminar(nfe_saida: NFeSaida) -> dict[str, Any]:
     """Payload API (xml string + metadados) para prévia/DANFE BFR."""
+    if not ambiente_emissao_nfe_definido(nfe_saida):
+        raise NFeXmlPreliminarError(MSG_AMBIENTE_NAO_DEFINIDO)
+    ambiente = resolver_ambiente_emissao_nfe(nfe_saida)
+    tp_amb = tp_amb_xml_de_ambiente_emissao(ambiente)
     numeracao = resolver_numero_fiscal_preliminar(nfe_saida)
     xml_bytes = gerar_xml_nfe_preliminar(nfe_saida)
     xml = xml_bytes.decode('utf-8')
@@ -449,7 +505,7 @@ def gerar_resultado_xml_preliminar(nfe_saida: NFeSaida) -> dict[str, Any]:
         'preview': True,
         'preliminar': True,
         'sem_autorizacao': True,
-        'ambiente': 'homologacao',
+        'ambiente': ambiente,
         'bloqueado': False,
         'xml': xml,
         'xml_bytes': len(xml_bytes),
@@ -458,7 +514,7 @@ def gerar_resultado_xml_preliminar(nfe_saida: NFeSaida) -> dict[str, Any]:
         'chave_acesso_preliminar': chave_44,
         'chave_acesso_formatada': chave_fmt,
         'inf_nfe_id': f'NFe{chave_44}' if chave_44 else '',
-        'tp_amb': '2',
+        'tp_amb': tp_amb,
         'mensagens': [MSG_XML_PRELIMINAR, AVISO_DANFE_PRELIMINAR],
         'avisos': [AVISO_DANFE_PRELIMINAR],
         'status_prontidao': validacao.get('status_prontidao'),

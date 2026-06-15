@@ -6,6 +6,10 @@ import re
 from dataclasses import dataclass
 
 from apps.fiscal.models import NFeSaida
+from apps.fiscal.nfe_emissao.ambiente_emissao_nfe import (
+    MSG_AMBIENTE_NAO_DEFINIDO,
+    ambiente_emissao_nfe_definido,
+)
 from apps.fiscal.nfe_emissao.empresa_emitente import resolver_empresa_emitente_nfe
 from apps.fiscal.nfe_emissao.numeracao import NFeNumeracaoError, obter_config_numeracao
 
@@ -41,7 +45,7 @@ def numero_interno_e_fiscal_oficial(numero: str | None) -> bool:
 
 def resolver_numero_fiscal_preliminar(nfe_saida: NFeSaida) -> NumeroFiscalPreliminar:
     """
-    Exibe série/nNF da configuração de homologação (próximo número) ou numeração já reservada.
+    Exibe série/nNF da configuração do ambiente da NF-e (próximo número) ou numeração reservada.
     Não incrementa proximo_numero — apenas leitura para XML/DANFE preliminar.
     """
     numero_ref = (nfe_saida.numero or '').strip()
@@ -55,35 +59,21 @@ def resolver_numero_fiscal_preliminar(nfe_saida: NFeSaida) -> NumeroFiscalPrelim
             politica='numeracao_reservada_emissao',
         )
 
+    if not ambiente_emissao_nfe_definido(nfe_saida):
+        raise NumeroFiscalPreliminarError(MSG_AMBIENTE_NAO_DEFINIDO)
+
+    ambiente = (nfe_saida.ambiente_emissao or '').strip()
+
     try:
         empresa = resolver_empresa_emitente_nfe(nfe_saida)
-        cfg = obter_config_numeracao(empresa.pk, ambiente='homologacao')
+        cfg = obter_config_numeracao(empresa.pk, ambiente=ambiente)
         nnf = str(int(cfg.proximo_numero))[:9].zfill(9)
         return NumeroFiscalPreliminar(
             serie=_serie_digits(cfg.serie),
             nnf=nnf,
             codigo_numerico=f'{int(nfe_saida.pk) % 100000000:08d}',
             numero_interno_ref=numero_ref or str(nfe_saida.pk),
-            politica='config_homologacao_proximo_numero',
+            politica=f'config_{ambiente}_proximo_numero',
         )
     except NFeNumeracaoError as exc:
         raise NumeroFiscalPreliminarError(str(exc)) from exc
-
-    # fallback legado (não deve ocorrer com seed de migração)
-    if numero_ref and re.match(r'^[0-9]{1,9}$', numero_ref):
-        return NumeroFiscalPreliminar(
-            serie='900',
-            nnf=numero_ref.zfill(9),
-            codigo_numerico=f'{int(nfe_saida.pk) % 100000000:08d}',
-            numero_interno_ref=numero_ref,
-            politica='numero_interno_numerico',
-        )
-
-    nnf_pk = str(int(nfe_saida.pk))[:9].zfill(9)
-    return NumeroFiscalPreliminar(
-        serie='900',
-        nnf=nnf_pk,
-        codigo_numerico=f'{int(nfe_saida.pk) % 100000000:08d}',
-        numero_interno_ref=numero_ref or str(nfe_saida.pk),
-        politica='homologacao_pk_numerico',
-    )

@@ -373,10 +373,11 @@ def gerar_danfe_bfr_nfe_preliminar(nfe_saida) -> tuple[bytes, dict[str, Any]]:
     if _xml_tem_protocolo(xml):
         raise DanfeBfrError('XML preliminar não deve conter protocolo SEFAZ.')
 
+    tp_amb = _tp_amb_do_xml(xml)
     pdf = gerar_danfe_bfr_de_xml_string(
         xml,
         nfe_saida=nfe_saida,
-        ambiente='2',
+        ambiente=tp_amb,
         tem_protocolo=False,
     )
 
@@ -384,7 +385,8 @@ def gerar_danfe_bfr_nfe_preliminar(nfe_saida) -> tuple[bytes, dict[str, Any]]:
     m_nnf = re.search(r'<[\w:]*nNF>([0-9]+)</[\w:]*nNF>', xml)
     chave = m_chave.group(1) if m_chave else ''
     nnf = m_nnf.group(1) if m_nnf else ''
-    marca = resolver_marca_dagua_danfe(nfe_saida, '2', tem_protocolo=False)
+    marca = resolver_marca_dagua_danfe(nfe_saida, tp_amb, tem_protocolo=False)
+    ambiente_label = 'producao' if tp_amb == '1' else 'homologacao'
 
     meta = {
         'preview': True,
@@ -401,6 +403,8 @@ def gerar_danfe_bfr_nfe_preliminar(nfe_saida) -> tuple[bytes, dict[str, Any]]:
         'nfe_saida_id': nfe_saida.pk,
         'numero': nfe_saida.numero,
         'status': nfe_saida.status,
+        'ambiente_emissao': ambiente_label,
+        'tp_amb': tp_amb,
         'content_type': 'application/pdf',
         'filename': f'danfe-conferencia-bfr-nfe-{nfe_saida.pk}.pdf',
         'marca_dagua': marca,

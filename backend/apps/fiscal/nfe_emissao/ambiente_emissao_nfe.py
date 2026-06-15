@@ -36,6 +36,19 @@ def _empresa_emitente_para_ambiente(nf: NFeSaida) -> Empresa | None:
     return None
 
 
+def tp_amb_xml_de_ambiente_emissao(ambiente: str) -> str:
+    """1 = produção SEFAZ, 2 = homologação."""
+    return '1' if ambiente == NFeSaida.AmbienteEmissao.PRODUCAO else '2'
+
+
+def resolver_ambiente_emissao_nfe(nf: NFeSaida) -> str:
+    """Retorna homologacao|producao ou levanta ValueError se indefinido."""
+    amb = (nf.ambiente_emissao or '').strip()
+    if amb not in _AMBIENTES_VALIDOS:
+        raise ValueError(MSG_AMBIENTE_NAO_DEFINIDO)
+    return amb
+
+
 def garantir_ambiente_emissao_nfe_saida(nf: NFeSaida) -> NFeSaida:
     """Preenche ambiente_emissao a partir da empresa emitente quando vazio (rascunho)."""
     if ambiente_emissao_nfe_definido(nf):

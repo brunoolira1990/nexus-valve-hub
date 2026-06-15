@@ -26,9 +26,11 @@ def _tp_amb_str(ambiente: str | int | None, *, nfe_saida: NFeSaida | None = None
         if raw in ('1', '2'):
             return raw
     if nfe_saida is not None:
-        pre = (nfe_saida.chave_acesso_preliminar or '').strip()
-        if len(pre) >= 44:
-            return '2'  # preliminar sempre homologação
+        amb = (nfe_saida.ambiente_emissao or '').strip()
+        if amb == NFeSaida.AmbienteEmissao.PRODUCAO:
+            return '1'
+        if amb == NFeSaida.AmbienteEmissao.HOMOLOGACAO:
+            return '2'
     return '2'
 
 
