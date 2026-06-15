@@ -76,7 +76,7 @@ import { GerarContasReceberNfeModal } from '@/components/fiscal/GerarContasReceb
 import { NFeConsultaSefazModal } from '@/components/fiscal/NFeConsultaSefazModal';
 import { NFeCartaCorrecaoModal } from '@/components/fiscal/NFeCartaCorrecaoModal';
 import { buildCartaCorrecaoContextoFromConferencia } from '@/lib/nfeCartaCorrecaoPreview';
-import { NFeFinanceiroAcoes } from '@/components/fiscal/NFeFinanceiroAcoes';
+import { NFeFinanceiroPanel } from '@/components/fiscal/NFeFinanceiroPanel';
 import { NFeSaidaAcoesOperacionais } from '@/components/fiscal/NFeSaidaAcoesOperacionais';
 import { NFeSaidaAcoesContextoBanner } from '@/components/fiscal/NFeSaidaAcoesGruposPanel';
 import {
@@ -877,6 +877,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
           <TabsTrigger value="reforma">Reforma</TabsTrigger>
           <TabsTrigger value="transporte">Transporte</TabsTrigger>
           <TabsTrigger value="obs">Observações</TabsTrigger>
+          <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
           <TabsTrigger value="validacao">Validação</TabsTrigger>
           <TabsTrigger value="historico">Histórico</TabsTrigger>
         </TabsList>
@@ -1382,6 +1383,34 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
             </div>
           </TabsContent>
 
+          <TabsContent value="financeiro" className="space-y-3 mt-0">
+            <NFeFinanceiroPanel
+              nfeId={nfeId}
+              status={String(nfe.status)}
+              statusEmissaoSefaz={conf.emissao_sefaz?.status_emissao_sefaz}
+              resumoEmissaoSefaz={conf.emissao_sefaz ?? null}
+              financeiro={conf.financeiro ?? null}
+              numeroNfe={
+                apresentacao?.numero_fiscal ||
+                conf.emissao_sefaz?.numero_nfe ||
+                conf.emissao_producao?.numero_nfe ||
+                String(nfe.numero ?? '')
+              }
+              serieNfe={
+                apresentacao?.serie_fiscal ||
+                conf.emissao_sefaz?.serie_nfe ||
+                conf.emissao_producao?.serie_nfe ||
+                ''
+              }
+              clienteNome={String(nfe.cliente_nome ?? '')}
+              valorTotal={nfe.valor_total as number | string | undefined}
+              quantidadeParcelas={
+                typeof nfe.quantidade_parcelas === 'number' ? nfe.quantidade_parcelas : null
+              }
+              onGerar={() => setGerarCrOpen(true)}
+            />
+          </TabsContent>
+
           <TabsContent value="validacao" className="space-y-3 mt-0">
             <div className="rounded-md border border-border p-3 space-y-2 bg-muted/20">
               <div className="flex flex-wrap items-center gap-2">
@@ -1525,19 +1554,6 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
               />
             </div>
             ) : null}
-            <div className="rounded-md border border-border p-3 space-y-2">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {GRUPO_ACAO_LABELS.financeiras}
-              </p>
-              <NFeFinanceiroAcoes
-                nfeId={nfeId}
-                status={String(nfe.status)}
-                statusEmissaoSefaz={conf.emissao_sefaz?.status_emissao_sefaz}
-                resumoEmissaoSefaz={conf.emissao_sefaz ?? null}
-                financeiro={conf.financeiro ?? null}
-                onGerar={() => setGerarCrOpen(true)}
-              />
-            </div>
             {acoesFiscaisPosAutorizacao.length ? (
               <div className="rounded-md border border-border p-3 space-y-2">
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
