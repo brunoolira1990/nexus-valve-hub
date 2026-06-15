@@ -671,7 +671,11 @@ def _xml_preview_string(dados: dict[str, Any]) -> str:
         if _text(tr.get('transportadora_ie')):
             _sub(transporta, 'IE', tr['transportadora_ie'][:14])
         if _text(tr.get('transportadora_ender')):
-            _sub(transporta, 'xEnder', tr['transportadora_ender'][:60])
+            from apps.fiscal.nfe_transp_bindings import normalizar_xender_transportadora_xml
+
+            x_ender = normalizar_xender_transportadora_xml(tr['transportadora_ender'])[:60]
+            if x_ender:
+                _sub(transporta, 'xEnder', x_ender)
         if _text(tr.get('transportadora_mun')):
             _sub(transporta, 'xMun', tr['transportadora_mun'][:60])
         if _text(tr.get('transportadora_uf')):

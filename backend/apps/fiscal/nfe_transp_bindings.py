@@ -2,17 +2,55 @@
 
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 from typing import Any
 
-from apps.core.pdf.formatters import dec, endereco_cadastro
 from apps.fiscal.models import NFeSaida
 from apps.fiscal.nfe_saida_xml_nfelib import _dec_field, _digits, _text
 from apps.fiscal.nfe_xml_higienizacao import normalizar_ie_xml
 
+XENDER_TRANSPORTADORA_MAX = 60
+
 
 def _dec_str(v: Any, places: int = 2) -> str:
+    from apps.core.pdf.formatters import dec
+
     return f'{dec(v):.{places}f}'
+
+
+def normalizar_xender_transportadora_xml(texto: str | None) -> str:
+    """Remove espaços/vírgulas finais e colapsa whitespace — compatível com TString do XSD."""
+    s = _text(texto)
+    if not s:
+        return ''
+    s = re.sub(r'\s+', ' ', s)
+    s = re.sub(r'[,;\s]+$', '', s)
+    return s.strip()
+
+
+def montar_xender_transportadora(
+    logradouro: str | None,
+    numero: str | None,
+    complemento: str | None = None,
+) -> str:
+    """
+    Monta transporta/xEnder: logradouro + número (+ complemento se couber).
+    Não inclui bairro, cidade, UF ou CEP (vão em xMun/UF).
+    """
+    logr = _text(logradouro)
+    nro = _text(numero)
+    comp = _text(complemento)
+
+    linha = ' '.join(p for p in (logr, nro) if p).strip()
+    if comp and linha:
+        candidato = f'{linha} {comp}'.strip()
+        if len(candidato) <= XENDER_TRANSPORTADORA_MAX:
+            linha = candidato
+    elif comp and not linha:
+        linha = comp
+
+    return normalizar_xender_transportadora_xml(linha)[:XENDER_TRANSPORTADORA_MAX]
 
 
 def montar_transporte_dados_nfe(nf: NFeSaida) -> dict[str, Any]:
@@ -20,15 +58,7 @@ def montar_transporte_dados_nfe(nf: NFeSaida) -> dict[str, Any]:
     tr = nf.transportadora if nf.transportadora_id else None
     ender = ''
     if tr:
-        ender = endereco_cadastro(
-            tr.logradouro,
-            tr.numero,
-            tr.complemento,
-            tr.bairro,
-            tr.cidade,
-            tr.uf,
-            tr.cep,
-        )
+        ender = montar_xender_transportadora(tr.logradouro, tr.numero, tr.complemento)
     placa = _text(nf.placa_veiculo) or (_text(tr.placa_padrao) if tr else '')
     uf_veic = _text(nf.uf_veiculo) or (_text(tr.uf_placa) if tr else '')
 
@@ -73,9 +103,9 @@ def aplicar_transp_nfelib(inf: Any, nfe_module: Any, transporte: dict[str, Any] 
     ie = normalizar_ie_xml(tr.get('transportadora_ie'))
     if ie and ie != 'ISENTO':
         transp_kw['IE'] = ie
-    ender = _text(tr.get('transportadora_ender'))
+    ender = normalizar_xender_transportadora_xml(_text(tr.get('transportadora_ender')))
     if ender:
-        transp_kw['xEnder'] = ender[:60]
+        transp_kw['xEnder'] = ender[:XENDER_TRANSPORTADORA_MAX]
     mun = _text(tr.get('transportadora_mun'))
     if mun:
         transp_kw['xMun'] = mun[:60]

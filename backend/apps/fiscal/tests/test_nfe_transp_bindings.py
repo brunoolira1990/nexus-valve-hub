@@ -51,6 +51,8 @@ class NfeTranspBindingsTests(TestCase):
         self.assertEqual(dados['especie_volumes'], 'VOLUME')
         self.assertEqual(dados['numeracao_volumes'], '4040')
         self.assertEqual(dados['peso_bruto'], '500.00')
+        self.assertEqual(dados['transportadora_ender'], 'Rua Teste 100')
+        self.assertNotIn('Centro', dados['transportadora_ender'])
         self.assertIn('32241095000121', dados['transportadora_cnpj'])
 
     def test_aplicar_transp_nfelib_mod9_omite_transporta_e_vol(self):
@@ -65,7 +67,7 @@ class NfeTranspBindingsTests(TestCase):
                 'transportadora_nome': 'WINNER EXPRESS TRANSPORTES LTDA',
                 'transportadora_cnpj': '32241095000121',
                 'transportadora_ie': '1234567890',
-                'transportadora_ender': 'Rua Teste, 100',
+                'transportadora_ender': 'Rua Teste 100',
                 'transportadora_mun': 'São Paulo',
                 'transportadora_uf': 'SP',
                 'quantidade_volumes': 1,
@@ -91,7 +93,7 @@ class NfeTranspBindingsTests(TestCase):
                 'transportadora_nome': 'WINNER EXPRESS TRANSPORTES LTDA',
                 'transportadora_cnpj': '32241095000121',
                 'transportadora_ie': '1234567890',
-                'transportadora_ender': 'Rua Teste, 100',
+                'transportadora_ender': 'Rua Teste 100',
                 'transportadora_mun': 'São Paulo',
                 'transportadora_uf': 'SP',
                 'quantidade_volumes': 1,
