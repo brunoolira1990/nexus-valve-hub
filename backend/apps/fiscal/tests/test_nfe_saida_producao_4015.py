@@ -377,6 +377,8 @@ class NFe4015ProducaoSefazTests(NFe4015GruposMixin, TestCase):
     @override_settings(NFE_PRODUCAO_HABILITADA=True)
     def test_danfe_producao_autorizada_usa_xml_protocolado(self):
         from apps.fiscal.nfe_integracao.danfe_brazil_fiscal_report import brazil_fiscal_report_disponivel
+        from apps.fiscal.nfe_saida_danfe_autorizado import gerar_danfe_autorizado_nfe_saida
+        from apps.fiscal.danfe_render import DanfeBfrRenderError
         from apps.fiscal.nfe_saida_preview import gerar_preview_danfe_nfe_saida
 
         self.nf.status_emissao_sefaz = NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO
@@ -388,11 +390,15 @@ class NFe4015ProducaoSefazTests(NFe4015GruposMixin, TestCase):
         self.nf.chave_acesso = '352605123456780001995500100000000361000000361'
         self.nf.xml_autorizado = XML_AUTORIZADO_MOCK_PROD
         self.nf.save()
-        pdf, meta = gerar_preview_danfe_nfe_saida(self.nf)
+        with self.assertRaises(DanfeBfrRenderError) as ctx_preview:
+            gerar_preview_danfe_nfe_saida(self.nf)
+        self.assertIn('danfe-autorizado', str(ctx_preview.exception).lower())
+        pdf, meta = gerar_danfe_autorizado_nfe_saida(self.nf)
         if brazil_fiscal_report_disponivel():
             self.assertFalse(meta.get('conferencia'))
             self.assertFalse(meta.get('bloqueado'), meta.get('mensagens'))
             self.assertEqual(meta.get('danfe_origem'), 'xml_autorizado_procNFe')
+            self.assertEqual(meta.get('tp_amb'), '1')
             self.assertIsNone(meta.get('marca_dagua'))
             self.assertGreater(len(pdf), 100)
 

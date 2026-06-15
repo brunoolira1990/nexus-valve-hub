@@ -278,9 +278,17 @@ const NFeSaida = () => {
     setChecklistOpen(true);
   };
 
-  const previewDanfeLinha = async (id: number) => {
+  const previewDanfeLinha = async (row: NFeSaida) => {
     try {
-      const { blob } = await nfeSaidasService.previewDanfeBlob(id);
+      const sefaz = row.status_emissao_sefaz || row.resumo_emissao_sefaz?.status_emissao_sefaz;
+      const autorizada =
+        sefaz === 'AUTORIZADA_PRODUCAO' ||
+        sefaz === 'AUTORIZADA_HOMOLOGACAO' ||
+        row.status === 'AUTORIZADA_PRODUCAO' ||
+        row.status === 'AUTORIZADA_HOMOLOGACAO';
+      const blob = autorizada
+        ? await nfeSaidasService.danfeAutorizadoBlob(row.id)
+        : (await nfeSaidasService.previewDanfeBlob(row.id)).blob;
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank', 'noopener,noreferrer');
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
@@ -598,7 +606,7 @@ const NFeSaida = () => {
                           className="erp-btn-ghost erp-btn-sm p-1"
                           title="Visualizar DANFE"
                           aria-label="Visualizar DANFE"
-                          onClick={() => void previewDanfeLinha(e.id)}
+                          onClick={() => void previewDanfeLinha(e)}
                         >
                           <FileText className="h-4 w-4" />
                         </button>

@@ -23,6 +23,12 @@ export function PedidoVendaFiscalNfeAcoes({
     nfe_status_emissao_sefaz: nfeStatusEmissaoSefaz,
     nfe_saida_status: nfeSaidaStatus,
   });
+  const autorizada =
+    nfeStatusEmissaoSefaz === 'AUTORIZADA_PRODUCAO' ||
+    nfeStatusEmissaoSefaz === 'AUTORIZADA_HOMOLOGACAO' ||
+    nfeSaidaStatus === 'AUTORIZADA_PRODUCAO' ||
+    nfeSaidaStatus === 'AUTORIZADA_HOMOLOGACAO' ||
+    homolog;
 
   const runBlob = async (key: string, fn: () => Promise<Blob>, filename: string) => {
     setLoading(key);
@@ -44,8 +50,8 @@ export function PedidoVendaFiscalNfeAcoes({
   const visualizarDanfe = async () => {
     setLoading('view');
     try {
-      const blob = homolog
-        ? await nfeSaidasService.danfeHomologacaoBlob(nfeSaidaId)
+      const blob = autorizada
+        ? await nfeSaidasService.danfeAutorizadoBlob(nfeSaidaId)
         : (await nfeSaidasService.previewDanfeBlob(nfeSaidaId)).blob;
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank', 'noopener,noreferrer');
@@ -89,8 +95,8 @@ export function PedidoVendaFiscalNfeAcoes({
           void runBlob(
             'danfe',
             () =>
-              homolog
-                ? nfeSaidasService.danfeHomologacaoBlob(nfeSaidaId)
+              autorizada
+                ? nfeSaidasService.danfeAutorizadoBlob(nfeSaidaId)
                 : nfeSaidasService.previewDanfeBlob(nfeSaidaId).then((r) => r.blob),
             `danfe-nfe-${nfeSaidaId}.pdf`,
           )

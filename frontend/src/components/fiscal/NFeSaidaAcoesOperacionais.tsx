@@ -75,18 +75,11 @@ export function NFeSaidaAcoesOperacionais({
     onPreviewError(null);
     onDanfeLoading(true);
     try {
-      if (autorizadaHomolog) {
-        const blob = await nfeSaidasService.danfeHomologacaoBlob(nfeId);
+      if (autorizadaHomolog || autorizadaProducao) {
+        const blob = await nfeSaidasService.danfeAutorizadoBlob(nfeId);
         const url = URL.createObjectURL(blob);
         window.open(url, '_blank', 'noopener,noreferrer');
         setTimeout(() => URL.revokeObjectURL(url), 60_000);
-        return;
-      }
-      if (autorizadaProducao) {
-        const { blob } = await nfeSaidasService.previewDanfeBlob(nfeId);
-        const u = URL.createObjectURL(blob);
-        window.open(u, '_blank', 'noopener,noreferrer');
-        setTimeout(() => URL.revokeObjectURL(u), 60_000);
         return;
       }
       const { blob, meta } = await nfeSaidasService.previewDanfeBlob(nfeId);

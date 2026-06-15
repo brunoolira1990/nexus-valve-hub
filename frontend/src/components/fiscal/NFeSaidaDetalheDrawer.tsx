@@ -88,8 +88,8 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
     if (!nfe?.id) return;
     setDanfeLoading(true);
     try {
-      if (contextoAcao.autorizadaHomolog) {
-        const blob = await nfeSaidasService.danfeHomologacaoBlob(nfe.id);
+      if (contextoAcao.autorizadaHomolog || contextoAcao.autorizadaProducao) {
+        const blob = await nfeSaidasService.danfeAutorizadoBlob(nfe.id);
         const url = URL.createObjectURL(blob);
         window.open(url, '_blank', 'noopener,noreferrer');
         window.setTimeout(() => URL.revokeObjectURL(url), 60_000);

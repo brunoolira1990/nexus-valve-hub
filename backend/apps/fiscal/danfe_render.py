@@ -74,6 +74,17 @@ def render_engine_oficial(meta: dict[str, Any] | None) -> bool:
     return engine in RENDER_ENGINES_OFICIAIS
 
 
+def _ambiente_log_para_nfe(nf: NFeSaida) -> str:
+    """tpAmb para logs BFR — produção=1, homologação=2."""
+    from apps.fiscal.nfe_saida_bloqueio import nf_autorizada_producao
+
+    if nf_autorizada_producao(nf):
+        return '1'
+    if (nf.ambiente_emissao or '').strip() == NFeSaida.AmbienteEmissao.PRODUCAO:
+        return '1'
+    return '2'
+
+
 def _meta_erro_bfr(
     nf: NFeSaida,
     *,
@@ -104,13 +115,14 @@ def _levantar_erro_bfr(
     nf: NFeSaida,
     exc: BaseException,
     *,
-    ambiente: str | None = '2',
+    ambiente: str | None = None,
 ) -> None:
+    amb_log = ambiente if ambiente in ('1', '2') else _ambiente_log_para_nfe(nf)
     trace_id = log_danfe_bfr_erro(
         nfe_id=nf.pk,
         numero=nf.numero,
         status=nf.status,
-        ambiente=ambiente,
+        ambiente=amb_log,
         erro_tipo=type(exc).__name__,
         erro_mensagem=str(exc).strip() or type(exc).__name__,
     )
@@ -121,7 +133,7 @@ def _levantar_erro_bfr(
         nfe_saida_id=nf.pk,
         numero=nf.numero,
         status=nf.status,
-        ambiente=ambiente,
+        ambiente=amb_log,
         erro_tipo=type(exc).__name__,
         trace_id=trace_id,
     ) from exc
@@ -137,13 +149,14 @@ def gerar_danfe_bfr_oficial(nfe_saida: NFeSaida) -> tuple[bytes, dict[str, Any]]
     )
 
     nf = nfe_saida
+    amb_log = _ambiente_log_para_nfe(nf)
     if not brazil_fiscal_report_disponivel():
         exc = DanfeBfrIndisponivelError(MSG_BFR_INDISPONIVEL)
         trace_id = log_danfe_bfr_erro(
             nfe_id=nf.pk,
             numero=nf.numero,
             status=nf.status,
-            ambiente='2',
+            ambiente=amb_log,
             erro_tipo=type(exc).__name__,
             erro_mensagem=str(exc),
         )
@@ -157,7 +170,7 @@ def gerar_danfe_bfr_oficial(nfe_saida: NFeSaida) -> tuple[bytes, dict[str, Any]]
             nfe_saida_id=nf.pk,
             numero=nf.numero,
             status=nf.status,
-            ambiente='2',
+            ambiente=amb_log,
             erro_tipo=type(exc).__name__,
             trace_id=trace_id,
         ) from exc
@@ -180,7 +193,7 @@ def gerar_danfe_bfr_oficial(nfe_saida: NFeSaida) -> tuple[bytes, dict[str, Any]]
             nfe_id=nf.pk,
             numero=nf.numero,
             status=nf.status,
-            ambiente='2',
+            ambiente=amb_log,
             erro_tipo='DanfeBfrBloqueado',
             erro_mensagem=msg,
         )
@@ -190,7 +203,7 @@ def gerar_danfe_bfr_oficial(nfe_saida: NFeSaida) -> tuple[bytes, dict[str, Any]]
             nfe_saida_id=nf.pk,
             numero=nf.numero,
             status=nf.status,
-            ambiente='2',
+            ambiente=amb_log,
             erro_tipo='DanfeBfrBloqueado',
             trace_id=trace_id,
         )

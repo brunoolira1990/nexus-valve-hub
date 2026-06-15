@@ -1383,31 +1383,49 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'], url_path='danfe-homologacao')
     def danfe_homologacao(self, request, pk=None):
+        """Alias legado — delega para danfe-autorizado."""
+        return self.danfe_autorizado(request, pk=pk)
+
+    @action(detail=True, methods=['get'], url_path='danfe-autorizado')
+    def danfe_autorizado(self, request, pk=None):
         from django.http import HttpResponse
 
-        from apps.fiscal.nfe_integracao.danfe_brazil_fiscal_report import (
-            DanfeBfrError,
-            gerar_danfe_bfr_homologacao_autorizada,
-        )
+        from apps.fiscal.danfe_render import DanfeBfrRenderError
+        from apps.fiscal.nfe_integracao.danfe_brazil_fiscal_report import DanfeBfrError
+        from apps.fiscal.nfe_saida_bloqueio import nf_autorizada_homologacao, nf_autorizada_producao
+        from apps.fiscal.nfe_saida_danfe_autorizado import gerar_danfe_autorizado_nfe_saida
 
         nf = self.get_object()
-        if nf.status_emissao_sefaz != nf.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO:
+        if not (nf_autorizada_producao(nf) or nf_autorizada_homologacao(nf)):
             return response.Response(
-                {'mensagem': 'DANFE homologação disponível apenas após autorização SEFAZ.'},
+                {'mensagem': 'DANFE autorizado disponível apenas após autorização SEFAZ.'},
                 status=status.HTTP_409_CONFLICT,
             )
         try:
-            pdf, meta = gerar_danfe_bfr_homologacao_autorizada(nf)
-        except DanfeBfrError as exc:
-            return response.Response({'mensagem': str(exc)}, status=400)
-        return HttpResponse(
-            pdf,
-            content_type='application/pdf',
-            headers={
-                'Content-Disposition': f'inline; filename="{meta["filename"]}"',
-                'X-Danfe-Origem': meta.get('danfe_origem', ''),
-            },
-        )
+            pdf, meta = gerar_danfe_autorizado_nfe_saida(nf)
+        except (DanfeBfrRenderError, DanfeBfrError) as exc:
+            payload = {
+                'detail': str(exc),
+                'mensagens': [str(exc)],
+                'bloqueado': True,
+                'render_engine': 'brazil_fiscal_report_erro',
+                'renderer_oficial': 'BFR',
+                'trace_id': getattr(exc, 'trace_id', None),
+                'nfe_saida_id': nf.pk,
+                'numero': nf.numero,
+            }
+            return response.Response(payload, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        headers = {
+            'Content-Disposition': f'inline; filename="{meta["filename"]}"',
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
+            'Pragma': 'no-cache',
+            'X-Danfe-Renderer-Oficial': 'BFR',
+            'X-Danfe-Origem': str(meta.get('danfe_origem', '')),
+            'X-Danfe-Renderer-Label': str(meta.get('danfe_renderer_label', '')),
+        }
+        if meta.get('render_engine'):
+            headers['X-Danfe-Renderer'] = str(meta.get('render_engine'))
+        return HttpResponse(pdf, content_type='application/pdf', headers=headers)
 
     @action(detail=True, methods=['get'], url_path='financeiro/preview-contas-receber')
     def preview_contas_receber(self, request, pk=None):

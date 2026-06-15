@@ -422,9 +422,9 @@ def gerar_danfe_bfr_producao_autorizada(nfe_saida) -> tuple[bytes, dict[str, Any
     if not brazil_fiscal_report_disponivel():
         raise DanfeBfrIndisponivelError('BrazilFiscalReport indisponível neste ambiente.')
 
-    xml = (nfe_saida.xml_autorizado or '').strip()
-    if not xml:
-        raise DanfeBfrError('XML autorizado não disponível. Emita em produção antes.')
+    from apps.fiscal.nfe_integracao.danfe_xml_autorizado import resolver_xml_autorizado_danfe
+
+    xml = resolver_xml_autorizado_danfe(nfe_saida)
 
     if not _xml_tem_protocolo(xml):
         raise DanfeBfrError('XML autorizado sem protocolo SEFAZ — DANFE indisponível.')
@@ -468,9 +468,9 @@ def gerar_danfe_bfr_homologacao_autorizada(nfe_saida) -> tuple[bytes, dict[str, 
     if not brazil_fiscal_report_disponivel():
         raise DanfeBfrIndisponivelError('BrazilFiscalReport indisponível neste ambiente.')
 
-    xml = (nfe_saida.xml_autorizado or '').strip()
-    if not xml:
-        raise DanfeBfrError('XML autorizado não disponível. Emita em homologação antes.')
+    from apps.fiscal.nfe_integracao.danfe_xml_autorizado import resolver_xml_autorizado_danfe
+
+    xml = resolver_xml_autorizado_danfe(nfe_saida)
 
     if not _xml_tem_protocolo(xml):
         raise DanfeBfrError('XML autorizado sem protocolo SEFAZ — DANFE indisponível.')
@@ -499,6 +499,17 @@ def gerar_danfe_bfr_homologacao_autorizada(nfe_saida) -> tuple[bytes, dict[str, 
         'mensagens': ['DANFE homologação — SEM VALOR FISCAL.', 'Protocolo SEFAZ real.'],
     }
     return pdf, meta
+
+
+def gerar_danfe_bfr_autorizada(nfe_saida) -> tuple[bytes, dict[str, Any]]:
+    """DANFE final via XML autorizado — produção ou homologação conforme status da NF-e."""
+    from apps.fiscal.nfe_saida_bloqueio import nf_autorizada_homologacao, nf_autorizada_producao
+
+    if nf_autorizada_producao(nfe_saida):
+        return gerar_danfe_bfr_producao_autorizada(nfe_saida)
+    if nf_autorizada_homologacao(nfe_saida):
+        return gerar_danfe_bfr_homologacao_autorizada(nfe_saida)
+    raise DanfeBfrError('DANFE autorizado disponível apenas após autorização SEFAZ.')
 
 
 def gerar_danfe_bfr_de_nfe_saida_preview(nfe_saida) -> tuple[bytes, dict[str, Any]]:

@@ -766,41 +766,27 @@ def gerar_preview_xml_nfe_saida(nfe_saida: NFeSaida) -> dict[str, Any]:
 
 
 def gerar_preview_danfe_nfe_saida(nfe_saida: NFeSaida) -> tuple[bytes, dict[str, Any]]:
-    """NF-e Saída 3.5.4 — DANFE de conferência ou autorizado (homolog/produção)."""
+    """NF-e Saída 3.5.4 — DANFE de conferência (rascunho/pré-emissão apenas)."""
     from apps.fiscal.danfe_render import DanfeBfrRenderError
     from apps.fiscal.nfe_saida_bloqueio import nf_autorizada_homologacao, nf_autorizada_producao
 
-    xml_autorizado = (nfe_saida.xml_autorizado or '').strip()
-    if (nf_autorizada_homologacao(nfe_saida) or nf_autorizada_producao(nfe_saida)) and xml_autorizado:
-        from apps.fiscal.nfe_integracao.danfe_brazil_fiscal_report import (
-            DanfeBfrError,
-            DanfeBfrIndisponivelError,
-            brazil_fiscal_report_disponivel,
-            gerar_danfe_bfr_homologacao_autorizada,
-            gerar_danfe_bfr_producao_autorizada,
-        )
-
-        if not brazil_fiscal_report_disponivel():
-            raise DanfeBfrRenderError(
-                'Renderizador oficial BFR (BrazilFiscalReport) indisponível neste ambiente.',
-                nfe_saida_id=nfe_saida.pk,
-            )
-        try:
-            if nf_autorizada_producao(nfe_saida):
-                pdf, meta = gerar_danfe_bfr_producao_autorizada(nfe_saida)
-            else:
-                pdf, meta = gerar_danfe_bfr_homologacao_autorizada(nfe_saida)
-        except (DanfeBfrError, DanfeBfrIndisponivelError) as exc:
-            raise DanfeBfrRenderError(
-                str(exc),
-                nfe_saida_id=nfe_saida.pk,
-                erro_tipo=type(exc).__name__,
-            ) from exc
-        if pdf and not meta.get('bloqueado'):
-            return pdf, meta
+    if nf_autorizada_producao(nfe_saida):
         raise DanfeBfrRenderError(
-            'Não foi possível gerar o DANFE a partir do XML autorizado.',
+            'NF-e autorizada em produção: use GET /api/nf-saidas/{id}/danfe-autorizado/ para o DANFE final.',
             nfe_saida_id=nfe_saida.pk,
+            numero=nfe_saida.numero,
+            status=nfe_saida.status,
+            ambiente='1',
+            erro_tipo='DanfePreviewNaoPermitido',
+        )
+    if nf_autorizada_homologacao(nfe_saida):
+        raise DanfeBfrRenderError(
+            'NF-e autorizada em homologação: use GET /api/nf-saidas/{id}/danfe-autorizado/ para o DANFE final.',
+            nfe_saida_id=nfe_saida.pk,
+            numero=nfe_saida.numero,
+            status=nfe_saida.status,
+            ambiente='2',
+            erro_tipo='DanfePreviewNaoPermitido',
         )
 
     from apps.fiscal.danfe_conferencia import gerar_danfe_conferencia_pdf

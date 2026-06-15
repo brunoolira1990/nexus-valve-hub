@@ -839,6 +839,32 @@ export const nfeSaidasService = {
     const res = await api.get<Blob>(`${nfSai}${id}/danfe-homologacao/`, { responseType: 'blob' });
     return res.data;
   },
+  danfeAutorizadoBlob: async (id: number) => {
+    try {
+      const res = await api.get<Blob>(`${nfSai}${id}/danfe-autorizado/`, {
+        responseType: 'blob',
+        params: { t: Date.now() },
+        headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+      });
+      return res.data;
+    } catch (err) {
+      const ax = err as import('axios').AxiosError<Blob>;
+      const data = ax.response?.data;
+      if (data instanceof Blob && ax.response?.status === 503) {
+        try {
+          const json = JSON.parse(await data.text()) as { detail?: string; mensagens?: string[] };
+          const msg =
+            json.detail ||
+            (Array.isArray(json.mensagens) ? json.mensagens[0] : undefined) ||
+            'Não foi possível gerar o DANFE autorizado.';
+          throw Object.assign(new Error(msg), { response: ax.response, isAxiosError: true });
+        } catch (parseErr) {
+          if (parseErr instanceof Error && !(parseErr instanceof SyntaxError)) throw parseErr;
+        }
+      }
+      throw err;
+    }
+  },
   previewContasReceber: async (id: number) =>
     (await api.get<NFeGerarContasReceberPreview>(`${nfSai}${id}/financeiro/preview-contas-receber/`)).data,
   gerarContasReceber: async (

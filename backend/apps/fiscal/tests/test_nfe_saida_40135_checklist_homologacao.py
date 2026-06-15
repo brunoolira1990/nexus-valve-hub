@@ -252,8 +252,10 @@ class NFe40135ChecklistHomologacaoTests(TestCase):
             '<protNFe><infProt><nProt>13526005517408</nProt></infProt></protNFe>'
             '</nfeProc>'
         )
+        from apps.fiscal.nfe_saida_danfe_autorizado import gerar_danfe_autorizado_nfe_saida
+
         nf.save()
-        pdf, meta = gerar_preview_danfe_nfe_saida(nf)
+        pdf, meta = gerar_danfe_autorizado_nfe_saida(nf)
         if brazil_fiscal_report_disponivel():
             self.assertFalse(meta.get('bloqueado'), meta.get('mensagens'))
             self.assertGreater(len(pdf), 100)
