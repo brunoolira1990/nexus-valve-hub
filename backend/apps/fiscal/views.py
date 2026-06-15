@@ -1086,6 +1086,68 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         code = status.HTTP_200_OK if payload.get('ok') else status.HTTP_422_UNPROCESSABLE_ENTITY
         return response.Response(payload, status=code)
 
+    @action(detail=True, methods=['post'], url_path='emitir-carta-correcao')
+    def emitir_carta_correcao(self, request, pk=None):
+        """Emite Carta de Correção Eletrônica (CC-e) — evento SEFAZ, sem alterar XML autorizado."""
+        import logging
+
+        from apps.fiscal.nfe_emissao.carta_correcao import (
+            NFeCartaCorrecaoError,
+            emitir_carta_correcao_nfe_saida,
+        )
+        from apps.fiscal.nfe_emissao.resposta_carta_correcao import montar_resposta_carta_correcao
+        from apps.fiscal.nfe_integracao.adapters.carta_correcao_parser import ResultadoCartaCorrecaoSefaz
+        from apps.fiscal.nfe_integracao.adapters.exceptions import CertificadoA1Error
+
+        log = logging.getLogger(__name__)
+        nf = self.get_object()
+        texto = request.data.get('texto_correcao', request.data.get('correcao', ''))
+
+        def _payload_erro(msg: str, *, ok: bool = False) -> dict:
+            nf.refresh_from_db()
+            return montar_resposta_carta_correcao(
+                nf,
+                ResultadoCartaCorrecaoSefaz(
+                    ok=ok,
+                    c_stat_lote='',
+                    x_motivo_lote=msg,
+                    c_stat_evento='',
+                    x_motivo_evento='',
+                    protocolo='',
+                    chave_acesso=nf.chave_acesso or '',
+                    n_seq_evento='',
+                    tp_evento='110110',
+                    dh_reg_evento='',
+                    tp_amb='',
+                    id_evento='',
+                    xml_retorno='',
+                ),
+                ok=False,
+                mensagem=msg,
+                texto_correcao=texto.strip() if texto else '',
+            )
+
+        try:
+            payload = emitir_carta_correcao_nfe_saida(nf, texto_correcao=texto, usuario=request.user)
+        except NFeCartaCorrecaoError as exc:
+            payload = _payload_erro(str(exc))
+            etapa = getattr(exc, 'etapa', '')
+            if etapa in ('CERTIFICADO', 'EMITENTE'):
+                return response.Response(payload, status=status.HTTP_400_BAD_REQUEST)
+            if etapa == 'VALIDACAO':
+                return response.Response(payload, status=status.HTTP_400_BAD_REQUEST)
+            return response.Response(payload, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        except CertificadoA1Error as exc:
+            return response.Response(_payload_erro(str(exc)), status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            log.exception('Erro técnico CC-e nfe_id=%s', pk)
+            return response.Response(
+                _payload_erro('Erro técnico ao transmitir Carta de Correção. Tente novamente ou contate o suporte.'),
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        code = status.HTTP_200_OK if payload.get('ok') else status.HTTP_422_UNPROCESSABLE_ENTITY
+        return response.Response(payload, status=code)
+
     @action(detail=True, methods=['post'], url_path='reprocessar-retorno-sefaz')
     def reprocessar_retorno_sefaz(self, request, pk=None):
         """Reinterpreta xml_retorno salvo (lote 104 + infProt) sem retransmitir."""

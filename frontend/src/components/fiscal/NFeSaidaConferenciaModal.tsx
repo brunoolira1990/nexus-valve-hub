@@ -72,6 +72,7 @@ import type { Transportadora } from '@/types';
 import { AdvancedSupportSection } from '@/components/nexus/AdvancedSupportSection';
 import { GerarContasReceberNfeModal } from '@/components/fiscal/GerarContasReceberNfeModal';
 import { NFeConsultaSefazModal } from '@/components/fiscal/NFeConsultaSefazModal';
+import { NFeCartaCorrecaoModal } from '@/components/fiscal/NFeCartaCorrecaoModal';
 import { NFeFinanceiroAcoes } from '@/components/fiscal/NFeFinanceiroAcoes';
 import { NFeSaidaAcoesOperacionais } from '@/components/fiscal/NFeSaidaAcoesOperacionais';
 import { NFeSaidaAcoesContextoBanner } from '@/components/fiscal/NFeSaidaAcoesGruposPanel';
@@ -162,6 +163,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
   const [descarteLoading, setDescarteLoading] = useState(false);
   const [gerarCrOpen, setGerarCrOpen] = useState(false);
   const [consultaSefazOpen, setConsultaSefazOpen] = useState(false);
+  const [cartaCorrecaoOpen, setCartaCorrecaoOpen] = useState(false);
   const [baselineSnapshot, setBaselineSnapshot] = useState<ConferenciaDirtySnapshot | null>(null);
   const [acaoLoadingMsg, setAcaoLoadingMsg] = useState<string | null>(null);
 
@@ -1515,6 +1517,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                       title={acao.title}
                       onClick={() => {
                         if (acao.id === 'consulta_sefaz') setConsultaSefazOpen(true);
+                        if (acao.id === 'carta_correcao') setCartaCorrecaoOpen(true);
                       }}
                     >
                       {acao.label}
@@ -1890,6 +1893,17 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
         nfeId={nfeId}
         onClose={() => setConsultaSefazOpen(false)}
         onConsultaConcluida={() => {
+          void load();
+          setHistoricoRefreshKey((k) => k + 1);
+        }}
+      />
+
+      <NFeCartaCorrecaoModal
+        open={cartaCorrecaoOpen}
+        nfeId={nfeId}
+        homologacao={contextoAcao.autorizadaHomolog}
+        onClose={() => setCartaCorrecaoOpen(false)}
+        onEmitida={() => {
           void load();
           setHistoricoRefreshKey((k) => k + 1);
         }}

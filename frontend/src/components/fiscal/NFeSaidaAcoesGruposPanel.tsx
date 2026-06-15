@@ -29,6 +29,8 @@ type Props = {
   onDescartar?: () => void;
   onConsultaSefaz?: () => void;
   consultaSefazLoading?: boolean;
+  onCartaCorrecao?: () => void;
+  cartaCorrecaoLoading?: boolean;
   xmlAutorizadoHref?: string;
   financeiroSlot?: React.ReactNode;
   compact?: boolean;
@@ -135,6 +137,8 @@ export function NFeSaidaAcoesGruposPanel({
   onDescartar,
   onConsultaSefaz,
   consultaSefazLoading,
+  onCartaCorrecao,
+  cartaCorrecaoLoading,
   xmlAutorizadoHref,
   financeiroSlot,
   compact,
@@ -234,6 +238,20 @@ export function NFeSaidaAcoesGruposPanel({
             onClick={onConsultaSefaz}
           >
             {consultaSefazLoading ? <Loader2 className="h-3 w-3 animate-spin inline mr-1" /> : null}
+            {acao.label}
+          </button>
+        );
+      case 'carta_correcao':
+        return (
+          <button
+            key={acao.id}
+            type="button"
+            className="erp-btn-outline erp-btn-sm"
+            disabled={!acao.habilitada || cartaCorrecaoLoading}
+            title={acao.title}
+            onClick={onCartaCorrecao}
+          >
+            {cartaCorrecaoLoading ? <Loader2 className="h-3 w-3 animate-spin inline mr-1" /> : null}
             {acao.label}
           </button>
         );

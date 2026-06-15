@@ -490,6 +490,7 @@ class NFeSaidaEvento(models.Model):
         NFE_REJEITADA_PRODUCAO = 'NFE_REJEITADA_PRODUCAO', 'NF-e rejeitada produção'
         ERRO_TRANSMISSAO_SEFAZ = 'ERRO_TRANSMISSAO_SEFAZ', 'Erro transmissão SEFAZ'
         CONSULTA_SITUACAO_SEFAZ = 'CONSULTA_SITUACAO_SEFAZ', 'Consulta situação SEFAZ'
+        CARTA_CORRECAO_EMITIDA = 'CARTA_CORRECAO_EMITIDA', 'Carta de Correção emitida'
 
     nfe_saida = models.ForeignKey(
         NFeSaida,

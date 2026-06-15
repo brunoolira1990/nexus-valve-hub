@@ -466,6 +466,35 @@ export type NFeConsultaSituacaoSefazResponse = {
   };
 };
 
+export type NFeCartaCorrecaoResponse = {
+  ok: boolean;
+  mensagem?: string;
+  nfe_saida_id?: number;
+  ambiente?: string;
+  ambiente_label?: string;
+  chave_acesso?: string;
+  texto_correcao?: string;
+  sequencia_evento?: number;
+  cstat?: string;
+  cStat?: string;
+  xmotivo?: string;
+  xMotivo?: string;
+  protocolo?: string;
+  protocolo_evento?: string;
+  emitido_em?: string;
+  status_emissao_sefaz?: string;
+  etapa?: string;
+  evento_sefaz?: {
+    cstat?: string;
+    xmotivo?: string;
+    protocolo?: string;
+    n_seq_evento?: string;
+    tp_evento?: string;
+    dh_reg_evento?: string;
+    id_evento?: string;
+  };
+};
+
 export type NFeEmissaoProducaoResponse = NFeEmissaoHomologacaoResponse & {
   ambiente?: 'producao';
 };
@@ -700,6 +729,17 @@ export const nfeSaidasService = {
       {},
       {
         timeout: 60_000,
+        validateStatus: (s) => s >= 200 && s < 500,
+      },
+    );
+    return res.data;
+  },
+  emitirCartaCorrecao: async (id: number, payload: { texto_correcao: string }) => {
+    const res = await api.post<NFeCartaCorrecaoResponse>(
+      `${nfSai}${id}/emitir-carta-correcao/`,
+      payload,
+      {
+        timeout: 120_000,
         validateStatus: (s) => s >= 200 && s < 500,
       },
     );

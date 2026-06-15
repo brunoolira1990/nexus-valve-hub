@@ -166,3 +166,27 @@ def consulta_situacao_nfe(
         if 'connection' in msg or 'conex' in msg or 'network' in msg:
             raise PyNFeComunicacaoError('Erro ao conectar ao WebService da SEFAZ.') from exc
         raise PyNFeComunicacaoError(f'Erro na consulta situação NF-e: {exc}') from exc
+
+
+def transmitir_evento_nfe(
+    comunicacao: Any,
+    evento_assinado: Any,
+    *,
+    modelo: str = 'nfe',
+    id_lote: int = 1,
+) -> Any:
+    """Transmite evento NF-e à SEFAZ (NFeRecepcaoEvento4 — CC-e, cancelamento, etc.)."""
+    try:
+        with requests_sem_proxy_ambiente():
+            return comunicacao.evento(modelo, evento_assinado, id_lote=id_lote)
+    except PyNFeComunicacaoError:
+        raise
+    except Exception as exc:
+        msg = str(exc).lower()
+        if 'timeout' in msg or 'timed out' in msg:
+            raise PyNFeComunicacaoError(
+                'Tempo esgotado ao transmitir evento à SEFAZ. Verifique certificado/rede e tente novamente.',
+            ) from exc
+        if 'connection' in msg or 'conex' in msg or 'network' in msg:
+            raise PyNFeComunicacaoError('Erro ao conectar ao WebService da SEFAZ.') from exc
+        raise PyNFeComunicacaoError(f'Erro na transmissão do evento NF-e: {exc}') from exc

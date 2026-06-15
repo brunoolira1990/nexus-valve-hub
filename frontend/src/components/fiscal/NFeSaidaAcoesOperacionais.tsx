@@ -133,7 +133,7 @@ export function NFeSaidaAcoesOperacionais({
       {autorizadaProducao ? (
         <OperationalMessage
           title="NF-e autorizada em produção"
-          message="Documento com validade fiscal. CC-e e cancelamento serão disponibilizados em fase futura."
+          message="Documento com validade fiscal. Cancelamento SEFAZ será disponibilizado em fase futura."
           variant="success"
           raw
         />

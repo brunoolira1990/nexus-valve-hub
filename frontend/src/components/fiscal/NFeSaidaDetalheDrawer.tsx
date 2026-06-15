@@ -24,6 +24,7 @@ import { formatDateTimeBr, nfePodeDescartarRascunho } from '@/lib/nfeSaidaUi';
 import { MotivoAcaoDestrutivaModal } from '@/components/comercial/MotivoAcaoDestrutivaModal';
 import { GerarContasReceberNfeModal } from '@/components/fiscal/GerarContasReceberNfeModal';
 import { NFeConsultaSefazModal } from '@/components/fiscal/NFeConsultaSefazModal';
+import { NFeCartaCorrecaoModal } from '@/components/fiscal/NFeCartaCorrecaoModal';
 import { NFeFinanceiroAcoes } from '@/components/fiscal/NFeFinanceiroAcoes';
 import { NFeSaidaAcoesGruposPanel } from '@/components/fiscal/NFeSaidaAcoesGruposPanel';
 import { toast } from 'sonner';
@@ -56,6 +57,7 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
   const [descarteLoading, setDescarteLoading] = useState(false);
   const [gerarCrOpen, setGerarCrOpen] = useState(false);
   const [consultaSefazOpen, setConsultaSefazOpen] = useState(false);
+  const [cartaCorrecaoOpen, setCartaCorrecaoOpen] = useState(false);
 
   useEffect(() => {
     if (!open || !nfeId) {
@@ -381,6 +383,7 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
               }
               onDescartar={() => setDescarteOpen(true)}
               onConsultaSefaz={() => setConsultaSefazOpen(true)}
+              onCartaCorrecao={() => setCartaCorrecaoOpen(true)}
               financeiroSlot={
                 <NFeFinanceiroAcoes
                   nfeId={nfe.id}
@@ -402,7 +405,7 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
           {!descartePerm.pode && nfe && (nfe.status || '').toUpperCase() !== 'DESCARTADA_INTERNA' ? (
             <p className="text-xs text-muted-foreground w-full mt-2">
               {descartePerm.motivo ||
-                'Estorno interno não disponível. NF-e autorizada exige cancelamento ou CC-e (em preparação).'}
+                'Estorno interno não disponível. NF-e autorizada exige cancelamento SEFAZ (fase futura) ou Carta de Correção.'}
             </p>
           ) : null}
         </DrawerFooter>
@@ -453,6 +456,18 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
         nfeId={nfeId}
         onClose={() => setConsultaSefazOpen(false)}
         onConsultaConcluida={() => {
+          if (nfeId) {
+            void nfeSaidasService.getById(nfeId).then(setNfe).catch(() => undefined);
+          }
+        }}
+      />
+
+      <NFeCartaCorrecaoModal
+        open={cartaCorrecaoOpen}
+        nfeId={nfeId}
+        homologacao={contextoAcao.autorizadaHomolog}
+        onClose={() => setCartaCorrecaoOpen(false)}
+        onEmitida={() => {
           if (nfeId) {
             void nfeSaidasService.getById(nfeId).then(setNfe).catch(() => undefined);
           }

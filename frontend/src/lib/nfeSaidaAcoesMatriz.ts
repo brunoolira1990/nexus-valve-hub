@@ -20,7 +20,7 @@ export const AVISO_HOMOLOG_SEM_VALOR_FISCAL =
   'NF-e de homologação não possui valor fiscal e não vira produção. Para produção, gere/emita uma NF-e real.';
 
 export const AVISO_PRODUCAO_POS_AUTORIZACAO =
-  'NF-e autorizada em produção. CC-e e cancelamento serão disponibilizados em fase futura.';
+  'NF-e autorizada em produção. Cancelamento SEFAZ será disponibilizado em fase futura.';
 
 export type NFeSaidaCenarioAcao =
   | 'rascunho_conferencia'
@@ -176,14 +176,11 @@ export function podeConsultarSituacaoSefaz(ctx: NFeSaidaContextoAcao): boolean {
   return Boolean(ctx.chaveAcesso) && (ctx.autorizadaHomolog || ctx.autorizadaProducao);
 }
 
+export function podeEmitirCartaCorrecao(ctx: NFeSaidaContextoAcao): boolean {
+  return podeConsultarSituacaoSefaz(ctx);
+}
+
 const FUTURAS_BASE: Omit<NFeSaidaAcaoConfig, 'visivel' | 'habilitada'>[] = [
-  {
-    id: 'carta_correcao',
-    grupo: 'futuras',
-    futura: true,
-    label: ACTION_LABELS.cartaCorrecao,
-    title: 'Carta de Correção Eletrônica (CC-e) — fase futura (sem execução nesta etapa)',
-  },
   {
     id: 'cancelamento',
     grupo: 'futuras',
@@ -232,6 +229,9 @@ export function obterMatrizAcoesNfeSaida(
     if (podeConsultarSituacaoSefaz(ctx)) {
       acoes.push(acao({ id: 'consulta_sefaz', grupo: 'fiscal', label: 'Consulta SEFAZ' }));
     }
+    if (podeEmitirCartaCorrecao(ctx)) {
+      acoes.push(acao({ id: 'carta_correcao', grupo: 'fiscal', label: ACTION_LABELS.cartaCorrecao }));
+    }
   } else if (cenario === 'producao_autorizada') {
     acoes.push(
       acao({ id: 'abrir_nfe', grupo: 'documentos', label: 'Abrir NF-e' }),
@@ -253,6 +253,9 @@ export function obterMatrizAcoesNfeSaida(
     );
     if (podeConsultarSituacaoSefaz(ctx)) {
       acoes.push(acao({ id: 'consulta_sefaz', grupo: 'fiscal', label: 'Consulta SEFAZ' }));
+    }
+    if (podeEmitirCartaCorrecao(ctx)) {
+      acoes.push(acao({ id: 'carta_correcao', grupo: 'fiscal', label: ACTION_LABELS.cartaCorrecao }));
     }
   } else if (cenario === 'rascunho_conferencia' || cenario === 'rejeitada_erro') {
     if (opts?.podeValidar !== false) {
@@ -298,7 +301,7 @@ export function obterMatrizAcoesNfeSaida(
       acoes.push(acao({ ...f, visivel: true, habilitada: false }));
     }
   } else if (cenario === 'rascunho_conferencia' || cenario === 'rejeitada_erro') {
-    acoes.push(acao({ ...FUTURAS_BASE[2], visivel: true, habilitada: false }));
+    acoes.push(acao({ ...FUTURAS_BASE[0], visivel: true, habilitada: false }));
   }
 
   return acoes.filter((a) => a.visivel);
