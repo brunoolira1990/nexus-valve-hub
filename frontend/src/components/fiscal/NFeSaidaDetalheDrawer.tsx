@@ -25,6 +25,7 @@ import { MotivoAcaoDestrutivaModal } from '@/components/comercial/MotivoAcaoDest
 import { GerarContasReceberNfeModal } from '@/components/fiscal/GerarContasReceberNfeModal';
 import { NFeConsultaSefazModal } from '@/components/fiscal/NFeConsultaSefazModal';
 import { NFeCartaCorrecaoModal } from '@/components/fiscal/NFeCartaCorrecaoModal';
+import { buildCartaCorrecaoContextoFromNfe } from '@/lib/nfeCartaCorrecaoPreview';
 import { NFeFinanceiroAcoes } from '@/components/fiscal/NFeFinanceiroAcoes';
 import { NFeSaidaAcoesGruposPanel } from '@/components/fiscal/NFeSaidaAcoesGruposPanel';
 import { toast } from 'sonner';
@@ -466,6 +467,9 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
         open={cartaCorrecaoOpen}
         nfeId={nfeId}
         homologacao={contextoAcao.autorizadaHomolog}
+        contextoInicial={
+          nfe ? buildCartaCorrecaoContextoFromNfe(nfe, { homologacao: contextoAcao.autorizadaHomolog }) : null
+        }
         onClose={() => setCartaCorrecaoOpen(false)}
         onEmitida={() => {
           if (nfeId) {

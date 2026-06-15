@@ -73,6 +73,7 @@ import { AdvancedSupportSection } from '@/components/nexus/AdvancedSupportSectio
 import { GerarContasReceberNfeModal } from '@/components/fiscal/GerarContasReceberNfeModal';
 import { NFeConsultaSefazModal } from '@/components/fiscal/NFeConsultaSefazModal';
 import { NFeCartaCorrecaoModal } from '@/components/fiscal/NFeCartaCorrecaoModal';
+import { buildCartaCorrecaoContextoFromConferencia } from '@/lib/nfeCartaCorrecaoPreview';
 import { NFeFinanceiroAcoes } from '@/components/fiscal/NFeFinanceiroAcoes';
 import { NFeSaidaAcoesOperacionais } from '@/components/fiscal/NFeSaidaAcoesOperacionais';
 import { NFeSaidaAcoesContextoBanner } from '@/components/fiscal/NFeSaidaAcoesGruposPanel';
@@ -1906,6 +1907,11 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
         open={cartaCorrecaoOpen}
         nfeId={nfeId}
         homologacao={contextoAcao.autorizadaHomolog}
+        contextoInicial={
+          conf
+            ? buildCartaCorrecaoContextoFromConferencia(conf, contextoAcao.autorizadaHomolog)
+            : null
+        }
         onClose={() => setCartaCorrecaoOpen(false)}
         onEmitida={() => {
           void load();
