@@ -90,6 +90,9 @@ export function NFeFinanceiroAcoes({
           <Wallet className="h-3 w-3 mr-1" />
           Ver contas a receber
         </button>
+        <p className="text-xs text-muted-foreground">
+          {flags.motivo_bloqueio_financeiro || 'Contas a receber já foram geradas para esta NF-e.'}
+        </p>
       </div>
     );
   }

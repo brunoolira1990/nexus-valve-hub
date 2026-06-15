@@ -12,7 +12,12 @@ from apps.financeiro.constants import FormaPagamentoCodigo
 from apps.financeiro.models import CategoriaFinanceira, CentroCusto, ContaFinanceira, TituloFinanceiro
 from apps.financeiro.services.titulo import TOLERANCIA_PARCELAS, criar_titulo_financeiro
 from apps.fiscal.models import NFeSaida
-from apps.fiscal.nfe_saida_bloqueio import _STATUS_CANCELADA, _status_normalizado, nf_autorizada_homologacao
+from apps.fiscal.nfe_saida_bloqueio import (
+    _STATUS_CANCELADA,
+    _status_normalizado,
+    nf_autorizada_homologacao,
+    nf_autorizada_producao,
+)
 from apps.fiscal.nfe_saida_duplicatas import gerar_duplicatas_nfe_saida
 
 CENTAVO = Decimal('0.01')
@@ -49,6 +54,8 @@ MSG_HOMOLOG_SEM_FINANCEIRO = 'Financeiro indisponível para NF-e de homologaçã
 def nf_autorizada_para_financeiro(nf: NFeSaida) -> bool:
     if nf_autorizada_homologacao(nf):
         return False
+    if nf_autorizada_producao(nf):
+        return True
     st = _status_normalizado(nf.status)
     return st in ('AUTORIZADA', 'AUTORIZADA_INTERNA', 'EMITIDA', 'EMITIDO')
 
@@ -70,6 +77,8 @@ def montar_origem_descricao_nfe(nf: NFeSaida) -> str:
     chave = (nf.chave_acesso or '').strip()
     if nf_autorizada_homologacao(nf):
         base = 'NF-e autorizada em homologação'
+    elif nf_autorizada_producao(nf):
+        base = 'NF-e autorizada em produção'
     else:
         base = 'NF-e autorizada'
     if chave:
@@ -176,6 +185,8 @@ def sugerir_categoria_receita_id() -> int | None:
 def preview_contas_receber_de_nfe(nf: NFeSaida) -> dict[str, Any]:
     if nf_cancelada(nf):
         raise ValueError(MSG_CANCELADA)
+    if nf_autorizada_homologacao(nf):
+        raise ValueError(MSG_HOMOLOG_SEM_FINANCEIRO)
     if not nf_autorizada_para_financeiro(nf):
         raise ValueError(MSG_NAO_AUTORIZADA)
     if not nf.cliente_id:
@@ -338,6 +349,8 @@ def gerar_contas_receber_de_nfe_autorizada(
         raise ValueError(MSG_JA_GERADO)
     if nf_cancelada(nf):
         raise ValueError(MSG_CANCELADA)
+    if nf_autorizada_homologacao(nf):
+        raise ValueError(MSG_HOMOLOG_SEM_FINANCEIRO)
     if not nf_autorizada_para_financeiro(nf):
         raise ValueError(MSG_NAO_AUTORIZADA)
     if not nf.cliente_id:
