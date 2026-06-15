@@ -284,6 +284,10 @@ def _build_det(linha: dict) -> Any:
 
     x_ped = _text(linha.get('x_ped'))
     n_item_ped = _text(linha.get('n_item_ped'))
+    if not x_ped and not n_item_ped:
+        from apps.fiscal.nfe_integracao.danfe_xml_adicionais import resolver_xped_nitemped_item
+
+        x_ped, n_item_ped = resolver_xped_nitemped_item(None, linha)
     if x_ped:
         prod.xPed = x_ped[:15]
     if n_item_ped:
@@ -402,6 +406,11 @@ def montar_tnfe_oficial(dados: dict[str, Any], *, nfe_saida: NFeSaida | None = N
         dest_kw['IE'] = _text(dest.get('ie'))[:14]
     inf.dest = nfe.Tnfe.InfNfe.Dest(**dest_kw)
     inf.dest.enderDest = _ender_dest(dados)
+
+    if nfe_saida is not None:
+        from apps.fiscal.nfe_integracao.danfe_xml_adicionais import enriquecer_linhas_xml_nfe
+
+        enriquecer_linhas_xml_nfe(nfe_saida, dados)
 
     inf.det = [_build_det(linha) for linha in dados.get('itens') or []]
     if not inf.det:

@@ -279,6 +279,17 @@ def montar_inf_cpl_nfe(
     return inf_cpl, inf_fisco
 
 
+def _normalizar_n_item_ped_xml(valor: str) -> str:
+    """nItemPed XSD: [0-9]{1,6} — preserva dígitos informados pelo usuário."""
+    bruto = _text(valor)
+    if not bruto:
+        return ''
+    if bruto.isdigit():
+        return bruto[:6]
+    digits = ''.join(c for c in bruto if c.isdigit())
+    return digits[:6] if digits else ''
+
+
 def resolver_xped_nitemped_item(
     item_db: ItemNFeSaida | None,
     linha: dict[str, Any] | None = None,
@@ -302,6 +313,7 @@ def resolver_xped_nitemped_item(
         linha.get('observacao_item'),
     )
     n_item = _resolver_linha_pedido_item(pc_num, pc_item_raw, observacao_item=obs_item)
+    n_item = _normalizar_n_item_ped_xml(n_item)
     return (pc_num[:15] if pc_num else ''), n_item
 
 

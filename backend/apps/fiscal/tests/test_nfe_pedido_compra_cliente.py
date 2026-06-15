@@ -150,3 +150,43 @@ class NFePedidoCompraClienteTests(SimpleTestCase):
         self.assertEqual(xml_frag[0], '123456')
         self.assertEqual(xml_frag[1], '1')
         self.assertIn('Pedido de compra: 123456', xml_frag[2] or '')
+
+    def test_build_det_resolve_pedido_cliente_sem_xped_na_linha(self):
+        from apps.fiscal.nfe_saida_xml_nfelib import _build_det
+
+        det = _build_det(
+            {
+                'n_item': 1,
+                'item_id': 1,
+                'c_prod': 'P1',
+                'x_prod': 'Produto teste',
+                'ncm': '84818095',
+                'cfop': '5102',
+                'u_com': 'UN',
+                'q_com': Decimal('1'),
+                'v_un_com': Decimal('5000'),
+                'v_prod': Decimal('5000'),
+                'pedido_cliente_numero': '4500074275',
+                'pedido_cliente_item': '10',
+                'snapshot_fiscal': {'cst_icms': '20', 'base_icms': '2444.50', 'aliquota_icms': '18', 'valor_icms': '440.01'},
+            },
+        )
+        self.assertEqual(det.prod.xPed, '4500074275')
+        self.assertEqual(det.prod.nItemPed, '10')
+
+    def test_cache_preliminar_invalido_sem_tag_xped(self):
+        from apps.fiscal.nfe_integracao.nfe_xml_preliminar import _xml_preliminar_cache_valido
+
+        nf = _NfStub()
+        nf.pedido_cliente_numero = '55005050'
+        xml_so_infadprod = (
+            '<NFe><infNFe><det nItem="1"><prod><xProd>P</xProd></prod>'
+            '<infAdProd>Pedido de compra: 55005050 — Item: 01</infAdProd></det></infNFe></NFe>'
+        )
+        self.assertFalse(_xml_preliminar_cache_valido(nf, xml_so_infadprod))
+        xml_com_tags = xml_so_infadprod.replace(
+            '</prod>',
+            '</prod><xPed>55005050</xPed><nItemPed>01</nItemPed>',
+            1,
+        )
+        self.assertTrue(_xml_preliminar_cache_valido(nf, xml_com_tags))

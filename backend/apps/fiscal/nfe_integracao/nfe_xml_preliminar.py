@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
@@ -293,21 +294,43 @@ def _persistir_preliminar_no_modelo(
     )
 
 
+def _xml_tem_tag_valor(xml_cache: str, tag: str, valor: str) -> bool:
+    if not valor:
+        return True
+    return bool(
+        re.search(
+            rf'<(?:[\w]{{1,20}}:)?{tag}>{re.escape(valor)}</(?:[\w]{{1,20}}:)?{tag}>',
+            xml_cache,
+            flags=re.IGNORECASE,
+        ),
+    )
+
+
 def _xml_preliminar_cache_valido(nfe_saida: NFeSaida, xml_cache: str) -> bool:
-    """Invalida cache antigo sem pedido de compra / xPed quando a NF-e já tem esses dados."""
+    """Invalida cache antigo sem tags xPed/nItemPed quando a NF-e já tem pedido do cliente."""
     if not xml_cache:
         return False
     ped_cab = _text(nfe_saida.pedido_cliente_numero)
+    tags_xped: set[str] = set()
+    tags_nitem: set[str] = set()
     if ped_cab:
-        ped_tag = ped_cab[:15]
-        if ped_tag not in xml_cache and 'PEDIDO DE COMPRA' not in xml_cache.upper():
-            return False
+        tags_xped.add(ped_cab[:15])
     for item in nfe_saida.itens.all():
         pc = _text(item.pedido_cliente_numero) or ped_cab
+        if pc:
+            tags_xped.add(pc[:15])
         pi = _text(item.pedido_cliente_item)
-        if pc and pc[:15] not in xml_cache:
+        if pi:
+            from apps.fiscal.nfe_integracao.danfe_xml_adicionais import resolver_xped_nitemped_item
+
+            _, n_item = resolver_xped_nitemped_item(item, pedido_cabecalho=ped_cab)
+            if n_item:
+                tags_nitem.add(n_item)
+    for ped_tag in tags_xped:
+        if not _xml_tem_tag_valor(xml_cache, 'xPed', ped_tag):
             return False
-        if pi and pi[:6] not in xml_cache:
+    for n_item in tags_nitem:
+        if not _xml_tem_tag_valor(xml_cache, 'nItemPed', n_item):
             return False
     return True
 

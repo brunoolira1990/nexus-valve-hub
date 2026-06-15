@@ -637,8 +637,21 @@ def _xml_preview_string(dados: dict[str, Any]) -> str:
         _sub(prod, 'qTrib', linha['q_com'])
         _sub(prod, 'vUnTrib', linha['v_un_com'])
         _sub(prod, 'indTot', '1')
+        x_ped = _text(linha.get('x_ped'))
+        n_item_ped = _text(linha.get('n_item_ped'))
+        if not x_ped and not n_item_ped:
+            from apps.fiscal.nfe_integracao.danfe_xml_adicionais import resolver_xped_nitemped_item
+
+            x_ped, n_item_ped = resolver_xped_nitemped_item(None, linha)
+        if x_ped:
+            _sub(prod, 'xPed', x_ped[:15])
+        if n_item_ped:
+            _sub(prod, 'nItemPed', n_item_ped[:6])
         imposto = ET.SubElement(det, 'imposto')
         _build_imposto_det(imposto, linha.get('snapshot_fiscal') or {}, linha)
+        inf_ad_prod = _text(linha.get('inf_ad_prod'))
+        if inf_ad_prod:
+            _sub(det, 'infAdProd', inf_ad_prod[:500])
 
     total = ET.SubElement(inf, 'total')
     icms_tot = ET.SubElement(total, 'ICMSTot')
@@ -701,6 +714,24 @@ def _xml_preview_string(dados: dict[str, Any]) -> str:
 
 
 def gerar_preview_xml_nfe_saida(nfe_saida: NFeSaida) -> dict[str, Any]:
+    from apps.fiscal.nfe_integracao.adapters.nfelib_adapter import nfelib_disponivel
+
+    if nfelib_disponivel():
+        from apps.fiscal.nfe_saida_xml_nfelib import gerar_xml_oficial_nfe_saida
+
+        payload = gerar_xml_oficial_nfe_saida(nfe_saida)
+        if payload.get('bloqueado'):
+            return payload
+        avisos = list(payload.get('avisos') or [])
+        if MSG_XML_PREVIEW not in avisos:
+            avisos.append(MSG_XML_PREVIEW)
+        mensagens = list(payload.get('mensagens') or [])
+        if MSG_XML_PREVIEW not in mensagens:
+            mensagens.insert(0, MSG_XML_PREVIEW)
+        payload['avisos'] = avisos
+        payload['mensagens'] = mensagens
+        return payload
+
     dados = gerar_dados_preview_nfe_saida(nfe_saida)
     if dados.get('bloqueado'):
         return dados
@@ -710,6 +741,9 @@ def gerar_preview_xml_nfe_saida(nfe_saida: NFeSaida) -> dict[str, Any]:
     avisos = list(dados.get('avisos') or [])
     avisos.append(MSG_XML_PREVIEW)
 
+    from apps.fiscal.nfe_integracao.danfe_xml_adicionais import enriquecer_linhas_xml_nfe
+
+    enriquecer_linhas_xml_nfe(nfe_saida, dados)
     xml = _xml_preview_string(dados)
     return {
         'nfe_saida_id': nfe_saida.pk,
