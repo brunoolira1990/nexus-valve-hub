@@ -991,6 +991,101 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         code = status.HTTP_200_OK if payload.get('ok') else status.HTTP_422_UNPROCESSABLE_ENTITY
         return response.Response(payload, status=code)
 
+    @action(detail=True, methods=['post'], url_path='consultar-situacao-sefaz')
+    def consultar_situacao_sefaz(self, request, pk=None):
+        """Consulta situação da NF-e na SEFAZ (read-only — sem emitir/cancelar/corrigir)."""
+        import logging
+
+        from apps.fiscal.nfe_emissao.consulta_situacao import (
+            NFeConsultaSituacaoError,
+            consultar_situacao_nfe_saida,
+        )
+        from apps.fiscal.nfe_emissao.resposta_consulta import montar_resposta_consulta_situacao
+        from apps.fiscal.nfe_integracao.adapters.consulta_situacao_parser import (
+            ResultadoConsultaSituacaoSefaz,
+        )
+        from apps.fiscal.nfe_integracao.adapters.exceptions import CertificadoA1Error
+
+        log = logging.getLogger(__name__)
+        nf = self.get_object()
+        try:
+            payload = consultar_situacao_nfe_saida(nf, usuario=request.user)
+        except NFeConsultaSituacaoError as exc:
+            nf.refresh_from_db()
+            payload = montar_resposta_consulta_situacao(
+                nf,
+                ResultadoConsultaSituacaoSefaz(
+                    ok=False,
+                    c_stat_consulta='',
+                    x_motivo_consulta=str(exc),
+                    c_stat_nfe='',
+                    x_motivo_nfe='',
+                    protocolo='',
+                    chave_acesso=nf.chave_acesso or '',
+                    dh_recbto='',
+                    tp_amb='',
+                    xml_retorno='',
+                    autorizada=False,
+                    cancelada=False,
+                    denegada=False,
+                ),
+                ok=False,
+                mensagem=str(exc),
+            )
+            etapa = getattr(exc, 'etapa', '')
+            if etapa == 'CERTIFICADO':
+                return response.Response(payload, status=status.HTTP_400_BAD_REQUEST)
+            return response.Response(payload, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        except CertificadoA1Error as exc:
+            nf.refresh_from_db()
+            payload = montar_resposta_consulta_situacao(
+                nf,
+                ResultadoConsultaSituacaoSefaz(
+                    ok=False,
+                    c_stat_consulta='',
+                    x_motivo_consulta=str(exc),
+                    c_stat_nfe='',
+                    x_motivo_nfe='',
+                    protocolo='',
+                    chave_acesso=nf.chave_acesso or '',
+                    dh_recbto='',
+                    tp_amb='',
+                    xml_retorno='',
+                    autorizada=False,
+                    cancelada=False,
+                    denegada=False,
+                ),
+                ok=False,
+                mensagem=str(exc),
+            )
+            return response.Response(payload, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            log.exception('Erro técnico consulta SEFAZ nfe_id=%s', pk)
+            nf.refresh_from_db()
+            payload = montar_resposta_consulta_situacao(
+                nf,
+                ResultadoConsultaSituacaoSefaz(
+                    ok=False,
+                    c_stat_consulta='',
+                    x_motivo_consulta='Erro técnico na consulta SEFAZ.',
+                    c_stat_nfe='',
+                    x_motivo_nfe='',
+                    protocolo='',
+                    chave_acesso=nf.chave_acesso or '',
+                    dh_recbto='',
+                    tp_amb='',
+                    xml_retorno='',
+                    autorizada=False,
+                    cancelada=False,
+                    denegada=False,
+                ),
+                ok=False,
+                mensagem='Erro técnico ao consultar a SEFAZ. Tente novamente ou contate o suporte.',
+            )
+            return response.Response(payload, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        code = status.HTTP_200_OK if payload.get('ok') else status.HTTP_422_UNPROCESSABLE_ENTITY
+        return response.Response(payload, status=code)
+
     @action(detail=True, methods=['post'], url_path='reprocessar-retorno-sefaz')
     def reprocessar_retorno_sefaz(self, request, pk=None):
         """Reinterpreta xml_retorno salvo (lote 104 + infProt) sem retransmitir."""

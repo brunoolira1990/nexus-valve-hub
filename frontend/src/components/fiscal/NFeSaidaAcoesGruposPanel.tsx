@@ -27,6 +27,8 @@ type Props = {
   onXmlAutorizado?: () => void;
   onCopiarChave?: () => void;
   onDescartar?: () => void;
+  onConsultaSefaz?: () => void;
+  consultaSefazLoading?: boolean;
   xmlAutorizadoHref?: string;
   financeiroSlot?: React.ReactNode;
   compact?: boolean;
@@ -131,6 +133,8 @@ export function NFeSaidaAcoesGruposPanel({
   onDanfe,
   onXml,
   onDescartar,
+  onConsultaSefaz,
+  consultaSefazLoading,
   xmlAutorizadoHref,
   financeiroSlot,
   compact,
@@ -219,6 +223,20 @@ export function NFeSaidaAcoesGruposPanel({
         );
       case 'descartar_rascunho':
         return <BotaoAcao key={acao.id} acao={acao} variant="destructive" onClick={onDescartar} />;
+      case 'consulta_sefaz':
+        return (
+          <button
+            key={acao.id}
+            type="button"
+            className="erp-btn-outline erp-btn-sm"
+            disabled={!acao.habilitada || consultaSefazLoading}
+            title={acao.title}
+            onClick={onConsultaSefaz}
+          >
+            {consultaSefazLoading ? <Loader2 className="h-3 w-3 animate-spin inline mr-1" /> : null}
+            {acao.label}
+          </button>
+        );
       default:
         return <BotaoAcao key={acao.id} acao={acao} />;
     }
@@ -237,12 +255,15 @@ export function NFeSaidaAcoesGruposPanel({
           {grupos.documentos.map(renderAcao)}
         </GrupoSecao>
       ) : null}
-      {financeiroSlot ? (
+      {financeiroSlot || contexto.autorizadaHomolog ? (
         <section className={compact ? 'space-y-1.5' : 'space-y-2'}>
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             {GRUPO_ACAO_LABELS.financeiras}
           </p>
           {financeiroSlot}
+          {contexto.autorizadaHomolog && !financeiroSlot ? (
+            <p className="text-xs text-muted-foreground">Financeiro indisponível para NF-e de homologação.</p>
+          ) : null}
         </section>
       ) : null}
       {grupos.futuras.length ? (

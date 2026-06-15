@@ -437,6 +437,35 @@ export type NFeEmissaoHomologacaoResponse = {
   etapa?: string;
 };
 
+export type NFeConsultaSituacaoSefazResponse = {
+  ok: boolean;
+  mensagem?: string;
+  nfe_saida_id?: number;
+  ambiente?: string;
+  ambiente_label?: string;
+  chave_acesso?: string;
+  cstat?: string;
+  cStat?: string;
+  xmotivo?: string;
+  xMotivo?: string;
+  protocolo?: string;
+  protocolo_autorizacao?: string;
+  consultado_em?: string;
+  status_emissao_sefaz?: string;
+  status_local_atualizado?: boolean;
+  sem_efeitos_fiscais?: boolean;
+  etapa?: string;
+  situacao_sefaz?: {
+    cstat?: string;
+    xmotivo?: string;
+    protocolo?: string;
+    dh_recbto?: string;
+    autorizada?: boolean;
+    cancelada?: boolean;
+    denegada?: boolean;
+  };
+};
+
 export type NFeEmissaoProducaoResponse = NFeEmissaoHomologacaoResponse & {
   ambiente?: 'producao';
 };
@@ -660,6 +689,17 @@ export const nfeSaidasService = {
       payload,
       {
         timeout: 120_000,
+        validateStatus: (s) => s >= 200 && s < 500,
+      },
+    );
+    return res.data;
+  },
+  consultarSituacaoSefaz: async (id: number) => {
+    const res = await api.post<NFeConsultaSituacaoSefazResponse>(
+      `${nfSai}${id}/consultar-situacao-sefaz/`,
+      {},
+      {
+        timeout: 60_000,
         validateStatus: (s) => s >= 200 && s < 500,
       },
     );

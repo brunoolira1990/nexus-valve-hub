@@ -71,6 +71,7 @@ import {
 import type { Transportadora } from '@/types';
 import { AdvancedSupportSection } from '@/components/nexus/AdvancedSupportSection';
 import { GerarContasReceberNfeModal } from '@/components/fiscal/GerarContasReceberNfeModal';
+import { NFeConsultaSefazModal } from '@/components/fiscal/NFeConsultaSefazModal';
 import { NFeFinanceiroAcoes } from '@/components/fiscal/NFeFinanceiroAcoes';
 import { NFeSaidaAcoesOperacionais } from '@/components/fiscal/NFeSaidaAcoesOperacionais';
 import { NFeSaidaAcoesContextoBanner } from '@/components/fiscal/NFeSaidaAcoesGruposPanel';
@@ -160,6 +161,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
   const [descarteOpen, setDescarteOpen] = useState(false);
   const [descarteLoading, setDescarteLoading] = useState(false);
   const [gerarCrOpen, setGerarCrOpen] = useState(false);
+  const [consultaSefazOpen, setConsultaSefazOpen] = useState(false);
   const [baselineSnapshot, setBaselineSnapshot] = useState<ConferenciaDirtySnapshot | null>(null);
   const [acaoLoadingMsg, setAcaoLoadingMsg] = useState<string | null>(null);
 
@@ -250,6 +252,10 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
 
   const acoesFuturas = useMemo(
     () => matrizAcoesConferencia.filter((a) => a.grupo === 'futuras'),
+    [matrizAcoesConferencia],
+  );
+  const acoesFiscaisPosAutorizacao = useMemo(
+    () => matrizAcoesConferencia.filter((a) => a.grupo === 'fiscal'),
     [matrizAcoesConferencia],
   );
 
@@ -1494,6 +1500,29 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                 onGerar={() => setGerarCrOpen(true)}
               />
             </div>
+            {acoesFiscaisPosAutorizacao.length ? (
+              <div className="rounded-md border border-border p-3 space-y-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {GRUPO_ACAO_LABELS.fiscal}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {acoesFiscaisPosAutorizacao.map((acao) => (
+                    <button
+                      key={acao.id}
+                      type="button"
+                      className="erp-btn-outline erp-btn-sm"
+                      disabled={!acao.habilitada}
+                      title={acao.title}
+                      onClick={() => {
+                        if (acao.id === 'consulta_sefaz') setConsultaSefazOpen(true);
+                      }}
+                    >
+                      {acao.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             {acoesFuturas.length ? (
               <div className="rounded-md border border-border p-3 space-y-2">
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -1853,6 +1882,16 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
         onGenerated={() => {
           toast.success('Contas a receber geradas com sucesso.');
           void load();
+        }}
+      />
+
+      <NFeConsultaSefazModal
+        open={consultaSefazOpen}
+        nfeId={nfeId}
+        onClose={() => setConsultaSefazOpen(false)}
+        onConsultaConcluida={() => {
+          void load();
+          setHistoricoRefreshKey((k) => k + 1);
         }}
       />
     </Modal>

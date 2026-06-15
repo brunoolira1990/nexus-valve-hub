@@ -140,3 +140,29 @@ def extrair_xml_resposta(resposta: Any) -> str:
     """Normaliza corpo XML da resposta PyNFe (delega ao parser 3.6.1)."""
     log_diagnostico_resposta(resposta, contexto='extrair_xml_resposta')
     return normalizar_xml_bruto(resposta)
+
+
+def consulta_situacao_nfe(
+    comunicacao: Any,
+    chave_acesso: str,
+    *,
+    modelo: str = 'nfe',
+) -> Any:
+    """Consulta situação da NF-e na SEFAZ (NFeConsultaProtocolo4 / consSitNFe)."""
+    chave = (chave_acesso or '').strip()
+    if len(chave) != 44 or not chave.isdigit():
+        raise PyNFeComunicacaoError('Chave de acesso inválida para consulta SEFAZ.')
+    try:
+        with requests_sem_proxy_ambiente():
+            return comunicacao.consulta_nota(modelo, chave)
+    except PyNFeComunicacaoError:
+        raise
+    except Exception as exc:
+        msg = str(exc).lower()
+        if 'timeout' in msg or 'timed out' in msg:
+            raise PyNFeComunicacaoError(
+                'Tempo esgotado ao consultar a SEFAZ. Verifique certificado/rede e tente novamente.',
+            ) from exc
+        if 'connection' in msg or 'conex' in msg or 'network' in msg:
+            raise PyNFeComunicacaoError('Erro ao conectar ao WebService da SEFAZ.') from exc
+        raise PyNFeComunicacaoError(f'Erro na consulta situação NF-e: {exc}') from exc

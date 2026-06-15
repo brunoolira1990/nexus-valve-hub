@@ -23,6 +23,7 @@ import { getNfeFiscalSummaryBadge } from '@/lib/nfeSaidaListagemCompacta';
 import { formatDateTimeBr, nfePodeDescartarRascunho } from '@/lib/nfeSaidaUi';
 import { MotivoAcaoDestrutivaModal } from '@/components/comercial/MotivoAcaoDestrutivaModal';
 import { GerarContasReceberNfeModal } from '@/components/fiscal/GerarContasReceberNfeModal';
+import { NFeConsultaSefazModal } from '@/components/fiscal/NFeConsultaSefazModal';
 import { NFeFinanceiroAcoes } from '@/components/fiscal/NFeFinanceiroAcoes';
 import { NFeSaidaAcoesGruposPanel } from '@/components/fiscal/NFeSaidaAcoesGruposPanel';
 import { toast } from 'sonner';
@@ -54,6 +55,7 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
   const [descarteOpen, setDescarteOpen] = useState(false);
   const [descarteLoading, setDescarteLoading] = useState(false);
   const [gerarCrOpen, setGerarCrOpen] = useState(false);
+  const [consultaSefazOpen, setConsultaSefazOpen] = useState(false);
 
   useEffect(() => {
     if (!open || !nfeId) {
@@ -378,6 +380,7 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
                   : undefined
               }
               onDescartar={() => setDescarteOpen(true)}
+              onConsultaSefaz={() => setConsultaSefazOpen(true)}
               financeiroSlot={
                 <NFeFinanceiroAcoes
                   nfeId={nfe.id}
@@ -441,6 +444,17 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
           }
           if (titulo?.id) {
             navigate(`/financeiro/contas-receber?titulo=${titulo.id}`);
+          }
+        }}
+      />
+
+      <NFeConsultaSefazModal
+        open={consultaSefazOpen}
+        nfeId={nfeId}
+        onClose={() => setConsultaSefazOpen(false)}
+        onConsultaConcluida={() => {
+          if (nfeId) {
+            void nfeSaidasService.getById(nfeId).then(setNfe).catch(() => undefined);
           }
         }}
       />

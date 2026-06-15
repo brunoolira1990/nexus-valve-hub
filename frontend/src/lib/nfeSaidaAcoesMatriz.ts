@@ -20,7 +20,7 @@ export const AVISO_HOMOLOG_SEM_VALOR_FISCAL =
   'NF-e de homologação não possui valor fiscal e não vira produção. Para produção, gere/emita uma NF-e real.';
 
 export const AVISO_PRODUCAO_POS_AUTORIZACAO =
-  'NF-e autorizada em produção. Consulta SEFAZ, CC-e e cancelamento serão disponibilizados em fase futura.';
+  'NF-e autorizada em produção. CC-e e cancelamento serão disponibilizados em fase futura.';
 
 export type NFeSaidaCenarioAcao =
   | 'rascunho_conferencia'
@@ -172,14 +172,11 @@ export function resolverContextoNfeSaida(
   };
 }
 
+export function podeConsultarSituacaoSefaz(ctx: NFeSaidaContextoAcao): boolean {
+  return Boolean(ctx.chaveAcesso) && (ctx.autorizadaHomolog || ctx.autorizadaProducao);
+}
+
 const FUTURAS_BASE: Omit<NFeSaidaAcaoConfig, 'visivel' | 'habilitada'>[] = [
-  {
-    id: 'consulta_sefaz',
-    grupo: 'futuras',
-    futura: true,
-    label: 'Consulta SEFAZ',
-    title: 'Consulta de situação na SEFAZ — fase futura (sem execução nesta etapa)',
-  },
   {
     id: 'carta_correcao',
     grupo: 'futuras',
@@ -232,6 +229,9 @@ export function obterMatrizAcoesNfeSaida(
       }),
       acao({ id: 'historico', grupo: 'documentos', label: 'Ver histórico' }),
     );
+    if (podeConsultarSituacaoSefaz(ctx)) {
+      acoes.push(acao({ id: 'consulta_sefaz', grupo: 'fiscal', label: 'Consulta SEFAZ' }));
+    }
   } else if (cenario === 'producao_autorizada') {
     acoes.push(
       acao({ id: 'abrir_nfe', grupo: 'documentos', label: 'Abrir NF-e' }),
@@ -251,6 +251,9 @@ export function obterMatrizAcoesNfeSaida(
       }),
       acao({ id: 'historico', grupo: 'documentos', label: 'Ver histórico' }),
     );
+    if (podeConsultarSituacaoSefaz(ctx)) {
+      acoes.push(acao({ id: 'consulta_sefaz', grupo: 'fiscal', label: 'Consulta SEFAZ' }));
+    }
   } else if (cenario === 'rascunho_conferencia' || cenario === 'rejeitada_erro') {
     if (opts?.podeValidar !== false) {
       acoes.push(acao({ id: 'validar', grupo: 'fiscal', label: 'Validar' }));
@@ -284,7 +287,7 @@ export function obterMatrizAcoesNfeSaida(
       id: 'gerar_contas_receber',
       grupo: 'financeiras',
       label: 'Gerar contas a receber',
-      visivel: cenario === 'homolog_autorizada' || cenario === 'producao_autorizada' || cenario === 'rascunho_conferencia',
+      visivel: cenario === 'producao_autorizada' || cenario === 'rascunho_conferencia',
       habilitada: false,
       title: 'Gerenciado pelo bloco financeiro abaixo',
     }),

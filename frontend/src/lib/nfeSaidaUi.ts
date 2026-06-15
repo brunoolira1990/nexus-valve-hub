@@ -310,6 +310,7 @@ const LABELS_TIPO_EVENTO: Record<string, string> = {
   DESCARTE_RASCUNHO_NFE: 'Descarte interno de rascunho',
   OBSERVACAO: 'Observação',
   NFE_AUTORIZADA_HOMOLOGACAO: 'Autorizada homologação SEFAZ',
+  CONSULTA_SITUACAO_SEFAZ: 'Consulta SEFAZ',
 };
 
 export function labelTipoEventoNFe(tipo: string): string {
@@ -355,6 +356,9 @@ export function nfeRascunhoSemAutorizacao(nfe: {
 export function resumoEventoCurto(resumo: Record<string, unknown> | null | undefined): string {
   if (!resumo || typeof resumo !== 'object') return '';
   const parts: string[] = [];
+  if (resumo.cStat) parts.push(`cStat ${resumo.cStat}`);
+  if (resumo.xMotivo) parts.push(String(resumo.xMotivo));
+  if (resumo.ambiente) parts.push(`Ambiente: ${resumo.ambiente}`);
   if (resumo.mensagem) parts.push(String(resumo.mensagem));
   if (resumo.pedido_id) parts.push(`Pedido #${resumo.pedido_id}`);
   if (resumo.faturamento_id) parts.push(`Faturamento #${resumo.faturamento_id}`);

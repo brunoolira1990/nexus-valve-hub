@@ -489,6 +489,7 @@ class NFeSaidaEvento(models.Model):
         NFE_AUTORIZADA_PRODUCAO = 'NFE_AUTORIZADA_PRODUCAO', 'NF-e autorizada produção'
         NFE_REJEITADA_PRODUCAO = 'NFE_REJEITADA_PRODUCAO', 'NF-e rejeitada produção'
         ERRO_TRANSMISSAO_SEFAZ = 'ERRO_TRANSMISSAO_SEFAZ', 'Erro transmissão SEFAZ'
+        CONSULTA_SITUACAO_SEFAZ = 'CONSULTA_SITUACAO_SEFAZ', 'Consulta situação SEFAZ'
 
     nfe_saida = models.ForeignKey(
         NFeSaida,

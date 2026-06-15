@@ -43,10 +43,12 @@ def nf_cancelada(nf: NFeSaida) -> bool:
     return 'CANCEL' in sefaz
 
 
+MSG_HOMOLOG_SEM_FINANCEIRO = 'Financeiro indisponível para NF-e de homologação.'
+
+
 def nf_autorizada_para_financeiro(nf: NFeSaida) -> bool:
     if nf_autorizada_homologacao(nf):
-        cstat = (nf.cstat_autorizacao or '').strip()
-        return cstat in ('', '100')
+        return False
     st = _status_normalizado(nf.status)
     return st in ('AUTORIZADA', 'AUTORIZADA_INTERNA', 'EMITIDA', 'EMITIDO')
 
@@ -87,6 +89,8 @@ def montar_flags_financeiro_nfe(nf: NFeSaida) -> dict[str, Any]:
         motivo = MSG_TITULO_CANCELADO if tem_cancelado else MSG_JA_GERADO
     elif nf_cancelada(nf):
         motivo = MSG_CANCELADA
+    elif nf_autorizada_homologacao(nf):
+        motivo = MSG_HOMOLOG_SEM_FINANCEIRO
     elif not nf_autorizada_para_financeiro(nf):
         motivo = 'Disponível após autorização da NF-e.'
     elif not nf.cliente_id:
