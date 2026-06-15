@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from apps.fiscal.models import NFeSaida
+from apps.fiscal.nfe_emissao.ambiente_emissao_nfe import MSG_AMBIENTE_NAO_DEFINIDO, ambiente_emissao_nfe_definido
 from apps.fiscal.nfe_emissao.empresa_emitente import resolver_empresa_emitente_nfe
 from apps.fiscal.nfe_emissao.numeracao import NFeNumeracaoError, obter_config_numeracao
 from apps.fiscal.nfe_emissao.validacao_util import extrair_mensagens_pendencias_validacao
@@ -162,8 +163,17 @@ def validar_xml_emissao_local(xml: str, *, nfe_saida: NFeSaida) -> list[str]:
             erros.append('Série do XML diverge da numeração reservada.')
 
     m_amb = re.search(r'<[\w:]*tpAmb>([12])</[\w:]*tpAmb>', xml)
-    if not m_amb or m_amb.group(1) != '2':
-        erros.append('tpAmb deve ser 2 (homologação) nesta fase.')
+    if not ambiente_emissao_nfe_definido(nfe_saida):
+        erros.append(MSG_AMBIENTE_NAO_DEFINIDO)
+    else:
+        tp_amb_esperado = (
+            '1' if nfe_saida.ambiente_emissao == NFeSaida.AmbienteEmissao.PRODUCAO else '2'
+        )
+        if not m_amb or m_amb.group(1) != tp_amb_esperado:
+            if tp_amb_esperado == '1':
+                erros.append('tpAmb deve ser 1 (produção).')
+            else:
+                erros.append('tpAmb deve ser 2 (homologação).')
 
     if nfe_saida.chave_acesso and f'NFe{nfe_saida.chave_acesso}' not in xml:
         erros.append('Id infNFe não corresponde à chave reservada.')

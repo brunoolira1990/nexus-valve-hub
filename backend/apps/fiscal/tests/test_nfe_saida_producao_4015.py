@@ -285,6 +285,25 @@ class NFe4015ProducaoSefazTests(NFe4015GruposMixin, TestCase):
         self.assertEqual(self.nf.ambiente_emissao, 'producao')
 
     @override_settings(NFE_PRODUCAO_HABILITADA=True)
+    def test_validar_xml_local_producao_aceita_tpamb_1(self):
+        from apps.fiscal.nfe_emissao.validacao import validar_xml_emissao_local
+
+        reservar_numeracao_nfe(self.nf, ambiente='producao', usuario=self.user)
+        self.nf.refresh_from_db()
+        xml = gerar_xml_oficial_emissao(self.nf).decode()
+        erros = validar_xml_emissao_local(xml, nfe_saida=self.nf)
+        self.assertFalse(any('tpAmb deve ser 2' in e for e in erros), erros)
+
+    def test_validar_xml_local_homolog_rejeita_tpamb_1(self):
+        from apps.fiscal.nfe_emissao.validacao import validar_xml_emissao_local
+
+        self.nf.ambiente_emissao = NFeSaida.AmbienteEmissao.HOMOLOGACAO
+        self.nf.save(update_fields=['ambiente_emissao'])
+        xml = '<NFe xmlns="http://www.portalfiscal.inf.br/nfe"><infNFe Id="NFe35260512345678000199550010000000011000000011" versao="4.00"><ide><mod>55</mod><serie>0</serie><nNF>1</nNF><tpAmb>1</tpAmb></ide></infNFe></NFe>'
+        erros = validar_xml_emissao_local(xml, nfe_saida=self.nf)
+        self.assertTrue(any('tpAmb deve ser 2' in e for e in erros))
+
+    @override_settings(NFE_PRODUCAO_HABILITADA=True)
     def test_xml_producao_tpamb_1(self):
         reservar_numeracao_nfe(self.nf, ambiente='producao', usuario=self.user)
         self.nf.refresh_from_db()
