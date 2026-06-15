@@ -709,17 +709,28 @@ Preencher manualmente. **Não ligar a flag** até todos os itens obrigatórios e
 
 > **Não** copiar dump ou backup para o repositório Git.
 
+#### Registro operacional efetuado (jun/2026)
+
+| Campo | Valor registrado |
+|-------|------------------|
+| **Data/hora do backup** | **Confirmado pelo operador** — completar data/hora exata na tabela acima se diferente |
+| **Responsável** | **Bruno Lira** |
+| **Ambiente** | Servidor operacional (Nexus App produção operacional) |
+| **Tipo** | pg_dump / snapshot (conforme procedimento do operador) |
+| **Identificação do artefato** | Armazenamento seguro off-repo — **não versionar** |
+| **Validação mínima** | Confirmada pelo operador |
+| **NF-e produção no backup** | Nenhuma transmitida; flag `NFE_PRODUCAO_HABILITADA=false` |
+
 ### Pré-requisitos (obrigatório)
 
-- [ ] `NFE_PRODUCAO_HABILITADA=false` confirmado **agora**
-- [ ] Backup completo realizado e registrado
+- [x] `NFE_PRODUCAO_HABILITADA=false` confirmado **agora**
+- [x] Backup completo realizado e registrado (responsável Bruno Lira — ver registro operacional acima)
 - [ ] Certificado A1 válido (CNPJ compatível)
-- [ ] Empresa emitente revisada (CNPJ, IE, regime, endereço)
 - [ ] Série/número produção conferidos com contador/SEFAZ
 - [ ] Cliente e produtos revisados (NCM, CFOP, impostos)
 - [ ] NF «Pronta para emissão»; checklist produção UI sem bloqueios
 - [ ] DANFE BFR validado em homologação com mesmos dados
-- [ ] Apenas emissor designado com `fiscal_nfe_producao`
+- [x] Apenas emissor designado com `fiscal_nfe_producao` — **`fiscal01`** (único usuário no grupo)
 - [ ] Contador/fiscal e técnico confirmados presentes
 - [ ] Operação = venda normal (não remessa/triangular/devolução/entrada própria)
 
@@ -1217,19 +1228,19 @@ Nenhum número foi reservado nem alterado nesta auditoria. Validação contador/
 - Preparação NF-e real candidata T0 (novo pedido/faturamento)
 - `emitir-producao` / ligar flag / reservar número / alterar `.env`
 
-### 16.2 Status checklist §11 (evidência em 13/06/2026)
+### 16.2 Status checklist §11 (evidência em 13/06/2026 — ver atualização §17)
 
 | Item §11 | Status | Evidência / observação |
 |----------|--------|------------------------|
-| `NFE_PRODUCAO_HABILITADA=false` | **OK** | Confirmado no container auditado |
-| Backup formal registrado | **PENDENTE** | Operador deve preencher §11 «Registro de backup» |
+| `NFE_PRODUCAO_HABILITADA=false` | **OK** | Confirmado |
+| Backup formal registrado | **OK** | Responsável Bruno Lira — §11 + §17.1 |
 | Certificado A1 válido | **OK** | Válido até 2027-01-21; CNPJ compatível |
 | SEFAZ produção SP cStat 107 | **OK** | Consulta somente status (13/06/2026) |
-| `DEBUG=False` servidor operacional | **PENDENTE / BLOQUEIO** | Container local: `DEBUG=true`; operador **não conferiu** servidor real (13/06/2026) |
-| Numeração produção (série 1 / nº 1) | **PENDENTE** | Lida: ativa, modelo 55 — **confirmação contador/fiscal ausente** |
-| Grupo `fiscal_nfe_producao` | **PENDENTE** | Grupo inexistente; responsável não informado |
-| NF-e candidata T0 pronta | **PENDENTE** | NF 17 = homolog (não reutilizar); NF 15 = fixture incompleta |
-| `verificar_prontidao_producao` sem críticos | **OK** | Executado 13/06/2026 |
+| `DEBUG=False` servidor operacional | **OK** | Confirmado pelo operador (jun/2026) |
+| Numeração produção (série 1 / nº 1) | **PENDENTE** | Confirmação contador/fiscal ausente |
+| Grupo `fiscal_nfe_producao` | **OK** | Criado; único usuário: `fiscal01` — §17.3 |
+| NF-e candidata T0 pronta | **PENDENTE** | NF 17 = homolog; NF 15 = fixture |
+| `verificar_prontidao_producao` sem críticos | **OK** | Executado |
 | Contador/fiscal presente | **PENDENTE** | Janela T0 |
 | Autorização formal direção | **PENDENTE** | Janela T0 |
 | Checklist §11 assinado | **PENDENTE** | Assinaturas operador/fiscal/técnico/direção |
@@ -1255,13 +1266,11 @@ docker compose exec -T backend python manage.py shell -c "from django.conf impor
 
 ### 16.4 Parte 2 — Backup formal
 
-| Status | **BLOQUEADO** até registro |
+| Status | **Registrado** (jun/2026) |
 |--------|---------------------------|
-| Evidência nesta tarefa | Nenhuma |
-| Confirmação operador (13/06/2026) | **Backup ainda não realizado** — manter bloqueio T0 |
-| Próximo passo | Preencher §11 «Registro de backup» (data, responsável, tipo, validação mínima) |
-
-Sem backup formal registrado: **não avançar para T0**.
+| Responsável | **Bruno Lira** |
+| Detalhe | §11 «Registro operacional efetuado» + §17.1 |
+| NF-e produção no backup | Nenhuma; flag off |
 
 ### 16.5 Parte 3 — Numeração produção (somente leitura)
 
@@ -1280,11 +1289,9 @@ Nenhum número reservado nem alterado. **Confirmação contador/fiscal pendente.
 
 | Item | Status |
 |------|--------|
-| Grupo existe | **Não** |
-| Usuários com permissão hoje | `admin` (superuser), `comercial04` (admin) — **não adequados para T0 operacional** |
-| Alteração nesta tarefa | **Nenhuma** — operador informará username na próxima etapa |
-
-**Próximo passo:** operador informar username do responsável → criar grupo e atribuir **somente** a esse usuário.
+| Grupo existe | **Sim** — criado jun/2026 |
+| Único usuário | **`fiscal01`** |
+| Detalhe completo | §17.2 e §17.3 |
 
 ### 16.7 Parte 5 — NF-e candidata T0
 
@@ -1305,13 +1312,13 @@ Nenhum número reservado nem alterado. **Confirmação contador/fiscal pendente.
 
 ### 16.9 Pendências restantes (bloqueiam T0)
 
-1. Confirmar `DEBUG=false` no **servidor operacional real**
-2. Registrar backup formal (§11)
-3. Contador/fiscal validar série 1 / próximo número 1
-4. Informar responsável autorizado → criar `fiscal_nfe_producao`
-5. Preparar NF-e real candidata T0
-6. Assinar checklist §11 + autorização direção
-7. Janela T0 com contador/fiscal presente
+1. Completar data/hora exata do backup na tabela §11 (se necessário)
+2. Contador/fiscal validar série 1 / próximo número 1
+3. Preparar NF-e real candidata T0
+4. Assinar checklist §11 + autorização direção
+5. Janela T0 com contador/fiscal presente
+
+> Permissão `fiscal_nfe_producao` e usuário `fiscal01` concluídos — ver §17.
 
 ### 16.10 Confirmações desta operação
 
@@ -1321,3 +1328,79 @@ Nenhum número reservado nem alterado. **Confirmação contador/fiscal pendente.
 - [x] Não alterou `.env`, certificado, numeração, regra fiscal, código fiscal
 - [x] Não expôs secrets/certificado/senha
 - [x] Não rodou suítes longas (4015/402)
+
+---
+
+## 17. T0 — Acesso `fiscal01` e permissão `fiscal_nfe_producao` (jun/2026)
+
+> **T0 permanece BLOQUEADO** para emissão produção. Permissão de perfil criada; flag e janela formal ainda pendentes.
+
+| Campo | Valor |
+|-------|--------|
+| **Data registro** | jun/2026 |
+| **Resultado** | **BLOQUEADO** para T0 (emissão produção) |
+| **`NFE_PRODUCAO_HABILITADA`** | `false` (inalterado) |
+| **NF-e produção transmitida** | Nenhuma |
+| **Número produção reservado** | Nenhum |
+
+### 17.1 Backup formal (§11)
+
+| Campo | Valor |
+|-------|--------|
+| **Responsável** | **Bruno Lira** |
+| **Data/hora** | Confirmada pelo operador — completar data exata na tabela §11 se necessário |
+| **Status** | **Registrado** (sem artefato no Git) |
+
+### 17.2 Usuário operacional T0 — `fiscal01`
+
+| Campo | Valor |
+|-------|--------|
+| Username | `fiscal01` |
+| E-mail | `fiscal01@nexusvalvulas.com.br` |
+| Colaborador | **Bruno Prado de Lira** |
+| `is_staff` | `false` |
+| `is_superuser` | `false` |
+| Grupos | `fiscal`, `fiscal_nfe_producao` |
+| Conta `admin` | Staff/superuser técnico — **não** vinculado ao colaborador Bruno |
+
+### 17.3 Grupo `fiscal_nfe_producao`
+
+| Item | Valor |
+|------|--------|
+| Grupo | **Criado** |
+| Único usuário vinculado | **`fiscal01`** |
+| `usuario_pode_emitir_nfe_producao(fiscal01)` | `true` (perfil) |
+| Emissão produção efetiva | **Bloqueada** — `NFE_PRODUCAO_HABILITADA=false` |
+
+### 17.4 Status checklist §11 atualizado
+
+| Item | Status |
+|------|--------|
+| `NFE_PRODUCAO_HABILITADA=false` | **OK** |
+| Backup formal | **OK** — responsável Bruno Lira (§11 + §17.1) |
+| `DEBUG=false` servidor operacional | **OK** — confirmado pelo operador |
+| Grupo `fiscal_nfe_producao` + emissor `fiscal01` | **OK** |
+| Certificado A1 / SEFAZ 107 | **OK** (auditorias anteriores) |
+| Numeração produção (contador) | **PENDENTE** |
+| NF-e candidata T0 pronta | **PENDENTE** |
+| Checklist §11 assinado | **PENDENTE** |
+| Autorização formal direção | **PENDENTE** |
+| Contador/fiscal na janela | **PENDENTE** |
+
+### 17.5 Bloqueio T0 mantido — próximos passos
+
+1. Completar **data/hora exata** do backup na tabela §11 (se ainda em branco).
+2. Contador/fiscal validar **série 1 / próximo número 1**.
+3. Preparar **NF-e real candidata** → «Pronta para emissão» → `validar-emissao-producao` sem pendências.
+4. Assinar checklist §11 + autorização da direção.
+5. Janela T0 com contador/fiscal presente → **somente então** `NFE_PRODUCAO_HABILITADA=true`.
+
+### 17.6 Confirmações desta etapa
+
+- [x] Backup formal registrado (responsável Bruno Lira)
+- [x] `fiscal_nfe_producao` criado; somente `fiscal01` vinculado
+- [x] `admin` não alterado como operador T0
+- [x] `NFE_PRODUCAO_HABILITADA=false`
+- [x] Nenhuma NF-e produção transmitida
+- [x] Nenhum número reservado
+- [x] T0 **BLOQUEADO** até NF candidata + checklist + autorização
