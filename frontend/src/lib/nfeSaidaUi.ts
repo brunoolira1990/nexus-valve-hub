@@ -1,4 +1,5 @@
 import type { NFeSaida } from '@/types';
+import { isNfeAmbienteProducao } from '@/lib/empresaNfeAmbiente';
 
 const STATUS_NFE_FINALIZADA = new Set([
   'AUTORIZADA_INTERNA',
@@ -273,6 +274,13 @@ export function badgeNfeSaidaLinhaListagem(nfe: {
 
 export function mensagemCabecalhoNfeAutorizadaHomolog(): string {
   return 'NF-e de homologação não possui valor fiscal e não vira produção. Para produção, gere/emita uma NF-e real.';
+}
+
+export function mensagemProntaParaEmissao(ambiente?: string | null): string {
+  if (isNfeAmbienteProducao(ambiente)) {
+    return 'Conferência concluída — pronta para transmitir em produção SEFAZ quando o checklist permitir.';
+  }
+  return 'Conferência concluída — pronta para transmitir em homologação quando desejar.';
 }
 
 export function deveExibirMensagemProntaEmissao(

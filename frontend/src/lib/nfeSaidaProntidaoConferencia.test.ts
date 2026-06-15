@@ -15,7 +15,8 @@ describe('nfeSaidaProntidaoConferencia', () => {
 
   it('mensagem de orientação por status', () => {
     expect(mensagemOrientacaoProntidao('COM_PENDENCIAS')).toContain('pendências bloqueantes');
-    expect(mensagemOrientacaoProntidao('PRONTA_PARA_EMISSAO')).toContain('SEFAZ');
+    expect(mensagemOrientacaoProntidao('PRONTA_PARA_EMISSAO', 'homologacao')).toContain('homologação');
+    expect(mensagemOrientacaoProntidao('PRONTA_PARA_EMISSAO', 'producao')).toContain('produção SEFAZ');
   });
 
   it('botão marcar pronta conforme payload', () => {

@@ -69,7 +69,8 @@ class NFe4015ConferenciaProducaoUiTests(NFe4015GruposMixin, TestCase):
     def test_homologacao_nao_implica_producao_fiscal_generico(self):
         conf = montar_conferencia_nfe_saida(self.nf, modo='completo', usuario=self.fiscal_user)
         perm = montar_permissoes_emissao_producao(self.nf, usuario=self.fiscal_user)
-        self.assertTrue(conf['permissoes'].get('pode_tentar_emitir_homologacao'))
+        self.assertFalse(conf['permissoes'].get('pode_tentar_emitir_homologacao'))
+        self.assertIn('produção', conf['permissoes'].get('motivo_emitir_homologacao_bloqueado', '').lower())
         self.assertFalse(perm['usuario_pode_emitir_producao'])
         self.assertFalse(perm['pode_emitir_producao'])
         self.assertIn('permissão', perm['motivo_emitir_producao_bloqueado'].lower())

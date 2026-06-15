@@ -45,12 +45,15 @@ def montar_permissoes_emissao_producao(
 
     pronta = nf.status_conferencia == NFeSaida.StatusConferencia.PRONTA_PARA_EMISSAO
     nao_autorizada_prod = nf.status_emissao_sefaz != NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO
-    pode_tentar = habilitada and tem_permissao and pronta and nao_autorizada_prod
+    ambiente_prod = nf.ambiente_emissao == NFeSaida.AmbienteEmissao.PRODUCAO
+    pode_tentar = habilitada and tem_permissao and pronta and nao_autorizada_prod and ambiente_prod
     checklist_ok = bool(validacao and validacao.get('pronta'))
     pode_emitir = pode_tentar and checklist_ok
 
     motivo = ''
-    if not habilitada:
+    if not ambiente_prod:
+        motivo = 'NF-e não está configurada para ambiente de produção SEFAZ.'
+    elif not habilitada:
         motivo = 'Emissão produção SEFAZ desabilitada neste ambiente.'
     elif not tem_permissao:
         motivo = MSG_SEM_PERMISSAO_USUARIO

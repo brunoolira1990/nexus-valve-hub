@@ -51,6 +51,7 @@ const permHabilitadaAdmin = {
 const emissaoPronta = {
   habilitada: true,
   pronta: true,
+  ambiente_emissao_nfe: 'producao',
   emitente: { nome: 'Emitente Teste' },
   destinatario: { nome: 'Cliente Teste' },
   valor_total: 1500,

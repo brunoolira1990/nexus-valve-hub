@@ -61,6 +61,7 @@ export type NFeSaidaContextoAcao = {
   cenario: NFeSaidaCenarioAcao;
   ambienteLabel: string;
   ambienteRaw: string;
+  isAmbienteProducao: boolean;
   autorizadaHomolog: boolean;
   autorizadaProducao: boolean;
   temXmlAutorizado: boolean;
@@ -146,6 +147,7 @@ export function resolverContextoNfeSaida(
     entrada.resumo_emissao_sefaz?.ambiente_emissao ??
     (autorizadaHomolog ? 'homologacao' : autorizadaProducao ? 'producao' : '');
   const ambienteLabel = formatAmbienteNfe(ambienteRaw);
+  const isAmbienteProducao = (ambienteRaw || '').trim().toLowerCase() === 'producao';
   const chave =
     (entrada.chave_acesso ?? '').trim() ||
     (emissaoSefaz as { chave_acesso?: string } | undefined)?.chave_acesso?.trim() ||
@@ -154,11 +156,16 @@ export function resolverContextoNfeSaida(
   let avisoAmbiente: string | null = null;
   if (autorizadaHomolog) avisoAmbiente = AVISO_HOMOLOG_SEM_VALOR_FISCAL;
   else if (autorizadaProducao) avisoAmbiente = AVISO_PRODUCAO_POS_AUTORIZACAO;
+  else if (isAmbienteProducao && cenario === 'rascunho_conferencia') {
+    avisoAmbiente =
+      'Documento fiscal real — use o checklist e a emissão Produção SEFAZ abaixo. Homologação não se aplica a esta NF-e.';
+  }
 
   return {
     cenario,
     ambienteLabel,
     ambienteRaw,
+    isAmbienteProducao,
     autorizadaHomolog,
     autorizadaProducao,
     temXmlAutorizado: Boolean(
@@ -168,7 +175,8 @@ export function resolverContextoNfeSaida(
     chaveAcesso: chave,
     avisoAmbiente,
     exibirAcoesFuturas: autorizadaHomolog || autorizadaProducao,
-    exibirPainelEmissaoProducao: !autorizadaHomolog && cenario !== 'producao_autorizada',
+    exibirPainelEmissaoProducao:
+      isAmbienteProducao && !autorizadaHomolog && cenario !== 'producao_autorizada',
   };
 }
 
@@ -261,14 +269,13 @@ export function obterMatrizAcoesNfeSaida(
     if (opts?.podeValidar !== false) {
       acoes.push(acao({ id: 'validar', grupo: 'fiscal', label: 'Validar' }));
     }
-    if (cenario === 'rejeitada_erro' && opts?.podeEmitirHomolog) {
+    const homologAtiva = !ctx.isAmbienteProducao;
+    if (homologAtiva && cenario === 'rejeitada_erro' && opts?.podeEmitirHomolog) {
       acoes.push(acao({ id: 'emitir_homolog', grupo: 'fiscal', label: ACTION_LABELS.reenviarNfe }));
-    } else if (cenario === 'rascunho_conferencia' && opts?.podeEmitirHomolog) {
+    } else if (homologAtiva && cenario === 'rascunho_conferencia' && opts?.podeEmitirHomolog) {
       acoes.push(acao({ id: 'emitir_homolog', grupo: 'fiscal', label: ACTION_LABELS.emitirNfe }));
     }
-    if (opts?.podeEmitirProducao) {
-      acoes.push(acao({ id: 'emitir_producao', grupo: 'fiscal', label: 'Emitir em produção SEFAZ' }));
-    }
+    // Emissão produção/homologação: botões dedicados no painel/modal — não duplicar na matriz.
     acoes.push(
       acao({ id: 'abrir_nfe', grupo: 'documentos', label: 'Abrir NF-e' }),
       acao({ id: 'danfe_previa', grupo: 'documentos', label: 'DANFE prévia' }),

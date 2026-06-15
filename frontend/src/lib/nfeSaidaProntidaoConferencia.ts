@@ -1,4 +1,5 @@
-/** NF-e Saída 3.5.3 — status de prontidão da conferência (separado do status fiscal). */
+import { isNfeAmbienteProducao } from '@/lib/empresaNfeAmbiente';
+import { mensagemProntaParaEmissao } from '@/lib/nfeSaidaUi';
 
 export type StatusConferenciaNFe =
   | 'EM_CONFERENCIA'
@@ -39,16 +40,22 @@ export function badgeStatusConferenciaNFe(
   }
 }
 
-export function mensagemOrientacaoProntidao(status: StatusConferenciaNFe | undefined): string | null {
+export function mensagemOrientacaoProntidao(
+  status: StatusConferenciaNFe | undefined,
+  ambiente?: string | null,
+): string | null {
   const st = (status || '').toUpperCase();
   if (st === 'COM_PENDENCIAS') {
     return 'Existem pendências bloqueantes. Corrija os itens abaixo e valide novamente.';
   }
   if (st === 'CONFERIDA') {
+    if (isNfeAmbienteProducao(ambiente)) {
+      return 'Conferência validada sem pendências bloqueantes. Marque como pronta para emissão antes de transmitir em produção SEFAZ.';
+    }
     return 'Conferência validada sem pendências bloqueantes. Você pode marcar a NF-e como pronta para emissão.';
   }
   if (st === 'PRONTA_PARA_EMISSAO') {
-    return 'Conferência concluída — pronta para transmitir em homologação quando desejar.';
+    return mensagemProntaParaEmissao(ambiente);
   }
   return 'Salve os dados complementares e use «Validar conferência» para atualizar o status.';
 }

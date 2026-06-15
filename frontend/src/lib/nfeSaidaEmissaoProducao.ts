@@ -1,5 +1,7 @@
 /** Helpers UI — emissão NF-e Saída produção SEFAZ (Fase 3C). */
 
+import { isNfeAmbienteProducao } from '@/lib/empresaNfeAmbiente';
+
 export const TEXTO_CONFIRMACAO_PRODUCAO = 'PRODUCAO SEFAZ';
 export const CONFIRMACAO_AMBIENTE_PRODUCAO = 'PRODUCAO_SEFAZ';
 
@@ -45,6 +47,7 @@ export function exibirBlocoProducaoSefaz(
   permissoes?: NFeEmissaoProducaoPermissoes | null,
 ): boolean {
   if (emissao?.autorizada_producao) return true;
+  if (!isNfeAmbienteProducao(emissao?.ambiente_emissao_nfe)) return false;
   if (permissoes?.producao_habilitada) return true;
   if (emissao?.habilitada) return true;
   return Boolean(emissao?.status_emissao_sefaz?.includes('PRODUCAO'));

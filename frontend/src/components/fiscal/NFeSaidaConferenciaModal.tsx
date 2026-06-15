@@ -36,6 +36,7 @@ import {
   deveExibirMensagemProntaEmissao,
   isAutorizadaHomologacao,
   mensagemCabecalhoNfeAutorizadaHomolog,
+  mensagemProntaParaEmissao,
   nfeSalvarFormularioBloqueado,
   nfePodeDescartarRascunho,
 } from '@/lib/nfeSaidaUi';
@@ -83,6 +84,7 @@ import {
   resolverContextoNfeSaida,
 } from '@/lib/nfeSaidaAcoesMatriz';
 import { podeExibirBotaoEmitirProducao } from '@/lib/nfeSaidaEmissaoProducao';
+import { isNfeAmbienteProducao } from '@/lib/empresaNfeAmbiente';
 import { ACTION_LABELS } from '@/lib/operationalUi';
 
 type ConferenciaItem = NFeSaidaConferenciaPayload['itens'][number] & {
@@ -241,7 +243,8 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
     );
     const prontidaoCtx = (conf.prontidao ?? {}) as NFeSaidaProntidaoPayload;
     const podeValidarCtx = Boolean(conf.permissoes.pode_validar_conferencia ?? prontidaoCtx.pode_validar);
-    const podeTentarHomologCtx = Boolean(conf.permissoes.pode_tentar_emitir_homologacao);
+    const podeTentarHomologCtx =
+      Boolean(conf.permissoes.pode_tentar_emitir_homologacao) && !contextoAcao.isAmbienteProducao;
     const descarteCtx = nfePodeDescartarRascunho({
       status: String(conf.nfe.status),
       status_emissao_sefaz: conf.emissao_sefaz?.status_emissao_sefaz,
@@ -519,17 +522,26 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
   };
   const podeSalvar = !nfeSalvarFormularioBloqueado(nfe.status) && complementosEditaveis;
   const prontidao = (conf.prontidao ?? {}) as NFeSaidaProntidaoPayload;
-  const prontidaoBadge = badgeStatusConferenciaNFe(prontidao.status_conferencia);
-  const orientacaoProntidao = mensagemOrientacaoProntidao(prontidao.status_conferencia);
-  const podeValidarConferencia = Boolean(permissoes.pode_validar_conferencia ?? prontidao.pode_validar);
-  const podeMarcarPronta = Boolean(permissoes.pode_marcar_pronta ?? prontidao.pode_marcar_pronta);
-  const podeTentarEmitirHomolog = Boolean(permissoes.pode_tentar_emitir_homologacao);
-  const podeEmitirHomolog = Boolean(permissoes.pode_emitir_homologacao);
-  const motivoEmitirHomologBloqueado = permissoes.motivo_emitir_homologacao_bloqueado ?? '';
   const autorizadaHomolog = isAutorizadaHomologacao(
     { status: String(nfe.status) },
     conf.emissao_sefaz ?? null,
   );
+  const ambienteEmissaoNfe =
+    conf.apresentacao?.ambiente_emissao ??
+    conf.emissao_sefaz?.ambiente_emissao ??
+    conf.emissao_producao?.ambiente_emissao_nfe ??
+    contextoAcao.ambienteRaw ??
+    '';
+  const isAmbienteProducaoNfe = isNfeAmbienteProducao(ambienteEmissaoNfe);
+  const prontidaoBadge = badgeStatusConferenciaNFe(prontidao.status_conferencia);
+  const orientacaoProntidao = mensagemOrientacaoProntidao(prontidao.status_conferencia, ambienteEmissaoNfe);
+  const exibirMensagemPronta = deveExibirMensagemProntaEmissao(prontidao.status_conferencia, autorizadaHomolog);
+  const podeValidarConferencia = Boolean(permissoes.pode_validar_conferencia ?? prontidao.pode_validar);
+  const podeMarcarPronta = Boolean(permissoes.pode_marcar_pronta ?? prontidao.pode_marcar_pronta);
+  const podeTentarEmitirHomolog =
+    Boolean(permissoes.pode_tentar_emitir_homologacao) && !isAmbienteProducaoNfe;
+  const podeEmitirHomolog = Boolean(permissoes.pode_emitir_homologacao);
+  const motivoEmitirHomologBloqueado = permissoes.motivo_emitir_homologacao_bloqueado ?? '';
   const emissaoSefazBadge = badgeNfeSaidaEmissaoSefaz(conf.emissao_sefaz ?? null);
   const numeracaoHomolog = conf.emissao_sefaz?.numeracao_homologacao;
   const transporte = conf.transporte as Record<string, unknown>;
@@ -825,9 +837,9 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
           <p className="text-xs text-emerald-800 dark:text-emerald-200 mt-2 rounded-md bg-emerald-600/10 px-2 py-1.5 w-full">
             {conf.emissao_sefaz?.mensagem_status_homologacao || mensagemCabecalhoNfeAutorizadaHomolog()}
           </p>
-        ) : deveExibirMensagemProntaEmissao(prontidao.status_conferencia, autorizadaHomolog) ? (
+        ) : exibirMensagemPronta ? (
           <p className="text-xs text-emerald-800 dark:text-emerald-200 mt-2 rounded-md bg-emerald-600/10 px-2 py-1.5 w-full">
-            Conferência concluída — pronta para transmitir em homologação quando desejar.
+            {mensagemProntaParaEmissao(ambienteEmissaoNfe)}
           </p>
         ) : orientacaoProntidao ? (
           <p className="text-xs text-muted-foreground mt-2">{orientacaoProntidao}</p>
@@ -1366,7 +1378,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                   Marcada pronta em: {new Date(prontidao.marcada_pronta_em).toLocaleString('pt-BR')}
                 </p>
               ) : null}
-              {orientacaoProntidao ? (
+              {orientacaoProntidao && !exibirMensagemPronta ? (
                 <p className="text-sm text-muted-foreground">{orientacaoProntidao}</p>
               ) : null}
               <div className="flex flex-wrap gap-2 pt-1">
@@ -1393,26 +1405,6 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                       Validar dados
                     </button>
                   )
-                ) : null}
-                {podeValidarConferencia && !autorizadaHomolog ? (
-                  <button
-                    type="button"
-                    className="erp-btn-primary erp-btn-sm"
-                    disabled={
-                      !podeMarcarPronta || marcarProntaLoading || alteracoesNaoSalvas
-                    }
-                    title={
-                      alteracoesNaoSalvas
-                        ? 'Salve as alterações antes de marcar pronta.'
-                        : !podeMarcarPronta
-                          ? 'Resolva as pendências bloqueantes antes de marcar pronta.'
-                          : undefined
-                    }
-                    onClick={() => void handleMarcarPronta()}
-                  >
-                    {marcarProntaLoading ? <Loader2 className="h-3 w-3 animate-spin inline" /> : null}
-                    {ACTION_LABELS.prepararEmissao}
-                  </button>
                 ) : null}
                 {descartePerm.pode && !autorizadaHomolog ? (
                   <button
@@ -1441,7 +1433,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
               danfeLoading={danfeLoading}
               validarXmlLoading={validarXmlLoading}
               podeTentarEmitirHomolog={podeTentarEmitirHomolog && !autorizadaHomolog}
-              podeEmitirHomolog={podeEmitirHomolog && !autorizadaHomolog}
+              podeEmitirHomolog={podeEmitirHomolog && !autorizadaHomolog && !isAmbienteProducaoNfe}
               labelEmitir={labelEmitirHomolog}
               emissaoSefaz={conf.emissao_sefaz}
               danfeMeta={danfeMeta}
@@ -1463,7 +1455,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
               {emissaoMsg ? (
                 <div className="w-full rounded-md border border-border bg-muted/20 p-3 text-xs">{emissaoMsg}</div>
               ) : null}
-              {podeTentarEmitirHomolog && !podeEmitirHomolog && motivoEmitirHomologBloqueado ? (
+              {podeTentarEmitirHomolog && !podeEmitirHomolog && motivoEmitirHomologBloqueado && !isAmbienteProducaoNfe ? (
                 <div className="w-full rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-100">
                   {motivoEmitirHomologBloqueado}
                 </div>

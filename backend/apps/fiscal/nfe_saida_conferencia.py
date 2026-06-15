@@ -245,9 +245,10 @@ def _montar_permissoes_emissao_homolog(
     *,
     itens_count: int,
 ) -> dict[str, Any]:
+    ambiente_prod = nf.ambiente_emissao == NFeSaida.AmbienteEmissao.PRODUCAO
     pronta = nf.status_conferencia == NFeSaida.StatusConferencia.PRONTA_PARA_EMISSAO
     nao_autorizada = nf.status_emissao_sefaz != NFeSaida.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO
-    pode_tentar = pronta and nao_autorizada
+    pode_tentar = pronta and nao_autorizada and not ambiente_prod
     checklist_ok = bool((checklist or {}).get('pode_emitir'))
     # modo abertura não inclui checklist — marcar pronta já validou na hora
     if not checklist_ok and checklist is None and pronta and nf.conferencia_marcada_pronta_em:
@@ -266,6 +267,8 @@ def _montar_permissoes_emissao_homolog(
         motivo = 'Resolva as pendências na aba Validação antes de emitir em homologação.'
     elif not pronta:
         motivo = 'Marque a NF-e como pronta para emissão na conferência.'
+    elif ambiente_prod:
+        motivo = 'NF-e configurada para produção SEFAZ. Use o fluxo de emissão em produção.'
     elif not nao_autorizada:
         motivo = 'NF-e já autorizada em homologação.'
     return {
