@@ -226,8 +226,14 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
     [conf],
   );
 
-  const matrizAcoesConferencia = useMemo(() => {
-    if (!conf) return [];
+  const { matrizAcoesConferencia, acoesFuturas, acoesFiscaisPosAutorizacao } = useMemo(() => {
+    if (!conf) {
+      return {
+        matrizAcoesConferencia: [] as ReturnType<typeof obterMatrizAcoesNfeSaida>,
+        acoesFuturas: [] as ReturnType<typeof obterMatrizAcoesNfeSaida>,
+        acoesFiscaisPosAutorizacao: [] as ReturnType<typeof obterMatrizAcoesNfeSaida>,
+      };
+    }
     const autorizadaHomologCtx = isAutorizadaHomologacao(
       { status: String(conf.nfe.status) },
       conf.emissao_sefaz ?? null,
@@ -242,7 +248,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
         conf.emissao_sefaz?.protocolo_autorizacao || conf.apresentacao?.protocolo_autorizacao,
       cstat_autorizacao: conf.nfe.cstat_autorizacao as string | undefined,
     });
-    return obterMatrizAcoesNfeSaida(contextoAcao, {
+    const matriz = obterMatrizAcoesNfeSaida(contextoAcao, {
       podeDescartar: descarteCtx.pode,
       podeValidar: podeValidarCtx && !autorizadaHomologCtx,
       podeEmitirHomolog: podeTentarHomologCtx && !autorizadaHomologCtx,
@@ -250,16 +256,14 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
         contextoAcao.exibirPainelEmissaoProducao &&
         podeExibirBotaoEmitirProducao(conf.emissao_producao, conf.permissoes),
     });
+    return {
+      matrizAcoesConferencia: matriz,
+      acoesFuturas: matriz.filter((a) => a.grupo === 'futuras'),
+      acoesFiscaisPosAutorizacao: matriz.filter((a) => a.grupo === 'fiscal'),
+    };
   }, [conf, contextoAcao]);
 
-  const acoesFuturas = useMemo(
-    () => matrizAcoesConferencia.filter((a) => a.grupo === 'futuras'),
-    [matrizAcoesConferencia],
-  );
-  const acoesFiscaisPosAutorizacao = useMemo(
-    () => matrizAcoesConferencia.filter((a) => a.grupo === 'fiscal'),
-    [matrizAcoesConferencia],
-  );
+  // Nenhum hook (useState/useEffect/useMemo/useCallback) abaixo desta linha.
 
   const serieHomologConfirm =
     conf?.emissao_sefaz?.serie_nfe ??
