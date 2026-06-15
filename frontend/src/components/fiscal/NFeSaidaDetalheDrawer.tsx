@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { ExternalLink, FileCode, FileText, Loader2, X, ClipboardCheck } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Loader2, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
   Drawer,
@@ -24,7 +24,12 @@ import { formatDateTimeBr, nfePodeDescartarRascunho } from '@/lib/nfeSaidaUi';
 import { MotivoAcaoDestrutivaModal } from '@/components/comercial/MotivoAcaoDestrutivaModal';
 import { GerarContasReceberNfeModal } from '@/components/fiscal/GerarContasReceberNfeModal';
 import { NFeFinanceiroAcoes } from '@/components/fiscal/NFeFinanceiroAcoes';
+import { NFeSaidaAcoesGruposPanel } from '@/components/fiscal/NFeSaidaAcoesGruposPanel';
 import { toast } from 'sonner';
+import {
+  obterMatrizAcoesNfeSaida,
+  resolverContextoNfeSaida,
+} from '@/lib/nfeSaidaAcoesMatriz';
 import { nfeSaidasService, type NFeChecklistHomologacaoResponse } from '@/services/api/fiscal';
 import { apiErrorMessage } from '@/services/api/config';
 import type { NFeSaida } from '@/types';
@@ -78,6 +83,13 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
     if (!nfe?.id) return;
     setDanfeLoading(true);
     try {
+      if (contextoAcao.autorizadaHomolog) {
+        const blob = await nfeSaidasService.danfeHomologacaoBlob(nfe.id);
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank', 'noopener,noreferrer');
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        return;
+      }
       const { blob } = await nfeSaidasService.previewDanfeBlob(nfe.id);
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank', 'noopener,noreferrer');
@@ -91,6 +103,10 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
 
   const baixarXml = async () => {
     if (!nfe?.id) return;
+    if (contextoAcao.temXmlAutorizado && (contextoAcao.autorizadaHomolog || contextoAcao.autorizadaProducao)) {
+      window.open(nfeSaidasService.downloadXmlAutorizadoUrl(nfe.id), '_blank', 'noopener,noreferrer');
+      return;
+    }
     try {
       const data = await nfeSaidasService.previewXmlPreliminar(nfe.id);
       const blob = new Blob([data.xml || ''], { type: 'application/xml' });
@@ -103,6 +119,12 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
     } catch (e) {
       alert(apiErrorMessage(e, { fallback: 'Não foi possível baixar o XML.' }));
     }
+  };
+
+  const abrirConferencia = () => {
+    if (!nfe) return;
+    if (onOpenConferencia) onOpenConferencia(nfe);
+    else navigate(`/nfe-saida?nfe=${nfe.id}`);
   };
 
   const ap = nfe?.apresentacao;
@@ -128,6 +150,33 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
         cstat_autorizacao: nfe.cstat_autorizacao,
       })
     : { pode: false, motivo: '' };
+
+  const contextoAcao = useMemo(() => {
+    if (!nfe) {
+      return resolverContextoNfeSaida({});
+    }
+    return resolverContextoNfeSaida(
+      {
+        status: nfe.status,
+        status_emissao_sefaz: nfe.status_emissao_sefaz,
+        resumo_emissao_sefaz: nfe.resumo_emissao_sefaz,
+        ambiente_emissao: ap?.ambiente_emissao || sefaz?.ambiente_emissao,
+        chave_acesso: ap?.chave_acesso,
+        tem_xml_autorizado: sefaz?.tem_xml_autorizado,
+      },
+      sefaz ?? undefined,
+    );
+  }, [nfe, ap, sefaz]);
+
+  const matrizAcoes = useMemo(
+    () =>
+      obterMatrizAcoesNfeSaida(contextoAcao, {
+        podeDescartar: descartePerm.pode,
+        podeValidar: !contextoAcao.autorizadaHomolog && !contextoAcao.autorizadaProducao,
+        podeEmitirProducao: false,
+      }),
+    [contextoAcao, descartePerm.pode],
+  );
 
   const descartarRascunho = async (motivo: string) => {
     if (!nfe?.id) return;
@@ -312,95 +361,41 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
         </div>
 
         <DrawerFooter className="border-t border-border shrink-0">
-          <div className="flex flex-wrap gap-2 w-full">
-            <button
-              type="button"
-              className="erp-btn-outline erp-btn-sm"
-              disabled={!nfe}
-              title="Validar pré-homologação"
-              aria-label="Validar pré-homologação"
-              onClick={() => setChecklistOpen(true)}
-            >
-              <ClipboardCheck className="h-3 w-3 mr-1" />
-              Validar
-            </button>
-            <button
-              type="button"
-              className="erp-btn-primary erp-btn-sm"
-              disabled={!nfe}
-              title="Abrir NF-e"
-              aria-label="Abrir NF-e"
-              onClick={() => {
-                if (nfe && onOpenConferencia) onOpenConferencia(nfe);
-                else if (nfe) navigate(`/nfe-saida?nfe=${nfe.id}`);
-              }}
-            >
-              <ExternalLink className="h-3 w-3 mr-1" />
-              Abrir NF-e
-            </button>
-            <button
-              type="button"
-              className="erp-btn-outline erp-btn-sm"
-              disabled={!nfe || danfeLoading}
-              title="Visualizar DANFE"
-              aria-label="Visualizar DANFE"
-              onClick={() => void visualizarDanfe()}
-            >
-              {danfeLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileText className="h-3 w-3" />}
-              <span className="ml-1">DANFE</span>
-            </button>
-            <button
-              type="button"
-              className="erp-btn-outline erp-btn-sm"
-              disabled={!nfe}
-              title="Baixar XML"
-              aria-label="Baixar XML"
-              onClick={() => void baixarXml()}
-            >
-              <FileCode className="h-3 w-3 mr-1" />
-              XML
-            </button>
-            {descartePerm.pode ? (
-              <button
-                type="button"
-                className="erp-btn-outline erp-btn-sm text-destructive border-destructive/40"
-                disabled={!nfe || descarteLoading}
-                title="Descartar rascunho (sem SEFAZ)"
-                onClick={() => setDescarteOpen(true)}
-              >
-                Descartar rascunho
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="erp-btn-outline erp-btn-sm opacity-50 cursor-not-allowed"
-              disabled
-              title="Cancelamento fiscal SEFAZ — fase futura (4.0.13.6.9)"
-            >
-              Cancelar NF-e
-            </button>
-          </div>
-          <div className="w-full mt-2 pt-2 border-t border-border/60">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">
-              Ações financeiras
-            </p>
-            {nfe ? (
-              <NFeFinanceiroAcoes
-                nfeId={nfe.id}
-                status={nfe.status}
-                statusEmissaoSefaz={nfe.status_emissao_sefaz}
-                resumoEmissaoSefaz={nfe.resumo_emissao_sefaz}
-                financeiro={{
-                  financeiro_gerado: nfe.financeiro_gerado,
-                  pode_gerar_contas_receber: nfe.pode_gerar_contas_receber,
-                  motivo_bloqueio_financeiro: nfe.motivo_bloqueio_financeiro,
-                  contas_receber_vinculadas: nfe.contas_receber_vinculadas,
-                  nfe_cancelada_com_financeiro: nfe.nfe_cancelada_com_financeiro,
-                }}
-                onGerar={() => setGerarCrOpen(true)}
-              />
-            ) : null}
-          </div>
+          {nfe ? (
+            <NFeSaidaAcoesGruposPanel
+              compact
+              contexto={contextoAcao}
+              acoes={matrizAcoes}
+              danfeLoading={danfeLoading}
+              onValidar={() => setChecklistOpen(true)}
+              onAbrirNfe={abrirConferencia}
+              onHistorico={abrirConferencia}
+              onDanfe={() => void visualizarDanfe()}
+              onXml={() => void baixarXml()}
+              xmlAutorizadoHref={
+                nfe.id && contextoAcao.temXmlAutorizado
+                  ? nfeSaidasService.downloadXmlAutorizadoUrl(nfe.id)
+                  : undefined
+              }
+              onDescartar={() => setDescarteOpen(true)}
+              financeiroSlot={
+                <NFeFinanceiroAcoes
+                  nfeId={nfe.id}
+                  status={nfe.status}
+                  statusEmissaoSefaz={nfe.status_emissao_sefaz}
+                  resumoEmissaoSefaz={nfe.resumo_emissao_sefaz}
+                  financeiro={{
+                    financeiro_gerado: nfe.financeiro_gerado,
+                    pode_gerar_contas_receber: nfe.pode_gerar_contas_receber,
+                    motivo_bloqueio_financeiro: nfe.motivo_bloqueio_financeiro,
+                    contas_receber_vinculadas: nfe.contas_receber_vinculadas,
+                    nfe_cancelada_com_financeiro: nfe.nfe_cancelada_com_financeiro,
+                  }}
+                  onGerar={() => setGerarCrOpen(true)}
+                />
+              }
+            />
+          ) : null}
           {!descartePerm.pode && nfe && (nfe.status || '').toUpperCase() !== 'DESCARTADA_INTERNA' ? (
             <p className="text-xs text-muted-foreground w-full mt-2">
               {descartePerm.motivo ||

@@ -40,7 +40,7 @@ describe('nfeSaidaPosAutorizacaoHomolog', () => {
 
   it('mensagem cabeçalho homologação', () => {
     expect(mensagemCabecalhoNfeAutorizadaHomolog()).toContain('homologação');
-    expect(mensagemCabecalhoNfeAutorizadaHomolog()).not.toContain('Nenhuma transmissão SEFAZ');
+    expect(mensagemCabecalhoNfeAutorizadaHomolog()).toContain('não vira produção');
   });
 
   it('bloqueia salvar formulário', () => {

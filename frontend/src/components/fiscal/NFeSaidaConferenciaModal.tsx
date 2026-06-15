@@ -73,6 +73,13 @@ import { AdvancedSupportSection } from '@/components/nexus/AdvancedSupportSectio
 import { GerarContasReceberNfeModal } from '@/components/fiscal/GerarContasReceberNfeModal';
 import { NFeFinanceiroAcoes } from '@/components/fiscal/NFeFinanceiroAcoes';
 import { NFeSaidaAcoesOperacionais } from '@/components/fiscal/NFeSaidaAcoesOperacionais';
+import { NFeSaidaAcoesContextoBanner } from '@/components/fiscal/NFeSaidaAcoesGruposPanel';
+import {
+  GRUPO_ACAO_LABELS,
+  obterMatrizAcoesNfeSaida,
+  resolverContextoNfeSaida,
+} from '@/lib/nfeSaidaAcoesMatriz';
+import { podeExibirBotaoEmitirProducao } from '@/lib/nfeSaidaEmissaoProducao';
 import { ACTION_LABELS } from '@/lib/operationalUi';
 
 type ConferenciaItem = NFeSaidaConferenciaPayload['itens'][number] & {
@@ -572,6 +579,43 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
       conf.emissao_sefaz?.protocolo_autorizacao || apresentacao?.protocolo_autorizacao,
     cstat_autorizacao: nfe.cstat_autorizacao as string | undefined,
   });
+
+  const contextoAcao = useMemo(
+    () =>
+      resolverContextoNfeSaida(
+        {
+          status: nfe.status,
+          status_emissao_sefaz: conf.emissao_sefaz?.status_emissao_sefaz,
+          ambiente_emissao: apresentacao?.ambiente_emissao || conf.emissao_sefaz?.ambiente_emissao,
+          chave_acesso: apresentacao?.chave_acesso || conf.emissao_sefaz?.chave_acesso,
+          tem_xml_autorizado: conf.emissao_sefaz?.tem_xml_autorizado,
+          autorizada_producao: conf.emissao_producao?.autorizada_producao,
+        },
+        conf.emissao_sefaz ?? undefined,
+      ),
+    [nfe.status, conf.emissao_sefaz, conf.emissao_producao, apresentacao],
+  );
+  const matrizAcoesConferencia = useMemo(
+    () =>
+      obterMatrizAcoesNfeSaida(contextoAcao, {
+        podeDescartar: descartePerm.pode,
+        podeValidar: podeValidarConferencia && !autorizadaHomolog,
+        podeEmitirHomolog: podeTentarEmitirHomolog && !autorizadaHomolog,
+        podeEmitirProducao:
+          contextoAcao.exibirPainelEmissaoProducao &&
+          podeExibirBotaoEmitirProducao(conf.emissao_producao, permissoes),
+      }),
+    [
+      contextoAcao,
+      descartePerm.pode,
+      podeValidarConferencia,
+      autorizadaHomolog,
+      podeTentarEmitirHomolog,
+      conf.emissao_producao,
+      permissoes,
+    ],
+  );
+  const acoesFuturas = matrizAcoesConferencia.filter((a) => a.grupo === 'futuras');
 
   const descartarRascunho = async (motivo: string) => {
     setDescarteLoading(true);
@@ -1359,14 +1403,22 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                 ) : null}
               </div>
             </div>
+            <NFeSaidaAcoesContextoBanner contexto={contextoAcao} />
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {autorizadaHomolog || contextoAcao.autorizadaProducao
+                  ? GRUPO_ACAO_LABELS.documentos
+                  : GRUPO_ACAO_LABELS.fiscal}
+              </p>
             <NFeSaidaAcoesOperacionais
               nfeId={nfeId}
               autorizadaHomolog={autorizadaHomolog}
+              autorizadaProducao={contextoAcao.autorizadaProducao}
               emissaoLoading={emissaoLoading}
               danfeLoading={danfeLoading}
               validarXmlLoading={validarXmlLoading}
-              podeTentarEmitirHomolog={podeTentarEmitirHomolog}
-              podeEmitirHomolog={podeEmitirHomolog}
+              podeTentarEmitirHomolog={podeTentarEmitirHomolog && !autorizadaHomolog}
+              podeEmitirHomolog={podeEmitirHomolog && !autorizadaHomolog}
               labelEmitir={labelEmitirHomolog}
               emissaoSefaz={conf.emissao_sefaz}
               danfeMeta={danfeMeta}
@@ -1402,6 +1454,8 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                 onApplied={handleImpostosAtualizados}
               />
             </NFeSaidaAcoesOperacionais>
+            </div>
+            {contextoAcao.exibirPainelEmissaoProducao ? (
             <div className="space-y-2">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Emissão produção SEFAZ
@@ -1416,8 +1470,11 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                 }}
               />
             </div>
+            ) : null}
             <div className="rounded-md border border-border p-3 space-y-2">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Ações financeiras</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {GRUPO_ACAO_LABELS.financeiras}
+              </p>
               <NFeFinanceiroAcoes
                 nfeId={nfeId}
                 status={String(nfe.status)}
@@ -1427,6 +1484,26 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                 onGerar={() => setGerarCrOpen(true)}
               />
             </div>
+            {acoesFuturas.length ? (
+              <div className="rounded-md border border-border p-3 space-y-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {GRUPO_ACAO_LABELS.futuras}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {acoesFuturas.map((acao) => (
+                    <button
+                      key={acao.id}
+                      type="button"
+                      className="erp-btn-outline erp-btn-sm opacity-50 cursor-not-allowed"
+                      disabled
+                      title={acao.title}
+                    >
+                      {acao.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             {previewError ? <p className="text-sm text-destructive">{previewError}</p> : null}
             {conf?.emissao_sefaz?.status_emissao_sefaz ? (
               <div className="space-y-2">

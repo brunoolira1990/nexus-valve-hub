@@ -1,0 +1,257 @@
+import {
+  ClipboardCheck,
+  Copy,
+  ExternalLink,
+  FileCode,
+  FileText,
+  History,
+  Loader2,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import {
+  GRUPO_ACAO_LABELS,
+  agruparAcoesPorGrupo,
+  type NFeSaidaAcaoConfig,
+  type NFeSaidaContextoAcao,
+} from '@/lib/nfeSaidaAcoesMatriz';
+
+type Props = {
+  contexto: NFeSaidaContextoAcao;
+  acoes: NFeSaidaAcaoConfig[];
+  danfeLoading?: boolean;
+  onValidar?: () => void;
+  onAbrirNfe?: () => void;
+  onHistorico?: () => void;
+  onDanfe?: () => void;
+  onXml?: () => void;
+  onXmlAutorizado?: () => void;
+  onCopiarChave?: () => void;
+  onDescartar?: () => void;
+  xmlAutorizadoHref?: string;
+  financeiroSlot?: React.ReactNode;
+  compact?: boolean;
+};
+
+function GrupoSecao({
+  titulo,
+  children,
+  compact,
+}: {
+  titulo: string;
+  children: React.ReactNode;
+  compact?: boolean;
+}) {
+  return (
+    <section className={compact ? 'space-y-1.5' : 'space-y-2'}>
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{titulo}</p>
+      <div className="flex flex-wrap gap-2">{children}</div>
+    </section>
+  );
+}
+
+function BotaoAcao({
+  acao,
+  onClick,
+  href,
+  loading,
+  variant = 'outline',
+  children,
+}: {
+  acao: NFeSaidaAcaoConfig;
+  onClick?: () => void;
+  href?: string;
+  loading?: boolean;
+  variant?: 'outline' | 'primary' | 'destructive';
+  children?: React.ReactNode;
+}) {
+  const cls =
+    variant === 'primary'
+      ? 'erp-btn-primary erp-btn-sm'
+      : variant === 'destructive'
+        ? 'erp-btn-outline erp-btn-sm text-destructive border-destructive/40'
+        : acao.futura || !acao.habilitada
+          ? 'erp-btn-outline erp-btn-sm opacity-50 cursor-not-allowed'
+          : 'erp-btn-outline erp-btn-sm';
+
+  const disabled = acao.futura || !acao.habilitada || loading;
+  const title = acao.title || (acao.futura ? 'Disponível em fase futura' : undefined);
+  const label = (
+    <>
+      {children}
+      {acao.label}
+    </>
+  );
+
+  if (href && acao.habilitada && !acao.futura) {
+    return (
+      <a className={cls} href={href} target="_blank" rel="noreferrer" title={title}>
+        {label}
+      </a>
+    );
+  }
+
+  return (
+    <button type="button" className={cls} disabled={disabled} title={title} onClick={onClick}>
+      {loading ? <Loader2 className="h-3 w-3 animate-spin inline mr-1" /> : null}
+      {label}
+    </button>
+  );
+}
+
+export function NFeSaidaAcoesContextoBanner({ contexto }: { contexto: NFeSaidaContextoAcao }) {
+  const ambienteClass = contexto.autorizadaProducao
+    ? 'border-red-600/40 bg-red-950/5 text-red-800 dark:text-red-300'
+    : contexto.autorizadaHomolog
+      ? 'border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100'
+      : 'border-border bg-muted/20 text-muted-foreground';
+
+  return (
+    <div className={`rounded-md border px-3 py-2 space-y-1 text-xs ${ambienteClass}`}>
+      <p>
+        <span className="font-medium">Ambiente:</span> {contexto.ambienteLabel}
+        {contexto.autorizadaHomolog ? (
+          <span className="ml-2 erp-badge-warning text-[10px]">Sem valor fiscal</span>
+        ) : null}
+        {contexto.autorizadaProducao ? (
+          <span className="ml-2 erp-badge-success text-[10px]">Produção SEFAZ</span>
+        ) : null}
+      </p>
+      {contexto.avisoAmbiente ? <p>{contexto.avisoAmbiente}</p> : null}
+    </div>
+  );
+}
+
+export function NFeSaidaAcoesGruposPanel({
+  contexto,
+  acoes,
+  danfeLoading,
+  onValidar,
+  onAbrirNfe,
+  onHistorico,
+  onDanfe,
+  onXml,
+  onDescartar,
+  xmlAutorizadoHref,
+  financeiroSlot,
+  compact,
+}: Props) {
+  const grupos = agruparAcoesPorGrupo(acoes);
+
+  const copiarChave = () => {
+    if (!contexto.chaveAcesso) return;
+    void navigator.clipboard.writeText(contexto.chaveAcesso).then(() => {
+      toast.success('Chave de acesso copiada.');
+    });
+  };
+
+  const renderAcao = (acao: NFeSaidaAcaoConfig) => {
+    switch (acao.id) {
+      case 'validar':
+        return (
+          <button key={acao.id} type="button" className="erp-btn-outline erp-btn-sm" onClick={onValidar}>
+            <ClipboardCheck className="h-3 w-3 mr-1 inline" />
+            {acao.label}
+          </button>
+        );
+      case 'abrir_nfe':
+        return (
+          <button key={acao.id} type="button" className="erp-btn-primary erp-btn-sm" onClick={onAbrirNfe}>
+            <ExternalLink className="h-3 w-3 mr-1 inline" />
+            {acao.label}
+          </button>
+        );
+      case 'historico':
+        return (
+          <button
+            key={acao.id}
+            type="button"
+            className="erp-btn-outline erp-btn-sm"
+            onClick={onHistorico ?? onAbrirNfe}
+          >
+            <History className="h-3 w-3 mr-1 inline" />
+            {acao.label}
+          </button>
+        );
+      case 'danfe_previa':
+      case 'danfe_autorizado':
+        return (
+          <button
+            key={acao.id}
+            type="button"
+            className="erp-btn-outline erp-btn-sm"
+            disabled={danfeLoading || !acao.habilitada}
+            onClick={onDanfe}
+          >
+            {danfeLoading ? (
+              <Loader2 className="h-3 w-3 animate-spin inline mr-1" />
+            ) : (
+              <FileText className="h-3 w-3 mr-1 inline" />
+            )}
+            {acao.label}
+          </button>
+        );
+      case 'xml_previo':
+        return (
+          <button key={acao.id} type="button" className="erp-btn-outline erp-btn-sm" onClick={onXml}>
+            <FileCode className="h-3 w-3 mr-1 inline" />
+            {acao.label}
+          </button>
+        );
+      case 'xml_autorizado':
+        return (
+          <BotaoAcao key={acao.id} acao={acao} href={xmlAutorizadoHref}>
+            <FileCode className="h-3 w-3 mr-1 inline" />
+          </BotaoAcao>
+        );
+      case 'copiar_chave':
+        return (
+          <button
+            key={acao.id}
+            type="button"
+            className="erp-btn-outline erp-btn-sm"
+            disabled={!acao.habilitada}
+            title={acao.title}
+            onClick={copiarChave}
+          >
+            <Copy className="h-3 w-3 mr-1 inline" />
+            {acao.label}
+          </button>
+        );
+      case 'descartar_rascunho':
+        return <BotaoAcao key={acao.id} acao={acao} variant="destructive" onClick={onDescartar} />;
+      default:
+        return <BotaoAcao key={acao.id} acao={acao} />;
+    }
+  };
+
+  return (
+    <div className={compact ? 'space-y-3' : 'space-y-4'}>
+      <NFeSaidaAcoesContextoBanner contexto={contexto} />
+      {grupos.fiscal.length ? (
+        <GrupoSecao titulo={GRUPO_ACAO_LABELS.fiscal} compact={compact}>
+          {grupos.fiscal.map(renderAcao)}
+        </GrupoSecao>
+      ) : null}
+      {grupos.documentos.length ? (
+        <GrupoSecao titulo={GRUPO_ACAO_LABELS.documentos} compact={compact}>
+          {grupos.documentos.map(renderAcao)}
+        </GrupoSecao>
+      ) : null}
+      {financeiroSlot ? (
+        <section className={compact ? 'space-y-1.5' : 'space-y-2'}>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {GRUPO_ACAO_LABELS.financeiras}
+          </p>
+          {financeiroSlot}
+        </section>
+      ) : null}
+      {grupos.futuras.length ? (
+        <GrupoSecao titulo={GRUPO_ACAO_LABELS.futuras} compact={compact}>
+          {grupos.futuras.map((a) => (
+            <BotaoAcao key={a.id} acao={a} />
+          ))}
+        </GrupoSecao>
+      ) : null}
+    </div>
+  );
+}

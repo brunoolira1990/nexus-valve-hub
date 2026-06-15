@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { Wallet } from 'lucide-react';
+import { isAutorizadaProducao } from '@/lib/nfeSaidaAcoesMatriz';
 import { isAutorizadaHomologacao } from '@/lib/nfeSaidaUi';
 
 type FinanceiroFlags = {
@@ -30,11 +31,20 @@ export function NFeFinanceiroAcoes({
   className = '',
 }: Props) {
   const navigate = useNavigate();
-  const autorizada = isAutorizadaHomologacao({
+  const autorizadaHomolog = isAutorizadaHomologacao({
     status: status ?? '',
     status_emissao_sefaz: statusEmissaoSefaz,
     resumo_emissao_sefaz: resumoEmissaoSefaz ?? undefined,
   });
+  const autorizadaProducao = isAutorizadaProducao(
+    {
+      status: status ?? '',
+      status_emissao_sefaz: statusEmissaoSefaz,
+      resumo_emissao_sefaz: resumoEmissaoSefaz ?? undefined,
+    },
+    resumoEmissaoSefaz ?? undefined,
+  );
+  const autorizada = autorizadaHomolog || autorizadaProducao;
 
   const flags = financeiro ?? {};
   const vinculados = flags.contas_receber_vinculadas ?? [];

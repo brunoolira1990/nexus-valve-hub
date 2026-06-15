@@ -271,7 +271,7 @@ export function badgeNfeSaidaLinhaListagem(nfe: {
 }
 
 export function mensagemCabecalhoNfeAutorizadaHomolog(): string {
-  return 'NF-e autorizada em homologação pela SEFAZ. Documento sem valor fiscal de produção.';
+  return 'NF-e de homologação não possui valor fiscal e não vira produção. Para produção, gere/emita uma NF-e real.';
 }
 
 export function deveExibirMensagemProntaEmissao(

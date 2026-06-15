@@ -1,13 +1,15 @@
-import { Loader2 } from 'lucide-react';
+import { Loader2, Copy } from 'lucide-react';
 import { AdvancedSupportSection } from '@/components/nexus/AdvancedSupportSection';
 import { OperationalMessage } from '@/components/nexus/OperationalMessage';
 import { ACTION_LABELS, TECHNICAL_DOWNLOAD_LABELS, labelNfeStatusOperacional } from '@/lib/operationalUi';
+import { AVISO_HOMOLOG_SEM_VALOR_FISCAL } from '@/lib/nfeSaidaAcoesMatriz';
 import {
   nfeSaidasService,
   type DanfePreviewMeta,
   type NFeSaidaPreviewXmlResponse,
 } from '@/services/api/fiscal';
 import { apiErrorMessage } from '@/services/api/config';
+import { toast } from 'sonner';
 
 type EmissaoSefaz = {
   status_emissao_sefaz?: string;
@@ -25,6 +27,7 @@ type EmissaoSefaz = {
 type Props = {
   nfeId: number;
   autorizadaHomolog: boolean;
+  autorizadaProducao?: boolean;
   emissaoLoading: boolean;
   danfeLoading: boolean;
   validarXmlLoading: boolean;
@@ -47,6 +50,7 @@ type Props = {
 export function NFeSaidaAcoesOperacionais({
   nfeId,
   autorizadaHomolog,
+  autorizadaProducao = false,
   emissaoLoading,
   danfeLoading,
   validarXmlLoading,
@@ -76,6 +80,13 @@ export function NFeSaidaAcoesOperacionais({
         setTimeout(() => URL.revokeObjectURL(url), 60_000);
         return;
       }
+      if (autorizadaProducao) {
+        const { blob } = await nfeSaidasService.previewDanfeBlob(nfeId);
+        const u = URL.createObjectURL(blob);
+        window.open(u, '_blank', 'noopener,noreferrer');
+        setTimeout(() => URL.revokeObjectURL(u), 60_000);
+        return;
+      }
       const { blob, meta } = await nfeSaidasService.previewDanfeBlob(nfeId);
       onDanfeMeta(meta);
       const u = URL.createObjectURL(blob);
@@ -93,23 +104,42 @@ export function NFeSaidaAcoesOperacionais({
   };
 
   const statusLabel = labelNfeStatusOperacional(emissaoSefaz?.status_emissao_sefaz);
+  const autorizada = autorizadaHomolog || autorizadaProducao;
 
   return (
     <div className="space-y-3">
-      <OperationalMessage
-        title={`Status: ${statusLabel}`}
-        message={
-          autorizadaHomolog
-            ? 'NF-e autorizada pela SEFAZ.'
-            : emissaoSefaz?.status_emissao_sefaz === 'REJEITADA_HOMOLOGACAO'
+      {!autorizada ? (
+        <OperationalMessage
+          title={`Status: ${statusLabel}`}
+          message={
+            emissaoSefaz?.status_emissao_sefaz === 'REJEITADA_HOMOLOGACAO'
               ? emissaoSefaz?.nfe?.xmotivo || 'NF-e rejeitada. Corrija os dados e reenvie.'
               : 'Revise os dados da NF-e antes de emitir.'
-        }
-        variant={autorizadaHomolog ? 'success' : 'info'}
-        raw
-      />
+          }
+          variant="info"
+          raw
+        />
+      ) : null}
 
-      {autorizadaHomolog && emissaoSefaz?.nfe?.protocolo ? (
+      {autorizadaHomolog ? (
+        <OperationalMessage
+          title="NF-e autorizada em homologação"
+          message={AVISO_HOMOLOG_SEM_VALOR_FISCAL}
+          variant="success"
+          raw
+        />
+      ) : null}
+
+      {autorizadaProducao ? (
+        <OperationalMessage
+          title="NF-e autorizada em produção"
+          message="Documento com validade fiscal. Consulta SEFAZ, CC-e e cancelamento serão disponibilizados em fase futura."
+          variant="success"
+          raw
+        />
+      ) : null}
+
+      {autorizada && emissaoSefaz?.nfe?.protocolo ? (
         <div className="text-xs space-y-0.5 text-muted-foreground">
           <p>Protocolo: {emissaoSefaz.nfe.protocolo}</p>
           {emissaoSefaz.chave_acesso ? (
@@ -126,21 +156,40 @@ export function NFeSaidaAcoesOperacionais({
           onClick={() => void abrirDanfe()}
         >
           {danfeLoading ? <Loader2 className="h-3 w-3 animate-spin inline mr-1" /> : null}
-          {ACTION_LABELS.verDanfe}
+          {autorizadaHomolog
+            ? 'DANFE (homologação)'
+            : autorizadaProducao
+              ? 'DANFE autorizado'
+              : ACTION_LABELS.verDanfe}
         </button>
 
-        {autorizadaHomolog && emissaoSefaz?.tem_xml_autorizado ? (
+        {autorizada && emissaoSefaz?.tem_xml_autorizado ? (
           <a
             className="erp-btn-outline erp-btn-sm"
             href={nfeSaidasService.downloadXmlAutorizadoUrl(nfeId)}
             target="_blank"
             rel="noreferrer"
           >
-            {ACTION_LABELS.baixarXml}
+            {autorizadaProducao ? 'XML autorizado (produção)' : ACTION_LABELS.baixarXml}
           </a>
         ) : null}
 
-        {podeTentarEmitirHomolog && !autorizadaHomolog ? (
+        {autorizadaProducao && emissaoSefaz?.chave_acesso ? (
+          <button
+            type="button"
+            className="erp-btn-outline erp-btn-sm"
+            onClick={() => {
+              void navigator.clipboard.writeText(emissaoSefaz.chave_acesso!).then(() => {
+                toast.success('Chave de acesso copiada.');
+              });
+            }}
+          >
+            <Copy className="h-3 w-3 mr-1 inline" />
+            Copiar chave
+          </button>
+        ) : null}
+
+        {podeTentarEmitirHomolog && !autorizada ? (
           <button
             type="button"
             className="erp-btn-primary erp-btn-sm"
@@ -244,7 +293,7 @@ export function NFeSaidaAcoesOperacionais({
               {TECHNICAL_DOWNLOAD_LABELS.xmlRetorno}
             </a>
           ) : null}
-          {!autorizadaHomolog ? (
+          {!autorizada ? (
             <button
               type="button"
               className="erp-btn-outline erp-btn-sm"
