@@ -63,7 +63,11 @@ def nfe_autorizada(nfe_saida: NFeSaida, *, tem_protocolo: bool = False) -> bool:
     st = _norm_status(nfe_saida.status)
     if st in _STATUS_EMITIDA:
         return True
-    if (nfe_saida.status_emissao_sefaz or '') == 'AUTORIZADA_HOMOLOGACAO':
+    if (nfe_saida.status_emissao_sefaz or '') == NFeSaida.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO:
+        return True
+    if (nfe_saida.status_emissao_sefaz or '') == NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO:
+        return True
+    if st == 'AUTORIZADA_PRODUCAO':
         return True
     return bool(tem_protocolo or nfe_saida.efeitos_autorizacao_aplicados_em)
 

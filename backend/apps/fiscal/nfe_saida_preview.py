@@ -110,9 +110,9 @@ def _dec_str(v, places: int = 2) -> str:
 
 
 def _bloqueio_preview(nf: NFeSaida) -> dict[str, Any] | None:
-    from apps.fiscal.nfe_saida_bloqueio import nf_autorizada_homologacao
+    from apps.fiscal.nfe_saida_bloqueio import nf_autorizada_homologacao, nf_autorizada_producao
 
-    if nf_autorizada_homologacao(nf):
+    if nf_autorizada_homologacao(nf) or nf_autorizada_producao(nf):
         return None
 
     st = _norm_status(nf.status)
@@ -766,26 +766,42 @@ def gerar_preview_xml_nfe_saida(nfe_saida: NFeSaida) -> dict[str, Any]:
 
 
 def gerar_preview_danfe_nfe_saida(nfe_saida: NFeSaida) -> tuple[bytes, dict[str, Any]]:
-    """NF-e Saída 3.5.4 — DANFE de conferência em layout real."""
-    from apps.fiscal.nfe_saida_bloqueio import nf_autorizada_homologacao
+    """NF-e Saída 3.5.4 — DANFE de conferência ou autorizado (homolog/produção)."""
+    from apps.fiscal.danfe_render import DanfeBfrRenderError
+    from apps.fiscal.nfe_saida_bloqueio import nf_autorizada_homologacao, nf_autorizada_producao
 
-    if nf_autorizada_homologacao(nfe_saida) and (nfe_saida.xml_autorizado or '').strip():
-        try:
-            from apps.fiscal.nfe_integracao.danfe_brazil_fiscal_report import (
-                DanfeBfrError,
-                DanfeBfrIndisponivelError,
-                brazil_fiscal_report_disponivel,
-                gerar_danfe_bfr_homologacao_autorizada,
+    xml_autorizado = (nfe_saida.xml_autorizado or '').strip()
+    if (nf_autorizada_homologacao(nfe_saida) or nf_autorizada_producao(nfe_saida)) and xml_autorizado:
+        from apps.fiscal.nfe_integracao.danfe_brazil_fiscal_report import (
+            DanfeBfrError,
+            DanfeBfrIndisponivelError,
+            brazil_fiscal_report_disponivel,
+            gerar_danfe_bfr_homologacao_autorizada,
+            gerar_danfe_bfr_producao_autorizada,
+        )
+
+        if not brazil_fiscal_report_disponivel():
+            raise DanfeBfrRenderError(
+                'Renderizador oficial BFR (BrazilFiscalReport) indisponível neste ambiente.',
+                nfe_saida_id=nfe_saida.pk,
             )
-
-            if brazil_fiscal_report_disponivel():
+        try:
+            if nf_autorizada_producao(nfe_saida):
+                pdf, meta = gerar_danfe_bfr_producao_autorizada(nfe_saida)
+            else:
                 pdf, meta = gerar_danfe_bfr_homologacao_autorizada(nfe_saida)
-                if pdf and not meta.get('bloqueado'):
-                    return pdf, meta
-        except (DanfeBfrError, DanfeBfrIndisponivelError):
-            pass
-        except Exception:
-            pass
+        except (DanfeBfrError, DanfeBfrIndisponivelError) as exc:
+            raise DanfeBfrRenderError(
+                str(exc),
+                nfe_saida_id=nfe_saida.pk,
+                erro_tipo=type(exc).__name__,
+            ) from exc
+        if pdf and not meta.get('bloqueado'):
+            return pdf, meta
+        raise DanfeBfrRenderError(
+            'Não foi possível gerar o DANFE a partir do XML autorizado.',
+            nfe_saida_id=nfe_saida.pk,
+        )
 
     from apps.fiscal.danfe_conferencia import gerar_danfe_conferencia_pdf
 

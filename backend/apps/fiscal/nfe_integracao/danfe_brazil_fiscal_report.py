@@ -417,6 +417,52 @@ def gerar_danfe_bfr_nfe_preliminar(nfe_saida) -> tuple[bytes, dict[str, Any]]:
     return pdf, meta
 
 
+def gerar_danfe_bfr_producao_autorizada(nfe_saida) -> tuple[bytes, dict[str, Any]]:
+    """DANFE via XML autorizado (procNFe) — produção com protocolo SEFAZ."""
+    if not brazil_fiscal_report_disponivel():
+        raise DanfeBfrIndisponivelError('BrazilFiscalReport indisponível neste ambiente.')
+
+    xml = (nfe_saida.xml_autorizado or '').strip()
+    if not xml:
+        raise DanfeBfrError('XML autorizado não disponível. Emita em produção antes.')
+
+    if not _xml_tem_protocolo(xml):
+        raise DanfeBfrError('XML autorizado sem protocolo SEFAZ — DANFE indisponível.')
+
+    tp_amb = _tp_amb_do_xml(xml)
+    if tp_amb != '1':
+        raise DanfeBfrError('XML autorizado de produção deve conter tpAmb=1.')
+
+    pdf = gerar_danfe_bfr_de_xml_string(
+        xml,
+        nfe_saida=nfe_saida,
+        ambiente='1',
+        tem_protocolo=True,
+    )
+    marca = resolver_marca_dagua_danfe(nfe_saida, '1', tem_protocolo=True)
+    meta = {
+        'preview': False,
+        'conferencia': False,
+        'producao_autorizada': True,
+        'bloqueado': False,
+        'render_engine': 'brazil_fiscal_report',
+        'danfe_origem': 'xml_autorizado_procNFe',
+        'danfe_renderer_label': 'DANFE Produção (autorizada SEFAZ)',
+        'protocolo_autorizacao': nfe_saida.protocolo_autorizacao,
+        'chave_acesso': nfe_saida.chave_acesso,
+        'nfe_saida_id': nfe_saida.pk,
+        'numero': nfe_saida.numero_nfe or nfe_saida.numero,
+        'serie': nfe_saida.serie_nfe,
+        'ambiente_emissao': 'producao',
+        'tp_amb': '1',
+        'content_type': 'application/pdf',
+        'filename': f'danfe-producao-{nfe_saida.pk}.pdf',
+        'marca_dagua': marca,
+        'mensagens': ['DANFE produção — documento com validade fiscal.', 'Protocolo SEFAZ real.'],
+    }
+    return pdf, meta
+
+
 def gerar_danfe_bfr_homologacao_autorizada(nfe_saida) -> tuple[bytes, dict[str, Any]]:
     """DANFE via XML autorizado (procNFe) — homologação com protocolo real SEFAZ."""
     if not brazil_fiscal_report_disponivel():

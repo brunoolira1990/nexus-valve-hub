@@ -68,13 +68,19 @@ def nf_autorizada_homologacao(nf: NFeSaida) -> bool:
     return (nf.status or '').strip().upper() in _STATUS_AUTORIZADA_HOMOLOG
 
 
+def nf_autorizada_producao(nf: NFeSaida) -> bool:
+    if (nf.status_emissao_sefaz or '').strip() == NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO:
+        return True
+    return (nf.status or '').strip().upper() == 'AUTORIZADA_PRODUCAO'
+
+
 def origem_comercial_travada(nf: NFeSaida) -> bool:
     return bool(nf.faturamento_pedido_venda_id or nf.pedido_venda_id)
 
 
 def nf_ja_finalizada_operacionalmente(nf: NFeSaida) -> bool:
     """Trava edição estrutural após autorização real — não confunde status legado EMITIDA com SEFAZ."""
-    if nf_autorizada_homologacao(nf):
+    if nf_autorizada_homologacao(nf) or nf_autorizada_producao(nf):
         return True
     st = _status_normalizado(nf.status)
     if st in _STATUS_CANCELADA:

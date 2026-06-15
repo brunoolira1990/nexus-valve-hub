@@ -375,6 +375,28 @@ class NFe4015ProducaoSefazTests(NFe4015GruposMixin, TestCase):
         self.assertEqual(mock_tx.call_args[0][0].ambiente_emissao, 'producao')
 
     @override_settings(NFE_PRODUCAO_HABILITADA=True)
+    def test_danfe_producao_autorizada_usa_xml_protocolado(self):
+        from apps.fiscal.nfe_integracao.danfe_brazil_fiscal_report import brazil_fiscal_report_disponivel
+        from apps.fiscal.nfe_saida_preview import gerar_preview_danfe_nfe_saida
+
+        self.nf.status_emissao_sefaz = NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO
+        self.nf.status = 'AUTORIZADA_PRODUCAO'
+        self.nf.ambiente_emissao = NFeSaida.AmbienteEmissao.PRODUCAO
+        self.nf.serie_nfe = '1'
+        self.nf.numero_nfe = '000000361'
+        self.nf.protocolo_autorizacao = '135260000000099'
+        self.nf.chave_acesso = '352605123456780001995500100000000361000000361'
+        self.nf.xml_autorizado = XML_AUTORIZADO_MOCK_PROD
+        self.nf.save()
+        pdf, meta = gerar_preview_danfe_nfe_saida(self.nf)
+        if brazil_fiscal_report_disponivel():
+            self.assertFalse(meta.get('conferencia'))
+            self.assertFalse(meta.get('bloqueado'), meta.get('mensagens'))
+            self.assertEqual(meta.get('danfe_origem'), 'xml_autorizado_procNFe')
+            self.assertIsNone(meta.get('marca_dagua'))
+            self.assertGreater(len(pdf), 100)
+
+    @override_settings(NFE_PRODUCAO_HABILITADA=True)
     @patch('apps.fiscal.nfe_emissao.servico_producao.validar_emissao_completa', return_value={'ok': True, 'erros': []})
     @patch('apps.fiscal.nfe_emissao.servico_producao.transmitir_nfe_producao')
     @patch('apps.fiscal.nfe_emissao.servico_producao.assinar_xml_nfe')

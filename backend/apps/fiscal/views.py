@@ -1516,6 +1516,7 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         from django.http import HttpResponse
 
         from apps.fiscal.danfe_render import DanfeBfrRenderError
+        from apps.fiscal.nfe_integracao.danfe_brazil_fiscal_report import DanfeBfrError
         from apps.fiscal.nfe_perf import medir_nfe_perf
 
         nf = self.get_object()
@@ -1523,14 +1524,14 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
             with medir_nfe_perf('preview_danfe', nfe_id=nf.pk) as perf:
                 pdf, meta = gerar_preview_danfe_nfe_saida(nf)
                 perf.marcar('pdf_gerado')
-        except DanfeBfrRenderError as exc:
+        except (DanfeBfrRenderError, DanfeBfrError) as exc:
             payload = {
                 'detail': str(exc),
                 'mensagens': [str(exc)],
                 'bloqueado': True,
                 'render_engine': 'brazil_fiscal_report_erro',
                 'renderer_oficial': 'BFR',
-                'trace_id': exc.trace_id,
+                'trace_id': getattr(exc, 'trace_id', None),
                 'nfe_saida_id': nf.pk,
                 'numero': nf.numero,
             }
