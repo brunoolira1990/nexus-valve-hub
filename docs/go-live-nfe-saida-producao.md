@@ -700,9 +700,9 @@ Preencher manualmente. **Não ligar a flag** até todos os itens obrigatórios e
 
 | Campo | Preencher |
 |-------|-----------|
-| Data/hora do backup | |
-| Responsável | |
-| Ambiente (dev/staging/prod) | |
+| Data/hora do backup | **15/06/2026** |
+| Responsável | **Bruno Lira** |
+| Ambiente (dev/staging/prod) | Servidor operacional (produção operacional Nexus App) |
 | Tipo (snapshot/pg_dump/outro) | |
 | Identificação do artefato (caminho/retenção — **não versionar**) | |
 | Validação mínima (restore testado / checksum / outro) | |
@@ -713,7 +713,7 @@ Preencher manualmente. **Não ligar a flag** até todos os itens obrigatórios e
 
 | Campo | Valor registrado |
 |-------|------------------|
-| **Data/hora do backup** | **Confirmado pelo operador** — completar data/hora exata na tabela acima se diferente |
+| **Data/hora do backup** | **15/06/2026** |
 | **Responsável** | **Bruno Lira** |
 | **Ambiente** | Servidor operacional (Nexus App produção operacional) |
 | **Tipo** | pg_dump / snapshot (conforme procedimento do operador) |
@@ -1312,11 +1312,10 @@ Nenhum número reservado nem alterado. **Confirmação contador/fiscal pendente.
 
 ### 16.9 Pendências restantes (bloqueiam T0)
 
-1. Completar data/hora exata do backup na tabela §11 (se necessário)
-2. Contador/fiscal validar série 1 / próximo número 1
-3. Preparar NF-e real candidata T0
-4. Assinar checklist §11 + autorização direção
-5. Janela T0 com contador/fiscal presente
+1. Contador/fiscal validar série 1 / próximo número 1
+2. Preparar NF-e real candidata T0
+3. Assinar checklist §11 + autorização direção
+4. Janela T0 com contador/fiscal presente
 
 > Permissão `fiscal_nfe_producao` e usuário `fiscal01` concluídos — ver §17.
 
@@ -1348,7 +1347,7 @@ Nenhum número reservado nem alterado. **Confirmação contador/fiscal pendente.
 | Campo | Valor |
 |-------|--------|
 | **Responsável** | **Bruno Lira** |
-| **Data/hora** | Confirmada pelo operador — completar data exata na tabela §11 se necessário |
+| **Data/hora** | **15/06/2026** |
 | **Status** | **Registrado** (sem artefato no Git) |
 
 ### 17.2 Usuário operacional T0 — `fiscal01`
@@ -1389,11 +1388,10 @@ Nenhum número reservado nem alterado. **Confirmação contador/fiscal pendente.
 
 ### 17.5 Bloqueio T0 mantido — próximos passos
 
-1. Completar **data/hora exata** do backup na tabela §11 (se ainda em branco).
-2. Contador/fiscal validar **série 1 / próximo número 1**.
-3. Preparar **NF-e real candidata** → «Pronta para emissão» → `validar-emissao-producao` sem pendências.
-4. Assinar checklist §11 + autorização da direção.
-5. Janela T0 com contador/fiscal presente → **somente então** `NFE_PRODUCAO_HABILITADA=true`.
+1. Contador/fiscal validar **série 1 / próximo número 1**.
+2. Preparar **NF-e real candidata** → «Pronta para emissão» → `validar-emissao-producao` sem pendências.
+3. Assinar checklist §11 + autorização da direção.
+4. Janela T0 com contador/fiscal presente → **somente então** `NFE_PRODUCAO_HABILITADA=true`.
 
 ### 17.6 Confirmações desta etapa
 
