@@ -1371,14 +1371,25 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
     def download_xml_autorizado(self, request, pk=None):
         from django.http import HttpResponse
 
+        from apps.fiscal.nfe_integracao.danfe_brazil_fiscal_report import DanfeBfrError
+        from apps.fiscal.nfe_integracao.danfe_xml_autorizado import resolver_xml_autorizado_danfe
+        from apps.fiscal.nfe_saida_arquivo_autorizado import (
+            content_disposition_attachment,
+            nome_arquivo_xml_autorizado,
+        )
+
         nf = self.get_object()
-        xml = (nf.xml_autorizado or '').strip()
-        if not xml:
+        try:
+            xml = resolver_xml_autorizado_danfe(nf)
+        except DanfeBfrError as exc:
+            return response.Response({'mensagem': str(exc)}, status=404)
+        if not (xml or '').strip():
             return response.Response({'mensagem': 'XML autorizado indisponível.'}, status=404)
+        filename = nome_arquivo_xml_autorizado(nf)
         return HttpResponse(
             xml,
             content_type='application/xml; charset=utf-8',
-            headers={'Content-Disposition': f'attachment; filename="nfe-{nf.pk}-procNFe.xml"'},
+            headers={'Content-Disposition': content_disposition_attachment(filename)},
         )
 
     @action(detail=True, methods=['get'], url_path='danfe-homologacao')
@@ -1401,6 +1412,11 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
                 {'mensagem': 'DANFE autorizado disponível apenas após autorização SEFAZ.'},
                 status=status.HTTP_409_CONFLICT,
             )
+        from apps.fiscal.nfe_saida_arquivo_autorizado import (
+            content_disposition_attachment,
+            nome_arquivo_danfe_autorizado,
+        )
+
         try:
             pdf, meta = gerar_danfe_autorizado_nfe_saida(nf)
         except (DanfeBfrRenderError, DanfeBfrError) as exc:
@@ -1415,8 +1431,14 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
                 'numero': nf.numero,
             }
             return response.Response(payload, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        if not pdf:
+            return response.Response(
+                {'mensagem': 'Não foi possível gerar o DANFE autorizado.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        filename = nome_arquivo_danfe_autorizado(nf)
         headers = {
-            'Content-Disposition': f'inline; filename="{meta["filename"]}"',
+            'Content-Disposition': content_disposition_attachment(filename),
             'Cache-Control': 'no-store, no-cache, must-revalidate',
             'Pragma': 'no-cache',
             'X-Danfe-Renderer-Oficial': 'BFR',

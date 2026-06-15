@@ -21,7 +21,8 @@ vi.mock('@/services/api/fiscal', () => ({
   nfeSaidasService: {
     emitirProducao: vi.fn(),
     validarEmissaoProducao: vi.fn(),
-    downloadXmlAutorizadoUrl: vi.fn((id: number) => `/api/nf-saidas/${id}/xml-autorizado/`),
+    downloadXmlAutorizado: vi.fn(),
+    downloadXmlAutorizadoBlob: vi.fn(),
   },
 }));
 

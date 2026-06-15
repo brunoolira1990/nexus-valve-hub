@@ -206,14 +206,17 @@ export function NFeSaidaEmissaoProducaoPanel({
             <p className="font-mono text-xs break-all">Chave: {emissaoProducao.chave_acesso}</p>
           ) : null}
           {emissaoProducao?.tem_xml_autorizado ? (
-            <a
+            <button
+              type="button"
               className="erp-btn-outline erp-btn-sm inline-flex mt-2"
-              href={nfeSaidasService.downloadXmlAutorizadoUrl(nfeId)}
-              target="_blank"
-              rel="noreferrer"
+              onClick={() => {
+                void nfeSaidasService.downloadXmlAutorizado(nfeId).catch((e) => {
+                  toast.error(apiErrorMessage(e, { fallback: 'Não foi possível baixar o XML autorizado.' }));
+                });
+              }}
             >
               Baixar XML autorizado (produção)
-            </a>
+            </button>
           ) : null}
         </div>
       ) : (

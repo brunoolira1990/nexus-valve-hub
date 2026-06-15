@@ -14,6 +14,12 @@ import type {
   NFeSaidaListItem,
 } from '@/types';
 import type { DiagnosticoFiscalPreview, EnderecoFiscalResumo } from '@/lib/enderecoFiscal';
+import {
+  downloadBlobFile,
+  parseContentDispositionFilename,
+  readBlobErrorMessage,
+} from '@/lib/downloadBlobFile';
+import type { AxiosResponse } from 'axios';
 
 /** Remove campos só de UI; em PATCH mantém `id` (obrigatório em NF-e de faturamento). */
 export function stripNfItens(itens: Array<ItemNFe | Record<string, unknown>>, opts?: { keepId?: boolean }) {
@@ -30,6 +36,27 @@ export function stripNfItens(itens: Array<ItemNFe | Record<string, unknown>>, op
 
 const nfEnt = 'nf-entradas/';
 const nfSai = 'nf-saidas/';
+
+async function resolveBlobDownload(
+  res: AxiosResponse<Blob>,
+  fallbackFilename: string,
+  errorFallback: string,
+): Promise<{ blob: Blob; filename: string }> {
+  const contentType = String(res.headers['content-type'] || '');
+  const isJson =
+    contentType.includes('application/json') ||
+    (res.data instanceof Blob && res.data.type.includes('json'));
+  if (res.status >= 400 || isJson) {
+    const msg = await readBlobErrorMessage(res.data, errorFallback);
+    throw Object.assign(new Error(msg), { response: res });
+  }
+  if (!(res.data instanceof Blob) || !res.data.size) {
+    throw new Error('O arquivo retornado está vazio.');
+  }
+  const filename =
+    parseContentDispositionFilename(res.headers['content-disposition']) || fallbackFilename;
+  return { blob: res.data, filename };
+}
 const cte = 'cte-entradas/';
 
 export const nfeEntradasService = {
@@ -827,6 +854,18 @@ export const nfeSaidasService = {
   downloadXmlLoteEnviadoUrl: (id: number) => `${api.defaults.baseURL}${nfSai}${id}/xml-lote-enviado/`,
   downloadXmlRetornoSefazUrl: (id: number) => `${api.defaults.baseURL}${nfSai}${id}/xml-retorno-sefaz/`,
   downloadXmlAutorizadoUrl: (id: number) => `${api.defaults.baseURL}${nfSai}${id}/xml-autorizado/`,
+  downloadXmlAutorizadoBlob: async (id: number) => {
+    const res = await api.get<Blob>(`${nfSai}${id}/xml-autorizado/`, {
+      responseType: 'blob',
+      headers: { Accept: 'application/xml, text/xml, application/json' },
+      validateStatus: (s) => s >= 200 && s < 500,
+    });
+    return resolveBlobDownload(res, `NFe_${id}_procNFe.xml`, 'XML autorizado indisponível.');
+  },
+  downloadXmlAutorizado: async (id: number) => {
+    const { blob, filename } = await nfeSaidasService.downloadXmlAutorizadoBlob(id);
+    downloadBlobFile(blob, filename);
+  },
   validarXmlSchema: async (id: number) =>
     (
       await api.post<{ ok: boolean; tipo?: string; erros?: Array<Record<string, unknown>> }>(
@@ -844,26 +883,34 @@ export const nfeSaidasService = {
       const res = await api.get<Blob>(`${nfSai}${id}/danfe-autorizado/`, {
         responseType: 'blob',
         params: { t: Date.now() },
-        headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+        headers: {
+          Accept: 'application/pdf, application/json',
+          'Cache-Control': 'no-cache',
+          Pragma: 'no-cache',
+        },
+        validateStatus: (s) => s >= 200 && s < 500,
       });
-      return res.data;
+      return resolveBlobDownload(
+        res,
+        `DANFE_NFe_${id}.pdf`,
+        'Não foi possível gerar o DANFE autorizado.',
+      );
     } catch (err) {
       const ax = err as import('axios').AxiosError<Blob>;
       const data = ax.response?.data;
       if (data instanceof Blob && ax.response?.status === 503) {
-        try {
-          const json = JSON.parse(await data.text()) as { detail?: string; mensagens?: string[] };
-          const msg =
-            json.detail ||
-            (Array.isArray(json.mensagens) ? json.mensagens[0] : undefined) ||
-            'Não foi possível gerar o DANFE autorizado.';
-          throw Object.assign(new Error(msg), { response: ax.response, isAxiosError: true });
-        } catch (parseErr) {
-          if (parseErr instanceof Error && !(parseErr instanceof SyntaxError)) throw parseErr;
-        }
+        const msg = await readBlobErrorMessage(
+          data,
+          'Não foi possível gerar o DANFE autorizado.',
+        );
+        throw Object.assign(new Error(msg), { response: ax.response, isAxiosError: true });
       }
       throw err;
     }
+  },
+  baixarDanfeAutorizado: async (id: number) => {
+    const { blob, filename } = await nfeSaidasService.danfeAutorizadoBlob(id);
+    downloadBlobFile(blob, filename);
   },
   previewContasReceber: async (id: number) =>
     (await api.get<NFeGerarContasReceberPreview>(`${nfSai}${id}/financeiro/preview-contas-receber/`)).data,

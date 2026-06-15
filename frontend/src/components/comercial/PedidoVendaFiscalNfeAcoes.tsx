@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Download, ExternalLink, Eye, FileCode, Scale } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { downloadBlobFile, openBlobInNewTab } from '@/lib/downloadBlobFile';
 import { nfeSaidasService } from '@/services/api/fiscal';
 import { apiErrorMessage } from '@/services/api/config';
 import { nfeTemDanfeHomologacao } from '@/lib/pedidoVendaModalUi';
@@ -30,16 +31,11 @@ export function PedidoVendaFiscalNfeAcoes({
     nfeSaidaStatus === 'AUTORIZADA_HOMOLOGACAO' ||
     homolog;
 
-  const runBlob = async (key: string, fn: () => Promise<Blob>, filename: string) => {
+  const runBlob = async (key: string, fn: () => Promise<{ blob: Blob; filename: string }>) => {
     setLoading(key);
     try {
-      const blob = await fn();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      const { blob, filename } = await fn();
+      downloadBlobFile(blob, filename);
     } catch (e) {
       alert(apiErrorMessage(e, { fallback: 'Não foi possível baixar o arquivo.' }));
     } finally {
@@ -50,12 +46,13 @@ export function PedidoVendaFiscalNfeAcoes({
   const visualizarDanfe = async () => {
     setLoading('view');
     try {
-      const blob = autorizada
-        ? await nfeSaidasService.danfeAutorizadoBlob(nfeSaidaId)
-        : (await nfeSaidasService.previewDanfeBlob(nfeSaidaId)).blob;
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank', 'noopener,noreferrer');
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      if (autorizada) {
+        const { blob } = await nfeSaidasService.danfeAutorizadoBlob(nfeSaidaId);
+        openBlobInNewTab(blob);
+        return;
+      }
+      const { blob } = await nfeSaidasService.previewDanfeBlob(nfeSaidaId);
+      openBlobInNewTab(blob);
     } catch (e) {
       alert(apiErrorMessage(e, { fallback: 'Não foi possível visualizar o DANFE.' }));
     } finally {
@@ -92,32 +89,40 @@ export function PedidoVendaFiscalNfeAcoes({
         className={btnOutline}
         disabled={!!loading}
         onClick={() =>
-          void runBlob(
-            'danfe',
-            () =>
-              autorizada
-                ? nfeSaidasService.danfeAutorizadoBlob(nfeSaidaId)
-                : nfeSaidasService.previewDanfeBlob(nfeSaidaId).then((r) => r.blob),
-            `danfe-nfe-${nfeSaidaId}.pdf`,
+          void runBlob('danfe', () =>
+            autorizada
+              ? nfeSaidasService.danfeAutorizadoBlob(nfeSaidaId)
+              : nfeSaidasService.previewDanfeBlob(nfeSaidaId).then(({ blob }) => ({
+                  blob,
+                  filename: `danfe-nfe-${nfeSaidaId}.pdf`,
+                })),
           )
         }
       >
         <Download className="h-3 w-3 shrink-0" aria-hidden />
         <span>Baixar DANFE</span>
       </button>
-      <a
-        className={btnOutline}
-        href={
-          homolog
-            ? nfeSaidasService.downloadXmlAutorizadoUrl(nfeSaidaId)
-            : nfeSaidasService.downloadXmlNfeUrl(nfeSaidaId)
-        }
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        <FileCode className="h-3 w-3 shrink-0" aria-hidden />
-        <span>Baixar XML</span>
-      </a>
+      {autorizada ? (
+        <button
+          type="button"
+          className={btnOutline}
+          disabled={!!loading}
+          onClick={() => void runBlob('xml', () => nfeSaidasService.downloadXmlAutorizadoBlob(nfeSaidaId))}
+        >
+          <FileCode className="h-3 w-3 shrink-0" aria-hidden />
+          <span>Baixar XML</span>
+        </button>
+      ) : (
+        <a
+          className={btnOutline}
+          href={nfeSaidasService.downloadXmlNfeUrl(nfeSaidaId)}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <FileCode className="h-3 w-3 shrink-0" aria-hidden />
+          <span>Baixar XML</span>
+        </a>
+      )}
       <button
         type="button"
         className={btnOutline}

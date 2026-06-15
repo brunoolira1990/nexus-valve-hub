@@ -31,7 +31,6 @@ type Props = {
   consultaSefazLoading?: boolean;
   onCartaCorrecao?: () => void;
   cartaCorrecaoLoading?: boolean;
-  xmlAutorizadoHref?: string;
   financeiroSlot?: React.ReactNode;
   compact?: boolean;
 };
@@ -139,7 +138,7 @@ export function NFeSaidaAcoesGruposPanel({
   consultaSefazLoading,
   onCartaCorrecao,
   cartaCorrecaoLoading,
-  xmlAutorizadoHref,
+  onXmlAutorizado,
   financeiroSlot,
   compact,
 }: Props) {
@@ -207,7 +206,7 @@ export function NFeSaidaAcoesGruposPanel({
         );
       case 'xml_autorizado':
         return (
-          <BotaoAcao key={acao.id} acao={acao} href={xmlAutorizadoHref}>
+          <BotaoAcao key={acao.id} acao={acao} onClick={onXmlAutorizado ?? onXml}>
             <FileCode className="h-3 w-3 mr-1 inline" />
           </BotaoAcao>
         );

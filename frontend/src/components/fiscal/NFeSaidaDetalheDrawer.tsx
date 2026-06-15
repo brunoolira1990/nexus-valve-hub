@@ -33,6 +33,7 @@ import {
   obterMatrizAcoesNfeSaida,
   resolverContextoNfeSaida,
 } from '@/lib/nfeSaidaAcoesMatriz';
+import { openBlobInNewTab } from '@/lib/downloadBlobFile';
 import { nfeSaidasService, type NFeChecklistHomologacaoResponse } from '@/services/api/fiscal';
 import { apiErrorMessage } from '@/services/api/config';
 import type { NFeSaida } from '@/types';
@@ -89,10 +90,8 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
     setDanfeLoading(true);
     try {
       if (contextoAcao.autorizadaHomolog || contextoAcao.autorizadaProducao) {
-        const blob = await nfeSaidasService.danfeAutorizadoBlob(nfe.id);
-        const url = URL.createObjectURL(blob);
-        window.open(url, '_blank', 'noopener,noreferrer');
-        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        const { blob } = await nfeSaidasService.danfeAutorizadoBlob(nfe.id);
+        openBlobInNewTab(blob);
         return;
       }
       const { blob } = await nfeSaidasService.previewDanfeBlob(nfe.id);
@@ -109,7 +108,11 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
   const baixarXml = async () => {
     if (!nfe?.id) return;
     if (contextoAcao.temXmlAutorizado && (contextoAcao.autorizadaHomolog || contextoAcao.autorizadaProducao)) {
-      window.open(nfeSaidasService.downloadXmlAutorizadoUrl(nfe.id), '_blank', 'noopener,noreferrer');
+      try {
+        await nfeSaidasService.downloadXmlAutorizado(nfe.id);
+      } catch (e) {
+        alert(apiErrorMessage(e, { fallback: 'Não foi possível baixar o XML autorizado.' }));
+      }
       return;
     }
     try {
@@ -377,11 +380,7 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
               onHistorico={abrirConferencia}
               onDanfe={() => void visualizarDanfe()}
               onXml={() => void baixarXml()}
-              xmlAutorizadoHref={
-                nfe.id && contextoAcao.temXmlAutorizado
-                  ? nfeSaidasService.downloadXmlAutorizadoUrl(nfe.id)
-                  : undefined
-              }
+              onXmlAutorizado={() => void baixarXml()}
               onDescartar={() => setDescarteOpen(true)}
               onConsultaSefaz={() => setConsultaSefazOpen(true)}
               onCartaCorrecao={() => setCartaCorrecaoOpen(true)}

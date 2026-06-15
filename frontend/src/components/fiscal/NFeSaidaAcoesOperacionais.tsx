@@ -3,6 +3,7 @@ import { AdvancedSupportSection } from '@/components/nexus/AdvancedSupportSectio
 import { OperationalMessage } from '@/components/nexus/OperationalMessage';
 import { ACTION_LABELS, TECHNICAL_DOWNLOAD_LABELS, labelNfeStatusConferenciaOperacional } from '@/lib/operationalUi';
 import { AVISO_HOMOLOG_SEM_VALOR_FISCAL } from '@/lib/nfeSaidaAcoesMatriz';
+import { openBlobInNewTab } from '@/lib/downloadBlobFile';
 import {
   nfeSaidasService,
   type DanfePreviewMeta,
@@ -76,10 +77,8 @@ export function NFeSaidaAcoesOperacionais({
     onDanfeLoading(true);
     try {
       if (autorizadaHomolog || autorizadaProducao) {
-        const blob = await nfeSaidasService.danfeAutorizadoBlob(nfeId);
-        const url = URL.createObjectURL(blob);
-        window.open(url, '_blank', 'noopener,noreferrer');
-        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        const { blob } = await nfeSaidasService.danfeAutorizadoBlob(nfeId);
+        openBlobInNewTab(blob);
         return;
       }
       const { blob, meta } = await nfeSaidasService.previewDanfeBlob(nfeId);
@@ -95,6 +94,16 @@ export function NFeSaidaAcoesOperacionais({
       );
     } finally {
       onDanfeLoading(false);
+    }
+  };
+
+  const baixarXmlAutorizado = async () => {
+    try {
+      await nfeSaidasService.downloadXmlAutorizado(nfeId);
+    } catch (err) {
+      onPreviewError(
+        apiErrorMessage(err, { fallback: 'Não foi possível baixar o XML autorizado.' }),
+      );
     }
   };
 
@@ -162,14 +171,13 @@ export function NFeSaidaAcoesOperacionais({
         </button>
 
         {autorizada && emissaoSefaz?.tem_xml_autorizado ? (
-          <a
+          <button
+            type="button"
             className="erp-btn-outline erp-btn-sm"
-            href={nfeSaidasService.downloadXmlAutorizadoUrl(nfeId)}
-            target="_blank"
-            rel="noreferrer"
+            onClick={() => void baixarXmlAutorizado()}
           >
             {autorizadaProducao ? 'XML autorizado (produção)' : ACTION_LABELS.baixarXml}
-          </a>
+          </button>
         ) : null}
 
         {autorizadaProducao && emissaoSefaz?.chave_acesso ? (

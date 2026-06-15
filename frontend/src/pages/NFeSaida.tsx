@@ -20,6 +20,7 @@ import { NFeChecklistHomologacaoModal } from '@/components/fiscal/NFeChecklistHo
 import { NFeSaidaEfeitosPanel } from '@/components/fiscal/NFeSaidaEfeitosPanel';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
+import { openBlobInNewTab } from '@/lib/downloadBlobFile';
 import { apiErrorMessage } from '@/services/api/config';
 import {
   nfeSaidasService,
@@ -287,11 +288,9 @@ const NFeSaida = () => {
         row.status === 'AUTORIZADA_PRODUCAO' ||
         row.status === 'AUTORIZADA_HOMOLOGACAO';
       const blob = autorizada
-        ? await nfeSaidasService.danfeAutorizadoBlob(row.id)
+        ? (await nfeSaidasService.danfeAutorizadoBlob(row.id)).blob
         : (await nfeSaidasService.previewDanfeBlob(row.id)).blob;
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank', 'noopener,noreferrer');
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      openBlobInNewTab(blob);
     } catch (err) {
       alert(apiErrorMessage(err, { fallback: 'Não foi possível visualizar o DANFE.' }));
     }
