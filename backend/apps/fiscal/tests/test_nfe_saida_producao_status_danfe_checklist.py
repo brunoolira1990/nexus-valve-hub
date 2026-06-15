@@ -63,9 +63,20 @@ class NFeProducaoStatusDanfeChecklistTests(NFe4015GruposMixin, TestCase):
         self.assertIn('BFR', bfr[0]['mensagem'])
         self.assertIn('trace-test-123', bfr[0]['mensagem'])
 
-    @override_settings(NFE_PRODUCAO_HABILITADA=True)
+    @override_settings(NFE_PRODUCAO_HABILITADA=True, DANFE_BLOCK_EMISSION_IF_BFR_FAILS=True)
     @patch('apps.fiscal.danfe_render.validar_danfe_bfr_para_emissao', return_value=None)
-    def test_conferencia_emissao_producao_expoe_status_conferencia(self, _mock_bfr):
+    def test_montar_validacao_nao_levanta_nameerror_bfr(self, _mock_bfr):
+        """Regressão 61680ec — emissao_bloqueada_se_bfr_falhar precisa estar importado."""
+        payload = montar_validacao_emissao_producao(self.nf)
+        self.assertIn('pendencias', payload)
+
+    @override_settings(NFE_PRODUCAO_HABILITADA=True, DANFE_BLOCK_EMISSION_IF_BFR_FAILS=True)
+    @patch('apps.fiscal.danfe_render.validar_danfe_bfr_para_emissao', return_value=None)
+    def test_conferencia_abertura_nao_retorna_500(self, _mock_bfr):
+        conf = montar_conferencia_nfe_saida(self.nf, modo='abertura', incluir_checklist=False)
+        self.assertIn('emissao_producao', conf)
+        self.assertIn('prontidao', conf)
+
         conf = montar_conferencia_nfe_saida(self.nf, modo='completo', usuario=self.admin_user)
         self.assertEqual(
             conf['emissao_producao']['status_conferencia'],

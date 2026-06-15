@@ -410,12 +410,27 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
     }
   }
 
-  if (loading || !conf) {
+  if (loading) {
     return (
       <Modal isOpen onClose={onClose} title="Conferência NF-e Saída" size="2xl">
         <div className="flex flex-col items-center justify-center py-16 gap-3">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           <p className="text-sm text-muted-foreground">{acaoLoadingMsg ?? 'Carregando conferência...'}</p>
+        </div>
+      </Modal>
+    );
+  }
+
+  if (!conf) {
+    return (
+      <Modal isOpen onClose={onClose} title="Conferência NF-e Saída" size="2xl">
+        <div className="flex flex-col items-center justify-center py-12 gap-4 px-4 text-center">
+          <p className="text-sm text-destructive">
+            {saveError || 'Não foi possível carregar a conferência desta NF-e.'}
+          </p>
+          <button type="button" className="erp-btn-outline" onClick={() => void load()}>
+            Tentar novamente
+          </button>
         </div>
       </Modal>
     );

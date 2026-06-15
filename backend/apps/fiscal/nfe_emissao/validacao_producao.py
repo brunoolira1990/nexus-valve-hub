@@ -117,9 +117,13 @@ def montar_validacao_emissao_producao(nfe_saida: NFeSaida) -> dict[str, Any]:
         for msg in validar_xml_emissao_producao_local(nfe_saida.xml_assinado, nfe_saida=nfe_saida):
             pendencias.append(_pendencia('xml_producao', msg))
 
-    if emissao_bloqueada_se_bfr_falhar():
-        from apps.fiscal.danfe_render import DanfeBfrRenderError, validar_danfe_bfr_para_emissao
+    from apps.fiscal.danfe_render import (
+        DanfeBfrRenderError,
+        emissao_bloqueada_se_bfr_falhar,
+        validar_danfe_bfr_para_emissao,
+    )
 
+    if emissao_bloqueada_se_bfr_falhar():
         try:
             validar_danfe_bfr_para_emissao(nfe_saida)
         except DanfeBfrRenderError as exc:
