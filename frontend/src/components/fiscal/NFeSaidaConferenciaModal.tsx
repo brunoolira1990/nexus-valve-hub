@@ -206,6 +206,53 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
     [conf, baselineSnapshot],
   );
 
+  const contextoAcao = useMemo(
+    () =>
+      resolverContextoNfeSaida(
+        {
+          status: conf?.nfe?.status,
+          status_emissao_sefaz: conf?.emissao_sefaz?.status_emissao_sefaz,
+          ambiente_emissao: conf?.apresentacao?.ambiente_emissao || conf?.emissao_sefaz?.ambiente_emissao,
+          chave_acesso: conf?.apresentacao?.chave_acesso || conf?.emissao_sefaz?.chave_acesso,
+          tem_xml_autorizado: conf?.emissao_sefaz?.tem_xml_autorizado,
+          autorizada_producao: conf?.emissao_producao?.autorizada_producao,
+        },
+        conf?.emissao_sefaz ?? undefined,
+      ),
+    [conf],
+  );
+
+  const matrizAcoesConferencia = useMemo(() => {
+    if (!conf) return [];
+    const autorizadaHomologCtx = isAutorizadaHomologacao(
+      { status: String(conf.nfe.status) },
+      conf.emissao_sefaz ?? null,
+    );
+    const prontidaoCtx = (conf.prontidao ?? {}) as NFeSaidaProntidaoPayload;
+    const podeValidarCtx = Boolean(conf.permissoes.pode_validar_conferencia ?? prontidaoCtx.pode_validar);
+    const podeTentarHomologCtx = Boolean(conf.permissoes.pode_tentar_emitir_homologacao);
+    const descarteCtx = nfePodeDescartarRascunho({
+      status: String(conf.nfe.status),
+      status_emissao_sefaz: conf.emissao_sefaz?.status_emissao_sefaz,
+      protocolo_autorizacao:
+        conf.emissao_sefaz?.protocolo_autorizacao || conf.apresentacao?.protocolo_autorizacao,
+      cstat_autorizacao: conf.nfe.cstat_autorizacao as string | undefined,
+    });
+    return obterMatrizAcoesNfeSaida(contextoAcao, {
+      podeDescartar: descarteCtx.pode,
+      podeValidar: podeValidarCtx && !autorizadaHomologCtx,
+      podeEmitirHomolog: podeTentarHomologCtx && !autorizadaHomologCtx,
+      podeEmitirProducao:
+        contextoAcao.exibirPainelEmissaoProducao &&
+        podeExibirBotaoEmitirProducao(conf.emissao_producao, conf.permissoes),
+    });
+  }, [conf, contextoAcao]);
+
+  const acoesFuturas = useMemo(
+    () => matrizAcoesConferencia.filter((a) => a.grupo === 'futuras'),
+    [matrizAcoesConferencia],
+  );
+
   const serieHomologConfirm =
     conf?.emissao_sefaz?.serie_nfe ??
     conf?.emissao_sefaz?.numeracao_homologacao?.serie ??
@@ -579,43 +626,6 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
       conf.emissao_sefaz?.protocolo_autorizacao || apresentacao?.protocolo_autorizacao,
     cstat_autorizacao: nfe.cstat_autorizacao as string | undefined,
   });
-
-  const contextoAcao = useMemo(
-    () =>
-      resolverContextoNfeSaida(
-        {
-          status: nfe.status,
-          status_emissao_sefaz: conf.emissao_sefaz?.status_emissao_sefaz,
-          ambiente_emissao: apresentacao?.ambiente_emissao || conf.emissao_sefaz?.ambiente_emissao,
-          chave_acesso: apresentacao?.chave_acesso || conf.emissao_sefaz?.chave_acesso,
-          tem_xml_autorizado: conf.emissao_sefaz?.tem_xml_autorizado,
-          autorizada_producao: conf.emissao_producao?.autorizada_producao,
-        },
-        conf.emissao_sefaz ?? undefined,
-      ),
-    [nfe.status, conf.emissao_sefaz, conf.emissao_producao, apresentacao],
-  );
-  const matrizAcoesConferencia = useMemo(
-    () =>
-      obterMatrizAcoesNfeSaida(contextoAcao, {
-        podeDescartar: descartePerm.pode,
-        podeValidar: podeValidarConferencia && !autorizadaHomolog,
-        podeEmitirHomolog: podeTentarEmitirHomolog && !autorizadaHomolog,
-        podeEmitirProducao:
-          contextoAcao.exibirPainelEmissaoProducao &&
-          podeExibirBotaoEmitirProducao(conf.emissao_producao, permissoes),
-      }),
-    [
-      contextoAcao,
-      descartePerm.pode,
-      podeValidarConferencia,
-      autorizadaHomolog,
-      podeTentarEmitirHomolog,
-      conf.emissao_producao,
-      permissoes,
-    ],
-  );
-  const acoesFuturas = matrizAcoesConferencia.filter((a) => a.grupo === 'futuras');
 
   const descartarRascunho = async (motivo: string) => {
     setDescarteLoading(true);
