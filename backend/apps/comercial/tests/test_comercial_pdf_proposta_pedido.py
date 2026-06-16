@@ -162,6 +162,45 @@ class PropostaPdfItemAvulsoTests(ComercialPdfBaseFixture):
         self.assertIn('84818099', text)
 
 
+class PropostaPdfCamposComerciaisTests(ComercialPdfBaseFixture):
+    def test_pdf_exibe_campos_comerciais_quando_preenchidos(self):
+        ser = PropostaSerializer(
+            data={
+                'empresa_emitente_id': self.empresa.id,
+                'cliente_id': self.cliente.id,
+                'data': '2026-05-10',
+                'validade_dias': 7,
+                'status': 'Aberta',
+                'condicao_pagamento_texto': '30',
+                'referencia_cliente': 'REQ-2026-001',
+                'frete_texto': 'FOB – POSTO / SP',
+                'observacoes_proposta': 'Observação comercial\nlinha 2',
+                'mensagem_comercial': 'A regra é não perder pedidos.',
+                'itens': [
+                    {
+                        'produto_id': self.prod.id,
+                        'quantidade': '1',
+                        'quantidade_negociada': '1',
+                        'valor_unitario': '100',
+                        'preco_por_unidade_negociada': '100',
+                        'unidade_negociada': 'PC',
+                    }
+                ],
+            }
+        )
+        self.assertTrue(ser.is_valid(), ser.errors)
+        proposta = ser.save()
+        pdf_bytes = gerar_proposta_pdf_bytes(proposta)
+        text = ''
+        for page in PdfReader(io.BytesIO(pdf_bytes)).pages:
+            text += page.extract_text() or ''
+        self.assertIn('REQ-2026-001', text)
+        self.assertIn('FOB', text.upper())
+        self.assertIn('OBSERVA', text.upper())
+        self.assertIn('PERDER PEDIDOS', text.upper())
+        self.assertIn('PC', text)
+
+
 class PedidoVendaListIdTests(ComercialPdfBaseFixture):
     def test_listagem_inclui_id_para_pdf(self):
         ser = PedidoVendaSerializer(

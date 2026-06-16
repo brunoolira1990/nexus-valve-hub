@@ -121,6 +121,29 @@ class Proposta(models.Model):
         default='',
         help_text='Prazo previsto de entrega (texto livre, ex.: 30 dias após aprovação).',
     )
+    validade_dias = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text='Validade comercial em dias (a partir da data da proposta).',
+    )
+    frete_texto = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text='Frete / condição de frete comercial (texto livre; não altera NF-e).',
+    )
+    mensagem_comercial = models.TextField(
+        blank=True,
+        help_text='Mensagem comercial exibida ao cliente (PDF e proposta).',
+    )
+    observacoes_proposta = models.TextField(
+        blank=True,
+        help_text='Observações gerais da proposta comercial.',
+    )
+    referencia_cliente = models.CharField(
+        max_length=128,
+        blank=True,
+        help_text='Nº da requisição ou cotação do cliente.',
+    )
     homologacao_fiscal_status = models.CharField(
         max_length=32,
         choices=HomologacaoFiscalStatus.choices,

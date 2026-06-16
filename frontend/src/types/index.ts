@@ -1576,6 +1576,11 @@ export interface Proposta {
   empresa_emitente_nome?: string;
   data: string;
   validade: string;
+  validade_dias?: number | null;
+  frete_texto?: string;
+  mensagem_comercial?: string;
+  observacoes_proposta?: string;
+  referencia_cliente?: string;
   /** Texto legado ou espelho do vendedor cadastrado. */
   vendedor: string;
   vendedor_id?: number | null;

@@ -14,7 +14,7 @@ import { Modal } from '@/components/Modal';
 import { HomologacaoFiscalPropostaPanel } from '@/components/HomologacaoFiscalPropostaPanel';
 import { propostasService } from '@/services/api/comercial';
 import { clientesService } from '@/services/api/clientes';
-import { produtosService } from '@/services/api/produtos';
+import { produtosService, ncmApiService } from '@/services/api/produtos';
 import { empresasService } from '@/services/api/empresas';
 import { regrasFiscaisService } from '@/services/api/regras-fiscais';
 import { cenariosFiscaisSaidaService } from '@/services/api/cenarios-fiscais-saida';
@@ -47,6 +47,7 @@ import {
 import { colaboradoresService } from '@/services/api/colaboradores';
 import { vendedoresService } from '@/services/api/vendedores';
 import { ItemComercialMetricasGrid } from '@/components/comercial/ItemComercialMetricasGrid';
+import { NcmAutocomplete, type NcmOption } from '@/components/produtos/NcmAutocomplete';
 import {
   normalizeNcm,
   ncmFiscalDigitsValid,
@@ -73,10 +74,13 @@ import type {
 import { UFS } from '@/types';
 import {
   CONDICAO_PAGAMENTO_PADRAO,
+  MENSAGEM_COMERCIAL_PADRAO,
   STATUS_PROPOSTA_CONVERTIDA,
   STATUS_PROPOSTA_INICIAL,
+  VALIDADE_DIAS_PADRAO,
   dataHojeIso,
-  validadePadraoIso,
+  diasValidadeEntreDatas,
+  validadeIsoFromDias,
 } from '@/lib/comercialFormDefaults';
 import { propostaTemPedidoGerado, statusPropostaUi } from '@/lib/propostaStatus';
 import { usePaginatedList } from '@/hooks/usePaginatedList';
@@ -89,6 +93,7 @@ import { TableSkeleton } from '@/components/nexus/Skeleton';
 import { toast } from 'sonner';
 import {
   DiscountInput,
+  IntegerInput,
   MoneyInput,
   QuantityInput,
   ReadonlyCalculatedField,
@@ -220,7 +225,11 @@ const Propostas = () => {
     cliente_avulso_nome: '',
     empresa_emitente_id: null as number | null,
     data: '',
-    validade: '',
+    validade_dias: VALIDADE_DIAS_PADRAO,
+    frete_texto: '',
+    mensagem_comercial: '',
+    observacoes_proposta: '',
+    referencia_cliente: '',
     vendedor_id: null as number | null,
     status: STATUS_PROPOSTA_INICIAL,
     condicao_pagamento_texto: CONDICAO_PAGAMENTO_PADRAO,
@@ -414,6 +423,11 @@ const Propostas = () => {
     }
     return (form.uf_destino_avulso || '').toUpperCase().slice(0, 2);
   }, [clienteAvulso, form.cliente_id, form.uf_destino_avulso, selectedCliente]);
+
+  const validadeCalculadaIso = useMemo(() => {
+    if (!form.data || !form.validade_dias) return '';
+    return validadeIsoFromDias(form.data, form.validade_dias);
+  }, [form.data, form.validade_dias]);
 
   const resolveUfOrigemEmitente = useCallback((): string => {
     const list = empresasRef.current;
@@ -670,14 +684,24 @@ const Propostas = () => {
       cliente_avulso_nome: '',
       empresa_emitente_id: empresas.length === 1 ? empresas[0]?.id ?? null : null,
       data: hoje,
-      validade: validadePadraoIso(hoje),
+      validade_dias: VALIDADE_DIAS_PADRAO,
+      frete_texto: '',
+      mensagem_comercial: MENSAGEM_COMERCIAL_PADRAO,
+      observacoes_proposta: '',
+      referencia_cliente: '',
       vendedor_id: null,
       status: STATUS_PROPOSTA_INICIAL,
-    condicao_pagamento_texto: CONDICAO_PAGAMENTO_PADRAO,
-    prazo_entrega_texto: '',
-    uf_destino_avulso: '',
+      condicao_pagamento_texto: CONDICAO_PAGAMENTO_PADRAO,
+      prazo_entrega_texto: '',
+      uf_destino_avulso: '',
       usar_cenario_fiscal_saida: true,
       cenario_fiscal_saida_id: null,
+    });
+    void propostasService.sugestaoNova(null).then((s) => {
+      setForm((p) => ({
+        ...p,
+        mensagem_comercial: (s.mensagem_comercial || '').trim() || MENSAGEM_COMERCIAL_PADRAO,
+      }));
     });
     setItens([]);
     setHomologacaoStatus('NAO_INICIADA');
@@ -689,6 +713,12 @@ const Propostas = () => {
         setSelectedColaboradorVendedor(c);
         setSelectedVendedor({ id: c.vendedor_id, nome: c.nome, codigo: c.codigo, ativo: true });
         setForm((p) => ({ ...p, vendedor_id: c.vendedor_id! }));
+        void propostasService.sugestaoNova(c.vendedor_id).then((s) => {
+          setForm((p) => ({
+            ...p,
+            mensagem_comercial: (s.mensagem_comercial || '').trim() || MENSAGEM_COMERCIAL_PADRAO,
+          }));
+        });
         return;
       }
       void vendedoresService.getVinculado().then((v) => {
@@ -696,6 +726,12 @@ const Propostas = () => {
         setSelectedVendedor(v);
         setSelectedColaboradorVendedor(colaboradorStubForDisplay(v.id, v.nome, v.codigo, v.id));
         setForm((p) => ({ ...p, vendedor_id: v.id }));
+        void propostasService.sugestaoNova(v.id).then((s) => {
+          setForm((p) => ({
+            ...p,
+            mensagem_comercial: (s.mensagem_comercial || '').trim() || MENSAGEM_COMERCIAL_PADRAO,
+          }));
+        });
       });
     });
   };
@@ -711,7 +747,11 @@ const Propostas = () => {
       cliente_avulso_nome: e.cliente_avulso_nome ?? '',
       empresa_emitente_id: e.empresa_emitente_id ?? (empresas.length === 1 ? empresas[0]?.id ?? null : null),
       data: e.data,
-      validade: e.validade,
+      validade_dias: e.validade_dias ?? diasValidadeEntreDatas(e.data, e.validade) ?? VALIDADE_DIAS_PADRAO,
+      frete_texto: e.frete_texto ?? '',
+      mensagem_comercial: e.mensagem_comercial ?? '',
+      observacoes_proposta: e.observacoes_proposta ?? '',
+      referencia_cliente: e.referencia_cliente ?? '',
       vendedor_id: e.vendedor_id ?? null,
       status: e.status,
       condicao_pagamento_texto: e.condicao_pagamento_texto,
@@ -763,6 +803,14 @@ const Propostas = () => {
       toast.error('Selecione a empresa emitente (matriz ou filial).');
       return;
     }
+    if (clienteAvulso && !form.uf_destino_avulso) {
+      toast.error('Informe a UF destino para contexto fiscal da proposta.');
+      return;
+    }
+    if (!form.validade_dias || form.validade_dias < 1) {
+      toast.error('Informe a validade da proposta em dias (mínimo 1).');
+      return;
+    }
     const condPreview = previewCondicaoPagamento(form.condicao_pagamento_texto, form.data);
     if (condPreview.erro) {
       toast.error(condPreview.erro);
@@ -772,6 +820,7 @@ const Propostas = () => {
     const vencimentos = buildDueDates(form.data, dias);
     const payloadForm = {
       ...form,
+      validade: validadeCalculadaIso || validadeIsoFromDias(form.data, form.validade_dias),
       usar_cenario_fiscal_saida: editing ? form.usar_cenario_fiscal_saida : true,
       cliente_id: clienteAvulso ? null : form.cliente_id,
       cliente_avulso_nome: clienteAvulso ? form.cliente_avulso_nome : '',
@@ -1338,11 +1387,21 @@ const Propostas = () => {
                     setForm((p) => ({
                       ...p,
                       data: iso,
-                      validade: p.validade || (iso ? validadePadraoIso(iso) : ''),
                     }))
                   }
                 />
-                <DateBrInput label="Validade" valueIso={form.validade} onChangeIso={(iso) => setForm((p) => ({ ...p, validade: iso }))} />
+                <div>
+                  <label className="erp-label">Validade da proposta (dias)</label>
+                  <IntegerInput
+                    value={form.validade_dias}
+                    min={1}
+                    className="erp-input mt-1"
+                    onChange={(value) => setForm((p) => ({ ...p, validade_dias: value || VALIDADE_DIAS_PADRAO }))}
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Válida até {formatDateBr(validadeCalculadaIso) || '—'}
+                  </p>
+                </div>
                 <div>
                   <label className="erp-label">Status</label>
                   <select
@@ -1388,7 +1447,10 @@ const Propostas = () => {
                           onChange={(e) => setForm((p) => ({ ...p, cliente_avulso_nome: e.target.value }))}
                         />
                         <div>
-                          <label className="text-xs text-muted-foreground">UF destino (para regra fiscal)</label>
+                          <label className="text-xs text-muted-foreground">UF destino</label>
+                          <p className="text-[10px] text-muted-foreground">
+                            Informe a UF destino para contexto fiscal da proposta.
+                          </p>
                           <select
                             className="erp-select mt-1 w-full"
                             value={form.uf_destino_avulso}
@@ -1488,6 +1550,42 @@ const Propostas = () => {
                 </div>
               </div>
               <div>
+                <label className="erp-label">Nº da requisição / cotação do cliente</label>
+                <input
+                  className="erp-input mt-1"
+                  placeholder="Opcional"
+                  value={form.referencia_cliente}
+                  onChange={(e) => setForm((p) => ({ ...p, referencia_cliente: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="erp-label">Frete / condição de frete</label>
+                <input
+                  className="erp-input mt-1"
+                  placeholder="Ex.: FOB – POSTO / SP, CIF, RETIRA, A COMBINAR"
+                  value={form.frete_texto}
+                  onChange={(e) => setForm((p) => ({ ...p, frete_texto: e.target.value }))}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="erp-label">Mensagem comercial</label>
+                <textarea
+                  className="erp-input mt-1 min-h-[72px]"
+                  rows={3}
+                  value={form.mensagem_comercial}
+                  onChange={(e) => setForm((p) => ({ ...p, mensagem_comercial: e.target.value }))}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="erp-label">Observações da proposta</label>
+                <textarea
+                  className="erp-input mt-1 min-h-[72px]"
+                  rows={3}
+                  value={form.observacoes_proposta}
+                  onChange={(e) => setForm((p) => ({ ...p, observacoes_proposta: e.target.value }))}
+                />
+              </div>
+              <div>
                 <label className="erp-label">Prazo de entrega</label>
                 <input
                   className="erp-input mt-1"
@@ -1503,7 +1601,7 @@ const Propostas = () => {
                 </div>
               </div>
               <p className="md:col-span-2 text-xs text-muted-foreground">
-                Validade da proposta: {formatDateBr(form.validade) || '—'} · Prazo de entrega:{' '}
+                Validade: {form.validade_dias} dia(s) · Válida até {formatDateBr(validadeCalculadaIso) || '—'} · Prazo de entrega:{' '}
                 {(form.prazo_entrega_texto || '').trim() || '—'}
               </p>
             </div>
@@ -1683,12 +1781,21 @@ const Propostas = () => {
                       />
                     </div>
                     <div>
-                      <label className="text-xs text-muted-foreground">NCM (8 dígitos — regra fiscal)</label>
-                      <input
-                        className="erp-input h-8 text-sm mt-1 font-mono"
-                        placeholder="Ex.: 84818099"
-                        value={item.ncm_avulso ?? ''}
-                        onChange={(e) => updateItem(idx, { ncm_avulso: e.target.value })}
+                      <label className="text-xs text-muted-foreground">NCM (busca na base — regra fiscal)</label>
+                      <NcmAutocomplete
+                        value={
+                          item.ncm_avulso
+                            ? ({
+                                id: -(item.id as number),
+                                codigo: normalizeNcm(item.ncm_avulso),
+                                descricao: '',
+                              } satisfies NcmOption)
+                            : null
+                        }
+                        searchNcm={(term, limit) => ncmApiService.search(term, limit)}
+                        onChange={(opt) =>
+                          updateItem(idx, { ncm_avulso: opt ? normalizeNcm(opt.codigo) : '' })
+                        }
                       />
                     </div>
                   </div>

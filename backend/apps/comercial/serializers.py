@@ -14,7 +14,13 @@ from apps.regras_fiscais.models import CenarioFiscalSaida
 from apps.comercial.payment_terms import compute_due_dates, parse_payment_condition
 from apps.comercial.conversao_item_comercial import calcular_item_comercial_com_conversao
 from apps.comercial.pedido_compra_finance import calcular_financeiro_item_pedido_compra
-from apps.comercial.commercial_defaults import aplicar_defaults_pedido_venda, aplicar_defaults_proposta
+from apps.comercial.commercial_defaults import (
+    aplicar_defaults_pedido_venda,
+    aplicar_defaults_proposta,
+    inferir_validade_dias,
+    sincronizar_validade_proposta,
+    ultima_mensagem_comercial_vendedor,
+)
 from apps.comercial.numbering import (
     gerar_numero_pedido_venda,
     gerar_numero_proposta,
@@ -630,6 +636,11 @@ class PropostaSerializer(serializers.ModelSerializer):
     numero = serializers.CharField(max_length=32, required=False, allow_blank=True)
     data = serializers.DateField(required=False)
     validade = serializers.DateField(required=False)
+    validade_dias = serializers.IntegerField(required=False, allow_null=True, min_value=1, max_value=3650)
+    frete_texto = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    mensagem_comercial = serializers.CharField(required=False, allow_blank=True)
+    observacoes_proposta = serializers.CharField(required=False, allow_blank=True)
+    referencia_cliente = serializers.CharField(max_length=128, required=False, allow_blank=True)
     cliente_id = serializers.PrimaryKeyRelatedField(
         queryset=Cliente.objects.all(),
         source='cliente',
@@ -686,6 +697,11 @@ class PropostaSerializer(serializers.ModelSerializer):
             'pode_converter_em_pedido',
             'data',
             'validade',
+            'validade_dias',
+            'frete_texto',
+            'mensagem_comercial',
+            'observacoes_proposta',
+            'referencia_cliente',
             'vendedor',
             'vendedor_id',
             'vendedor_nome',
@@ -761,6 +777,15 @@ class PropostaSerializer(serializers.ModelSerializer):
         data['usar_cenario_fiscal_saida'] = bool(instance.usar_cenario_fiscal_saida)
         data['data'] = instance.data.isoformat()
         data['validade'] = instance.validade.isoformat()
+        data['validade_dias'] = (
+            instance.validade_dias
+            if instance.validade_dias is not None
+            else inferir_validade_dias(instance.data, instance.validade)
+        )
+        data['frete_texto'] = instance.frete_texto or ''
+        data['mensagem_comercial'] = instance.mensagem_comercial or ''
+        data['observacoes_proposta'] = instance.observacoes_proposta or ''
+        data['referencia_cliente'] = instance.referencia_cliente or ''
         data['vencimentos_previstos'] = [d.isoformat() for d in instance.vencimentos_previstos]
         data['valor_total'] = float(instance.valor_total)
         data['operacao_fiscal'] = 'Saída'
@@ -795,7 +820,8 @@ class PropostaSerializer(serializers.ModelSerializer):
         attrs['quantidade_parcelas'] = len(dias)
         attrs['vencimentos_previstos'] = compute_due_dates(data_base, dias) if data_base else []
         _apply_emitente_e_uf_operacao_saida(attrs, self.instance)
-        aplicar_defaults_proposta(attrs, instance=self.instance)
+        sincronizar_validade_proposta(attrs, instance=self.instance)
+        aplicar_defaults_proposta(attrs, instance=self.instance, request=self.context.get('request'))
         return attrs
 
     def create(self, validated_data):

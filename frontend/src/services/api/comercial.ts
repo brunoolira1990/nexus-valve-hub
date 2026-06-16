@@ -107,6 +107,12 @@ export const propostasService = {
     return unwrapListResults(response.data);
   },
   getById: async (id: number) => (await api.get<Proposta>(`${propostasPath}${id}/`)).data,
+  sugestaoNova: async (vendedorId?: number | null) =>
+    (
+      await api.get<{ mensagem_comercial: string }>(`${propostasPath}sugestao-nova/`, {
+        params: vendedorId ? { vendedor_id: vendedorId } : undefined,
+      })
+    ).data,
   create: async (data: Omit<Proposta, 'id'>) => {
     const { cliente_nome: _cn, valor_total: _vt, itens, ...rest } = data;
     return (

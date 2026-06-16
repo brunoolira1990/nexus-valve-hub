@@ -1,4 +1,10 @@
-import { formatMoneyBRL, formatPercentBR, formatQuantityBR } from '@/lib/numberFields';
+import { useEffect, useState } from 'react';
+import {
+  formatMoneyBRL,
+  formatQuantityBR,
+  parseMoneyInputToDecimal,
+  parseQuantityInputToDecimal,
+} from '@/lib/numberFields';
 
 type BaseInputProps = {
   value: number;
@@ -9,16 +15,82 @@ type BaseInputProps = {
   step?: string;
 };
 
-export function QuantityInput({ value, onChange, className, readOnly, min = 0.001, step = 'any' }: BaseInputProps) {
+type EditableDecimalProps = BaseInputProps & {
+  inputMode?: 'decimal' | 'numeric';
+  formatDisplay: (value: number) => string;
+  parseInput: (raw: string) => number;
+  allowEmpty?: boolean;
+};
+
+function formatEditableDecimal(value: number): string {
+  if (!Number.isFinite(value) || value === 0) return '';
+  const isInt = Math.abs(value - Math.round(value)) < 1e-9;
+  if (isInt) return String(Math.round(value));
+  return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+}
+
+function EditableDecimalInput({
+  value,
+  onChange,
+  className,
+  readOnly,
+  min = 0,
+  inputMode = 'decimal',
+  formatDisplay,
+  parseInput,
+  allowEmpty = true,
+}: EditableDecimalProps) {
+  const [text, setText] = useState('');
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) {
+      if (allowEmpty && (value === 0 || !Number.isFinite(value))) {
+        setText('');
+      } else {
+        setText(formatDisplay(value));
+      }
+    }
+  }, [value, focused, formatDisplay, allowEmpty]);
+
   return (
     <input
-      type="number"
-      step={step}
-      min={min}
+      type="text"
+      inputMode={inputMode}
       readOnly={readOnly}
       className={className || 'erp-input h-9 text-sm w-full mt-1'}
+      value={text}
+      onFocus={(e) => {
+        setFocused(true);
+        e.target.select();
+      }}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => {
+        setFocused(false);
+        const raw = text.trim();
+        if (!raw) {
+          onChange(allowEmpty ? 0 : Math.max(min, 0));
+          return;
+        }
+        const parsed = parseInput(raw);
+        const safe = Number.isFinite(parsed) ? Math.max(min, parsed) : 0;
+        onChange(safe);
+      }}
+    />
+  );
+}
+
+export function QuantityInput({ value, onChange, className, readOnly, min = 0.001 }: BaseInputProps) {
+  return (
+    <EditableDecimalInput
       value={value}
-      onChange={(e) => onChange(Number(e.target.value) || 0)}
+      onChange={onChange}
+      className={className}
+      readOnly={readOnly}
+      min={min}
+      inputMode="decimal"
+      formatDisplay={(n) => (n ? formatEditableDecimal(n) : '')}
+      parseInput={parseQuantityInputToDecimal}
     />
   );
 }
@@ -27,16 +99,17 @@ export function QuantityDisplay({ value, unidade, className }: { value: number; 
   return <span className={className}>{formatQuantityBR(value, unidade)}</span>;
 }
 
-export function MoneyInput({ value, onChange, className, readOnly, min = 0, step = '0.01' }: BaseInputProps) {
+export function MoneyInput({ value, onChange, className, readOnly, min = 0 }: BaseInputProps) {
   return (
-    <input
-      type="number"
-      step={step}
-      min={min}
-      readOnly={readOnly}
-      className={className || 'erp-input h-9 text-sm w-full mt-1'}
+    <EditableDecimalInput
       value={value}
-      onChange={(e) => onChange(Number(e.target.value) || 0)}
+      onChange={onChange}
+      className={className}
+      readOnly={readOnly}
+      min={min}
+      inputMode="decimal"
+      formatDisplay={formatEditableDecimal}
+      parseInput={parseMoneyInputToDecimal}
     />
   );
 }
@@ -45,26 +118,57 @@ export function MoneyDisplay({ value, className }: { value: number; className?: 
   return <span className={className}>{formatMoneyBRL(value)}</span>;
 }
 
-export function PercentInput({ value, onChange, className, readOnly, min = 0, step = '0.0001' }: BaseInputProps) {
+export function PercentInput({ value, onChange, className, readOnly, min = 0 }: BaseInputProps) {
   return (
-    <input
-      type="number"
-      step={step}
-      min={min}
-      readOnly={readOnly}
-      className={className || 'erp-input h-9 text-sm w-full mt-1'}
+    <EditableDecimalInput
       value={value}
-      onChange={(e) => onChange(Number(e.target.value) || 0)}
+      onChange={onChange}
+      className={className}
+      readOnly={readOnly}
+      min={min}
+      inputMode="decimal"
+      formatDisplay={formatEditableDecimal}
+      parseInput={parseMoneyInputToDecimal}
     />
   );
 }
 
 export function PercentDisplay({ value, className }: { value: number; className?: string }) {
-  return <span className={className}>{formatPercentBR(value)}</span>;
+  const n = Number(value ?? 0);
+  const safe = Number.isFinite(n) ? n : 0;
+  return <span className={className}>{`${safe.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}%`}</span>;
 }
 
 export function DiscountInput(props: BaseInputProps) {
   return <MoneyInput {...props} />;
+}
+
+export function IntegerInput({
+  value,
+  onChange,
+  className,
+  readOnly,
+  min = 1,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+  className?: string;
+  readOnly?: boolean;
+  min?: number;
+}) {
+  return (
+    <EditableDecimalInput
+      value={value}
+      onChange={onChange}
+      className={className}
+      readOnly={readOnly}
+      min={min}
+      inputMode="numeric"
+      formatDisplay={(n) => (n > 0 ? String(Math.round(n)) : '')}
+      parseInput={(raw) => Math.round(parseQuantityInputToDecimal(raw))}
+      allowEmpty
+    />
+  );
 }
 
 export function UnitSelect({

@@ -23,7 +23,8 @@ from .observed_metrics import (
     montar_referencia_comercial_custo_compra,
     montar_referencia_comercial_frete,
 )
-from .models import FaturamentoPedidoVenda, PedidoCompra, PedidoVenda, Proposta
+from .commercial_defaults import ultima_mensagem_comercial_vendedor
+from .models import FaturamentoPedidoVenda, PedidoCompra, PedidoVenda, Proposta, Vendedor
 from nexus_erp.list_mixins import AutocompleteOrPaginationMixin, aplicar_ordering
 from nexus_erp.view_mixins import FriendlyDestroyMixin
 from nexus_erp.pagination import NexusPageNumberPagination
@@ -80,6 +81,24 @@ class PropostaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
             self.request.query_params.get('ordering'),
             {'data': 'data', 'numero': 'numero', 'valor_total': 'valor_total', 'status': 'status'},
             '-id',
+        )
+
+    @action(detail=False, methods=['get'], url_path='sugestao-nova')
+    def sugestao_nova(self, request):
+        vendedor_ref = None
+        raw_vid = (request.query_params.get('vendedor_id') or '').strip()
+        if raw_vid:
+            try:
+                vendedor_ref = Vendedor.objects.filter(pk=int(raw_vid), ativo=True).first()
+            except (TypeError, ValueError):
+                pass
+        return Response(
+            {
+                'mensagem_comercial': ultima_mensagem_comercial_vendedor(
+                    vendedor_ref=vendedor_ref,
+                    usuario=request.user,
+                ),
+            },
         )
 
     @action(detail=False, methods=['get'], url_path='apoio-gerencial')
