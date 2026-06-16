@@ -7,6 +7,7 @@ from apps.produtos.models import (
     FamiliaProdutoPolegadaPermitida,
     FamiliaProdutoRoscaConexaoPermitida,
     FamiliaProdutoSchedulePermitido,
+    Ncm,
     Polegada,
     RoscaConexao,
     ScheduleEspessura,
@@ -94,7 +95,7 @@ class Command(BaseCommand):
                 descricao_base='VALVULA ESFERA TRIPARTIDA TOTAL INOX 304 TP BSP',
                 tipo_regra_codigo=t.BASE_POLEGADA,
                 separador_base_medidas='.',
-                ncm_padrao='8481.80.95',
+                ncm_padrao_codigo='8481.80.95',
                 unidade_padrao='PC',
             ),
             dict(
@@ -102,7 +103,7 @@ class Command(BaseCommand):
                 descricao_base='VALVULA ESFERA TRIPARTIDA WCB PP TP',
                 tipo_regra_codigo=t.BASE_ROSCA_POLEGADA,
                 separador_base_medidas='.',
-                ncm_padrao='8481.80.95',
+                ncm_padrao_codigo='8481.80.95',
                 unidade_padrao='PC',
             ),
             dict(
@@ -141,9 +142,22 @@ class Command(BaseCommand):
             for p in Polegada.objects.filter(tipo_medida=Polegada.TipoMedida.NPS)
         }
         for row in familias:
+            payload = {k: v for k, v in row.items() if k not in ('codigo_figura', 'ncm_padrao_codigo')}
+            ncm_codigo = row.get('ncm_padrao_codigo')
+            if ncm_codigo:
+                ncm = Ncm.objects.filter(codigo=ncm_codigo).first()
+                if ncm:
+                    payload['ncm_padrao'] = ncm
+                else:
+                    self.stdout.write(
+                        self.style.WARNING(
+                            f'Família {row["codigo_figura"]}: NCM {ncm_codigo} não encontrado; '
+                            'ncm_padrao não será definido.',
+                        ),
+                    )
             obj, _ = FamiliaProduto.objects.update_or_create(
                 codigo_figura=row['codigo_figura'],
-                defaults={**{k: v for k, v in row.items() if k != 'codigo_figura'}, 'ativo': True},
+                defaults={**payload, 'ativo': True},
             )
             obj.save()
             # relações iniciais mínimas para viabilizar cadastro guiado.
