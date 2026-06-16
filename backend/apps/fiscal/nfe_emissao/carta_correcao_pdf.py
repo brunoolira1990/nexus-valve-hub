@@ -256,45 +256,10 @@ def _bloco_dados_evento_cc(
     titulo_style,
     rotulo_style,
     valor_style,
-) -> Table:
+) -> Table | None:
     if transmitido:
-        seq = str(dados.get('sequencia_evento') or dados.get('sequencia_prevista') or '—')
-        linhas = [
-            _campo_evento('Sequência do evento', escape(seq), rotulo_style, valor_style),
-            _campo_evento(
-                'Status do evento',
-                _status_evento_html(transmitido=True, dados=dados),
-                rotulo_style,
-                valor_style,
-            ),
-        ]
-        criado = _fmt_datetime(dados.get('criado_em_evento') or dados.get('emitido_em'))
-        if criado != '—':
-            linhas.append(_campo_evento('Criado em', escape(criado), rotulo_style, valor_style))
-        id_evento = str(dados.get('id_evento') or '').strip()
-        if id_evento:
-            linhas.append(_campo_evento('ID do Evento', escape(id_evento), rotulo_style, valor_style))
-        protocolo = str(dados.get('protocolo') or '').strip()
-        if protocolo:
-            linhas.append(_campo_evento('Protocolo', escape(protocolo), rotulo_style, valor_style))
-        dh_reg = _fmt_datetime(dados.get('dh_reg_evento'))
-        if dh_reg != '—':
-            linhas.append(
-                _campo_evento('Registrado na SEFAZ em', escape(dh_reg), rotulo_style, valor_style),
-            )
-        cstat = str(dados.get('cstat') or '').strip()
-        xmotivo = str(dados.get('xmotivo') or '').strip()
-        if cstat or xmotivo:
-            linhas.append(
-                _campo_evento(
-                    'Retorno SEFAZ',
-                    escape(f'{cstat or "—"} — {xmotivo or "—"}'),
-                    rotulo_style,
-                    valor_style,
-                ),
-            )
-    else:
-        linhas = [
+        return None
+    linhas = [
             _campo_evento(
                 'Sequência prevista',
                 escape(str(dados.get('sequencia_prevista') or '—')),
@@ -553,14 +518,16 @@ def _cabecalho_fiscal_cce(dados: dict[str, Any], ph_small, ph_center) -> Table:
 
 
 def _dados_barcode_cce(dados: dict[str, Any]) -> tuple[str, str, str]:
+    if not dados.get('transmitido'):
+        return '', '', ''
     valor = str(dados.get('barcode_valor') or '').strip()
     rotulo = str(dados.get('barcode_rotulo') or '').strip()
     texto = str(dados.get('barcode_texto_fmt') or '').strip()
     if valor:
-        return valor, rotulo or 'Código de barras', texto or valor
+        return valor, rotulo or 'Chave de acesso da NF-e', texto or valor
     return resolver_barcode_cce(
-        id_evento=str(dados.get('id_evento') or ''),
         chave_acesso=str(dados.get('chave_acesso') or ''),
+        autorizada=True,
     )
 
 
@@ -575,7 +542,14 @@ def _criar_desenho_codigo_barras(valor: str):
     )
 
 
-def _bloco_codigo_barras(dados: dict[str, Any], rotulo_style, texto_style) -> Table | None:
+def _bloco_codigo_barras(
+    dados: dict[str, Any],
+    rotulo_style,
+    texto_style,
+    *,
+    meta_style,
+    id_style,
+) -> Table | None:
     valor, rotulo, texto_fmt = _dados_barcode_cce(dados)
     if not valor:
         return None
@@ -588,12 +562,40 @@ def _bloco_codigo_barras(dados: dict[str, Any], rotulo_style, texto_style) -> Ta
         drawing.height *= scale
         drawing.scale(scale, scale)
 
-    if rotulo == 'Chave de acesso da NF-e':
-        texto_html = _html_chave_acesso(texto_fmt)
-    else:
-        texto_html = nobr(escape(texto_fmt))
+    texto_html = _html_chave_acesso(texto_fmt or valor)
 
-    tbl = Table(
+    rows: list[list] = []
+    meta_count = 0
+    id_ev = str(dados.get('id_evento') or '').strip()
+    if id_ev:
+        rows.append(
+            [
+                Paragraph(
+                    f'<nobr><font color="#64748b"><b>ID do Evento:</b></font> {escape(id_ev)}</nobr>',
+                    id_style,
+                ),
+            ],
+        )
+        meta_count += 1
+    proto = str(dados.get('protocolo') or '').strip()
+    if proto:
+        rows.append(
+            [Paragraph(f'<nobr><font color="#64748b"><b>Protocolo:</b></font> {escape(proto)}</nobr>', meta_style)],
+        )
+        meta_count += 1
+    dh_reg = _fmt_datetime(dados.get('dh_reg_evento'))
+    if dh_reg != '—':
+        rows.append(
+            [
+                Paragraph(
+                    f'<nobr><font color="#64748b"><b>Registrado na SEFAZ em:</b></font> {escape(dh_reg)}</nobr>',
+                    meta_style,
+                ),
+            ],
+        )
+        meta_count += 1
+
+    rows.extend(
         [
             [drawing],
             [
@@ -604,27 +606,45 @@ def _bloco_codigo_barras(dados: dict[str, Any], rotulo_style, texto_style) -> Ta
             ],
             [Paragraph(texto_html, texto_style)],
         ],
-        colWidths=[_inner_w()],
     )
-    tbl.setStyle(
-        TableStyle(
+
+    tbl = Table(rows, colWidths=[_inner_w()])
+    style_cmds = [
+        ('BOX', (0, 0), (-1, -1), 0.45, C_SLATE_TEXT),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.white),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 12),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+    ]
+    if meta_count:
+        style_cmds.extend(
             [
-                ('BOX', (0, 0), (-1, -1), 0.45, C_SLATE_TEXT),
-                ('BACKGROUND', (0, 0), (-1, -1), colors.white),
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ('ALIGN', (0, 0), (0, 0), 'CENTER'),
-                ('ALIGN', (0, 1), (-1, -1), 'CENTER'),
-                ('LEFTPADDING', (0, 0), (-1, -1), 12),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 12),
-                ('TOPPADDING', (0, 0), (0, 0), 10),
-                ('BOTTOMPADDING', (0, 0), (0, 0), 4),
-                ('TOPPADDING', (0, 1), (0, 1), 6),
-                ('BOTTOMPADDING', (0, 1), (0, 1), 2),
-                ('TOPPADDING', (0, 2), (0, 2), 2),
-                ('BOTTOMPADDING', (0, 2), (0, 2), 10),
+                ('TOPPADDING', (0, 0), (0, meta_count - 1), 8),
+                ('BOTTOMPADDING', (0, 0), (0, meta_count - 1), 4),
+                ('LINEBELOW', (0, meta_count - 1), (-1, meta_count - 1), 0.25, C_BORDER),
+                ('TOPPADDING', (0, meta_count), (0, meta_count), 10),
+                ('BOTTOMPADDING', (0, meta_count), (0, meta_count), 4),
             ],
-        ),
+        )
+    else:
+        style_cmds.extend(
+            [
+                ('TOPPADDING', (0, meta_count), (0, meta_count), 10),
+                ('BOTTOMPADDING', (0, meta_count), (0, meta_count), 4),
+            ],
+        )
+    chave_lbl_idx = meta_count + 1
+    chave_idx = meta_count + 2
+    style_cmds.extend(
+        [
+            ('TOPPADDING', (0, chave_lbl_idx), (0, chave_lbl_idx), 6),
+            ('BOTTOMPADDING', (0, chave_lbl_idx), (0, chave_lbl_idx), 2),
+            ('TOPPADDING', (0, chave_idx), (0, chave_idx), 2),
+            ('BOTTOMPADDING', (0, chave_idx), (0, chave_idx), 10),
+        ],
     )
+    tbl.setStyle(TableStyle(style_cmds))
     return tbl
 
 
@@ -764,6 +784,23 @@ def gerar_pdf_representacao_cce(dados: dict[str, Any]) -> bytes:
     rodape = ParagraphStyle(
         'CceRodape', parent=ph_small, fontSize=8, leading=10.5, textColor=C_MUTED, alignment=TA_CENTER
     )
+    evento_meta = ParagraphStyle(
+        'CceEvMeta',
+        parent=ph_small,
+        fontSize=7.5,
+        leading=10,
+        textColor=C_SLATE_TEXT,
+        alignment=TA_CENTER,
+    )
+    id_evento_style = ParagraphStyle(
+        'CceIdEv',
+        parent=ph_small,
+        fontName='Courier',
+        fontSize=6.5,
+        leading=9,
+        textColor=C_PRIMARY,
+        alignment=TA_CENTER,
+    )
 
     avisos: list[str] = []
     if not transmitido:
@@ -783,11 +820,7 @@ def gerar_pdf_representacao_cce(dados: dict[str, Any]) -> bytes:
         _cabecalho_fiscal_cce(dados, ph_small, ph_center),
     ]
     partes.extend(_faixa_avisos(avisos, warn))
-
-    barcode_valor, barcode_rotulo, _ = _dados_barcode_cce(dados) if transmitido else ('', '', '')
-    incluir_chave_identificacao = not (
-        transmitido and barcode_valor and barcode_rotulo == 'Chave de acesso da NF-e'
-    )
+    barcode_valor, _, _ = _dados_barcode_cce(dados) if transmitido else ('', '', '')
     partes.extend(
         _bloco_identificacao_nfe(
             dados,
@@ -796,20 +829,26 @@ def gerar_pdf_representacao_cce(dados: dict[str, Any]) -> bytes:
             valor,
             chave,
             chave_lbl,
-            incluir_chave=incluir_chave_identificacao,
+            incluir_chave=not (transmitido and barcode_valor),
         ),
     )
-    partes.append(
-        _bloco_dados_evento_cc(
-            dados,
-            transmitido=transmitido,
-            titulo_style=titulo_secao,
-            rotulo_style=rotulo,
-            valor_style=valor,
-        ),
+    bloco_evento = _bloco_dados_evento_cc(
+        dados,
+        transmitido=transmitido,
+        titulo_style=titulo_secao,
+        rotulo_style=rotulo,
+        valor_style=valor,
     )
+    if bloco_evento is not None:
+        partes.append(bloco_evento)
     if transmitido:
-        bloco_bc = _bloco_codigo_barras(dados, chave_lbl, chave)
+        bloco_bc = _bloco_codigo_barras(
+            dados,
+            chave_lbl,
+            chave,
+            meta_style=evento_meta,
+            id_style=id_evento_style,
+        )
         if bloco_bc is not None:
             partes.append(bloco_bc)
     partes.append(_bloco_texto_legal(legal_pre))

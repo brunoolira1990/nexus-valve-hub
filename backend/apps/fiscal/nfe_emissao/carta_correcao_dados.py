@@ -63,15 +63,38 @@ def _fmt_chave(chave: str | None) -> str:
     return ' '.join(digits[i : i + 4] for i in range(0, 44, 4))
 
 
-def resolver_barcode_cce(*, id_evento: str, chave_acesso: str) -> tuple[str, str, str]:
-    """Valor real para Code128, rótulo e texto formatado abaixo do código de barras."""
-    id_ev = str(id_evento or '').strip()
-    if id_ev:
-        return id_ev, 'ID do Evento', id_ev
+def resolver_barcode_cce(*, chave_acesso: str, autorizada: bool = True) -> tuple[str, str, str]:
+    """Code128 da chave NF-e (somente CC-e autorizada), rótulo e chave formatada abaixo."""
+    if not autorizada:
+        return '', '', ''
     digits = ''.join(c for c in str(chave_acesso or '') if c.isdigit())
     if len(digits) == 44:
         return digits, 'Chave de acesso da NF-e', _fmt_chave(digits)
     return '', '', ''
+
+
+def resolver_id_evento_cce(
+    resumo: dict[str, Any],
+    *,
+    chave_acesso: str,
+    sequencia: int | None,
+) -> str:
+    """ID infEvento persistido ou montado a partir de chave/sequência/tpEvento reais."""
+    direct = str(resumo.get('id_evento') or '').strip()
+    if direct:
+        return direct
+    tp = str(resumo.get('tp_evento') or '110110').strip()
+    digits = ''.join(c for c in str(chave_acesso or '') if c.isdigit())
+    if sequencia is None or len(digits) != 44:
+        return ''
+    try:
+        seq = int(sequencia)
+    except (TypeError, ValueError):
+        return ''
+    if seq < 1 or seq > 99:
+        return ''
+    tp_digits = ''.join(c for c in tp if c.isdigit()).zfill(6)[-6:]
+    return f'ID{tp_digits}{digits}{seq:02d}'
 
 
 def _identidade_nfe(nf: NFeSaida) -> dict[str, str]:
@@ -111,6 +134,7 @@ def listar_cce_anteriores(nf: NFeSaida) -> list[dict[str, Any]]:
             sequencia = len(out) + 1
         texto = str(resumo.get('texto_correcao') or '').strip()
         emitido = str(resumo.get('emitido_em') or ev.criado_em.isoformat())
+        chave_ev = str(resumo.get('chave_acesso') or getattr(ev.nfe_saida, 'chave_acesso', '') or '')
         out.append(
             {
                 'evento_id': ev.pk,
@@ -118,7 +142,11 @@ def listar_cce_anteriores(nf: NFeSaida) -> list[dict[str, Any]]:
                 'cstat': str(resumo.get('cStat') or resumo.get('cstat') or ''),
                 'xmotivo': str(resumo.get('xMotivo') or resumo.get('xmotivo') or ''),
                 'protocolo': str(resumo.get('protocolo') or ''),
-                'id_evento': str(resumo.get('id_evento') or ''),
+                'id_evento': resolver_id_evento_cce(
+                    resumo,
+                    chave_acesso=chave_ev,
+                    sequencia=sequencia,
+                ),
                 'emitido_em': emitido,
                 'texto_correcao': texto,
                 'texto_resumo': (texto[:120] + '…') if len(texto) > 120 else texto,
@@ -258,9 +286,9 @@ def montar_dados_comprovante_cce(evento: NFeSaidaEvento) -> dict[str, Any]:
     anteriores = listar_cce_anteriores(nf)
     vigente = obter_ultima_cce_vigente(anteriores)
     cstat = str(resumo.get('cStat') or resumo.get('cstat') or '')
-    id_evento = str(resumo.get('id_evento') or '')
     chave_bruta = ident['chave_acesso'] or str(resumo.get('chave_acesso') or '')
-    bc_valor, bc_rotulo, bc_texto = resolver_barcode_cce(id_evento=id_evento, chave_acesso=chave_bruta)
+    id_evento = resolver_id_evento_cce(resumo, chave_acesso=chave_bruta, sequencia=sequencia)
+    bc_valor, bc_rotulo, bc_texto = resolver_barcode_cce(chave_acesso=chave_bruta, autorizada=True)
     return {
         'ok': True,
         'evento_id': evento.pk,
