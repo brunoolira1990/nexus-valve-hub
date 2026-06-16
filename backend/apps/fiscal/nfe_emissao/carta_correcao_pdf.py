@@ -98,8 +98,8 @@ def _caixa_correcoes(texto: str, body_style) -> Table:
 def _faixa_avisos(avisos: list[str], warn_style) -> list[Any]:
     if not avisos:
         return []
-    linhas = ''.join(f'<br/><b>{escape(av)}</b>' for av in avisos)
-    tbl = Table([[Paragraph(linhas.lstrip('<br/>'), warn_style)]], colWidths=[180 * mm])
+    html = '<br/>'.join(f'<b>{escape(av)}</b>' for av in avisos)
+    tbl = Table([[Paragraph(html, warn_style)]], colWidths=[180 * mm])
     tbl.setStyle(
         TableStyle(
             [
