@@ -1,4 +1,5 @@
-import api from './config';
+import axios from 'axios';
+import api, { clearAuthSession, SESSION_EXPIRED_MESSAGE } from './config';
 import {
   buildListParams,
   type ListQueryParams,
@@ -911,12 +912,19 @@ export const nfeSaidasService = {
   },
   cartaCorrecaoDados: async (id: number) =>
     (await api.get<NFeCartaCorrecaoDadosResponse>(`${nfSai}${id}/carta-correcao/dados/`)).data,
-  previaCartaCorrecao: async (id: number, payload: { texto_correcao: string }) =>
-    (
-      await api.post<NFeCartaCorrecaoPreviaResponse>(`${nfSai}${id}/previa-carta-correcao/`, payload, {
-        validateStatus: (s) => s >= 200 && s < 500,
-      })
-    ).data,
+  previaCartaCorrecao: async (id: number, payload: { texto_correcao: string }) => {
+    const res = await api.post<NFeCartaCorrecaoPreviaResponse>(`${nfSai}${id}/previa-carta-correcao/`, payload, {
+      validateStatus: (s) => s >= 200 && s < 500,
+    });
+    if (res.status === 401) {
+      clearAuthSession();
+      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+        window.location.assign('/login');
+      }
+      throw new axios.AxiosError(SESSION_EXPIRED_MESSAGE, 'ERR_BAD_REQUEST', res.config, res.request, res);
+    }
+    return res.data;
+  },
   previaCartaCorrecaoPdfBlob: async (id: number, payload: { texto_correcao: string }) => {
     const res = await api.post<Blob>(`${nfSai}${id}/previa-carta-correcao/pdf/`, payload, {
       responseType: 'blob',

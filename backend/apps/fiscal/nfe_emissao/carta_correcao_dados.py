@@ -63,6 +63,17 @@ def _fmt_chave(chave: str | None) -> str:
     return ' '.join(digits[i : i + 4] for i in range(0, 44, 4))
 
 
+def resolver_barcode_cce(*, id_evento: str, chave_acesso: str) -> tuple[str, str, str]:
+    """Valor real para Code128, rótulo e texto formatado abaixo do código de barras."""
+    id_ev = str(id_evento or '').strip()
+    if id_ev:
+        return id_ev, 'ID do Evento', id_ev
+    digits = ''.join(c for c in str(chave_acesso or '') if c.isdigit())
+    if len(digits) == 44:
+        return digits, 'Chave de acesso da NF-e', _fmt_chave(digits)
+    return '', '', ''
+
+
 def _identidade_nfe(nf: NFeSaida) -> dict[str, str]:
     from apps.fiscal.nfe_saida_apresentacao import montar_apresentacao_nfe_saida
 
@@ -247,6 +258,9 @@ def montar_dados_comprovante_cce(evento: NFeSaidaEvento) -> dict[str, Any]:
     anteriores = listar_cce_anteriores(nf)
     vigente = obter_ultima_cce_vigente(anteriores)
     cstat = str(resumo.get('cStat') or resumo.get('cstat') or '')
+    id_evento = str(resumo.get('id_evento') or '')
+    chave_bruta = ident['chave_acesso'] or str(resumo.get('chave_acesso') or '')
+    bc_valor, bc_rotulo, bc_texto = resolver_barcode_cce(id_evento=id_evento, chave_acesso=chave_bruta)
     return {
         'ok': True,
         'evento_id': evento.pk,
@@ -256,7 +270,7 @@ def montar_dados_comprovante_cce(evento: NFeSaidaEvento) -> dict[str, Any]:
         'homologacao': ambiente == 'homologacao',
         **emit,
         'destinatario': destinatario or '—',
-        'chave_acesso': ident['chave_acesso'] or str(resumo.get('chave_acesso') or ''),
+        'chave_acesso': chave_bruta,
         'chave_acesso_fmt': ident['chave_acesso_fmt'] or _fmt_chave(resumo.get('chave_acesso')),
         'numero_nfe': ident['numero_nfe'],
         'serie_nfe': ident['serie_nfe'],
@@ -266,9 +280,14 @@ def montar_dados_comprovante_cce(evento: NFeSaidaEvento) -> dict[str, Any]:
         'cstat': cstat,
         'xmotivo': str(resumo.get('xMotivo') or resumo.get('xmotivo') or ''),
         'protocolo': str(resumo.get('protocolo') or ''),
-        'id_evento': str(resumo.get('id_evento') or ''),
+        'id_evento': id_evento,
         'status_evento': f'Registrado — cStat {cstat}' if cstat else 'Registrado na SEFAZ',
         'emitido_em': str(resumo.get('emitido_em') or evento.criado_em.isoformat()),
+        'criado_em_evento': evento.criado_em.isoformat(),
+        'dh_reg_evento': str(resumo.get('dh_reg_evento') or ''),
+        'barcode_valor': bc_valor,
+        'barcode_rotulo': bc_rotulo,
+        'barcode_texto_fmt': bc_texto,
         'usuario_nome': _nome_usuario(evento.criado_por),
         'transmitido': True,
         'modo': 'autorizada',
