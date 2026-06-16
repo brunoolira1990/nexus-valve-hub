@@ -6,7 +6,7 @@ from typing import Any
 
 from django.utils import timezone
 
-from apps.core.pdf.formatters import fmt_cnpj
+from apps.core.pdf.formatters import endereco_cadastro, fmt_cnpj, format_phone
 from apps.fiscal.models import NFeSaida, NFeSaidaEvento
 from apps.fiscal.nfe_emissao.consulta_situacao import _homologacao_da_nfe
 from apps.fiscal.nfe_emissao.empresa_emitente import resolver_empresa_emitente_nfe
@@ -134,15 +134,36 @@ def proxima_sequencia_cce(nf: NFeSaida) -> int:
 
 
 def montar_identidade_emitente(nf: NFeSaida) -> dict[str, str]:
+    from apps.fiscal.nfe_integracao.danfe_empresa_logo import get_empresa_logo_path_or_none
+
     empresa = resolver_empresa_emitente_nfe(nf)
-    emitente = (empresa.razao_social or empresa.nome_fantasia or '').strip()
-    cnpj = fmt_cnpj(empresa.cnpj or '')
+    razao = (empresa.razao_social or '').strip()
+    fantasia = (empresa.nome_fantasia or '').strip()
+    emitente = razao or fantasia
     if not emitente:
         raise NFeCartaCorrecaoDadosError('Empresa emitente não identificada para a NF-e.')
+    endereco = endereco_cadastro(
+        empresa.logradouro or '',
+        empresa.numero or '',
+        empresa.complemento or '',
+        empresa.bairro or '',
+        empresa.cidade or '',
+        empresa.uf or '',
+        empresa.cep or '',
+    )
+    logo_path = get_empresa_logo_path_or_none(empresa) or ''
     return {
         'emitente': emitente,
-        'emitente_cnpj': cnpj,
+        'emitente_fantasia': fantasia,
+        'emitente_cnpj': fmt_cnpj(empresa.cnpj or ''),
+        'emitente_ie': (empresa.ie or '').strip(),
+        'emitente_endereco': endereco,
+        'emitente_cidade': (empresa.cidade or '').strip(),
         'emitente_uf': (empresa.uf or '').strip(),
+        'emitente_cep': (empresa.cep or '').strip(),
+        'emitente_telefone': format_phone(empresa.telefone or ''),
+        'emitente_email': (empresa.email or '').strip(),
+        'emitente_logo_path': logo_path,
     }
 
 
@@ -172,8 +193,7 @@ def montar_dados_contexto_cce(nf: NFeSaida) -> dict[str, Any]:
         'ambiente': ambiente,
         'ambiente_label': 'Homologação' if homolog else 'Produção',
         'homologacao': homolog,
-        'emitente': emit['emitente'],
-        'emitente_cnpj': emit['emitente_cnpj'],
+        **emit,
         'destinatario': destinatario or '—',
         'chave_acesso': ident['chave_acesso'],
         'chave_acesso_fmt': ident['chave_acesso_fmt'],
@@ -234,8 +254,7 @@ def montar_dados_comprovante_cce(evento: NFeSaidaEvento) -> dict[str, Any]:
         'ambiente': ambiente,
         'ambiente_label': 'Homologação' if ambiente == 'homologacao' else 'Produção',
         'homologacao': ambiente == 'homologacao',
-        'emitente': emit['emitente'],
-        'emitente_cnpj': emit['emitente_cnpj'],
+        **emit,
         'destinatario': destinatario or '—',
         'chave_acesso': ident['chave_acesso'] or str(resumo.get('chave_acesso') or ''),
         'chave_acesso_fmt': ident['chave_acesso_fmt'] or _fmt_chave(resumo.get('chave_acesso')),
