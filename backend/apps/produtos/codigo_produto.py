@@ -58,6 +58,8 @@ def _descricao_rosca_comercial(rosca: RoscaConexao | None) -> str:
     if not rosca:
         return ''
     codigo = (rosca.codigo or '').strip().upper()
+    if codigo == 'SW':
+        return 'SW'
     desc_raw = _normalize_spaces((rosca.descricao or ''))
     desc_upper = desc_raw.upper()
     if 'PADRAO DA FAMILIA' in desc_upper or 'PADRÃO DA FAMÍLIA' in desc_upper:

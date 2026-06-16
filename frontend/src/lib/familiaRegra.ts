@@ -339,7 +339,7 @@ export function sugerirConfiguracaoFamilia(descricaoBase: string): SugestaoConfi
     };
   }
 
-  const roscaKw = /\b(BSP|NPT|ROSCA|M-F|F-M|MACHO|FEMEA|FÊMEA)\b/;
+  const roscaKw = /\b(BSP|NPT|SW|ROSCA|M-F|F-M|MACHO|FEMEA|FÊMEA)\b/;
 
   if (_has(u, /\bCONDULETE\b/)) {
     const td: TipoDimensional = 'BITOLA_POLEGADA';

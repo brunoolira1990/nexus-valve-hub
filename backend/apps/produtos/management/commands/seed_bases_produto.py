@@ -11,6 +11,7 @@ from apps.produtos.models import (
     RoscaConexao,
     ScheduleEspessura,
 )
+from apps.produtos.roscas_conexao_base import seed_roscas_conexao_canonicas
 
 POLEGADAS_OFICIAIS = [
     ('01', '1/8"'),
@@ -83,25 +84,7 @@ class Command(BaseCommand):
             )
         self.stdout.write(self.style.SUCCESS('Schedules: OK.'))
 
-        roscas = [
-            ('', 'BSP / padrão da família', ''),
-            ('N', 'NPT', ''),
-            ('S', 'SW', ''),
-            ('OD', 'OD / dupla anilha', ''),
-            ('ODN', 'OD + NPT', ''),
-            ('U', 'UNF', ''),
-            ('JN', 'JIC x NPT', ''),
-            ('FN', 'Fêmea NPT', ''),
-            ('FMN', 'Fêmea-macho NPT', ''),
-            ('MFU', 'Macho-fêmea UNF x BSP', ''),
-            ('FF', 'Fêmea-fêmea', ''),
-            ('MMN', 'Macho-macho NPT', ''),
-        ]
-        for codigo, desc, obs in roscas:
-            RoscaConexao.objects.update_or_create(
-                codigo=codigo,
-                defaults={'descricao': desc, 'observacao': obs, 'ativo': True},
-            )
+        seed_roscas_conexao_canonicas()
         self.stdout.write(self.style.SUCCESS('Roscas / conexões: OK.'))
 
         t = FamiliaProduto.TipoRegraCodigo
