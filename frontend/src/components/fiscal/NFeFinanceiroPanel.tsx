@@ -1,7 +1,7 @@
 import { Wallet } from 'lucide-react';
 import { fmtMoeda } from '@/lib/nfeSaidaConferencia';
 import { isAutorizadaHomologacao } from '@/lib/nfeSaidaUi';
-import { isAutorizadaProducao } from '@/lib/nfeSaidaAcoesMatriz';
+import { isAutorizadaProducao, isCanceladaNfe } from '@/lib/nfeSaidaAcoesMatriz';
 import { NFeFinanceiroAcoes } from '@/components/fiscal/NFeFinanceiroAcoes';
 
 type FinanceiroFlags = {
@@ -56,7 +56,13 @@ export function NFeFinanceiroPanel({
   onGerar,
 }: Props) {
   const flags = financeiro ?? {};
-  const statusInfo = statusFinanceiroLabel(flags);
+  const cancelada = isCanceladaNfe(status);
+  const statusInfo = cancelada
+    ? {
+        texto: 'NF-e cancelada na SEFAZ. Revise manualmente os títulos financeiros vinculados, se houver.',
+        tone: 'muted' as const,
+      }
+    : statusFinanceiroLabel(flags);
   const autorizadaHomolog = isAutorizadaHomologacao({
     status: status ?? '',
     status_emissao_sefaz: statusEmissaoSefaz,

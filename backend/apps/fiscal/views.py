@@ -1280,6 +1280,79 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         code = status.HTTP_200_OK if payload.get('ok') else status.HTTP_422_UNPROCESSABLE_ENTITY
         return response.Response(payload, status=code)
 
+    @action(detail=True, methods=['get'], url_path='cancelamento/dados')
+    def cancelamento_dados(self, request, pk=None):
+        """Contexto read-only do cancelamento SEFAZ — sem transmissão."""
+        from apps.fiscal.nfe_emissao.cancelamento_dados import montar_dados_contexto_cancelamento
+
+        nf = self.get_object()
+        return response.Response(montar_dados_contexto_cancelamento(nf, usuario=request.user))
+
+    @action(detail=True, methods=['post'], url_path='cancelar')
+    def cancelar(self, request, pk=None):
+        """Transmite evento de cancelamento NF-e à SEFAZ no ambiente da própria nota."""
+        import logging
+
+        from apps.fiscal.nfe_emissao.cancelamento_sefaz import (
+            NFeCancelamentoError,
+            emitir_cancelamento_nfe_saida,
+        )
+        from apps.fiscal.nfe_emissao.resposta_cancelamento import montar_resposta_cancelamento
+        from apps.fiscal.nfe_integracao.adapters.cancelamento_parser import ResultadoCancelamentoSefaz
+        from apps.fiscal.nfe_integracao.adapters.exceptions import CertificadoA1Error
+
+        log = logging.getLogger(__name__)
+        nf = self.get_object()
+        justificativa = request.data.get('justificativa', request.data.get('motivo', ''))
+
+        def _payload_erro(msg: str, *, ok: bool = False) -> dict:
+            nf.refresh_from_db()
+            return montar_resposta_cancelamento(
+                nf,
+                ResultadoCancelamentoSefaz(
+                    ok=ok,
+                    c_stat_lote='',
+                    x_motivo_lote=msg,
+                    c_stat_evento='',
+                    x_motivo_evento='',
+                    protocolo='',
+                    chave_acesso=nf.chave_acesso or '',
+                    n_seq_evento='1',
+                    tp_evento='110111',
+                    dh_reg_evento='',
+                    tp_amb='',
+                    id_evento='',
+                    xml_retorno='',
+                ),
+                ok=False,
+                mensagem=msg,
+                justificativa=str(justificativa or '').strip(),
+            )
+
+        try:
+            payload = emitir_cancelamento_nfe_saida(
+                nf,
+                justificativa=justificativa,
+                usuario=request.user,
+                confirmacao_payload=request.data,
+            )
+        except NFeCancelamentoError as exc:
+            payload = _payload_erro(str(exc))
+            etapa = getattr(exc, 'etapa', '')
+            if etapa in ('CERTIFICADO', 'EMITENTE', 'VALIDACAO', 'CONFIRMACAO', 'PERMISSAO'):
+                return response.Response(payload, status=status.HTTP_400_BAD_REQUEST)
+            return response.Response(payload, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        except CertificadoA1Error as exc:
+            return response.Response(_payload_erro(str(exc)), status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            log.exception('Erro técnico cancelamento nfe_id=%s', pk)
+            return response.Response(
+                _payload_erro('Erro técnico ao transmitir cancelamento. Tente novamente ou contate o suporte.'),
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        code = status.HTTP_200_OK if payload.get('ok') else status.HTTP_422_UNPROCESSABLE_ENTITY
+        return response.Response(payload, status=code)
+
     @action(detail=True, methods=['post'], url_path='reprocessar-retorno-sefaz')
     def reprocessar_retorno_sefaz(self, request, pk=None):
         """Reinterpreta xml_retorno salvo (lote 104 + infProt) sem retransmitir."""

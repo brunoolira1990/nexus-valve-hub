@@ -118,7 +118,13 @@ export function isRejeitadaOuErro(
 
 export function isCanceladaNfe(status?: string | null): boolean {
   const st = (status || '').trim().toUpperCase();
-  return st === 'CANCELADA' || st === 'CANCELADA_INTERNA' || st === 'CANCELADO';
+  return (
+    st === 'CANCELADA' ||
+    st === 'CANCELADA_INTERNA' ||
+    st === 'CANCELADA_HOMOLOGACAO' ||
+    st === 'CANCELADA_PRODUCAO' ||
+    st === 'CANCELADO'
+  );
 }
 
 export function resolverCenarioNfeSaida(
@@ -185,18 +191,16 @@ export function podeConsultarSituacaoSefaz(ctx: NFeSaidaContextoAcao): boolean {
 }
 
 export function podeEmitirCartaCorrecao(ctx: NFeSaidaContextoAcao): boolean {
+  if (ctx.cenario === 'cancelada') return false;
   return podeConsultarSituacaoSefaz(ctx);
 }
 
-const FUTURAS_BASE: Omit<NFeSaidaAcaoConfig, 'visivel' | 'habilitada'>[] = [
-  {
-    id: 'cancelamento',
-    grupo: 'futuras',
-    futura: true,
-    label: ACTION_LABELS.cancelarNfe,
-    title: 'Cancelamento fiscal SEFAZ — fase futura (sem execução nesta etapa)',
-  },
-];
+export function podeCancelarNfeSefaz(ctx: NFeSaidaContextoAcao): boolean {
+  if (ctx.cenario === 'cancelada') return false;
+  return podeConsultarSituacaoSefaz(ctx);
+}
+
+const FUTURAS_BASE: Omit<NFeSaidaAcaoConfig, 'visivel' | 'habilitada'>[] = [];
 
 function acao(
   partial: Omit<NFeSaidaAcaoConfig, 'visivel' | 'habilitada'> & { visivel?: boolean; habilitada?: boolean },
@@ -240,6 +244,9 @@ export function obterMatrizAcoesNfeSaida(
     if (podeEmitirCartaCorrecao(ctx)) {
       acoes.push(acao({ id: 'carta_correcao', grupo: 'fiscal', label: ACTION_LABELS.cartaCorrecao }));
     }
+    if (podeCancelarNfeSefaz(ctx)) {
+      acoes.push(acao({ id: 'cancelamento', grupo: 'fiscal', label: ACTION_LABELS.cancelarNfe }));
+    }
   } else if (cenario === 'producao_autorizada') {
     acoes.push(
       acao({ id: 'abrir_nfe', grupo: 'documentos', label: 'Abrir NF-e' }),
@@ -264,6 +271,9 @@ export function obterMatrizAcoesNfeSaida(
     }
     if (podeEmitirCartaCorrecao(ctx)) {
       acoes.push(acao({ id: 'carta_correcao', grupo: 'fiscal', label: ACTION_LABELS.cartaCorrecao }));
+    }
+    if (podeCancelarNfeSefaz(ctx)) {
+      acoes.push(acao({ id: 'cancelamento', grupo: 'fiscal', label: ACTION_LABELS.cancelarNfe }));
     }
   } else if (cenario === 'rascunho_conferencia' || cenario === 'rejeitada_erro') {
     if (opts?.podeValidar !== false) {
@@ -303,12 +313,14 @@ export function obterMatrizAcoesNfeSaida(
     }),
   );
 
-  if (ctx.exibirAcoesFuturas) {
+  if (ctx.exibirAcoesFuturas && FUTURAS_BASE.length) {
     for (const f of FUTURAS_BASE) {
       acoes.push(acao({ ...f, visivel: true, habilitada: false }));
     }
   } else if (cenario === 'rascunho_conferencia' || cenario === 'rejeitada_erro') {
-    acoes.push(acao({ ...FUTURAS_BASE[0], visivel: true, habilitada: false }));
+    if (FUTURAS_BASE[0]) {
+      acoes.push(acao({ ...FUTURAS_BASE[0], visivel: true, habilitada: false }));
+    }
   }
 
   return acoes.filter((a) => a.visivel);

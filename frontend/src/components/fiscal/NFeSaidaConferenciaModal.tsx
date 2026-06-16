@@ -75,6 +75,7 @@ import { AdvancedSupportSection } from '@/components/nexus/AdvancedSupportSectio
 import { GerarContasReceberNfeModal } from '@/components/fiscal/GerarContasReceberNfeModal';
 import { NFeConsultaSefazModal } from '@/components/fiscal/NFeConsultaSefazModal';
 import { NFeCartaCorrecaoModal } from '@/components/fiscal/NFeCartaCorrecaoModal';
+import { NFeCancelamentoModal } from '@/components/fiscal/NFeCancelamentoModal';
 import { buildCartaCorrecaoContextoFromConferencia } from '@/lib/nfeCartaCorrecaoPreview';
 import { NFeFinanceiroPanel } from '@/components/fiscal/NFeFinanceiroPanel';
 import { NFeSaidaAcoesOperacionais } from '@/components/fiscal/NFeSaidaAcoesOperacionais';
@@ -175,6 +176,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
   const [gerarCrOpen, setGerarCrOpen] = useState(false);
   const [consultaSefazOpen, setConsultaSefazOpen] = useState(false);
   const [cartaCorrecaoOpen, setCartaCorrecaoOpen] = useState(false);
+  const [cancelamentoOpen, setCancelamentoOpen] = useState(false);
   const [baselineSnapshot, setBaselineSnapshot] = useState<ConferenciaDirtySnapshot | null>(null);
   const [acaoLoadingMsg, setAcaoLoadingMsg] = useState<string | null>(null);
 
@@ -1570,6 +1572,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                       onClick={() => {
                         if (acao.id === 'consulta_sefaz') setConsultaSefazOpen(true);
                         if (acao.id === 'carta_correcao') setCartaCorrecaoOpen(true);
+                        if (acao.id === 'cancelamento') setCancelamentoOpen(true);
                       }}
                     >
                       {acao.label}
@@ -1961,6 +1964,16 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
         }
         onClose={() => setCartaCorrecaoOpen(false)}
         onEmitida={() => {
+          void load();
+          setHistoricoRefreshKey((k) => k + 1);
+        }}
+      />
+
+      <NFeCancelamentoModal
+        open={cancelamentoOpen}
+        nfeId={nfeId}
+        onClose={() => setCancelamentoOpen(false)}
+        onCancelada={() => {
           void load();
           setHistoricoRefreshKey((k) => k + 1);
         }}

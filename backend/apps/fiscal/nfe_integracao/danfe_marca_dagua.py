@@ -5,7 +5,13 @@ from __future__ import annotations
 from apps.fiscal.models import NFeSaida
 from apps.fiscal.nfe_saida_bloqueio import STATUS_NFE_RASCUNHO
 
-_STATUS_CANCELADA = frozenset({'CANCELADA', 'CANCELADO', 'CANCELADA_INTERNA'})
+_STATUS_CANCELADA = frozenset({
+    'CANCELADA',
+    'CANCELADO',
+    'CANCELADA_INTERNA',
+    'CANCELADA_HOMOLOGACAO',
+    'CANCELADA_PRODUCAO',
+})
 _STATUS_EMITIDA = frozenset({
     'EMITIDA',
     'EMITIDO',

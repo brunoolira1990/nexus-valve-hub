@@ -26,6 +26,7 @@ from apps.fiscal.nfe_integracao.adapters.pynfe_adapter import (
     extrair_xml_resposta,
     transmitir_evento_nfe,
 )
+from apps.fiscal.nfe_saida_bloqueio import nf_cancelada_operacional
 from apps.fiscal.nfe_saida_efeitos import _lock_nfe_saida, _registrar_evento
 
 logger = logging.getLogger(__name__)
@@ -69,8 +70,7 @@ def validar_texto_correcao(texto: str | None) -> str:
 
 
 def pode_emitir_carta_correcao(nf: NFeSaida) -> tuple[bool, str]:
-    st = (nf.status or '').strip().upper()
-    if st in ('CANCELADA', 'CANCELADA_INTERNA', 'CANCELADO'):
+    if nf_cancelada_operacional(nf):
         return False, MSG_CANCELADA
 
     chave = (nf.chave_acesso or '').strip()

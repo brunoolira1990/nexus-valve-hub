@@ -594,6 +594,66 @@ export type NFeCartaCorrecaoResponse = {
   };
 };
 
+export type NFeCancelamentoDadosResponse = {
+  ok: boolean;
+  pode_cancelar: boolean;
+  motivo_bloqueio?: string;
+  ambiente: 'homologacao' | 'producao';
+  ambiente_label: string;
+  producao: boolean;
+  exige_confirmacao_producao: boolean;
+  texto_confirmacao_producao: string;
+  alerta_producao?: string;
+  alerta_financeiro?: string;
+  financeiro_gerado?: boolean;
+  nfe: {
+    id: number;
+    numero_nfe: string;
+    serie_nfe: string;
+    chave_acesso: string;
+    protocolo_autorizacao: string;
+    valor_total: number;
+    cliente_nome: string;
+    status: string;
+    status_emissao_sefaz: string;
+  };
+  emitente: {
+    nome: string;
+    cnpj: string;
+    uf: string;
+  };
+};
+
+export type NFeCancelamentoResponse = {
+  ok: boolean;
+  mensagem?: string;
+  nfe_saida_id?: number;
+  evento_id?: number;
+  ambiente?: string;
+  ambiente_label?: string;
+  chave_acesso?: string;
+  justificativa?: string;
+  cstat?: string;
+  cStat?: string;
+  xmotivo?: string;
+  xMotivo?: string;
+  protocolo?: string;
+  protocolo_cancelamento?: string;
+  emitido_em?: string;
+  status?: string;
+  status_emissao_sefaz?: string;
+  etapa?: string;
+  evento_sefaz?: {
+    cstat?: string;
+    xmotivo?: string;
+    protocolo?: string;
+    n_seq_evento?: string;
+    tp_evento?: string;
+    dh_reg_evento?: string;
+    id_evento?: string;
+  };
+};
+
 export type NFeEmissaoProducaoResponse = NFeEmissaoHomologacaoResponse & {
   ambiente?: 'producao';
 };
@@ -945,6 +1005,22 @@ export const nfeSaidasService = {
     ).data,
   contasReceberVinculadas: async (id: number) =>
     (await api.get<NFeContasReceberVinculadasResponse>(`${nfSai}${id}/financeiro/contas-receber/`)).data,
+  cancelamentoDados: async (id: number) =>
+    (await api.get<NFeCancelamentoDadosResponse>(`${nfSai}${id}/cancelamento/dados/`)).data,
+  cancelarNfe: async (
+    id: number,
+    payload: {
+      justificativa: string;
+      confirmar_cancelamento_producao?: boolean;
+      confirmar_texto?: string;
+    },
+  ) => {
+    const res = await api.post<NFeCancelamentoResponse>(`${nfSai}${id}/cancelar/`, payload, {
+      timeout: 120_000,
+      validateStatus: (s) => s >= 200 && s < 500,
+    });
+    return res.data;
+  },
 };
 
 export type NFeGerarContasReceberParcela = {

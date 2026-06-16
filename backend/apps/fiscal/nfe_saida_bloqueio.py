@@ -8,7 +8,13 @@ STATUS_NFE_RASCUNHO = 'RASCUNHO'
 
 _STATUS_EMITIDA = frozenset({'EMITIDA', 'EMITIDO', 'AUTORIZADA_INTERNA', 'AUTORIZADA'})
 _STATUS_AUTORIZADA_TRAVA = frozenset({'AUTORIZADA_INTERNA', 'AUTORIZADA'})
-_STATUS_CANCELADA = frozenset({'CANCELADA', 'CANCELADO', 'CANCELADA_INTERNA'})
+_STATUS_CANCELADA = frozenset({
+    'CANCELADA',
+    'CANCELADO',
+    'CANCELADA_INTERNA',
+    'CANCELADA_HOMOLOGACAO',
+    'CANCELADA_PRODUCAO',
+})
 _STATUS_AUTORIZADA_HOMOLOG = frozenset({'AUTORIZADA_HOMOLOGACAO'})
 
 MSG_ITENS_ORIGEM_COMERCIAL = (
@@ -72,6 +78,14 @@ def nf_autorizada_producao(nf: NFeSaida) -> bool:
     if (nf.status_emissao_sefaz or '').strip() == NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO:
         return True
     return (nf.status or '').strip().upper() == 'AUTORIZADA_PRODUCAO'
+
+
+def nf_cancelada_operacional(nf: NFeSaida) -> bool:
+    st = _status_normalizado(nf.status)
+    if st in _STATUS_CANCELADA:
+        return True
+    sefaz = (nf.status_emissao_sefaz or '').strip().upper()
+    return 'CANCEL' in sefaz
 
 
 def origem_comercial_travada(nf: NFeSaida) -> bool:

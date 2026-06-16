@@ -25,6 +25,7 @@ import { MotivoAcaoDestrutivaModal } from '@/components/comercial/MotivoAcaoDest
 import { GerarContasReceberNfeModal } from '@/components/fiscal/GerarContasReceberNfeModal';
 import { NFeConsultaSefazModal } from '@/components/fiscal/NFeConsultaSefazModal';
 import { NFeCartaCorrecaoModal } from '@/components/fiscal/NFeCartaCorrecaoModal';
+import { NFeCancelamentoModal } from '@/components/fiscal/NFeCancelamentoModal';
 import { buildCartaCorrecaoContextoFromNfe } from '@/lib/nfeCartaCorrecaoPreview';
 import { NFeFinanceiroAcoes } from '@/components/fiscal/NFeFinanceiroAcoes';
 import { NFeSaidaAcoesGruposPanel } from '@/components/fiscal/NFeSaidaAcoesGruposPanel';
@@ -60,6 +61,7 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
   const [gerarCrOpen, setGerarCrOpen] = useState(false);
   const [consultaSefazOpen, setConsultaSefazOpen] = useState(false);
   const [cartaCorrecaoOpen, setCartaCorrecaoOpen] = useState(false);
+  const [cancelamentoOpen, setCancelamentoOpen] = useState(false);
 
   useEffect(() => {
     if (!open || !nfeId) {
@@ -384,6 +386,7 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
               onDescartar={() => setDescarteOpen(true)}
               onConsultaSefaz={() => setConsultaSefazOpen(true)}
               onCartaCorrecao={() => setCartaCorrecaoOpen(true)}
+              onCancelamento={() => setCancelamentoOpen(true)}
               financeiroSlot={
                 <NFeFinanceiroAcoes
                   nfeId={nfe.id}
@@ -471,6 +474,17 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
         }
         onClose={() => setCartaCorrecaoOpen(false)}
         onEmitida={() => {
+          if (nfeId) {
+            void nfeSaidasService.getById(nfeId).then(setNfe).catch(() => undefined);
+          }
+        }}
+      />
+
+      <NFeCancelamentoModal
+        open={cancelamentoOpen}
+        nfeId={nfeId}
+        onClose={() => setCancelamentoOpen(false)}
+        onCancelada={() => {
           if (nfeId) {
             void nfeSaidasService.getById(nfeId).then(setNfe).catch(() => undefined);
           }

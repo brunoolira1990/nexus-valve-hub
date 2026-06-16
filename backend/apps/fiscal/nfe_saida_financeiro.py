@@ -13,10 +13,10 @@ from apps.financeiro.models import CategoriaFinanceira, CentroCusto, ContaFinanc
 from apps.financeiro.services.titulo import TOLERANCIA_PARCELAS, criar_titulo_financeiro
 from apps.fiscal.models import NFeSaida
 from apps.fiscal.nfe_saida_bloqueio import (
-    _STATUS_CANCELADA,
     _status_normalizado,
     nf_autorizada_homologacao,
     nf_autorizada_producao,
+    nf_cancelada_operacional,
 )
 from apps.fiscal.nfe_saida_duplicatas import gerar_duplicatas_nfe_saida
 
@@ -41,11 +41,7 @@ def _round_money(value: Decimal | str | float | int) -> Decimal:
 
 
 def nf_cancelada(nf: NFeSaida) -> bool:
-    st = _status_normalizado(nf.status)
-    if st in _STATUS_CANCELADA:
-        return True
-    sefaz = (nf.status_emissao_sefaz or '').strip().upper()
-    return 'CANCEL' in sefaz
+    return nf_cancelada_operacional(nf)
 
 
 MSG_HOMOLOG_SEM_FINANCEIRO = 'Financeiro indisponível para NF-e de homologação.'

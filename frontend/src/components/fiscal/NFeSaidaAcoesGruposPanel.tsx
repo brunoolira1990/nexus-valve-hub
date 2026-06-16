@@ -31,6 +31,7 @@ type Props = {
   consultaSefazLoading?: boolean;
   onCartaCorrecao?: () => void;
   cartaCorrecaoLoading?: boolean;
+  onCancelamento?: () => void;
   financeiroSlot?: React.ReactNode;
   compact?: boolean;
 };
@@ -138,6 +139,7 @@ export function NFeSaidaAcoesGruposPanel({
   consultaSefazLoading,
   onCartaCorrecao,
   cartaCorrecaoLoading,
+  onCancelamento,
   onXmlAutorizado,
   financeiroSlot,
   compact,
@@ -251,6 +253,19 @@ export function NFeSaidaAcoesGruposPanel({
             onClick={onCartaCorrecao}
           >
             {cartaCorrecaoLoading ? <Loader2 className="h-3 w-3 animate-spin inline mr-1" /> : null}
+            {acao.label}
+          </button>
+        );
+      case 'cancelamento':
+        return (
+          <button
+            key={acao.id}
+            type="button"
+            className="erp-btn-destructive erp-btn-sm"
+            disabled={!acao.habilitada}
+            title={acao.title}
+            onClick={onCancelamento}
+          >
             {acao.label}
           </button>
         );

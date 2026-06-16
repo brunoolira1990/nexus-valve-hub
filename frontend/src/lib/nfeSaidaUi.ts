@@ -321,6 +321,7 @@ const LABELS_TIPO_EVENTO: Record<string, string> = {
   NFE_AUTORIZADA_HOMOLOGACAO: 'Autorizada homologação SEFAZ',
   CONSULTA_SITUACAO_SEFAZ: 'Consulta SEFAZ',
   CARTA_CORRECAO_EMITIDA: 'Carta de Correção emitida',
+  CANCELAMENTO_SEFAZ_EMITIDO: 'Cancelamento SEFAZ',
 };
 
 export function labelTipoEventoNFe(tipo: string): string {
@@ -370,6 +371,10 @@ export function resumoEventoCurto(resumo: Record<string, unknown> | null | undef
   if (resumo.xMotivo) parts.push(String(resumo.xMotivo));
   if (resumo.texto_correcao) {
     const txt = String(resumo.texto_correcao);
+    parts.push(txt.length > 80 ? `${txt.slice(0, 77)}…` : txt);
+  }
+  if (resumo.justificativa) {
+    const txt = String(resumo.justificativa);
     parts.push(txt.length > 80 ? `${txt.slice(0, 77)}…` : txt);
   }
   if (resumo.protocolo) parts.push(`Prot. ${resumo.protocolo}`);

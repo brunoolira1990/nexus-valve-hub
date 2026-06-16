@@ -491,6 +491,7 @@ class NFeSaidaEvento(models.Model):
         ERRO_TRANSMISSAO_SEFAZ = 'ERRO_TRANSMISSAO_SEFAZ', 'Erro transmissão SEFAZ'
         CONSULTA_SITUACAO_SEFAZ = 'CONSULTA_SITUACAO_SEFAZ', 'Consulta situação SEFAZ'
         CARTA_CORRECAO_EMITIDA = 'CARTA_CORRECAO_EMITIDA', 'Carta de Correção emitida'
+        CANCELAMENTO_SEFAZ_EMITIDO = 'CANCELAMENTO_SEFAZ_EMITIDO', 'Cancelamento SEFAZ emitido'
 
     nfe_saida = models.ForeignKey(
         NFeSaida,
