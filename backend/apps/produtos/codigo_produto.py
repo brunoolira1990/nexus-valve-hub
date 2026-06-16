@@ -92,7 +92,10 @@ def _descricao_schedule_comercial(schedule: ScheduleEspessura | None) -> str:
 def _codigo_rosca(rosca: RoscaConexao | None) -> str:
     if not rosca:
         return ''
-    return (rosca.codigo or '').strip()
+    codigo = (rosca.codigo or '').strip()
+    if codigo.upper() == 'SW':
+        return 'S'
+    return codigo
 
 
 def _codigo_schedule(sch: ScheduleEspessura | None) -> str:
