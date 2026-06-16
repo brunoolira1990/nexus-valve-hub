@@ -529,12 +529,14 @@ export type NFeCartaCorrecaoAnterior = {
   cstat: string;
   xmotivo: string;
   protocolo: string;
+  id_evento?: string;
   emitido_em: string;
   texto_correcao: string;
   texto_resumo: string;
   usuario_nome?: string;
   ambiente?: string;
   tem_comprovante?: boolean;
+  vigente?: boolean;
 };
 
 export type NFeCartaCorrecaoDadosResponse = {
@@ -553,6 +555,9 @@ export type NFeCartaCorrecaoDadosResponse = {
   sequencia_prevista: number;
   total_cce_anteriores: number;
   mensagem_multiplas: string;
+  mensagem_consolidar?: string;
+  texto_consolidado_base?: string;
+  cce_vigente?: NFeCartaCorrecaoAnterior | null;
   cce_anteriores: NFeCartaCorrecaoAnterior[];
   o_que_nao_pode_corrigir?: string;
 };

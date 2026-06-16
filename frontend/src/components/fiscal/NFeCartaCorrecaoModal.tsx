@@ -126,14 +126,21 @@ function ListaCceAnteriores({
         {anteriores.map((ev) => (
           <li
             key={ev.evento_id}
-            className="text-xs rounded border bg-background p-2 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2"
+            className={cn(
+              'text-xs rounded border bg-background p-2 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2',
+              ev.vigente && 'border-emerald-600/40 bg-emerald-600/5',
+            )}
           >
             <div className="space-y-0.5 min-w-0">
-              <p>
+              <p className="flex flex-wrap items-center gap-1.5">
                 <span className="font-medium">Seq. {ev.sequencia}</span>
-                {' · '}
-                {formatDateTimeBr(ev.emitido_em)}
-                {ev.protocolo ? ` · prot. ${ev.protocolo}` : ''}
+                {ev.vigente ? (
+                  <span className="erp-badge-success text-[10px]">Vigente</span>
+                ) : null}
+                <span className="text-muted-foreground">
+                  · {formatDateTimeBr(ev.emitido_em)}
+                  {ev.protocolo ? ` · prot. ${ev.protocolo}` : ''}
+                </span>
               </p>
               <p className="text-muted-foreground">
                 cStat {ev.cstat || '—'}
@@ -163,6 +170,9 @@ function ListaCceAnteriores({
           </li>
         ))}
       </ul>
+      <p className="text-[10px] text-muted-foreground">
+        A última CC-e autorizada é a vigente. Eventos anteriores permanecem no histórico para auditoria.
+      </p>
     </div>
   );
 }
@@ -178,26 +188,31 @@ function BlocoPreviaCce({
 }) {
   return (
     <div className="space-y-3 rounded-md border border-border bg-muted/20 p-3 text-sm">
-      <div>
-        <p className="font-semibold">Prévia da Carta de Correção Eletrônica — CC-e</p>
-        <p className="text-xs text-muted-foreground mt-0.5">Evento fiscal modelo 110110 — somente visualização</p>
+      <div className="text-center border-b border-border pb-2">
+        <p className="font-semibold text-base">Representação Gráfica de CC-e</p>
+        <p className="text-xs text-muted-foreground">Carta de Correção Eletrônica</p>
+        <p className="text-xs mt-1">{contexto.emitente}</p>
       </div>
+
+      <p className="text-xs font-semibold text-center rounded-md border border-amber-600/50 bg-amber-500/10 text-amber-900 dark:text-amber-100 px-2 py-1.5">
+        {MSG_PREVIA_SEM_TRANSMISSAO}
+      </p>
+
+      {contexto.homologacao ? (
+        <p className="text-xs font-medium text-center rounded-md border border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100 px-2 py-1">
+          HOMOLOGAÇÃO — SEM VALOR FISCAL
+        </p>
+      ) : null}
 
       <p
         className={cn(
           'text-xs rounded-md border px-2 py-1.5',
           contexto.homologacao
             ? 'border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100'
-            : 'border-red-600/30 bg-red-950/5 text-red-800 dark:text-red-300',
+            : 'border-slate-500/30 bg-slate-500/5 text-muted-foreground',
         )}
       >
         <span className="font-medium">Ambiente:</span> {contexto.ambienteLabel}
-        {' — '}
-        {contexto.homologacao ? MSG_AVISO_CCE_HOMOLOG : MSG_AVISO_CCE_PRODUCAO}
-      </p>
-
-      <p className="text-xs font-medium text-amber-800 dark:text-amber-200 border border-amber-500/40 bg-amber-500/10 rounded px-2 py-1.5">
-        {MSG_PREVIA_SEM_TRANSMISSAO}
       </p>
 
       {contexto.mensagemMultiplas ? (
@@ -218,14 +233,20 @@ function BlocoPreviaCce({
       <CampoPrevia label="Chave de acesso" value={contexto.chaveAcesso} mono />
 
       <div className="space-y-1">
-        <p className="text-xs font-medium text-muted-foreground">Texto da correção</p>
-        <p className="text-sm whitespace-pre-wrap rounded-md border bg-background p-2">{textoCorrecao}</p>
+        <p className="text-xs font-semibold uppercase tracking-wide">Correções a serem consideradas</p>
+        <p className="text-sm whitespace-pre-wrap break-words rounded-md border-2 border-border bg-background p-3 min-h-[6rem]">
+          {textoCorrecao}
+        </p>
       </div>
 
       <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs">
-        <p className="font-medium mb-1">O que a CC-e não pode corrigir</p>
+        <p className="font-medium mb-1">Limitações da Carta de Correção</p>
         <p className="text-muted-foreground">{MSG_O_QUE_CCE_NAO_PODE_CORRIGIR}</p>
       </div>
+
+      <p className="text-[10px] text-center text-muted-foreground">
+        Documento de prévia — não transmitido à SEFAZ
+      </p>
     </div>
   );
 }
@@ -247,6 +268,7 @@ export function NFeCartaCorrecaoModal({
   const [previaGeradaEm, setPreviaGeradaEm] = useState('');
   const [resultado, setResultado] = useState<NFeCartaCorrecaoResponse | null>(null);
   const [erroTransmissao, setErroTransmissao] = useState<string | null>(null);
+  const [textoBaseAplicado, setTextoBaseAplicado] = useState(false);
 
   const textoLimpo = useMemo(() => texto.trim(), [texto]);
   const tamanho = textoLimpo.length;
@@ -262,18 +284,23 @@ export function NFeCartaCorrecaoModal({
         return;
       }
       setContexto(mapCartaCorrecaoDadosToContexto(dados));
+      if (!textoBaseAplicado && dados.texto_consolidado_base) {
+        setTexto(dados.texto_consolidado_base);
+        setTextoBaseAplicado(true);
+      }
     } catch (e) {
       if (!contextoInicial) setContexto(null);
       toast.error(apiErrorMessage(e, { fallback: 'Não foi possível carregar dados da CC-e.' }));
     } finally {
       setContextoLoading(false);
     }
-  }, [nfeId, contextoInicial]);
+  }, [nfeId, contextoInicial, textoBaseAplicado]);
 
   useEffect(() => {
     if (!open) {
       setEtapa('redigir');
       setTexto('');
+      setTextoBaseAplicado(false);
       setLoading(false);
       setPdfLoading(false);
       setContexto(contextoInicial ?? null);
@@ -390,6 +417,11 @@ export function NFeCartaCorrecaoModal({
                     <strong>Evento fiscal SEFAZ (110110).</strong> Redija a correção, pré-visualize o conteúdo e só
                     então transmita à SEFAZ. Nada é enviado antes da confirmação explícita.
                   </p>
+                  {contexto?.mensagemConsolidar ? (
+                    <p className="text-xs rounded-md border border-emerald-600/30 bg-emerald-600/5 px-2 py-1.5 text-emerald-900 dark:text-emerald-100">
+                      {contexto.mensagemConsolidar}
+                    </p>
+                  ) : null}
                   {contexto?.mensagemMultiplas ? (
                     <p className="text-xs rounded-md border border-blue-500/30 bg-blue-500/5 px-2 py-1.5">
                       {contexto.mensagemMultiplas}
@@ -401,16 +433,21 @@ export function NFeCartaCorrecaoModal({
                   <p className="text-xs text-muted-foreground">{MSG_LIMITES_CCE}</p>
                   <div className="space-y-1.5">
                     <label htmlFor="cce-texto" className="text-sm font-medium">
-                      Texto da correção <span className="text-destructive">*</span>
+                      Correções a serem consideradas <span className="text-destructive">*</span>
                     </label>
                     <Textarea
                       id="cce-texto"
                       value={texto}
                       onChange={(e) => setTexto(e.target.value)}
-                      rows={6}
+                      rows={8}
                       maxLength={TAMANHO_MAXIMO_CORRECAO}
-                      placeholder="Descreva de forma clara e objetiva a correção (mín. 15 caracteres)."
+                      placeholder={
+                        contexto?.textoConsolidadoBase
+                          ? 'Revise as correções anteriores e adicione novas linhas conforme necessário (Enter para nova correção).'
+                          : 'Descreva as correções (mín. 15 caracteres). Use Enter para separar correções e linhas em branco entre elas.'
+                      }
                       disabled={loading}
+                      className="font-mono text-sm whitespace-pre-wrap"
                     />
                     <p
                       className={`text-xs ${tamanho > 0 && !textoValido ? 'text-destructive' : 'text-muted-foreground'}`}

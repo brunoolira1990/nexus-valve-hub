@@ -18,6 +18,9 @@ export type NFeCartaCorrecaoContexto = {
   serie: string;
   sequenciaPrevista: number;
   mensagemMultiplas?: string;
+  mensagemConsolidar?: string;
+  textoConsolidadoBase?: string;
+  cceVigente?: NFeCartaCorrecaoAnterior | null;
   totalCceAnteriores?: number;
   cceAnteriores?: NFeCartaCorrecaoAnterior[];
   previaEm?: string;
@@ -32,8 +35,7 @@ export const MSG_O_QUE_CCE_NAO_PODE_CORRIGIR =
 export const MSG_CONFIRMACAO_TRANSMISSAO_CCE =
   'Esta ação transmite uma Carta de Correção Eletrônica para a SEFAZ.';
 
-export const MSG_PREVIA_SEM_TRANSMISSAO =
-  'Este PDF é uma prévia. Nenhum evento foi transmitido, assinado ou registrado na SEFAZ.';
+export const MSG_PREVIA_SEM_TRANSMISSAO = 'PRÉVIA — NÃO TRANSMITIDA À SEFAZ';
 
 const CSTAT_OK = CSTAT_CCE_REGISTRADO;
 
@@ -59,10 +61,32 @@ export function mapCartaCorrecaoDadosToContexto(
     serie: dados.serie_nfe || '—',
     sequenciaPrevista: dados.sequencia_prevista,
     mensagemMultiplas: dados.mensagem_multiplas || undefined,
+    mensagemConsolidar: dados.mensagem_consolidar || undefined,
+    textoConsolidadoBase: dados.texto_consolidado_base || undefined,
+    cceVigente: dados.cce_vigente ?? undefined,
     totalCceAnteriores: dados.total_cce_anteriores,
     cceAnteriores: dados.cce_anteriores ?? [],
     previaEm: 'previa_em' in dados ? dados.previa_em : undefined,
   };
+}
+
+/** Última CC-e autorizada (cStat 135/136) entre os eventos da NF-e — vigente para exibição. */
+export function obterCceVigenteDosEventos(eventos: NFeSaidaEfeitosEvento[]): NFeSaidaEfeitosEvento | null {
+  let vigente: NFeSaidaEfeitosEvento | null = null;
+  for (const ev of eventos) {
+    if (ev.tipo_evento !== 'CARTA_CORRECAO_EMITIDA') continue;
+    const cstat = String(ev.resumo?.cStat ?? ev.resumo?.cstat ?? '').trim();
+    if (!CSTAT_CCE_REGISTRADO.has(cstat)) continue;
+    if (!vigente || String(ev.criado_em) > String(vigente.criado_em)) {
+      vigente = ev;
+    }
+  }
+  return vigente;
+}
+
+export function eventoCceEstaVigente(ev: NFeSaidaEfeitosEvento, eventos: NFeSaidaEfeitosEvento[]): boolean {
+  const vigente = obterCceVigenteDosEventos(eventos);
+  return Boolean(vigente && vigente.id === ev.id);
 }
 
 function resolverHomologacao(

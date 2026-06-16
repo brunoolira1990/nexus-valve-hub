@@ -17,6 +17,12 @@ MSG_O_QUE_NAO_PODE_CORRIGIR = (
     'dados cadastrais que mudem emitente ou destinatário; data de emissão ou saída; numeração da NF-e.'
 )
 
+MSG_CONSOLIDAR_CORRECOES = (
+    'Uma nova CC-e deve consolidar todas as correções anteriores que continuam válidas. '
+    'Revise o texto abaixo, mantenha as correções já registradas e adicione novas correções conforme necessário '
+    '(use Enter para separar correções e linhas em branco entre elas).'
+)
+
 
 class NFeCartaCorrecaoDadosError(ValueError):
     pass
@@ -50,6 +56,13 @@ def _fmt_serie(serie: str | None) -> str:
     return str(int(digits)) if digits else str(serie or '').strip()
 
 
+def _fmt_chave(chave: str | None) -> str:
+    digits = ''.join(c for c in str(chave or '') if c.isdigit())
+    if len(digits) != 44:
+        return str(chave or '').strip()
+    return ' '.join(digits[i : i + 4] for i in range(0, 44, 4))
+
+
 def _identidade_nfe(nf: NFeSaida) -> dict[str, str]:
     from apps.fiscal.nfe_saida_apresentacao import montar_apresentacao_nfe_saida
 
@@ -61,6 +74,7 @@ def _identidade_nfe(nf: NFeSaida) -> dict[str, str]:
         'numero_nfe': numero or '—',
         'serie_nfe': serie or '—',
         'chave_acesso': chave,
+        'chave_acesso_fmt': _fmt_chave(chave),
     }
 
 
@@ -93,15 +107,26 @@ def listar_cce_anteriores(nf: NFeSaida) -> list[dict[str, Any]]:
                 'cstat': str(resumo.get('cStat') or resumo.get('cstat') or ''),
                 'xmotivo': str(resumo.get('xMotivo') or resumo.get('xmotivo') or ''),
                 'protocolo': str(resumo.get('protocolo') or ''),
+                'id_evento': str(resumo.get('id_evento') or ''),
                 'emitido_em': emitido,
                 'texto_correcao': texto,
                 'texto_resumo': (texto[:120] + '…') if len(texto) > 120 else texto,
                 'usuario_nome': _nome_usuario(ev.criado_por),
                 'ambiente': str(resumo.get('ambiente') or ''),
                 'tem_comprovante': True,
+                'vigente': False,
             },
         )
+    if out:
+        out[-1]['vigente'] = True
     return out
+
+
+def obter_ultima_cce_vigente(anteriores: list[dict[str, Any]] | None) -> dict[str, Any] | None:
+    """Última CC-e autorizada (cStat 135/136) — vigente para consolidação."""
+    if not anteriores:
+        return None
+    return anteriores[-1]
 
 
 def proxima_sequencia_cce(nf: NFeSaida) -> int:
@@ -131,6 +156,8 @@ def montar_dados_contexto_cce(nf: NFeSaida) -> dict[str, Any]:
     if nf.cliente_id and getattr(nf, 'cliente', None):
         destinatario = (nf.cliente.razao_social or '').strip()
     anteriores = listar_cce_anteriores(nf)
+    vigente = obter_ultima_cce_vigente(anteriores)
+    texto_base = str(vigente.get('texto_correcao') or '') if vigente else ''
     seq = proxima_sequencia_cce(nf)
     total = len(anteriores)
     mensagem_multiplas = ''
@@ -149,11 +176,15 @@ def montar_dados_contexto_cce(nf: NFeSaida) -> dict[str, Any]:
         'emitente_cnpj': emit['emitente_cnpj'],
         'destinatario': destinatario or '—',
         'chave_acesso': ident['chave_acesso'],
+        'chave_acesso_fmt': ident['chave_acesso_fmt'],
         'numero_nfe': ident['numero_nfe'],
         'serie_nfe': ident['serie_nfe'],
         'sequencia_prevista': seq,
         'total_cce_anteriores': total,
         'mensagem_multiplas': mensagem_multiplas,
+        'mensagem_consolidar': MSG_CONSOLIDAR_CORRECOES if vigente else '',
+        'texto_consolidado_base': texto_base,
+        'cce_vigente': vigente,
         'cce_anteriores': anteriores,
         'o_que_nao_pode_corrigir': MSG_O_QUE_NAO_PODE_CORRIGIR,
     }
@@ -168,6 +199,7 @@ def montar_dados_previa_cce(nf: NFeSaida, *, texto_correcao: str) -> dict[str, A
     base['previa_em'] = timezone.now().isoformat()
     base['somente_leitura'] = True
     base['transmitido'] = False
+    base['modo'] = 'previa'
     return base
 
 
@@ -176,8 +208,12 @@ def montar_dados_comprovante_cce(evento: NFeSaidaEvento) -> dict[str, Any]:
         raise NFeCartaCorrecaoDadosError('Evento informado não é Carta de Correção.')
     nf = evento.nfe_saida
     resumo = evento.resumo if isinstance(evento.resumo, dict) else {}
+    if not _cstat_registrado(resumo):
+        raise NFeCartaCorrecaoDadosError('CC-e ainda não registrada na SEFAZ — comprovante indisponível.')
     homolog = _homologacao_da_nfe(nf)
     ambiente = str(resumo.get('ambiente') or ('homologacao' if homolog else 'producao'))
+    if ambiente.lower() in ('homologação', 'homologacao'):
+        ambiente = 'homologacao'
     ident = _identidade_nfe(nf)
     emit = montar_identidade_emitente(nf)
     destinatario = ''
@@ -188,6 +224,9 @@ def montar_dados_comprovante_cce(evento: NFeSaidaEvento) -> dict[str, Any]:
         sequencia = int(seq_raw)
     except (TypeError, ValueError):
         sequencia = None
+    anteriores = listar_cce_anteriores(nf)
+    vigente = obter_ultima_cce_vigente(anteriores)
+    cstat = str(resumo.get('cStat') or resumo.get('cstat') or '')
     return {
         'ok': True,
         'evento_id': evento.pk,
@@ -199,14 +238,21 @@ def montar_dados_comprovante_cce(evento: NFeSaidaEvento) -> dict[str, Any]:
         'emitente_cnpj': emit['emitente_cnpj'],
         'destinatario': destinatario or '—',
         'chave_acesso': ident['chave_acesso'] or str(resumo.get('chave_acesso') or ''),
+        'chave_acesso_fmt': ident['chave_acesso_fmt'] or _fmt_chave(resumo.get('chave_acesso')),
         'numero_nfe': ident['numero_nfe'],
         'serie_nfe': ident['serie_nfe'],
         'sequencia_evento': sequencia,
+        'sequencia_prevista': sequencia,
         'texto_correcao': str(resumo.get('texto_correcao') or ''),
-        'cstat': str(resumo.get('cStat') or resumo.get('cstat') or ''),
+        'cstat': cstat,
         'xmotivo': str(resumo.get('xMotivo') or resumo.get('xmotivo') or ''),
         'protocolo': str(resumo.get('protocolo') or ''),
+        'id_evento': str(resumo.get('id_evento') or ''),
+        'status_evento': f'Registrado — cStat {cstat}' if cstat else 'Registrado na SEFAZ',
         'emitido_em': str(resumo.get('emitido_em') or evento.criado_em.isoformat()),
         'usuario_nome': _nome_usuario(evento.criado_por),
         'transmitido': True,
+        'modo': 'autorizada',
+        'vigente': bool(vigente and vigente.get('evento_id') == evento.pk),
+        'o_que_nao_pode_corrigir': MSG_O_QUE_NAO_PODE_CORRIGIR,
     }

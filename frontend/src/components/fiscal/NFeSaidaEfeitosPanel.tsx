@@ -13,6 +13,7 @@ import {
   labelTipoEventoNFe,
   resumoEventoCurto,
 } from '@/lib/nfeSaidaUi';
+import { eventoCceEstaVigente, obterCceVigenteDosEventos } from '@/lib/nfeCartaCorrecaoPreview';
 
 type Props = {
   nfeSaidaId: number;
@@ -262,13 +263,37 @@ export function NFeSaidaEfeitosPanel({
               Histórico de eventos ({eventos.length})
             </h4>
             <p className="text-xs text-muted-foreground mb-2">Ordem: mais recente primeiro.</p>
+            {(() => {
+              const cceVigente = obterCceVigenteDosEventos(eventos);
+              if (!cceVigente) return null;
+              const seq = cceVigente.resumo?.sequencia_evento ?? cceVigente.resumo?.n_seq_evento;
+              return (
+                <div className="mb-3 rounded-md border border-emerald-600/40 bg-emerald-600/5 p-2 text-xs">
+                  <p className="font-medium text-emerald-800 dark:text-emerald-200 flex flex-wrap items-center gap-1.5">
+                    CC-e vigente
+                    <span className="erp-badge-success text-[10px]">Autorizada</span>
+                    {seq ? <span className="text-muted-foreground font-normal">· Seq. {String(seq)}</span> : null}
+                  </p>
+                  {cceVigente.resumo?.texto_correcao ? (
+                    <p className="text-muted-foreground mt-1 whitespace-pre-wrap line-clamp-3">
+                      {String(cceVigente.resumo.texto_correcao)}
+                    </p>
+                  ) : null}
+                </div>
+              );
+            })()}
             {eventos.length === 0 ? (
               <p className="text-xs text-muted-foreground">Nenhum evento registrado ainda.</p>
             ) : (
               <ul className="space-y-2 max-h-48 overflow-y-auto">
                 {eventos.map((ev) => (
                   <li key={ev.id} className="text-xs border-b border-border/50 pb-2 last:border-0">
-                    <div className="font-medium">{labelTipoEventoNFe(ev.tipo_evento)}</div>
+                    <div className="font-medium flex flex-wrap items-center gap-1.5">
+                      {labelTipoEventoNFe(ev.tipo_evento)}
+                      {ev.tipo_evento === 'CARTA_CORRECAO_EMITIDA' && eventoCceEstaVigente(ev, eventos) ? (
+                        <span className="erp-badge-success text-[10px]">Vigente</span>
+                      ) : null}
+                    </div>
                     <div className="text-muted-foreground">
                       {formatDateTimeBr(ev.criado_em)}
                       {ev.criado_por_nome ? ` · ${ev.criado_por_nome}` : ''}
