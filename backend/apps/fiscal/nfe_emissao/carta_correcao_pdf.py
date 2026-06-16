@@ -16,9 +16,9 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 from apps.core.pdf.components import build_logo_cell
 from apps.core.pdf.styles import (
     C_BORDER,
+    C_BRAND_PRIMARY,
+    C_CARD_BG,
     C_FRAME_LIGHT,
-    C_HEADER_DEEP,
-    C_HEADER_FG,
     C_LABEL_BG,
     C_MUTED,
     C_PRIMARY,
@@ -39,7 +39,9 @@ _CONTENT_W = _PAGE_W - 2 * _MARGIN_X
 _COR_AVISO = colors.HexColor('#b45309')
 _COR_AVISO_FUNDO = colors.HexColor('#fffbeb')
 _W_LOGO = 48 * mm
-_W_DOC = 62 * mm
+_W_DOC = 58 * mm
+_BLOCO_BORDER = 0.35
+_SECTION_PAD = 8
 
 
 def _p(text: str, style) -> Paragraph:
@@ -81,14 +83,14 @@ def _html_chave_acesso(chave: str) -> str:
 def _estilo_bloco_largura_total() -> TableStyle:
     return TableStyle(
         [
-            ('BOX', (0, 0), (-1, -1), 0.75, C_SLATE_TEXT),
-            ('INNERGRID', (0, 0), (-1, -1), 0.35, C_BORDER),
+            ('BOX', (0, 0), (-1, -1), _BLOCO_BORDER, C_BORDER),
+            ('INNERGRID', (0, 0), (-1, -1), 0.25, C_BORDER),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('BACKGROUND', (0, 0), (0, -1), C_LABEL_BG),
-            ('LEFTPADDING', (0, 0), (-1, -1), 7),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 7),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('LEFTPADDING', (0, 0), (-1, -1), _SECTION_PAD),
+            ('RIGHTPADDING', (0, 0), (-1, -1), _SECTION_PAD),
+            ('TOPPADDING', (0, 0), (-1, -1), 7),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
         ],
     )
 
@@ -98,11 +100,11 @@ def _titulo_faixa(titulo: str, style) -> Table:
     tbl.setStyle(
         TableStyle(
             [
-                ('BACKGROUND', (0, 0), (-1, -1), C_TABLE_HEADER_BG),
-                ('BOX', (0, 0), (-1, -1), 0.75, C_SLATE_TEXT),
-                ('LEFTPADDING', (0, 0), (-1, -1), 8),
-                ('TOPPADDING', (0, 0), (-1, -1), 4),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                ('BACKGROUND', (0, 0), (-1, -1), C_LABEL_BG),
+                ('BOX', (0, 0), (-1, -1), _BLOCO_BORDER, C_BORDER),
+                ('LEFTPADDING', (0, 0), (-1, -1), _SECTION_PAD),
+                ('TOPPADDING', (0, 0), (-1, -1), 5),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
             ],
         ),
     )
@@ -241,18 +243,17 @@ def _caixa_correcoes(texto: str, titulo_style, corpo_style) -> Table:
     tbl.setStyle(
         TableStyle(
             [
-                ('BOX', (0, 0), (-1, -1), 1.2, C_HEADER_DEEP),
-                ('BACKGROUND', (0, 0), (0, 0), C_HEADER_DEEP),
-                ('TEXTCOLOR', (0, 0), (0, 0), C_HEADER_FG),
+                ('BOX', (0, 0), (-1, -1), 0.45, C_FRAME_LIGHT),
+                ('BACKGROUND', (0, 0), (0, 0), C_TABLE_HEADER_BG),
                 ('BACKGROUND', (0, 1), (0, 1), colors.white),
                 ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                 ('ALIGN', (0, 0), (0, 0), 'CENTER'),
-                ('LEFTPADDING', (0, 0), (-1, -1), 12),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 12),
-                ('TOPPADDING', (0, 0), (0, 0), 9),
-                ('BOTTOMPADDING', (0, 0), (0, 0), 9),
-                ('TOPPADDING', (0, 1), (0, 1), 12),
-                ('BOTTOMPADDING', (0, 1), (0, 1), 12),
+                ('LEFTPADDING', (0, 0), (-1, -1), 14),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 14),
+                ('TOPPADDING', (0, 0), (0, 0), 8),
+                ('BOTTOMPADDING', (0, 0), (0, 0), 8),
+                ('TOPPADDING', (0, 1), (0, 1), 14),
+                ('BOTTOMPADDING', (0, 1), (0, 1), 14),
                 ('MINHEIGHT', (0, 1), (0, 1), _MIN_ALTURA_CORRECOES),
             ],
         ),
@@ -291,23 +292,21 @@ def _linhas_emitente(dados: dict[str, Any]) -> list[tuple[str, bool]]:
     return out
 
 
-def _cabecalho_emitente(dados: dict[str, Any], ph_title, ph_line, ph_center, ph_doc) -> Table:
+def _cabecalho_emitente(dados: dict[str, Any], ph_title, ph_line, ph_center, ph_doc_kind, ph_doc_title, ph_doc_meta) -> Table:
     logo_path = str(dados.get('emitente_logo_path') or '').strip() or None
     if logo_path:
         logo_cell = build_logo_cell(logo_path, ph_center=ph_center, header_spacious=True)
     else:
         rz = escape(str(dados.get('emitente') or 'Emitente'))
         logo_cell = Table(
-            [[Paragraph(f'<b><font size="10" color="#0F5EDB">{rz}</font></b>', ph_center)]],
+            [[Paragraph(f'<b><font color="#0F5EDB">{rz}</font></b>', ph_center)]],
             colWidths=[_W_LOGO],
-            rowHeights=[22 * mm],
         )
         logo_cell.setStyle(
             TableStyle(
                 [
-                    ('BOX', (0, 0), (-1, -1), 0.5, C_FRAME_LIGHT),
-                    ('BACKGROUND', (0, 0), (-1, -1), colors.white),
                     ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                 ],
             ),
         )
@@ -324,53 +323,63 @@ def _cabecalho_emitente(dados: dict[str, Any], ph_title, ph_line, ph_center, ph_
         TableStyle(
             [
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('TOPPADDING', (0, 0), (-1, -1), 1),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
+                ('TOPPADDING', (0, 0), (-1, -1), 0.5),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 0.5),
+                ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 0),
             ],
         ),
     )
 
     transmitido = bool(dados.get('transmitido'))
     status_doc = 'AUTORIZADA' if transmitido else 'PRÉVIA'
+    status_color = '#15803d' if transmitido else '#b45309'
     quadro = Table(
         [
-            [Paragraph('<font size="7" color="#cbd5e1">DOCUMENTO FISCAL</font>', ph_doc)],
-            [Paragraph('<b><font size="16" color="white">CC-e</font></b>', ph_doc)],
-            [Paragraph('<font size="8" color="#e2e8f0">Representação Gráfica</font>', ph_doc)],
-            [Paragraph('<font size="7.5" color="#94a3b8">Carta de Correção Eletrônica</font>', ph_doc)],
-            [Paragraph(f'<b><font size="9" color="white">{escape(str(dados.get("ambiente_label") or ""))}</font></b>', ph_doc)],
-            [Paragraph(f'<font size="8" color="#fbbf24">{status_doc}</font>', ph_doc)],
+            [Paragraph('<font size="6.5" color="#64748b">DOCUMENTO FISCAL</font>', ph_doc_kind)],
+            [Paragraph('<b><font size="15" color="#0F5EDB">CC-e</font></b>', ph_doc_title)],
+            [Paragraph('<font size="7.5" color="#64748b">Representação Gráfica</font>', ph_doc_meta)],
+            [Paragraph('<font size="7" color="#94a3b8">Carta de Correção Eletrônica</font>', ph_doc_meta)],
+            [Paragraph(f'<b><font size="8.5" color="#334155">{escape(str(dados.get("ambiente_label") or ""))}</font></b>', ph_doc_meta)],
+            [Paragraph(f'<b><font size="8.5" color="{status_color}">{status_doc}</font></b>', ph_doc_meta)],
         ],
         colWidths=[_W_DOC],
     )
     quadro.setStyle(
         TableStyle(
             [
-                ('BOX', (0, 0), (-1, -1), 1, C_HEADER_DEEP),
-                ('BACKGROUND', (0, 0), (-1, -1), C_HEADER_DEEP),
+                ('BACKGROUND', (0, 0), (-1, -1), colors.white),
+                ('BOX', (0, 0), (-1, -1), 0.38, C_FRAME_LIGHT),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                 ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
                 ('LEFTPADDING', (0, 0), (-1, -1), 8),
                 ('RIGHTPADDING', (0, 0), (-1, -1), 10),
-                ('TOPPADDING', (0, 0), (-1, -1), 4),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                ('TOPPADDING', (0, 0), (0, 0), 2),
+                ('BOTTOMPADDING', (0, -1), (-1, -1), 2),
+                ('TOPPADDING', (0, 1), (-1, -2), 1),
+                ('BOTTOMPADDING', (0, 1), (-1, -2), 1),
             ],
         ),
     )
 
+    cpad = 4 * mm
+    g_logo_emit = 4.2 * mm
+    g_emit_doc = 2.6 * mm
     hdr = Table([[logo_cell, mid_tbl, quadro]], colWidths=[_W_LOGO, w_mid, _W_DOC])
     hdr.setStyle(
         TableStyle(
             [
-                ('BOX', (0, 0), (-1, -1), 1, C_SLATE_TEXT),
+                ('BOX', (0, 0), (-1, -1), 0.38, C_FRAME_LIGHT),
+                ('BACKGROUND', (0, 0), (-1, -1), colors.white),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('BACKGROUND', (0, 0), (1, 0), colors.white),
-                ('LEFTPADDING', (0, 0), (1, 0), 8),
-                ('RIGHTPADDING', (0, 0), (1, 0), 6),
-                ('TOPPADDING', (0, 0), (-1, -1), 6),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-                ('LINEAFTER', (0, 0), (0, 0), 0.5, C_BORDER),
-                ('LINEAFTER', (1, 0), (1, 0), 0.5, C_BORDER),
+                ('TOPPADDING', (0, 0), (-1, -1), 5 * mm),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 5 * mm),
+                ('LEFTPADDING', (0, 0), (0, 0), cpad),
+                ('RIGHTPADDING', (0, 0), (0, 0), g_logo_emit / 2),
+                ('LEFTPADDING', (1, 0), (1, 0), g_logo_emit / 2),
+                ('RIGHTPADDING', (1, 0), (1, 0), g_emit_doc / 2),
+                ('LEFTPADDING', (2, 0), (2, 0), g_emit_doc / 2),
+                ('RIGHTPADDING', (2, 0), (2, 0), cpad),
             ],
         ),
     )
@@ -386,15 +395,15 @@ def _faixa_avisos(avisos: list[str], warn_style) -> list[Any]:
         TableStyle(
             [
                 ('BACKGROUND', (0, 0), (-1, -1), _COR_AVISO_FUNDO),
-                ('BOX', (0, 0), (-1, -1), 1.2, _COR_AVISO),
-                ('LEFTPADDING', (0, 0), (-1, -1), 10),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 10),
-                ('TOPPADDING', (0, 0), (-1, -1), 7),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
+                ('BOX', (0, 0), (-1, -1), 0.75, _COR_AVISO),
+                ('LEFTPADDING', (0, 0), (-1, -1), 12),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+                ('TOPPADDING', (0, 0), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
             ],
         ),
     )
-    return [tbl, Spacer(1, 5)]
+    return [Spacer(1, 3), tbl, Spacer(1, 6)]
 
 
 def _bloco_legal(texto: str, titulo_style, corpo_style) -> Table:
@@ -408,14 +417,16 @@ def _bloco_legal(texto: str, titulo_style, corpo_style) -> Table:
     tbl.setStyle(
         TableStyle(
             [
-                ('BOX', (0, 0), (-1, -1), 0.5, C_BORDER),
-                ('BACKGROUND', (0, 0), (0, 0), C_LABEL_BG),
-                ('BACKGROUND', (0, 1), (0, 1), colors.HexColor('#fafbfc')),
+                ('BOX', (0, 0), (-1, -1), _BLOCO_BORDER, C_BORDER),
+                ('BACKGROUND', (0, 0), (0, 0), C_CARD_BG),
+                ('BACKGROUND', (0, 1), (0, 1), colors.white),
                 ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ('LEFTPADDING', (0, 0), (-1, -1), 8),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 8),
-                ('TOPPADDING', (0, 0), (-1, -1), 5),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+                ('LEFTPADDING', (0, 0), (-1, -1), _SECTION_PAD),
+                ('RIGHTPADDING', (0, 0), (-1, -1), _SECTION_PAD),
+                ('TOPPADDING', (0, 0), (0, 0), 6),
+                ('BOTTOMPADDING', (0, 0), (0, 0), 4),
+                ('TOPPADDING', (0, 1), (0, 1), 4),
+                ('BOTTOMPADDING', (0, 1), (0, 1), 8),
             ],
         ),
     )
@@ -443,25 +454,27 @@ def gerar_pdf_representacao_cce(dados: dict[str, Any]) -> bytes:
         'CceEmitTitle',
         parent=ph,
         fontName='Helvetica-Bold',
-        fontSize=10.5,
-        leading=12.5,
+        fontSize=10,
+        leading=12,
         textColor=C_PRIMARY,
     )
     ph_line = ParagraphStyle(
         'CceEmitLine',
         parent=ph_small,
-        fontSize=8.5,
-        leading=10.5,
+        fontSize=8.2,
+        leading=10.2,
         textColor=C_MUTED,
     )
-    ph_doc = ParagraphStyle('CceDoc', parent=ph, alignment=TA_RIGHT, textColor=C_HEADER_FG)
+    ph_doc_kind = ParagraphStyle('CceDocKind', parent=ph, alignment=TA_RIGHT, textColor=C_MUTED)
+    ph_doc_title = ParagraphStyle('CceDocTitle', parent=ph, alignment=TA_RIGHT, textColor=C_BRAND_PRIMARY)
+    ph_doc_meta = ParagraphStyle('CceDocMeta', parent=ph, alignment=TA_RIGHT, textColor=C_MUTED)
     secao = ParagraphStyle(
         'CceSecao',
         parent=styles['Normal'],
         fontName='Helvetica-Bold',
-        fontSize=FONT_PDF_SECTION + 0.5,
-        leading=12,
-        textColor=C_HEADER_DEEP,
+        fontSize=FONT_PDF_SECTION,
+        leading=11,
+        textColor=C_SLATE_TEXT,
         alignment=TA_LEFT,
     )
     rotulo = ParagraphStyle(
@@ -500,17 +513,17 @@ def gerar_pdf_representacao_cce(dados: dict[str, Any]) -> bytes:
     correcao_titulo = ParagraphStyle(
         'CceCorrecaoTit',
         parent=secao,
-        fontSize=11,
+        fontSize=10,
         alignment=TA_CENTER,
-        textColor=C_HEADER_FG,
+        textColor=C_SLATE_TEXT,
     )
     warn = ParagraphStyle(
         'CceWarn',
         parent=ph,
         fontName='Helvetica-Bold',
-        fontSize=10.5,
+        fontSize=10,
         textColor=_COR_AVISO,
-        leading=13,
+        leading=12.5,
         alignment=TA_CENTER,
     )
     legal_titulo = ParagraphStyle('CceLegalTit', parent=rotulo, fontSize=8)
@@ -539,20 +552,20 @@ def gerar_pdf_representacao_cce(dados: dict[str, Any]) -> bytes:
         texto_rodape = 'Documento de prévia — não transmitido à SEFAZ. Não possui validade fiscal.'
 
     story: list[Any] = [
-        _cabecalho_emitente(dados, ph_title, ph_line, ph_center, ph_doc),
-        Spacer(1, 5),
+        _cabecalho_emitente(dados, ph_title, ph_line, ph_center, ph_doc_kind, ph_doc_title, ph_doc_meta),
+        Spacer(1, 6),
     ]
     story.extend(_faixa_avisos(avisos, warn))
     story.append(_titulo_faixa('IDENTIFICAÇÃO DA NF-e', secao))
     story.append(_bloco_identificacao_nfe(dados, rotulo, valor, chave))
-    story.append(Spacer(1, 4))
+    story.append(Spacer(1, 5))
     story.append(_titulo_faixa('DADOS DO EVENTO', secao))
     story.append(_bloco_dados_evento(dados, transmitido=transmitido, rotulo_style=rotulo, valor_style=valor))
-    story.append(Spacer(1, 6))
+    story.append(Spacer(1, 7))
     story.append(_caixa_correcoes(str(dados.get('texto_correcao') or ''), correcao_titulo, correcao))
-    story.append(Spacer(1, 5))
-    story.append(_bloco_legal(str(dados.get('o_que_nao_pode_corrigir') or MSG_O_QUE_NAO_PODE_CORRIGIR), legal_titulo, legal_corpo))
     story.append(Spacer(1, 6))
+    story.append(_bloco_legal(str(dados.get('o_que_nao_pode_corrigir') or MSG_O_QUE_NAO_PODE_CORRIGIR), legal_titulo, legal_corpo))
+    story.append(Spacer(1, 7))
     story.append(Paragraph(escape(texto_rodape), rodape))
 
     doc.build(story)
