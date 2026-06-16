@@ -186,7 +186,7 @@ export function UnitSelect({
 }) {
   return (
     <select
-      className={className || 'erp-input h-9 text-sm w-full mt-1'}
+      className={className || 'erp-input h-9 text-sm w-full mt-1 text-left leading-normal py-1.5'}
       value={value}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value.toUpperCase())}

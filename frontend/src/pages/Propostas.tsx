@@ -1531,14 +1531,14 @@ const Propostas = () => {
 
           <ComercialModalSection
             title="Condições comerciais"
-            description="Informe os prazos em dias separados por vírgula. Ex.: 30,45,60."
+            description="Condição de pagamento em texto comercial livre (ex.: 30 DDL, 30/45 DDL, À vista, A combinar)."
           >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="erp-label">Condição de pagamento</label>
                 <input
                   className="erp-input mt-1"
-                  placeholder="Ex.: 30, 45, 60 ou à vista"
+                  placeholder="Ex.: 30 DDL, 30/45 DDL, À vista, A combinar"
                   value={form.condicao_pagamento_texto}
                   onChange={(e) => setForm((p) => ({ ...p, condicao_pagamento_texto: e.target.value }))}
                 />
@@ -1828,7 +1828,7 @@ const Propostas = () => {
                     <label className="text-xs text-muted-foreground">Unidade negociada</label>
                     <UnitSelect
                       value={item.unidade_negociada || ''}
-                      className={`${numericClass.replace('text-right', 'text-left')} min-w-[160px] w-full`}
+                      className="erp-input h-9 text-sm w-full min-w-[160px] text-left leading-normal py-1.5"
                       options={(() => {
                         const p = item.produto_id ? produtoCache.get(item.produto_id) : undefined;
                         return p ? unidadesNegociacaoProduto(p) : todasUnidadesPadrao();

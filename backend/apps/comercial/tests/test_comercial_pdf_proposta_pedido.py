@@ -158,7 +158,8 @@ class PropostaPdfItemAvulsoTests(ComercialPdfBaseFixture):
         for page in PdfReader(io.BytesIO(pdf_bytes)).pages:
             text += page.extract_text() or ''
         self.assertIn('ITEM AVULSO ESPECIAL', text.upper())
-        self.assertIn('CLIENTE AVULSO', text.upper())
+        self.assertIn('CLIENTE AVULSO PDF', text.upper())
+        self.assertNotIn('CLIENTE (AVULSO)', text.upper())
         self.assertIn('84818099', text)
 
 
@@ -199,6 +200,44 @@ class PropostaPdfCamposComerciaisTests(ComercialPdfBaseFixture):
         self.assertIn('OBSERVA', text.upper())
         self.assertIn('PERDER PEDIDOS', text.upper())
         self.assertIn('PC', text)
+        self.assertIn('30 DDL', text)
+        self.assertNotIn('STATUS:', text.upper())
+        upper = text.upper()
+        idx_itens = upper.find('ITENS')
+        idx_obs = upper.find('OBSERV')
+        idx_msg = upper.find('PERDER PEDIDOS')
+        self.assertGreater(idx_itens, -1)
+        self.assertGreater(idx_obs, idx_itens)
+        self.assertGreater(idx_msg, idx_obs)
+
+    def test_pdf_condicao_pagamento_texto_livre(self):
+        ser = PropostaSerializer(
+            data={
+                'empresa_emitente_id': self.empresa.id,
+                'cliente_id': self.cliente.id,
+                'data': '2026-05-10',
+                'validade_dias': 10,
+                'status': 'Pendente',
+                'condicao_pagamento_texto': 'À vista',
+                'itens': [
+                    {
+                        'produto_id': self.prod.id,
+                        'quantidade': '1',
+                        'quantidade_negociada': '1',
+                        'valor_unitario': '100',
+                        'preco_por_unidade_negociada': '100',
+                        'unidade_negociada': 'PC',
+                    }
+                ],
+            }
+        )
+        self.assertTrue(ser.is_valid(), ser.errors)
+        proposta = ser.save()
+        text = ''
+        for page in PdfReader(io.BytesIO(gerar_proposta_pdf_bytes(proposta))).pages:
+            text += page.extract_text() or ''
+        self.assertIn('VISTA', text.upper())
+        self.assertNotIn('PENDENTE', text.upper())
 
 
 class PedidoVendaListIdTests(ComercialPdfBaseFixture):

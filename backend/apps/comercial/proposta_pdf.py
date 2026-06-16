@@ -8,7 +8,6 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import KeepTogether, Paragraph, Spacer, Table, TableStyle
 
-from apps.comercial.commercial_defaults import inferir_validade_dias, label_status_proposta
 from apps.core.pdf.base import build_nexus_pdf_bytes, default_page_content_width
 from apps.core.pdf.components import (
     build_commercial_order_header,
@@ -23,7 +22,6 @@ from apps.core.pdf.formatters import (
     fmt_cnpj,
     fmt_date_br,
     format_phone,
-    format_currency_br,
     nobr,
     qty_br,
     txt_or_emdash,
@@ -31,7 +29,7 @@ from apps.core.pdf.formatters import (
 from apps.core.pdf.styles import C_BORDER, C_PRIMARY, SPACE_SM, SPACE_XS, base_paragraph_styles
 
 from .comercial_pdf_shared import (
-    condicoes_pagamento_exibicao,
+    condicao_pagamento_proposta_pdf,
     descricao_pdf_com_linha_ncm,
     endereco_cliente,
     endereco_empresa,
@@ -41,6 +39,7 @@ from .comercial_pdf_shared import (
     parcelas_exibicao,
     prazo_entrega_exibicao_proposta,
     resolver_ncm_item_comercial,
+    validade_proposta_pdf,
     vencimentos_exibicao,
 )
 from .models import ItemProposta, Proposta
@@ -94,6 +93,51 @@ def _total_linha_proposta(it: ItemProposta) -> Decimal:
     return max(Decimal('0'), q * p - d)
 
 
+def _bloco_cliente_proposta(proposta: Proposta, *, page_w, p_party_title, p_party_bold, p_party_norm):
+    ref_cli = (proposta.referencia_cliente or '').strip()
+    ref_linha = f'Ref. requisição/cotação: {ref_cli}' if ref_cli else None
+
+    cli = getattr(proposta, 'cliente', None)
+    if cli is not None:
+        fantasia = (cli.nome_fantasia or '').strip() or None
+        if ref_linha:
+            fantasia = f'{ref_linha}' + (f' · {fantasia}' if fantasia else '')
+        return party_block_table(
+            'Cliente',
+            cli.razao_social or '—',
+            fantasia,
+            fmt_cnpj(cli.cnpj),
+            endereco_cliente(cli),
+            format_phone(cli.telefone, cli.celular),
+            (cli.email or None),
+            None,
+            page_w,
+            p_title=p_party_title,
+            p_bold=p_party_bold,
+            p_norm=p_party_norm,
+            compact=True,
+        )
+
+    nome_av = (proposta.cliente_avulso_nome or '').strip() or '—'
+    uf = (proposta.uf_destino_avulso or '').strip()
+    endereco_av = f'UF destino: {uf}' if uf else '—'
+    return party_block_table(
+        'Cliente',
+        nome_av,
+        ref_linha,
+        '—',
+        endereco_av,
+        None,
+        None,
+        None,
+        page_w,
+        p_title=p_party_title,
+        p_bold=p_party_bold,
+        p_norm=p_party_norm,
+        compact=True,
+    )
+
+
 def gerar_proposta_pdf_bytes(proposta: Proposta) -> bytes:
     numero_txt = txt_or_emdash(proposta.numero)
     meta_title = f'Proposta Comercial {numero_txt}'
@@ -111,10 +155,11 @@ def gerar_proposta_pdf_bytes(proposta: Proposta) -> bytes:
     def story_builder():
         page_w = default_page_content_width()
         data_s = fmt_date_br(proposta.data)
-        val_s = fmt_date_br(proposta.validade)
-        dias_val = proposta.validade_dias or inferir_validade_dias(proposta.data, proposta.validade)
-        val_meta = f'{dias_val} dias (válida até {val_s})' if dias_val else val_s
-        st_s = txt_or_emdash(label_status_proposta(proposta.status))
+        val_exibicao = validade_proposta_pdf(
+            data=proposta.data,
+            validade=proposta.validade,
+            validade_dias=proposta.validade_dias,
+        )
 
         emit_rz = (empresa.razao_social or '').strip() or None if empresa else None
         emit_cnpj = None
@@ -138,7 +183,7 @@ def gerar_proposta_pdf_bytes(proposta: Proposta) -> bytes:
                 emitente_site=((empresa.site or '').strip() or None) if empresa else None,
                 document_kind_upper='PROPOSTA COMERCIAL',
                 numero_nobr_html=nobr(numero_txt),
-                meta_line_html=f'Emissão: {nobr(data_s)} · Validade: {nobr(val_meta)} · Status: {nobr(st_s)}',
+                meta_line_html=f'Emissão: {nobr(data_s)}',
                 page_width=page_w,
                 ph_small=ph_small,
                 ph_center=ph_center,
@@ -146,43 +191,15 @@ def gerar_proposta_pdf_bytes(proposta: Proposta) -> bytes:
         )
         story.append(Spacer(1, SPACE_SM))
 
-        cli = getattr(proposta, 'cliente', None)
-        if cli is not None:
-            cli_tbl = party_block_table(
-                'Cliente',
-                cli.razao_social or '—',
-                (cli.nome_fantasia or '').strip() or None,
-                fmt_cnpj(cli.cnpj),
-                endereco_cliente(cli),
-                format_phone(cli.telefone, cli.celular),
-                (cli.email or None),
-                None,
-                page_w,
-                p_title=p_party_title,
-                p_bold=p_party_bold,
-                p_norm=p_party_norm,
-                compact=True,
+        story.append(
+            _bloco_cliente_proposta(
+                proposta,
+                page_w=page_w,
+                p_party_title=p_party_title,
+                p_party_bold=p_party_bold,
+                p_party_norm=p_party_norm,
             )
-        else:
-            nome_av = (proposta.cliente_avulso_nome or '').strip() or 'Cliente avulso'
-            uf = (proposta.uf_destino_avulso or '').strip()
-            extra = f'UF destino: {uf}' if uf else None
-            cli_tbl = party_block_table(
-                'Cliente (avulso)',
-                nome_av,
-                None,
-                '—',
-                extra or '—',
-                None,
-                None,
-                None,
-                page_w,
-                p_title=p_party_title,
-                p_bold=p_party_bold,
-                p_norm=p_party_norm,
-                compact=True,
-            )
-        story.append(cli_tbl)
+        )
         story.append(Spacer(1, 1.35 * mm))
 
         vend_nome = nome_vendedor(vendedor_ref=getattr(proposta, 'vendedor_ref', None), vendedor_texto=proposta.vendedor)
@@ -201,52 +218,6 @@ def gerar_proposta_pdf_bytes(proposta: Proposta) -> bytes:
         )
         story.append(vend_tbl)
         story.append(Spacer(1, 1.15 * mm))
-
-        cond_rows = [
-            ('Validade da proposta:', val_meta),
-            ('Prazo de entrega:', prazo_entrega_exibicao_proposta(proposta)),
-            ('Pagamento:', condicoes_pagamento_exibicao(
-                condicao_texto=proposta.condicao_pagamento_texto,
-                dias_parcelas=list(proposta.dias_parcelas or []),
-            )),
-            ('Parcelas:', parcelas_exibicao(
-                quantidade_parcelas=proposta.quantidade_parcelas,
-                vencimentos_previstos=list(proposta.vencimentos_previstos or []),
-                dias_parcelas=list(proposta.dias_parcelas or []),
-            )),
-            ('Vencimentos:', vencimentos_exibicao(list(proposta.vencimentos_previstos or []))),
-        ]
-        ref_cli = (proposta.referencia_cliente or '').strip()
-        if ref_cli:
-            cond_rows.insert(0, ('Nº requisição / cotação do cliente:', ref_cli))
-        frete_txt = (proposta.frete_texto or '').strip()
-        if frete_txt:
-            cond_rows.append(('Frete:', frete_txt))
-        story.extend(
-            build_conditions_commercial_grid(
-                'Condições comerciais',
-                cond_rows,
-                page_w=page_w,
-                ph_small=ph_small,
-                pairs_per_row=2,
-                label_width_frac=0.31,
-            )
-        )
-        story.append(Spacer(1, 1.15 * mm))
-
-        obs = (proposta.observacoes_proposta or '').strip()
-        if obs:
-            story.append(build_section_title('Observações', ph_small=ph_small, compact=True, page_w=page_w))
-            story.append(Spacer(1, 0.6 * mm))
-            story.append(Paragraph(obs.replace('\n', '<br/>'), p_party_norm))
-            story.append(Spacer(1, 1.0 * mm))
-
-        msg = (proposta.mensagem_comercial or '').strip()
-        if msg:
-            story.append(build_section_title('Mensagem comercial', ph_small=ph_small, compact=True, page_w=page_w))
-            story.append(Spacer(1, 0.6 * mm))
-            story.append(Paragraph(msg.replace('\n', '<br/>'), p_party_norm))
-            story.append(Spacer(1, 1.0 * mm))
 
         story.append(build_section_title('Itens da proposta', ph_small=ph_small, compact=True, page_w=page_w))
         story.append(Spacer(1, 0.95 * mm))
@@ -321,6 +292,53 @@ def gerar_proposta_pdf_bytes(proposta: Proposta) -> bytes:
                 compact=True,
             )
         )
+        story.append(Spacer(1, 1.15 * mm))
+
+        cond_rows = [
+            (
+                'Condição de pagamento:',
+                condicao_pagamento_proposta_pdf(
+                    condicao_texto=proposta.condicao_pagamento_texto,
+                    dias_parcelas=list(proposta.dias_parcelas or []),
+                ),
+            ),
+            ('Prazo de entrega:', prazo_entrega_exibicao_proposta(proposta)),
+            ('Validade:', val_exibicao),
+            ('Parcelas:', parcelas_exibicao(
+                quantidade_parcelas=proposta.quantidade_parcelas,
+                vencimentos_previstos=list(proposta.vencimentos_previstos or []),
+                dias_parcelas=list(proposta.dias_parcelas or []),
+            )),
+            ('Vencimentos:', vencimentos_exibicao(list(proposta.vencimentos_previstos or []))),
+        ]
+        frete_txt = (proposta.frete_texto or '').strip()
+        if frete_txt:
+            cond_rows.insert(2, ('Frete:', frete_txt))
+        story.extend(
+            build_conditions_commercial_grid(
+                'Condições comerciais',
+                cond_rows,
+                page_w=page_w,
+                ph_small=ph_small,
+                pairs_per_row=2,
+                label_width_frac=0.31,
+            )
+        )
+        story.append(Spacer(1, 1.15 * mm))
+
+        obs = (proposta.observacoes_proposta or '').strip()
+        if obs:
+            story.append(build_section_title('Observações', ph_small=ph_small, compact=True, page_w=page_w))
+            story.append(Spacer(1, 0.6 * mm))
+            story.append(Paragraph(obs.replace('\n', '<br/>'), p_party_norm))
+            story.append(Spacer(1, 1.0 * mm))
+
+        msg = (proposta.mensagem_comercial or '').strip()
+        if msg:
+            story.append(build_section_title('Mensagem comercial', ph_small=ph_small, compact=True, page_w=page_w))
+            story.append(Spacer(1, 0.6 * mm))
+            story.append(Paragraph(msg.replace('\n', '<br/>'), p_party_norm))
+            story.append(Spacer(1, 1.0 * mm))
 
         return story
 

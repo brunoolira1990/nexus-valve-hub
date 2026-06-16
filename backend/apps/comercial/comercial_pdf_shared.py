@@ -144,6 +144,44 @@ def condicoes_pagamento_exibicao(*, condicao_texto: str, dias_parcelas: list) ->
     return (condicao_texto or '').strip() or '—'
 
 
+def condicao_pagamento_proposta_pdf(*, condicao_texto: str, dias_parcelas: list) -> str:
+    """Texto comercial de pagamento no PDF da proposta (ex.: 30 DDL, 30/45 DDL, À vista)."""
+    import re
+
+    raw = (condicao_texto or '').strip()
+    dias = list(dias_parcelas or [])
+    dias_puros = bool(raw and re.fullmatch(r'[\d,\s/]+', raw))
+
+    if raw and not dias_puros:
+        return raw
+
+    if dias:
+        if len(dias) == 1:
+            return f'{int(dias[0])} DDL'
+        return f'{"/".join(str(int(d)) for d in dias)} DDL'
+
+    if raw.isdigit():
+        return f'{raw} DDL'
+
+    partes = [p.strip() for p in re.split(r'[,/]', raw) if p.strip().isdigit()]
+    if partes:
+        if len(partes) == 1:
+            return f'{partes[0]} DDL'
+        return f'{"/".join(partes)} DDL'
+
+    return raw or '—'
+
+
+def validade_proposta_pdf(*, data, validade, validade_dias) -> str:
+    from apps.comercial.commercial_defaults import inferir_validade_dias
+
+    val_s = fmt_date_br(validade)
+    dias_val = validade_dias or inferir_validade_dias(data, validade)
+    if dias_val:
+        return f'{dias_val} dias — válida até {val_s}'
+    return val_s or '—'
+
+
 def parcelas_exibicao(*, quantidade_parcelas: int, vencimentos_previstos: list, dias_parcelas: list) -> str:
     n = int(quantidade_parcelas or 0)
     if n > 0:

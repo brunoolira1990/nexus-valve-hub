@@ -92,13 +92,14 @@ class PropostaStatusConversaoTests(ConverterPropostaPedidoSetupMixin, TestCase):
         p.refresh_from_db()
         self.assertEqual(p.status, STATUS_PROPOSTA_CONVERTIDA)
 
-    def test_pdf_proposta_exibe_status_convertida(self):
+    def test_pdf_proposta_nao_exibe_status_interno(self):
         p = _proposta_aprovada()
         _item(p, _produto())
         converter_proposta_em_pedido_venda(p)
         p.refresh_from_db()
         text = _pdf_text(gerar_proposta_pdf_bytes(p))
-        self.assertIn('Convertida', text)
+        self.assertNotIn('Convertida', text)
+        self.assertNotIn('Status:', text)
 
     def test_sync_legado_pedido_sem_status_convertida(self):
         p = _proposta_aprovada()
