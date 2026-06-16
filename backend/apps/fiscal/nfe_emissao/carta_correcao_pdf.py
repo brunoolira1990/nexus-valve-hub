@@ -28,6 +28,7 @@ from apps.core.pdf.styles import (
     FONT_PDF_SMALL,
     base_paragraph_styles,
 )
+from apps.core.pdf.formatters import nobr
 from apps.fiscal.nfe_emissao.carta_correcao_dados import MSG_O_QUE_NAO_PODE_CORRIGIR
 
 _MARGIN_X = 8 * mm
@@ -59,18 +60,204 @@ def _fmt_datetime(iso: str | None) -> str:
         return str(iso)[:19]
 
 
-def _estilo_celula_grid() -> TableStyle:
+_W_ROTULO = 34 * mm
+_MIN_ALTURA_CORRECOES = 42 * mm
+
+
+def _html_chave_acesso(chave: str) -> str:
+    """Chave em até duas linhas horizontais — evita quebra vertical por coluna estreita."""
+    bruto = str(chave or '').strip()
+    digits = ''.join(c for c in bruto if c.isdigit())
+    if len(digits) == 44:
+        grupos = [digits[i : i + 4] for i in range(0, 44, 4)]
+        linha1 = ' '.join(grupos[:6])
+        linha2 = ' '.join(grupos[6:])
+        return f'{nobr(linha1)}<br/>{nobr(linha2)}'
+    if bruto and bruto != '—':
+        return nobr(bruto)
+    return '—'
+
+
+def _estilo_bloco_largura_total() -> TableStyle:
     return TableStyle(
         [
             ('BOX', (0, 0), (-1, -1), 0.75, C_SLATE_TEXT),
             ('INNERGRID', (0, 0), (-1, -1), 0.35, C_BORDER),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 6),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-            ('TOPPADDING', (0, 0), (-1, -1), 5),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('BACKGROUND', (0, 0), (0, -1), C_LABEL_BG),
+            ('LEFTPADDING', (0, 0), (-1, -1), 7),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 7),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ],
     )
+
+
+def _titulo_faixa(titulo: str, style) -> Table:
+    tbl = Table([[Paragraph(f'<b>{escape(titulo)}</b>', style)]], colWidths=[_CONTENT_W])
+    tbl.setStyle(
+        TableStyle(
+            [
+                ('BACKGROUND', (0, 0), (-1, -1), C_TABLE_HEADER_BG),
+                ('BOX', (0, 0), (-1, -1), 0.75, C_SLATE_TEXT),
+                ('LEFTPADDING', (0, 0), (-1, -1), 8),
+                ('TOPPADDING', (0, 0), (-1, -1), 4),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ],
+        ),
+    )
+    return tbl
+
+
+def _bloco_identificacao_nfe(
+    dados: dict[str, Any],
+    rotulo_style,
+    valor_style,
+    chave_style,
+) -> Table:
+    """Identificação da NF-e em largura total."""
+    w_val = _CONTENT_W - _W_ROTULO
+    w_terco = w_val / 3
+    row_topo = [
+        [
+            Paragraph('<b>NF-e nº</b>', rotulo_style),
+            Paragraph(escape(str(dados.get('numero_nfe') or '—')), valor_style),
+            Paragraph('<b>Série</b>', rotulo_style),
+            Paragraph(escape(str(dados.get('serie_nfe') or '—')), valor_style),
+            Paragraph('<b>Ambiente</b>', rotulo_style),
+            Paragraph(escape(str(dados.get('ambiente_label') or '—')), valor_style),
+        ],
+    ]
+    tbl_topo = Table(
+        row_topo,
+        colWidths=[_W_ROTULO * 0.55, w_terco - _W_ROTULO * 0.55, _W_ROTULO * 0.45, w_terco - _W_ROTULO * 0.45, _W_ROTULO * 0.55, w_terco - _W_ROTULO * 0.55],
+    )
+    style_topo = _estilo_bloco_largura_total()
+    style_topo.add('BACKGROUND', (0, 0), (0, 0), C_LABEL_BG)
+    style_topo.add('BACKGROUND', (2, 0), (2, 0), C_LABEL_BG)
+    style_topo.add('BACKGROUND', (4, 0), (4, 0), C_LABEL_BG)
+    tbl_topo.setStyle(style_topo)
+
+    row_dest = [
+        [
+            Paragraph('<b>Destinatário</b>', rotulo_style),
+            Paragraph(escape(str(dados.get('destinatario') or '—')), valor_style),
+        ],
+    ]
+    tbl_dest = Table(row_dest, colWidths=[_W_ROTULO, w_val])
+    style_dest = _estilo_bloco_largura_total()
+    tbl_dest.setStyle(style_dest)
+
+    chave_fmt = str(dados.get('chave_acesso_fmt') or dados.get('chave_acesso') or '—')
+    row_chave = [
+        [
+            Paragraph('<b>Chave de acesso</b>', rotulo_style),
+            Paragraph(_html_chave_acesso(chave_fmt), chave_style),
+        ],
+    ]
+    tbl_chave = Table(row_chave, colWidths=[_W_ROTULO, w_val])
+    style_chave = _estilo_bloco_largura_total()
+    tbl_chave.setStyle(style_chave)
+
+    bloco = Table([[tbl_topo], [tbl_dest], [tbl_chave]], colWidths=[_CONTENT_W])
+    bloco.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('LEFTPADDING', (0, 0), (-1, -1), 0)]))
+    return bloco
+
+
+def _bloco_dados_evento(
+    dados: dict[str, Any],
+    *,
+    transmitido: bool,
+    rotulo_style,
+    valor_style,
+) -> Table:
+    """Dados do evento em grade horizontal legível."""
+    w_val = _CONTENT_W - _W_ROTULO
+    if transmitido:
+        seq = str(dados.get('sequencia_evento') or dados.get('sequencia_prevista') or '—')
+        linhas = [
+            [
+                Paragraph('<b>Sequência</b>', rotulo_style),
+                Paragraph(escape(seq), valor_style),
+                Paragraph('<b>Status</b>', rotulo_style),
+                Paragraph(escape(str(dados.get('status_evento') or 'Registrado na SEFAZ')), valor_style),
+            ],
+            [
+                Paragraph('<b>Registro em</b>', rotulo_style),
+                Paragraph(escape(_fmt_datetime(dados.get('emitido_em'))), valor_style),
+                Paragraph('<b>Protocolo</b>', rotulo_style),
+                Paragraph(escape(str(dados.get('protocolo') or '—')), valor_style),
+            ],
+            [
+                Paragraph('<b>ID do evento</b>', rotulo_style),
+                Paragraph(escape(str(dados.get('id_evento') or '—')), valor_style),
+                Paragraph('<b>Retorno SEFAZ</b>', rotulo_style),
+                Paragraph(
+                    escape(f"{dados.get('cstat') or '—'} — {dados.get('xmotivo') or '—'}"),
+                    valor_style,
+                ),
+            ],
+        ]
+        col_w = w_val / 2
+        tbl = Table(linhas, colWidths=[_W_ROTULO * 0.72, col_w - _W_ROTULO * 0.72, _W_ROTULO * 0.72, col_w - _W_ROTULO * 0.72])
+    else:
+        linhas = [
+            [
+                Paragraph('<b>Sequência prevista</b>', rotulo_style),
+                Paragraph(escape(str(dados.get('sequencia_prevista') or '—')), valor_style),
+                Paragraph('<b>Status</b>', rotulo_style),
+                Paragraph('Prévia — não transmitida', valor_style),
+            ],
+            [
+                Paragraph('<b>Prévia gerada em</b>', rotulo_style),
+                Paragraph(escape(_fmt_datetime(dados.get('previa_em'))), valor_style),
+                '',
+                '',
+            ],
+        ]
+        col_w = w_val / 2
+        tbl = Table(linhas, colWidths=[_W_ROTULO * 0.85, col_w - _W_ROTULO * 0.85, _W_ROTULO * 0.55, col_w - _W_ROTULO * 0.55])
+        style = _estilo_bloco_largura_total()
+        style.add('BACKGROUND', (0, 0), (0, 0), C_LABEL_BG)
+        style.add('BACKGROUND', (2, 0), (2, 0), C_LABEL_BG)
+        style.add('BACKGROUND', (0, 1), (0, 1), C_LABEL_BG)
+        style.add('SPAN', (1, 1), (3, 1))
+        tbl.setStyle(style)
+        return tbl
+
+    style = _estilo_bloco_largura_total()
+    for r in range(len(linhas)):
+        style.add('BACKGROUND', (0, r), (0, r), C_LABEL_BG)
+        style.add('BACKGROUND', (2, r), (2, r), C_LABEL_BG)
+    tbl.setStyle(style)
+    return tbl
+
+
+def _caixa_correcoes(texto: str, titulo_style, corpo_style) -> Table:
+    """Bloco principal — largura total com altura mínima equilibrada."""
+    header = Paragraph('<b>CORREÇÕES A SEREM CONSIDERADAS</b>', titulo_style)
+    corpo = _p(texto or '—', corpo_style)
+    tbl = Table([[header], [corpo]], colWidths=[_CONTENT_W])
+    tbl.setStyle(
+        TableStyle(
+            [
+                ('BOX', (0, 0), (-1, -1), 1.2, C_HEADER_DEEP),
+                ('BACKGROUND', (0, 0), (0, 0), C_HEADER_DEEP),
+                ('TEXTCOLOR', (0, 0), (0, 0), C_HEADER_FG),
+                ('BACKGROUND', (0, 1), (0, 1), colors.white),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('ALIGN', (0, 0), (0, 0), 'CENTER'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 12),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+                ('TOPPADDING', (0, 0), (0, 0), 9),
+                ('BOTTOMPADDING', (0, 0), (0, 0), 9),
+                ('TOPPADDING', (0, 1), (0, 1), 12),
+                ('BOTTOMPADDING', (0, 1), (0, 1), 12),
+                ('MINHEIGHT', (0, 1), (0, 1), _MIN_ALTURA_CORRECOES),
+            ],
+        ),
+    )
+    return tbl
 
 
 def _linhas_emitente(dados: dict[str, Any]) -> list[tuple[str, bool]]:
@@ -210,103 +397,10 @@ def _faixa_avisos(avisos: list[str], warn_style) -> list[Any]:
     return [tbl, Spacer(1, 5)]
 
 
-def _caixa_correcoes(texto: str, titulo_style, corpo_style) -> Table:
-    """Bloco principal — altura conforme conteúdo (sem MINHEIGHT artificial)."""
-    header = Paragraph('<b>CORREÇÕES A SEREM CONSIDERADAS</b>', titulo_style)
-    corpo = _p(texto or '—', corpo_style)
-    tbl = Table([[header], [corpo]], colWidths=[_CONTENT_W])
-    tbl.setStyle(
-        TableStyle(
-            [
-                ('BOX', (0, 0), (-1, -1), 1.2, C_HEADER_DEEP),
-                ('BACKGROUND', (0, 0), (0, 0), C_HEADER_DEEP),
-                ('TEXTCOLOR', (0, 0), (0, 0), C_HEADER_FG),
-                ('BACKGROUND', (0, 1), (0, 1), colors.white),
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ('ALIGN', (0, 0), (0, 0), 'CENTER'),
-                ('LEFTPADDING', (0, 0), (-1, -1), 12),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 12),
-                ('TOPPADDING', (0, 0), (0, 0), 9),
-                ('BOTTOMPADDING', (0, 0), (0, 0), 9),
-                ('TOPPADDING', (0, 1), (0, 1), 14),
-                ('BOTTOMPADDING', (0, 1), (0, 1), 14),
-            ],
-        ),
-    )
-    return tbl
-
-
-def _celula_rotulo_valor(rotulo: str, valor: str, rotulo_style, valor_style, *, colspan_valor: int = 1) -> list:
-    if colspan_valor > 1:
-        return [
-            Paragraph(f'<b>{escape(rotulo)}</b>', rotulo_style),
-            Paragraph(escape(valor), valor_style),
-            '',
-            '',
-        ]
-    return [Paragraph(f'<b>{escape(rotulo)}</b>', rotulo_style), Paragraph(escape(valor), valor_style)]
-
-
-def _grade_identificacao(
-    campos: list[tuple[str, str, int]],
-    rotulo_style,
-    valor_style,
-) -> Table:
-    """Grade 4 colunas estilo DANFE — (rótulo, valor, colspan_valor 1 ou 3)."""
-    rows: list[list] = []
-    buffer: list = []
-
-    def flush_pair():
-        nonlocal buffer
-        if len(buffer) == 2:
-            rows.append(buffer + ['', ''])
-        elif len(buffer) == 4:
-            rows.append(buffer)
-        buffer = []
-
-    for rotulo, valor, span in campos:
-        if span == 3:
-            flush_pair()
-            rows.append(_celula_rotulo_valor(rotulo, valor, rotulo_style, valor_style, colspan_valor=3))
-        else:
-            buffer.extend(_celula_rotulo_valor(rotulo, valor, rotulo_style, valor_style))
-            if len(buffer) == 4:
-                flush_pair()
-    flush_pair()
-
-    col_w = _CONTENT_W / 4
-    tbl = Table(rows, colWidths=[col_w * 0.42, col_w * 0.58, col_w * 0.42, col_w * 0.58])
-    style = _estilo_celula_grid()
-    style.add('BACKGROUND', (0, 0), (0, -1), C_LABEL_BG)
-    style.add('BACKGROUND', (2, 0), (2, -1), C_LABEL_BG)
-    for ridx, row in enumerate(rows):
-        if len(row) == 4 and row[2] == '' and row[3] != '':
-            style.add('SPAN', (1, ridx), (3, ridx))
-            style.add('BACKGROUND', (0, ridx), (0, ridx), C_LABEL_BG)
-    tbl.setStyle(style)
-    return tbl
-
-
-def _titulo_faixa(titulo: str, style) -> Table:
-    tbl = Table([[Paragraph(f'<b>{escape(titulo)}</b>', style)]], colWidths=[_CONTENT_W])
-    tbl.setStyle(
-        TableStyle(
-            [
-                ('BACKGROUND', (0, 0), (-1, -1), C_TABLE_HEADER_BG),
-                ('BOX', (0, 0), (-1, -1), 0.75, C_SLATE_TEXT),
-                ('LEFTPADDING', (0, 0), (-1, -1), 8),
-                ('TOPPADDING', (0, 0), (-1, -1), 4),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-            ],
-        ),
-    )
-    return tbl
-
-
 def _bloco_legal(texto: str, titulo_style, corpo_style) -> Table:
     tbl = Table(
         [
-            [Paragraph('<b>Limitações da Carta de Correção (informação legal)</b>', titulo_style)],
+            [Paragraph('<b>Limitações da Carta de Correção</b>', titulo_style)],
             [_p(texto, corpo_style)],
         ],
         colWidths=[_CONTENT_W],
@@ -385,6 +479,13 @@ def gerar_pdf_representacao_cce(dados: dict[str, Any]) -> bytes:
         leading=11.5,
         textColor=C_PRIMARY,
     )
+    chave = ParagraphStyle(
+        'CceChave',
+        parent=valor,
+        fontName='Courier',
+        fontSize=8.8,
+        leading=11,
+    )
     correcao = ParagraphStyle(
         'CceCorrecao',
         parent=ph,
@@ -429,40 +530,12 @@ def gerar_pdf_representacao_cce(dados: dict[str, Any]) -> bytes:
     if homolog:
         avisos.append('HOMOLOGAÇÃO — SEM VALOR FISCAL')
 
-    chave_fmt = str(dados.get('chave_acesso_fmt') or dados.get('chave_acesso') or '—')
-
-    campos_grid: list[tuple[str, str, int]] = [
-        ('NF-e nº', str(dados.get('numero_nfe') or '—'), 1),
-        ('Série', str(dados.get('serie_nfe') or '—'), 1),
-        ('Destinatário', str(dados.get('destinatario') or '—'), 1),
-        ('Ambiente', str(dados.get('ambiente_label') or '—'), 1),
-        ('Chave de acesso', chave_fmt, 3),
-    ]
-
     if transmitido:
-        seq = str(dados.get('sequencia_evento') or dados.get('sequencia_prevista') or '—')
-        campos_grid.extend(
-            [
-                ('Seq. CC-e', seq, 1),
-                ('Status', str(dados.get('status_evento') or 'Registrado na SEFAZ'), 1),
-                ('Registro em', _fmt_datetime(dados.get('emitido_em')), 1),
-                ('Protocolo', str(dados.get('protocolo') or '—'), 1),
-                ('ID do evento', str(dados.get('id_evento') or '—'), 1),
-                ('Retorno SEFAZ', f"{dados.get('cstat') or '—'} — {dados.get('xmotivo') or '—'}", 1),
-            ],
-        )
         texto_rodape = (
             'Evento registrado na SEFAZ conforme retorno eletrônico. '
             'Representação gráfica auxiliar — não substitui o XML do evento.'
         )
     else:
-        campos_grid.extend(
-            [
-                ('Seq. prevista', str(dados.get('sequencia_prevista') or '—'), 1),
-                ('Status', 'Prévia — não transmitida', 1),
-                ('Prévia gerada em', _fmt_datetime(dados.get('previa_em')), 1),
-            ],
-        )
         texto_rodape = 'Documento de prévia — não transmitido à SEFAZ. Não possui validade fiscal.'
 
     story: list[Any] = [
@@ -470,10 +543,13 @@ def gerar_pdf_representacao_cce(dados: dict[str, Any]) -> bytes:
         Spacer(1, 5),
     ]
     story.extend(_faixa_avisos(avisos, warn))
-    story.append(_caixa_correcoes(str(dados.get('texto_correcao') or ''), correcao_titulo, correcao))
+    story.append(_titulo_faixa('IDENTIFICAÇÃO DA NF-e', secao))
+    story.append(_bloco_identificacao_nfe(dados, rotulo, valor, chave))
+    story.append(Spacer(1, 4))
+    story.append(_titulo_faixa('DADOS DO EVENTO', secao))
+    story.append(_bloco_dados_evento(dados, transmitido=transmitido, rotulo_style=rotulo, valor_style=valor))
     story.append(Spacer(1, 6))
-    story.append(_titulo_faixa('IDENTIFICAÇÃO DA NF-e E DADOS DO EVENTO', secao))
-    story.append(_grade_identificacao(campos_grid, rotulo, valor))
+    story.append(_caixa_correcoes(str(dados.get('texto_correcao') or ''), correcao_titulo, correcao))
     story.append(Spacer(1, 5))
     story.append(_bloco_legal(str(dados.get('o_que_nao_pode_corrigir') or MSG_O_QUE_NAO_PODE_CORRIGIR), legal_titulo, legal_corpo))
     story.append(Spacer(1, 6))
