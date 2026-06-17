@@ -55,6 +55,7 @@ const baseMenuItems: MenuItem[] = [
   { label: 'Estoque', icon: Warehouse, children: [
     { label: 'Saldos', path: '/estoque' },
     { label: 'Atendimentos Operacionais', path: '/atendimentos-estoque' },
+    { label: 'Expedição / Logística', path: '/expedicao' },
   ]},
   { label: 'Qualidade', icon: ShieldCheck, children: [
     { label: 'Certificados de Qualidade', path: '/certificados' },

@@ -18,6 +18,7 @@ export type ResumoEmissaoSefazNfe = {
   numero_nfe?: string;
   ambiente_emissao?: string;
   chave_acesso?: string;
+  tem_xml_autorizado?: boolean;
   nfe?: { cstat?: string; xmotivo?: string; protocolo?: string };
   lote?: { cstat?: string; xmotivo?: string };
 };

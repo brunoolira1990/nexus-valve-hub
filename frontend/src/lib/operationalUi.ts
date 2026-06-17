@@ -16,6 +16,7 @@ export const ACTION_LABELS = {
   descartarRascunho: 'Descartar rascunho',
   baixarXml: 'Baixar XML',
   cancelarNfe: 'Cancelar NF-e',
+  enviarDanfeXml: 'Enviar DANFE/XML',
   cartaCorrecao: 'Carta de Correção',
   historicoSefaz: 'Histórico SEFAZ',
   corrigirDados: 'Corrigir dados',

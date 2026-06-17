@@ -758,6 +758,14 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
 
         return status_conferencia_display(obj.status_conferencia)
 
+    @staticmethod
+    def _tem_xml_autorizado_resumo(obj: NFeSaida) -> bool:
+        if (obj.xml_autorizado or '').strip():
+            return True
+        from apps.fiscal.nfe_saida_envio_email import tem_xml_autorizado_disponivel
+
+        return tem_xml_autorizado_disponivel(obj)
+
     def get_resumo_emissao_sefaz(self, obj):
         st = (obj.status_emissao_sefaz or '').strip()
         if not st and not (obj.serie_nfe or obj.numero_nfe or obj.chave_acesso):
@@ -771,6 +779,7 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
             'serie_nfe': obj.serie_nfe or '',
             'numero_nfe': obj.numero_nfe or '',
             'chave_acesso': obj.chave_acesso or '',
+            'tem_xml_autorizado': self._tem_xml_autorizado_resumo(obj),
             'lote': {
                 'cstat': obj.cstat_lote or '',
                 'xmotivo': obj.xmotivo_lote or '',

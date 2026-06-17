@@ -26,6 +26,7 @@ import { GerarContasReceberNfeModal } from '@/components/fiscal/GerarContasReceb
 import { NFeConsultaSefazModal } from '@/components/fiscal/NFeConsultaSefazModal';
 import { NFeCartaCorrecaoModal } from '@/components/fiscal/NFeCartaCorrecaoModal';
 import { NFeCancelamentoModal } from '@/components/fiscal/NFeCancelamentoModal';
+import { NFeEnvioDanfeXmlModal } from '@/components/fiscal/NFeEnvioDanfeXmlModal';
 import { buildCartaCorrecaoContextoFromNfe } from '@/lib/nfeCartaCorrecaoPreview';
 import { NFeFinanceiroAcoes } from '@/components/fiscal/NFeFinanceiroAcoes';
 import { NFeSaidaAcoesGruposPanel } from '@/components/fiscal/NFeSaidaAcoesGruposPanel';
@@ -62,6 +63,7 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
   const [consultaSefazOpen, setConsultaSefazOpen] = useState(false);
   const [cartaCorrecaoOpen, setCartaCorrecaoOpen] = useState(false);
   const [cancelamentoOpen, setCancelamentoOpen] = useState(false);
+  const [envioEmailOpen, setEnvioEmailOpen] = useState(false);
 
   useEffect(() => {
     if (!open || !nfeId) {
@@ -230,6 +232,7 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
         : 'erp-badge-success';
 
   return (
+    <>
     <Drawer open={open} onOpenChange={(v) => !v && onClose()}>
       <DrawerContent className="inset-y-0 right-0 left-auto top-0 mt-0 h-full w-full max-w-lg rounded-none rounded-l-lg border-l flex flex-col max-h-[100vh]">
         <DrawerHeader className="text-left border-b border-border shrink-0">
@@ -387,6 +390,7 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
               onConsultaSefaz={() => setConsultaSefazOpen(true)}
               onCartaCorrecao={() => setCartaCorrecaoOpen(true)}
               onCancelamento={() => setCancelamentoOpen(true)}
+              onEnvioDanfeXml={() => setEnvioEmailOpen(true)}
               financeiroSlot={
                 <NFeFinanceiroAcoes
                   nfeId={nfe.id}
@@ -490,6 +494,19 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
           }
         }}
       />
+
     </Drawer>
+
+      <NFeEnvioDanfeXmlModal
+        open={envioEmailOpen}
+        nfeId={nfeId}
+        onClose={() => setEnvioEmailOpen(false)}
+        onEnviado={() => {
+          if (nfeId) {
+            void nfeSaidasService.getById(nfeId).then(setNfe).catch(() => undefined);
+          }
+        }}
+      />
+    </>
   );
 }

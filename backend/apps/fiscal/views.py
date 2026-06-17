@@ -1353,6 +1353,46 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         code = status.HTTP_200_OK if payload.get('ok') else status.HTTP_422_UNPROCESSABLE_ENTITY
         return response.Response(payload, status=code)
 
+    @action(detail=True, methods=['get'], url_path='envio-email/dados')
+    def envio_email_dados(self, request, pk=None):
+        """Contexto read-only para envio manual de DANFE/XML por e-mail."""
+        from apps.fiscal.nfe_saida_envio_email import montar_dados_envio_email_danfe_xml
+
+        nf = self.get_object()
+        return response.Response(montar_dados_envio_email_danfe_xml(nf, usuario=request.user))
+
+    @action(detail=True, methods=['post'], url_path='envio-email/enviar')
+    def envio_email_enviar(self, request, pk=None):
+        """Envia DANFE PDF + XML autorizado por e-mail — ação manual, sem efeito fiscal."""
+        import logging
+
+        from apps.fiscal.nfe_saida_envio_email import NFeEnvioEmailError, enviar_email_danfe_xml_nfe_saida
+
+        log = logging.getLogger(__name__)
+        nf = self.get_object()
+        try:
+            payload = enviar_email_danfe_xml_nfe_saida(
+                nf,
+                usuario=request.user,
+                para=str(request.data.get('para') or request.data.get('destinatario') or ''),
+                cc=str(request.data.get('cc') or request.data.get('copias') or ''),
+                assunto=str(request.data.get('assunto') or ''),
+                mensagem=str(request.data.get('mensagem') or ''),
+                confirmar_envio=bool(
+                    request.data.get('confirmar_envio') or request.data.get('confirmar')
+                ),
+            )
+        except NFeEnvioEmailError as exc:
+            return response.Response({'ok': False, 'mensagem': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            log.exception('Erro técnico envio e-mail DANFE/XML nfe_id=%s', pk)
+            return response.Response(
+                {'ok': False, 'mensagem': 'Erro técnico ao enviar e-mail. Tente novamente ou contate o suporte.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        nf.refresh_from_db()
+        return response.Response(payload, status=status.HTTP_200_OK)
+
     @action(detail=True, methods=['post'], url_path='reprocessar-retorno-sefaz')
     def reprocessar_retorno_sefaz(self, request, pk=None):
         """Reinterpreta xml_retorno salvo (lote 104 + infProt) sem retransmitir."""

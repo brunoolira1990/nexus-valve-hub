@@ -39,6 +39,7 @@ import Certificados from "./pages/Certificados";
 import CertificadosFornecedor from "./pages/CertificadosFornecedor";
 import Estoque from "./pages/Estoque";
 import AtendimentosEstoque from "./pages/AtendimentosEstoque";
+import Expedicao from "./pages/Expedicao";
 import ApuracaoFiscal from "./pages/ApuracaoFiscal";
 import Contabil from "./pages/Contabil";
 import FinanceiroVisaoGeral from "./pages/financeiro/FinanceiroVisaoGeral";
@@ -100,6 +101,7 @@ const App = () => (
         <Route path="certificados-fornecedor" element={<CertificadosFornecedor />} />
         <Route path="estoque" element={<Estoque />} />
         <Route path="atendimentos-estoque" element={<AtendimentosEstoque />} />
+        <Route path="expedicao" element={<Expedicao />} />
         <Route path="apuracao-fiscal" element={<ApuracaoFiscal />} />
         <Route path="contabil" element={<Contabil />} />
         <Route path="financeiro" element={<FinanceiroVisaoGeral />} />

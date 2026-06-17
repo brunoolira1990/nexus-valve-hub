@@ -29,10 +29,16 @@ export const Modal = ({ isOpen, onClose, title, children, footer, size = 'md', s
   const overlayClass = stacked ? 'bg-foreground/55' : 'bg-foreground/40';
 
   const modal = (
-    <div className={`fixed inset-0 ${zClass} flex items-start justify-center pt-4 pb-4 px-3 sm:pt-8 sm:px-4`}>
-      <div className={`fixed inset-0 ${overlayClass}`} onClick={onClose} aria-hidden />
+    <div
+      className={`fixed inset-0 ${zClass} flex items-start justify-center pt-4 pb-4 px-3 sm:pt-8 sm:px-4 pointer-events-none`}
+    >
       <div
-        className={`relative bg-card rounded-lg nexus-modal-shadow w-full ${sizeClass} max-h-[85vh] flex flex-col min-h-0`}
+        className={`fixed inset-0 ${overlayClass} pointer-events-auto`}
+        onClick={onClose}
+        aria-hidden
+      />
+      <div
+        className={`relative z-10 pointer-events-auto bg-card rounded-lg nexus-modal-shadow w-full ${sizeClass} max-h-[85vh] flex flex-col min-h-0`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"

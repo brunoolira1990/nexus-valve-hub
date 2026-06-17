@@ -533,6 +533,48 @@ class NFeSaidaEvento(models.Model):
         ]
 
 
+class NFeSaidaEnvioEmail(models.Model):
+    """Log de envio manual de DANFE/XML autorizado por e-mail — sem efeito fiscal."""
+
+    class StatusEnvio(models.TextChoices):
+        SUCESSO = 'SUCESSO', 'Sucesso'
+        ERRO = 'ERRO', 'Erro'
+
+    nfe_saida = models.ForeignKey(
+        NFeSaida,
+        on_delete=models.CASCADE,
+        related_name='envios_email',
+    )
+    enviado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='nf_saida_envios_email',
+    )
+    enviado_em = models.DateTimeField(auto_now_add=True)
+    destinatario = models.CharField(max_length=320)
+    copias = models.TextField(blank=True, help_text='Destinatários em cópia (separados por vírgula).')
+    assunto = models.CharField(max_length=255)
+    ambiente = models.CharField(max_length=16, blank=True)
+    status_envio = models.CharField(max_length=8, choices=StatusEnvio.choices)
+    mensagem_erro = models.TextField(blank=True)
+    anexo_xml = models.BooleanField(default=False)
+    anexo_danfe_pdf = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['-enviado_em', '-id']
+        verbose_name = 'Envio e-mail NF-e Saída'
+        verbose_name_plural = 'Envios e-mail NF-e Saída'
+        indexes = [
+            models.Index(fields=['nfe_saida', '-enviado_em']),
+            models.Index(fields=['status_envio', '-enviado_em']),
+        ]
+
+    def __str__(self) -> str:
+        return f'Envio NF-e {self.nfe_saida_id} → {self.destinatario} ({self.status_envio})'
+
+
 class ItemNFeSaida(models.Model):
     nf = models.ForeignKey(NFeSaida, on_delete=models.CASCADE, related_name='itens')
     item_faturamento_pedido = models.ForeignKey(

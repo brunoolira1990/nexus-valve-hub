@@ -6,6 +6,7 @@ import {
   FileText,
   History,
   Loader2,
+  Mail,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -32,6 +33,7 @@ type Props = {
   onCartaCorrecao?: () => void;
   cartaCorrecaoLoading?: boolean;
   onCancelamento?: () => void;
+  onEnvioDanfeXml?: () => void;
   financeiroSlot?: React.ReactNode;
   compact?: boolean;
 };
@@ -140,6 +142,7 @@ export function NFeSaidaAcoesGruposPanel({
   onCartaCorrecao,
   cartaCorrecaoLoading,
   onCancelamento,
+  onEnvioDanfeXml,
   onXmlAutorizado,
   financeiroSlot,
   compact,
@@ -266,6 +269,20 @@ export function NFeSaidaAcoesGruposPanel({
             title={acao.title}
             onClick={onCancelamento}
           >
+            {acao.label}
+          </button>
+        );
+      case 'enviar_danfe_xml':
+        return (
+          <button
+            key={acao.id}
+            type="button"
+            className="erp-btn-outline erp-btn-sm"
+            disabled={!acao.habilitada}
+            title={acao.title}
+            onClick={onEnvioDanfeXml}
+          >
+            <Mail className="h-3 w-3 mr-1 inline" />
             {acao.label}
           </button>
         );

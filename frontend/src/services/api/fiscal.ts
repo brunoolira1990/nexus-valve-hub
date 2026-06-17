@@ -1034,6 +1034,75 @@ export const nfeSaidasService = {
     });
     return res.data;
   },
+  envioEmailDados: async (id: number) => {
+    const { data } = await api.get<unknown>(`${nfSai}${id}/envio-email/dados/`);
+    return data as NFeEnvioEmailDadosResponse;
+  },
+  envioEmailEnviar: async (
+    id: number,
+    payload: {
+      para: string;
+      cc?: string;
+      assunto: string;
+      mensagem: string;
+      confirmar_envio: boolean;
+    },
+  ) => {
+    const res = await api.post<NFeEnvioEmailEnviarResponse>(`${nfSai}${id}/envio-email/enviar/`, payload, {
+      timeout: 120_000,
+      validateStatus: (s) => s >= 200 && s < 500,
+    });
+    return res.data;
+  },
+};
+
+export type NFeEnvioEmailHistorico = {
+  id: number;
+  enviado_em: string;
+  usuario_nome: string;
+  destinatario: string;
+  copias?: string;
+  assunto?: string;
+  status_envio: 'SUCESSO' | 'ERRO';
+  mensagem_erro?: string;
+  ambiente?: string;
+  anexo_xml?: boolean;
+  anexo_danfe_pdf?: boolean;
+};
+
+export type NFeEnvioEmailDadosResponse = {
+  ok: boolean;
+  pode_enviar: boolean;
+  motivo_bloqueio?: string;
+  ambiente: string;
+  ambiente_label: string;
+  homologacao: boolean;
+  alerta_homologacao?: string;
+  destinatario_sugerido: string;
+  assunto_sugerido: string;
+  mensagem_sugerida: string;
+  anexos: {
+    xml_autorizado: boolean;
+    danfe_pdf: boolean;
+  };
+  nfe: {
+    id: number;
+    numero: string;
+    serie: string;
+    chave_acesso: string;
+    status: string;
+    status_emissao_sefaz: string;
+    cliente_nome: string;
+    protocolo_autorizacao: string;
+  };
+  ultimo_envio: NFeEnvioEmailHistorico | null;
+  historico_recente?: NFeEnvioEmailHistorico[];
+};
+
+export type NFeEnvioEmailEnviarResponse = {
+  ok: boolean;
+  mensagem?: string;
+  envio?: NFeEnvioEmailHistorico | null;
 };
 
 export type NFeGerarContasReceberParcela = {

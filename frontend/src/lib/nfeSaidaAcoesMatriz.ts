@@ -45,6 +45,7 @@ export type NFeSaidaAcaoId =
   | 'consulta_sefaz'
   | 'carta_correcao'
   | 'cancelamento'
+  | 'enviar_danfe_xml'
   | 'gerar_contas_receber';
 
 export type NFeSaidaAcaoConfig = {
@@ -200,6 +201,11 @@ export function podeCancelarNfeSefaz(ctx: NFeSaidaContextoAcao): boolean {
   return podeConsultarSituacaoSefaz(ctx);
 }
 
+export function podeEnviarDanfeXml(ctx: NFeSaidaContextoAcao): boolean {
+  if (ctx.cenario === 'cancelada') return false;
+  return (ctx.autorizadaHomolog || ctx.autorizadaProducao) && ctx.temXmlAutorizado;
+}
+
 const FUTURAS_BASE: Omit<NFeSaidaAcaoConfig, 'visivel' | 'habilitada'>[] = [];
 
 function acao(
@@ -237,6 +243,13 @@ export function obterMatrizAcoesNfeSaida(
         title: ctx.temXmlAutorizado ? undefined : 'XML autorizado indisponível',
       }),
       acao({ id: 'historico', grupo: 'documentos', label: 'Ver histórico' }),
+      acao({
+        id: 'enviar_danfe_xml',
+        grupo: 'documentos',
+        label: ACTION_LABELS.enviarDanfeXml,
+        habilitada: podeEnviarDanfeXml(ctx),
+        title: podeEnviarDanfeXml(ctx) ? undefined : 'XML autorizado ou DANFE indisponível',
+      }),
     );
     if (podeConsultarSituacaoSefaz(ctx)) {
       acoes.push(acao({ id: 'consulta_sefaz', grupo: 'fiscal', label: 'Consulta SEFAZ' }));
@@ -265,6 +278,13 @@ export function obterMatrizAcoesNfeSaida(
         title: ctx.chaveAcesso ? undefined : 'Chave de acesso indisponível',
       }),
       acao({ id: 'historico', grupo: 'documentos', label: 'Ver histórico' }),
+      acao({
+        id: 'enviar_danfe_xml',
+        grupo: 'documentos',
+        label: ACTION_LABELS.enviarDanfeXml,
+        habilitada: podeEnviarDanfeXml(ctx),
+        title: podeEnviarDanfeXml(ctx) ? undefined : 'XML autorizado ou DANFE indisponível',
+      }),
     );
     if (podeConsultarSituacaoSefaz(ctx)) {
       acoes.push(acao({ id: 'consulta_sefaz', grupo: 'fiscal', label: 'Consulta SEFAZ' }));
