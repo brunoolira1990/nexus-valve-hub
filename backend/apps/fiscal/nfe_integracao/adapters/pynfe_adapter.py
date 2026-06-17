@@ -142,6 +142,41 @@ def extrair_xml_resposta(resposta: Any) -> str:
     return normalizar_xml_bruto(resposta)
 
 
+def consulta_cadastro_contribuinte(
+    comunicacao: Any,
+    documento: str,
+    *,
+    uf: str,
+    tipo: str = 'CNPJ',
+    modelo: str = 'nfe',
+) -> Any:
+    """Consulta cadastro do contribuinte (NFeConsultaCadastro / CadConsultaCadastro4)."""
+    doc = ''.join(ch for ch in str(documento or '') if ch.isdigit())
+    uf_norm = (uf or '').strip().upper()
+    if len(doc) not in {11, 14}:
+        raise PyNFeComunicacaoError('CNPJ inválido para consulta cadastral SEFAZ.')
+    if len(uf_norm) != 2:
+        raise PyNFeComunicacaoError('UF inválida para consulta cadastral SEFAZ.')
+    try:
+        with requests_sem_proxy_ambiente():
+            return comunicacao.consulta_cadastro(modelo, doc, tipo=tipo.upper(), uf=uf_norm)
+    except PyNFeComunicacaoError:
+        raise
+    except Exception as exc:
+        msg = str(exc).lower()
+        if 'timeout' in msg or 'timed out' in msg:
+            raise PyNFeComunicacaoError(
+                'Tempo esgotado ao consultar cadastro na SEFAZ. Tente novamente em instantes.',
+            ) from exc
+        if 'connection' in msg or 'conex' in msg or 'network' in msg:
+            raise PyNFeComunicacaoError('Erro ao conectar ao WebService da SEFAZ.') from exc
+        if 'cadastro' in msg and ('url' in msg or 'endpoint' in msg or 'not found' in msg):
+            raise PyNFeComunicacaoError(
+                'Consulta cadastral SEFAZ não configurada para esta UF.',
+            ) from exc
+        raise PyNFeComunicacaoError(f'Erro na consulta cadastro SEFAZ: {exc}') from exc
+
+
 def consulta_situacao_nfe(
     comunicacao: Any,
     chave_acesso: str,

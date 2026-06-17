@@ -8,8 +8,11 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-def _get_json(url: str, *, timeout: float = 8.0) -> dict[str, Any]:
-    req = Request(url, headers={'User-Agent': 'NexusERP/4.0'})
+def _get_json(url: str, *, timeout: float = 8.0, headers: dict[str, str] | None = None) -> dict[str, Any]:
+    hdr = {'User-Agent': 'NexusERP/4.0'}
+    if headers:
+        hdr.update(headers)
+    req = Request(url, headers=hdr)
     with urlopen(req, timeout=timeout) as response:
         raw = response.read().decode('utf-8')
     try:

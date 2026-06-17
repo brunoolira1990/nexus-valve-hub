@@ -13,8 +13,18 @@ import {
   SelectField,
   TextareaField,
 } from '@/components/ui/cadastro';
+import { ConsultaCnpjSugestoesPanel } from '@/components/cadastros/ConsultaCnpjSugestoesPanel';
+import { ConsultaIeSefazControls } from '@/components/cadastros/ConsultaIeSefazControls';
+import { useConsultaIeSefaz } from '@/hooks/useConsultaIeSefaz';
 import { consultaCep, consultaCnpj } from '@/services/api/consulta';
 import { apiErrorMessage } from '@/services/api/config';
+import {
+  aplicarConsultaCnpjCamposVazios,
+  MAPEAMENTO_CNPJ_CLIENTE,
+  mensagemSucessoConsultaCnpj,
+  montarSugestoesCnpj,
+  type CampoSugestaoCnpj,
+} from '@/lib/consultaCnpjCadastro';
 import {
   enderecoFiscalInconsistenteLocal,
   mensagemEnderecoFiscalInconsistente,
@@ -200,7 +210,9 @@ function AlertaEnderecoFiscal({ mensagem }: { mensagem: string }) {
 export function ClienteForm({ defaultValues, transportadoras, onSubmit, onCancel, saving, enderecoFiscalInicial }: Props) {
   const [tab, setTab] = useState<string>(TAB_ITEMS[0].id);
   const [cnpjLookupLoading, setCnpjLookupLoading] = useState(false);
+  const consultaIe = useConsultaIeSefaz();
   const [cnpjLookupMessage, setCnpjLookupMessage] = useState<string | null>(null);
+  const [cnpjSugestoes, setCnpjSugestoes] = useState<CampoSugestaoCnpj<keyof ClienteFormInput>[]>([]);
   const [lastLookupCnpj, setLastLookupCnpj] = useState<string | null>(null);
   const [cepLookupLoading, setCepLookupLoading] = useState(false);
   const [cepLookupMessage, setCepLookupMessage] = useState<string | null>(null);
@@ -222,6 +234,9 @@ export function ClienteForm({ defaultValues, transportadoras, onSubmit, onCancel
     resolver: zodResolver(schema),
     defaultValues,
   });
+  const aplicarIeNoFormulario = (valor: string) => {
+    setValue('ie', valor, { shouldDirty: true, shouldValidate: true });
+  };
   const cnpjField = register('cnpj');
   const cepField = register('cep');
   const dddField = register('ddd');
@@ -312,35 +327,62 @@ export function ClienteForm({ defaultValues, transportadoras, onSubmit, onCancel
 
   const runCnpjLookup = async (rawValue: string, force = false) => {
     const cnpj = normalizeCnpj(rawValue);
-    if (cnpj.length !== 14 || !isValidCnpj(cnpj)) return;
+    if (cnpj.length !== 14) {
+      if (digitsOnly(rawValue, 14)) {
+        setCnpjLookupMessage('CNPJ inválido. Informe 14 dígitos.');
+      }
+      return;
+    }
+    if (!isValidCnpj(cnpj)) {
+      setCnpjSugestoes([]);
+      setCnpjLookupMessage('CNPJ inválido. Verifique os dígitos verificadores.');
+      return;
+    }
     if (cnpjLookupLoading) return;
     if (!force && lastLookupCnpj === cnpj) return;
 
     clearErrors('root');
     setCnpjLookupMessage(null);
+    setCnpjSugestoes([]);
     setCnpjLookupLoading(true);
     try {
       const { data } = await consultaCnpj(cnpj);
-      setIfEmpty('razao_social', data.razao_social || '');
-      setIfEmpty('nome_fantasia', data.nome_fantasia || '');
-      setValue('logradouro', data.logradouro || getValues('logradouro') || '');
-      setValue('numero', data.numero || getValues('numero') || '');
-      setIfEmpty('complemento', data.complemento || '');
-      setValue('bairro', data.bairro || getValues('bairro') || '');
-      setValue('cidade', data.cidade || '');
-      setValue('uf', data.uf || '');
-      if (data.cep) setValue('cep', formatCep(data.cep));
-      setIfEmpty('telefone', formatPhone(data.telefone || ''));
+      const valoresAtuais = getValues();
+      const updates = aplicarConsultaCnpjCamposVazios(valoresAtuais, data, MAPEAMENTO_CNPJ_CLIENTE);
+      for (const [campo, valor] of Object.entries(updates) as [keyof ClienteFormInput, string][]) {
+        setValue(campo, valor);
+      }
+      setCnpjSugestoes(montarSugestoesCnpj(valoresAtuais, data, MAPEAMENTO_CNPJ_CLIENTE));
       setEnderecoFiscalAlerta('');
       setLastLookupCnpj(cnpj);
-      setCnpjLookupMessage('Dados do CNPJ consultados com sucesso.');
+      setCnpjLookupMessage(mensagemSucessoConsultaCnpj(data));
+      await consultaIe.tryAutoConsultaIe(
+        getValues('cnpj'),
+        getValues('uf') || data.uf || '',
+        getValues('ie'),
+        aplicarIeNoFormulario,
+      );
     } catch (err) {
-      const msg = apiErrorMessage(err);
+      const msg = apiErrorMessage(err, {
+        fallback: 'Não foi possível consultar o CNPJ agora. Você pode preencher os dados manualmente.',
+      });
       setCnpjLookupMessage(msg);
       setError('root', { message: msg });
     } finally {
       setCnpjLookupLoading(false);
     }
+  };
+
+  const aplicarSugestaoCnpj = (campo: keyof ClienteFormInput, valor: string) => {
+    setValue(campo, valor);
+    setCnpjSugestoes((prev) => prev.filter((item) => item.campo !== campo));
+  };
+
+  const aplicarTodasSugestoesCnpj = () => {
+    for (const item of cnpjSugestoes) {
+      setValue(item.campo, item.sugerido);
+    }
+    setCnpjSugestoes([]);
   };
 
   const onCnpjBlur = async (e: FocusEvent<HTMLInputElement>) => {
@@ -445,23 +487,25 @@ export function ClienteForm({ defaultValues, transportadoras, onSubmit, onCancel
               onKeyDown={onCnpjKeyDown}
               error={errors.cnpj?.message}
             />
-            <div className="mt-1 flex items-center gap-3 text-xs">
-              <span className="text-muted-foreground">
-                {cnpjLookupLoading
-                  ? 'Consultando CNPJ...'
-                  : cnpjLookupMessage ?? 'A consulta ocorre automaticamente ao sair do campo.'}
-              </span>
-              <button
-                type="button"
-                className="text-primary hover:underline disabled:text-muted-foreground disabled:no-underline"
-                onClick={() => void runCnpjLookup(getValues('cnpj'), true)}
-                disabled={cnpjLookupLoading}
-              >
-                Consultar novamente
-              </button>
+            <div className="mt-1 text-xs text-muted-foreground">
+              {cnpjLookupLoading
+                ? 'Consultando CNPJ...'
+                : cnpjLookupMessage ?? 'A consulta ocorre automaticamente ao sair do campo.'}
             </div>
           </div>
+          <ConsultaCnpjSugestoesPanel
+            sugestoes={cnpjSugestoes}
+            onAplicarCampo={aplicarSugestaoCnpj}
+            onAplicarTodas={aplicarTodasSugestoesCnpj}
+          />
           <InputField label="Inscrição Estadual (IE)" operationalUpper {...register('ie')} />
+          <ConsultaIeSefazControls
+            consultaIe={consultaIe}
+            getCnpj={() => getValues('cnpj')}
+            getUf={() => getValues('uf')}
+            getIeAtual={() => getValues('ie')}
+            onAplicarIe={aplicarIeNoFormulario}
+          />
           <div className="md:col-span-2 flex flex-wrap gap-2 pt-1">
             <CheckboxField control={control} name="ativo" label="Cadastro ativo" />
             <CheckboxField control={control} name="bloqueado" label="Bloqueado para venda" />

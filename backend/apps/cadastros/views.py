@@ -1,13 +1,11 @@
-import json
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
-
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, authentication_classes, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
-from apps.cadastros.consulta_externa import consultar_cep_viacep, format_cep_br, normalizar_cep_digitos
+from apps.cadastros.consulta_cnpj import consultar_cnpj_cadastral
+from apps.cadastros.consulta_ie import ConsultaIeError, consultar_inscricao_estadual
+from apps.cadastros.consulta_externa import consultar_cep_viacep, normalizar_cep_digitos
 from .models import Cliente, Empresa, Fornecedor, Transportadora
 from .serializers import (
     ClienteSerializer,
@@ -241,19 +239,6 @@ class TransportadoraViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet
         )
 
 
-def _get_json(url: str, timeout: int = 8) -> dict:
-    request = Request(url, headers={"User-Agent": "NEXUS-APP/1.0"})
-    with urlopen(request, timeout=timeout) as response:
-        raw = response.read().decode("utf-8")
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError as e:
-        raise ValueError("Resposta inválida do serviço externo.") from e
-
-
-from apps.cadastros.consulta_externa import consultar_cep_viacep, format_cep_br, normalizar_cep_digitos
-
-
 @api_view(['GET'])
 @authentication_classes([])
 @permission_classes([AllowAny])
@@ -276,41 +261,29 @@ def consulta_cep(request, cep: str):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def consulta_cnpj(request, cnpj: str):
-    cnpj_digitos = ''.join(ch for ch in str(cnpj or '') if ch.isdigit())
-    if len(cnpj_digitos) != 14:
-        return Response({'detail': 'CNPJ inválido. Informe 14 dígitos.'}, status=status.HTTP_400_BAD_REQUEST)
+    data, erro = consultar_cnpj_cadastral(cnpj)
+    if erro and not data:
+        return Response({'detail': erro}, status=status.HTTP_400_BAD_REQUEST)
+    if not data:
+        return Response(
+            {'detail': erro or 'Não foi possível consultar o CNPJ agora.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return Response(data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def consulta_ie(request):
+    """Consulta Inscrição Estadual na SEFAZ (NFeConsultaCadastro) — autenticada."""
+    cnpj = request.query_params.get('cnpj')
+    uf = request.query_params.get('uf')
+    empresa_raw = request.query_params.get('empresa_id')
+    empresa_id = int(empresa_raw) if empresa_raw and str(empresa_raw).isdigit() else None
 
     try:
-        payload = _get_json(f'https://receitaws.com.br/v1/cnpj/{cnpj_digitos}')
-    except (HTTPError, URLError, TimeoutError, ValueError):
-        return Response(
-            {'detail': 'Falha ao consultar o serviço de CNPJ.'},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+        payload = consultar_inscricao_estadual(cnpj, uf, empresa_id=empresa_id)
+    except ConsultaIeError as exc:
+        return Response({'detail': exc.mensagem, 'erro_codigo': exc.codigo}, status=status.HTTP_400_BAD_REQUEST)
 
-    status_receita = (payload.get('status') or '').lower()
-    if status_receita == 'error':
-        return Response(
-            {'detail': payload.get('message', 'CNPJ não encontrado.')},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    cep_raw = (payload.get('cep') or '').replace('.', '').replace('-', '').strip()
-    cep_fmt = format_cep_br(cep_raw) if len(cep_raw) == 8 and cep_raw.isdigit() else (payload.get('cep') or '')
-
-    return Response(
-        {
-            'cnpj': payload.get('cnpj', '') or '',
-            'razao_social': payload.get('nome', '') or '',
-            'nome_fantasia': payload.get('fantasia', '') or '',
-            'logradouro': payload.get('logradouro', '') or '',
-            'numero': payload.get('numero', '') or '',
-            'complemento': payload.get('complemento', '') or '',
-            'bairro': payload.get('bairro', '') or '',
-            'cidade': payload.get('municipio', '') or '',
-            'uf': payload.get('uf', '') or '',
-            'cep': cep_fmt or '',
-            'telefone': payload.get('telefone', '') or '',
-            'email': payload.get('email', '') or '',
-        }
-    )
+    return Response(payload)
