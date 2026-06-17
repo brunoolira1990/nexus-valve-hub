@@ -2,21 +2,52 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
 from django.core import mail
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from apps.cadastros.models import Cliente
 from apps.fiscal.models import NFeSaida, NFeSaidaEnvioEmail
+from apps.fiscal.nfe_saida_envio_email import resolver_destinatario_email_cliente_nfe
 from apps.fiscal.tests.test_nfe_saida_402_emissao_homologacao import _pedido_nf, _preparar_pronta
 
 XML_AUTORIZADO = '<?xml version="1.0"?><nfeProc><NFe/><protNFe/></nfeProc>'
 PDF_MOCK = b'%PDF-1.4 mock'
+
+
+class ResolverDestinatarioEmailClienteNfeTests(SimpleTestCase):
+    def test_prioriza_email_nf(self):
+        cliente = Mock()
+        cliente.email_nf = 'fiscal@test.local'
+        cliente.email = 'principal@test.local'
+        nf = Mock(cliente_id=1, cliente=cliente)
+        data = resolver_destinatario_email_cliente_nfe(nf)
+        self.assertEqual(data['destinatario_sugerido'], 'fiscal@test.local')
+        self.assertEqual(data['destinatario_origem'], 'email_nf')
+        self.assertFalse(data['cliente_sem_email'])
+
+    def test_usa_email_principal_sem_email_nf(self):
+        cliente = Mock()
+        cliente.email_nf = ''
+        cliente.email = 'principal@test.local'
+        nf = Mock(cliente_id=1, cliente=cliente)
+        data = resolver_destinatario_email_cliente_nfe(nf)
+        self.assertEqual(data['destinatario_sugerido'], 'principal@test.local')
+        self.assertEqual(data['destinatario_origem'], 'email')
+
+    def test_vazio_quando_cliente_sem_email(self):
+        cliente = Mock()
+        cliente.email_nf = ''
+        cliente.email = ''
+        nf = Mock(cliente_id=1, cliente=cliente)
+        data = resolver_destinatario_email_cliente_nfe(nf)
+        self.assertEqual(data['destinatario_sugerido'], '')
+        self.assertTrue(data['cliente_sem_email'])
 
 
 @override_settings(
@@ -64,6 +95,10 @@ class NFeSaidaEnvioEmailTests(TestCase):
         self.assertTrue(data['anexos']['xml_autorizado'])
         self.assertTrue(data['anexos']['danfe_pdf'])
         self.assertIn('HOMOLOG', data['alerta_homologacao'].upper())
+        self.assertEqual(data['destinatario_sugerido'], 'cliente@test.local')
+        self.assertEqual(data['destinatario_origem'], 'email_nf')
+        self.assertFalse(data['cliente_sem_email'])
+        self.assertEqual(data['aviso_sem_email_cliente'], '')
 
         res = self.client.post(
             f'/api/nf-saidas/{self.nf.pk}/envio-email/enviar/',
@@ -102,6 +137,33 @@ class NFeSaidaEnvioEmailTests(TestCase):
             format='json',
         )
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch('apps.fiscal.nfe_saida_envio_email.gerar_danfe_autorizado_nfe_saida', return_value=(PDF_MOCK, {}))
+    def test_destinatario_sugerido_usa_email_principal_quando_sem_email_nf(self, _mock_danfe):
+        cliente = Cliente.objects.get(pk=self.nf.cliente_id)
+        cliente.email_nf = ''
+        cliente.email = 'principal@test.local'
+        cliente.save(update_fields=['email_nf', 'email'])
+
+        r = self.client.get(f'/api/nf-saidas/{self.nf.pk}/envio-email/dados/')
+        data = r.json()
+        self.assertEqual(data['destinatario_sugerido'], 'principal@test.local')
+        self.assertEqual(data['destinatario_origem'], 'email')
+        self.assertFalse(data['cliente_sem_email'])
+
+    @patch('apps.fiscal.nfe_saida_envio_email.gerar_danfe_autorizado_nfe_saida', return_value=(PDF_MOCK, {}))
+    def test_destinatario_vazio_quando_cliente_sem_email(self, _mock_danfe):
+        cliente = Cliente.objects.get(pk=self.nf.cliente_id)
+        cliente.email_nf = ''
+        cliente.email = ''
+        cliente.save(update_fields=['email_nf', 'email'])
+
+        r = self.client.get(f'/api/nf-saidas/{self.nf.pk}/envio-email/dados/')
+        data = r.json()
+        self.assertEqual(data['destinatario_sugerido'], '')
+        self.assertTrue(data['cliente_sem_email'])
+        self.assertEqual(data['destinatario_origem'], '')
+        self.assertIn('sem e-mail cadastrado', data['aviso_sem_email_cliente'].lower())
 
     def test_inutilizada_bloqueia_envio(self):
         self.nf.status = 'INUTILIZADA_HOMOLOGACAO'

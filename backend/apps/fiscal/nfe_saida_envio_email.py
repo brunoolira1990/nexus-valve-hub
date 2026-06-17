@@ -76,10 +76,48 @@ def normalizar_lista_emails(valor: str | None) -> list[str]:
     return out
 
 
+def resolver_destinatario_email_cliente_nfe(nf: NFeSaida) -> dict[str, Any]:
+    """
+    Sugestão de destinatário para envio DANFE/XML (somente leitura do cadastro).
+    Prioridade: email_nf (fiscal) → email principal → vazio.
+    """
+    vazio = {
+        'destinatario_sugerido': '',
+        'cliente_sem_email': True,
+        'destinatario_origem': '',
+    }
+    if not nf.cliente_id:
+        return vazio
+
+    cliente = nf.cliente
+    if cliente is None:
+        from apps.cadastros.models import Cliente
+
+        cliente = Cliente.objects.filter(pk=nf.cliente_id).only('email_nf', 'email').first()
+    if cliente is None:
+        return vazio
+
+    email_nf = (cliente.email_nf or '').strip()
+    if email_nf:
+        return {
+            'destinatario_sugerido': email_nf,
+            'cliente_sem_email': False,
+            'destinatario_origem': 'email_nf',
+        }
+
+    email = (cliente.email or '').strip()
+    if email:
+        return {
+            'destinatario_sugerido': email,
+            'cliente_sem_email': False,
+            'destinatario_origem': 'email',
+        }
+
+    return vazio
+
+
 def resolver_email_destinatario_sugerido(nf: NFeSaida) -> str:
-    if nf.cliente_id and nf.cliente:
-        return (nf.cliente.email_nf or nf.cliente.email or '').strip()
-    return ''
+    return str(resolver_destinatario_email_cliente_nfe(nf).get('destinatario_sugerido') or '').strip()
 
 
 def tem_xml_autorizado_disponivel(nf: NFeSaida) -> bool:
@@ -185,6 +223,11 @@ def montar_dados_envio_email_danfe_xml(nf: NFeSaida, *, usuario=None) -> dict[st
     if nf.cliente_id and nf.cliente:
         cliente_nome = (nf.cliente.razao_social or '').strip()
 
+    destinatario = resolver_destinatario_email_cliente_nfe(nf)
+    aviso_sem_email = ''
+    if destinatario['cliente_sem_email'] and nf.cliente_id:
+        aviso_sem_email = 'Cliente sem e-mail cadastrado. Informe o destinatário manualmente.'
+
     return {
         'ok': pode,
         'pode_enviar': pode,
@@ -198,7 +241,10 @@ def montar_dados_envio_email_danfe_xml(nf: NFeSaida, *, usuario=None) -> dict[st
             if homolog
             else ''
         ),
-        'destinatario_sugerido': resolver_email_destinatario_sugerido(nf),
+        'destinatario_sugerido': destinatario['destinatario_sugerido'],
+        'cliente_sem_email': destinatario['cliente_sem_email'],
+        'destinatario_origem': destinatario['destinatario_origem'],
+        'aviso_sem_email_cliente': aviso_sem_email,
         'assunto_sugerido': montar_assunto_sugerido(nf, homolog=homolog),
         'mensagem_sugerida': montar_mensagem_sugerida(nf, homolog=homolog),
         'anexos': {

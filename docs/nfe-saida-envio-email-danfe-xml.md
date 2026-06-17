@@ -58,6 +58,18 @@ Em desenvolvimento local, pode usar `EMAIL_BACKEND=django.core.mail.backends.con
 - `GET /api/nf-saidas/{id}/envio-email/dados/` — preview (destinatário sugerido, anexos, último envio).
 - `POST /api/nf-saidas/{id}/envio-email/enviar/` — envia e-mail (exige `confirmar_envio: true`).
 
+### Pré-preenchimento do destinatário
+
+O campo **Para** do modal é preenchido automaticamente com a sugestão retornada pelo endpoint de dados. A sugestão é **somente leitura do cadastro** — o usuário pode apagar, editar ou substituir antes de enviar.
+
+Prioridade da sugestão (campos do cadastro `Cliente`):
+
+1. `email_nf` — e-mail fiscal / NF-e
+2. `email` — e-mail principal do cliente
+3. vazio — com aviso discreto: *"Cliente sem e-mail cadastrado. Informe o destinatário manualmente."*
+
+O último envio registrado (`ultimo_envio`) permanece apenas como histórico; não substitui a sugestão do cadastro ao abrir o modal.
+
 ## Regras
 
 - Somente NF-e **autorizada** (homologação ou produção).

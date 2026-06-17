@@ -1079,6 +1079,9 @@ export type NFeEnvioEmailDadosResponse = {
   homologacao: boolean;
   alerta_homologacao?: string;
   destinatario_sugerido: string;
+  cliente_sem_email?: boolean;
+  destinatario_origem?: 'email_nf' | 'email' | '';
+  aviso_sem_email_cliente?: string;
   assunto_sugerido: string;
   mensagem_sugerida: string;
   anexos: {

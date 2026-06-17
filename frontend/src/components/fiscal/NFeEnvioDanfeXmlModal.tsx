@@ -70,6 +70,11 @@ function normalizeEnvioEmailDados(raw: unknown): NFeEnvioEmailDadosResponse {
     homologacao: Boolean(r.homologacao),
     alerta_homologacao: String(r.alerta_homologacao ?? ''),
     destinatario_sugerido: String(r.destinatario_sugerido ?? ''),
+    cliente_sem_email: Boolean(r.cliente_sem_email),
+    destinatario_origem: (r.destinatario_origem === 'email_nf' || r.destinatario_origem === 'email'
+      ? r.destinatario_origem
+      : '') as NFeEnvioEmailDadosResponse['destinatario_origem'],
+    aviso_sem_email_cliente: String(r.aviso_sem_email_cliente ?? ''),
     assunto_sugerido: String(r.assunto_sugerido ?? ''),
     mensagem_sugerida: String(r.mensagem_sugerida ?? ''),
     anexos: {
@@ -375,6 +380,9 @@ export function NFeEnvioDanfeXmlModal({ open, nfeId, onClose, onEnviado }: Props
                   <label className="erp-label" htmlFor="envio-email-para">
                     Para
                   </label>
+                  {dados.aviso_sem_email_cliente ? (
+                    <p className="mt-1 text-xs text-muted-foreground">{dados.aviso_sem_email_cliente}</p>
+                  ) : null}
                   <input
                     id="envio-email-para"
                     className="erp-input mt-1 w-full"
