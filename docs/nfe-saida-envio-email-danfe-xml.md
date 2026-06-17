@@ -18,21 +18,40 @@ Envio **manual** dos arquivos da NF-e autorizada (DANFE PDF + XML autorizado) pa
 
 ## Configuração SMTP (`.env`)
 
-Use apenas placeholders no `.env.example`. Valores reais ficam no `.env` do servidor:
+Use apenas placeholders no `.env.example`. Valores reais ficam no `.env` do servidor (nunca commitar senha ou host de produção).
+
+O Django lê as variáveis em `backend/nexus_erp/settings.py` na inicialização do backend. Após alterar o `.env`, recrie ou reinicie o container:
+
+```bash
+docker compose up -d --force-recreate backend
+# ou
+docker compose restart backend
+```
 
 | Variável | Descrição |
 |----------|-----------|
 | `EMAIL_BACKEND` | Ex.: `django.core.mail.backends.smtp.EmailBackend` |
-| `EMAIL_HOST` | Servidor SMTP |
-| `EMAIL_PORT` | Porta (ex.: 587) |
+| `EMAIL_HOST` | Servidor SMTP (ex.: `mail.example.com`) |
+| `EMAIL_PORT` | Porta (ex.: `25` sem TLS, `587` com STARTTLS) |
 | `EMAIL_HOST_USER` | Usuário SMTP |
 | `EMAIL_HOST_PASSWORD` | Senha SMTP |
-| `EMAIL_USE_TLS` | `true` / `false` |
-| `EMAIL_USE_SSL` | `true` / `false` |
-| `DEFAULT_FROM_EMAIL` | Remetente padrão |
-| `NEXUS_EMAIL_OPERACIONAL` | Remetente operacional (DANFE/XML) |
+| `EMAIL_USE_TLS` | `true` / `false` (STARTTLS) |
+| `EMAIL_USE_SSL` | `true` / `false` (SSL implícito) |
+| `DEFAULT_FROM_EMAIL` | Remetente padrão (fallback: `EMAIL_HOST_USER`) |
+| `NEXUS_EMAIL_OPERACIONAL` | Remetente do envio DANFE/XML (fallback: `DEFAULT_FROM_EMAIL`) |
 
-Em desenvolvimento, `EMAIL_BACKEND=console` envia para o log do backend.
+Verificar carga das variáveis:
+
+```bash
+docker compose exec backend python manage.py shell -c "
+from django.conf import settings
+print('EMAIL_HOST=', settings.EMAIL_HOST)
+print('EMAIL_PORT=', settings.EMAIL_PORT)
+print('PASSWORD_SET=', bool(settings.EMAIL_HOST_PASSWORD))
+"
+```
+
+Em desenvolvimento local, pode usar `EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend` para logar no stdout do backend em vez de enviar SMTP real.
 
 ## API
 

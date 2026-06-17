@@ -49,6 +49,7 @@ from apps.financeiro.views import (
     financeiro_relatorio_fornecedores_pdf,
     financeiro_resumo_operacional,
 )
+from apps.expedicao.views import ExpedicaoViewSet
 from apps.corridas.views import CorridaViewSet
 from apps.fiscal.nfe_integracao.views import NFeSefazIntegracaoViewSet
 from apps.fiscal.views import (
@@ -119,6 +120,7 @@ router.register(r'roscas-conexao', RoscaConexaoViewSet, basename='roscaconexao')
 router.register(r'schedules-espessura', ScheduleEspessuraViewSet, basename='scheduleespessura')
 router.register(r'polegadas', PolegadaViewSet, basename='polegada')
 router.register(r'ncms', NcmViewSet, basename='ncm')
+router.register(r'expedicoes', ExpedicaoViewSet, basename='expedicao')
 router.register(r'corridas', CorridaViewSet, basename='corrida')
 router.register(r'regras-fiscais', RegraFiscalViewSet, basename='regrafiscal')
 router.register(r'regras-fiscais-entrada', RegraFiscalEntradaViewSet, basename='regrafiscal-entrada')

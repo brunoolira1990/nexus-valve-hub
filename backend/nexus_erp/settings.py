@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     'apps.financeiro',
     'apps.relatorios',
     'apps.core',
+    'apps.expedicao',
 ]
 
 MIDDLEWARE = [
@@ -182,6 +183,41 @@ NFE_PRODUCAO_HABILITADA = os.environ.get('NFE_PRODUCAO_HABILITADA', 'false').low
     'true',
     'yes',
 )
+
+
+def _email_env_bool(key: str, default: str = 'False') -> bool:
+    """Interpreta variáveis SMTP booleanas do ambiente (1/true/yes/on)."""
+    return os.getenv(key, default).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def _email_env_int(key: str, default: str) -> int:
+    """Interpreta porta SMTP do ambiente com fallback seguro."""
+    raw = (os.getenv(key, default) or default).strip()
+    try:
+        return int(raw)
+    except ValueError:
+        return int(default)
+
+
+# E-mail operacional (envio manual DANFE/XML NF-e) — valores reais apenas no .env do servidor
+EMAIL_BACKEND = os.getenv(
+    'EMAIL_BACKEND',
+    'django.core.mail.backends.smtp.EmailBackend',
+)
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'localhost').strip()
+EMAIL_PORT = _email_env_int('EMAIL_PORT', '25')
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '').strip()
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '').strip()
+EMAIL_USE_TLS = _email_env_bool('EMAIL_USE_TLS', 'False')
+EMAIL_USE_SSL = _email_env_bool('EMAIL_USE_SSL', 'False')
+DEFAULT_FROM_EMAIL = os.getenv(
+    'DEFAULT_FROM_EMAIL',
+    EMAIL_HOST_USER or 'webmaster@localhost',
+).strip()
+NEXUS_EMAIL_OPERACIONAL = os.getenv(
+    'NEXUS_EMAIL_OPERACIONAL',
+    DEFAULT_FROM_EMAIL,
+).strip()
 
 # ERP 4.0.13.7.2 — testes só em banco isolado (test_*)
 TEST_RUNNER = 'nexus_erp.test_runner.NexusDiscoverRunner'
