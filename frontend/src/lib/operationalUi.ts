@@ -78,6 +78,10 @@ export const PROPOSTA_STATUS_LABELS: Record<string, string> = {
   ENVIADA: 'Enviada',
   APROVADA: 'Aprovada',
   CONVERTIDA: 'Convertida em pedido',
+  PARCIALMENTE_CONVERTIDA: 'Parcialmente convertida',
+  REABERTA: 'Reaberta / em negociação',
+  PERDIDA: 'Perdida',
+  PERDIDO: 'Perdida',
   RECUSADA: 'Recusada',
   CANCELADA: 'Cancelada',
 };

@@ -1469,6 +1469,10 @@ export interface ItemProposta {
   valor_carga_saida?: number;
   estrategia_formacao?: 'margem' | 'markup';
   alvo_percentual?: number;
+  status_comercial?: string;
+  pedido_venda_id?: number | null;
+  pedido_venda_numero?: string;
+  pode_selecionar_para_pedido?: boolean;
 }
 
 export type ColaboradorFuncao =
@@ -1609,7 +1613,19 @@ export interface Proposta {
   pedido_venda_id?: number | null;
   pedido_venda_numero?: string;
   pode_converter_em_pedido?: boolean;
+  pode_gerar_pedido?: boolean;
+  requer_recuperacao?: boolean;
+  pedidos_gerados_resumo?: { id: number; numero: string; status: string }[];
+  itens_pendentes_conversao?: number;
   itens: ItemProposta[];
+}
+
+export type AcaoItensNaoSelecionados = 'MANTER_PENDENTE' | 'CANCELAR';
+
+export interface GerarPedidoPropostaPayload {
+  itens: { proposta_item_id: number }[];
+  acao_itens_nao_selecionados: AcaoItensNaoSelecionados;
+  observacao?: string;
 }
 
 /** Resposta de POST /api/propostas/{id}/converter-pedido/ (Propostas 2.1). */
@@ -1623,6 +1639,12 @@ export interface ConverterPropostaPedidoResponse {
   mensagens: string[];
   ja_existia: boolean;
   pedido?: PedidoVenda;
+}
+
+export interface RecuperarPropostaResponse {
+  proposta_id: number;
+  proposta_status: string;
+  mensagem: string;
 }
 
 export interface ItemPedido {

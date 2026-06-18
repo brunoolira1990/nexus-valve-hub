@@ -33,7 +33,8 @@ import { buildDueDates, parsePaymentCondition } from '@/lib/paymentTerms';
 import { previewCondicaoPagamento } from '@/lib/condicaoPagamento';
 import { formatDateBr } from '@/lib/dateBr';
 import { DateBrInput } from '@/components/comercial/DateBrInput';
-import { ComercialModalSection } from '@/components/comercial/ComercialModalSection';
+import { GerarPedidoPropostaModal } from '@/components/comercial/GerarPedidoPropostaModal';
+import { RecuperarPropostaModal } from '@/components/comercial/RecuperarPropostaModal';
 import { CondicaoPagamentoResumo } from '@/components/comercial/CondicaoPagamentoResumo';
 import { ClienteComercialField } from '@/components/comercial/ClienteComercialField';
 import { ProdutoComercialField } from '@/components/comercial/ProdutoComercialField';
@@ -77,12 +78,20 @@ import {
   MENSAGEM_COMERCIAL_PADRAO,
   STATUS_PROPOSTA_CONVERTIDA,
   STATUS_PROPOSTA_INICIAL,
+  STATUS_PROPOSTA_PARCIALMENTE_CONVERTIDA,
+  STATUS_PROPOSTA_REABERTA,
   VALIDADE_DIAS_PADRAO,
   dataHojeIso,
   diasValidadeEntreDatas,
   validadeIsoFromDias,
 } from '@/lib/comercialFormDefaults';
-import { propostaTemPedidoGerado, statusPropostaUi } from '@/lib/propostaStatus';
+import {
+  propostaPodeGerarPedido,
+  propostaRequerRecuperacao,
+  propostaTemPedidoGerado,
+  propostaTotalmenteConvertida,
+  statusPropostaUi,
+} from '@/lib/propostaStatus';
 import { usePaginatedList } from '@/hooks/usePaginatedList';
 import { PaginationControls } from '@/components/list/PaginationControls';
 import { FilterBar } from '@/components/list/FilterBar';
@@ -280,6 +289,10 @@ const Propostas = () => {
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
   const [wizardError, setWizardError] = useState<string | null>(null);
   const [wizardLoading, setWizardLoading] = useState(false);
+  const [gerarPedidoOpen, setGerarPedidoOpen] = useState(false);
+  const [gerarPedidoLoading, setGerarPedidoLoading] = useState(false);
+  const [recuperarOpen, setRecuperarOpen] = useState(false);
+  const [recuperarLoading, setRecuperarLoading] = useState(false);
   const [wizardProposta, setWizardProposta] = useState<Proposta | null>(null);
   const [wizardClienteId, setWizardClienteId] = useState<number | null>(null);
   const [novoClienteNome, setNovoClienteNome] = useState('');
@@ -850,27 +863,75 @@ const Propostas = () => {
     return updated;
   };
 
+  const abrirPedidoPorId = (pedidoId: number) => {
+    navigate(`/pedidos-venda?pedido=${pedidoId}`);
+  };
+
   const abrirPedidoDaProposta = (proposta: Pick<Proposta, 'pedido_venda_id' | 'pedido_venda_numero'>) => {
     if (!proposta.pedido_venda_id) return;
-    navigate(`/pedidos-venda?pedido=${proposta.pedido_venda_id}`);
+    abrirPedidoPorId(proposta.pedido_venda_id);
+  };
+
+  const abrirGerarPedidoModal = (proposta: Proposta) => {
+    setEditing(proposta);
+    setGerarPedidoOpen(true);
+  };
+
+  const confirmarGerarPedido = async (payload: {
+    itens: { proposta_item_id: number }[];
+    acao_itens_nao_selecionados: 'MANTER_PENDENTE' | 'CANCELAR';
+    observacao: string;
+  }) => {
+    if (!editing?.id) return;
+    setGerarPedidoLoading(true);
+    try {
+      const r = await propostasService.gerarPedido(editing.id, payload);
+      setGerarPedidoOpen(false);
+      const p = await propostasService.getById(editing.id);
+      setEditing(p);
+      await load();
+      const abrir = window.confirm(`Pedido de Venda nº ${r.numero} gerado com sucesso.\n\nDeseja abrir o pedido agora?`);
+      if (abrir) abrirPedidoPorId(r.pedido_id);
+    } catch (e) {
+      alert(apiErrorMessage(e, { fallback: 'Não foi possível gerar o pedido de venda.' }));
+    } finally {
+      setGerarPedidoLoading(false);
+    }
+  };
+
+  const confirmarRecuperarProposta = async (motivo: string) => {
+    if (!editing?.id) return;
+    setRecuperarLoading(true);
+    try {
+      const r = await propostasService.recuperar(editing.id, { motivo });
+      const p = await propostasService.getById(editing.id);
+      setEditing(p);
+      setRecuperarOpen(false);
+      await load();
+      alert(r.mensagem);
+    } catch (e) {
+      alert(apiErrorMessage(e, { fallback: 'Não foi possível recuperar a proposta.' }));
+    } finally {
+      setRecuperarLoading(false);
+    }
   };
 
   const startWizard = async (proposta: Proposta) => {
-    if (propostaTemPedidoGerado(proposta)) {
+    if (propostaRequerRecuperacao(proposta)) {
+      setEditing(proposta);
+      setRecuperarOpen(true);
+      return;
+    }
+    if (propostaTotalmenteConvertida(proposta)) {
       if (proposta.pedido_venda_id) {
         abrirPedidoDaProposta(proposta);
         return;
       }
-      try {
-        const current = await propostasService.getById(proposta.id);
-        if (current.pedido_venda_id) {
-          abrirPedidoDaProposta(current);
-          return;
-        }
-      } catch {
-        /* segue para alerta */
-      }
-      alert('Esta proposta já foi convertida em pedido de venda.');
+      alert('Esta proposta já foi convertida integralmente em pedido de venda.');
+      return;
+    }
+    if (propostaPodeGerarPedido(proposta)) {
+      abrirGerarPedidoModal(proposta);
       return;
     }
     setWizardOpen(true);
@@ -1046,7 +1107,8 @@ const Propostas = () => {
   const itensResolvidos = (wizardProposta?.itens.length ?? 0) - itensPendentes.length;
   const podeConverter = Boolean(
     wizardProposta &&
-      !propostaTemPedidoGerado(wizardProposta) &&
+      !propostaTotalmenteConvertida(wizardProposta) &&
+      !propostaRequerRecuperacao(wizardProposta) &&
       clienteResolvido &&
       itensPendentes.length === 0,
   );
@@ -1057,7 +1119,13 @@ const Propostas = () => {
     setWizardLoading(true);
     setWizardError(null);
     try {
-      const r = await propostasService.convertToPedido(wizardProposta.id);
+      const ids = wizardProposta.itens
+        .filter((it) => it.pode_selecionar_para_pedido !== false && it.status_comercial !== 'CONVERTIDO_EM_PEDIDO')
+        .map((it) => it.id);
+      const r = await propostasService.gerarPedido(wizardProposta.id, {
+        itens: ids.map((id) => ({ proposta_item_id: id })),
+        acao_itens_nao_selecionados: 'MANTER_PENDENTE',
+      });
       setWizardOpen(false);
       await load();
       alert(`Pedido de venda ${r.numero} criado com sucesso (${r.itens_criados} itens).`);
@@ -1100,21 +1168,6 @@ const Propostas = () => {
     }
   };
 
-  const convertirEmPedido = async () => {
-    if (!editing?.id) return;
-    if (!confirm(MSG_CONFIRMACAO_CONVERTER_PEDIDO)) return;
-    try {
-      const r = await propostasService.convertToPedido(editing.id);
-      const p = await propostasService.getById(editing.id);
-      setEditing(p);
-      await load();
-      const extra = r.mensagens?.length ? `\n\n${r.mensagens.join('\n')}` : '';
-      alert(`Pedido de venda ${r.numero} criado com sucesso (${r.itens_criados} itens).${extra}`);
-    } catch (e) {
-      alert(apiErrorMessage(e, { fallback: 'Não foi possível converter a proposta em pedido de venda.' }));
-    }
-  };
-
   const condicaoPreview = previewCondicaoPagamento(form.condicao_pagamento_texto, form.data);
   const isNovaProposta = !editing;
   const usaCenarioUi = propostaUsaMotorCenario(form, { isNew: isNovaProposta });
@@ -1124,13 +1177,18 @@ const Propostas = () => {
     { value: 'Aprovada', label: 'Aprovada' },
     { value: 'Rejeitada', label: 'Rejeitada' },
   ];
-  if (editing && propostaTemPedidoGerado(editing)) {
+  if (editing && propostaTotalmenteConvertida(editing)) {
     statusOpcoesProposta.unshift({ value: STATUS_PROPOSTA_CONVERTIDA, label: 'Convertida' });
+  } else if (editing && propostaTemPedidoGerado(editing)) {
+    statusOpcoesProposta.unshift({ value: STATUS_PROPOSTA_PARCIALMENTE_CONVERTIDA, label: 'Parcialmente convertida' });
+  }
+  if (editing && (editing.status || '').toUpperCase() === STATUS_PROPOSTA_REABERTA) {
+    statusOpcoesProposta.unshift({ value: STATUS_PROPOSTA_REABERTA, label: 'Reaberta' });
   }
   if (editing && ['Pendente', 'pendente'].includes(editing.status)) {
     statusOpcoesProposta.push({ value: 'Pendente', label: 'Pendente (legado)' });
   }
-  const propostaConvertidaNoModal = Boolean(editing && propostaTemPedidoGerado(editing));
+  const propostaConvertidaNoModal = Boolean(editing && propostaTotalmenteConvertida(editing));
   const cenarioSelecionado =
     cenariosSaida.find((c) => c.id === form.cenario_fiscal_saida_id) ??
     cenariosSaida.find((c) => c.padrao) ??
@@ -1252,6 +1310,8 @@ const Propostas = () => {
               { value: 'Aprovada', label: 'Aprovada' },
               { value: 'Rejeitada', label: 'Rejeitada' },
               { value: 'CONVERTIDA', label: 'Convertida' },
+              { value: STATUS_PROPOSTA_PARCIALMENTE_CONVERTIDA, label: 'Parcialmente convertida' },
+              { value: STATUS_PROPOSTA_REABERTA, label: 'Reaberta' },
             ],
           },
         ]}
@@ -1277,7 +1337,8 @@ const Propostas = () => {
             ) : (
             items.map(e => {
               const statusUi = statusPropostaUi(e);
-              const jaConvertida = propostaTemPedidoGerado(e);
+              const temPedido = propostaTemPedidoGerado(e);
+              const podeGerar = propostaPodeGerarPedido(e);
               return (
               <tr key={e.id}>
                 <td className="font-medium">{e.numero}</td><td>{e.cliente_nome || e.cliente_avulso_nome || 'Cliente avulso'}</td><td>{formatDateBr(e.data)}</td><td>{formatDateBr(e.validade)}</td><td>{e.vendedor_nome || e.vendedor || '—'}</td>
@@ -1285,7 +1346,7 @@ const Propostas = () => {
                 <td>{formatMoneyBr(e.valor_total)}</td>
                 <td className="text-right">
                   <div className="flex items-center justify-end gap-1">
-                    {jaConvertida ? (
+                    {temPedido && !podeGerar ? (
                       <button
                         type="button"
                         onClick={() => abrirPedidoDaProposta(e)}
@@ -1299,7 +1360,7 @@ const Propostas = () => {
                         type="button"
                         onClick={() => startWizard(e)}
                         className="erp-btn-ghost erp-btn-sm"
-                        title="Converter em pedido"
+                        title={podeGerar ? 'Gerar pedido de venda' : 'Converter em pedido'}
                       >
                         <ShoppingCart className="h-4 w-4" />
                       </button>
@@ -2334,38 +2395,69 @@ const Propostas = () => {
         {editing?.id ? (
           <div className="mt-6 rounded-md border border-border bg-muted/30 p-4">
             <p className="text-sm font-medium">Pedido de venda</p>
-            {propostaTemPedidoGerado(editing) ? (
-              <div className="mt-2 flex flex-wrap items-center gap-3">
-                <span className="erp-badge-success">Pedido de venda gerado</span>
-                <span className="text-sm text-muted-foreground">
-                  {editing.pedido_venda_numero || (editing.pedido_venda_id ? `PV #${editing.pedido_venda_id}` : '—')}
-                </span>
-                {editing.pedido_venda_id ? (
-                  <button
-                    type="button"
-                    className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1"
-                    onClick={() => abrirPedidoDaProposta(editing)}
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                    Abrir pedido de venda
-                  </button>
-                ) : null}
-              </div>
-            ) : editing.pode_converter_em_pedido ? (
+            {propostaRequerRecuperacao(editing) ? (
               <div className="mt-2 space-y-2">
-                <p className="text-xs text-muted-foreground">
-                  Esta ação cria um Pedido de Venda a partir da proposta aprovada. O faturamento/NF-e será tratado em
-                  etapa posterior.
+                <p className="text-xs text-amber-800 dark:text-amber-200">
+                  Esta proposta está cancelada/perdida. Para gerar Pedido de Venda, recupere a proposta primeiro.
                 </p>
-                <button type="button" className="erp-btn-primary inline-flex items-center gap-2" onClick={convertirEmPedido}>
-                  <ShoppingCart className="h-4 w-4" />
-                  Converter em pedido
+                <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => setRecuperarOpen(true)}>
+                  Recuperar proposta
                 </button>
               </div>
+            ) : propostaTotalmenteConvertida(editing) ? (
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <span className="erp-badge-success">Convertida integralmente</span>
+                {(editing.pedidos_gerados_resumo?.length ? editing.pedidos_gerados_resumo : editing.pedido_venda_id ? [{ id: editing.pedido_venda_id, numero: editing.pedido_venda_numero || '', status: '' }] : []).map((pv) => (
+                  <button
+                    key={pv.id}
+                    type="button"
+                    className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1"
+                    onClick={() => abrirPedidoPorId(pv.id)}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    {pv.numero || `PV #${pv.id}`}
+                  </button>
+                ))}
+              </div>
             ) : (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Vincule cliente cadastrado e produtos em todos os itens para habilitar a conversão em pedido de venda.
-              </p>
+              <div className="mt-2 space-y-3">
+                {propostaTemPedidoGerado(editing) ? (
+                  <div className="flex flex-wrap gap-2">
+                    <span className="erp-badge-warning">Parcialmente convertida</span>
+                    {(editing.pedidos_gerados_resumo || []).map((pv) => (
+                      <button
+                        key={pv.id}
+                        type="button"
+                        className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1"
+                        onClick={() => abrirPedidoPorId(pv.id)}
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        {pv.numero}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                {propostaPodeGerarPedido(editing) ? (
+                  <>
+                    <p className="text-xs text-muted-foreground">
+                      Gere um pedido com todos ou parte dos itens. Itens restantes podem ficar pendentes ou ser
+                      cancelados/perdidos.
+                    </p>
+                    <button
+                      type="button"
+                      className="erp-btn-primary inline-flex items-center gap-2"
+                      onClick={() => setGerarPedidoOpen(true)}
+                    >
+                      <ShoppingCart className="h-4 w-4" />
+                      Gerar Pedido de Venda
+                    </button>
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Vincule cliente cadastrado e produtos em todos os itens pendentes para habilitar a geração de pedido.
+                  </p>
+                )}
+              </div>
             )}
           </div>
         ) : null}
@@ -2552,7 +2644,8 @@ const Propostas = () => {
                   <p className="text-sm"><span className="font-medium">Cliente cadastrado:</span> {clienteResolvido ? 'OK' : 'Pendente'}</p>
                   <p className="text-sm"><span className="font-medium">Itens vinculados:</span> {itensPendentes.length === 0 ? 'OK' : `${itensPendentes.length} pendente(s)`}</p>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    A conversão cria um Pedido de Venda com snapshot da proposta e impede nova conversão da mesma proposta.
+                    A conversão cria um Pedido de Venda com os itens pendentes. É possível gerar pedidos parciais
+                    adicionais depois, enquanto houver itens pendentes na proposta.
                   </p>
                 </div>
               </div>
@@ -2585,6 +2678,20 @@ const Propostas = () => {
           </div>
         ) : null}
       </Modal>
+
+      <GerarPedidoPropostaModal
+        open={gerarPedidoOpen}
+        proposta={editing}
+        loading={gerarPedidoLoading}
+        onClose={() => setGerarPedidoOpen(false)}
+        onConfirm={confirmarGerarPedido}
+      />
+      <RecuperarPropostaModal
+        open={recuperarOpen}
+        loading={recuperarLoading}
+        onClose={() => setRecuperarOpen(false)}
+        onConfirm={confirmarRecuperarProposta}
+      />
     </div>
   );
 };

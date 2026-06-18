@@ -134,6 +134,10 @@ class ItemPropostaSerializer(serializers.ModelSerializer):
     pis_cofins_base_deduz_icms = serializers.SerializerMethodField(read_only=True)
     deduzir_icms_base_pis = serializers.SerializerMethodField(read_only=True)
     deduzir_icms_base_cofins = serializers.SerializerMethodField(read_only=True)
+    status_comercial = serializers.SerializerMethodField(read_only=True)
+    pedido_venda_id = serializers.SerializerMethodField(read_only=True)
+    pedido_venda_numero = serializers.SerializerMethodField(read_only=True)
+    pode_selecionar_para_pedido = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = ItemProposta
@@ -194,6 +198,10 @@ class ItemPropostaSerializer(serializers.ModelSerializer):
             'valor_carga_saida',
             'alertas_conversao',
             'snapshot_produto',
+            'status_comercial',
+            'pedido_venda_id',
+            'pedido_venda_numero',
+            'pode_selecionar_para_pedido',
         )
 
     def validate(self, attrs):
@@ -338,6 +346,28 @@ class ItemPropostaSerializer(serializers.ModelSerializer):
         if obj.produto_id:
             return obj.produto.descricao
         return obj.descricao_avulsa or 'Item avulso'
+
+    def get_status_comercial(self, obj):
+        from apps.comercial.proposta_comercial_status import status_item_proposta
+
+        return status_item_proposta(obj)
+
+    def get_pedido_venda_id(self, obj):
+        from apps.comercial.proposta_comercial_status import pedido_vinculado_item
+
+        pid, _ = pedido_vinculado_item(obj)
+        return pid
+
+    def get_pedido_venda_numero(self, obj):
+        from apps.comercial.proposta_comercial_status import pedido_vinculado_item
+
+        _, pnum = pedido_vinculado_item(obj)
+        return pnum
+
+    def get_pode_selecionar_para_pedido(self, obj):
+        from apps.comercial.proposta_comercial_status import item_pode_converter
+
+        return item_pode_converter(obj)
 
     def _resultado_fiscal_do_item(self, obj: ItemProposta):
         cache = self.context.setdefault('_fiscal_item_cache', {})
@@ -666,6 +696,10 @@ class PropostaSerializer(serializers.ModelSerializer):
     pedido_venda_id = serializers.SerializerMethodField(read_only=True)
     pedido_venda_numero = serializers.SerializerMethodField(read_only=True)
     pode_converter_em_pedido = serializers.SerializerMethodField(read_only=True)
+    pode_gerar_pedido = serializers.SerializerMethodField(read_only=True)
+    requer_recuperacao = serializers.SerializerMethodField(read_only=True)
+    pedidos_gerados_resumo = serializers.SerializerMethodField(read_only=True)
+    itens_pendentes_conversao = serializers.SerializerMethodField(read_only=True)
     vendedor_id = serializers.PrimaryKeyRelatedField(
         queryset=Vendedor.objects.all(),
         source='vendedor_ref',
@@ -695,6 +729,10 @@ class PropostaSerializer(serializers.ModelSerializer):
             'pedido_venda_id',
             'pedido_venda_numero',
             'pode_converter_em_pedido',
+            'pode_gerar_pedido',
+            'requer_recuperacao',
+            'pedidos_gerados_resumo',
+            'itens_pendentes_conversao',
             'data',
             'validade',
             'validade_dias',
@@ -758,12 +796,38 @@ class PropostaSerializer(serializers.ModelSerializer):
         pedido = obj.pedidos_gerados.order_by('id').first()
         return pedido.numero if pedido else ''
 
+    def get_pedidos_gerados_resumo(self, obj):
+        return [
+            {'id': p.pk, 'numero': p.numero, 'status': p.status}
+            for p in obj.pedidos_gerados.order_by('id')
+        ]
+
+    def get_itens_pendentes_conversao(self, obj):
+        from apps.comercial.proposta_comercial_status import itens_pendentes_conversao
+
+        return len(itens_pendentes_conversao(obj))
+
+    def get_requer_recuperacao(self, obj):
+        from apps.comercial.proposta_comercial_status import proposta_requer_recuperacao
+
+        return proposta_requer_recuperacao(obj)
+
+    def get_pode_gerar_pedido(self, obj):
+        from apps.comercial.converter_proposta_pedido import validar_proposta_para_conversao
+        from apps.comercial.proposta_comercial_status import proposta_requer_recuperacao
+
+        if proposta_requer_recuperacao(obj):
+            return False
+        ok, _ = validar_proposta_para_conversao(obj, parcial=True)
+        return ok
+
     def get_pode_converter_em_pedido(self, obj):
         from apps.comercial.converter_proposta_pedido import validar_proposta_para_conversao
+        from apps.comercial.proposta_comercial_status import proposta_requer_recuperacao, proposta_totalmente_convertida
 
-        if obj.pedidos_gerados.exists():
+        if proposta_requer_recuperacao(obj) or proposta_totalmente_convertida(obj):
             return False
-        ok, _ = validar_proposta_para_conversao(obj)
+        ok, _ = validar_proposta_para_conversao(obj, parcial=bool(obj.pedidos_gerados.exists()))
         return ok
 
     def get_vendedor_nome(self, obj):
@@ -1079,7 +1143,8 @@ class PedidoVendaSerializer(serializers.ModelSerializer):
             attrs['empresa_emitente'] = emp
         proposta = attrs.get('proposta', self.instance.proposta if self.instance else None)
         if proposta:
-            if not self.instance and PedidoVenda.objects.filter(proposta=proposta).exists():
+            allow_multi = self.context.get('allow_multi_pedido_proposta')
+            if not self.instance and PedidoVenda.objects.filter(proposta=proposta).exists() and not allow_multi:
                 raise serializers.ValidationError(
                     {'proposta_id': 'Esta proposta já foi convertida em pedido de venda.'}
                 )

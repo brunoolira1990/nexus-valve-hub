@@ -6,6 +6,8 @@ export const VALIDADE_DIAS_PADRAO = 15;
 export const MENSAGEM_COMERCIAL_PADRAO = 'A regra é não perder pedidos. Estamos abertos à negociação.';
 export const STATUS_PROPOSTA_INICIAL = 'PENDENTE';
 export const STATUS_PROPOSTA_CONVERTIDA = 'CONVERTIDA';
+export const STATUS_PROPOSTA_PARCIALMENTE_CONVERTIDA = 'PARCIALMENTE_CONVERTIDA';
+export const STATUS_PROPOSTA_REABERTA = 'REABERTA';
 export const STATUS_PEDIDO_VENDA_INICIAL = 'ABERTO';
 export const CONDICAO_PAGAMENTO_PADRAO = '30';
 

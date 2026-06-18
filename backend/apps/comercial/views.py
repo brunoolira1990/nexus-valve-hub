@@ -7,7 +7,13 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
 
-from .converter_proposta_pedido import converter_proposta_em_pedido_venda
+from .converter_proposta_pedido import (
+    ACAO_CANCELAR,
+    ACAO_MANTER_PENDENTE,
+    converter_proposta_em_pedido_venda,
+    gerar_pedido_venda_de_proposta,
+    recuperar_proposta_comercial,
+)
 from apps.fiscal.nfe_saida_from_faturamento import gerar_nfe_saida_from_faturamento
 
 from .faturamento_pedido_venda import (
@@ -51,7 +57,12 @@ class PropostaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         Proposta.objects.select_related(
             'cliente', 'empresa_emitente', 'cenario_fiscal_saida', 'vendedor_ref',
         )
-        .prefetch_related('itens__produto', 'itens__proposta__cenario_fiscal_saida', 'pedidos_gerados')
+        .prefetch_related(
+            'itens__produto',
+            'itens__proposta__cenario_fiscal_saida',
+            'itens__itens_pedido_venda__pedido',
+            'pedidos_gerados',
+        )
         .all()
     )
     serializer_class = PropostaSerializer
@@ -133,6 +144,43 @@ class PropostaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         except ValueError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(resultado, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='gerar-pedido')
+    def gerar_pedido(self, request, pk=None):
+        proposta = self.get_object()
+        data = request.data if isinstance(request.data, dict) else {}
+        itens = data.get('itens')
+        acao = (data.get('acao_itens_nao_selecionados') or ACAO_MANTER_PENDENTE).strip().upper()
+        if acao not in (ACAO_MANTER_PENDENTE, ACAO_CANCELAR):
+            return Response(
+                {'detail': 'acao_itens_nao_selecionados deve ser MANTER_PENDENTE ou CANCELAR.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            resultado = gerar_pedido_venda_de_proposta(
+                proposta,
+                itens_payload=itens if isinstance(itens, list) else None,
+                acao_itens_nao_selecionados=acao,
+                observacao=str(data.get('observacao') or ''),
+                usuario=request.user,
+            )
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(resultado, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='recuperar')
+    def recuperar(self, request, pk=None):
+        proposta = self.get_object()
+        data = request.data if isinstance(request.data, dict) else {}
+        try:
+            resultado = recuperar_proposta_comercial(
+                proposta,
+                motivo=str(data.get('motivo') or ''),
+                usuario=request.user,
+            )
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(resultado, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], url_path='homologar-cenario-fiscal/iniciar')
     def homologar_cenario_fiscal_iniciar(self, request, pk=None):
