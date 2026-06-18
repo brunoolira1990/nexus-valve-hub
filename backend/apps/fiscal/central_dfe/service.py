@@ -126,17 +126,41 @@ def normalizar_cnpj(valor: str | None) -> str:
     return ''.join(c for c in str(valor or '') if c.isdigit())
 
 
+def _scalar_query_param(val: Any, default: str = '') -> str:
+    """Normaliza valor de QueryDict (dict() retorna listas por chave)."""
+    if val is None:
+        return default
+    if isinstance(val, list):
+        return str(val[0]).strip() if val else default
+    return str(val).strip()
+
+
+def normalizar_params_central_dfe(params: dict[str, Any]) -> dict[str, str]:
+    return {str(k): _scalar_query_param(v) for k, v in (params or {}).items()}
+
+
+class EmpresaCentralDfeError(Exception):
+    def __init__(self, mensagem: str, codigo: str = 'EMPRESA_INVALIDA') -> None:
+        super().__init__(mensagem)
+        self.mensagem = mensagem
+        self.codigo = codigo
+
+
 def resolver_empresa_central(params: dict[str, Any]) -> Empresa | None:
-    raw = params.get('empresa_id')
+    raw = _scalar_query_param(params.get('empresa_id'))
     if raw:
         try:
             return Empresa.objects.get(pk=int(raw))
-        except (Empresa.DoesNotExist, TypeError, ValueError):
-            pass
+        except Empresa.DoesNotExist as exc:
+            raise EmpresaCentralDfeError('Empresa não encontrada.') from exc
+        except (TypeError, ValueError) as exc:
+            raise EmpresaCentralDfeError('empresa_id inválido.') from exc
     return Empresa.objects.order_by('pk').first()
 
 
 def parse_filtros_central_dfe(params: dict[str, Any]) -> FiltrosCentralDfe:
+    p = normalizar_params_central_dfe(params)
+
     def _date(raw: str | None) -> date | None:
         if not raw:
             return None
@@ -181,38 +205,38 @@ def parse_filtros_central_dfe(params: dict[str, Any]) -> FiltrosCentralDfe:
             return None
 
     empresa_id = None
-    if params.get('empresa_id'):
+    if p.get('empresa_id'):
         try:
-            empresa_id = int(params.get('empresa_id'))
+            empresa_id = int(p.get('empresa_id'))
         except (TypeError, ValueError):
             empresa_id = None
 
-    incluir_tratados = str(params.get('incluir_tratados', '')).lower() in {'1', 'true', 'sim'}
-    ordering = (params.get('ordering') or '-data_emissao').strip() or '-data_emissao'
+    incluir_tratados = p.get('incluir_tratados', '').lower() in {'1', 'true', 'sim'}
+    ordering = p.get('ordering') or '-data_emissao'
 
-    emissao_inicio = _date(params.get('data_emissao_inicio'))
-    emissao_fim = _date(params.get('data_emissao_fim'))
+    emissao_inicio = _date(p.get('data_emissao_inicio'))
+    emissao_fim = _date(p.get('data_emissao_fim'))
     if not emissao_inicio and not emissao_fim:
-        comp_inicio, comp_fim = _competencia(params.get('competencia_emissao') or params.get('competencia'))
+        comp_inicio, comp_fim = _competencia(p.get('competencia_emissao') or p.get('competencia'))
         emissao_inicio = comp_inicio or emissao_inicio
         emissao_fim = comp_fim or emissao_fim
 
     return FiltrosCentralDfe(
         empresa_id=empresa_id,
-        tipo_documento=(params.get('tipo_documento') or '').strip().upper(),
-        status_entrada=(params.get('status_entrada') or '').strip().upper(),
+        tipo_documento=(p.get('tipo_documento') or '').upper(),
+        status_entrada=(p.get('status_entrada') or '').upper(),
         incluir_tratados=incluir_tratados,
         data_emissao_inicio=emissao_inicio,
         data_emissao_fim=emissao_fim,
-        data_importacao_inicio=_date(params.get('data_importacao_inicio')),
-        data_importacao_fim=_date(params.get('data_importacao_fim')),
-        emitente_cnpj=normalizar_cnpj(params.get('emitente_cnpj') or params.get('participante_cnpj')),
-        emitente_nome=(params.get('emitente_nome') or params.get('participante_nome') or '').strip(),
-        chave_acesso=''.join(c for c in str(params.get('chave_acesso') or '') if c.isdigit()),
-        uf=(params.get('uf') or '').strip().upper()[:2],
-        valor_min=_decimal(params.get('valor_min')),
-        valor_max=_decimal(params.get('valor_max')),
-        search=(params.get('search') or '').strip(),
+        data_importacao_inicio=_date(p.get('data_importacao_inicio')),
+        data_importacao_fim=_date(p.get('data_importacao_fim')),
+        emitente_cnpj=normalizar_cnpj(p.get('emitente_cnpj') or p.get('participante_cnpj')),
+        emitente_nome=(p.get('emitente_nome') or p.get('participante_nome') or '').strip(),
+        chave_acesso=''.join(c for c in p.get('chave_acesso', '') if c.isdigit()),
+        uf=(p.get('uf') or '').upper()[:2],
+        valor_min=_decimal(p.get('valor_min')),
+        valor_max=_decimal(p.get('valor_max')),
+        search=(p.get('search') or '').strip(),
         ordering=ordering,
     )
 
@@ -446,12 +470,18 @@ def _match_filtros_pos_query(row: DocumentoCentralDfe, filtros: FiltrosCentralDf
         return False
     if filtros.emitente_nome:
         termo = filtros.emitente_nome.lower()
-        if termo not in row.emitente_nome.lower():
+        if termo not in (row.emitente_nome or '').lower():
             return False
     if filtros.search:
         termo = filtros.search.lower()
         blob = ' '.join(
-            [row.numero, row.chave_acesso, row.emitente_nome, row.tipo_label, row.status_entrada_label],
+            [
+                row.numero or '',
+                row.chave_acesso or '',
+                row.emitente_nome or '',
+                row.tipo_label or '',
+                row.status_entrada_label or '',
+            ],
         ).lower()
         if termo not in blob:
             return False
