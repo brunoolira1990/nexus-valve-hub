@@ -43,6 +43,7 @@ const baseMenuItems: MenuItem[] = [
     { label: 'Pedidos de Venda', path: '/pedidos-venda' },
   ]},
   { label: 'Fiscal', icon: Receipt, children: [
+    { label: 'DF-e Recebidos', path: '/central-dfe' },
     { label: 'NF-e Saída', path: '/nfe-saida' },
     { label: 'SEFAZ — Status serviço', path: '/nfe-sefaz' },
     { label: 'Base NF-e Saída Importada', path: '/nfe-historica-importada' },

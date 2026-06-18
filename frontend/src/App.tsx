@@ -29,6 +29,7 @@ import PedidosCompra from "./pages/PedidosCompra";
 import NFeEntrada from "./pages/NFeEntrada";
 import NFeSaida from "./pages/NFeSaida";
 import NFeSefazIntegracao from "./pages/NFeSefazIntegracao";
+import CentralDfe from "./pages/CentralDfe";
 import NFeHistoricaImportada from "./pages/NFeHistoricaImportada";
 import NFeHistoricaEntradaImportada from "./pages/NFeHistoricaEntradaImportada";
 import NFeEntradaConferenciaPage from "./pages/NFeEntradaConferencia";
@@ -92,6 +93,7 @@ const App = () => (
         <Route path="nfe-saida" element={<NFeSaida />} />
         <Route path="nfe-sefaz" element={<NFeSefazIntegracao />} />
         <Route path="nfe-historica-importada" element={<NFeHistoricaImportada />} />
+        <Route path="central-dfe" element={<CentralDfe />} />
         <Route path="nfe-entrada-historica-importada" element={<NFeHistoricaEntradaImportada />} />
         <Route path="nfe-entrada/:id/conferencia" element={<NFeEntradaConferenciaPage />} />
         <Route path="visao-gerencial-nfe-historica" element={<PainelFiscalGerencialHistorico />} />

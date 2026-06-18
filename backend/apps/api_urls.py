@@ -52,6 +52,8 @@ from apps.financeiro.views import (
 from apps.expedicao.views import ExpedicaoViewSet
 from apps.corridas.views import CorridaViewSet
 from apps.fiscal.nfe_integracao.views import NFeSefazIntegracaoViewSet
+from apps.fiscal.central_dfe.views import CentralDfeViewSet
+from apps.fiscal.dfe_recebidos.views import DfeRecebidosCapturaView
 from apps.fiscal.views import (
     AlocacaoAtendimentoViewSet,
     AtendimentosOperacionaisViewSet,
@@ -156,6 +158,7 @@ router.register(
 router.register(r'cte-entradas', CTeEntradaViewSet, basename='cteentrada')
 router.register(r'cte-historicos-importados', CTeHistoricoImportadoViewSet, basename='cte-hist-importado')
 router.register(r'painel-fiscal-gerencial-historico', PainelFiscalGerencialHistoricoViewSet, basename='painel-fiscal-gerencial')
+router.register(r'central-dfe', CentralDfeViewSet, basename='central-dfe')
 router.register(r'estoque', EstoqueViewSet, basename='estoque')
 router.register(r'estoque/saldos', EstoqueSaldosViewSet, basename='estoque-saldos')
 router.register(
@@ -186,6 +189,16 @@ router.register(r'financeiro/creditos', CreditoFinanceiroViewSet, basename='fina
 urlpatterns = [
     # Rotas explícitas: garantem endpoints críticos mesmo com runserver --noreload (Docker).
     # Após alterar apps/api_urls.py ou views, reinicie: docker compose restart backend
+    path(
+        'central-dfe/',
+        CentralDfeViewSet.as_view({'get': 'list'}),
+        name='central-dfe-list-explicit',
+    ),
+    path(
+        'dfe-recebidos/capturar/',
+        DfeRecebidosCapturaView.as_view(),
+        name='dfe-recebidos-capturar',
+    ),
     path(
         'pedidos-compra/<int:pk>/pdf/',
         PedidoCompraViewSet.as_view({'get': 'pdf'}),
