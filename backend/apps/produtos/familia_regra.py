@@ -84,6 +84,12 @@ def flags_por_tipo_regra(tipo: str) -> FlagsFamilia:
             usa_polegada_principal=False,
             usa_polegada_secundaria=False,
         ),
+        t.BASE_OD_POLEGADA_ESPESSURA: FlagsFamilia(
+            usa_rosca_conexao=False,
+            usa_schedule=False,
+            usa_polegada_principal=True,
+            usa_polegada_secundaria=False,
+        ),
         t.BASE_DN_MM: FlagsFamilia(
             usa_rosca_conexao=False,
             usa_schedule=False,

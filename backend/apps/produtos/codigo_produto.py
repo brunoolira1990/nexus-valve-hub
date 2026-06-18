@@ -143,6 +143,33 @@ def _format_mm_descricao(val: Decimal | None) -> str:
     return f'{txt.replace(".", ",")}MM'
 
 
+def _format_espessura_mm_comercial(val: Decimal | None) -> str:
+    """Espessura com duas casas decimais e unidade mm (ex.: 1,50 mm)."""
+    if val is None:
+        return ''
+    q = val.quantize(Decimal('0.01'))
+    txt = format(q, 'f')
+    if '.' in txt:
+        inteiro, dec = txt.split('.', 1)
+        dec = dec.ljust(2, '0')[:2]
+        return f'{inteiro},{dec} mm'
+    return f'{txt},00 mm'
+
+
+def _segmento_espessura_mm_codigo(val: Decimal | None, *, width: int = 4) -> str:
+    """Centésimos de mm no código interno (1,50 mm → 0150)."""
+    if val is None:
+        return ''
+    try:
+        n = int((val * Decimal('100')).quantize(Decimal('1')))
+    except Exception:
+        return ''
+    s = str(abs(n))
+    if width > 1 and len(s) <= width:
+        return s.zfill(width)
+    return s
+
+
 def _format_dim_code_piece(val: Decimal | None) -> str:
     if val is None:
         return ''
@@ -334,6 +361,13 @@ def montar_codigo_interno(
             return ''
         return f'{_prefixo_od(fig)}{sep}{od_s}{esp_s}'
 
+    if rule == t.BASE_OD_POLEGADA_ESPESSURA:
+        id_od = _codigo_pol(polegada_principal, width=2)
+        esp_s = _segmento_espessura_mm_codigo(espessura_mm, width=4)
+        if not id_od or not esp_s:
+            return ''
+        return f'{_prefixo_od(fig)}{sep}{id_od}{esp_s}'
+
     return ''
 
 
@@ -487,6 +521,19 @@ def montar_descricao_sugerida(
         if base and mm and tail:
             return _fin(f'{base} {mm} X {tail}')
         return _fin(' '.join([x for x in (base, mm, tail) if x]))
+
+    if td == Td.OD_POLEGADA_X_ESPESSURA:
+        base = _base_descricao_comercial(familia)
+        od_txt = _normalize_spaces((polegada_principal.descricao or '').strip()) if polegada_principal else ''
+        esp_txt = _format_espessura_mm_comercial(espessura_mm)
+        dim = ''
+        if od_txt and esp_txt:
+            dim = f'OD {od_txt} x {esp_txt}'
+        elif od_txt:
+            dim = f'OD {od_txt}'
+        elif esp_txt:
+            dim = esp_txt
+        return _fin(' '.join([x for x in (base, dim) if x]))
 
     if td in (Td.OD_MM, Td.OD_MM_X_ESPESSURA, Td.OD_MM_X_ESPESSURA_X_COMPRIMENTO):
         partes_mm: list[str] = []

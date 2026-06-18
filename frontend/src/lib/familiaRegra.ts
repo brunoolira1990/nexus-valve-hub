@@ -29,6 +29,7 @@ const TABLE: Record<TipoRegraCodigo, FlagsFamilia> = {
   BASE_ROSCA_SCHEDULE_DUAS_POLEGADAS: { usa_rosca_conexao: true, usa_schedule: true, usa_polegada_principal: true, usa_polegada_secundaria: true },
   UNDERSCORE_POLEGADA: { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: true, usa_polegada_secundaria: false },
   BASE_OD_MM_ESPESSURA: { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: false, usa_polegada_secundaria: false },
+  BASE_OD_POLEGADA_ESPESSURA: { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: true, usa_polegada_secundaria: false },
   BASE_DN_MM: { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: false, usa_polegada_secundaria: false },
   BASE_DN_MM_REDUCAO: { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: false, usa_polegada_secundaria: false },
   BASE_BITOLA_POLEGADA: { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: true, usa_polegada_secundaria: false },
@@ -92,6 +93,7 @@ export function labelsCamposObrigatorios(flags: FlagsFamilia, td?: TipoDimension
     extra.push('OD menor (mm)');
   }
   if (td === 'OD_MM') extra.push('Medida OD/mm');
+  if (td === 'OD_POLEGADA_X_ESPESSURA') extra.push('Espessura (mm)');
   if (td === 'OD_MM_X_ROSCA') extra.push('Medida OD/mm');
   const out = [...r, ...extra];
   if (out.length === 0) out.push('Nenhum (código manual no produto)');
@@ -106,6 +108,8 @@ export function hintTipoDimensional(td: TipoDimensional | undefined | null): str
       return 'NPS/SCH — usa Schedule + polegada(s) nominal(is). OD não é NPS/SCH.';
     case 'OD_POLEGADA':
       return 'OD em polegada — medida OD no cadastro mestre de polegadas; sem schedule.';
+    case 'OD_POLEGADA_X_ESPESSURA':
+      return 'OD em polegada + espessura mm — fração preservada na descrição (ex.: OD 1/2" x 1,50 mm).';
     case 'OD_POLEGADA_X_ROSCA':
       return 'OD x Rosca — medida OD + tipo de rosca + medida da rosca; sem schedule.';
     case 'OD_MM':
@@ -149,7 +153,7 @@ export function hintTipoDimensional(td: TipoDimensional | undefined | null): str
 
 export function labelPolegadaPrincipal(td: TipoDimensional | undefined | null): string {
   if (td === 'ESPIGAO_X_FLANGE') return 'Medida do espigão';
-  if (td === 'OD_POLEGADA' || td === 'OD_POLEGADA_X_ROSCA') return 'Medida OD (cadastro mestre)';
+  if (td === 'OD_POLEGADA' || td === 'OD_POLEGADA_X_ESPESSURA' || td === 'OD_POLEGADA_X_ROSCA') return 'Medida OD (cadastro mestre)';
   if (td === 'CANTONEIRA_POLEGADA') return 'Aba em polegada';
   if (td === 'BITOLA_POLEGADA' || td === 'OD_MM_X_ROSCA') return 'Bitola';
   if (td === 'NPS_SCHEDULE' || td === 'NPS') return 'Polegada nominal (NPS)';
@@ -239,6 +243,7 @@ export function sugerirTipoRegraPorDimensional(td: TipoDimensional): TipoRegraCo
   if (td === 'NPS_SCHEDULE') return 'BASE_SCHEDULE_POLEGADA';
   if (td === 'REDUCAO_NPS') return 'BASE_SCHEDULE_DUAS_POLEGADAS';
   if (td === 'OD_POLEGADA') return 'BASE_POLEGADA';
+  if (td === 'OD_POLEGADA_X_ESPESSURA') return 'BASE_OD_POLEGADA_ESPESSURA';
   if (td === 'OD_POLEGADA_X_ROSCA') return 'BASE_ROSCA_DUAS_POLEGADAS';
   if (td === 'OD_MM_X_ESPESSURA' || td === 'OD_MM_X_ESPESSURA_X_COMPRIMENTO') return 'BASE_OD_MM_ESPESSURA';
   if (td === 'NPS_X_ROSCA') return 'BASE_ROSCA_POLEGADA';
@@ -584,12 +589,17 @@ export function requisitosMedidasPermitidasModal(
     return { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: false, usa_polegada_secundaria: false };
   }
 
+  if (tr === 'BASE_OD_POLEGADA_ESPESSURA') {
+    return { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: true, usa_polegada_secundaria: false };
+  }
+
   if (['BASE_DN_MM', 'BASE_DN_MM_REDUCAO', 'BASE_OD_MM', 'BASE_OD_MM_REDUCAO'].includes(tr || '')) {
     return { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: false, usa_polegada_secundaria: false };
   }
 
   const odOuMmSemSchedule: TipoDimensional[] = [
     'OD_POLEGADA',
+    'OD_POLEGADA_X_ESPESSURA',
     'OD_POLEGADA_X_ROSCA',
     'OD_MM',
     'DN_MM',
@@ -637,6 +647,11 @@ export function requisitosMedidasPermitidasModal(
   if (t === 'OD_POLEGADA') {
     r.usa_polegada_principal = true;
     r.usa_polegada_secundaria = false;
+  }
+  if (t === 'OD_POLEGADA_X_ESPESSURA') {
+    r.usa_polegada_principal = true;
+    r.usa_polegada_secundaria = false;
+    r.usa_schedule = false;
   }
   if (t === 'OD_POLEGADA_X_ROSCA') {
     r.usa_rosca_conexao = true;
@@ -688,7 +703,7 @@ export function requisitosMedidasPermitidasModal(
 
 export function tipoMedidaPrincipalPorDimensional(td: TipoDimensional | undefined | null): 'NPS' | 'OD' | undefined {
   if (!td) return undefined;
-  if (td === 'OD_POLEGADA' || td === 'OD_POLEGADA_X_ROSCA') return 'OD';
+  if (td === 'OD_POLEGADA' || td === 'OD_POLEGADA_X_ESPESSURA' || td === 'OD_POLEGADA_X_ROSCA') return 'OD';
   if (
     td === 'NPS' ||
     td === 'NPS_SCHEDULE' ||
@@ -717,4 +732,21 @@ export function tipoMedidaSecundariaPorDimensional(td: TipoDimensional | undefin
   )
     return 'NPS';
   return undefined;
+}
+
+/** Exemplo de código dimensional para prévia no modal de família. */
+export function exemploCodigoDimensionalFamilia(
+  td: TipoDimensional | undefined | null,
+  codigoFigura: string | undefined | null,
+): string | null {
+  const fig = (codigoFigura || 'FIG').trim();
+  if (td === 'OD_POLEGADA_X_ESPESSURA') return `${fig}OD.040150 (OD 1/2" + 1,50 mm)`;
+  if (td === 'NPS_SCHEDULE') return `${fig}.20.XX`;
+  return null;
+}
+
+/** Exemplo de descrição dimensional para prévia no modal de família. */
+export function exemploDescricaoDimensionalFamilia(td: TipoDimensional | undefined | null): string | null {
+  if (td === 'OD_POLEGADA_X_ESPESSURA') return 'OD 1/2" x 1,50 mm';
+  return null;
 }

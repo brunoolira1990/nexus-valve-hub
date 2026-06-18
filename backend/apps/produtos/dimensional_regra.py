@@ -81,7 +81,7 @@ def validar_tipo_dimensional_x_regra(*, tipo_dimensional: str, tipo_regra_codigo
     }:
         return 'Redução NPS/SCH exige regra 6 ou 8 (base + schedule + duas polegadas).'
 
-    if tipo_dimensional in (Td.OD_POLEGADA, Td.OD_POLEGADA_X_ROSCA) and tipo_regra_codigo in sch_rules:
+    if tipo_dimensional in (Td.OD_POLEGADA, Td.OD_POLEGADA_X_ROSCA, Td.OD_POLEGADA_X_ESPESSURA) and tipo_regra_codigo in sch_rules:
         return 'OD não é NPS/SCH: use regra sem schedule no código (por exemplo 1 ou 4).'
 
     if tipo_dimensional == Td.OD_POLEGADA and tipo_regra_codigo not in {
@@ -89,6 +89,12 @@ def validar_tipo_dimensional_x_regra(*, tipo_dimensional: str, tipo_regra_codigo
         Tr.UNDERSCORE_POLEGADA,
     }:
         return 'OD em polegada combina com regra 1 (base + polegada) ou 9 (underscore).'
+
+    if tipo_dimensional == Td.OD_POLEGADA_X_ESPESSURA and tipo_regra_codigo != Tr.BASE_OD_POLEGADA_ESPESSURA:
+        return 'OD polegada + espessura mm exige a regra Base + OD polegada + espessura mm.'
+
+    if tipo_regra_codigo == Tr.BASE_OD_POLEGADA_ESPESSURA and tipo_dimensional != Td.OD_POLEGADA_X_ESPESSURA:
+        return 'A regra Base + OD polegada + espessura exige o tipo dimensional OD polegada + espessura mm.'
 
     if tipo_dimensional == Td.OD_POLEGADA_X_ROSCA and tipo_regra_codigo != Tr.BASE_ROSCA_DUAS_POLEGADAS:
         return 'OD x Rosca exige regra 4 (base + rosca + duas polegadas).'
@@ -247,8 +253,19 @@ def requisitos_efetivos_produto(familia: FamiliaProduto) -> RequisitosEfetivosPr
             r['exige_comprimento_mm'] = True
         return r
 
+    if familia.tipo_regra_codigo == Tr.BASE_OD_POLEGADA_ESPESSURA:
+        r['usa_rosca_conexao'] = False
+        r['usa_schedule'] = False
+        r['usa_polegada_principal'] = True
+        r['usa_polegada_secundaria'] = False
+        r['exige_od_mm'] = False
+        r['exige_espessura_mm'] = True
+        r['incluir_schedule_na_descricao'] = False
+        return r
+
     if td in (
         Td.OD_POLEGADA,
+        Td.OD_POLEGADA_X_ESPESSURA,
         Td.OD_POLEGADA_X_ROSCA,
         Td.DN_MM,
         Td.DN_MM_REDUCAO,
@@ -305,6 +322,14 @@ def requisitos_efetivos_produto(familia: FamiliaProduto) -> RequisitosEfetivosPr
     if td == Td.OD_POLEGADA:
         r['usa_polegada_principal'] = True
         r['usa_polegada_secundaria'] = False
+
+    if td == Td.OD_POLEGADA_X_ESPESSURA:
+        r['usa_polegada_principal'] = True
+        r['usa_polegada_secundaria'] = False
+        r['exige_espessura_mm'] = True
+        r['exige_od_mm'] = False
+        r['usa_rosca_conexao'] = False
+        r['usa_schedule'] = False
 
     if td == Td.OD_POLEGADA_X_ROSCA:
         r['usa_rosca_conexao'] = True
@@ -384,6 +409,8 @@ def validar_campos_obrigatorios_produto_interno(
             errs['polegada_principal_ref_id'] = 'Informe a medida do espigão.'
         elif td == Td.OD_POLEGADA:
             errs['polegada_principal_ref_id'] = 'Informe a Medida OD.'
+        elif td == Td.OD_POLEGADA_X_ESPESSURA:
+            errs['polegada_principal_ref_id'] = 'Informe a medida OD (polegada).'
         elif td in (Td.NPS_SCHEDULE, Td.FLANGE, Td.VALVULA):
             errs['polegada_principal_ref_id'] = 'Informe a polegada nominal (NPS).'
         elif td == Td.BITOLA_POLEGADA:
@@ -441,7 +468,7 @@ def tipo_medida_esperado_por_campo(familia: FamiliaProduto) -> dict[str, str | N
     principal: str | None = None
     secundaria: str | None = None
 
-    if td in (Td.OD_POLEGADA, Td.OD_POLEGADA_X_ROSCA):
+    if td in (Td.OD_POLEGADA, Td.OD_POLEGADA_X_ESPESSURA, Td.OD_POLEGADA_X_ROSCA):
         principal = tipo_od
     elif td in (
         Td.NPS,

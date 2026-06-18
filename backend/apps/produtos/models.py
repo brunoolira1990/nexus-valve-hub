@@ -136,6 +136,7 @@ class FamiliaProduto(models.Model):
         ROSCA_X_ROSCA = 'ROSCA_X_ROSCA', 'Rosca x Rosca (orientação)'
         NPS_X_ROSCA = 'NPS_X_ROSCA', 'NPS x Rosca'
         OD_POLEGADA = 'OD_POLEGADA', 'OD em polegada (não é NPS/SCH)'
+        OD_POLEGADA_X_ESPESSURA = 'OD_POLEGADA_X_ESPESSURA', 'OD em polegada + espessura mm'
         OD_POLEGADA_X_ROSCA = 'OD_POLEGADA_X_ROSCA', 'OD em polegada x Rosca'
         OD_MM = 'OD_MM', 'OD em mm (tubo / dimensional)'
         DN_MM = 'DN_MM', 'DN / medida em mm (PVC, CPVC, PPR, etc.)'
@@ -173,6 +174,10 @@ class FamiliaProduto(models.Model):
         )
         UNDERSCORE_POLEGADA = 'UNDERSCORE_POLEGADA', 'Base + underscore + ID polegada (3 dígitos)'
         BASE_OD_MM_ESPESSURA = 'BASE_OD_MM_ESPESSURA', 'Base + OD mm + espessura mm (ex.: 6119OD.1002)'
+        BASE_OD_POLEGADA_ESPESSURA = (
+            'BASE_OD_POLEGADA_ESPESSURA',
+            'Base + OD polegada + espessura mm (ex.: 6119OD.040150)',
+        )
         BASE_DN_MM = 'BASE_DN_MM', 'Base + DN/mm (3 dígitos)'
         BASE_DN_MM_REDUCAO = 'BASE_DN_MM_REDUCAO', 'Base + DN maior × menor (3+3 dígitos)'
         BASE_BITOLA_POLEGADA = 'BASE_BITOLA_POLEGADA', 'Base + bitola (código da tabela de polegadas)'

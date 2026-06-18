@@ -32,6 +32,8 @@ import {
 } from '@/lib/produtoMaterial';
 import {
   expandirSiglasValvulaDescricaoBase,
+  exemploCodigoDimensionalFamilia,
+  exemploDescricaoDimensionalFamilia,
   flagsPorTipoRegra,
   hintTipoDimensional,
   labelPolegadaPrincipal,
@@ -170,6 +172,7 @@ const REGRAS: { value: TipoRegraCodigo; label: string }[] = [
   { value: 'UNDERSCORE_POLEGADA', label: '9) Underscore + ID 3 dígitos — {figura}_{id}' },
   { value: 'MANUAL_FABRICANTE', label: '10) Manual/fabricante (sem código por família)' },
   { value: 'BASE_OD_MM_ESPESSURA', label: '11) Base + OD mm + espessura mm — {figura}.{od}{esp} (ex.: 6119OD.1002)' },
+  { value: 'BASE_OD_POLEGADA_ESPESSURA', label: '19) Base + OD polegada + espessura mm — {figura}OD.{id}{esp} (ex.: 6119OD.040150)' },
   { value: 'BASE_ESPIGAO_FLANGE_NPS', label: '12) Base + espigão NPS + flange NPS ({figura}.E{id}F{id})' },
   { value: 'BASE_DN_MM', label: '13) Base + DN/mm — {figura}.{mm 3 dígitos}' },
   { value: 'BASE_DN_MM_REDUCAO', label: '14) Base + DN maior×menor — {figura}.{mm}{mm}' },
@@ -192,6 +195,7 @@ const TIPOS_DIMENSIONAIS: { value: TipoDimensional; label: string }[] = [
   { value: 'REDUCAO_NPS', label: 'Redução NPS + Schedule' },
   { value: 'NPS_X_ROSCA', label: 'NPS x Rosca' },
   { value: 'OD_POLEGADA', label: 'OD em polegada (não é NPS/SCH)' },
+  { value: 'OD_POLEGADA_X_ESPESSURA', label: 'OD em polegada + espessura mm' },
   { value: 'OD_POLEGADA_X_ROSCA', label: 'OD em polegada x Rosca' },
   { value: 'DN_MM', label: 'DN/mm (PVC/CPVC/PPR — medida única)' },
   { value: 'DN_MM_REDUCAO', label: 'DN/mm × DN/mm (redução)' },
@@ -407,7 +411,7 @@ const Produtos = () => {
     const td = familiaSel?.tipo_dimensional;
     if (!td) return undefined;
     if (td === 'BITOLA_POLEGADA' || td === 'OD_MM_X_ROSCA') return undefined;
-    if (td === 'OD_POLEGADA' || td === 'OD_POLEGADA_X_ROSCA') return 'OD';
+    if (td === 'OD_POLEGADA' || td === 'OD_POLEGADA_X_ESPESSURA' || td === 'OD_POLEGADA_X_ROSCA') return 'OD';
     if (
       td === 'NPS' ||
       td === 'NPS_SCHEDULE' ||
@@ -1109,6 +1113,7 @@ const Produtos = () => {
         'ROSCA_X_ROSCA',
         'NPS_X_ROSCA',
         'OD_POLEGADA',
+        'OD_POLEGADA_X_ESPESSURA',
         'OD_POLEGADA_X_ROSCA',
         'DN_MM',
         'DN_MM_REDUCAO',
@@ -2139,8 +2144,16 @@ const Produtos = () => {
             <p>Categoria: {CATEGORIAS_FAMILIA.find((c) => c.value === famQuick.categoria_produto)?.label}</p>
             <p>Tipo: {famQuick.tipo_dimensional}</p>
             <p>Produto vai pedir: {labelsCamposObrigatorios(famQuickFlags, famQuick.tipo_dimensional).join(' · ')}</p>
-            <p className="mt-1">Exemplo de código: {famQuick.codigo_figura || 'FIG'}.{famQuick.tipo_dimensional === 'NPS_SCHEDULE' ? '20.XX' : '...'}</p>
-            <p>Exemplo de descrição: {expandirSiglasValvulaDescricaoBase(famQuick.descricao_base || 'DESCRIÇÃO BASE')} …</p>
+            <p className="mt-1">
+              Exemplo de código:{' '}
+              {exemploCodigoDimensionalFamilia(famQuick.tipo_dimensional, famQuick.codigo_figura) ||
+                `${famQuick.codigo_figura || 'FIG'}.${famQuick.tipo_dimensional === 'NPS_SCHEDULE' ? '20.XX' : '...'}`}
+            </p>
+            <p>
+              Exemplo de descrição dimensional:{' '}
+              {exemploDescricaoDimensionalFamilia(famQuick.tipo_dimensional) ||
+                `${expandirSiglasValvulaDescricaoBase(famQuick.descricao_base || 'DESCRIÇÃO BASE')} …`}
+            </p>
           </div>
           </div>
         </div>
