@@ -47,7 +47,7 @@ export function GerarPedidoPropostaModal({ open, proposta, loading, onClose, onC
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Gerar Pedido de Venda a partir da Proposta" size="lg">
+    <Modal isOpen={open} onClose={onClose} title="Gerar Pedido de Venda a partir da Proposta" size="lg">
       {!proposta ? null : (
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">

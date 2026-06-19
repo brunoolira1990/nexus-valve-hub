@@ -885,9 +885,17 @@ const Propostas = () => {
     abrirPedidoPorId(proposta.pedido_venda_id);
   };
 
-  const abrirGerarPedidoModal = (proposta: Proposta) => {
-    setEditing(proposta);
-    setGerarPedidoOpen(true);
+  const abrirGerarPedidoModal = async (proposta: Proposta) => {
+    setGerarPedidoLoading(true);
+    try {
+      const current = await propostasService.getById(proposta.id);
+      setEditing(current);
+      setGerarPedidoOpen(true);
+    } catch (e) {
+      alert(apiErrorMessage(e, { fallback: 'Não foi possível abrir a geração de pedido.' }));
+    } finally {
+      setGerarPedidoLoading(false);
+    }
   };
 
   const confirmarGerarPedido = async (payload: {
@@ -966,7 +974,7 @@ const Propostas = () => {
       return;
     }
     if (propostaPodeGerarPedido(proposta)) {
-      abrirGerarPedidoModal(proposta);
+      await abrirGerarPedidoModal(proposta);
       return;
     }
     setWizardOpen(true);
@@ -2496,7 +2504,8 @@ const Propostas = () => {
                     <button
                       type="button"
                       className="erp-btn-primary inline-flex items-center gap-2"
-                      onClick={() => setGerarPedidoOpen(true)}
+                      disabled={gerarPedidoLoading}
+                      onClick={() => void abrirGerarPedidoModal(editing)}
                     >
                       <ShoppingCart className="h-4 w-4" />
                       Gerar Pedido de Venda
@@ -2610,7 +2619,10 @@ const Propostas = () => {
         title={wizardProposta ? `Converter Proposta ${wizardProposta.numero}` : 'Converter proposta'}
         size="xl"
       >
-        {wizardLoading && !wizardProposta ? <p className="text-sm text-muted-foreground">Carregando dados da proposta...</p> : null}
+            {wizardError && !wizardProposta ? (
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{wizardError}</div>
+            ) : null}
+            {wizardLoading && !wizardProposta ? <p className="text-sm text-muted-foreground">Carregando dados da proposta...</p> : null}
         {wizardProposta ? (
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-2">

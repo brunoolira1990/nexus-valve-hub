@@ -16,7 +16,7 @@ export function RecuperarPropostaModal({ open, loading, onClose, onConfirm }: Pr
   }, [open]);
 
   return (
-    <Modal open={open} onClose={onClose} title="Recuperar proposta cancelada/perdida">
+    <Modal isOpen={open} onClose={onClose} title="Recuperar proposta cancelada/perdida">
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground">
           A proposta será reaberta para negociação. O histórico de cancelamento/perda anterior será preservado.
