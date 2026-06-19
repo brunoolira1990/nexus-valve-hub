@@ -1000,7 +1000,8 @@ export type TipoEventoComercialProposta =
   | 'ITEM_CONVERTIDO'
   | 'ITEM_CANCELADO'
   | 'ITEM_MANTIDO_PENDENTE'
-  | 'PEDIDO_EXCLUIDO_STATUS_REVERTIDO';
+  | 'PEDIDO_EXCLUIDO_STATUS_REVERTIDO'
+  | 'REPARO_STATUS_COMERCIAL_PEDIDO';
 
 export interface EventoComercialProposta {
   id: number;

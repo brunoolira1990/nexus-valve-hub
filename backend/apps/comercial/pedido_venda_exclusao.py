@@ -97,7 +97,7 @@ def excluir_pedido_venda(pedido: PedidoVenda, *, usuario=None) -> None:
     if not proposta_id:
         return
 
-    proposta = Proposta.objects.select_for_update().get(pk=proposta_id)
+    proposta = Proposta.objects.select_for_update().prefetch_related('itens').get(pk=proposta_id)
     proposta.status = calcular_status_proposta_apos_exclusao_pedido(proposta)
     proposta.save(update_fields=['status'])
 

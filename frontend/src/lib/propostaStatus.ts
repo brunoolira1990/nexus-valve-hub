@@ -106,5 +106,6 @@ export function labelEventoComercialProposta(tipo?: string | null): string {
   if (st === 'ITEM_CANCELADO') return 'Item cancelado';
   if (st === 'ITEM_MANTIDO_PENDENTE') return 'Item mantido pendente';
   if (st === 'PEDIDO_EXCLUIDO_STATUS_REVERTIDO') return 'Pedido excluído — itens revertidos';
+  if (st === 'REPARO_STATUS_COMERCIAL_PEDIDO') return 'Reparo de status comercial';
   return tipo || '—';
 }

@@ -320,6 +320,10 @@ class PropostaComercialHistorico(models.Model):
             'PEDIDO_EXCLUIDO_STATUS_REVERTIDO',
             'Pedido excluído — status revertido',
         )
+        REPARO_STATUS_COMERCIAL_PEDIDO = (
+            'REPARO_STATUS_COMERCIAL_PEDIDO',
+            'Reparo de status comercial (pedido excluído)',
+        )
 
     proposta = models.ForeignKey(
         Proposta,
