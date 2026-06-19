@@ -65,8 +65,8 @@ class Command(BaseCommand):
             )
             return
 
-        if not relatorio.itens_reparaveis:
-            self.stdout.write(self.style.WARNING('\nNenhum item reparável encontrado. Nada foi alterado.'))
+        if not relatorio.tem_reparo:
+            self.stdout.write(self.style.WARNING('\nNenhum reparo necessário. Nada foi alterado.'))
             return
 
         try:
@@ -76,6 +76,8 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS('\nReparo concluído.'))
         self.stdout.write(f"  Itens reparados: {len(resultado['itens_reparados'])}")
+        if resultado.get('status_proposta_reparado'):
+            self.stdout.write('  Status da proposta recalculado.')
         self.stdout.write(f"  Status: {resultado['status_anterior']} → {resultado['status_novo']}")
         for item in resultado['itens_reparados']:
             ref = item.get('pedido_numero_ref') or item.get('pedido_id_ref') or '—'

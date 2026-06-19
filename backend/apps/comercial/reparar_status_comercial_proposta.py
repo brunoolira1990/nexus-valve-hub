@@ -38,6 +38,16 @@ MSG_PEDIDO_COM_EFEITOS = 'Pedido vinculado possui efeitos posteriores — reparo
 MSG_RESIDUO_FATURAMENTO = 'Faturamento ativo encontrado para pedido referenciado — reparo bloqueado.'
 MSG_RESIDUO_NFE = 'NF-e vinculada ao pedido referenciado — reparo bloqueado.'
 MSG_RESIDUO_ALOCACAO = 'Alocação de atendimento vinculada — reparo bloqueado.'
+MSG_STATUS_PROPOSTA_INCONSISTENTE = (
+    'Status da proposta indica conversão, mas não há itens convertidos nem pedidos ativos.'
+)
+
+STATUS_PROPOSTA_REPARO_CANDIDATO = frozenset(
+    {
+        STATUS_PROPOSTA_CONVERTIDA,
+        STATUS_PROPOSTA_PARCIALMENTE_CONVERTIDA,
+    },
+)
 
 
 @dataclass
@@ -55,6 +65,8 @@ class RelatorioReparoProposta:
     proposta_numero: str
     status_atual: str
     status_novo_previsto: str | None = None
+    reparar_status_proposta: bool = False
+    motivo_reparo_status: str = ''
     linhas: list[ItemReparoLinha] = field(default_factory=list)
 
     @property
@@ -68,6 +80,10 @@ class RelatorioReparoProposta:
     @property
     def itens_ignorados(self) -> list[int]:
         return [lin.item_id for lin in self.linhas if lin.acao == 'ignorar']
+
+    @property
+    def tem_reparo(self) -> bool:
+        return bool(self.itens_reparaveis) or self.reparar_status_proposta
 
 
 def _pedido_vivo_vinculado_item(item: ItemProposta) -> PedidoVenda | None:
@@ -214,6 +230,30 @@ def _prever_status_proposta_apos_reparo(proposta: Proposta, itens_reparaveis: se
     return 'Aprovada'
 
 
+def _tem_item_convertido_no_banco(proposta: Proposta) -> bool:
+    return any(
+        (item.status_comercial or '').strip() == STATUS_ITEM_CONVERTIDO
+        for item in proposta.itens.all()
+    )
+
+
+def _tem_pedido_vivo_na_proposta(proposta: Proposta) -> bool:
+    if proposta.pedidos_gerados.exists():
+        return True
+    return any(_pedido_vivo_vinculado_item(item) is not None for item in proposta.itens.all())
+
+
+def _proposta_precisa_reparo_status(proposta: Proposta) -> bool:
+    if _norm_status(proposta.status) not in STATUS_PROPOSTA_REPARO_CANDIDATO:
+        return False
+    if _tem_item_convertido_no_banco(proposta):
+        return False
+    if _tem_pedido_vivo_na_proposta(proposta):
+        return False
+    status_correto = calcular_status_proposta_apos_exclusao_pedido(proposta)
+    return _norm_status(proposta.status) != _norm_status(status_correto)
+
+
 def analisar_reparo_status_comercial_proposta(proposta: Proposta) -> RelatorioReparoProposta:
     proposta = Proposta.objects.prefetch_related('itens').get(pk=proposta.pk)
     linhas = [avaliar_item_para_reparo(item) for item in proposta.itens.all()]
@@ -223,11 +263,13 @@ def analisar_reparo_status_comercial_proposta(proposta: Proposta) -> RelatorioRe
         status_atual=proposta.status or '',
         linhas=linhas,
     )
-    if relatorio.itens_reparaveis:
-        relatorio.status_novo_previsto = _prever_status_proposta_apos_reparo(
-            proposta,
-            set(relatorio.itens_reparaveis),
-        )
+    itens_reparaveis = set(relatorio.itens_reparaveis)
+    if itens_reparaveis:
+        relatorio.status_novo_previsto = _prever_status_proposta_apos_reparo(proposta, itens_reparaveis)
+    elif _proposta_precisa_reparo_status(proposta):
+        relatorio.reparar_status_proposta = True
+        relatorio.motivo_reparo_status = MSG_STATUS_PROPOSTA_INCONSISTENTE
+        relatorio.status_novo_previsto = calcular_status_proposta_apos_exclusao_pedido(proposta)
     return relatorio
 
 
@@ -247,6 +289,7 @@ def executar_reparo_status_comercial_proposta(
         )
 
     itens_reparados: list[dict[str, Any]] = []
+    status_anterior = proposta.status or ''
     for linha in relatorio.linhas:
         if linha.acao != 'reparar':
             continue
@@ -260,21 +303,36 @@ def executar_reparo_status_comercial_proposta(
             },
         )
 
-    status_anterior = proposta.status or ''
-    if itens_reparados:
+    status_proposta_reparado = relatorio.reparar_status_proposta
+    if itens_reparados or status_proposta_reparado:
         proposta = Proposta.objects.select_for_update().prefetch_related('itens').get(pk=proposta.pk)
         proposta.status = calcular_status_proposta_apos_exclusao_pedido(proposta)
         proposta.save(update_fields=['status'])
+
+        if itens_reparados and status_proposta_reparado:
+            descricao = (
+                f'Reparo de status comercial: {len(itens_reparados)} item(ns) órfão(s) '
+                'retornaram para pendente e o status da proposta foi recalculado.'
+            )
+        elif itens_reparados:
+            descricao = (
+                f'Reparo de status comercial: {len(itens_reparados)} item(ns) órfão(s) '
+                'retornaram para pendente após exclusão prévia de pedido de venda.'
+            )
+        else:
+            descricao = (
+                'Reparo de status comercial: status da proposta recalculado '
+                'após exclusão prévia de pedido de venda sem itens convertidos.'
+            )
+
         registrar_evento_comercial(
             proposta,
             PropostaComercialHistorico.TipoEvento.REPARO_STATUS_COMERCIAL_PEDIDO,
-            descricao=(
-                f'Reparo de status comercial: {len(itens_reparados)} item(ns) órfão(s) '
-                'retornaram para pendente após exclusão prévia de pedido de venda.'
-            ),
+            descricao=descricao,
             usuario=usuario,
             dados_json={
                 'itens_reparados': itens_reparados,
+                'status_proposta_reparado': status_proposta_reparado,
                 'status_anterior': status_anterior,
                 'status_novo': proposta.status,
             },
@@ -286,6 +344,7 @@ def executar_reparo_status_comercial_proposta(
         'status_anterior': status_anterior,
         'status_novo': proposta.status,
         'itens_reparados': itens_reparados,
+        'status_proposta_reparado': status_proposta_reparado,
         'itens_ignorados': relatorio.itens_ignorados,
         'relatorio': relatorio,
     }
@@ -298,6 +357,9 @@ def formatar_relatorio_reparo(relatorio: RelatorioReparoProposta) -> str:
     ]
     if relatorio.status_novo_previsto is not None:
         linhas.append(f'Status previsto após reparo: {relatorio.status_novo_previsto}')
+    if relatorio.reparar_status_proposta:
+        linhas.append('Status da proposta: será recalculado.')
+        linhas.append(f'  Motivo: {relatorio.motivo_reparo_status}')
 
     if not relatorio.linhas:
         linhas.append('Nenhum item encontrado na proposta.')
@@ -314,4 +376,6 @@ def formatar_relatorio_reparo(relatorio: RelatorioReparoProposta) -> str:
     linhas.append(f'Reparáveis: {len(relatorio.itens_reparaveis)}')
     linhas.append(f'Bloqueados: {len(relatorio.itens_bloqueados)}')
     linhas.append(f'Ignorados: {len(relatorio.itens_ignorados)}')
+    if relatorio.reparar_status_proposta:
+        linhas.append('Status proposta: reparo necessário')
     return '\n'.join(linhas)

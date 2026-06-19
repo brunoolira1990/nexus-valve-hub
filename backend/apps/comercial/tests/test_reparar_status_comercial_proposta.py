@@ -9,13 +9,18 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import TestCase
 
-from apps.comercial.commercial_defaults import STATUS_ITEM_CONVERTIDO, STATUS_ITEM_PENDENTE
+from apps.comercial.commercial_defaults import (
+    STATUS_ITEM_CONVERTIDO,
+    STATUS_ITEM_PENDENTE,
+    STATUS_PROPOSTA_CONVERTIDA,
+)
 from apps.comercial.converter_proposta_pedido import (
     converter_proposta_em_pedido_venda,
     gerar_pedido_venda_de_proposta,
 )
 from apps.comercial.faturamento_pedido_venda import criar_faturamento_pedido
 from apps.comercial.models import PedidoVenda, PropostaComercialHistorico
+from apps.comercial.pedido_venda_exclusao import excluir_pedido_venda
 from apps.comercial.proposta_comercial_status import item_pode_converter, status_item_proposta
 from apps.comercial.reparar_status_comercial_proposta import (
     CONFIRMACAO_TOKEN,
@@ -54,6 +59,73 @@ class RepararStatusComercialPropostaTests(TestCase):
         self.assertEqual(item.status_comercial, STATUS_ITEM_CONVERTIDO)
         self.assertIsNone(item.pedido_venda_gerado_id)
         return p, item, pedido_id, pedido_numero
+
+    def _proposta_convertida_com_itens_pendentes(self):
+        """Simula proposta presa: status CONVERTIDA, itens já PENDENTES, sem pedidos."""
+        p = _proposta_aprovada()
+        item1 = _item(p, _produto())
+        item2 = _item(p, _produto())
+        r = converter_proposta_em_pedido_venda(p)
+        excluir_pedido_venda(PedidoVenda.objects.get(pk=r['pedido_id']), usuario=self.user)
+        item1.refresh_from_db()
+        item2.refresh_from_db()
+        p.refresh_from_db()
+        self.assertEqual(item1.status_comercial, STATUS_ITEM_PENDENTE)
+        self.assertEqual(item2.status_comercial, STATUS_ITEM_PENDENTE)
+        p.status = STATUS_PROPOSTA_CONVERTIDA
+        p.save(update_fields=['status'])
+        return p, item1, item2
+
+    def test_dry_run_repara_status_proposta_convertida_sem_itens_convertidos(self):
+        p, item1, item2 = self._proposta_convertida_com_itens_pendentes()
+
+        relatorio = analisar_reparo_status_comercial_proposta(p)
+
+        self.assertTrue(relatorio.reparar_status_proposta)
+        self.assertEqual(relatorio.status_novo_previsto, 'Aprovada')
+        self.assertNotIn(item1.pk, relatorio.itens_reparaveis)
+        self.assertNotIn(item2.pk, relatorio.itens_reparaveis)
+
+    def test_reparo_status_proposta_convertida_sem_itens_convertidos(self):
+        p, item1, item2 = self._proposta_convertida_com_itens_pendentes()
+
+        resultado = executar_reparo_status_comercial_proposta(p, usuario=self.user)
+
+        p.refresh_from_db()
+        item1.refresh_from_db()
+        item2.refresh_from_db()
+        self.assertTrue(resultado['status_proposta_reparado'])
+        self.assertEqual(resultado['itens_reparados'], [])
+        self.assertEqual(p.status, 'Aprovada')
+        self.assertEqual(item1.status_comercial, STATUS_ITEM_PENDENTE)
+        self.assertEqual(item2.status_comercial, STATUS_ITEM_PENDENTE)
+
+        evt = PropostaComercialHistorico.objects.filter(
+            proposta=p,
+            tipo_evento=PropostaComercialHistorico.TipoEvento.REPARO_STATUS_COMERCIAL_PEDIDO,
+        ).first()
+        self.assertIsNotNone(evt)
+        self.assertTrue(evt.dados_json['status_proposta_reparado'])
+
+        r2 = converter_proposta_em_pedido_venda(p)
+        self.assertTrue(PedidoVenda.objects.filter(pk=r2['pedido_id']).exists())
+
+    def test_management_command_repara_apenas_status_proposta(self):
+        p, _, _ = self._proposta_convertida_com_itens_pendentes()
+        out = StringIO()
+
+        call_command(
+            'reparar_status_comercial_proposta',
+            proposta_id=p.pk,
+            confirmar=CONFIRMACAO_TOKEN,
+            stdout=out,
+        )
+
+        p.refresh_from_db()
+        self.assertEqual(p.status, 'Aprovada')
+        output = out.getvalue()
+        self.assertIn('Status da proposta recalculado', output)
+        self.assertIn('Reparo concluído', output)
 
     def test_dry_run_lista_item_orfao(self):
         p, item, pedido_id, pedido_numero = self._proposta_com_item_preso()
