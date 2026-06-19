@@ -29,7 +29,7 @@ export function ProdutoComercialField({
       wrapClassName="w-full"
       value={valueId}
       selectedOption={selectedProduto}
-      placeholder="Buscar produto por código ou descrição..."
+      placeholder="Buscar por código, descrição, material ou medida..."
       disabled={disabled}
       minChars={1}
       limit={50}

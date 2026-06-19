@@ -35,6 +35,7 @@ from apps.produtos.serializers import (
 from django.db.models import Q, Value
 from django.db.models.functions import Coalesce
 from apps.produtos.polegadas import extract_mm_from_term
+from apps.produtos.produto_busca import aplicar_filtro_busca_produto, produto_busca_rank
 from apps.produtos.sorting import (
     natural_codigo_completo_key,
     natural_codigo_figura_key,
@@ -60,21 +61,8 @@ def _familia_busca_rank(term: str, obj: FamiliaProduto) -> int:
     return 5
 
 
-def _produto_busca_rank(term: str, obj: Produto) -> int:
-    q = term.lower()
-    cc = (obj.codigo_completo or '').lower()
-    dsc = (obj.descricao or '').lower()
-    if cc == q:
-        return 0
-    if cc.startswith(q):
-        return 1
-    if dsc.startswith(q):
-        return 2
-    if q in dsc:
-        return 3
-    if q in cc:
-        return 4
-    return 5
+def _produto_busca_rank(term: str, obj: Produto) -> tuple[int, int, int, str]:
+    return produto_busca_rank(term, obj)
 
 
 class FamiliaProdutoViewSet(viewsets.ModelViewSet):
@@ -209,23 +197,7 @@ class ProdutoViewSet(FriendlyDestroyMixin, AutocompleteOrPaginationMixin, viewse
         qs = super().get_queryset()
         search = (self.request.query_params.get('search') or '').strip()
         if search:
-            qs = qs.filter(
-                Q(codigo_completo__icontains=search)
-                | Q(descricao__icontains=search)
-                | Q(material__icontains=search)
-                | Q(norma__icontains=search)
-                | Q(ncm__icontains=search)
-                | Q(figura__icontains=search)
-                | Q(sufixo__icontains=search)
-                | Q(schedule__icontains=search)
-                | Q(polegada_principal__icontains=search)
-                | Q(polegada_secundaria__icontains=search)
-                | Q(tipo_peca__icontains=search)
-                | Q(conexao__icontains=search)
-                | Q(familia__codigo_figura__icontains=search)
-                | Q(familia__descricao_base__icontains=search)
-                | Q(familia__ncm_padrao__codigo__icontains=search)
-            )
+            qs = aplicar_filtro_busca_produto(qs, search)
         if (self.request.query_params.get('sem_ncm') or '').strip() in ('1', 'true', 'True'):
             qs = qs.filter(Q(ncm='') | Q(ncm__isnull=True))
         material = (self.request.query_params.get('material') or '').strip()
