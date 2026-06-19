@@ -1,14 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Modal } from '@/components/Modal';
 import { formatMoneyBr } from '@/lib/numberFormat';
-import { labelStatusItemProposta } from '@/lib/propostaStatus';
+import { itemPodeSelecionarParaPedido, labelStatusItemProposta } from '@/lib/propostaStatus';
 import type { AcaoItensNaoSelecionados, ItemProposta, Proposta } from '@/types';
-
-function itemPodeSelecionarParaPedido(it: ItemProposta): boolean {
-  if (it.pode_selecionar_para_pedido === false) return false;
-  const st = (it.status_comercial || 'PENDENTE').toUpperCase();
-  return !['CONVERTIDO_EM_PEDIDO', 'CANCELADO', 'PERDIDO'].includes(st);
-}
 
 function valorTotalItem(it: ItemProposta): number {
   const qtd = Number(it.quantidade_negociada ?? it.quantidade ?? 0);
@@ -35,8 +29,8 @@ export function GerarPedidoPropostaModal({ open, proposta, loading, onClose, onC
 
   useEffect(() => {
     if (!open || !proposta) return;
-    const pendentes = proposta.itens.filter((it) => itemPodeSelecionarParaPedido(it));
-    setSelecionados(pendentes.map((it) => it.id));
+    const elegiveis = proposta.itens.filter((it) => itemPodeSelecionarParaPedido(it));
+    setSelecionados(elegiveis.map((it) => it.id));
     setAcao('MANTER_PENDENTE');
     setObservacao('');
   }, [open, proposta]);
@@ -75,6 +69,7 @@ export function GerarPedidoPropostaModal({ open, proposta, loading, onClose, onC
                 {itens.map((it) => {
                   const pode = itemPodeSelecionarParaPedido(it);
                   const st = it.status_comercial || 'PENDENTE';
+                  const semProduto = !it.produto_id && !['CONVERTIDO_EM_PEDIDO', 'CANCELADO', 'PERDIDO'].includes(st.toUpperCase());
                   return (
                     <tr key={it.id} className={!pode ? 'opacity-60' : undefined}>
                       <td>
@@ -89,6 +84,9 @@ export function GerarPedidoPropostaModal({ open, proposta, loading, onClose, onC
                         <div className="font-medium">{it.produto_nome || it.descricao_avulsa || '—'}</div>
                         {it.pedido_venda_numero ? (
                           <div className="text-xs text-muted-foreground">Pedido: {it.pedido_venda_numero}</div>
+                        ) : null}
+                        {semProduto ? (
+                          <div className="text-xs text-warning">Pendente produto — vincule antes de selecionar</div>
                         ) : null}
                       </td>
                       <td>{it.quantidade_negociada ?? it.quantidade}</td>

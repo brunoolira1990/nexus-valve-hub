@@ -1200,7 +1200,7 @@ class PedidoVendaSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {'proposta_id': 'Esta proposta possui cliente avulso. Vincule/crie cliente cadastrado antes de converter.'}
                 )
-            if proposta.itens.filter(produto__isnull=True).exists():
+            if not allow_multi and proposta.itens.filter(produto__isnull=True).exists():
                 raise serializers.ValidationError(
                     {'proposta_id': 'Esta proposta possui item avulso. Vincule/crie produto cadastrado antes de converter.'}
                 )

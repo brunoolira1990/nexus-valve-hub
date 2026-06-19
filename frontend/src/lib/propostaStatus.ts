@@ -3,7 +3,7 @@ import {
   STATUS_PROPOSTA_PARCIALMENTE_CONVERTIDA,
   STATUS_PROPOSTA_REABERTA,
 } from '@/lib/comercialFormDefaults';
-import type { Proposta } from '@/types';
+import type { ItemProposta, Proposta } from '@/types';
 
 export type PropostaStatusUi = {
   label: string;
@@ -75,6 +75,18 @@ export function statusPropostaUi(
     return { label: upper.startsWith('PERD') ? 'Perdida' : 'Cancelada', badgeClass: 'erp-badge-danger', valor: st };
   }
   return { label: st || '—', badgeClass: 'erp-badge-danger', valor: st };
+}
+
+/** Item elegível para seleção na geração parcial de pedido (exige produto vinculado). */
+export function itemPodeSelecionarParaPedido(
+  item: Pick<ItemProposta, 'pode_selecionar_para_pedido' | 'status_comercial' | 'produto_id'>,
+): boolean {
+  if (item.pode_selecionar_para_pedido === false) return false;
+  const st = normStatus(item.status_comercial || 'PENDENTE');
+  if (['CONVERTIDO_EM_PEDIDO', 'CANCELADO', 'PERDIDO', 'MANTIDO_PARA_DEPOIS'].includes(st)) {
+    return false;
+  }
+  return Boolean(item.produto_id);
 }
 
 export function labelStatusItemProposta(status?: string | null): string {

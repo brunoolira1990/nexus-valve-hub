@@ -17,7 +17,9 @@ from apps.comercial.converter_proposta_pedido import (
     MSG_PROPOSTA_JA_CONVERTIDA,
     STATUS_PEDIDO_INICIAL,
     converter_proposta_em_pedido_venda,
+    gerar_pedido_venda_de_proposta,
 )
+from apps.comercial.proposta_comercial_status import status_item_proposta
 from apps.comercial.serializers import recalcular_proposta
 from apps.produtos.models import FamiliaProduto, Produto
 from apps.regras_fiscais.cenario_fiscal_saida import garantir_cenario_saida_padrao
@@ -77,6 +79,24 @@ def _item(proposta: Proposta, prod: Produto, *, icms=Decimal('18')) -> ItemPropo
         valor_unitario=Decimal('100'),
         preco_por_unidade_negociada=Decimal('100'),
         desconto=Decimal('5'),
+        modo_preco='sugerido',
+        icms_saida_percentual=icms,
+        pis_saida_percentual=Decimal('1.65'),
+        cofins_saida_percentual=Decimal('7.6'),
+    )
+
+
+def _item_avulso(proposta: Proposta, *, icms=Decimal('18')) -> ItemProposta:
+    return ItemProposta.objects.create(
+        proposta=proposta,
+        produto=None,
+        descricao_avulsa='Item avulso sem produto',
+        ncm_avulso='84818200',
+        quantidade=Decimal('1'),
+        quantidade_negociada=Decimal('1'),
+        valor_unitario=Decimal('50'),
+        preco_por_unidade_negociada=Decimal('50'),
+        desconto=Decimal('0'),
         modo_preco='sugerido',
         icms_saida_percentual=icms,
         pis_saida_percentual=Decimal('1.65'),
@@ -222,6 +242,48 @@ class ConverterPropostaPedidoTests(ConverterPropostaPedidoSetupMixin, TestCase):
             context={'allow_proposta_vinculo': True, 'allow_multi_pedido_proposta': True},
         )
         self.assertTrue(ser.is_valid(), ser.errors)
+
+    def test_gerar_pedido_parcial_item_sem_produto_nao_selecionado(self):
+        p = _proposta_aprovada()
+        prod = _produto()
+        item_vinculado = _item(p, prod)
+        item_avulso = _item_avulso(p)
+        r = gerar_pedido_venda_de_proposta(
+            p,
+            itens_payload=[{'proposta_item_id': item_vinculado.pk}],
+            acao_itens_nao_selecionados='MANTER_PENDENTE',
+        )
+        self.assertEqual(r['itens_criados'], 1)
+        pedido = PedidoVenda.objects.get(pk=r['pedido_id'])
+        self.assertEqual(pedido.itens.count(), 1)
+        self.assertEqual(pedido.itens.get().item_proposta_id, item_vinculado.pk)
+
+        item_vinculado.refresh_from_db()
+        item_avulso.refresh_from_db()
+        self.assertEqual(status_item_proposta(item_vinculado), 'CONVERTIDO_EM_PEDIDO')
+        self.assertEqual(status_item_proposta(item_avulso), 'PENDENTE')
+
+        det = self.client.get(f'/api/propostas/{p.pk}/')
+        self.assertFalse(det.json()['pode_gerar_pedido'])
+
+    def test_gerar_pedido_parcial_item_selecionado_sem_produto_falha(self):
+        p = _proposta_aprovada()
+        _item(p, _produto())
+        item_avulso = _item_avulso(p)
+        with self.assertRaises(ValueError) as ctx:
+            gerar_pedido_venda_de_proposta(
+                p,
+                itens_payload=[{'proposta_item_id': item_avulso.pk}],
+            )
+        self.assertIn('produto', str(ctx.exception).lower())
+
+    def test_converter_total_exige_todos_itens_com_produto(self):
+        p = _proposta_aprovada()
+        _item(p, _produto())
+        _item_avulso(p)
+        with self.assertRaises(ValueError) as ctx:
+            converter_proposta_em_pedido_venda(p)
+        self.assertIn('produto', str(ctx.exception).lower())
 
 
 @override_settings(USE_CENARIO_FISCAL_SAIDA_FOR_PROPOSTAS=True)

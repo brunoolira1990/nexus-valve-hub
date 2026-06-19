@@ -23,7 +23,6 @@ from apps.comercial.proposta_comercial_status import (
     itens_pendentes_conversao,
     marcar_item_cancelado_ou_perdido,
     marcar_item_convertido,
-    marcar_item_mantido_pendente,
     proposta_requer_recuperacao,
     proposta_totalmente_convertida,
     status_item_proposta,
@@ -40,6 +39,14 @@ MSG_PROPOSTA_CANCELADA_RECUPERAR = (
     'Esta proposta está cancelada/perdida. Recupere a proposta antes de gerar Pedido de Venda.'
 )
 MSG_NENHUM_ITEM_SELECIONADO = 'Selecione ao menos um item da proposta para gerar o pedido de venda.'
+MSG_NENHUM_ITEM_COM_PRODUTO = (
+    'Nenhum item pendente possui produto vinculado. '
+    'Vincule ao menos um item para gerar pedido parcial.'
+)
+MSG_ITEM_SELECIONADO_SEM_PRODUTO = (
+    'Vincule o item selecionado a um produto cadastrado antes de converter em pedido. '
+    'O pedido e o faturamento exigem produto no cadastro.'
+)
 ACAO_MANTER_PENDENTE = 'MANTER_PENDENTE'
 ACAO_CANCELAR = 'CANCELAR'
 
@@ -136,7 +143,29 @@ def _valor_item_proposta(item: ItemProposta) -> Decimal:
     return _round_monetary(bruto)
 
 
-def validar_proposta_para_conversao(proposta: Proposta, *, parcial: bool = False) -> tuple[bool, list[str]]:
+def _validar_produto_e_ncm_itens(
+    itens: list[ItemProposta],
+    *,
+    mensagem_sem_produto: str,
+) -> tuple[bool, list[str]]:
+    for item in itens:
+        if item.produto_id:
+            continue
+        if not price_rules.ncm_fiscal_valido(item.ncm_avulso or ''):
+            return False, [
+                'Existem itens avulsos sem NCM válido (8 dígitos). '
+                'Regularize antes de converter em pedido.',
+            ]
+        return False, [mensagem_sem_produto]
+    return True, []
+
+
+def validar_proposta_para_conversao(
+    proposta: Proposta,
+    *,
+    parcial: bool = False,
+    itens_para_converter: list[ItemProposta] | None = None,
+) -> tuple[bool, list[str]]:
     mensagens: list[str] = []
     if proposta_requer_recuperacao(proposta):
         return False, [MSG_PROPOSTA_CANCELADA_RECUPERAR]
@@ -163,21 +192,26 @@ def validar_proposta_para_conversao(proposta: Proposta, *, parcial: bool = False
     if not itens_pendentes_conversao(proposta):
         return False, ['Não há itens pendentes para converter em pedido de venda.']
     pendentes = itens_pendentes_conversao(proposta)
-    for item in pendentes:
-        if item.produto_id:
-            continue
-        if not price_rules.ncm_fiscal_valido(item.ncm_avulso or ''):
-            return False, [
-                'Existem itens avulsos sem NCM válido (8 dígitos). '
-                'Regularize antes de converter em pedido.',
-            ]
-    if proposta.itens.filter(produto__isnull=True).exists():
-        avulsos_pendentes = [it for it in pendentes if not it.produto_id]
-        if avulsos_pendentes:
-            return False, [
+    if parcial:
+        if itens_para_converter is not None:
+            ok, erros = _validar_produto_e_ncm_itens(
+                itens_para_converter,
+                mensagem_sem_produto=MSG_ITEM_SELECIONADO_SEM_PRODUTO,
+            )
+            if not ok:
+                return False, erros
+        elif not any(it.produto_id for it in pendentes):
+            return False, [MSG_NENHUM_ITEM_COM_PRODUTO]
+    else:
+        ok, erros = _validar_produto_e_ncm_itens(
+            pendentes,
+            mensagem_sem_produto=(
                 'Vincule todos os itens avulsos a produtos cadastrados antes de converter. '
-                'O pedido e o faturamento exigem produto no cadastro.',
-            ]
+                'O pedido e o faturamento exigem produto no cadastro.'
+            ),
+        )
+        if not ok:
+            return False, erros
     if not proposta.itens.exists():
         return False, ['A proposta não possui itens para converter.']
     return True, mensagens
@@ -332,11 +366,18 @@ def gerar_pedido_venda_de_proposta(
         raise ValueError(MSG_PROPOSTA_JA_CONVERTIDA)
 
     parcial = bool(itens_payload)
-    ok, mensagens = validar_proposta_para_conversao(proposta, parcial=parcial)
+    if parcial:
+        selecionados = _resolver_itens_selecionados(proposta, itens_payload)
+        ok, mensagens = validar_proposta_para_conversao(
+            proposta,
+            parcial=True,
+            itens_para_converter=selecionados,
+        )
+    else:
+        ok, mensagens = validar_proposta_para_conversao(proposta, parcial=False)
+        selecionados = _resolver_itens_selecionados(proposta, itens_payload)
     if not ok:
         raise ValueError(mensagens[0] if mensagens else 'Proposta não pode ser convertida.')
-
-    selecionados = _resolver_itens_selecionados(proposta, itens_payload)
     if not selecionados:
         raise ValueError(MSG_NENHUM_ITEM_SELECIONADO)
 
@@ -393,7 +434,6 @@ def gerar_pedido_venda_de_proposta(
                 )
         else:
             for item in nao_selecionados:
-                marcar_item_mantido_pendente(item)
                 registrar_evento_comercial(
                     proposta,
                     PropostaComercialHistorico.TipoEvento.ITEM_MANTIDO_PENDENTE,

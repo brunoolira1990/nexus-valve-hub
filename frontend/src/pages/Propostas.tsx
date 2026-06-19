@@ -88,6 +88,7 @@ import {
   validadeIsoFromDias,
 } from '@/lib/comercialFormDefaults';
 import {
+  itemPodeSelecionarParaPedido,
   propostaPodeGerarPedido,
   propostaRequerRecuperacao,
   propostaTemPedidoGerado,
@@ -302,6 +303,7 @@ const Propostas = () => {
   const [historicoComercialLoading, setHistoricoComercialLoading] = useState(false);
   const [historicoComercialError, setHistoricoComercialError] = useState<string | null>(null);
   const [wizardProposta, setWizardProposta] = useState<Proposta | null>(null);
+  const [wizardItensSelecionados, setWizardItensSelecionados] = useState<number[]>([]);
   const [wizardClienteId, setWizardClienteId] = useState<number | null>(null);
   const [novoClienteNome, setNovoClienteNome] = useState('');
   const [novoClienteCnpj, setNovoClienteCnpj] = useState('');
@@ -985,6 +987,7 @@ const Propostas = () => {
       });
       setItemLinks(nextLinks);
       setNovoProdutoDescricao(nextDescricoes);
+      setWizardItensSelecionados(current.itens.filter((it) => itemPodeSelecionarParaPedido(it)).map((it) => it.id));
     } catch (e) {
       setWizardError(apiErrorMessage(e, { fallback: 'Não foi possível iniciar o wizard de conversão.' }));
     } finally {
@@ -1086,6 +1089,7 @@ const Propostas = () => {
     try {
       await propostasService.update(wizardProposta.id, { itens: itensAtualizados });
       await refreshProposta(wizardProposta.id);
+      setWizardItensSelecionados((prev) => (prev.includes(itemId) ? prev : [...prev, itemId]));
     } catch (e) {
       setWizardError(apiErrorMessage(e, { fallback: 'Não foi possível vincular o item ao produto.' }));
     } finally {
@@ -1128,6 +1132,7 @@ const Propostas = () => {
       mergeProdutoCache(produto);
       await refreshProposta(wizardProposta.id);
       setItemLinks((prev) => ({ ...prev, [itemId]: produto.id }));
+      setWizardItensSelecionados((prev) => (prev.includes(itemId) ? prev : [...prev, itemId]));
     } catch (e) {
       setWizardError(apiErrorMessage(e, { fallback: 'Não foi possível criar o produto para o item.' }));
     } finally {
@@ -1138,13 +1143,27 @@ const Propostas = () => {
   const clienteResolvido = Boolean(wizardProposta?.cliente_id);
   const itensPendentes = wizardProposta?.itens.filter((it) => !it.produto_id) ?? [];
   const itensResolvidos = (wizardProposta?.itens.length ?? 0) - itensPendentes.length;
+  const wizardSelecionadosValidos =
+    wizardProposta?.itens.filter(
+      (it) => wizardItensSelecionados.includes(it.id) && itemPodeSelecionarParaPedido(it),
+    ) ?? [];
+  const wizardSelecaoValida =
+    wizardItensSelecionados.length > 0 &&
+    wizardSelecionadosValidos.length === wizardItensSelecionados.length;
   const podeConverter = Boolean(
     wizardProposta &&
       !propostaTotalmenteConvertida(wizardProposta) &&
       !propostaRequerRecuperacao(wizardProposta) &&
       clienteResolvido &&
-      itensPendentes.length === 0,
+      wizardSelecaoValida,
   );
+
+  const toggleWizardItemSelecionado = (itemId: number, pode: boolean) => {
+    if (!pode) return;
+    setWizardItensSelecionados((prev) =>
+      prev.includes(itemId) ? prev.filter((id) => id !== itemId) : [...prev, itemId],
+    );
+  };
 
   const concluirConversao = async () => {
     if (!wizardProposta || !podeConverter) return;
@@ -1152,9 +1171,7 @@ const Propostas = () => {
     setWizardLoading(true);
     setWizardError(null);
     try {
-      const ids = wizardProposta.itens
-        .filter((it) => it.pode_selecionar_para_pedido !== false && it.status_comercial !== 'CONVERTIDO_EM_PEDIDO')
-        .map((it) => it.id);
+      const ids = wizardSelecionadosValidos.map((it) => it.id);
       const r = await propostasService.gerarPedido(wizardProposta.id, {
         itens: ids.map((id) => ({ proposta_item_id: id })),
         acao_itens_nao_selecionados: 'MANTER_PENDENTE',
@@ -2679,15 +2696,29 @@ const Propostas = () => {
               <div className="space-y-3">
                 <div className="rounded-md border border-border p-3 text-sm">
                   Itens vinculados: <span className="font-semibold">{itensResolvidos}</span> / {wizardProposta.itens.length}
+                  {' · '}
+                  Selecionados para pedido: <span className="font-semibold">{wizardItensSelecionados.length}</span>
                 </div>
                 <div className="rounded-md border border-border bg-muted/20 p-3 text-xs text-muted-foreground leading-relaxed">
-                  Itens avulsos usam NCM informado na proposta para a Regra Fiscal. A conversão em pedido exige <strong>NCM válido (8 dígitos)</strong> e{' '}
-                  <strong>produto cadastrado</strong> em cada linha — o pedido e o faturamento seguem o cadastro de produtos.
+                  Selecione os itens que entrarão neste pedido. Itens avulsos usam NCM informado na proposta para a Regra Fiscal.
+                  Cada item <strong>selecionado</strong> exige <strong>NCM válido (8 dígitos)</strong> e{' '}
+                  <strong>produto cadastrado</strong> — itens não selecionados podem permanecer pendentes.
                 </div>
-                {wizardProposta.itens.map((item) => (
+                {wizardProposta.itens.map((item) => {
+                  const podeSelecionar = itemPodeSelecionarParaPedido(item);
+                  return (
                   <div key={item.id} className="rounded-md border border-border p-3 space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm font-medium">{item.produto_nome || item.descricao_avulsa || `Item #${item.id}`}</p>
+                      <div className="flex items-start gap-2">
+                        <input
+                          type="checkbox"
+                          className="mt-1"
+                          checked={wizardItensSelecionados.includes(item.id)}
+                          disabled={!podeSelecionar || wizardLoading}
+                          onChange={() => toggleWizardItemSelecionado(item.id, podeSelecionar)}
+                        />
+                        <p className="text-sm font-medium">{item.produto_nome || item.descricao_avulsa || `Item #${item.id}`}</p>
+                      </div>
                       <div className="flex flex-wrap items-center gap-1">
                         {!item.produto_id && !ncmFiscalDigitsValid(item.ncm_avulso || '') ? (
                           <span className="erp-badge-danger text-xs">Sem NCM (8 dígitos)</span>
@@ -2731,7 +2762,8 @@ const Propostas = () => {
                       </div>
                     ) : null}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             ) : null}
 
@@ -2739,7 +2771,15 @@ const Propostas = () => {
               <div className="space-y-3">
                 <div className="rounded-md border border-border p-3">
                   <p className="text-sm"><span className="font-medium">Cliente cadastrado:</span> {clienteResolvido ? 'OK' : 'Pendente'}</p>
-                  <p className="text-sm"><span className="font-medium">Itens vinculados:</span> {itensPendentes.length === 0 ? 'OK' : `${itensPendentes.length} pendente(s)`}</p>
+                  <p className="text-sm">
+                    <span className="font-medium">Itens selecionados:</span>{' '}
+                    {wizardSelecaoValida ? `${wizardSelecionadosValidos.length} prontos para conversão` : 'Selecione ao menos um item com produto vinculado'}
+                  </p>
+                  {itensPendentes.length > 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      {itensPendentes.filter((it) => !wizardItensSelecionados.includes(it.id)).length} item(ns) sem produto permanecem pendentes (não bloqueiam a conversão parcial).
+                    </p>
+                  ) : null}
                   <p className="mt-2 text-xs text-muted-foreground">
                     A conversão cria um Pedido de Venda com os itens pendentes. É possível gerar pedidos parciais
                     adicionais depois, enquanto houver itens pendentes na proposta.
@@ -2760,7 +2800,7 @@ const Propostas = () => {
                   <button
                     type="button"
                     className="erp-btn-primary"
-                    disabled={wizardLoading || (wizardStep === 1 && !clienteResolvido) || (wizardStep === 2 && itensPendentes.length > 0)}
+                    disabled={wizardLoading || (wizardStep === 1 && !clienteResolvido) || (wizardStep === 2 && !wizardSelecaoValida)}
                     onClick={() => setWizardStep((s) => (s < 3 ? (s + 1) as 1 | 2 | 3 : s))}
                   >
                     Próximo
