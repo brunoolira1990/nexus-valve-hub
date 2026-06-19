@@ -2834,6 +2834,10 @@ const Propostas = () => {
         loading={gerarPedidoLoading}
         onClose={() => setGerarPedidoOpen(false)}
         onConfirm={confirmarGerarPedido}
+        onPropostaAtualizada={(p) => {
+          setEditing(p);
+          setHistoricoComercialEventos(null);
+        }}
       />
       <RecuperarPropostaModal
         open={recuperarOpen}
