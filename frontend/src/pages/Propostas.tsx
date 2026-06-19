@@ -35,6 +35,7 @@ import { formatDateBr } from '@/lib/dateBr';
 import { DateBrInput } from '@/components/comercial/DateBrInput';
 import { GerarPedidoPropostaModal } from '@/components/comercial/GerarPedidoPropostaModal';
 import { RecuperarPropostaModal } from '@/components/comercial/RecuperarPropostaModal';
+import { ComercialModalSection } from '@/components/comercial/ComercialModalSection';
 import { CondicaoPagamentoResumo } from '@/components/comercial/CondicaoPagamentoResumo';
 import { ClienteComercialField } from '@/components/comercial/ClienteComercialField';
 import { ProdutoComercialField } from '@/components/comercial/ProdutoComercialField';
