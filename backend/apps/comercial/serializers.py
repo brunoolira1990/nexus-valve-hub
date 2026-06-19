@@ -38,6 +38,7 @@ from .models import (
     PedidoCompra,
     PedidoVenda,
     Proposta,
+    PropostaComercialHistorico,
     Vendedor,
 )
 from .vendedor_helpers import (
@@ -137,6 +138,9 @@ class ItemPropostaSerializer(serializers.ModelSerializer):
     status_comercial = serializers.SerializerMethodField(read_only=True)
     pedido_venda_id = serializers.SerializerMethodField(read_only=True)
     pedido_venda_numero = serializers.SerializerMethodField(read_only=True)
+    item_pedido_venda_gerado_id = serializers.IntegerField(read_only=True)
+    convertido_em = serializers.DateTimeField(read_only=True)
+    motivo_cancelamento_item = serializers.CharField(read_only=True)
     pode_selecionar_para_pedido = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
@@ -201,6 +205,9 @@ class ItemPropostaSerializer(serializers.ModelSerializer):
             'status_comercial',
             'pedido_venda_id',
             'pedido_venda_numero',
+            'item_pedido_venda_gerado_id',
+            'convertido_em',
+            'motivo_cancelamento_item',
             'pode_selecionar_para_pedido',
         )
 
@@ -630,6 +637,37 @@ def _apply_emitente_e_uf_operacao_saida(attrs: dict, instance: Proposta | None) 
     attrs['uf_origem'] = ((emp.uf or '') if emp else '').strip().upper()[:2]
 
 
+class PropostaComercialHistoricoSerializer(serializers.ModelSerializer):
+    usuario_nome = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = PropostaComercialHistorico
+        fields = (
+            'id',
+            'tipo_evento',
+            'descricao',
+            'usuario_nome',
+            'criado_em',
+            'dados_json',
+        )
+        read_only_fields = fields
+
+    def get_usuario_nome(self, obj: PropostaComercialHistorico) -> str:
+        if not obj.usuario_id or not obj.usuario:
+            return ''
+        return (
+            obj.usuario.get_full_name().strip()
+            or getattr(obj.usuario, 'username', '')
+            or ''
+        )
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.criado_em:
+            data['criado_em'] = instance.criado_em.isoformat()
+        return data
+
+
 class HomologacaoFiscalPropostaEventoSerializer(serializers.ModelSerializer):
     criado_por_nome = serializers.SerializerMethodField(read_only=True)
 
@@ -700,6 +738,9 @@ class PropostaSerializer(serializers.ModelSerializer):
     requer_recuperacao = serializers.SerializerMethodField(read_only=True)
     pedidos_gerados_resumo = serializers.SerializerMethodField(read_only=True)
     itens_pendentes_conversao = serializers.SerializerMethodField(read_only=True)
+    recuperada_em = serializers.DateTimeField(read_only=True)
+    motivo_recuperacao = serializers.CharField(read_only=True)
+    status_anterior_recuperacao = serializers.CharField(read_only=True)
     vendedor_id = serializers.PrimaryKeyRelatedField(
         queryset=Vendedor.objects.all(),
         source='vendedor_ref',
@@ -733,6 +774,9 @@ class PropostaSerializer(serializers.ModelSerializer):
             'requer_recuperacao',
             'pedidos_gerados_resumo',
             'itens_pendentes_conversao',
+            'recuperada_em',
+            'motivo_recuperacao',
+            'status_anterior_recuperacao',
             'data',
             'validade',
             'validade_dias',
@@ -857,6 +901,10 @@ class PropostaSerializer(serializers.ModelSerializer):
         data['homologacao_fiscal_em'] = em.isoformat() if em else None
         data['homologacao_fiscal_status'] = instance.homologacao_fiscal_status
         data['homologacao_fiscal_observacao'] = instance.homologacao_fiscal_observacao or ''
+        rec = instance.recuperada_em
+        data['recuperada_em'] = rec.isoformat() if rec else None
+        data['motivo_recuperacao'] = instance.motivo_recuperacao or ''
+        data['status_anterior_recuperacao'] = instance.status_anterior_recuperacao or ''
         data['vendedor_id'] = instance.vendedor_ref_id
         data['vendedor_nome'] = nome_vendedor_exibicao(instance)
         return data

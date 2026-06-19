@@ -38,6 +38,7 @@ from .comercial_pdf_shared import pdf_http_response
 from .pedido_compra_pdf import gerar_pedido_compra_pdf_bytes
 from .pedido_venda_pdf import gerar_pedido_venda_pdf_bytes
 from .proposta_pdf import gerar_proposta_pdf_bytes
+from .proposta_comercial_historico import listar_historico_comercial
 from .homologacao_cenario_fiscal import (
     aprovar_homologacao_cenario_fiscal,
     iniciar_homologacao_cenario_fiscal,
@@ -61,6 +62,8 @@ class PropostaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
             'itens__produto',
             'itens__proposta__cenario_fiscal_saida',
             'itens__itens_pedido_venda__pedido',
+            'itens__pedido_venda_gerado',
+            'itens__item_pedido_venda_gerado__pedido',
             'pedidos_gerados',
         )
         .all()
@@ -181,6 +184,11 @@ class PropostaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         except ValueError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(resultado, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['get'], url_path='historico-comercial')
+    def historico_comercial(self, request, pk=None):
+        proposta = self.get_object()
+        return Response(listar_historico_comercial(proposta))
 
     @action(detail=True, methods=['post'], url_path='homologar-cenario-fiscal/iniciar')
     def homologar_cenario_fiscal_iniciar(self, request, pk=None):

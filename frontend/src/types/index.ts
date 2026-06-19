@@ -994,6 +994,27 @@ export interface HistoricoHomologacaoFiscalProposta {
   eventos: EventoHomologacaoFiscalProposta[];
 }
 
+export type TipoEventoComercialProposta =
+  | 'PROPOSTA_RECUPERADA'
+  | 'PEDIDO_GERADO'
+  | 'ITEM_CONVERTIDO'
+  | 'ITEM_CANCELADO'
+  | 'ITEM_MANTIDO_PENDENTE';
+
+export interface EventoComercialProposta {
+  id: number;
+  tipo_evento: TipoEventoComercialProposta;
+  descricao: string;
+  usuario_nome: string;
+  criado_em: string;
+  dados_json?: Record<string, unknown> | null;
+}
+
+export interface HistoricoComercialProposta {
+  proposta_id: number;
+  eventos: EventoComercialProposta[];
+}
+
 export interface UltimoEventoHomologacaoFiscal {
   id: number;
   tipo_evento: TipoEventoHomologacaoFiscal;
@@ -1472,6 +1493,9 @@ export interface ItemProposta {
   status_comercial?: string;
   pedido_venda_id?: number | null;
   pedido_venda_numero?: string;
+  item_pedido_venda_gerado_id?: number | null;
+  convertido_em?: string | null;
+  motivo_cancelamento_item?: string;
   pode_selecionar_para_pedido?: boolean;
 }
 
@@ -1617,6 +1641,9 @@ export interface Proposta {
   requer_recuperacao?: boolean;
   pedidos_gerados_resumo?: { id: number; numero: string; status: string }[];
   itens_pendentes_conversao?: number;
+  recuperada_em?: string | null;
+  motivo_recuperacao?: string;
+  status_anterior_recuperacao?: string;
   itens: ItemProposta[];
 }
 

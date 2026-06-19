@@ -178,7 +178,9 @@ class Comercial40136QuantidadePedidoTests(TestCase):
         }
         ser = PedidoVendaSerializer(pedido, data=payload, partial=False)
         self.assertFalse(ser.is_valid())
-        self.assertIn('quantidade_negociada', ser.errors.get('itens', [{}])[0])
+        # ItemPedidoVendaSerializer valida quantidade antes de quantidade_negociada;
+        # com ambos zero no payload, o erro reportado é em quantidade.
+        self.assertIn('quantidade', ser.errors.get('itens', [{}])[0])
 
     def test_pedido_faturado_bloqueia_alteracao_quantidade(self):
         pedido, item = _pedido_com_itens(qtd=Decimal('10'))

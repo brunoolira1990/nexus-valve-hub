@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Literal, TypedDict
 
 from django.db import transaction
@@ -13,10 +13,11 @@ from apps.comercial.commercial_defaults import (
     STATUS_ITEM_CANCELADO,
     STATUS_ITEM_PERDIDO,
     STATUS_PROPOSTA_CONVERTIDA,
+    STATUS_PROPOSTA_REABERTA,
 )
-from apps.comercial.models import ItemProposta, PedidoVenda, Proposta
+from apps.comercial.models import ItemProposta, PedidoVenda, Proposta, PropostaComercialHistorico
+from apps.comercial.proposta_comercial_historico import registrar_evento_comercial
 from apps.comercial.proposta_comercial_status import (
-    append_historico_comercial,
     calcular_status_proposta_apos_conversao,
     item_pode_converter,
     itens_pendentes_conversao,
@@ -41,6 +42,12 @@ MSG_PROPOSTA_CANCELADA_RECUPERAR = (
 MSG_NENHUM_ITEM_SELECIONADO = 'Selecione ao menos um item da proposta para gerar o pedido de venda.'
 ACAO_MANTER_PENDENTE = 'MANTER_PENDENTE'
 ACAO_CANCELAR = 'CANCELAR'
+
+_MONETARY_QUANT = Decimal('0.01')
+
+
+def _round_monetary(value: Decimal) -> Decimal:
+    return value.quantize(_MONETARY_QUANT, rounding=ROUND_HALF_UP)
 
 
 class ConverterPropostaPedidoDict(TypedDict):
@@ -125,7 +132,8 @@ def _snapshot_conversao_proposta(proposta: Proposta, *, parcial: bool, itens_ids
 def _valor_item_proposta(item: ItemProposta) -> Decimal:
     qtd = item.quantidade_negociada or item.quantidade
     preco = item.preco_por_unidade_negociada or item.valor_unitario or item.preco_final
-    return (qtd * preco) - (item.desconto or Decimal('0'))
+    bruto = (qtd * preco) - (item.desconto or Decimal('0'))
+    return _round_monetary(bruto)
 
 
 def validar_proposta_para_conversao(proposta: Proposta, *, parcial: bool = False) -> tuple[bool, list[str]]:
@@ -209,7 +217,9 @@ def _montar_payload_pedido(
     observacao: str = '',
 ) -> dict[str, Any]:
     itens_payload = [_montar_item_payload(item, proposta) for item in itens]
-    valor_total = sum((_valor_item_proposta(item) for item in itens), Decimal('0'))
+    valor_total = _round_monetary(
+        sum((_valor_item_proposta(item) for item in itens), Decimal('0')),
+    )
     obs_internas = (proposta.homologacao_fiscal_observacao or '').strip()
     if observacao.strip():
         extra = observacao.strip()
@@ -290,6 +300,15 @@ def _resolver_itens_selecionados(proposta: Proposta, itens_payload: list[dict] |
     return selecionados
 
 
+def _sincronizar_status_legado_com_pedido(proposta: Proposta) -> None:
+    """Alinha proposta com pedido já vinculado (legado 2.6.4 / migration 0029)."""
+    if not proposta.pedidos_gerados.exists():
+        return
+    if (proposta.status or '').strip().upper() != STATUS_PROPOSTA_CONVERTIDA:
+        proposta.status = STATUS_PROPOSTA_CONVERTIDA
+        proposta.save(update_fields=['status'])
+
+
 def gerar_pedido_venda_de_proposta(
     proposta: Proposta,
     *,
@@ -308,7 +327,11 @@ def gerar_pedido_venda_de_proposta(
     if proposta_totalmente_convertida(proposta):
         raise ValueError(MSG_PROPOSTA_JA_CONVERTIDA)
 
-    parcial = bool(proposta.pedidos_gerados.exists()) or bool(itens_payload)
+    if not itens_payload and proposta.pedidos_gerados.exists():
+        _sincronizar_status_legado_com_pedido(proposta)
+        raise ValueError(MSG_PROPOSTA_JA_CONVERTIDA)
+
+    parcial = bool(itens_payload)
     ok, mensagens = validar_proposta_para_conversao(proposta, parcial=parcial)
     if not ok:
         raise ValueError(mensagens[0] if mensagens else 'Proposta não pode ser convertida.')
@@ -326,30 +349,79 @@ def gerar_pedido_venda_de_proposta(
     with transaction.atomic():
         serializer = PedidoVendaSerializer(
             data=payload,
-            context={'allow_proposta_vinculo': True, 'allow_multi_pedido_proposta': True},
+            context={
+                'allow_proposta_vinculo': True,
+                'allow_multi_pedido_proposta': bool(itens_payload),
+            },
         )
         serializer.is_valid(raise_exception=True)
         pedido = serializer.save()
+        links = {
+            ipv.item_proposta_id: ipv
+            for ipv in pedido.itens.filter(item_proposta_id__isnull=False).select_related('pedido')
+        }
 
         for item in selecionados:
-            marcar_item_convertido(item, pedido_id=pedido.pk, pedido_numero=pedido.numero)
+            marcar_item_convertido(
+                item,
+                pedido=pedido,
+                item_pedido=links.get(item.pk),
+                usuario=usuario,
+            )
+            registrar_evento_comercial(
+                proposta,
+                PropostaComercialHistorico.TipoEvento.ITEM_CONVERTIDO,
+                descricao=f'Item #{item.pk} convertido no pedido {pedido.numero}.',
+                usuario=usuario,
+                dados_json={
+                    'item_proposta_id': item.pk,
+                    'pedido_venda_id': pedido.pk,
+                    'pedido_venda_numero': pedido.numero,
+                    'item_pedido_venda_id': links[item.pk].pk if item.pk in links else None,
+                },
+            )
 
         if acao_itens_nao_selecionados == ACAO_CANCELAR:
             for item in nao_selecionados:
-                marcar_item_cancelado_ou_perdido(item, status=STATUS_ITEM_CANCELADO)
+                marcar_item_cancelado_ou_perdido(item, status=STATUS_ITEM_CANCELADO, usuario=usuario)
+                registrar_evento_comercial(
+                    proposta,
+                    PropostaComercialHistorico.TipoEvento.ITEM_CANCELADO,
+                    descricao=f'Item #{item.pk} cancelado (não selecionado na geração do pedido {pedido.numero}).',
+                    usuario=usuario,
+                    dados_json={'item_proposta_id': item.pk, 'pedido_venda_id': pedido.pk},
+                )
         else:
             for item in nao_selecionados:
                 marcar_item_mantido_pendente(item)
+                registrar_evento_comercial(
+                    proposta,
+                    PropostaComercialHistorico.TipoEvento.ITEM_MANTIDO_PENDENTE,
+                    descricao=f'Item #{item.pk} mantido pendente após geração do pedido {pedido.numero}.',
+                    usuario=usuario,
+                    dados_json={'item_proposta_id': item.pk, 'pedido_venda_id': pedido.pk},
+                )
 
         proposta.status = calcular_status_proposta_apos_conversao(proposta)
-        hist = (
+        hist_desc = (
             f'Pedido de venda {pedido.numero} gerado com {len(selecionados)} item(ns). '
             f'Itens restantes: {acao_itens_nao_selecionados.lower()}.'
         )
         if observacao.strip():
-            hist += f' Obs.: {observacao.strip()}'
-        append_historico_comercial(proposta, hist, usuario=usuario)
-        proposta.save(update_fields=['status', 'observacoes_proposta'])
+            hist_desc += f' Obs.: {observacao.strip()}'
+        registrar_evento_comercial(
+            proposta,
+            PropostaComercialHistorico.TipoEvento.PEDIDO_GERADO,
+            descricao=hist_desc,
+            usuario=usuario,
+            dados_json={
+                'pedido_venda_id': pedido.pk,
+                'pedido_venda_numero': pedido.numero,
+                'itens_convertidos_ids': [it.pk for it in selecionados],
+                'acao_itens_nao_selecionados': acao_itens_nao_selecionados,
+            },
+        )
+        proposta.save(update_fields=['status'])
         recalcular_pedido_venda(pedido)
 
     mensagens_finais = list(extra_msgs)
@@ -367,8 +439,6 @@ def converter_proposta_em_pedido_venda(proposta: Proposta) -> ConverterPropostaP
 
 
 def recuperar_proposta_comercial(proposta: Proposta, *, motivo: str, usuario=None) -> RecuperarPropostaDict:
-    from apps.comercial.commercial_defaults import STATUS_PROPOSTA_REABERTA
-
     proposta = Proposta.objects.prefetch_related('itens', 'pedidos_gerados').get(pk=proposta.pk)
     motivo_limpo = (motivo or '').strip()
     if not motivo_limpo:
@@ -383,12 +453,26 @@ def recuperar_proposta_comercial(proposta: Proposta, *, motivo: str, usuario=Non
     status_anterior = proposta.status
     with transaction.atomic():
         proposta.status = STATUS_PROPOSTA_REABERTA
-        append_historico_comercial(
-            proposta,
-            f'Proposta recuperada/reaberta (status anterior: {status_anterior}). Motivo: {motivo_limpo}',
-            usuario=usuario,
+        proposta.recuperada_em = timezone.now()
+        proposta.recuperada_por = usuario if getattr(usuario, 'is_authenticated', False) else None
+        proposta.motivo_recuperacao = motivo_limpo
+        proposta.status_anterior_recuperacao = status_anterior or ''
+        proposta.save(
+            update_fields=[
+                'status',
+                'recuperada_em',
+                'recuperada_por',
+                'motivo_recuperacao',
+                'status_anterior_recuperacao',
+            ],
         )
-        proposta.save(update_fields=['status', 'observacoes_proposta'])
+        registrar_evento_comercial(
+            proposta,
+            PropostaComercialHistorico.TipoEvento.PROPOSTA_RECUPERADA,
+            descricao=f'Proposta recuperada/reaberta (status anterior: {status_anterior}). Motivo: {motivo_limpo}',
+            usuario=usuario,
+            dados_json={'status_anterior': status_anterior, 'motivo': motivo_limpo},
+        )
 
     return {
         'proposta_id': proposta.pk,

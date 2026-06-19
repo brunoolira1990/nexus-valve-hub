@@ -202,6 +202,27 @@ class ConverterPropostaPedidoTests(ConverterPropostaPedidoSetupMixin, TestCase):
         self.assertEqual(r.status_code, status.HTTP_200_OK)
         self.assertIsNone(r.json()['pedido_venda_id'])
 
+    def test_valor_total_pedido_arredonda_escala_orm(self):
+        """Multiplicação Decimal do ORM pode exceder 2 casas; payload deve quantizar."""
+        from apps.comercial.converter_proposta_pedido import _montar_payload_pedido, _valor_item_proposta
+        from apps.comercial.serializers import PedidoVendaSerializer
+
+        p = _proposta_aprovada()
+        prod = _produto()
+        item = _item(p, prod)
+        item.refresh_from_db()
+        valor_item = _valor_item_proposta(item)
+        self.assertEqual(valor_item, Decimal('195.00'))
+        self.assertEqual(abs(valor_item.as_tuple().exponent), 2)
+
+        payload = _montar_payload_pedido(p, itens=[item], mensagens=[])
+        self.assertEqual(payload['valor_total'], Decimal('195.00'))
+        ser = PedidoVendaSerializer(
+            data=payload,
+            context={'allow_proposta_vinculo': True, 'allow_multi_pedido_proposta': True},
+        )
+        self.assertTrue(ser.is_valid(), ser.errors)
+
 
 @override_settings(USE_CENARIO_FISCAL_SAIDA_FOR_PROPOSTAS=True)
 class ConverterPropostaPedidoCenarioGlobalTests(ConverterPropostaPedidoSetupMixin, TestCase):

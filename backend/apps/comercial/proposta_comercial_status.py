@@ -1,4 +1,4 @@
-"""Status comercial de proposta/itens e histórico sem migration dedicada."""
+"""Status comercial de proposta/itens persistidos no banco."""
 
 from __future__ import annotations
 
@@ -18,9 +18,7 @@ from apps.comercial.commercial_defaults import (
 )
 
 if TYPE_CHECKING:
-    from apps.comercial.models import ItemProposta, Proposta
-
-HISTORICO_MARKER = '[HISTORICO COMERCIAL]'
+    from apps.comercial.models import ItemPedidoVenda, ItemProposta, Proposta
 
 STATUS_PROPOSTA_BLOQUEIO_GERAR_PEDIDO = frozenset(
     {
@@ -60,9 +58,19 @@ def _merge_comercial_snapshot(item: ItemProposta, patch: dict[str, Any]) -> dict
     return raw
 
 
+def _usuario_autenticado(usuario):
+    if usuario is not None and getattr(usuario, 'is_authenticated', False):
+        return usuario
+    return None
+
+
 def item_ja_convertido_em_pedido(item: ItemProposta) -> bool:
     from apps.comercial.models import ItemPedidoVenda
 
+    if (item.status_comercial or '').strip() == STATUS_ITEM_CONVERTIDO:
+        return True
+    if item.pedido_venda_gerado_id or item.item_pedido_venda_gerado_id:
+        return True
     if ItemPedidoVenda.objects.filter(item_proposta_id=item.pk).exists():
         return True
     return _comercial_snapshot(item).get('status_comercial') == STATUS_ITEM_CONVERTIDO
@@ -71,14 +79,23 @@ def item_ja_convertido_em_pedido(item: ItemProposta) -> bool:
 def status_item_proposta(item: ItemProposta) -> str:
     if item_ja_convertido_em_pedido(item):
         return STATUS_ITEM_CONVERTIDO
-    st = _comercial_snapshot(item).get('status_comercial')
+    st = (item.status_comercial or '').strip()
     if st in (
         STATUS_ITEM_PENDENTE,
         STATUS_ITEM_MANTIDO,
         STATUS_ITEM_CANCELADO,
         STATUS_ITEM_PERDIDO,
+        STATUS_ITEM_CONVERTIDO,
     ):
         return st
+    snap = _comercial_snapshot(item).get('status_comercial')
+    if snap in (
+        STATUS_ITEM_PENDENTE,
+        STATUS_ITEM_MANTIDO,
+        STATUS_ITEM_CANCELADO,
+        STATUS_ITEM_PERDIDO,
+    ):
+        return snap
     return STATUS_ITEM_PENDENTE
 
 
@@ -86,41 +103,90 @@ def item_pode_converter(item: ItemProposta) -> bool:
     return status_item_proposta(item) in (STATUS_ITEM_PENDENTE, STATUS_ITEM_MANTIDO)
 
 
-def marcar_item_convertido(item: ItemProposta, *, pedido_id: int, pedido_numero: str) -> None:
+def marcar_item_convertido(
+    item: ItemProposta,
+    *,
+    pedido,
+    item_pedido: ItemPedidoVenda | None = None,
+    usuario=None,
+) -> None:
+    agora = timezone.now()
+    user = _usuario_autenticado(usuario)
+    item.status_comercial = STATUS_ITEM_CONVERTIDO
+    item.pedido_venda_gerado = pedido
+    item.item_pedido_venda_gerado = item_pedido
+    item.convertido_em = agora
+    item.convertido_por = user
     item.snapshot_produto = _merge_comercial_snapshot(
         item,
         {
             'status_comercial': STATUS_ITEM_CONVERTIDO,
-            'convertido_em': timezone.now().isoformat(),
-            'pedido_venda_id': pedido_id,
-            'pedido_venda_numero': pedido_numero,
+            'convertido_em': agora.isoformat(),
+            'pedido_venda_id': pedido.pk,
+            'pedido_venda_numero': pedido.numero,
         },
     )
-    item.save(update_fields=['snapshot_produto'])
+    item.save(
+        update_fields=[
+            'status_comercial',
+            'pedido_venda_gerado',
+            'item_pedido_venda_gerado',
+            'convertido_em',
+            'convertido_por',
+            'snapshot_produto',
+        ],
+    )
 
 
-def marcar_item_cancelado_ou_perdido(item: ItemProposta, *, status: str) -> None:
+def marcar_item_cancelado_ou_perdido(
+    item: ItemProposta,
+    *,
+    status: str,
+    usuario=None,
+    motivo: str = '',
+) -> None:
     if status not in (STATUS_ITEM_CANCELADO, STATUS_ITEM_PERDIDO):
         raise ValueError('Status inválido para cancelamento de item.')
+    agora = timezone.now()
+    user = _usuario_autenticado(usuario)
+    item.status_comercial = status
+    item.cancelado_em = agora
+    item.cancelado_por = user
+    item.motivo_cancelamento_item = (motivo or '').strip()
     item.snapshot_produto = _merge_comercial_snapshot(
         item,
         {
             'status_comercial': status,
-            'cancelado_em': timezone.now().isoformat(),
+            'cancelado_em': agora.isoformat(),
         },
     )
-    item.save(update_fields=['snapshot_produto'])
+    item.save(
+        update_fields=[
+            'status_comercial',
+            'cancelado_em',
+            'cancelado_por',
+            'motivo_cancelamento_item',
+            'snapshot_produto',
+        ],
+    )
 
 
 def marcar_item_mantido_pendente(item: ItemProposta) -> None:
+    item.status_comercial = STATUS_ITEM_MANTIDO
     item.snapshot_produto = _merge_comercial_snapshot(
         item,
         {'status_comercial': STATUS_ITEM_MANTIDO},
     )
-    item.save(update_fields=['snapshot_produto'])
+    item.save(update_fields=['status_comercial', 'snapshot_produto'])
 
 
 def pedido_vinculado_item(item: ItemProposta) -> tuple[int | None, str]:
+    if item.pedido_venda_gerado_id and item.pedido_venda_gerado:
+        return item.pedido_venda_gerado_id, item.pedido_venda_gerado.numero
+    if item.item_pedido_venda_gerado_id and item.item_pedido_venda_gerado:
+        pedido = item.item_pedido_venda_gerado.pedido
+        if pedido:
+            return pedido.pk, pedido.numero
     from apps.comercial.models import ItemPedidoVenda
 
     link = (
@@ -171,16 +237,3 @@ def calcular_status_proposta_apos_conversao(proposta: Proposta) -> str:
     if _norm_status(st) == STATUS_PROPOSTA_REABERTA:
         return STATUS_PROPOSTA_REABERTA
     return st or STATUS_PROPOSTA_REABERTA
-
-
-def append_historico_comercial(proposta: Proposta, linha: str, *, usuario=None) -> None:
-    user_txt = ''
-    if usuario is not None and getattr(usuario, 'is_authenticated', False):
-        user_txt = getattr(usuario, 'get_full_name', lambda: '')() or getattr(usuario, 'username', '') or ''
-    ts = timezone.localtime(timezone.now()).strftime('%d/%m/%Y %H:%M')
-    prefix = f'{HISTORICO_MARKER} {ts}'
-    if user_txt:
-        prefix += f' ({user_txt})'
-    entry = f'{prefix} — {linha.strip()}'
-    base = (proposta.observacoes_proposta or '').rstrip()
-    proposta.observacoes_proposta = f'{base}\n{entry}'.strip() if base else entry

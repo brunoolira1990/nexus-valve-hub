@@ -22,6 +22,7 @@ import type {
   CriarFaturamentoPedidoResponse,
   GerarNFeSaidaFaturamentoResponse,
   HistoricoHomologacaoFiscalProposta,
+  HistoricoComercialProposta,
   ResumoFaturamentoPedido,
   HomologacaoFiscalPropostaPayload,
   ItemPedido,
@@ -139,6 +140,8 @@ export const propostasService = {
     (await api.post<ConverterPropostaPedidoResponse>(`${propostasPath}${id}/gerar-pedido/`, payload)).data,
   recuperar: async (id: number, payload: { motivo: string }) =>
     (await api.post<RecuperarPropostaResponse>(`${propostasPath}${id}/recuperar/`, payload)).data,
+  historicoComercial: async (id: number) =>
+    (await api.get<HistoricoComercialProposta>(`${propostasPath}${id}/historico-comercial/`)).data,
   homologacaoFiscalResumo: async (id: number) =>
     (await api.get<HomologacaoFiscalPropostaPayload>(`${propostasPath}${id}/homologar-cenario-fiscal/resumo/`))
       .data,

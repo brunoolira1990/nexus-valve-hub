@@ -153,12 +153,29 @@ class Proposta(models.Model):
     homologacao_fiscal_em = models.DateTimeField(null=True, blank=True)
     homologacao_fiscal_observacao = models.TextField(blank=True)
     homologacao_fiscal_resumo = models.JSONField(null=True, blank=True)
+    recuperada_em = models.DateTimeField(null=True, blank=True)
+    recuperada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='propostas_recuperadas',
+    )
+    motivo_recuperacao = models.TextField(blank=True)
+    status_anterior_recuperacao = models.CharField(max_length=64, blank=True)
 
     class Meta:
         ordering = ['-data', 'numero']
 
 
 class ItemProposta(models.Model):
+    class StatusComercial(models.TextChoices):
+        PENDENTE = 'PENDENTE', 'Pendente'
+        CONVERTIDO_EM_PEDIDO = 'CONVERTIDO_EM_PEDIDO', 'Convertido em pedido'
+        CANCELADO = 'CANCELADO', 'Cancelado'
+        PERDIDO = 'PERDIDO', 'Perdido'
+        MANTIDO_PARA_DEPOIS = 'MANTIDO_PARA_DEPOIS', 'Mantido para depois'
+
     proposta = models.ForeignKey(Proposta, on_delete=models.CASCADE, related_name='itens')
     produto = models.ForeignKey('produtos.Produto', on_delete=models.PROTECT, null=True, blank=True)
     descricao_avulsa = models.CharField(max_length=255, blank=True)
@@ -205,6 +222,43 @@ class ItemProposta(models.Model):
     margem_resultante = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal('0'))
     lucro_resultante = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
     snapshot_produto = models.JSONField(default=dict, blank=True)
+    status_comercial = models.CharField(
+        max_length=32,
+        choices=StatusComercial.choices,
+        default=StatusComercial.PENDENTE,
+        db_index=True,
+    )
+    pedido_venda_gerado = models.ForeignKey(
+        'PedidoVenda',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='itens_proposta_convertidos',
+    )
+    item_pedido_venda_gerado = models.ForeignKey(
+        'ItemPedidoVenda',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='item_proposta_origem',
+    )
+    convertido_em = models.DateTimeField(null=True, blank=True)
+    convertido_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='itens_proposta_convertidos',
+    )
+    cancelado_em = models.DateTimeField(null=True, blank=True)
+    cancelado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='itens_proposta_cancelados',
+    )
+    motivo_cancelamento_item = models.TextField(blank=True)
 
 
 class HomologacaoFiscalPropostaEvento(models.Model):
@@ -251,6 +305,42 @@ class HomologacaoFiscalPropostaEvento(models.Model):
         indexes = [
             models.Index(fields=['proposta', '-criado_em']),
         ]
+
+
+class PropostaComercialHistorico(models.Model):
+    """Trilha de auditoria comercial da proposta (conversão parcial, recuperação, itens)."""
+
+    class TipoEvento(models.TextChoices):
+        PROPOSTA_RECUPERADA = 'PROPOSTA_RECUPERADA', 'Proposta recuperada'
+        PEDIDO_GERADO = 'PEDIDO_GERADO', 'Pedido de venda gerado'
+        ITEM_CONVERTIDO = 'ITEM_CONVERTIDO', 'Item convertido em pedido'
+        ITEM_CANCELADO = 'ITEM_CANCELADO', 'Item cancelado'
+        ITEM_MANTIDO_PENDENTE = 'ITEM_MANTIDO_PENDENTE', 'Item mantido pendente'
+
+    proposta = models.ForeignKey(
+        Proposta,
+        on_delete=models.CASCADE,
+        related_name='historico_comercial',
+    )
+    tipo_evento = models.CharField(max_length=32, choices=TipoEvento.choices)
+    descricao = models.TextField()
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='eventos_comerciais_proposta',
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+    dados_json = models.JSONField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-criado_em', '-id']
+        indexes = [
+            models.Index(fields=['proposta', '-criado_em']),
+        ]
+        verbose_name = 'Histórico comercial da proposta'
+        verbose_name_plural = 'Históricos comerciais das propostas'
 
 
 class PedidoVenda(models.Model):

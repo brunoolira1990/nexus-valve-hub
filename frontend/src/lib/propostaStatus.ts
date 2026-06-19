@@ -85,3 +85,13 @@ export function labelStatusItemProposta(status?: string | null): string {
   if (st === 'MANTIDO_PARA_DEPOIS') return 'Pendente (mantido)';
   return 'Pendente';
 }
+
+export function labelEventoComercialProposta(tipo?: string | null): string {
+  const st = normStatus(tipo || '');
+  if (st === 'PROPOSTA_RECUPERADA') return 'Proposta recuperada';
+  if (st === 'PEDIDO_GERADO') return 'Pedido gerado';
+  if (st === 'ITEM_CONVERTIDO') return 'Item convertido';
+  if (st === 'ITEM_CANCELADO') return 'Item cancelado';
+  if (st === 'ITEM_MANTIDO_PENDENTE') return 'Item mantido pendente';
+  return tipo || '—';
+}

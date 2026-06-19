@@ -71,6 +71,7 @@ import type {
   ComparativoFiscalSaida,
   HomologacaoFiscalStatusProposta,
   StatusComparativoFiscalSaida,
+  EventoComercialProposta,
 } from '@/types';
 import { UFS } from '@/types';
 import {
@@ -91,6 +92,8 @@ import {
   propostaTemPedidoGerado,
   propostaTotalmenteConvertida,
   statusPropostaUi,
+  labelStatusItemProposta,
+  labelEventoComercialProposta,
 } from '@/lib/propostaStatus';
 import { usePaginatedList } from '@/hooks/usePaginatedList';
 import { PaginationControls } from '@/components/list/PaginationControls';
@@ -293,6 +296,10 @@ const Propostas = () => {
   const [gerarPedidoLoading, setGerarPedidoLoading] = useState(false);
   const [recuperarOpen, setRecuperarOpen] = useState(false);
   const [recuperarLoading, setRecuperarLoading] = useState(false);
+  const [historicoComercialOpen, setHistoricoComercialOpen] = useState(false);
+  const [historicoComercialEventos, setHistoricoComercialEventos] = useState<EventoComercialProposta[] | null>(null);
+  const [historicoComercialLoading, setHistoricoComercialLoading] = useState(false);
+  const [historicoComercialError, setHistoricoComercialError] = useState<string | null>(null);
   const [wizardProposta, setWizardProposta] = useState<Proposta | null>(null);
   const [wizardClienteId, setWizardClienteId] = useState<number | null>(null);
   const [novoClienteNome, setNovoClienteNome] = useState('');
@@ -750,6 +757,9 @@ const Propostas = () => {
   };
   const openEdit = (e: Proposta) => {
     setEditing(e);
+    setHistoricoComercialOpen(false);
+    setHistoricoComercialEventos(null);
+    setHistoricoComercialError(null);
     setClienteAvulso(!e.cliente_id);
     hydrateCliente(e.cliente_id ?? null, e.cliente_nome);
     hydrateVendedor(e.vendedor_id ?? null, e.vendedor_nome || e.vendedor);
@@ -889,6 +899,7 @@ const Propostas = () => {
       setGerarPedidoOpen(false);
       const p = await propostasService.getById(editing.id);
       setEditing(p);
+      setHistoricoComercialEventos(null);
       await load();
       const abrir = window.confirm(`Pedido de Venda nº ${r.numero} gerado com sucesso.\n\nDeseja abrir o pedido agora?`);
       if (abrir) abrirPedidoPorId(r.pedido_id);
@@ -907,12 +918,33 @@ const Propostas = () => {
       const p = await propostasService.getById(editing.id);
       setEditing(p);
       setRecuperarOpen(false);
+      setHistoricoComercialEventos(null);
       await load();
       alert(r.mensagem);
     } catch (e) {
       alert(apiErrorMessage(e, { fallback: 'Não foi possível recuperar a proposta.' }));
     } finally {
       setRecuperarLoading(false);
+    }
+  };
+
+  const abrirHistoricoComercial = async () => {
+    if (!editing?.id) return;
+    if (historicoComercialOpen) {
+      setHistoricoComercialOpen(false);
+      return;
+    }
+    setHistoricoComercialOpen(true);
+    if (historicoComercialEventos !== null) return;
+    setHistoricoComercialLoading(true);
+    setHistoricoComercialError(null);
+    try {
+      const data = await propostasService.historicoComercial(editing.id);
+      setHistoricoComercialEventos(data.eventos);
+    } catch (e) {
+      setHistoricoComercialError(apiErrorMessage(e, { fallback: 'Não foi possível carregar o histórico comercial.' }));
+    } finally {
+      setHistoricoComercialLoading(false);
     }
   };
 
@@ -2459,6 +2491,70 @@ const Propostas = () => {
                 )}
               </div>
             )}
+          </div>
+        ) : null}
+
+        {editing?.id ? (
+          <div className="mt-4 rounded-md border border-border bg-muted/20 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-medium">Histórico comercial</p>
+              <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => void abrirHistoricoComercial()}>
+                {historicoComercialOpen ? 'Ocultar histórico' : 'Ver histórico comercial'}
+              </button>
+            </div>
+            {editing.recuperada_em ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Recuperada em {formatDateBr(editing.recuperada_em)}
+                {editing.status_anterior_recuperacao ? ` (status anterior: ${editing.status_anterior_recuperacao})` : ''}
+                {editing.motivo_recuperacao ? ` — ${editing.motivo_recuperacao}` : ''}
+              </p>
+            ) : null}
+            {historicoComercialOpen ? (
+              <div className="mt-3 space-y-2">
+                {historicoComercialLoading ? (
+                  <p className="text-xs text-muted-foreground">Carregando histórico…</p>
+                ) : historicoComercialError ? (
+                  <p className="text-xs text-muted-foreground">{historicoComercialError}</p>
+                ) : historicoComercialEventos?.length ? (
+                  <ul className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {historicoComercialEventos.map((evt) => (
+                      <li key={evt.id} className="rounded border border-border bg-background p-2 text-xs">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="font-medium">{labelEventoComercialProposta(evt.tipo_evento)}</span>
+                          <span className="text-muted-foreground">{formatDateBr(evt.criado_em)}</span>
+                          {evt.usuario_nome ? <span className="text-muted-foreground">— {evt.usuario_nome}</span> : null}
+                        </div>
+                        <p className="mt-1 text-muted-foreground">{evt.descricao}</p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Nenhum evento comercial registrado ainda.</p>
+                )}
+              </div>
+            ) : null}
+            {editing.itens.some((it) => it.status_comercial && it.status_comercial !== 'PENDENTE') ? (
+              <div className="mt-3 overflow-x-auto border border-border rounded-md">
+                <table className="erp-table w-full text-xs">
+                  <thead>
+                    <tr>
+                      <th>Item</th>
+                      <th>Status comercial</th>
+                      <th>Pedido vinculado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {editing.itens.map((it) => (
+                      <tr key={it.id}>
+                        <td>{it.produto_nome || it.descricao_avulsa || `#${it.id}`}</td>
+                        <td>{labelStatusItemProposta(it.status_comercial)}</td>
+                        <td>{it.pedido_venda_numero || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
           </div>
         ) : null}
 

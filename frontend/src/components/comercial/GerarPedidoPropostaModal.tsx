@@ -4,6 +4,12 @@ import { formatMoneyBr } from '@/lib/numberFormat';
 import { labelStatusItemProposta } from '@/lib/propostaStatus';
 import type { AcaoItensNaoSelecionados, ItemProposta, Proposta } from '@/types';
 
+function itemPodeSelecionarParaPedido(it: ItemProposta): boolean {
+  if (it.pode_selecionar_para_pedido === false) return false;
+  const st = (it.status_comercial || 'PENDENTE').toUpperCase();
+  return !['CONVERTIDO_EM_PEDIDO', 'CANCELADO', 'PERDIDO'].includes(st);
+}
+
 function valorTotalItem(it: ItemProposta): number {
   const qtd = Number(it.quantidade_negociada ?? it.quantidade ?? 0);
   const preco = Number(it.preco_por_unidade_negociada ?? it.valor_unitario ?? it.preco_final ?? 0);
@@ -29,7 +35,7 @@ export function GerarPedidoPropostaModal({ open, proposta, loading, onClose, onC
 
   useEffect(() => {
     if (!open || !proposta) return;
-    const pendentes = proposta.itens.filter((it) => it.pode_selecionar_para_pedido !== false && it.status_comercial !== 'CONVERTIDO_EM_PEDIDO');
+    const pendentes = proposta.itens.filter((it) => itemPodeSelecionarParaPedido(it));
     setSelecionados(pendentes.map((it) => it.id));
     setAcao('MANTER_PENDENTE');
     setObservacao('');
@@ -67,7 +73,7 @@ export function GerarPedidoPropostaModal({ open, proposta, loading, onClose, onC
               </thead>
               <tbody>
                 {itens.map((it) => {
-                  const pode = it.pode_selecionar_para_pedido !== false && it.status_comercial !== 'CONVERTIDO_EM_PEDIDO';
+                  const pode = itemPodeSelecionarParaPedido(it);
                   const st = it.status_comercial || 'PENDENTE';
                   return (
                     <tr key={it.id} className={!pode ? 'opacity-60' : undefined}>
