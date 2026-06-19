@@ -999,7 +999,8 @@ export type TipoEventoComercialProposta =
   | 'PEDIDO_GERADO'
   | 'ITEM_CONVERTIDO'
   | 'ITEM_CANCELADO'
-  | 'ITEM_MANTIDO_PENDENTE';
+  | 'ITEM_MANTIDO_PENDENTE'
+  | 'PEDIDO_EXCLUIDO_STATUS_REVERTIDO';
 
 export interface EventoComercialProposta {
   id: number;

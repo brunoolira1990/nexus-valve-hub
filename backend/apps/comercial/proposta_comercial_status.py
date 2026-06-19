@@ -67,7 +67,10 @@ def _usuario_autenticado(usuario):
 def item_ja_convertido_em_pedido(item: ItemProposta) -> bool:
     from apps.comercial.models import ItemPedidoVenda
 
-    if (item.status_comercial or '').strip() == STATUS_ITEM_CONVERTIDO:
+    st = (item.status_comercial or '').strip()
+    if st in (STATUS_ITEM_PENDENTE, STATUS_ITEM_MANTIDO):
+        return False
+    if st == STATUS_ITEM_CONVERTIDO:
         return True
     if item.pedido_venda_gerado_id or item.item_pedido_venda_gerado_id:
         return True
@@ -237,3 +240,47 @@ def calcular_status_proposta_apos_conversao(proposta: Proposta) -> str:
     if _norm_status(st) == STATUS_PROPOSTA_REABERTA:
         return STATUS_PROPOSTA_REABERTA
     return st or STATUS_PROPOSTA_REABERTA
+
+
+def reverter_item_proposta_apos_exclusao_pedido(item: ItemProposta, *, usuario=None) -> None:
+    """Limpa vínculo de conversão e restaura status pendente, preservando snapshot fiscal/comercial."""
+    if status_item_proposta(item) != STATUS_ITEM_CONVERTIDO:
+        return
+    item.status_comercial = STATUS_ITEM_PENDENTE
+    item.pedido_venda_gerado = None
+    item.item_pedido_venda_gerado = None
+    item.convertido_em = None
+    item.convertido_por = None
+    item.snapshot_produto = _merge_comercial_snapshot(
+        item,
+        {
+            'status_comercial': STATUS_ITEM_PENDENTE,
+            'convertido_em': None,
+            'pedido_venda_id': None,
+            'pedido_venda_numero': '',
+        },
+    )
+    item.save(
+        update_fields=[
+            'status_comercial',
+            'pedido_venda_gerado',
+            'item_pedido_venda_gerado',
+            'convertido_em',
+            'convertido_por',
+            'snapshot_produto',
+        ],
+    )
+
+
+def calcular_status_proposta_apos_exclusao_pedido(proposta: Proposta) -> str:
+    if proposta_totalmente_convertida(proposta):
+        return STATUS_PROPOSTA_CONVERTIDA
+    has_converted = any(
+        status_item_proposta(it) == STATUS_ITEM_CONVERTIDO for it in proposta.itens.all()
+    )
+    if proposta.pedidos_gerados.exists() or has_converted:
+        return STATUS_PROPOSTA_PARCIALMENTE_CONVERTIDA
+    st = _norm_status(proposta.status)
+    if st == STATUS_PROPOSTA_REABERTA:
+        return STATUS_PROPOSTA_REABERTA
+    return 'Aprovada'

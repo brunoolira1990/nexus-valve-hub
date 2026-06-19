@@ -409,7 +409,15 @@ const PedidosVenda = () => {
       toast.error('Não foi possível identificar o pedido para excluir. Recarregue a lista.');
       return;
     }
-    if (!confirm('Excluir este pedido de venda?')) return;
+    const propostaRef = pedido.proposta_numero
+      ? ` ${pedido.proposta_numero}`
+      : pedido.proposta_id
+        ? ` #${pedido.proposta_id}`
+        : '';
+    const msg = pedido.proposta_id
+      ? `Excluir o pedido de venda ${pedido.numero}? Os itens vinculados na proposta${propostaRef} voltarão para pendente, se não houver faturamento ou outros efeitos operacionais.`
+      : 'Excluir este pedido de venda?';
+    if (!confirm(msg)) return;
     try {
       await pedidosVendaService.delete(id);
       load();

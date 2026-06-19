@@ -280,6 +280,12 @@ class PropostaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
 
 class PedidoVendaViewSet(FriendlyDestroyMixin, AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
     destroy_entity_label = 'pedido de venda'
+
+    def perform_destroy(self, instance):
+        from apps.comercial.pedido_venda_exclusao import excluir_pedido_venda
+
+        excluir_pedido_venda(instance, usuario=self.request.user)
+
     queryset = (
         PedidoVenda.objects.select_related(
             'cliente', 'proposta', 'empresa_emitente', 'vendedor_ref',

@@ -316,6 +316,10 @@ class PropostaComercialHistorico(models.Model):
         ITEM_CONVERTIDO = 'ITEM_CONVERTIDO', 'Item convertido em pedido'
         ITEM_CANCELADO = 'ITEM_CANCELADO', 'Item cancelado'
         ITEM_MANTIDO_PENDENTE = 'ITEM_MANTIDO_PENDENTE', 'Item mantido pendente'
+        PEDIDO_EXCLUIDO_STATUS_REVERTIDO = (
+            'PEDIDO_EXCLUIDO_STATUS_REVERTIDO',
+            'Pedido excluído — status revertido',
+        )
 
     proposta = models.ForeignKey(
         Proposta,
