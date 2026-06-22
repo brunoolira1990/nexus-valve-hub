@@ -8,6 +8,7 @@ import { apiErrorMessage } from '@/services/api/config';
 import type { ItemPedido, ResumoFaturamentoPedido } from '@/types';
 import { formatCurrencyBRL } from '@/lib/formatBr';
 import {
+  classificarNfeResumoPedido,
   getFaturamentoStatusLabel,
   getNFeFiscalBadgeTokens,
   linhaFaturamentoNfeAmigavel,
@@ -317,6 +318,8 @@ export function PedidoFaturamentoPanel({ pedidoId, itens = [], onAtualizado, emb
           <p className="text-xs font-medium">Faturamentos e NF-e</p>
           {faturamentosNfe.map((f) => {
             const inconsistencia = mensagemNfeFaturamentoInconsistencia(f);
+            const casoNfe = classificarNfeResumoPedido(f);
+            const nfeCancelada = casoNfe === 'cancelada';
             return (
               <div
                 key={f.faturamento_id}
@@ -360,7 +363,7 @@ export function PedidoFaturamentoPanel({ pedidoId, itens = [], onAtualizado, emb
                         }
                         onClick={() => void gerarNfe(f.faturamento_id)}
                       >
-                        Gerar NF-e rascunho
+                        {f.pode_gerar_nova_nfe ? 'Emitir nova NF-e' : 'Gerar NF-e rascunho'}
                       </button>
                       {f.pode_estornar_pre_autorizacao !== false ? (
                         <button
@@ -411,26 +414,47 @@ export function PedidoFaturamentoPanel({ pedidoId, itens = [], onAtualizado, emb
                     </>
                   ) : f.status === 'GERADO_NFE' ? (
                     <>
-                      <span className="text-xs text-muted-foreground">{getFaturamentoStatusLabel(f.status)}</span>
-                      {f.pode_estornar_pre_autorizacao !== false ? (
-                        <button
-                          type="button"
-                          className="erp-btn-outline erp-btn-sm text-destructive border-destructive/40"
-                          disabled={loading}
-                          onClick={() =>
-                            setEstornoModal({
-                              faturamentoId: f.faturamento_id,
-                              label: linhaFaturamentoNfeAmigavel(f),
-                            })
-                          }
-                        >
-                          Estornar faturamento
-                        </button>
+                      {nfeCancelada ? (
+                        <>
+                          <StatusBadge status="cancelada" />
+                          <span className="text-xs text-muted-foreground">
+                            NF-e cancelada na SEFAZ — sem validade fiscal para faturamento ativo.
+                          </span>
+                          {f.nfe_saida_id ? (
+                            <button
+                              type="button"
+                              className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1"
+                              onClick={() => navigate(`/nfe-saida?nfe=${f.nfe_saida_id}`)}
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              Abrir NF-e cancelada
+                            </button>
+                          ) : null}
+                        </>
                       ) : (
-                        <span className="text-xs text-amber-800 dark:text-amber-200">
-                          {f.motivo_bloqueio_estorno ||
-                            'NF-e autorizada — use fluxo fiscal de cancelamento (em preparação).'}
-                        </span>
+                        <>
+                          <span className="text-xs text-muted-foreground">{getFaturamentoStatusLabel(f.status)}</span>
+                          {f.pode_estornar_pre_autorizacao !== false ? (
+                            <button
+                              type="button"
+                              className="erp-btn-outline erp-btn-sm text-destructive border-destructive/40"
+                              disabled={loading}
+                              onClick={() =>
+                                setEstornoModal({
+                                  faturamentoId: f.faturamento_id,
+                                  label: linhaFaturamentoNfeAmigavel(f),
+                                })
+                              }
+                            >
+                              Estornar faturamento
+                            </button>
+                          ) : (
+                            <span className="text-xs text-amber-800 dark:text-amber-200">
+                              {f.motivo_bloqueio_estorno ||
+                                'NF-e autorizada — use fluxo fiscal de cancelamento.'}
+                            </span>
+                          )}
+                        </>
                       )}
                     </>
                   ) : (
@@ -440,10 +464,43 @@ export function PedidoFaturamentoPanel({ pedidoId, itens = [], onAtualizado, emb
                 {inconsistencia ? (
                   <p className="text-xs text-amber-800 dark:text-amber-200">{inconsistencia}</p>
                 ) : null}
+                {nfeCancelada && f.nfe_motivo_cancelamento ? (
+                  <p className="text-xs text-muted-foreground">
+                    Motivo cancelamento: {f.nfe_motivo_cancelamento}
+                    {f.nfe_protocolo_cancelamento ? ` · Protocolo ${f.nfe_protocolo_cancelamento}` : ''}
+                  </p>
+                ) : null}
               </div>
             );
           })}
         </div>
+      ) : null}
+
+      {(resumo.historico_nfe_saida ?? []).length > 0 ? (
+        <details className="rounded border border-border p-3 space-y-2">
+          <summary className="text-xs font-medium cursor-pointer select-none">
+            Histórico de NF-e do pedido
+          </summary>
+          <ul className="space-y-2 pt-2">
+            {(resumo.historico_nfe_saida ?? []).map((h) => {
+              const cancelada = (h.status || '').toUpperCase().includes('CANCELADA');
+              return (
+                <li key={h.nfe_saida_id} className="text-sm flex flex-wrap items-center gap-2 border-b border-border/60 pb-2 last:border-0">
+                  <span className="font-medium">{h.titulo_exibicao || h.numero}</span>
+                  {cancelada ? <StatusBadge status="cancelada" /> : null}
+                  <button
+                    type="button"
+                    className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1"
+                    onClick={() => navigate(`/nfe-saida?nfe=${h.nfe_saida_id}`)}
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    Abrir
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </details>
       ) : null}
 
       <AtendimentoOperacionalResumo

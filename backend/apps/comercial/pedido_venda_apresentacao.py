@@ -88,12 +88,12 @@ def _classificar_caso(linha: dict[str, Any]) -> str:
         return 'nenhuma'
     sefaz = (linha.get('nfe_status_emissao_sefaz') or '').strip().upper()
     st = (linha.get('nfe_saida_status') or '').strip().upper()
+    if 'CANCEL' in st:
+        return 'cancelada'
     if sefaz == 'AUTORIZADA_HOMOLOGACAO' or st == 'AUTORIZADA_HOMOLOGACAO':
         return 'autorizada_homolog'
     if sefaz in ('AUTORIZADA_PRODUCAO',) or st == 'AUTORIZADA':
         return 'autorizada_producao'
-    if 'CANCEL' in st:
-        return 'cancelada'
     if 'REJEIT' in st or 'REJEIT' in sefaz:
         return 'rejeitada'
     if st == 'RASCUNHO' or not sefaz:
@@ -131,6 +131,8 @@ def formatar_identidade_nfe_pedido(linha: dict[str, Any], *, nf: NFeSaida | None
             titulo = (linha.get('nfe_saida_numero') or '').strip() or 'NF-e vinculada'
 
     status_fiscal = label_emissao_sefaz(linha.get('nfe_status_emissao_sefaz') or linha.get('nfe_saida_status'))
+    if caso == 'cancelada':
+        status_fiscal = 'Cancelada SEFAZ'
     badges: list[str] = []
     ambiente_label = ''
     msg_homolog = ''

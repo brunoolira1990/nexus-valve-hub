@@ -1824,6 +1824,11 @@ export interface ResumoFaturamentoPedido {
     nfe_status_emissao_sefaz?: string;
     nfe_cstat?: string;
     duplicatas_nfe?: DuplicataNfeSaida[];
+    nfe_cancelada_sefaz?: boolean;
+    nfe_protocolo_cancelamento?: string;
+    nfe_motivo_cancelamento?: string;
+    nfe_cancelada_em?: string | null;
+    pode_gerar_nova_nfe?: boolean;
     pode_estornar_pre_autorizacao?: boolean;
     motivo_bloqueio_estorno?: string;
   }[];

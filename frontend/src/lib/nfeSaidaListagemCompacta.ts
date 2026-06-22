@@ -27,6 +27,15 @@ type ListItemFiscalFallback = {
 function deriveFiscalFromListItem(item: ListItemFiscalFallback | undefined) {
   const sefaz = (item?.status_emissao_sefaz || '').trim();
   const st = (item?.status || '').trim().toUpperCase();
+  if (
+    st === 'CANCELADA_PRODUCAO' ||
+    st === 'CANCELADA_HOMOLOGACAO' ||
+    st === 'CANCELADA_INTERNA' ||
+    st === 'CANCELADA' ||
+    st === 'CANCELADO'
+  ) {
+    return { badge: 'Cancelada', variant: 'danger', subtexto: '' };
+  }
   if (sefaz === 'AUTORIZADA_HOMOLOGACAO' || st === 'AUTORIZADA_HOMOLOGACAO') {
     return {
       badge: 'Homologação autorizada',

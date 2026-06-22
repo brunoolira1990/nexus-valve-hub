@@ -122,4 +122,17 @@ describe('pedidoVendaModalUi', () => {
     expect(getStatusItemLabel('FATURADO')).toBe('Faturado');
     expect(getStatusItemLabel('FATURADO')).not.toBe('FATURADO');
   });
+
+  it('NF-e cancelada SEFAZ não aparece como autorizada em produção', () => {
+    const linhaCancelada = {
+      ...linhaHomolog,
+      nfe_saida_status: 'CANCELADA_PRODUCAO',
+      nfe_status_emissao_sefaz: 'AUTORIZADA_PRODUCAO',
+      nfe_titulo_exibicao: undefined,
+    };
+    expect(classificarNfeResumoPedido(linhaCancelada)).toBe('cancelada');
+    expect(getNFeFiscalBadgeTokens(linhaCancelada)).toEqual(['cancelada']);
+    expect(formatNFeTitulo(linhaCancelada)).toMatch(/cancelada/i);
+    expect(formatNFeTitulo(linhaCancelada)).not.toMatch(/autorizada/i);
+  });
 });

@@ -42,10 +42,30 @@ export function getFaturamentoStatusLabel(status: string | undefined | null): st
   return LABELS_FATURAMENTO[s] || s.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 }
 
-export function getNfeEmissaoSefazLabel(status: string | undefined | null): string {
+export function getNfeEmissaoSefazLabel(
+  status: string | undefined | null,
+  nfeSaidaStatus?: string | undefined | null,
+): string {
+  if (isNfeCanceladaOperacional({ nfe_saida_status: nfeSaidaStatus })) {
+    return 'Cancelada SEFAZ';
+  }
   const s = (status || '').trim().toUpperCase();
   if (!s) return '';
   return LABELS_EMISSAO_SEFAZ[s] || getFaturamentoStatusLabel(s);
+}
+
+export function isNfeCanceladaOperacional(linha: {
+  nfe_saida_status?: string | null;
+}): boolean {
+  const st = (linha.nfe_saida_status || '').trim().toUpperCase();
+  return (
+    st === 'CANCELADA_PRODUCAO' ||
+    st === 'CANCELADA_HOMOLOGACAO' ||
+    st === 'CANCELADA_INTERNA' ||
+    st === 'CANCELADA' ||
+    st === 'CANCELADO' ||
+    st.includes('CANCELADA')
+  );
 }
 
 export function formatNFeTitulo(linha: {
@@ -57,6 +77,14 @@ export function formatNFeTitulo(linha: {
   nfe_saida_numero?: string;
 }): string {
   if (linha.nfe_titulo_exibicao?.trim()) return linha.nfe_titulo_exibicao.trim();
+  const st = (linha.nfe_saida_status || '').trim().toUpperCase();
+  if (isNfeCanceladaOperacional({ nfe_saida_status: st })) {
+    const n = linha.nfe_numero_fiscal?.trim();
+    const serie = linha.nfe_serie_fiscal?.trim();
+    return n
+      ? `NF-e cancelada nº ${n}${serie ? ` — Série ${serie}` : ''}`
+      : 'NF-e cancelada';
+  }
   const sefaz = (linha.nfe_status_emissao_sefaz || '').trim().toUpperCase();
   const n = linha.nfe_numero_fiscal?.trim();
   const serie = linha.nfe_serie_fiscal?.trim();
@@ -66,7 +94,6 @@ export function formatNFeTitulo(linha: {
   if ((sefaz === 'AUTORIZADA' || sefaz === 'AUTORIZADA_PRODUCAO') && n) {
     return `NF-e autorizada nº ${n}${serie ? ` — Série ${serie}` : ''}`;
   }
-  const st = (linha.nfe_saida_status || '').trim().toUpperCase();
   if (st === 'CANCELADA' || st === 'CANCELADA_INTERNA') return 'NF-e cancelada';
   if (st.includes('REJEIT')) return 'NF-e rejeitada';
   if (st === 'RASCUNHO' || !st) return 'NF-e em rascunho';
@@ -86,9 +113,9 @@ export function classificarNfeResumoPedido(linha: FaturamentoNfeLinha): NfeResum
   if (!linha.nfe_saida_id) return 'nenhuma';
   const sefaz = (linha.nfe_status_emissao_sefaz || '').trim().toUpperCase();
   const st = (linha.nfe_saida_status || '').trim().toUpperCase();
+  if (isNfeCanceladaOperacional(linha) || linha.nfe_cancelada_sefaz) return 'cancelada';
   if (sefaz === 'AUTORIZADA_HOMOLOGACAO' || st === 'AUTORIZADA_HOMOLOGACAO') return 'autorizada_homolog';
   if (sefaz === 'AUTORIZADA_PRODUCAO' || st === 'AUTORIZADA') return 'autorizada_producao';
-  if (st.includes('CANCEL')) return 'cancelada';
   if (st.includes('REJEIT') || sefaz.includes('REJEIT')) return 'rejeitada';
   if (st === 'RASCUNHO' || !sefaz) return 'rascunho';
   return 'vinculada';
@@ -98,11 +125,16 @@ export function classificarNfeResumoPedido(linha: FaturamentoNfeLinha): NfeResum
 export function getNFeFiscalBadgeTokens(linha: {
   nfe_status_emissao_sefaz?: string;
   nfe_saida_status?: string;
+  nfe_cancelada_sefaz?: boolean;
 }): string[] {
   const sefaz = (linha.nfe_status_emissao_sefaz || '').trim().toUpperCase();
   const st = (linha.nfe_saida_status || '').trim().toUpperCase();
   const tokens: string[] = [];
 
+  if (isNfeCanceladaOperacional(linha) || linha.nfe_cancelada_sefaz) {
+    tokens.push('cancelada');
+    return tokens;
+  }
   if (sefaz === 'AUTORIZADA_HOMOLOGACAO' || st === 'AUTORIZADA_HOMOLOGACAO') {
     tokens.push('homologacao', 'autorizada_homologacao', 'sem_valor_fiscal', 'fora_apuracao');
     return tokens;
@@ -113,10 +145,6 @@ export function getNFeFiscalBadgeTokens(linha: {
   }
   if (st.includes('REJEIT') || sefaz.includes('REJEIT')) {
     tokens.push('rejeitada_homologacao');
-    return tokens;
-  }
-  if (st.includes('CANCEL')) {
-    tokens.push('cancelada');
     return tokens;
   }
   if (st === 'RASCUNHO' || !sefaz) {
@@ -173,6 +201,9 @@ export function linhaFaturamentoNfeAmigavel(f: FaturamentoNfeLinha): string {
   }
   if (caso === 'autorizada_producao') {
     return `${numFat} — NF-e autorizada`;
+  }
+  if (caso === 'cancelada') {
+    return `${numFat} — NF-e cancelada (sem validade fiscal)`;
   }
   if (caso === 'rascunho') {
     return `${numFat} — NF-e em rascunho`;
@@ -289,7 +320,10 @@ export function formatNFePedidoDisplay(linha: FaturamentoNfeLinha): NFePedidoDis
   }
   return {
     titulo: tituloResumoNfePedido(linha),
-    statusFiscalLabel: getNfeEmissaoSefazLabel(linha.nfe_status_emissao_sefaz || linha.nfe_saida_status),
+    statusFiscalLabel: getNfeEmissaoSefazLabel(
+      linha.nfe_status_emissao_sefaz || linha.nfe_saida_status,
+      linha.nfe_saida_status,
+    ),
     ambienteLabel:
       linha.nfe_status_emissao_sefaz === 'AUTORIZADA_HOMOLOGACAO' ? 'Homologação' : '',
     badges: badgesLabels,

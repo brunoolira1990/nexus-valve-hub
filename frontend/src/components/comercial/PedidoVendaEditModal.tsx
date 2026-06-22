@@ -30,6 +30,7 @@ import { formatDateBr } from '@/lib/dateBr';
 import { formatCurrencyBRL, formatQuantidadeBR } from '@/lib/formatBr';
 import { badgeNfeSaidaStatus, formatDateTimeBr } from '@/lib/nfeSaidaUi';
 import {
+  classificarNfeResumoPedido,
   getFaturamentoStatusLabel,
   getNFeFiscalBadgeTokens,
   getNfeEmissaoSefazLabel,
@@ -1024,7 +1025,8 @@ export function PedidoVendaEditModal({
               <div className="space-y-3">
                 {(faturamentoResumo?.faturamentos_nfe ?? []).map((f) => {
                   const inconsistencia = mensagemNfeFaturamentoInconsistencia(f);
-                  const sefazLabel = getNfeEmissaoSefazLabel(f.nfe_status_emissao_sefaz);
+                  const sefazLabel = getNfeEmissaoSefazLabel(f.nfe_status_emissao_sefaz, f.nfe_saida_status);
+                  const casoNfe = classificarNfeResumoPedido(f);
                   return (
                     <div key={f.faturamento_id} className="rounded-md border border-border p-4 space-y-3">
                       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -1055,6 +1057,12 @@ export function PedidoVendaEditModal({
                                 <StatusBadge key={tok} status={tok} />
                               ))}
                             </div>
+                            {casoNfe === 'cancelada' ? (
+                              <p className="text-xs text-destructive/90 rounded-md bg-destructive/5 px-2 py-1.5 border border-destructive/20">
+                                NF-e cancelada na SEFAZ — não representa faturamento fiscal válido.
+                                {f.nfe_motivo_cancelamento ? ` Motivo: ${f.nfe_motivo_cancelamento}` : ''}
+                              </p>
+                            ) : null}
                             <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1 text-xs text-muted-foreground pt-1">
                               {f.nfe_numero_fiscal ? (
                                 <>

@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { downloadBlobFile, openBlobInNewTab } from '@/lib/downloadBlobFile';
 import { nfeSaidasService } from '@/services/api/fiscal';
 import { apiErrorMessage } from '@/services/api/config';
-import { nfeTemDanfeHomologacao } from '@/lib/pedidoVendaModalUi';
+import { isNfeCanceladaOperacional, nfeTemDanfeHomologacao } from '@/lib/pedidoVendaModalUi';
 
 type Props = {
   nfeSaidaId: number;
@@ -24,12 +24,14 @@ export function PedidoVendaFiscalNfeAcoes({
     nfe_status_emissao_sefaz: nfeStatusEmissaoSefaz,
     nfe_saida_status: nfeSaidaStatus,
   });
+  const cancelada = isNfeCanceladaOperacional({ nfe_saida_status: nfeSaidaStatus });
   const autorizada =
-    nfeStatusEmissaoSefaz === 'AUTORIZADA_PRODUCAO' ||
-    nfeStatusEmissaoSefaz === 'AUTORIZADA_HOMOLOGACAO' ||
-    nfeSaidaStatus === 'AUTORIZADA_PRODUCAO' ||
-    nfeSaidaStatus === 'AUTORIZADA_HOMOLOGACAO' ||
-    homolog;
+    !cancelada &&
+    (nfeStatusEmissaoSefaz === 'AUTORIZADA_PRODUCAO' ||
+      nfeStatusEmissaoSefaz === 'AUTORIZADA_HOMOLOGACAO' ||
+      nfeSaidaStatus === 'AUTORIZADA_PRODUCAO' ||
+      nfeSaidaStatus === 'AUTORIZADA_HOMOLOGACAO' ||
+      homolog);
 
   const runBlob = async (key: string, fn: () => Promise<{ blob: Blob; filename: string }>) => {
     setLoading(key);
@@ -46,7 +48,7 @@ export function PedidoVendaFiscalNfeAcoes({
   const visualizarDanfe = async () => {
     setLoading('view');
     try {
-      if (autorizada) {
+      if (autorizada || cancelada) {
         const { blob } = await nfeSaidasService.danfeAutorizadoBlob(nfeSaidaId);
         openBlobInNewTab(blob);
         return;
@@ -90,7 +92,7 @@ export function PedidoVendaFiscalNfeAcoes({
         disabled={!!loading}
         onClick={() =>
           void runBlob('danfe', () =>
-            autorizada
+            autorizada || cancelada
               ? nfeSaidasService.danfeAutorizadoBlob(nfeSaidaId)
               : nfeSaidasService.previewDanfeBlob(nfeSaidaId).then(({ blob }) => ({
                   blob,
@@ -102,7 +104,7 @@ export function PedidoVendaFiscalNfeAcoes({
         <Download className="h-3 w-3 shrink-0" aria-hidden />
         <span>Baixar DANFE</span>
       </button>
-      {autorizada ? (
+      {(autorizada || cancelada) ? (
         <button
           type="button"
           className={btnOutline}

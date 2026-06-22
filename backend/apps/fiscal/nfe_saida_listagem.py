@@ -35,8 +35,17 @@ def montar_fiscal_resumo_listagem(nf: NFeSaida) -> dict[str, str]:
         return {'badge': 'Erro transmissão', 'variant': 'danger', 'subtexto': ''}
 
     st = (nf.status or '').strip().upper()
-    if st in ('CANCELADA_INTERNA', 'CANCELADA', 'CANCELADO'):
-        return {'badge': 'Cancelada', 'variant': 'danger', 'subtexto': 'Sem valor fiscal'}
+    if st in (
+        'CANCELADA_INTERNA',
+        'CANCELADA',
+        'CANCELADO',
+        'CANCELADA_PRODUCAO',
+        'CANCELADA_HOMOLOGACAO',
+    ):
+        sub = (nf.motivo_cancelamento or '').strip()
+        if not sub and st == 'CANCELADA_PRODUCAO':
+            sub = 'Cancelada na SEFAZ'
+        return {'badge': 'Cancelada', 'variant': 'danger', 'subtexto': sub[:80] if sub else 'Sem valor fiscal'}
 
     if st == 'DESCARTADA_INTERNA':
         return {'badge': 'Rascunho descartado', 'variant': 'neutral', 'subtexto': 'Sem evento SEFAZ'}

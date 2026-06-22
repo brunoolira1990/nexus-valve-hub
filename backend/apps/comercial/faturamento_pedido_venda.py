@@ -204,6 +204,10 @@ def _serializar_item_resumo(item: ItemPedidoVenda) -> dict[str, Any]:
 
 
 def montar_resumo_faturamento(pedido: PedidoVenda) -> dict[str, Any]:
+    from apps.fiscal.nfe_saida_pedido_cancelamento import sincronizar_efeitos_comerciais_pedido
+
+    sincronizar_efeitos_comerciais_pedido(pedido)
+
     pedido = (
         PedidoVenda.objects.select_related('cliente')
         .prefetch_related('itens__produto', 'faturamentos')
@@ -241,8 +245,10 @@ def montar_resumo_faturamento(pedido: PedidoVenda) -> dict[str, Any]:
         for f in pedido.faturamentos.filter(status=FaturamentoPedidoVenda.Status.RASCUNHO).order_by('-id')
     ]
 
+    from apps.fiscal.nfe_emissao.cancelamento_dados import montar_resumo_cancelamento_nfe_saida
     from apps.fiscal.nfe_saida_apresentacao import montar_apresentacao_nfe_saida
     from apps.fiscal.nfe_saida_ciclo_vida import avaliar_estorno_faturamento
+    from apps.fiscal.nfe_saida_pedido_cancelamento import nf_cancelada_sefaz
 
     faturamentos_nfe = []
     for f in (
@@ -256,6 +262,12 @@ def montar_resumo_faturamento(pedido: PedidoVenda) -> dict[str, Any]:
         .order_by('-id')
     ):
         pode_estornar, motivo_bloqueio_estorno = avaliar_estorno_faturamento(faturamento=f, nf=f.nfe_saida)
+        cancel_resumo = (
+            montar_resumo_cancelamento_nfe_saida(f.nfe_saida) if f.nfe_saida_id and f.nfe_saida else {}
+        )
+        nfe_cancelada = bool(cancel_resumo.get('cancelada')) or (
+            f.nfe_saida_id and nf_cancelada_sefaz(f.nfe_saida)
+        )
         faturamentos_nfe.append(
             {
                 'faturamento_id': f.pk,
@@ -269,6 +281,13 @@ def montar_resumo_faturamento(pedido: PedidoVenda) -> dict[str, Any]:
                 'nfe_saida_id': f.nfe_saida_id,
                 'nfe_saida_numero': f.nfe_saida.numero if f.nfe_saida_id else '',
                 'nfe_saida_status': f.nfe_saida.status if f.nfe_saida_id else '',
+                'nfe_cancelada_sefaz': nfe_cancelada,
+                'nfe_protocolo_cancelamento': (cancel_resumo.get('protocolo_cancelamento') or '').strip(),
+                'nfe_motivo_cancelamento': (cancel_resumo.get('motivo_cancelamento') or '').strip(),
+                'nfe_cancelada_em': cancel_resumo.get('cancelada_em'),
+                'pode_gerar_nova_nfe': (
+                    f.status == FaturamentoPedidoVenda.Status.PRONTO_PARA_NFE and not f.nfe_saida_id
+                ),
                 **(
                     {
                         'nfe_titulo_exibicao': ap['titulo_exibicao'],

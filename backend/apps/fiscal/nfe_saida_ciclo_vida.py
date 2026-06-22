@@ -84,7 +84,14 @@ def nf_possui_autorizacao_sefaz_efetiva(nf: NFeSaida) -> bool:
 def nf_esta_descartada_ou_inativa(nf: NFeSaida | None) -> bool:
     if not nf:
         return True
-    return _norm(nf.status) in (STATUS_NFE_DESCARTADA_INTERNA, 'CANCELADA_INTERNA', 'CANCELADA', 'CANCELADO')
+    return _norm(nf.status) in (
+        STATUS_NFE_DESCARTADA_INTERNA,
+        'CANCELADA_INTERNA',
+        'CANCELADA',
+        'CANCELADO',
+        'CANCELADA_PRODUCAO',
+        'CANCELADA_HOMOLOGACAO',
+    )
 
 
 def avaliar_descarte_nfe_rascunho(nf: NFeSaida) -> tuple[bool, str]:

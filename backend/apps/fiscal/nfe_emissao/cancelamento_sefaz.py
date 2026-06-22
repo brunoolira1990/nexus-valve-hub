@@ -284,6 +284,16 @@ def emitir_cancelamento_nfe_saida(
 
     if resultado.ok:
         _aplicar_status_cancelado_sefaz(nf, homolog=homolog, justificativa=texto, usuario=usuario)
+        from apps.fiscal.nfe_saida_pedido_cancelamento import aplicar_efeitos_comerciais_pos_cancelamento_sefaz
+
+        try:
+            aplicar_efeitos_comerciais_pos_cancelamento_sefaz(nf, usuario=usuario, motivo=texto)
+        except ValueError as exc:
+            logger.warning(
+                'CANCELAMENTO_EFEITOS_COMERCIAIS nfe_id=%s err=%s',
+                nf.pk,
+                exc,
+            )
 
     evento = _registrar_evento(
         nf,
