@@ -115,7 +115,7 @@ export function CentralDfeCteDetalheModal({ open, row, onClose }: Props) {
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Use &quot;Abrir na Base CT-e Importada&quot; na listagem para abrir o registro completo na base importada.
+          Use &quot;Abrir CT-e&quot; na listagem para abrir o registro completo na Base CT-e Importada.
         </p>
       </div>
     </Modal>

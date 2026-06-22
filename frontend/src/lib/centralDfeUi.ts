@@ -11,13 +11,13 @@ import {
   isNfeFornecedorAplicavel,
 } from '@/lib/manifestacaoDestinatarioUi';
 
-export const LABEL_ABRIR_BASE_NFE = 'Abrir na Base NF-e Importada';
-export const LABEL_ABRIR_BASE_CTE = 'Abrir na Base CT-e Importada';
+export const LABEL_ABRIR_BASE_NFE = 'Abrir NF-e';
+export const LABEL_ABRIR_BASE_CTE = 'Abrir CT-e';
 export const LABEL_ARMAZENAR_XML_CTE = 'Armazenar XML CT-e';
 export const LABEL_VER_CTE = 'Ver CT-e';
 export const LABEL_CONFERIR_CTE = 'Conferir CT-e';
-export const TOOLTIP_ABRIR_BASE_NFE = 'Abrir registro na Base NF-e Entrada Importada';
-export const TOOLTIP_ABRIR_BASE_CTE = 'Abrir registro na Base CT-e Importada';
+export const TOOLTIP_ABRIR_BASE_NFE = 'Abrir na Base NF-e Entrada Importada';
+export const TOOLTIP_ABRIR_BASE_CTE = 'Abrir na Base CT-e Importada';
 export const TOOLTIP_VER_CTE = 'Ver detalhes do CT-e na Central DF-e';
 export const TOOLTIP_CONFERIR_CTE = 'Conferir, marcar divergente ou ignorar CT-e';
 export const TOOLTIP_ARMAZENAR_XML_NFE =
