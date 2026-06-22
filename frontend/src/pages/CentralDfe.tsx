@@ -72,6 +72,12 @@ const fmtCnpj = (cnpj: string): string => {
   return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
 };
 
+/** Coluna fixa à direita — ações sempre visíveis com scroll horizontal da tabela. */
+const CLASSE_COLUNA_ACOES_TH =
+  'sticky right-0 z-20 min-w-[10.5rem] w-[10.5rem] bg-muted/80 shadow-[-4px_0_6px_-1px_hsl(var(--border))]';
+const CLASSE_COLUNA_ACOES_TD =
+  'sticky right-0 z-10 min-w-[10.5rem] w-[10.5rem] bg-card shadow-[-4px_0_6px_-1px_hsl(var(--border))] group-hover:bg-muted/50 align-top';
+
 function statusEntradaBadge(status: string): string {
   const map: Record<string, string> = {
     PENDENTE_ENTRADA: 'pendente',
@@ -732,19 +738,19 @@ const CentralDfe = () => {
         )}
         {!loading && !error && linhasExibidas.length > 0 && (
           <>
-            <DataTable>
+            <DataTable className="min-w-[68rem]">
               <thead>
                 <tr>
-                  <th>Tipo</th>
-                  <th>Documento</th>
-                  <th>Emitente</th>
-                  <th>CNPJ emitente</th>
-                  <th>Emissão</th>
-                  <th className="text-right">Valor</th>
-                  <th>Status de entrada</th>
-                  <th>Manifestação</th>
-                  <th>XML</th>
-                  <th className="w-80 min-w-[18rem]">Ações</th>
+                  <th className="whitespace-nowrap">Tipo</th>
+                  <th className="whitespace-nowrap">Documento</th>
+                  <th className="max-w-[9rem]">Emitente</th>
+                  <th className="whitespace-nowrap">CNPJ emitente</th>
+                  <th className="whitespace-nowrap">Emissão</th>
+                  <th className="text-right whitespace-nowrap">Valor</th>
+                  <th className="min-w-[7.5rem]">Status de entrada</th>
+                  <th className="min-w-[7rem]">Manifestação</th>
+                  <th className="whitespace-nowrap">XML</th>
+                  <th className={CLASSE_COLUNA_ACOES_TH}>Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -761,7 +767,7 @@ const CentralDfe = () => {
                     xmlJaArmazenado(manifestacao, row) || podeAbrirBaseImportada(row);
 
                   return (
-                  <tr key={`${somenteResumo ? 'resumo' : row.tipo_documento}-${row.id}-${row.chave_acesso}`}>
+                  <tr key={`${somenteResumo ? 'resumo' : row.tipo_documento}-${row.id}-${row.chave_acesso}`} className="group">
                     <td>
                       <span className="text-sm font-medium">{row.tipo_label}</span>
                     </td>
@@ -774,7 +780,11 @@ const CentralDfe = () => {
                         {row.chave_resumida || chaveNfeResumida(row.chave_acesso)}
                       </div>
                     </td>
-                    <td className="text-sm">{row.emitente_nome || '—'}</td>
+                    <td className="text-sm max-w-[9rem]">
+                      <span className="block truncate" title={row.emitente_nome || undefined}>
+                        {row.emitente_nome || '—'}
+                      </span>
+                    </td>
                     <td className="text-sm font-mono">{fmtCnpj(row.emitente_cnpj)}</td>
                     <td className="text-sm whitespace-nowrap">{fmtData(row.data_emissao)}</td>
                     <td className="text-sm text-right tabular-nums">{fmtMoney(row.valor_total)}</td>
@@ -792,8 +802,8 @@ const CentralDfe = () => {
                         {xmlStatus.label}
                       </StatusBadge>
                     </td>
-                    <td>
-                      <div className="flex items-center gap-1 flex-wrap">
+                    <td className={CLASSE_COLUNA_ACOES_TD}>
+                      <div className="flex items-center gap-0.5 flex-wrap">
                         {!isCteTransportadora(row) && (
                           <button
                             type="button"
