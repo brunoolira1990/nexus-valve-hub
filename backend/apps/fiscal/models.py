@@ -1594,3 +1594,144 @@ class NFeEntradaAgrupamentoItem(models.Model):
 
     def __str__(self) -> str:
         return f'Agrup. {self.agrupamento_id} item conf {self.item_nfe_conferencia_id}'
+
+
+class NFeDestinadaManifestacao(models.Model):
+    """Monitor de NF-e destinada ao CNPJ da empresa — distribuição DF-e / manifestação."""
+
+    class StatusManifestacao(models.TextChoices):
+        PENDENTE = 'PENDENTE', 'Pendente manifestação'
+        CIENTE = 'CIENTE', 'Ciência registrada'
+        CONFIRMADA = 'CONFIRMADA', 'Confirmação da operação'
+        DESCONHECIDA = 'DESCONHECIDA', 'Desconhecimento'
+        NAO_REALIZADA = 'NAO_REALIZADA', 'Operação não realizada'
+        ERRO = 'ERRO', 'Erro SEFAZ'
+
+    class StatusXml(models.TextChoices):
+        RESUMO = 'RESUMO', 'Resumo recebido'
+        DISPONIVEL = 'DISPONIVEL', 'XML disponível'
+        BAIXADO = 'BAIXADO', 'XML baixado'
+        PENDENTE = 'PENDENTE', 'Pendente XML'
+        ERRO = 'ERRO', 'Erro'
+
+    class Ambiente(models.TextChoices):
+        PRODUCAO = '1', 'Produção'
+        HOMOLOGACAO = '2', 'Homologação'
+
+    empresa = models.ForeignKey(
+        'cadastros.Empresa',
+        on_delete=models.CASCADE,
+        related_name='nfe_destinadas_manifestacao',
+    )
+    chave_acesso = models.CharField(max_length=44, db_index=True)
+    nsu = models.CharField(max_length=20, blank=True, db_index=True)
+    cnpj_destinatario = models.CharField(max_length=14, db_index=True)
+    cnpj_emitente = models.CharField(max_length=14, blank=True, db_index=True)
+    razao_social_emitente = models.CharField(max_length=255, blank=True)
+    ie_emitente = models.CharField(max_length=20, blank=True)
+    dh_emissao = models.DateTimeField(null=True, blank=True)
+    valor_nf = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
+    status_manifestacao = models.CharField(
+        max_length=24,
+        choices=StatusManifestacao.choices,
+        default=StatusManifestacao.PENDENTE,
+        db_index=True,
+    )
+    status_xml = models.CharField(
+        max_length=16,
+        choices=StatusXml.choices,
+        default=StatusXml.RESUMO,
+        db_index=True,
+    )
+    ambiente = models.CharField(
+        max_length=1,
+        choices=Ambiente.choices,
+        default=Ambiente.PRODUCAO,
+        db_index=True,
+    )
+    classificacao_dfe = models.CharField(max_length=32, default='BASE_DFE_IMPORTADA', blank=True)
+    ultimo_cstat = models.CharField(max_length=8, blank=True)
+    ultimo_xmotivo = models.CharField(max_length=255, blank=True)
+    resumo_json = models.JSONField(default=dict, blank=True)
+    nf_entrada_historica = models.ForeignKey(
+        'NFeEntradaHistoricaImportada',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='nfe_destinadas_manifestacao',
+    )
+    manifestado_em = models.DateTimeField(null=True, blank=True)
+    xml_baixado_em = models.DateTimeField(null=True, blank=True)
+    consultado_em = models.DateTimeField(auto_now=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-dh_emissao', '-id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['empresa', 'chave_acesso'],
+                name='uq_nfe_destinada_manifestacao_empresa_chave',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['empresa', 'status_manifestacao']),
+            models.Index(fields=['empresa', 'status_xml']),
+            models.Index(fields=['empresa', '-dh_emissao']),
+        ]
+        verbose_name = 'NF-e destinada (manifestação)'
+        verbose_name_plural = 'NF-e destinadas (manifestação)'
+
+    def __str__(self) -> str:
+        return f'{self.chave_acesso} — {self.razao_social_emitente or self.cnpj_emitente}'
+
+
+class NFeDestinadaManifestacaoEvento(models.Model):
+    """Trilha auditável de consulta, manifestação e download XML."""
+
+    class TipoAcao(models.TextChoices):
+        CONSULTA = 'CONSULTA', 'Consulta DF-e'
+        MANIFESTACAO = 'MANIFESTACAO', 'Manifestação do destinatário'
+        BAIXA_XML = 'BAIXA_XML', 'Download XML'
+
+    documento = models.ForeignKey(
+        NFeDestinadaManifestacao,
+        on_delete=models.CASCADE,
+        related_name='eventos',
+        null=True,
+        blank=True,
+    )
+    empresa = models.ForeignKey(
+        'cadastros.Empresa',
+        on_delete=models.CASCADE,
+        related_name='eventos_manifestacao_destinatario',
+        null=True,
+        blank=True,
+    )
+    tipo_acao = models.CharField(max_length=16, choices=TipoAcao.choices)
+    codigo_evento = models.CharField(max_length=16, blank=True)
+    descricao = models.TextField()
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='eventos_manifestacao_destinatario',
+    )
+    ambiente = models.CharField(max_length=1, blank=True)
+    resultado_resumido = models.CharField(max_length=255, blank=True)
+    cstat = models.CharField(max_length=8, blank=True)
+    xmotivo = models.CharField(max_length=255, blank=True)
+    dados_json = models.JSONField(null=True, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-criado_em', '-id']
+        indexes = [
+            models.Index(fields=['documento', '-criado_em']),
+        ]
+        verbose_name = 'Evento manifestação destinatário'
+        verbose_name_plural = 'Eventos manifestação destinatário'
+
+    def __str__(self) -> str:
+        return f'{self.tipo_acao} doc={self.documento_id} {self.criado_em:%Y-%m-%d %H:%M}'
+

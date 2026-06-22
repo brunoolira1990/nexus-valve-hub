@@ -91,6 +91,10 @@ class DocumentoCentralDfe:
     tipo_label: str
     detalhe_rota: str
     empresa_id: int | None = None
+    xml_status: str = 'ARMAZENADO'
+    xml_status_label: str = 'XML armazenado'
+    xml_armazenado: bool = True
+    manifestacao_aplicavel: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -111,6 +115,10 @@ class DocumentoCentralDfe:
             'tipo_label': self.tipo_label,
             'detalhe_rota': self.detalhe_rota,
             'empresa_id': self.empresa_id,
+            'xml_status': self.xml_status,
+            'xml_status_label': self.xml_status_label,
+            'xml_armazenado': self.xml_armazenado,
+            'manifestacao_aplicavel': self.manifestacao_aplicavel,
         }
 
     @staticmethod
@@ -388,6 +396,10 @@ def _coletar_nfe_entrada_recebida(
                 tipo_label=TIPO_LABELS[TIPO_NFE_ENTRADA],
                 detalhe_rota=ROTAS_DETALHE[TIPO_NFE_ENTRADA],
                 empresa_id=empresa.pk,
+                xml_status='ARMAZENADO',
+                xml_status_label='XML armazenado',
+                xml_armazenado=True,
+                manifestacao_aplicavel=True,
             ),
         )
     return rows
@@ -450,6 +462,10 @@ def _coletar_cte_recebido(filtros: FiltrosCentralDfe, empresa: Empresa) -> list[
                 tipo_label=TIPO_LABELS[TIPO_CTE],
                 detalhe_rota=ROTAS_DETALHE[TIPO_CTE],
                 empresa_id=empresa.pk,
+                xml_status='ARMAZENADO',
+                xml_status_label='XML armazenado',
+                xml_armazenado=True,
+                manifestacao_aplicavel=False,
             ),
         )
     return rows

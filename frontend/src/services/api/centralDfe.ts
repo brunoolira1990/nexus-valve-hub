@@ -31,6 +31,21 @@ export type CentralDfeDocumento = {
   tipo_label: string;
   detalhe_rota: string;
   empresa_id: number | null;
+  xml_status?: 'PENDENTE' | 'DISPONIVEL' | 'ARMAZENADO' | 'ERRO';
+  xml_status_label?: string;
+  xml_armazenado?: boolean;
+  manifestacao_aplicavel?: boolean;
+};
+
+export type ArmazenarXmlCentralResponse = {
+  tipo_documento: string;
+  xml_armazenado: boolean;
+  xml_status: string;
+  nf_entrada_historica_id?: number;
+  cte_historico_id?: number;
+  manifestacao_id?: number;
+  duplicado?: boolean;
+  mensagem?: string;
 };
 
 export type CentralDfeListResponse = PaginatedResponse<CentralDfeDocumento> & {
@@ -107,6 +122,30 @@ export const centralDfeService = {
     limite_lotes?: number;
   }): Promise<CentralDfeCapturaResponse> {
     const { data } = await api.post<CentralDfeCapturaResponse>('dfe-recebidos/capturar/', payload);
+    return data;
+  },
+
+  /** Armazena XML NF-e na Base NF-e Entrada Importada — ação manual explícita. */
+  async armazenarXmlNfe(
+    documentoId: number,
+    payload: { empresa_id: number; confirmacao_explicita: boolean },
+  ): Promise<ArmazenarXmlCentralResponse> {
+    const { data } = await api.post<ArmazenarXmlCentralResponse>(
+      `${base}${documentoId}/armazenar-xml-nfe/`,
+      payload,
+    );
+    return data;
+  },
+
+  /** Confirma/armazena XML CT-e na Base CT-e Importada — ação manual explícita. */
+  async armazenarXmlCte(
+    documentoId: number,
+    payload: { empresa_id: number; confirmacao_explicita: boolean },
+  ): Promise<ArmazenarXmlCentralResponse> {
+    const { data } = await api.post<ArmazenarXmlCentralResponse>(
+      `${base}${documentoId}/armazenar-xml-cte/`,
+      payload,
+    );
     return data;
   },
 };

@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CloudDownload, Copy, ExternalLink, Eye, Inbox, Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Copy, ExternalLink, Eye, FileDown, Inbox, Loader2, RefreshCw, Stamp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { CTeHistoricoDetalheModal } from '@/components/fiscal/CTeHistoricoDetalheModal';
+import { CentralDfeCteDetalheModal } from '@/components/fiscal/CentralDfeCteDetalheModal';
+import { ManifestacaoDestinatarioModals } from '@/components/fiscal/ManifestacaoDestinatarioModals';
 import { FilterBar } from '@/components/list/FilterBar';
 import { EmptyState, ErrorState } from '@/components/list/ListStates';
 import { PaginationControls } from '@/components/list/PaginationControls';
@@ -11,27 +13,44 @@ import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
 import { NexusCard } from '@/components/nexus/NexusCard';
 import { StatusBadge } from '@/components/nexus/StatusBadge';
 import { TableSkeleton } from '@/components/nexus/Skeleton';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { useAppContexto } from '@/hooks/useAppContexto';
+import { useManifestacaoDestinatario } from '@/hooks/useManifestacaoDestinatario';
 import { usePaginatedList } from '@/hooks/usePaginatedList';
+import {
+  isNfeFornecedorAplicavel,
+  podeArmazenarXmlNfe,
+  podeManifestarNfe,
+  statusManifestacaoExibicao,
+  statusXmlExibicao,
+  xmlJaArmazenado,
+} from '@/lib/manifestacaoDestinatarioUi';
+import {
+  isCteTransportadora,
+  labelAbrirBaseImportada,
+  labelStatusXmlManifestacao,
+  LABEL_ARMAZENAR_XML_CTE,
+  LABEL_CONFERIR_CTE,
+  LABEL_VER_CTE,
+  podeAbrirBaseImportada,
+  podeArmazenarXmlCte,
+  rotaAbrirBaseImportada,
+  statusManifestacaoCteExibicao,
+  statusXmlCteExibicao,
+  tooltipAbrirBaseImportada,
+  TOOLTIP_ARMAZENAR_XML_CTE,
+  TOOLTIP_ARMAZENAR_XML_NFE,
+  TOOLTIP_CONFERIR_CTE,
+  TOOLTIP_VER_CTE,
+} from '@/lib/centralDfeUi';
 import { chaveNfeResumida } from '@/lib/chaveNfeResumida';
 import {
   centralDfeService,
-  type CentralDfeCapturaResponse,
   type CentralDfeDocumento,
   type CentralDfeListResponse,
   type CentralDfeResumo,
 } from '@/services/api/centralDfe';
 import { apiErrorMessage } from '@/services/api/config';
+import type { NFeDestinadaDocumento } from '@/services/api/manifestacaoDestinatario';
 import { copiarTextoParaAreaDeTransferencia } from '@/utils/nfeXmlImportDiagnostico';
 
 const fmtMoney = (v: string | number | null | undefined): string => {
@@ -113,6 +132,71 @@ function aplicarCompetenciaMmAaaa(valor: string): { inicio: string; fim: string 
   return intervaloMes(ano, mes);
 }
 
+const SYNC_MIN_INTERVAL_MS = 5 * 60 * 1000;
+const SYNC_LOTES_PADRAO = 3;
+
+function fmtDateTime(d: Date): string {
+  return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+function lerUltimaSincronizacao(empresaId: number | undefined): Date | null {
+  if (!empresaId) return null;
+  const raw = sessionStorage.getItem(`central-dfe-sync-${empresaId}`);
+  if (!raw) return null;
+  const ts = Number(raw);
+  return Number.isFinite(ts) ? new Date(ts) : null;
+}
+
+function registrarSincronizacao(empresaId: number): Date {
+  const now = new Date();
+  sessionStorage.setItem(`central-dfe-sync-${empresaId}`, String(now.getTime()));
+  return now;
+}
+
+function podeSincronizarAutomaticamente(empresaId: number | undefined): boolean {
+  if (!empresaId) return false;
+  const raw = sessionStorage.getItem(`central-dfe-sync-${empresaId}`);
+  if (!raw) return true;
+  const ts = Number(raw);
+  if (!Number.isFinite(ts)) return true;
+  return Date.now() - ts >= SYNC_MIN_INTERVAL_MS;
+}
+
+function filtersShallowEqual(a: Record<string, string>, b: Record<string, string>): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const key of keys) {
+    if (a[key] !== b[key]) return false;
+  }
+  return true;
+}
+
+function resumoParaLinhaCentral(m: NFeDestinadaDocumento): CentralDfeDocumento {
+  const xmlArmazenado = m.status_xml === 'BAIXADO';
+  return {
+    id: m.id,
+    tipo_documento: 'NFE_ENTRADA',
+    chave_resumida: m.chave_resumida,
+    chave_acesso: m.chave_acesso,
+    numero: '—',
+    serie: '',
+    data_emissao: m.dh_emissao,
+    data_importacao: null,
+    emitente_nome: m.razao_social_emitente,
+    emitente_cnpj: m.cnpj_emitente,
+    uf: '',
+    valor_total: m.valor_nf,
+    status_entrada: 'IMPORTADO_BASE',
+    status_entrada_label: 'Resumo DF-e — pendente XML',
+    tipo_label: 'NF-e Fornecedor',
+    detalhe_rota: '',
+    empresa_id: m.empresa_id,
+    xml_status: xmlArmazenado ? 'ARMAZENADO' : m.status_xml === 'DISPONIVEL' ? 'DISPONIVEL' : m.status_xml === 'ERRO' ? 'ERRO' : 'PENDENTE',
+    xml_status_label: labelStatusXmlManifestacao(m.status_xml),
+    xml_armazenado: xmlArmazenado,
+    manifestacao_aplicavel: true,
+  };
+}
+
 const CentralDfe = () => {
   const { contexto } = useAppContexto();
   const empresaId = contexto?.empresa?.id;
@@ -123,12 +207,60 @@ const CentralDfe = () => {
   const [dataEmissaoFim, setDataEmissaoFim] = useState('');
   const [competenciaEmissao, setCompetenciaEmissao] = useState('');
   const [chaveFiltro, setChaveFiltro] = useState('');
-  const [limiteLotesCaptura, setLimiteLotesCaptura] = useState(3);
   const [copiadoId, setCopiadoId] = useState<number | null>(null);
-  const [detalheRow, setDetalheRow] = useState<CentralDfeDocumento | null>(null);
-  const [modalCteOpen, setModalCteOpen] = useState(false);
-  const [modalCapturaOpen, setModalCapturaOpen] = useState(false);
-  const [capturando, setCapturando] = useState(false);
+  const [cteDetalheLocalRow, setCteDetalheLocalRow] = useState<CentralDfeDocumento | null>(null);
+  const [modalCteDetalheLocalOpen, setModalCteDetalheLocalOpen] = useState(false);
+  const [cteConferenciaRow, setCteConferenciaRow] = useState<CentralDfeDocumento | null>(null);
+  const [modalCteConferenciaOpen, setModalCteConferenciaOpen] = useState(false);
+  const [atualizandoDfe, setAtualizandoDfe] = useState(false);
+  const [ultimaAtualizacao, setUltimaAtualizacao] = useState<Date | null>(null);
+  const [erroAtualizacao, setErroAtualizacao] = useState<string | null>(null);
+  const syncEmAndamento = useRef(false);
+  const chavesCentralNfeRef = useRef<Set<string>>(new Set());
+  const recarregarTudoRef = useRef<() => Promise<void>>(async () => {});
+
+  const periodoManifestacao = useMemo(() => {
+    if (dataEmissaoInicio && dataEmissaoFim) {
+      return { inicio: dataEmissaoInicio, fim: dataEmissaoFim };
+    }
+    return intervaloMesAtual();
+  }, [dataEmissaoInicio, dataEmissaoFim]);
+
+  const {
+    manifestacaoMap,
+    manifestacaoSomenteResumo,
+    fechamento,
+    detalhe,
+    setDetalhe,
+    manifestRow,
+    setManifestRow,
+    eventoSel,
+    setEventoSel,
+    justificativa,
+    setJustificativa,
+    confirmBaixar,
+    setConfirmBaixar,
+    confirmArmazenar,
+    setConfirmArmazenar,
+    confirmArmazenarCte,
+    setConfirmArmazenarCte,
+    dfeDetalheRow,
+    setDfeDetalheRow,
+    loadingAcaoManual,
+    carregarManifestacao,
+    abrirDetalheManifestacao,
+    abrirDetalheDfeNfe,
+    iniciarManifestacaoManual,
+    iniciarArmazenarXmlManual,
+    sincronizarResumosDestinados,
+    executarManifestacao,
+    executarArmazenarXmlNfe,
+    executarArmazenarXmlCte,
+  } = useManifestacaoDestinatario(empresaId, periodoManifestacao);
+
+  useEffect(() => {
+    setUltimaAtualizacao(lerUltimaSincronizacao(empresaId));
+  }, [empresaId]);
 
   const extraFilters = useMemo(() => {
     const f: Record<string, string> = { ordering: '-data_emissao' };
@@ -175,6 +307,117 @@ const CentralDfe = () => {
     initialFilters: extraFilters,
   });
 
+  const chavesCentralNfe = useMemo(
+    () =>
+      new Set(
+        items
+          .filter((row) => row.tipo_documento === 'NFE_ENTRADA' && row.chave_acesso)
+          .map((row) => row.chave_acesso),
+      ),
+    [items],
+  );
+
+  const chavesCentralNfeKey = useMemo(
+    () => [...chavesCentralNfe].sort().join('|'),
+    [chavesCentralNfe],
+  );
+
+  const linhasExibidas = useMemo(() => {
+    const central = items.map((row) => ({
+      row,
+      manifestacao:
+        row.tipo_documento === 'NFE_ENTRADA' ? manifestacaoMap.get(row.chave_acesso) ?? null : null,
+      somenteResumo: false,
+    }));
+    const extras = manifestacaoSomenteResumo.map((m) => ({
+      row: resumoParaLinhaCentral(m),
+      manifestacao: m,
+      somenteResumo: true,
+    }));
+    return [...central, ...extras];
+  }, [items, manifestacaoMap, manifestacaoSomenteResumo]);
+
+  useEffect(() => {
+    void carregarManifestacao(chavesCentralNfe);
+  }, [carregarManifestacao, chavesCentralNfeKey]);
+
+  const recarregarTudo = useCallback(async () => {
+    await reload();
+    await carregarManifestacao(chavesCentralNfe);
+  }, [reload, carregarManifestacao, chavesCentralNfe]);
+
+  useEffect(() => {
+    chavesCentralNfeRef.current = chavesCentralNfe;
+  }, [chavesCentralNfe]);
+
+  useEffect(() => {
+    recarregarTudoRef.current = recarregarTudo;
+  }, [recarregarTudo]);
+
+  const sincronizarDfe = useCallback(
+    async (manual = false) => {
+      if (!empresaId || syncEmAndamento.current) return;
+      if (!manual && !podeSincronizarAutomaticamente(empresaId)) {
+        setUltimaAtualizacao(lerUltimaSincronizacao(empresaId));
+        return;
+      }
+
+      syncEmAndamento.current = true;
+      setAtualizandoDfe(true);
+      setErroAtualizacao(null);
+
+      let erroMsg: string | null = null;
+
+      try {
+        // Sync automático permitido: captura DF-e + consulta resumos destinados (sem manifestar/baixar XML).
+        try {
+          const captura = await centralDfeService.capturarSefaz({
+            empresa_id: empresaId,
+            tipos: ['NFE', 'CTE'],
+            modo: 'incremental',
+            limite_lotes: SYNC_LOTES_PADRAO,
+          });
+          if (!captura.sefaz_consultada) {
+            const erros = captura.erros ?? [];
+            const msgCert = erros.find((e) => /certificado/i.test(e));
+            erroMsg = msgCert
+              ? 'Certificado digital não disponível/configurado para atualização DF-e.'
+              : erros[0] || 'Não foi possível atualizar DF-e automaticamente.';
+          }
+        } catch (err) {
+          const msg = apiErrorMessage(err, {
+            fallback: 'Não foi possível atualizar DF-e automaticamente.',
+          });
+          erroMsg = /certificado/i.test(msg)
+            ? 'Certificado digital não disponível/configurado para atualização DF-e.'
+            : 'Não foi possível atualizar DF-e automaticamente.';
+        }
+
+        const resumosOk = await sincronizarResumosDestinados(chavesCentralNfeRef.current, { silent: true });
+        if (!resumosOk && !erroMsg) {
+          erroMsg = 'Não foi possível consultar resumos destinados (sem envio de evento fiscal).';
+        }
+
+        await recarregarTudoRef.current();
+
+        const quando = registrarSincronizacao(empresaId);
+        setUltimaAtualizacao(quando);
+        setErroAtualizacao(erroMsg);
+      } finally {
+        syncEmAndamento.current = false;
+        setAtualizandoDfe(false);
+      }
+    },
+    [empresaId, sincronizarResumosDestinados],
+  );
+
+  useEffect(() => {
+    if (!empresaId) return;
+    void sincronizarDfe(false);
+    // Sincronização automática apenas ao abrir ou trocar empresa (intervalo mínimo via sessionStorage).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [empresaId]);
+
   useEffect(() => {
     setFilters((prev) => {
       const next = { ...prev };
@@ -184,7 +427,7 @@ const CentralDfe = () => {
       ['empresa_id', 'data_emissao_inicio', 'data_emissao_fim', 'competencia_emissao', 'chave_acesso', 'ordering'].forEach((k) => {
         if (!extraFilters[k]) delete next[k];
       });
-      return next;
+      return filtersShallowEqual(prev, next) ? prev : next;
     });
   }, [extraFilters, setFilters]);
 
@@ -222,14 +465,41 @@ const CentralDfe = () => {
     [filters],
   );
 
-  const abrirDetalhe = (row: CentralDfeDocumento) => {
-    setDetalheRow(row);
-    if (row.tipo_documento === 'CTE') {
-      setModalCteOpen(true);
+  const abrirDetalhe = (row: CentralDfeDocumento, manifestacao: NFeDestinadaDocumento | null) => {
+    if (row.tipo_documento === 'NFE_ENTRADA') {
+      abrirDetalheDfeNfe(row, manifestacao);
       return;
     }
     if (row.detalhe_rota) {
       window.location.assign(row.detalhe_rota);
+    }
+  };
+
+  const abrirDetalheCteLocal = (row: CentralDfeDocumento) => {
+    setCteDetalheLocalRow(row);
+    setModalCteDetalheLocalOpen(true);
+  };
+
+  const fecharDetalheCteLocal = () => {
+    setModalCteDetalheLocalOpen(false);
+    setCteDetalheLocalRow(null);
+  };
+
+  const abrirConferenciaCte = (row: CentralDfeDocumento) => {
+    setCteConferenciaRow(row);
+    setModalCteConferenciaOpen(true);
+  };
+
+  const fecharConferenciaCte = () => {
+    setModalCteConferenciaOpen(false);
+    setCteConferenciaRow(null);
+  };
+
+  const fecharManifestacao = (row: NFeDestinadaDocumento | null) => {
+    setManifestRow(row);
+    if (!row) {
+      setEventoSel('');
+      setJustificativa('');
     }
   };
 
@@ -274,155 +544,70 @@ const CentralDfe = () => {
     return 'sem filtro de emissão';
   }, [dataEmissaoInicio, dataEmissaoFim, competenciaEmissao]);
 
-  const exibirResumoCaptura = (data: CentralDfeCapturaResponse) => {
-    if (!data.sefaz_consultada) {
-      const erros = data.erros ?? [];
-      const msgCert = erros.find((e) => /certificado/i.test(e));
-      if (msgCert) {
-        toast.error('Certificado digital não disponível/configurado para consulta DF-e.');
-      } else if (erros.length) {
-        erros.forEach((e) => toast.error(e));
-      } else {
-        toast.error('A consulta SEFAZ não foi realizada. Verifique permissões e configuração.');
-      }
-      return;
-    }
-
-    const r = data.resumo;
-    const sefaz = data.sefaz_por_tipo ?? {};
-    const nfeSefaz = sefaz.NFE;
-    const cteSefaz = sefaz.CTE;
-
-    const linhasSefaz: string[] = [];
-    if (nfeSefaz?.consultada) {
-      linhasSefaz.push(
-        `NF-e SEFAZ cStat ${nfeSefaz.cstat || '—'}: ${nfeSefaz.encontrados_xml} XML, ${nfeSefaz.novos} nova(s), ${nfeSefaz.duplicados} duplicada(s)`,
-      );
-    }
-    if (cteSefaz?.consultada) {
-      linhasSefaz.push(
-        `CT-e SEFAZ cStat ${cteSefaz.cstat || '—'}: ${cteSefaz.encontrados_xml} XML, ${cteSefaz.novos} novo(s), ${cteSefaz.duplicados} duplicado(s)`,
-      );
-    }
-
-    const nsuNfe = data.nsu_por_tipo?.NFE;
-    const nsuCte = data.nsu_por_tipo?.CTE;
-    if (nsuNfe) {
-      linhasSefaz.push(
-        `NSU NF-e: ${nsuNfe.ultimo_nsu_inicial ?? '—'} → ${nsuNfe.ultimo_nsu_final ?? nsuNfe.ultimo_nsu ?? '—'} / max ${nsuNfe.max_nsu ?? '—'}`,
-      );
-    }
-    if (nsuCte) {
-      linhasSefaz.push(
-        `NSU CT-e: ${nsuCte.ultimo_nsu_inicial ?? '—'} → ${nsuCte.ultimo_nsu_final ?? nsuCte.ultimo_nsu ?? '—'} / max ${nsuCte.max_nsu ?? '—'}`,
-      );
-    }
-    if (data.lotes_processados != null) {
-      linhasSefaz.push(`Lotes processados: ${data.lotes_processados} (limite ${data.limite_lotes ?? limiteLotesCaptura})`);
-    }
-
-    const novosTotal = (r?.nfe_novas ?? 0) + (r?.cte_novos ?? 0);
-    const dupTotal = (r?.nfe_duplicadas ?? 0) + (r?.cte_duplicados ?? 0);
-
-    if (novosTotal === 0 && dupTotal === 0) {
-      toast.message('Nenhum DF-e novo encontrado nesta captura.');
-    } else if (data.sucesso) {
-      toast.success(
-        `Captura SEFAZ concluída. NF-e: ${r?.nfe_novas ?? 0} nova(s), ${r?.nfe_duplicadas ?? 0} duplicada(s). CT-e: ${r?.cte_novos ?? 0} novo(s), ${r?.cte_duplicados ?? 0} duplicado(s).`,
-      );
-    } else {
-      toast.warning(
-        `Captura SEFAZ parcial. NF-e: ${r?.nfe_novas ?? 0} nova(s). CT-e: ${r?.cte_novos ?? 0} novo(s).`,
-      );
-    }
-
-    linhasSefaz.forEach((linha) => toast.message(linha));
-    if (data.ainda_tem_nsu_pendente) {
-      toast.warning(
-        'A SEFAZ informou que ainda há documentos pendentes. Execute nova captura para continuar.',
-      );
-    }
-    for (const msg of data.mensagens ?? []) {
-      if (
-        msg !== 'Nenhum DF-e novo encontrado nesta captura.' &&
-        !msg.startsWith('Ainda existem documentos pendentes na SEFAZ')
-      ) {
-        toast.message(msg);
-      }
-    }
-    for (const aviso of data.avisos ?? []) {
-      toast.message(aviso);
-    }
-    for (const erro of data.erros ?? []) {
-      toast.error(erro);
-    }
-  };
-
-  const executarCapturaSefaz = async () => {
-    if (!empresaId) {
-      toast.error('Selecione a empresa ativa antes de capturar DF-e.');
-      return;
-    }
-    setCapturando(true);
-    setModalCapturaOpen(false);
-    try {
-      const data = await centralDfeService.capturarSefaz({
-        empresa_id: empresaId,
-        tipos: ['NFE', 'CTE'],
-        modo: 'incremental',
-        limite_lotes: limiteLotesCaptura,
-      });
-      exibirResumoCaptura(data);
-      if (data.sefaz_consultada) {
-        await reload();
-      }
-    } catch (err) {
-      const msg = apiErrorMessage(err, {
-        fallback: 'Não foi possível consultar a SEFAZ. Verifique certificado e conectividade.',
-      });
-      if (/certificado/i.test(msg)) {
-        toast.error('Certificado digital não disponível/configurado para consulta DF-e.');
-      } else {
-        toast.error(msg);
-      }
-    } finally {
-      setCapturando(false);
-    }
-  };
-
   return (
     <div className="erp-page">
       <PageHeader
         title="DF-e Recebidos"
-        subtitle="NF-e de fornecedores e CT-e de transportadoras emitidos contra o CNPJ da empresa, pendentes de entrada ou tratamento."
+        subtitle="NF-e e CT-e emitidos contra o CNPJ da empresa. A fila atualiza automaticamente; manifestação (NF-e) e armazenamento de XML são sempre manuais."
         icon={Inbox}
-        actions={
-          <button
-            type="button"
-            className="erp-btn-primary inline-flex items-center gap-2"
-            disabled={!empresaId || capturando}
-            onClick={() => setModalCapturaOpen(true)}
-          >
-            {capturando ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                Consultando SEFAZ…
-              </>
-            ) : (
-              <>
-                <CloudDownload className="h-4 w-4" aria-hidden />
-                Capturar DF-e da SEFAZ
-              </>
-            )}
-          </button>
-        }
       />
 
-      <p className="text-sm text-muted-foreground mb-4 -mt-2">
-        Fila de documentos emitidos contra <strong>{empresaLabel}</strong>
-        {empresaInfo?.cnpj ? ` (${fmtCnpj(empresaInfo.cnpj)})` : ''} sem entrada lançada no ERP.
-        Use &quot;Incluir já tratados&quot; para ver conferidos, divergentes, ignorados ou já lançados.
-      </p>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4 -mt-2 text-sm">
+        <p className="text-muted-foreground">
+          Documentos emitidos contra <strong>{empresaLabel}</strong>
+          {empresaInfo?.cnpj ? ` (${fmtCnpj(empresaInfo.cnpj)})` : ''}.
+          Marque &quot;Incluir já tratados&quot; para ver conferidos, divergentes, ignorados ou já lançados.
+        </p>
+        <div className="flex flex-wrap items-center gap-3 ml-auto">
+          {atualizandoDfe && (
+            <span className="inline-flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              Atualizando DF-e…
+            </span>
+          )}
+          {!atualizandoDfe && ultimaAtualizacao && (
+            <span className="text-muted-foreground whitespace-nowrap">
+              Última atualização: {fmtDateTime(ultimaAtualizacao)}
+            </span>
+          )}
+          {!atualizandoDfe && erroAtualizacao && (
+            <span className="text-destructive">{erroAtualizacao}</span>
+          )}
+          {!atualizandoDfe && !erroAtualizacao && (
+            <span className="text-xs text-muted-foreground">
+              NF-e: manifestação manual. NF-e e CT-e: armazenamento de XML manual para fechamento mensal.
+            </span>
+          )}
+          <button
+            type="button"
+            className="erp-btn-ghost erp-btn-sm inline-flex items-center gap-1.5"
+            disabled={!empresaId || atualizandoDfe}
+            onClick={() => void sincronizarDfe(true)}
+          >
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+            Atualizar agora
+          </button>
+        </div>
+      </div>
+
+      {fechamento && (
+        <div className="space-y-2 mb-4">
+          <p className="text-sm font-medium text-muted-foreground">
+            Fechamento do mês ({fmtData(fechamento.data_inicio)} — {fmtData(fechamento.data_fim)})
+          </p>
+          <p className="text-xs text-muted-foreground">
+            NF-e exige manifestação quando aplicável; NF-e e CT-e precisam de XML armazenado na base importada.
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+            <KpiCard label="NF-e XML armazenados" value={fechamento.nfe_xml_armazenados ?? fechamento.xml_baixados} />
+            <KpiCard label="CT-e XML armazenados" value={fechamento.cte_xml_armazenados ?? 0} />
+            <KpiCard label="NF-e sem manifestação" value={fechamento.sem_manifestacao} />
+            <KpiCard label="NF-e XML pendente" value={fechamento.nfe_xml_pendentes_manifestacao ?? fechamento.xml_pendentes} />
+            <KpiCard label="CT-e XML pendente" value={fechamento.cte_xml_pendentes ?? 0} />
+            <KpiCard label="Erros armazenamento" value={fechamento.erros_armazenamento ?? fechamento.erros} />
+          </div>
+        </div>
+      )}
 
       {resumo && (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
@@ -535,17 +720,17 @@ const CentralDfe = () => {
       <DataTableShell>
         {loading && <TableSkeleton rows={8} />}
         {!loading && error && <ErrorState message={error} onRetry={() => void reload()} />}
-        {!loading && !error && items.length === 0 && (
+        {!loading && !error && linhasExibidas.length === 0 && (
           <EmptyState
             title="Nenhum DF-e encontrado no filtro atual"
             description={
               dataEmissaoInicio || dataEmissaoFim || competenciaEmissao
-                ? `Não há documentos de fornecedores ou transportadoras para ${periodoFiltroLabel}. Tente capturar da SEFAZ, ampliar o período ou marque "Incluir já tratados".`
-                : 'Não há NF-e de fornecedores ou CT-e de transportadoras pendentes contra o CNPJ da empresa. Use os filtros de emissão ou capture da SEFAZ.'
+                ? `Não há documentos de fornecedores ou transportadoras para ${periodoFiltroLabel}. Tente ampliar o período, use "Atualizar agora" ou marque "Incluir já tratados".`
+                : 'Não há NF-e de fornecedores ou CT-e de transportadoras pendentes contra o CNPJ da empresa. A fila é atualizada automaticamente ao abrir a tela.'
             }
           />
         )}
-        {!loading && !error && items.length > 0 && (
+        {!loading && !error && linhasExibidas.length > 0 && (
           <>
             <DataTable>
               <thead>
@@ -557,12 +742,26 @@ const CentralDfe = () => {
                   <th>Emissão</th>
                   <th className="text-right">Valor</th>
                   <th>Status de entrada</th>
-                  <th className="w-28">Ações</th>
+                  <th>Manifestação</th>
+                  <th>XML</th>
+                  <th className="w-80 min-w-[18rem]">Ações</th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((row) => (
-                  <tr key={`${row.tipo_documento}-${row.id}`}>
+                {linhasExibidas.map(({ row, manifestacao, somenteResumo }) => {
+                  const manifestacaoStatus = isCteTransportadora(row)
+                    ? statusManifestacaoCteExibicao()
+                    : statusManifestacaoExibicao(manifestacao, row);
+                  const xmlStatus = isCteTransportadora(row)
+                    ? statusXmlCteExibicao(row)
+                    : statusXmlExibicao(manifestacao, row);
+                  const exibirManifestar = podeManifestarNfe(manifestacao, row);
+                  const exibirArmazenarXml = podeArmazenarXmlNfe(manifestacao, row);
+                  const exibirAbrirBaseImportada =
+                    xmlJaArmazenado(manifestacao, row) || podeAbrirBaseImportada(row);
+
+                  return (
+                  <tr key={`${somenteResumo ? 'resumo' : row.tipo_documento}-${row.id}-${row.chave_acesso}`}>
                     <td>
                       <span className="text-sm font-medium">{row.tipo_label}</span>
                     </td>
@@ -584,20 +783,118 @@ const CentralDfe = () => {
                       <div className="text-xs text-muted-foreground mt-1">{row.status_entrada_label}</div>
                     </td>
                     <td>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          className="erp-btn-ghost p-1.5"
-                          title="Ver detalhe"
-                          onClick={() => abrirDetalhe(row)}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </button>
-                        {row.detalhe_rota && (
+                      <StatusBadge status={manifestacaoStatus.badge}>
+                        {manifestacaoStatus.label}
+                      </StatusBadge>
+                    </td>
+                    <td>
+                      <StatusBadge status={xmlStatus.badge}>
+                        {xmlStatus.label}
+                      </StatusBadge>
+                    </td>
+                    <td>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {!isCteTransportadora(row) && (
+                          <button
+                            type="button"
+                            className="erp-btn-ghost p-1.5"
+                            title={isNfeFornecedorAplicavel(row) ? 'Ver detalhe / manifestação' : 'Ver detalhe'}
+                            onClick={() => abrirDetalhe(row, manifestacao)}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                        )}
+                        {exibirManifestar && isNfeFornecedorAplicavel(row) && (
+                          <button
+                            type="button"
+                            className="erp-btn-ghost inline-flex items-center gap-1 px-2 py-1 text-xs font-medium"
+                            title="Manifestar NF-e (ação manual)"
+                            disabled={loadingAcaoManual}
+                            onClick={() => void iniciarManifestacaoManual(row, manifestacao)}
+                          >
+                            <Stamp className="h-4 w-4 shrink-0" />
+                            Manifestar
+                          </button>
+                        )}
+                        {exibirArmazenarXml && isNfeFornecedorAplicavel(row) && (
+                          <button
+                            type="button"
+                            className="erp-btn-ghost inline-flex items-center gap-1 px-2 py-1 text-xs font-medium"
+                            title={TOOLTIP_ARMAZENAR_XML_NFE}
+                            disabled={loadingAcaoManual}
+                            onClick={() => void iniciarArmazenarXmlManual(row, manifestacao, somenteResumo)}
+                          >
+                            <FileDown className="h-4 w-4 shrink-0" />
+                            Armazenar XML
+                          </button>
+                        )}
+                        {exibirAbrirBaseImportada && isNfeFornecedorAplicavel(row) && (
+                          <Link
+                            to={rotaAbrirBaseImportada(row)}
+                            className="erp-btn-ghost inline-flex items-center gap-1 px-2 py-1 text-xs font-medium"
+                            title={tooltipAbrirBaseImportada(row)}
+                          >
+                            <ExternalLink className="h-4 w-4 shrink-0" />
+                            {labelAbrirBaseImportada(row)}
+                          </Link>
+                        )}
+                        {isNfeFornecedorAplicavel(row) && manifestacao && (
+                          <button
+                            type="button"
+                            className="erp-btn-ghost inline-flex items-center gap-1 px-2 py-1 text-xs"
+                            title="Ver histórico de manifestação"
+                            onClick={() => abrirDetalhe(row, manifestacao)}
+                          >
+                            Histórico
+                          </button>
+                        )}
+                        {isCteTransportadora(row) && (
+                          <>
+                            <button
+                              type="button"
+                              className="erp-btn-ghost inline-flex items-center gap-1 px-2 py-1 text-xs font-medium"
+                              title={TOOLTIP_VER_CTE}
+                              onClick={() => abrirDetalheCteLocal(row)}
+                            >
+                              {LABEL_VER_CTE}
+                            </button>
+                            {podeArmazenarXmlCte(row) && (
+                              <button
+                                type="button"
+                                className="erp-btn-ghost inline-flex items-center gap-1 px-2 py-1 text-xs font-medium"
+                                title={TOOLTIP_ARMAZENAR_XML_CTE}
+                                disabled={loadingAcaoManual}
+                                onClick={() => setConfirmArmazenarCte(row)}
+                              >
+                                <FileDown className="h-4 w-4 shrink-0" />
+                                {LABEL_ARMAZENAR_XML_CTE}
+                              </button>
+                            )}
+                            {exibirAbrirBaseImportada && podeAbrirBaseImportada(row) && (
+                              <Link
+                                to={rotaAbrirBaseImportada(row)}
+                                className="erp-btn-ghost inline-flex items-center gap-1 px-2 py-1 text-xs font-medium"
+                                title={tooltipAbrirBaseImportada(row)}
+                              >
+                                <ExternalLink className="h-4 w-4 shrink-0" />
+                                {labelAbrirBaseImportada(row)}
+                              </Link>
+                            )}
+                            <button
+                              type="button"
+                              className="erp-btn-ghost inline-flex items-center gap-1 px-2 py-1 text-xs font-medium"
+                              title={TOOLTIP_CONFERIR_CTE}
+                              onClick={() => abrirConferenciaCte(row)}
+                            >
+                              {LABEL_CONFERIR_CTE}
+                            </button>
+                          </>
+                        )}
+                        {row.detalhe_rota && !somenteResumo && !exibirAbrirBaseImportada && !isCteTransportadora(row) && (
                           <Link
                             to={row.detalhe_rota}
                             className="erp-btn-ghost p-1.5 inline-flex"
-                            title="Abrir tela de origem"
+                            title={tooltipAbrirBaseImportada(row)}
                           >
                             <ExternalLink className="h-4 w-4" />
                           </Link>
@@ -615,14 +912,15 @@ const CentralDfe = () => {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </DataTable>
             <PaginationControls
               page={page}
               pageSize={pageSize}
               totalPages={totalPages}
-              count={count}
+              count={count + manifestacaoSomenteResumo.length}
               onPageChange={setPage}
               onPageSizeChange={setPageSize}
             />
@@ -630,53 +928,94 @@ const CentralDfe = () => {
         )}
       </DataTableShell>
 
-      <CTeHistoricoDetalheModal
-        cteId={detalheRow?.tipo_documento === 'CTE' ? detalheRow.id : null}
-        open={modalCteOpen}
-        onClose={() => setModalCteOpen(false)}
+      <ManifestacaoDestinatarioModals
+        manifestRow={manifestRow}
+        onManifestRowChange={fecharManifestacao}
+        eventoSel={eventoSel}
+        onEventoSelChange={setEventoSel}
+        justificativa={justificativa}
+        onJustificativaChange={setJustificativa}
+        detalhe={detalhe}
+        onDetalheChange={setDetalhe}
+        dfeDetalheRow={dfeDetalheRow}
+        onDfeDetalheRowChange={setDfeDetalheRow}
+        manifestacaoDetalhe={dfeDetalheRow ? manifestacaoMap.get(dfeDetalheRow.chave_acesso) ?? null : null}
+        onIniciarManifestacao={() => {
+          if (!dfeDetalheRow) return;
+          void iniciarManifestacaoManual(
+            dfeDetalheRow,
+            manifestacaoMap.get(dfeDetalheRow.chave_acesso) ?? null,
+          );
+        }}
+        onIniciarBaixarXml={() => {
+          if (!dfeDetalheRow) return;
+          void iniciarArmazenarXmlManual(
+            dfeDetalheRow,
+            manifestacaoMap.get(dfeDetalheRow.chave_acesso) ?? null,
+            false,
+          );
+        }}
+        onAbrirManifestacaoDocumento={(doc) => {
+          setManifestRow(doc);
+          setEventoSel('');
+          setJustificativa('');
+          setDfeDetalheRow(null);
+          setDetalhe(null);
+        }}
+        onAbrirHistoricoDocumento={(doc) => {
+          void abrirDetalheManifestacao(doc);
+        }}
+        confirmBaixar={confirmArmazenar?.manifestacao ?? confirmBaixar}
+        onConfirmBaixarChange={(row) => {
+          if (!row) {
+            setConfirmArmazenar(null);
+            setConfirmBaixar(null);
+          }
+        }}
+        confirmArmazenarAberto={Boolean(confirmArmazenar)}
+        loadingAcao={loadingAcaoManual}
+        onExecutarManifestacao={() => void executarManifestacao(() => recarregarTudo(), chavesCentralNfe)}
+        onExecutarBaixarXml={() => void executarArmazenarXmlNfe(() => recarregarTudo(), chavesCentralNfe)}
       />
 
-      <AlertDialog open={modalCapturaOpen} onOpenChange={setModalCapturaOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Capturar DF-e da SEFAZ</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-3 text-sm text-muted-foreground">
-                <p>
-                  Esta ação consulta a SEFAZ com o certificado da empresa e importa para a fila DF-e
-                  Recebidos documentos emitidos contra o CNPJ da Nexus. Busca NF-e de fornecedores e CT-e
-                  de transportadoras em produção. Não gera entrada, financeiro ou estoque.
-                </p>
-                <div>
-                  <label className="erp-label" htmlFor="limite-lotes-captura">
-                    Lotes SEFAZ por execução
-                  </label>
-                  <select
-                    id="limite-lotes-captura"
-                    className="erp-input mt-1 w-full"
-                    value={limiteLotesCaptura}
-                    onChange={(e) => setLimiteLotesCaptura(Number(e.target.value))}
-                    disabled={capturando}
-                  >
-                    <option value={3}>3 lotes (padrão)</option>
-                    <option value={5}>5 lotes</option>
-                    <option value={10}>10 lotes</option>
-                  </select>
-                  <p className="text-xs mt-1">
-                    Chamadas excessivas podem gerar rejeição ou consumo indevido na SEFAZ. Se ainda houver NSU pendente, execute nova captura manualmente.
-                  </p>
-                </div>
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={capturando}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction disabled={capturando} onClick={() => void executarCapturaSefaz()}>
-              Consultar SEFAZ
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {confirmArmazenarCte && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-background border rounded-lg p-6 max-w-md w-full space-y-4 shadow-lg">
+            <h3 className="font-semibold">Armazenar XML CT-e?</h3>
+            <p className="text-sm text-muted-foreground">
+              O XML será confirmado na Base CT-e Importada, sem gerar financeiro, estoque, expedição, rateio ou
+              apuração automática.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="erp-btn-outline" onClick={() => setConfirmArmazenarCte(null)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="erp-btn-primary"
+                disabled={loadingAcaoManual}
+                onClick={() => void executarArmazenarXmlCte(() => recarregarTudo())}
+              >
+                Armazenar XML
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <CentralDfeCteDetalheModal
+        open={modalCteDetalheLocalOpen}
+        row={cteDetalheLocalRow}
+        onClose={fecharDetalheCteLocal}
+      />
+
+      <CTeHistoricoDetalheModal
+        cteId={cteConferenciaRow?.tipo_documento === 'CTE' ? cteConferenciaRow.id : null}
+        open={modalCteConferenciaOpen}
+        abaInicial="conferencia"
+        onClose={fecharConferenciaCte}
+        onConferenciaAtualizada={() => void recarregarTudo()}
+      />
     </div>
   );
 };

@@ -278,6 +278,38 @@ def consulta_distribuicao_dfe_nfe(
         raise PyNFeComunicacaoError(f'Erro na distribuição DF-e NF-e: {exc}') from exc
 
 
+def consulta_distribuicao_dfe_nfe_por_chave(
+    comunicacao: Any,
+    cnpj: str,
+    chave: str,
+) -> Any:
+    """Distribuição DF-e NF-e por chave de acesso (consChNFe)."""
+    doc = ''.join(ch for ch in str(cnpj or '') if ch.isdigit())
+    ch = ''.join(ch for ch in str(chave or '') if ch.isdigit())
+    if len(doc) != 14:
+        raise PyNFeComunicacaoError('CNPJ inválido para distribuição DF-e NF-e.')
+    if len(ch) != 44:
+        raise PyNFeComunicacaoError('Chave de acesso inválida para consulta DF-e.')
+    try:
+        with requests_sem_proxy_ambiente():
+            return comunicacao.consulta_distribuicao(
+                cnpj=doc,
+                chave=ch,
+                consulta_nsu_especifico=True,
+            )
+    except PyNFeComunicacaoError:
+        raise
+    except Exception as exc:
+        msg = str(exc).lower()
+        if 'timeout' in msg or 'timed out' in msg:
+            raise PyNFeComunicacaoError(
+                'Tempo esgotado ao consultar NF-e por chave na SEFAZ.',
+            ) from exc
+        if 'connection' in msg or 'conex' in msg or 'network' in msg:
+            raise PyNFeComunicacaoError('Erro ao conectar ao WebService de distribuição NF-e.') from exc
+        raise PyNFeComunicacaoError(f'Erro na consulta DF-e por chave: {exc}') from exc
+
+
 def consulta_distribuicao_dfe_cte(
     comunicacao: Any,
     cnpj: str,

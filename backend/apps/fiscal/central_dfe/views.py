@@ -5,9 +5,16 @@ from __future__ import annotations
 import logging
 
 from rest_framework import status, viewsets
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.fiscal.central_dfe.armazenar_xml_service import (
+    ArmazenarXmlCentralError,
+    armazenar_xml_cte_central,
+    armazenar_xml_nfe_central,
+)
+from apps.fiscal.central_dfe.serializers import ArmazenarXmlCentralSerializer
 from apps.fiscal.central_dfe.service import (
     EmpresaCentralDfeError,
     calcular_resumo_central,
@@ -15,9 +22,17 @@ from apps.fiscal.central_dfe.service import (
     parse_filtros_central_dfe,
     resolver_empresa_central,
 )
+from apps.fiscal.dfe_recebidos.permissoes import (
+    MSG_SEM_PERMISSAO_CAPTURA,
+    usuario_pode_capturar_dfe_recebidos,
+)
 from nexus_erp.pagination import paginate_sequence
 
 logger = logging.getLogger(__name__)
+
+
+def _sem_permissao_response():
+    return Response({'detail': MSG_SEM_PERMISSAO_CAPTURA}, status=status.HTTP_403_FORBIDDEN)
 
 
 class CentralDfeViewSet(viewsets.ViewSet):
@@ -57,3 +72,49 @@ class CentralDfeViewSet(viewsets.ViewSet):
                 {'detail': 'Não foi possível carregar DF-e Recebidos. Tente novamente.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+    @action(detail=True, methods=['post'], url_path='armazenar-xml-nfe')
+    def armazenar_xml_nfe(self, request, pk=None):
+        """Armazena XML NF-e na Base NF-e Entrada Importada — somente ação manual explícita."""
+        if not usuario_pode_capturar_dfe_recebidos(request.user):
+            return _sem_permissao_response()
+        ser = ArmazenarXmlCentralSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        if not ser.validated_data.get('confirmacao_explicita'):
+            return Response(
+                {'detail': 'Confirmação explícita obrigatória.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            resultado = armazenar_xml_nfe_central(
+                empresa_id=ser.validated_data['empresa_id'],
+                documento_id=int(pk),
+                usuario=request.user,
+                confirmacao_explicita=True,
+            )
+        except ArmazenarXmlCentralError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(resultado)
+
+    @action(detail=True, methods=['post'], url_path='armazenar-xml-cte')
+    def armazenar_xml_cte(self, request, pk=None):
+        """Confirma XML CT-e na Base CT-e Importada — somente ação manual explícita."""
+        if not usuario_pode_capturar_dfe_recebidos(request.user):
+            return _sem_permissao_response()
+        ser = ArmazenarXmlCentralSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        if not ser.validated_data.get('confirmacao_explicita'):
+            return Response(
+                {'detail': 'Confirmação explícita obrigatória.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            resultado = armazenar_xml_cte_central(
+                empresa_id=ser.validated_data['empresa_id'],
+                documento_id=int(pk),
+                usuario=request.user,
+                confirmacao_explicita=True,
+            )
+        except ArmazenarXmlCentralError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(resultado)

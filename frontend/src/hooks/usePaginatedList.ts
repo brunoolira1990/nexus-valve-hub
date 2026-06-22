@@ -7,6 +7,8 @@ import {
 } from '@/lib/apiList';
 import { apiErrorMessage } from '@/services/api/config';
 
+const EMPTY_ITEMS: never[] = [];
+
 type UsePaginatedListOptions<T> = {
   fetchPage: (params: ListQueryParams) => Promise<PaginatedResponse<T>>;
   initialPageSize?: number;
@@ -82,7 +84,7 @@ export function usePaginatedList<T>({
   }, []);
 
   return {
-    items: data?.results ?? [],
+    items: data?.results ?? EMPTY_ITEMS,
     count: data?.count ?? 0,
     page,
     pageSize,

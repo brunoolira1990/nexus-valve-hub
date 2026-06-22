@@ -136,6 +136,16 @@ def parse_distribuicao_dfe_response(raw: Any) -> ResultadoDistribuicaoDfe:
         schema = (el.get('schema') or '').strip()
         tipo = _classificar_schema(schema)
         if tipo in {'RES_NFE', 'RES_CTE'}:
+            try:
+                conteudo = decodificar_doc_zip(el.text or '')
+            except Exception as exc:
+                logger.debug('Falha ao decodificar resumo NSU=%s: %s', nsu, exc)
+                resultado.documentos_resumo += 1
+                continue
+            if conteudo:
+                resultado.documentos.append(
+                    DocumentoDistribuicao(nsu=nsu, schema=schema, conteudo_xml=conteudo, tipo=tipo),
+                )
             resultado.documentos_resumo += 1
             continue
         if tipo == 'OUTRO':

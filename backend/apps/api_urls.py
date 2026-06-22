@@ -54,6 +54,7 @@ from apps.corridas.views import CorridaViewSet
 from apps.fiscal.nfe_integracao.views import NFeSefazIntegracaoViewSet
 from apps.fiscal.central_dfe.views import CentralDfeViewSet
 from apps.fiscal.dfe_recebidos.views import DfeRecebidosCapturaView
+from apps.fiscal.manifestacao_destinatario.views import ManifestacaoDestinatarioViewSet
 from apps.fiscal.views import (
     AlocacaoAtendimentoViewSet,
     AtendimentosOperacionaisViewSet,
@@ -159,6 +160,11 @@ router.register(r'cte-entradas', CTeEntradaViewSet, basename='cteentrada')
 router.register(r'cte-historicos-importados', CTeHistoricoImportadoViewSet, basename='cte-hist-importado')
 router.register(r'painel-fiscal-gerencial-historico', PainelFiscalGerencialHistoricoViewSet, basename='painel-fiscal-gerencial')
 router.register(r'central-dfe', CentralDfeViewSet, basename='central-dfe')
+router.register(
+    r'fiscal/manifestacao-destinatario',
+    ManifestacaoDestinatarioViewSet,
+    basename='manifestacao-destinatario',
+)
 router.register(r'estoque', EstoqueViewSet, basename='estoque')
 router.register(r'estoque/saldos', EstoqueSaldosViewSet, basename='estoque-saldos')
 router.register(
@@ -195,9 +201,54 @@ urlpatterns = [
         name='central-dfe-list-explicit',
     ),
     path(
+        'central-dfe/<int:pk>/armazenar-xml-nfe/',
+        CentralDfeViewSet.as_view({'post': 'armazenar_xml_nfe'}),
+        name='central-dfe-armazenar-xml-nfe-explicit',
+    ),
+    path(
+        'central-dfe/<int:pk>/armazenar-xml-cte/',
+        CentralDfeViewSet.as_view({'post': 'armazenar_xml_cte'}),
+        name='central-dfe-armazenar-xml-cte-explicit',
+    ),
+    path(
         'dfe-recebidos/capturar/',
         DfeRecebidosCapturaView.as_view(),
         name='dfe-recebidos-capturar',
+    ),
+    path(
+        'fiscal/manifestacao-destinatario/',
+        ManifestacaoDestinatarioViewSet.as_view({'get': 'list'}),
+        name='manifestacao-destinatario-list-explicit',
+    ),
+    path(
+        'fiscal/manifestacao-destinatario/iniciar-por-chave/',
+        ManifestacaoDestinatarioViewSet.as_view({'post': 'iniciar_por_chave'}),
+        name='manifestacao-destinatario-iniciar-por-chave-explicit',
+    ),
+    path(
+        'fiscal/manifestacao-destinatario/consultar/',
+        ManifestacaoDestinatarioViewSet.as_view({'post': 'consultar'}),
+        name='manifestacao-destinatario-consultar-explicit',
+    ),
+    path(
+        'fiscal/manifestacao-destinatario/fechamento-preview/',
+        ManifestacaoDestinatarioViewSet.as_view({'get': 'fechamento_preview'}),
+        name='manifestacao-destinatario-fechamento-explicit',
+    ),
+    path(
+        'fiscal/manifestacao-destinatario/<int:pk>/',
+        ManifestacaoDestinatarioViewSet.as_view({'get': 'retrieve'}),
+        name='manifestacao-destinatario-detail-explicit',
+    ),
+    path(
+        'fiscal/manifestacao-destinatario/<int:pk>/manifestar/',
+        ManifestacaoDestinatarioViewSet.as_view({'post': 'manifestar'}),
+        name='manifestacao-destinatario-manifestar-explicit',
+    ),
+    path(
+        'fiscal/manifestacao-destinatario/<int:pk>/baixar-xml/',
+        ManifestacaoDestinatarioViewSet.as_view({'post': 'baixar_xml'}),
+        name='manifestacao-destinatario-baixar-xml-explicit',
     ),
     path(
         'pedidos-compra/<int:pk>/pdf/',
