@@ -395,10 +395,22 @@ def enriquecer_linhas_xml_nfe(
     return itens_db
 
 
-def inf_cpl_prioriza_pedido_para_danfe(inf_cpl: str, *, max_len: int = _MAX_INF_CPL_DANFE_CHARS) -> str:
-    """Garante que o bloco do pedido de compra apareça no rodapé do DANFE (limite BFR ~420)."""
+def inf_cpl_prioriza_pedido_para_danfe(
+    inf_cpl: str,
+    *,
+    max_len: int | None = None,
+) -> str:
+    """
+    Normaliza infCpl para exibição no DANFE.
+
+    Por padrão não trunca: a BFR pagina o bloco Dados Adicionais em páginas de continuação.
+    Use max_len apenas em cenários legados que exijam limite explícito.
+    """
     texto = _normalizar_espacos(inf_cpl)
-    if not texto or len(texto) <= max_len:
+    if not texto:
+        return ''
+    limite = max_len if max_len is not None else _MAX_INF_CPL_XML_CHARS
+    if len(texto) <= limite:
         return texto
     m = re.search(
         r'(PEDIDO DE COMPRA(?: DO CLIENTE)?:\s*[^.]+(?:\.|$))',
@@ -406,14 +418,14 @@ def inf_cpl_prioriza_pedido_para_danfe(inf_cpl: str, *, max_len: int = _MAX_INF_
         flags=re.IGNORECASE,
     )
     if not m:
-        return texto[: max_len - 3].rstrip() + '...'
+        return texto[: limite - 3].rstrip() + '...'
     pedido_bloco = m.group(1).strip()
     resto = (texto[: m.start()] + ' ' + texto[m.end() :]).strip()
-    espaco_resto = max_len - len(pedido_bloco) - 1
+    espaco_resto = limite - len(pedido_bloco) - 1
     if espaco_resto <= 0:
-        return pedido_bloco[:max_len]
+        return pedido_bloco[:limite]
     prefixo = resto[:espaco_resto].rstrip()
-    return f'{prefixo} {pedido_bloco}'.strip()[:max_len]
+    return f'{prefixo} {pedido_bloco}'.strip()[:limite]
 
 
 def montar_informacoes_complementares_danfe(

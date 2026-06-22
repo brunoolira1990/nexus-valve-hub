@@ -150,6 +150,21 @@ class DanfeBfrAcabamentoTests(TestCase):
         self.assertNotIn('CONTINUACAO', norm)
         self.assertNotIn('CONTINUACAODASINFORMACOES', norm)
 
+    def test_pdf_inf_cpl_longo_nao_truncado_no_rodape(self):
+        nf = _nf_pronta()
+        texto_longo = (
+            'BASE DE CALCULO REDUZIDA CONFORME REGRA INTERNA. '
+            'DEVOLUCAO APOS 7 DIAS SOMENTE COM AUTORIZACAO DO DEPARTAMENTO COMERCIAL. '
+            'DESTINO DOS PRODUTOS CONFORME PEDIDO DO CLIENTE. '
+            'ENDERECO DE ENTREGA: AV EXEMPLO 1234 BAIRRO CENTRO CIDADE EXEMPLO SP CEP: 12345678'
+        )
+        nf.informacoes_adicionais = texto_longo
+        nf.save(update_fields=['informacoes_adicionais'])
+        texto = compact_pdf_text(pdf_text(gerar_danfe_bfr_nfe_preliminar(nf)[0]))
+        self.assertIn('ENDERECODEENTREGA', texto)
+        self.assertIn('12345678', texto)
+        self.assertNotIn('CONTINUACAODASINFORMACOES', texto)
+
     def test_pdf_contem_pedido_cliente_cabecalho(self):
         nf = _nf_pronta()
         nf.pedido_cliente_numero = '5050'

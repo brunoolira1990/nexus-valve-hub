@@ -109,11 +109,11 @@ class DanfeNexus:
                 addit_data_next_pages,
             ):
                 """
-                BFR preenche espaço vazio da tabela de produtos com «CONTINUAÇÃO DAS
-                INFORMAÇÕES COMPLEMENTARES» quando infCpl não cabe no rodapé.
-                Nexus: nunca despejar infCpl na área de produtos.
+                BFR reparte infCpl longo na tabela de produtos quando não cabe no rodapé.
+                Nexus: não usar área de produtos; preservar overflow para páginas de
+                continuação do bloco Dados Adicionais.
                 """
-                return None, ''
+                return None, addit_data_next_pages
 
             def _get_additional_data_content(self):
                 from apps.fiscal.nfe_integracao.danfe_xml_adicionais import (
@@ -210,9 +210,9 @@ def _montar_config_danfe(
     logo_path: str | None = None,
 ):
     """
-    Configura BFR: logo emitente, PIS/COFINS, infCpl em linha única (sem ; → overflow em produtos).
+    Configura BFR: logo emitente, PIS/COFINS e infCpl com paginação no bloco Dados Adicionais.
 
-    A BFR reparte infCpl longo na tabela de produtos («CONTINUAÇÃO…»); infCpl curto evita isso.
+    Overflow de Informações Complementares segue para páginas de continuação (não para produtos).
     """
     from brazilfiscalreport.danfe.config import FontSize
 
