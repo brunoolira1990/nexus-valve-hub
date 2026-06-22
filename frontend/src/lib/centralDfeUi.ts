@@ -50,7 +50,7 @@ export function statusXmlCteExibicao(row: CentralDfeDocumento): { label: string;
 }
 
 export function statusManifestacaoCteExibicao(): { label: string; badge: string } {
-  return { label: LABEL_MANIFESTACAO_NAO_APLICAVEL, badge: 'pendente' };
+  return { label: LABEL_MANIFESTACAO_NAO_APLICAVEL, badge: 'inativo' };
 }
 
 export function podeArmazenarXmlCte(row: CentralDfeDocumento): boolean {

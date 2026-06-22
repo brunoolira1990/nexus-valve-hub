@@ -79,6 +79,16 @@ const fmtCnpj = (cnpj: string): string => {
   return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
 };
 
+/** XML + Ações fixas à direita — sempre visíveis com scroll horizontal nas demais colunas. */
+const CLASSE_COLUNA_XML_TH =
+  'sticky right-[5.5rem] z-10 min-w-[6.5rem] w-[6.5rem] bg-muted/95 shadow-[-2px_0_4px_-2px_hsl(var(--border))]';
+const CLASSE_COLUNA_XML_TD =
+  'sticky right-[5.5rem] z-10 min-w-[6.5rem] w-[6.5rem] bg-card shadow-[-2px_0_4px_-2px_hsl(var(--border))] group-hover:bg-muted/50';
+const CLASSE_COLUNA_ACOES_TH =
+  'sticky right-0 z-20 min-w-[5.5rem] w-[5.5rem] bg-muted/95 text-right shadow-[-4px_0_6px_-2px_hsl(var(--border))]';
+const CLASSE_COLUNA_ACOES_TD =
+  'sticky right-0 z-20 min-w-[5.5rem] w-[5.5rem] bg-card text-right align-middle shadow-[-4px_0_6px_-2px_hsl(var(--border))] group-hover:bg-muted/50';
+
 type CentralDfeAcoesLinhaProps = {
   row: CentralDfeDocumento;
   manifestacao: NFeDestinadaDocumento | null;
@@ -900,7 +910,7 @@ const CentralDfe = () => {
         <FilterBar filters={filterDefs} onChange={setFilter} />
       </NexusCard>
 
-      <DataTableShell>
+      <DataTableShell className="[&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border">
         {loading && <TableSkeleton rows={8} />}
         {!loading && error && <ErrorState message={error} onRetry={() => void reload()} />}
         {!loading && !error && linhasExibidas.length === 0 && (
@@ -915,19 +925,22 @@ const CentralDfe = () => {
         )}
         {!loading && !error && linhasExibidas.length > 0 && (
           <>
-            <DataTable className="min-w-[62rem]">
+            <p className="text-xs text-muted-foreground px-4 py-2 border-b border-border bg-muted/30">
+              Role horizontalmente para ver todas as colunas. XML e Ações permanecem fixos à direita.
+            </p>
+            <DataTable className="min-w-[58rem] [&_th]:px-3 [&_td]:px-3">
               <thead>
                 <tr>
-                  <th className="whitespace-nowrap">Tipo</th>
-                  <th className="whitespace-nowrap">Documento</th>
-                  <th className="max-w-[9rem]">Emitente</th>
-                  <th className="whitespace-nowrap">CNPJ emitente</th>
-                  <th className="whitespace-nowrap">Emissão</th>
-                  <th className="text-right whitespace-nowrap">Valor</th>
-                  <th className="min-w-[7.5rem]">Status de entrada</th>
-                  <th className="min-w-[7rem]">Manifestação</th>
-                  <th className="whitespace-nowrap">XML</th>
-                  <th className="w-[5.5rem] text-right whitespace-nowrap">Ações</th>
+                  <th className="whitespace-nowrap w-[4.5rem]">Tipo</th>
+                  <th className="whitespace-nowrap min-w-[8rem]">Documento</th>
+                  <th className="max-w-[7.5rem]">Emitente</th>
+                  <th className="whitespace-nowrap text-xs min-w-[8.5rem]">CNPJ emitente</th>
+                  <th className="whitespace-nowrap w-[5.5rem]">Emissão</th>
+                  <th className="text-right whitespace-nowrap w-[5.5rem]">Valor</th>
+                  <th className="min-w-[6.5rem]">Status de entrada</th>
+                  <th className="min-w-[6.5rem]">Manifestação</th>
+                  <th className={`whitespace-nowrap ${CLASSE_COLUNA_XML_TH}`}>XML</th>
+                  <th className={`${CLASSE_COLUNA_ACOES_TH} whitespace-nowrap`}>Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -957,7 +970,7 @@ const CentralDfe = () => {
                         {row.chave_resumida || chaveNfeResumida(row.chave_acesso)}
                       </div>
                     </td>
-                    <td className="text-sm max-w-[9rem]">
+                    <td className="text-sm max-w-[7.5rem]">
                       <span className="block truncate" title={row.emitente_nome || undefined}>
                         {row.emitente_nome || '—'}
                       </span>
@@ -974,12 +987,12 @@ const CentralDfe = () => {
                         {manifestacaoStatus.label}
                       </StatusBadge>
                     </td>
-                    <td>
+                    <td className={`whitespace-nowrap ${CLASSE_COLUNA_XML_TD}`}>
                       <StatusBadge status={xmlStatus.badge}>
                         {xmlStatus.label}
                       </StatusBadge>
                     </td>
-                    <td className="text-right align-middle w-[5.5rem]">
+                    <td className={CLASSE_COLUNA_ACOES_TD}>
                       <CentralDfeAcoesLinha
                         row={row}
                         manifestacao={manifestacao}
