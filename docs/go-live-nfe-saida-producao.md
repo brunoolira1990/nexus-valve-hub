@@ -1,5 +1,8 @@
 # Go-live NF-e Saída — produção SEFAZ (Nexus ERP)
 
+> **⚠️ Estado operacional (ERP 4.0.15.2.1):** no **servidor de produção**, a emissão NF-e Saída em produção SEFAZ **já está ativa** e deve ser preservada. Para deploy de Manifestação do Destinatário / Central DF-e com **produção fiscal completa**, use o checklist atualizado: [`docs/deploy-erp-40152-manifestacao-dfe-producao.md`](deploy-erp-40152-manifestacao-dfe-producao.md).  
+> Este arquivo permanece como **registro histórico** do planejamento pré-T0 (jun/2026). Trechos que mencionam produção «desligada» ou `NFE_PRODUCAO_HABILITADA=false` como estado do servidor estão **desatualizados** para a operação atual.
+
 Documento formal de **planejamento e ativação futura** da emissão de NF-e de venda em **produção SEFAZ** pelo Nexus ERP.
 
 | Campo | Valor |

@@ -840,7 +840,7 @@ Documentos complementares existentes:
 
 ---
 
-*Última atualização: 15/06/2026 — ERP 4.0.15 Manifestação do Destinatário / Monitor NF-e Destinada; produção NF-e saída desligada.*
+*Última atualização: 15/06/2026 — ERP 4.0.15.2.1 deploy produção fiscal completa (NF-e Saída + Manifestação + Central DF-e); ver `docs/deploy-erp-40152-manifestacao-dfe-producao.md`.*
 
 ## ERP 4.0.13.6.2 — Padronização segura dos campos comerciais
 
@@ -1113,6 +1113,18 @@ Revisão de integração sem execução de testes automatizados:
 - **Não gera** financeiro, estoque, expedição ou apuração automática.
 - **Não substitui** conferência fiscal humana.
 - CT-e destinado permanece em **4.0.15.1**.
+
+## ERP 4.0.15.2 / 4.0.15.2.1 — Deploy produção fiscal completa
+
+Checklist operacional para servidor com **todos os fluxos fiscais em produção SEFAZ**:
+
+- Documento: [`docs/deploy-erp-40152-manifestacao-dfe-producao.md`](deploy-erp-40152-manifestacao-dfe-producao.md)
+- **NF-e Saída produção:** já ativa no servidor — **preservar** (`NFE_PRODUCAO_HABILITADA` conforme configuração existente; não desligar no deploy).
+- **Manifestação do Destinatário + Central DF-e:** produção SEFAZ (`homologacao=False`); manifestação manual; XML manual.
+- **Homologação (`tpAmb=2`):** filtrada do fechamento mensal e bases fiscais reais (`fechamento_service`, `dfe_classificacao`).
+- Commit principal: `ee66354`; migration fiscal `0049`.
+- **Não gera** financeiro, estoque, expedição ou apuração automática.
+- `docs/go-live-nfe-saida-producao.md` — registro histórico pré-T0; superseded para operação atual pelo checklist 4.0.15.2.1.
 
 ## ERP 4.0.15 — Manifestação do Destinatário / Monitor NF-e Destinada
 
