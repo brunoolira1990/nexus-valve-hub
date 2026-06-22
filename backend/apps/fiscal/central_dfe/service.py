@@ -18,6 +18,7 @@ from apps.fiscal.dfe_classificacao import (
 )
 from apps.fiscal.models import (
     CTeHistoricoImportado,
+    NFeDestinadaManifestacao,
     NFeEntrada,
     NFeEntradaHistoricaImportada,
 )
@@ -297,6 +298,93 @@ def _aplica_filtro_data_importacao(qs, filtros: FiltrosCentralDfe):
     return qs
 
 
+def _chaves_nfe_historica_importada(empresa_id: int) -> set[str]:
+    return {
+        c
+        for c in NFeEntradaHistoricaImportada.objects.filter(empresa_destinataria_id=empresa_id)
+        .exclude(chave_acesso='')
+        .values_list('chave_acesso', flat=True)
+        if c
+    }
+
+
+def _status_xml_manifestacao_label(status_xml: str) -> str:
+    st = (status_xml or '').upper()
+    labels = {
+        'RESUMO': 'Resumo DF-e',
+        'DISPONIVEL': 'XML disponível',
+        'BAIXADO': 'XML armazenado',
+        'PENDENTE': 'Pendente XML',
+        'ERRO': 'Erro XML',
+    }
+    return labels.get(st, st or 'Pendente XML')
+
+
+def _coletar_nfe_resumo_destinada(
+    filtros: FiltrosCentralDfe,
+    empresa: Empresa,
+    chaves_lancadas: set[str],
+    chaves_historica: set[str],
+) -> list[DocumentoCentralDfe]:
+    """NF-e destinada com resumo/XML pendente ainda não importada na base histórica."""
+    if filtros.tipo_documento and filtros.tipo_documento not in {TIPO_NFE_ENTRADA}:
+        return []
+
+    qs = NFeDestinadaManifestacao.objects.filter(
+        empresa_id=empresa.pk,
+        ambiente=NFeDestinadaManifestacao.Ambiente.PRODUCAO,
+    )
+    qs = _aplica_filtro_data_emissao(qs, 'dh_emissao', filtros)
+    if filtros.chave_acesso:
+        qs = qs.filter(chave_acesso__icontains=filtros.chave_acesso)
+
+    rows: list[DocumentoCentralDfe] = []
+    for doc in qs.iterator(chunk_size=200):
+        chave = (doc.chave_acesso or '').strip()
+        if not chave or chave in chaves_historica:
+            continue
+        if not filtros.incluir_tratados and chave in chaves_lancadas:
+            continue
+
+        status_xml = (doc.status_xml or '').upper()
+        xml_armazenado = status_xml == NFeDestinadaManifestacao.StatusXml.BAIXADO
+        if xml_armazenado:
+            continue
+
+        status_entrada = 'IMPORTADO_BASE'
+        status_label = STATUS_ENTRADA_LABELS[status_entrada]
+        if not filtros.incluir_tratados and status_entrada not in VISAO_PADRAO_STATUSES:
+            continue
+
+        emit_cnpj = normalizar_cnpj(doc.cnpj_emitente)
+        rows.append(
+            DocumentoCentralDfe(
+                id=doc.pk,
+                tipo_documento=TIPO_NFE_ENTRADA,
+                chave_resumida=chave_resumida(chave),
+                chave_acesso=chave,
+                numero='—',
+                serie='',
+                data_emissao=doc.dh_emissao,
+                data_importacao=doc.consultado_em,
+                emitente_nome=doc.razao_social_emitente,
+                emitente_cnpj=emit_cnpj,
+                uf='',
+                valor_total=doc.valor_nf,
+                status_entrada=status_entrada,
+                status_entrada_label=status_label,
+                tipo_label=TIPO_LABELS[TIPO_NFE_ENTRADA],
+                detalhe_rota='',
+                empresa_id=empresa.pk,
+                xml_status=status_xml or 'PENDENTE',
+                xml_status_label=_status_xml_manifestacao_label(status_xml),
+                xml_armazenado=False,
+                manifestacao_aplicavel=True,
+            ),
+        )
+    return rows
+
+
 def _chaves_nfe_entrada_lancadas() -> set[str]:
     return {
         c
@@ -563,10 +651,23 @@ def coletar_documentos_central_dfe(
     if empresa is None:
         return []
     chaves_lancadas = _chaves_nfe_entrada_lancadas()
+    chaves_historica: set[str] = set()
+    if empresa is not None:
+        chaves_historica = _chaves_nfe_historica_importada(empresa.pk)
     rows: list[DocumentoCentralDfe] = []
     rows.extend(_coletar_nfe_entrada_recebida(filtros, empresa, chaves_lancadas))
+    rows.extend(_coletar_nfe_resumo_destinada(filtros, empresa, chaves_lancadas, chaves_historica))
     rows.extend(_coletar_cte_recebido(filtros, empresa))
-    rows = [r for r in rows if _match_filtros_pos_query(r, filtros)]
+    chaves_vistas: set[str] = set()
+    dedup: list[DocumentoCentralDfe] = []
+    for row in rows:
+        chave = (row.chave_acesso or '').strip()
+        if chave:
+            if chave in chaves_vistas:
+                continue
+            chaves_vistas.add(chave)
+        dedup.append(row)
+    rows = [r for r in dedup if _match_filtros_pos_query(r, filtros)]
     return ordenar_documentos_central(rows, filtros.ordering)
 
 

@@ -15,9 +15,9 @@ from django.utils import timezone
 from apps.cadastros.models import Empresa
 from apps.fiscal.dfe_recebidos.distribuicao_dfe_parser import parse_distribuicao_dfe_response
 from apps.fiscal.dfe_recebidos.nsu_estado import carregar_estado_nsu, salvar_estado_nsu
+from apps.fiscal.dfe_recebidos.resumo_distribuicao import processar_documentos_resumo_nfe_distribuicao
 from apps.fiscal.manifestacao_destinatario.audit import registrar_evento_manifestacao
-from apps.fiscal.manifestacao_destinatario.resnfe_parser import parse_resnfe_xml
-from apps.fiscal.models import NFeDestinadaManifestacao, NFeDestinadaManifestacaoEvento
+from apps.fiscal.models import NFeDestinadaManifestacaoEvento
 from apps.fiscal.nfe_historica_classificacao import norm_digits
 from apps.fiscal.nfe_integracao.adapters.certificado_a1 import carregar_certificado_empresa
 from apps.fiscal.nfe_integracao.adapters.exceptions import CertificadoA1Error, PyNFeComunicacaoError
@@ -35,68 +35,6 @@ MSG_CERTIFICADO = 'Certificado digital não disponível/configurado para consult
 
 class ManifestacaoConsultaError(ValueError):
     pass
-
-
-def _upsert_resnfe(
-    *,
-    empresa: Empresa,
-    cnpj_dest: str,
-    nsu: str,
-    parsed,
-) -> tuple[NFeDestinadaManifestacao, bool]:
-    if parsed.tp_amb != '1':
-        return None, False  # type: ignore[return-value]
-
-    obj, created = NFeDestinadaManifestacao.objects.update_or_create(
-        empresa=empresa,
-        chave_acesso=parsed.chave_acesso,
-        defaults={
-            'nsu': nsu,
-            'cnpj_destinatario': cnpj_dest,
-            'cnpj_emitente': parsed.cnpj_emitente,
-            'razao_social_emitente': parsed.razao_social_emitente,
-            'ie_emitente': parsed.ie_emitente,
-            'dh_emissao': parsed.dh_emissao,
-            'valor_nf': parsed.valor_nf,
-            'ambiente': NFeDestinadaManifestacao.Ambiente.PRODUCAO,
-            'classificacao_dfe': 'BASE_DFE_IMPORTADA',
-            'resumo_json': parsed.resumo_json,
-            'status_xml': NFeDestinadaManifestacao.StatusXml.RESUMO,
-        },
-    )
-    if not created and obj.status_xml == NFeDestinadaManifestacao.StatusXml.PENDENTE:
-        obj.status_xml = NFeDestinadaManifestacao.StatusXml.RESUMO
-        obj.save(update_fields=['status_xml', 'consultado_em'])
-    return obj, created
-
-
-def _marcar_xml_disponivel(
-    *,
-    empresa: Empresa,
-    cnpj_dest: str,
-    nsu: str,
-    chave: str,
-) -> NFeDestinadaManifestacao | None:
-    obj = NFeDestinadaManifestacao.objects.filter(empresa=empresa, chave_acesso=chave).first()
-    if obj is None:
-        obj = NFeDestinadaManifestacao.objects.create(
-            empresa=empresa,
-            chave_acesso=chave,
-            nsu=nsu,
-            cnpj_destinatario=cnpj_dest,
-            ambiente=NFeDestinadaManifestacao.Ambiente.PRODUCAO,
-            classificacao_dfe='BASE_DFE_IMPORTADA',
-            status_xml=NFeDestinadaManifestacao.StatusXml.DISPONIVEL,
-        )
-        return obj
-    if obj.status_xml not in (
-        NFeDestinadaManifestacao.StatusXml.BAIXADO,
-        NFeDestinadaManifestacao.StatusXml.DISPONIVEL,
-    ):
-        obj.status_xml = NFeDestinadaManifestacao.StatusXml.DISPONIVEL
-        obj.nsu = nsu or obj.nsu
-        obj.save(update_fields=['status_xml', 'nsu', 'consultado_em'])
-    return obj
 
 
 @transaction.atomic
@@ -177,46 +115,16 @@ def consultar_nfe_destinadas(
         if parsed.mensagem_usuario:
             mensagens.append(parsed.mensagem_usuario)
 
-        for doc in parsed.documentos:
-            if doc.tipo == 'RES_NFE':
-                resumos += 1
-                parsed_res = parse_resnfe_xml(doc.conteudo_xml)
-                if not parsed_res:
-                    continue
-                if parsed_res.tp_amb != '1':
-                    ignorados_homolog += 1
-                    continue
-                _, created = _upsert_resnfe(
-                    empresa=empresa,
-                    cnpj_dest=cnpj_dest,
-                    nsu=doc.nsu,
-                    parsed=parsed_res,
-                )
-                if created:
-                    novos += 1
-                else:
-                    atualizados += 1
-            elif doc.tipo == 'NFE':
-                import xml.etree.ElementTree as ET
-
-                try:
-                    root = ET.fromstring(doc.conteudo_xml)
-                    chave_el = None
-                    for el in root.iter():
-                        if el.tag.split('}')[-1] == 'chNFe':
-                            chave_el = (el.text or '').strip()
-                            break
-                    if chave_el and len(chave_el) == 44:
-                        obj = _marcar_xml_disponivel(
-                            empresa=empresa,
-                            cnpj_dest=cnpj_dest,
-                            nsu=doc.nsu,
-                            chave=chave_el,
-                        )
-                        if obj:
-                            xml_disponivel += 1
-                except ET.ParseError:
-                    continue
+        stats = processar_documentos_resumo_nfe_distribuicao(
+            empresa=empresa,
+            cnpj_dest=cnpj_dest,
+            documentos=parsed.documentos,
+        )
+        resumos += stats['resumos']
+        novos += stats['resumos_novos']
+        atualizados += stats['resumos_atualizados']
+        xml_disponivel += stats['xml_disponivel']
+        ignorados_homolog += stats['ignorados_homolog']
 
         if parsed.bloquear_retentativa or parsed.aguardar_proxima_consulta:
             break

@@ -327,6 +327,7 @@ function aplicarCompetenciaMmAaaa(valor: string): { inicio: string; fim: string 
 
 const SYNC_MIN_INTERVAL_MS = 5 * 60 * 1000;
 const SYNC_LOTES_PADRAO = 3;
+const SYNC_LOTES_MANUAL = 8;
 
 function fmtDateTime(d: Date): string {
   return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
@@ -408,6 +409,7 @@ const CentralDfe = () => {
   const [atualizandoDfe, setAtualizandoDfe] = useState(false);
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState<Date | null>(null);
   const [erroAtualizacao, setErroAtualizacao] = useState<string | null>(null);
+  const [avisoAtualizacao, setAvisoAtualizacao] = useState<string | null>(null);
   const syncEmAndamento = useRef(false);
   const chavesCentralNfeRef = useRef<Set<string>>(new Set());
   const recarregarTudoRef = useRef<() => Promise<void>>(async () => {});
@@ -416,7 +418,7 @@ const CentralDfe = () => {
     if (dataEmissaoInicio && dataEmissaoFim) {
       return { inicio: dataEmissaoInicio, fim: dataEmissaoFim };
     }
-    return intervaloMesAtual();
+    return { inicio: '', fim: '' };
   }, [dataEmissaoInicio, dataEmissaoFim]);
 
   const {
@@ -516,18 +518,27 @@ const CentralDfe = () => {
   );
 
   const linhasExibidas = useMemo(() => {
+    const chavesPagina = new Set(
+      items.filter((row) => row.chave_acesso).map((row) => row.chave_acesso),
+    );
     const central = items.map((row) => ({
       row,
       manifestacao:
         row.tipo_documento === 'NFE_ENTRADA' ? manifestacaoMap.get(row.chave_acesso) ?? null : null,
       somenteResumo: false,
     }));
-    const extras = manifestacaoSomenteResumo.map((m) => ({
-      row: resumoParaLinhaCentral(m),
-      manifestacao: m,
-      somenteResumo: true,
-    }));
-    return [...central, ...extras];
+    const extras = manifestacaoSomenteResumo
+      .filter((m) => !chavesPagina.has(m.chave_acesso))
+      .map((m) => ({
+        row: resumoParaLinhaCentral(m),
+        manifestacao: m,
+        somenteResumo: true,
+      }));
+    return [...central, ...extras].sort((a, b) => {
+      const da = a.row.data_emissao || '';
+      const db = b.row.data_emissao || '';
+      return db.localeCompare(da);
+    });
   }, [items, manifestacaoMap, manifestacaoSomenteResumo]);
 
   useEffect(() => {
@@ -558,8 +569,11 @@ const CentralDfe = () => {
       syncEmAndamento.current = true;
       setAtualizandoDfe(true);
       setErroAtualizacao(null);
+      setAvisoAtualizacao(null);
 
       let erroMsg: string | null = null;
+      let avisoMsg: string | null = null;
+      let syncComSucesso = false;
 
       try {
         // Sync automático permitido: captura DF-e + consulta resumos destinados (sem manifestar/baixar XML).
@@ -568,14 +582,41 @@ const CentralDfe = () => {
             empresa_id: empresaId,
             tipos: ['NFE', 'CTE'],
             modo: 'incremental',
-            limite_lotes: SYNC_LOTES_PADRAO,
+            limite_lotes: manual ? SYNC_LOTES_MANUAL : SYNC_LOTES_PADRAO,
           });
+          if (captura.sefaz_consultada) {
+            syncComSucesso = true;
+          }
           if (!captura.sefaz_consultada) {
             const erros = captura.erros ?? [];
             const msgCert = erros.find((e) => /certificado/i.test(e));
             erroMsg = msgCert
               ? 'Certificado digital não disponível/configurado para atualização DF-e.'
               : erros[0] || 'Não foi possível atualizar DF-e automaticamente.';
+          } else {
+            const avisos = captura.avisos ?? [];
+            const mensagens = captura.mensagens ?? [];
+            if (captura.ainda_tem_nsu_pendente) {
+              avisoMsg =
+                'Ainda há documentos pendentes na SEFAZ. Clique em "Atualizar agora" para continuar a captura.';
+            } else if (captura.parou_por_limite_lotes) {
+              avisoMsg =
+                'Captura interrompida pelo limite de lotes. Use "Atualizar agora" para buscar mais documentos.';
+            }
+            const semNovos = mensagens.find((m) => /nenhum dfe novo/i.test(m));
+            if (semNovos && !avisoMsg) {
+              avisoMsg = semNovos;
+            }
+            const consumo = avisos.find((a) => /consumo indevido/i.test(a));
+            if (consumo) {
+              erroMsg = consumo;
+              syncComSucesso = false;
+            }
+            const bloqueio = (captura.erros ?? []).find((e) => /consumo indevido|656/i.test(e));
+            if (bloqueio) {
+              erroMsg = bloqueio;
+              syncComSucesso = false;
+            }
           }
         } catch (err) {
           const msg = apiErrorMessage(err, {
@@ -583,19 +624,26 @@ const CentralDfe = () => {
           });
           erroMsg = /certificado/i.test(msg)
             ? 'Certificado digital não disponível/configurado para atualização DF-e.'
-            : 'Não foi possível atualizar DF-e automaticamente.';
+            : msg;
         }
 
         const resumosOk = await sincronizarResumosDestinados(chavesCentralNfeRef.current, { silent: true });
-        if (!resumosOk && !erroMsg) {
+        if (resumosOk) {
+          syncComSucesso = true;
+        } else if (!erroMsg) {
           erroMsg = 'Não foi possível consultar resumos destinados (sem envio de evento fiscal).';
         }
 
         await recarregarTudoRef.current();
 
-        const quando = registrarSincronizacao(empresaId);
-        setUltimaAtualizacao(quando);
+        if (syncComSucesso) {
+          const quando = registrarSincronizacao(empresaId);
+          setUltimaAtualizacao(quando);
+        } else {
+          setUltimaAtualizacao(lerUltimaSincronizacao(empresaId));
+        }
         setErroAtualizacao(erroMsg);
+        setAvisoAtualizacao(avisoMsg);
       } finally {
         syncEmAndamento.current = false;
         setAtualizandoDfe(false);
@@ -766,7 +814,10 @@ const CentralDfe = () => {
           {!atualizandoDfe && erroAtualizacao && (
             <span className="text-destructive">{erroAtualizacao}</span>
           )}
-          {!atualizandoDfe && !erroAtualizacao && (
+          {!atualizandoDfe && !erroAtualizacao && avisoAtualizacao && (
+            <span className="text-amber-700 dark:text-amber-400">{avisoAtualizacao}</span>
+          )}
+          {!atualizandoDfe && !erroAtualizacao && !avisoAtualizacao && (
             <span className="text-xs text-muted-foreground">
               NF-e: manifestação manual. NF-e e CT-e: armazenamento de XML manual para fechamento mensal.
             </span>

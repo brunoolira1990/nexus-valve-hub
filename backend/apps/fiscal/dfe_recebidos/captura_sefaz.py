@@ -19,6 +19,7 @@ from apps.fiscal.dfe_recebidos.nsu_estado import (
     carregar_estado_nsu,
     salvar_estado_nsu,
 )
+from apps.fiscal.dfe_recebidos.resumo_distribuicao import processar_documentos_resumo_nfe_distribuicao
 from apps.fiscal.nfe_historica_classificacao import norm_digits
 from apps.fiscal.nfe_import.service_entrada import importar_arquivos_entrada
 from apps.fiscal.nfe_integracao.adapters.certificado_a1 import carregar_certificado_empresa
@@ -183,6 +184,7 @@ def _capturar_tipo(
     ult_nsu_consulta = estado.ultimo_nsu
     encontrados = 0
     encontrados_resumo = 0
+    resumos_nfe_novos = 0
     novos = 0
     duplicados = 0
     ignorados = 0
@@ -252,6 +254,14 @@ def _capturar_tipo(
 
         docs_tipo = [d for d in parsed.documentos if d.tipo == tipo]
         encontrados += len(docs_tipo)
+
+        if tipo == TIPO_NFE and parsed.documentos:
+            resumo_stats = processar_documentos_resumo_nfe_distribuicao(
+                empresa=empresa,
+                cnpj_dest=cnpj_empresa,
+                documentos=parsed.documentos,
+            )
+            resumos_nfe_novos += resumo_stats['resumos_novos']
 
         arquivos, ign, avs = _processar_lote_importacao(docs_tipo, tipo=tipo, cnpj_empresa=cnpj_empresa)
         ignorados += ign
@@ -353,6 +363,7 @@ def _capturar_tipo(
         'parou_por_limite_lotes': parou_por_limite_lotes,
         'encontrados': encontrados,
         'encontrados_resumo': encontrados_resumo,
+        'resumos_nfe_novos': resumos_nfe_novos,
         'novos': novos,
         'duplicados': duplicados,
         'ignorados': ignorados,

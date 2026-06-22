@@ -15,6 +15,7 @@ from rest_framework.test import APIClient
 from apps.cadastros.models import Empresa, Fornecedor
 from apps.fiscal.models import (
     CTeHistoricoImportado,
+    NFeDestinadaManifestacao,
     NFeEntrada,
     NFeEntradaHistoricaImportada,
     NFeSaidaHistoricaImportada,
@@ -144,3 +145,27 @@ class CentralDfeRecebidosApiTest(TestCase):
         )
         self.assertEqual(resp.data['count'], 1)
         self.assertEqual(resp.data['results'][0]['status_entrada'], 'JA_LANCADO')
+
+    def test_lista_resumo_destinado_sem_xml_historico(self) -> None:
+        from django.utils import timezone
+
+        chave_resumo = '5' * 44
+        NFeDestinadaManifestacao.objects.create(
+            empresa=self.emp,
+            chave_acesso=chave_resumo,
+            nsu='123456789012345',
+            cnpj_destinatario='11111111000111',
+            cnpj_emitente='22222222000122',
+            razao_social_emitente='Forn Resumo',
+            dh_emissao=timezone.make_aware(datetime(2026, 6, 20, 10, 0, 0)),
+            valor_nf=Decimal('250'),
+            ambiente=NFeDestinadaManifestacao.Ambiente.PRODUCAO,
+            status_xml=NFeDestinadaManifestacao.StatusXml.RESUMO,
+        )
+        resp = self.client.get(self.url, {'empresa_id': self.emp.pk})
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        chaves = [r['chave_acesso'] for r in resp.data['results']]
+        self.assertIn(chave_resumo, chaves)
+        row = next(r for r in resp.data['results'] if r['chave_acesso'] == chave_resumo)
+        self.assertEqual(row['xml_armazenado'], False)
+        self.assertEqual(row['status_entrada'], 'IMPORTADO_BASE')
