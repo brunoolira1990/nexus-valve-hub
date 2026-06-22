@@ -22,6 +22,9 @@ export const AVISO_HOMOLOG_SEM_VALOR_FISCAL =
 export const AVISO_PRODUCAO_POS_AUTORIZACAO =
   'NF-e autorizada em produção. Cancelamento SEFAZ será disponibilizado em fase futura.';
 
+export const AVISO_CANCELADA_CONSULTA =
+  'NF-e cancelada na SEFAZ. Consulta e visualização de documentos locais apenas — sem validade fiscal para circulação.';
+
 export type NFeSaidaCenarioAcao =
   | 'rascunho_conferencia'
   | 'homolog_autorizada'
@@ -65,6 +68,7 @@ export type NFeSaidaContextoAcao = {
   isAmbienteProducao: boolean;
   autorizadaHomolog: boolean;
   autorizadaProducao: boolean;
+  cancelada: boolean;
   temXmlAutorizado: boolean;
   chaveAcesso: string;
   avisoAmbiente: string | null;
@@ -161,7 +165,8 @@ export function resolverContextoNfeSaida(
     '';
 
   let avisoAmbiente: string | null = null;
-  if (autorizadaHomolog) avisoAmbiente = AVISO_HOMOLOG_SEM_VALOR_FISCAL;
+  if (cenario === 'cancelada') avisoAmbiente = AVISO_CANCELADA_CONSULTA;
+  else if (autorizadaHomolog) avisoAmbiente = AVISO_HOMOLOG_SEM_VALOR_FISCAL;
   else if (autorizadaProducao) avisoAmbiente = AVISO_PRODUCAO_POS_AUTORIZACAO;
   else if (isAmbienteProducao && cenario === 'rascunho_conferencia') {
     avisoAmbiente =
@@ -175,6 +180,7 @@ export function resolverContextoNfeSaida(
     isAmbienteProducao,
     autorizadaHomolog,
     autorizadaProducao,
+    cancelada: cenario === 'cancelada',
     temXmlAutorizado: Boolean(
       entrada.tem_xml_autorizado ??
         (emissaoSefaz as { tem_xml_autorizado?: boolean } | undefined)?.tem_xml_autorizado,
@@ -183,7 +189,7 @@ export function resolverContextoNfeSaida(
     avisoAmbiente,
     exibirAcoesFuturas: autorizadaHomolog || autorizadaProducao,
     exibirPainelEmissaoProducao:
-      isAmbienteProducao && !autorizadaHomolog && cenario !== 'producao_autorizada',
+      isAmbienteProducao && !autorizadaHomolog && cenario !== 'producao_autorizada' && cenario !== 'cancelada',
   };
 }
 
@@ -295,6 +301,34 @@ export function obterMatrizAcoesNfeSaida(
     if (podeCancelarNfeSefaz(ctx)) {
       acoes.push(acao({ id: 'cancelamento', grupo: 'fiscal', label: ACTION_LABELS.cancelarNfe }));
     }
+  } else if (cenario === 'cancelada') {
+    acoes.push(
+      acao({ id: 'abrir_nfe', grupo: 'documentos', label: 'Abrir NF-e' }),
+      acao({
+        id: 'danfe_autorizado',
+        grupo: 'documentos',
+        label: 'DANFE cancelado',
+        habilitada: ctx.temXmlAutorizado,
+        title: ctx.temXmlAutorizado
+          ? 'Documento cancelado — sem validade fiscal para circulação.'
+          : 'XML autorizado local indisponível.',
+      }),
+      acao({
+        id: 'xml_autorizado',
+        grupo: 'documentos',
+        label: 'XML autorizado',
+        habilitada: ctx.temXmlAutorizado,
+        title: ctx.temXmlAutorizado ? undefined : 'XML autorizado local indisponível.',
+      }),
+      acao({
+        id: 'copiar_chave',
+        grupo: 'documentos',
+        label: 'Copiar chave',
+        habilitada: Boolean(ctx.chaveAcesso),
+        title: ctx.chaveAcesso ? undefined : 'Chave de acesso indisponível',
+      }),
+      acao({ id: 'historico', grupo: 'documentos', label: 'Ver histórico' }),
+    );
   } else if (cenario === 'rascunho_conferencia' || cenario === 'rejeitada_erro') {
     if (opts?.podeValidar !== false) {
       acoes.push(acao({ id: 'validar', grupo: 'fiscal', label: 'Validar' }));

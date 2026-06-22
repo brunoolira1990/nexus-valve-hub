@@ -5,10 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from apps.core.pdf.formatters import fmt_cnpj
-from apps.fiscal.models import NFeSaida
+from apps.fiscal.models import NFeSaida, NFeSaidaEvento
 from apps.fiscal.nfe_emissao.cancelamento_sefaz import pode_cancelar_nfe_sefaz
 from apps.fiscal.nfe_emissao.consulta_situacao import _homologacao_da_nfe
 from apps.fiscal.nfe_emissao.empresa_emitente import resolver_empresa_emitente_nfe
+from apps.fiscal.nfe_saida_bloqueio import nf_cancelada_operacional
 from apps.fiscal.nfe_saida_financeiro import montar_flags_financeiro_nfe
 
 
@@ -22,6 +23,58 @@ def _fmt_nnf(numero: str | None) -> str:
 def _fmt_serie(serie: str | None) -> str:
     digits = ''.join(c for c in str(serie or '') if c.isdigit())
     return str(int(digits)) if digits else str(serie or '').strip()
+
+
+def montar_resumo_cancelamento_nfe_saida(nf: NFeSaida) -> dict[str, Any]:
+    """Resumo do cancelamento para conferência/detalhe — dados locais, sem SEFAZ."""
+    if not nf_cancelada_operacional(nf):
+        return {
+            'cancelada': False,
+            'status_cancelamento': '',
+            'motivo_cancelamento': '',
+            'protocolo_cancelamento': '',
+            'cancelada_em': None,
+            'cstat_cancelamento': '',
+            'xmotivo_cancelamento': '',
+            'tem_evento_sefaz': False,
+            'evento_id': None,
+            'mensagem_consulta': '',
+        }
+
+    evt = (
+        NFeSaidaEvento.objects.filter(
+            nfe_saida=nf,
+            tipo_evento=NFeSaidaEvento.TipoEvento.CANCELAMENTO_SEFAZ_EMITIDO,
+        )
+        .order_by('-pk')
+        .first()
+    )
+    resumo = evt.resumo if evt and isinstance(evt.resumo, dict) else {}
+    protocolo = str(resumo.get('protocolo_cancelamento') or resumo.get('protocolo') or '').strip()
+    cstat = str(resumo.get('cStat') or resumo.get('cstat') or '').strip()
+    xmotivo = str(resumo.get('xMotivo') or resumo.get('xmotivo') or '').strip()
+    cancelada_em = None
+    if nf.cancelada_em:
+        cancelada_em = nf.cancelada_em.isoformat()
+    elif resumo.get('dh_reg_evento'):
+        cancelada_em = str(resumo.get('dh_reg_evento'))
+    elif resumo.get('emitido_em'):
+        cancelada_em = str(resumo.get('emitido_em'))
+
+    return {
+        'cancelada': True,
+        'status_cancelamento': (nf.status or '').strip(),
+        'motivo_cancelamento': (nf.motivo_cancelamento or xmotivo or '').strip(),
+        'protocolo_cancelamento': protocolo,
+        'cancelada_em': cancelada_em,
+        'cstat_cancelamento': cstat,
+        'xmotivo_cancelamento': xmotivo,
+        'tem_evento_sefaz': bool(evt),
+        'evento_id': evt.pk if evt else None,
+        'mensagem_consulta': (
+            'NF-e cancelada na SEFAZ. Visualização apenas — documento sem validade fiscal para circulação.'
+        ),
+    }
 
 
 def montar_dados_contexto_cancelamento(nf: NFeSaida, *, usuario=None) -> dict[str, Any]:

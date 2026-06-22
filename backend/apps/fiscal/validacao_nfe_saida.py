@@ -20,7 +20,13 @@ STATUS_COM_ALERTAS = 'COM_ALERTAS'
 STATUS_BLOQUEADA = 'BLOQUEADA'
 
 STATUS_EMITIDA = frozenset({'EMITIDA', 'EMITIDO', 'AUTORIZADA_INTERNA', 'AUTORIZADA'})
-STATUS_CANCELADA = frozenset({'CANCELADA', 'CANCELADO', 'CANCELADA_INTERNA'})
+STATUS_CANCELADA = frozenset({
+    'CANCELADA',
+    'CANCELADO',
+    'CANCELADA_INTERNA',
+    'CANCELADA_HOMOLOGACAO',
+    'CANCELADA_PRODUCAO',
+})
 
 
 class ItemValidacao(TypedDict, total=False):
@@ -236,17 +242,17 @@ def validar_nfe_saida_para_emissao(
     if st in STATUS_CANCELADA:
         _add(
             grupos,
-            tipo=TIPO_PENDENCIA,
+            tipo=TIPO_INFO,
             codigo='NFE_CANCELADA',
             grupo='origem',
-            mensagem='NF-e cancelada não pode ser validada para emissão.',
+            mensagem='NF-e cancelada. Consulta de dados e documentos locais apenas — sem emissão ou reenvio.',
         )
         return _montar_resultado(
             nf,
             grupos,
             status_prontidao=STATUS_BLOQUEADA,
             pode_emitir=False,
-            mensagens=['NF-e com status cancelado.'],
+            mensagens=['NF-e cancelada. Visualização e consulta de documentos locais apenas.'],
         )
 
     if st in STATUS_EMITIDA:

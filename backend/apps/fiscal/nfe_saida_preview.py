@@ -110,7 +110,21 @@ def _dec_str(v, places: int = 2) -> str:
 
 
 def _bloqueio_preview(nf: NFeSaida) -> dict[str, Any] | None:
-    from apps.fiscal.nfe_saida_bloqueio import nf_autorizada_homologacao, nf_autorizada_producao
+    from apps.fiscal.nfe_saida_bloqueio import (
+        nf_autorizada_homologacao,
+        nf_autorizada_producao,
+        nf_cancelada_operacional,
+        pode_visualizar_danfe_xml_autorizado,
+    )
+
+    if nf_cancelada_operacional(nf):
+        if pode_visualizar_danfe_xml_autorizado(nf):
+            return None
+        return {
+            'preview': False,
+            'bloqueado': True,
+            'mensagens': ['NF-e cancelada: XML autorizado local indisponível para consulta.'],
+        }
 
     if nf_autorizada_homologacao(nf) or nf_autorizada_producao(nf):
         return None
@@ -772,7 +786,22 @@ def gerar_preview_xml_nfe_saida(nfe_saida: NFeSaida) -> dict[str, Any]:
 def gerar_preview_danfe_nfe_saida(nfe_saida: NFeSaida) -> tuple[bytes, dict[str, Any]]:
     """NF-e Saída 3.5.4 — DANFE de conferência (rascunho/pré-emissão apenas)."""
     from apps.fiscal.danfe_render import DanfeBfrRenderError
-    from apps.fiscal.nfe_saida_bloqueio import nf_autorizada_homologacao, nf_autorizada_producao
+    from apps.fiscal.nfe_saida_bloqueio import (
+        nf_autorizada_homologacao,
+        nf_autorizada_producao,
+        nf_cancelada_operacional,
+        pode_visualizar_danfe_xml_autorizado,
+    )
+
+    if nf_cancelada_operacional(nfe_saida) and pode_visualizar_danfe_xml_autorizado(nfe_saida):
+        from apps.fiscal.nfe_saida_danfe_autorizado import gerar_danfe_autorizado_nfe_saida
+
+        pdf, meta = gerar_danfe_autorizado_nfe_saida(nfe_saida)
+        meta['consulta_cancelada'] = True
+        meta['mensagens'] = [
+            'DANFE de NF-e cancelada — documento sem validade fiscal para circulação.',
+        ]
+        return pdf, meta
 
     if nf_autorizada_producao(nfe_saida):
         raise DanfeBfrRenderError(

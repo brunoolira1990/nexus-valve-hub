@@ -16,11 +16,11 @@ def gerar_danfe_autorizado_nfe_saida(nfe_saida: NFeSaida) -> tuple[bytes, dict[s
         brazil_fiscal_report_disponivel,
         gerar_danfe_bfr_autorizada,
     )
-    from apps.fiscal.nfe_saida_bloqueio import nf_autorizada_homologacao, nf_autorizada_producao
+    from apps.fiscal.nfe_saida_bloqueio import pode_visualizar_danfe_xml_autorizado
 
-    if not (nf_autorizada_producao(nfe_saida) or nf_autorizada_homologacao(nfe_saida)):
+    if not pode_visualizar_danfe_xml_autorizado(nfe_saida):
         raise DanfeBfrRenderError(
-            'DANFE autorizado disponível apenas após autorização SEFAZ.',
+            'DANFE autorizado disponível apenas após autorização SEFAZ ou cancelamento com XML local.',
             nfe_saida_id=nfe_saida.pk,
             erro_tipo='NfeNaoAutorizada',
         )
@@ -32,7 +32,11 @@ def gerar_danfe_autorizado_nfe_saida(nfe_saida: NFeSaida) -> tuple[bytes, dict[s
     try:
         pdf, meta = gerar_danfe_bfr_autorizada(nfe_saida)
     except (DanfeBfrError, DanfeBfrIndisponivelError) as exc:
+        from apps.fiscal.nfe_saida_bloqueio import nf_autorizada_homologacao, nf_autorizada_producao
+
         ambiente = '1' if nf_autorizada_producao(nfe_saida) else '2'
+        if nf_autorizada_homologacao(nfe_saida):
+            ambiente = '2'
         raise DanfeBfrRenderError(
             str(exc),
             nfe_saida_id=nfe_saida.pk,

@@ -1518,13 +1518,18 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
 
         from apps.fiscal.danfe_render import DanfeBfrRenderError
         from apps.fiscal.nfe_integracao.danfe_brazil_fiscal_report import DanfeBfrError
-        from apps.fiscal.nfe_saida_bloqueio import nf_autorizada_homologacao, nf_autorizada_producao
+        from apps.fiscal.nfe_saida_bloqueio import pode_visualizar_danfe_xml_autorizado
         from apps.fiscal.nfe_saida_danfe_autorizado import gerar_danfe_autorizado_nfe_saida
 
         nf = self.get_object()
-        if not (nf_autorizada_producao(nf) or nf_autorizada_homologacao(nf)):
+        if not pode_visualizar_danfe_xml_autorizado(nf):
             return response.Response(
-                {'mensagem': 'DANFE autorizado disponível apenas após autorização SEFAZ.'},
+                {
+                    'mensagem': (
+                        'DANFE autorizado indisponível. '
+                        'É necessário XML autorizado local (NF-e autorizada ou cancelada com protocolo).'
+                    ),
+                },
                 status=status.HTTP_409_CONFLICT,
             )
         from apps.fiscal.nfe_saida_arquivo_autorizado import (

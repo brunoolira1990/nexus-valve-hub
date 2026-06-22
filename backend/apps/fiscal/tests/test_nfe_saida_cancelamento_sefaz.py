@@ -110,6 +110,32 @@ class NFeCancelamentoSefazTests(TestCase):
         flags = montar_flags_financeiro_nfe(self.nf_prod)
         self.assertFalse(flags['pode_gerar_contas_receber'])
 
+    def test_pode_visualizar_danfe_cancelada_com_xml_local(self):
+        self.nf_prod.status = 'CANCELADA_PRODUCAO'
+        self.nf_prod.save(update_fields=['status'])
+        from apps.fiscal.nfe_saida_bloqueio import pode_visualizar_danfe_xml_autorizado
+
+        self.assertTrue(pode_visualizar_danfe_xml_autorizado(self.nf_prod))
+
+    def test_validacao_cancelada_producao_informativa(self):
+        self.nf_prod.status = 'CANCELADA_PRODUCAO'
+        self.nf_prod.save(update_fields=['status'])
+        from apps.fiscal.validacao_nfe_saida import validar_nfe_saida_para_emissao
+
+        val = validar_nfe_saida_para_emissao(self.nf_prod)
+        self.assertFalse(val.get('pode_emitir'))
+        self.assertIn('cancelada', (val.get('mensagens') or [''])[0].lower())
+
+    def test_conferencia_inclui_resumo_cancelamento(self):
+        self.nf_prod.status = 'CANCELADA_PRODUCAO'
+        self.nf_prod.motivo_cancelamento = 'Nota emitida com erro operacional.'
+        self.nf_prod.save(update_fields=['status', 'motivo_cancelamento'])
+        from apps.fiscal.nfe_saida_conferencia import montar_conferencia_nfe_saida
+
+        conf = montar_conferencia_nfe_saida(self.nf_prod, modo='abertura')
+        self.assertTrue(conf['cancelamento']['cancelada'])
+        self.assertIn('Nota emitida', conf['cancelamento']['motivo_cancelamento'])
+
     @patch('apps.fiscal.nfe_emissao.cancelamento_sefaz.transmitir_evento_nfe')
     @patch('apps.fiscal.nfe_emissao.cancelamento_sefaz._montar_assinar_evento_cancelamento')
     @patch('apps.fiscal.nfe_emissao.cancelamento_sefaz.carregar_certificado_empresa')

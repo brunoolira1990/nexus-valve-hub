@@ -198,10 +198,13 @@ const LABELS_STATUS_NFE: Record<string, string> = {
   AUTORIZADA_HOMOLOGACAO: 'Autorizada homologação',
   AUTORIZADA_INTERNA: 'Autorizada (interna)',
   CANCELADA_INTERNA: 'Cancelada (interna)',
+  CANCELADA_PRODUCAO: 'Cancelada (produção SEFAZ)',
+  CANCELADA_HOMOLOGACAO: 'Cancelada (homologação SEFAZ)',
   EMITIDA: 'Emitida',
   EMITIDO: 'Emitido',
   AUTORIZADA: 'Autorizada',
   CANCELADA: 'Cancelada',
+  CANCELADO: 'Cancelada',
 };
 
 export function badgeNfeSaidaStatus(status: string | undefined | null): { label: string; className: string } {
@@ -216,7 +219,7 @@ export function badgeNfeSaidaStatus(status: string | undefined | null): { label:
   ) {
     return { label, className: 'erp-badge-success' };
   }
-  if (st === 'CANCELADA_INTERNA' || st === 'CANCELADA' || st === 'CANCELADO') {
+  if (st === 'CANCELADA_INTERNA' || st === 'CANCELADA' || st === 'CANCELADO' || st === 'CANCELADA_PRODUCAO' || st === 'CANCELADA_HOMOLOGACAO') {
     return { label, className: 'erp-badge-danger' };
   }
   if (st === 'RASCUNHO') {

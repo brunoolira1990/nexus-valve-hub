@@ -628,7 +628,9 @@ def montar_conferencia_nfe_saida(
         }
         if resumo_operacional is not None:
             payload['nfe']['resumo_atendimento_operacional'] = resumo_operacional
+        from apps.fiscal.nfe_emissao.cancelamento_dados import montar_resumo_cancelamento_nfe_saida
         from apps.fiscal.nfe_saida_financeiro import montar_flags_financeiro_nfe
 
         payload['financeiro'] = montar_flags_financeiro_nfe(nf)
+        payload['cancelamento'] = montar_resumo_cancelamento_nfe_saida(nf)
         return payload

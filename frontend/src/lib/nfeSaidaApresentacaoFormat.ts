@@ -14,6 +14,8 @@ const STATUS_LABELS: Record<string, string> = {
   REJEITADA: 'Rejeitada',
   CANCELADA: 'Cancelada',
   CANCELADA_INTERNA: 'Cancelada (interna)',
+  CANCELADA_PRODUCAO: 'Cancelada (produção SEFAZ)',
+  CANCELADA_HOMOLOGACAO: 'Cancelada (homologação SEFAZ)',
   CANCELADO: 'Cancelada',
   RASCUNHO: 'Rascunho',
   ERRO_TRANSMISSAO: 'Erro de transmissão',

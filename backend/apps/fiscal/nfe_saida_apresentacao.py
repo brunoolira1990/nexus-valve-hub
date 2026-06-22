@@ -8,7 +8,13 @@ from apps.comercial.faturamento_numero_exibicao import numero_faturamento_exibic
 from apps.fiscal.models import NFeSaida
 from apps.fiscal.nfe_saida_bloqueio import nf_autorizada_homologacao
 
-_STATUS_CANCELADO = frozenset({'CANCELADA_INTERNA', 'CANCELADA', 'CANCELADO'})
+_STATUS_CANCELADO = frozenset({
+    'CANCELADA_INTERNA',
+    'CANCELADA',
+    'CANCELADO',
+    'CANCELADA_HOMOLOGACAO',
+    'CANCELADA_PRODUCAO',
+})
 
 
 def _fmt_nnf(numero: str | None) -> str:
@@ -25,6 +31,15 @@ def _fmt_serie(serie: str | None) -> str:
 
 def _status_cancelado(nf: NFeSaida) -> bool:
     return (nf.status or '').strip().upper() in _STATUS_CANCELADO
+
+
+def _badge_cancelada(nf: NFeSaida) -> dict[str, str]:
+    st = (nf.status or '').strip().upper()
+    if st == 'CANCELADA_PRODUCAO':
+        return {'label': 'Cancelada (produção SEFAZ)', 'tipo': 'danger'}
+    if st == 'CANCELADA_HOMOLOGACAO':
+        return {'label': 'Cancelada (homologação SEFAZ)', 'tipo': 'danger'}
+    return {'label': 'Cancelada interna', 'tipo': 'danger'}
 
 
 def titulo_homologacao_exibicao(numero_fiscal: str, serie_fiscal: str) -> str:
@@ -94,7 +109,7 @@ def montar_apresentacao_nfe_saida(nf: NFeSaida) -> dict[str, Any]:
     elif sefaz == NFeSaida.StatusEmissaoSefaz.ERRO_TRANSMISSAO:
         badge_principal = {'label': 'Erro transmissão', 'tipo': 'danger'}
     elif cancelada:
-        badge_principal = {'label': 'Cancelada interna', 'tipo': 'danger'}
+        badge_principal = _badge_cancelada(nf)
     elif (nf.status or '').upper() == 'RASCUNHO':
         badge_principal = {'label': 'Rascunho', 'tipo': 'warning'}
     else:

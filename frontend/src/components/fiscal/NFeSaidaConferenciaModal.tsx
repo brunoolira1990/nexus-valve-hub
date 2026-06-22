@@ -566,7 +566,16 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
     Boolean(permissoes.pode_tentar_emitir_homologacao) && !isAmbienteProducaoNfe;
   const podeEmitirHomolog = Boolean(permissoes.pode_emitir_homologacao);
   const motivoEmitirHomologBloqueado = permissoes.motivo_emitir_homologacao_bloqueado ?? '';
-  const emissaoSefazBadge = badgeNfeSaidaEmissaoSefaz(conf.emissao_sefaz ?? null);
+  const emissaoSefazBadge = contextoAcao.cancelada
+    ? badgeNfeSaidaStatus(String(nfe.status))
+    : badgeNfeSaidaEmissaoSefaz(conf.emissao_sefaz ?? null);
+  const resumoCancelamento = (conf as { cancelamento?: {
+    cancelada?: boolean;
+    protocolo_cancelamento?: string;
+    motivo_cancelamento?: string;
+    cancelada_em?: string | null;
+    cstat_cancelamento?: string;
+  } }).cancelamento;
   const numeracaoCadastro = resolverNumeracaoCadastroConferencia(conf, ambienteEmissaoNfe);
   const transporte = conf.transporte as Record<string, unknown>;
   const modalidadeFrete = String(transporte.modalidade_frete ?? '9');
@@ -662,9 +671,11 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
     if (ok) toast.success('Alterações da conferência salvas.');
   };
 
-  const statusBadge = autorizadaHomolog
-    ? { label: 'NF-e autorizada', className: 'erp-badge-success' }
-    : badgeNfeSaidaStatus(nfe.status);
+  const statusBadge = contextoAcao.cancelada
+    ? badgeNfeSaidaStatus(String(nfe.status))
+    : autorizadaHomolog
+      ? { label: 'NF-e autorizada', className: 'erp-badge-success' }
+      : badgeNfeSaidaStatus(nfe.status);
   const reformaBadge = badgeStatusConferencia(conf.reforma_tributaria.resumo.status);
   const resumoReforma = conf.reforma_tributaria.resumo as Record<string, number | string>;
   const fiscalAlertasGerais = (conf.fiscal_atual as { alertas_gerais?: string[] }).alertas_gerais || [];
@@ -1473,6 +1484,25 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
               </div>
             </div>
             <NFeSaidaAcoesContextoBanner contexto={contextoAcao} />
+            {resumoCancelamento?.cancelada ? (
+              <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs space-y-1">
+                <p className="font-medium text-destructive">Cancelamento SEFAZ registrado</p>
+                {resumoCancelamento.protocolo_cancelamento ? (
+                  <p>Protocolo: {resumoCancelamento.protocolo_cancelamento}</p>
+                ) : null}
+                {resumoCancelamento.motivo_cancelamento ? (
+                  <p>Motivo: {resumoCancelamento.motivo_cancelamento}</p>
+                ) : null}
+                {resumoCancelamento.cancelada_em ? (
+                  <p className="text-muted-foreground">
+                    Cancelada em: {new Date(resumoCancelamento.cancelada_em).toLocaleString('pt-BR')}
+                  </p>
+                ) : null}
+                {resumoCancelamento.cstat_cancelamento ? (
+                  <p className="text-muted-foreground">cStat evento: {resumoCancelamento.cstat_cancelamento}</p>
+                ) : null}
+              </div>
+            ) : null}
             {!ambienteEmissaoDefinido ? (
               <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-100">
                 {MSG_AMBIENTE_NAO_DEFINIDO}
@@ -1488,6 +1518,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
               nfeId={nfeId}
               autorizadaHomolog={autorizadaHomolog}
               autorizadaProducao={contextoAcao.autorizadaProducao}
+              cancelada={contextoAcao.cancelada}
               statusConferencia={
                 prontidao.status_conferencia ??
                 conf.emissao_sefaz?.status_conferencia ??

@@ -44,6 +44,7 @@ import {
   nfeItensComerciaisEditaveis,
   nfeSalvarFormularioBloqueado,
 } from '@/lib/nfeSaidaUi';
+import { isCanceladaNfe } from '@/lib/nfeSaidaAcoesMatriz';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -282,12 +283,15 @@ const NFeSaida = () => {
   const previewDanfeLinha = async (row: NFeSaida) => {
     try {
       const sefaz = row.status_emissao_sefaz || row.resumo_emissao_sefaz?.status_emissao_sefaz;
+      const cancelada = isCanceladaNfe(row.status);
+      const temXmlAutorizado = Boolean(row.resumo_emissao_sefaz?.tem_xml_autorizado);
       const autorizada =
         sefaz === 'AUTORIZADA_PRODUCAO' ||
         sefaz === 'AUTORIZADA_HOMOLOGACAO' ||
         row.status === 'AUTORIZADA_PRODUCAO' ||
         row.status === 'AUTORIZADA_HOMOLOGACAO';
-      const blob = autorizada
+      const usarDanfeAutorizado = (autorizada && !cancelada) || (cancelada && temXmlAutorizado);
+      const blob = usarDanfeAutorizado
         ? (await nfeSaidasService.danfeAutorizadoBlob(row.id)).blob
         : (await nfeSaidasService.previewDanfeBlob(row.id)).blob;
       openBlobInNewTab(blob);
@@ -296,14 +300,20 @@ const NFeSaida = () => {
     }
   };
 
-  const previewXmlLinha = async (id: number) => {
+  const previewXmlLinha = async (row: NFeSaida) => {
     try {
-      const data = await nfeSaidasService.previewXmlPreliminar(id);
+      const cancelada = isCanceladaNfe(row.status);
+      const temXmlAutorizado = Boolean(row.resumo_emissao_sefaz?.tem_xml_autorizado);
+      if (cancelada && temXmlAutorizado) {
+        await nfeSaidasService.downloadXmlAutorizado(row.id);
+        return;
+      }
+      const data = await nfeSaidasService.previewXmlPreliminar(row.id);
       const blob = new Blob([data.xml || ''], { type: 'application/xml' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `nfe-${id}-preliminar.xml`;
+      a.download = `nfe-${row.id}-preliminar.xml`;
       a.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (err) {
@@ -614,7 +624,7 @@ const NFeSaida = () => {
                           className="erp-btn-ghost erp-btn-sm p-1"
                           title="Baixar XML"
                           aria-label="Baixar XML"
-                          onClick={() => void previewXmlLinha(e.id)}
+                          onClick={() => void previewXmlLinha(e)}
                         >
                           <FileCode className="h-4 w-4" />
                         </button>

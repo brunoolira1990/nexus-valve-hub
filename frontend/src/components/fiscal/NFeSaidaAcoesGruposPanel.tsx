@@ -105,16 +105,21 @@ function BotaoAcao({
 }
 
 export function NFeSaidaAcoesContextoBanner({ contexto }: { contexto: NFeSaidaContextoAcao }) {
-  const ambienteClass = contexto.autorizadaProducao
-    ? 'border-red-600/40 bg-red-950/5 text-red-800 dark:text-red-300'
-    : contexto.autorizadaHomolog
-      ? 'border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100'
-      : 'border-border bg-muted/20 text-muted-foreground';
+  const ambienteClass = contexto.cancelada
+    ? 'border-destructive/40 bg-destructive/5 text-destructive'
+    : contexto.autorizadaProducao
+      ? 'border-red-600/40 bg-red-950/5 text-red-800 dark:text-red-300'
+      : contexto.autorizadaHomolog
+        ? 'border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100'
+        : 'border-border bg-muted/20 text-muted-foreground';
 
   return (
     <div className={`rounded-md border px-3 py-2 space-y-1 text-xs ${ambienteClass}`}>
       <p>
         <span className="font-medium">Ambiente:</span> {contexto.ambienteLabel}
+        {contexto.cancelada ? (
+          <span className="ml-2 erp-badge-danger text-[10px]">Cancelada</span>
+        ) : null}
         {contexto.autorizadaHomolog ? (
           <span className="ml-2 erp-badge-warning text-[10px]">Sem valor fiscal</span>
         ) : null}

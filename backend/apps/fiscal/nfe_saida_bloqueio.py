@@ -88,6 +88,19 @@ def nf_cancelada_operacional(nf: NFeSaida) -> bool:
     return 'CANCEL' in sefaz
 
 
+def nf_tem_xml_autorizado_local(nf: NFeSaida) -> bool:
+    return bool((nf.xml_autorizado or '').strip())
+
+
+def pode_visualizar_danfe_xml_autorizado(nf: NFeSaida) -> bool:
+    """DANFE/XML autorizado a partir de arquivos locais — inclui NF-e cancelada após autorização."""
+    if not nf_tem_xml_autorizado_local(nf):
+        return False
+    if nf_autorizada_producao(nf) or nf_autorizada_homologacao(nf):
+        return True
+    return nf_cancelada_operacional(nf)
+
+
 def origem_comercial_travada(nf: NFeSaida) -> bool:
     return bool(nf.faturamento_pedido_venda_id or nf.pedido_venda_id)
 

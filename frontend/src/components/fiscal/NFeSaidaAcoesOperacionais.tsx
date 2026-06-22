@@ -2,7 +2,7 @@ import { Loader2, Copy } from 'lucide-react';
 import { AdvancedSupportSection } from '@/components/nexus/AdvancedSupportSection';
 import { OperationalMessage } from '@/components/nexus/OperationalMessage';
 import { ACTION_LABELS, TECHNICAL_DOWNLOAD_LABELS, labelNfeStatusConferenciaOperacional } from '@/lib/operationalUi';
-import { AVISO_HOMOLOG_SEM_VALOR_FISCAL } from '@/lib/nfeSaidaAcoesMatriz';
+import { AVISO_HOMOLOG_SEM_VALOR_FISCAL, AVISO_CANCELADA_CONSULTA } from '@/lib/nfeSaidaAcoesMatriz';
 import { openBlobInNewTab } from '@/lib/downloadBlobFile';
 import { formatNfeXsdErro } from '@/lib/nfeXsdErros';
 import {
@@ -30,6 +30,7 @@ type Props = {
   nfeId: number;
   autorizadaHomolog: boolean;
   autorizadaProducao?: boolean;
+  cancelada?: boolean;
   statusConferencia?: string | null;
   emissaoLoading: boolean;
   danfeLoading: boolean;
@@ -54,6 +55,7 @@ export function NFeSaidaAcoesOperacionais({
   nfeId,
   autorizadaHomolog,
   autorizadaProducao = false,
+  cancelada = false,
   statusConferencia,
   emissaoLoading,
   danfeLoading,
@@ -77,7 +79,11 @@ export function NFeSaidaAcoesOperacionais({
     onPreviewError(null);
     onDanfeLoading(true);
     try {
-      if (autorizadaHomolog || autorizadaProducao) {
+      const usarAutorizado =
+        autorizadaHomolog ||
+        autorizadaProducao ||
+        (cancelada && Boolean(emissaoSefaz?.tem_xml_autorizado));
+      if (usarAutorizado) {
         const { blob } = await nfeSaidasService.danfeAutorizadoBlob(nfeId);
         openBlobInNewTab(blob);
         return;
@@ -113,10 +119,20 @@ export function NFeSaidaAcoesOperacionais({
     statusConferencia,
   );
   const autorizada = autorizadaHomolog || autorizadaProducao;
+  const documentoAutorizadoLocal = Boolean(emissaoSefaz?.tem_xml_autorizado);
 
   return (
     <div className="space-y-3">
-      {!autorizada ? (
+      {cancelada ? (
+        <OperationalMessage
+          title="NF-e cancelada"
+          message={AVISO_CANCELADA_CONSULTA}
+          variant="error"
+          raw
+        />
+      ) : null}
+
+      {!autorizada && !cancelada ? (
         <OperationalMessage
           title={`Status: ${statusLabel}`}
           message={
@@ -164,24 +180,26 @@ export function NFeSaidaAcoesOperacionais({
           onClick={() => void abrirDanfe()}
         >
           {danfeLoading ? <Loader2 className="h-3 w-3 animate-spin inline mr-1" /> : null}
-          {autorizadaHomolog
-            ? 'DANFE (homologação)'
-            : autorizadaProducao
-              ? 'DANFE autorizado'
-              : ACTION_LABELS.verDanfe}
+          {cancelada
+            ? 'DANFE cancelado'
+            : autorizadaHomolog
+              ? 'DANFE (homologação)'
+              : autorizadaProducao
+                ? 'DANFE autorizado'
+                : ACTION_LABELS.verDanfe}
         </button>
 
-        {autorizada && emissaoSefaz?.tem_xml_autorizado ? (
+        {(autorizada || (cancelada && documentoAutorizadoLocal)) && documentoAutorizadoLocal ? (
           <button
             type="button"
             className="erp-btn-outline erp-btn-sm"
             onClick={() => void baixarXmlAutorizado()}
           >
-            {autorizadaProducao ? 'XML autorizado (produção)' : ACTION_LABELS.baixarXml}
+            {autorizadaProducao ? 'XML autorizado (produção)' : cancelada ? 'XML autorizado' : ACTION_LABELS.baixarXml}
           </button>
         ) : null}
 
-        {autorizadaProducao && emissaoSefaz?.chave_acesso ? (
+        {(autorizadaProducao || cancelada) && emissaoSefaz?.chave_acesso ? (
           <button
             type="button"
             className="erp-btn-outline erp-btn-sm"
@@ -196,7 +214,7 @@ export function NFeSaidaAcoesOperacionais({
           </button>
         ) : null}
 
-        {podeTentarEmitirHomolog && !autorizada ? (
+        {podeTentarEmitirHomolog && !autorizada && !cancelada ? (
           <button
             type="button"
             className="erp-btn-primary erp-btn-sm"

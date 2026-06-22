@@ -36,6 +36,20 @@ def montar_permissoes_emissao_producao(
         MSG_AMBIENTE_NAO_DEFINIDO,
         ambiente_emissao_nfe_definido,
     )
+    from apps.fiscal.nfe_saida_bloqueio import nf_cancelada_operacional
+
+    if nf_cancelada_operacional(nf):
+        return {
+            'producao_habilitada': nfe_producao_habilitada(),
+            'usuario_pode_emitir_producao': False,
+            'pode_tentar_emitir_producao': False,
+            'pode_emitir_producao': False,
+            'motivo_emitir_producao_bloqueado': (
+                'NF-e cancelada — emissão, reenvio e alterações fiscais não se aplicam.'
+            ),
+            'motivos_bloqueio_producao': ['NF-e cancelada.'],
+            'validacao_producao': None,
+        }
 
     habilitada = nfe_producao_habilitada()
     tem_permissao = usuario_pode_emitir_nfe_producao(usuario)

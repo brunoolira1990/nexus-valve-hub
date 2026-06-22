@@ -35,7 +35,7 @@ import {
   obterMatrizAcoesNfeSaida,
   resolverContextoNfeSaida,
 } from '@/lib/nfeSaidaAcoesMatriz';
-import { openBlobInNewTab } from '@/lib/downloadBlobFile';
+import { isCanceladaNfe } from '@/lib/nfeSaidaAcoesMatriz';
 import { nfeSaidasService, type NFeChecklistHomologacaoResponse } from '@/services/api/fiscal';
 import { apiErrorMessage } from '@/services/api/config';
 import type { NFeSaida } from '@/types';
@@ -93,7 +93,12 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
     if (!nfe?.id) return;
     setDanfeLoading(true);
     try {
-      if (contextoAcao.autorizadaHomolog || contextoAcao.autorizadaProducao) {
+      const cancelada = isCanceladaNfe(nfe.status);
+      const temXml = Boolean(
+        contextoAcao.temXmlAutorizado ||
+          nfe.resumo_emissao_sefaz?.tem_xml_autorizado,
+      );
+      if (contextoAcao.autorizadaHomolog || contextoAcao.autorizadaProducao || (cancelada && temXml)) {
         const { blob } = await nfeSaidasService.danfeAutorizadoBlob(nfe.id);
         openBlobInNewTab(blob);
         return;
@@ -111,7 +116,14 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
 
   const baixarXml = async () => {
     if (!nfe?.id) return;
-    if (contextoAcao.temXmlAutorizado && (contextoAcao.autorizadaHomolog || contextoAcao.autorizadaProducao)) {
+    const cancelada = isCanceladaNfe(nfe.status);
+    const temXmlAutorizado = Boolean(
+      contextoAcao.temXmlAutorizado || nfe.resumo_emissao_sefaz?.tem_xml_autorizado,
+    );
+    if (
+      temXmlAutorizado &&
+      (contextoAcao.autorizadaHomolog || contextoAcao.autorizadaProducao || cancelada)
+    ) {
       try {
         await nfeSaidasService.downloadXmlAutorizado(nfe.id);
       } catch (e) {
