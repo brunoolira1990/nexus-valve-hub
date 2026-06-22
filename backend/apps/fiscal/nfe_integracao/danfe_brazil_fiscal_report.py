@@ -83,6 +83,10 @@ class DanfeNexus:
 
         from apps.fiscal.nfe_integracao.danfe_bfr_billing import draw_billing_nexus
         from apps.fiscal.nfe_integracao.danfe_bfr_emit import draw_header_emit_nexus
+        from apps.fiscal.nfe_integracao.danfe_bfr_infcpl import (
+            draw_additional_data_primeira_pagina,
+            resolver_escala_infcpl_danfe,
+        )
         from apps.fiscal.nfe_integracao.danfe_bfr_taxes import draw_taxes_nexus
 
         class _DanfeNexus(Danfe):
@@ -98,6 +102,8 @@ class DanfeNexus:
                 self._marca_dagua_custom = (marca_dagua_custom or '').strip() or None
                 self._marca_dagua_cancelada_bfr = marca_dagua_cancelada_bfr
                 self._nexus_emit_extras = emit_extras or {}
+                self._nexus_infcpl_scale: float | None = None
+                self._nexus_infcpl_scale_active = False
                 super().__init__(xml, config)
                 if marca_dagua_cancelada_bfr:
                     self.watermark_cancelled = True
@@ -122,6 +128,29 @@ class DanfeNexus:
 
                 texto = super()._get_additional_data_content()
                 return inf_cpl_prioriza_pedido_para_danfe(texto)
+
+            def get_font_size(self, element_type: str, multiplier=False):
+                """Escala FONT_SIZE_CONT do infCpl na 1ª página (somente visual)."""
+                base = super().get_font_size(element_type, multiplier)
+                if (
+                    self._nexus_infcpl_scale_active
+                    and element_type == 'FONT_SIZE_CONT'
+                    and multiplier
+                    and self._nexus_infcpl_scale is not None
+                ):
+                    return base * self._nexus_infcpl_scale
+                return base
+
+            def _draw_additional_data(self, additional_data, continuation_height=None):
+                if continuation_height is not None:
+                    return super()._draw_additional_data(additional_data, continuation_height)
+                if self._nexus_infcpl_scale is None:
+                    self._nexus_infcpl_scale = resolver_escala_infcpl_danfe(self, additional_data)
+                return draw_additional_data_primeira_pagina(
+                    self,
+                    additional_data,
+                    self._nexus_infcpl_scale,
+                )
 
             def _draw_watermark_multiline(self, texto: str, *, font_size: int = 22) -> None:
                 linhas = [ln.strip() for ln in texto.split('\n') if ln.strip()]

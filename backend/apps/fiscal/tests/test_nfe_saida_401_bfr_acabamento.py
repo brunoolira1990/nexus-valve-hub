@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import io
 import re
 from decimal import Decimal
 from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
+from pypdf import PdfReader
 
 from apps.fiscal.models import AtendimentoEstoque, NFeSaida, NFeSaidaEvento
 from apps.fiscal.nfe_integracao.danfe_brazil_fiscal_report import (
@@ -29,6 +31,10 @@ from apps.regras_fiscais.models import CenarioFiscalSaidaEscopo, RegraFiscalSaid
 def _pdf_texto(nf: NFeSaida) -> str:
     pdf, _ = gerar_danfe_bfr_nfe_preliminar(nf)
     return compact_pdf_text(pdf_text(pdf))
+
+
+def _pdf_paginas(pdf: bytes) -> int:
+    return len(PdfReader(io.BytesIO(pdf)).pages)
 
 
 @override_settings(USE_CENARIO_FISCAL_SAIDA_FOR_PROPOSTAS=True)
@@ -152,16 +158,34 @@ class DanfeBfrAcabamentoTests(TestCase):
 
     def test_pdf_inf_cpl_longo_nao_truncado_no_rodape(self):
         nf = _nf_pronta()
-        texto_longo = (
+        bloco = (
+            'BASE DE CALCULO REDUZIDA CONFORME REGRA INTERNA. '
+            'DEVOLUCAO APOS 7 DIAS SOMENTE COM AUTORIZACAO DO DEPARTAMENTO COMERCIAL. '
+            'DESTINO DOS PRODUTOS CONFORME PEDIDO DO CLIENTE. '
+            'ENDERECO DE ENTREGA: AV EXEMPLO 1234 BAIRRO CENTRO CIDADE EXEMPLO SP CEP: 12345678. '
+        )
+        texto_longo = bloco * 8
+        nf.informacoes_adicionais = texto_longo
+        nf.save(update_fields=['informacoes_adicionais'])
+        pdf, _ = gerar_danfe_bfr_nfe_preliminar(nf)
+        texto = compact_pdf_text(pdf_text(pdf))
+        self.assertIn('12345678', texto)
+        self.assertNotIn('CONTINUACAODASINFORMACOES', texto)
+        self.assertGreater(_pdf_paginas(pdf), 1)
+
+    def test_pdf_inf_cpl_medio_tenta_uma_pagina(self):
+        nf = _nf_pronta()
+        texto_medio = (
             'BASE DE CALCULO REDUZIDA CONFORME REGRA INTERNA. '
             'DEVOLUCAO APOS 7 DIAS SOMENTE COM AUTORIZACAO DO DEPARTAMENTO COMERCIAL. '
             'DESTINO DOS PRODUTOS CONFORME PEDIDO DO CLIENTE. '
             'ENDERECO DE ENTREGA: AV EXEMPLO 1234 BAIRRO CENTRO CIDADE EXEMPLO SP CEP: 12345678'
         )
-        nf.informacoes_adicionais = texto_longo
+        nf.informacoes_adicionais = texto_medio
         nf.save(update_fields=['informacoes_adicionais'])
-        texto = compact_pdf_text(pdf_text(gerar_danfe_bfr_nfe_preliminar(nf)[0]))
-        self.assertIn('ENDERECODEENTREGA', texto)
+        pdf, _ = gerar_danfe_bfr_nfe_preliminar(nf)
+        self.assertEqual(_pdf_paginas(pdf), 1)
+        texto = compact_pdf_text(pdf_text(pdf))
         self.assertIn('12345678', texto)
         self.assertNotIn('CONTINUACAODASINFORMACOES', texto)
 
