@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Copy, ExternalLink, Eye, FileDown, Inbox, Loader2, RefreshCw, Stamp } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Copy, ExternalLink, Eye, FileDown, Inbox, Loader2, MoreVertical, RefreshCw, Stamp } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { CTeHistoricoDetalheModal } from '@/components/fiscal/CTeHistoricoDetalheModal';
 import { CentralDfeCteDetalheModal } from '@/components/fiscal/CentralDfeCteDetalheModal';
@@ -13,6 +13,13 @@ import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
 import { NexusCard } from '@/components/nexus/NexusCard';
 import { StatusBadge } from '@/components/nexus/StatusBadge';
 import { TableSkeleton } from '@/components/nexus/Skeleton';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useAppContexto } from '@/hooks/useAppContexto';
 import { useManifestacaoDestinatario } from '@/hooks/useManifestacaoDestinatario';
 import { usePaginatedList } from '@/hooks/usePaginatedList';
@@ -72,11 +79,181 @@ const fmtCnpj = (cnpj: string): string => {
   return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
 };
 
-/** Coluna fixa à direita — ações sempre visíveis com scroll horizontal da tabela. */
-const CLASSE_COLUNA_ACOES_TH =
-  'sticky right-0 z-20 min-w-[10.5rem] w-[10.5rem] bg-muted/80 shadow-[-4px_0_6px_-1px_hsl(var(--border))]';
-const CLASSE_COLUNA_ACOES_TD =
-  'sticky right-0 z-10 min-w-[10.5rem] w-[10.5rem] bg-card shadow-[-4px_0_6px_-1px_hsl(var(--border))] group-hover:bg-muted/50 align-top';
+type CentralDfeAcoesLinhaProps = {
+  row: CentralDfeDocumento;
+  manifestacao: NFeDestinadaDocumento | null;
+  somenteResumo: boolean;
+  loadingAcaoManual: boolean;
+  copiadoId: number | null;
+  exibirManifestar: boolean;
+  exibirArmazenarXml: boolean;
+  exibirAbrirBaseImportada: boolean;
+  onAbrirDetalhe: () => void;
+  onManifestar: () => void;
+  onArmazenarXmlNfe: () => void;
+  onAbrirDetalheCte: () => void;
+  onArmazenarXmlCte: () => void;
+  onConferirCte: () => void;
+  onCopiarChave: () => void;
+};
+
+function CentralDfeAcoesLinha({
+  row,
+  manifestacao,
+  somenteResumo,
+  loadingAcaoManual,
+  copiadoId,
+  exibirManifestar,
+  exibirArmazenarXml,
+  exibirAbrirBaseImportada,
+  onAbrirDetalhe,
+  onManifestar,
+  onArmazenarXmlNfe,
+  onAbrirDetalheCte,
+  onArmazenarXmlCte,
+  onConferirCte,
+  onCopiarChave,
+}: CentralDfeAcoesLinhaProps) {
+  const navigate = useNavigate();
+  const cte = isCteTransportadora(row);
+  const nfe = isNfeFornecedorAplicavel(row);
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="erp-btn-ghost erp-btn-sm inline-flex items-center gap-1 text-xs font-medium"
+          aria-label="Ações do documento"
+        >
+          Ações
+          <MoreVertical className="h-3.5 w-3.5 shrink-0 opacity-70" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56" onOpenAutoFocus={(ev) => ev.preventDefault()}>
+        {nfe && (
+          <>
+            <DropdownMenuItem className="cursor-pointer" onSelect={onAbrirDetalhe}>
+              <span className="flex items-center gap-2">
+                <Eye className="h-4 w-4 shrink-0" />
+                Ver detalhe
+              </span>
+            </DropdownMenuItem>
+            {exibirManifestar && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                disabled={loadingAcaoManual}
+                onSelect={onManifestar}
+              >
+                <span className="flex items-center gap-2">
+                  <Stamp className="h-4 w-4 shrink-0" />
+                  Manifestar
+                </span>
+              </DropdownMenuItem>
+            )}
+            {exibirArmazenarXml && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                disabled={loadingAcaoManual}
+                title={TOOLTIP_ARMAZENAR_XML_NFE}
+                onSelect={onArmazenarXmlNfe}
+              >
+                <span className="flex items-center gap-2">
+                  <FileDown className="h-4 w-4 shrink-0" />
+                  Armazenar XML
+                </span>
+              </DropdownMenuItem>
+            )}
+            {exibirAbrirBaseImportada && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                title={tooltipAbrirBaseImportada(row)}
+                onSelect={() => navigate(rotaAbrirBaseImportada(row))}
+              >
+                <span className="flex items-center gap-2">
+                  <ExternalLink className="h-4 w-4 shrink-0" />
+                  {labelAbrirBaseImportada(row)}
+                </span>
+              </DropdownMenuItem>
+            )}
+            {manifestacao && (
+              <DropdownMenuItem className="cursor-pointer" onSelect={onAbrirDetalhe}>
+                <span className="flex items-center gap-2">
+                  <Eye className="h-4 w-4 shrink-0" />
+                  Histórico
+                </span>
+              </DropdownMenuItem>
+            )}
+            {row.detalhe_rota && !somenteResumo && !exibirAbrirBaseImportada && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                title={tooltipAbrirBaseImportada(row)}
+                onSelect={() => navigate(row.detalhe_rota)}
+              >
+                <span className="flex items-center gap-2">
+                  <ExternalLink className="h-4 w-4 shrink-0" />
+                  Abrir registro
+                </span>
+              </DropdownMenuItem>
+            )}
+          </>
+        )}
+        {cte && (
+          <>
+            <DropdownMenuItem className="cursor-pointer" onSelect={onAbrirDetalheCte}>
+              <span className="flex items-center gap-2" title={TOOLTIP_VER_CTE}>
+                {LABEL_VER_CTE}
+              </span>
+            </DropdownMenuItem>
+            {podeArmazenarXmlCte(row) && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                disabled={loadingAcaoManual}
+                title={TOOLTIP_ARMAZENAR_XML_CTE}
+                onSelect={onArmazenarXmlCte}
+              >
+                <span className="flex items-center gap-2">
+                  <FileDown className="h-4 w-4 shrink-0" />
+                  {LABEL_ARMAZENAR_XML_CTE}
+                </span>
+              </DropdownMenuItem>
+            )}
+            {exibirAbrirBaseImportada && podeAbrirBaseImportada(row) && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                title={tooltipAbrirBaseImportada(row)}
+                onSelect={() => navigate(rotaAbrirBaseImportada(row))}
+              >
+                <span className="flex items-center gap-2">
+                  <ExternalLink className="h-4 w-4 shrink-0" />
+                  {labelAbrirBaseImportada(row)}
+                </span>
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem
+              className="cursor-pointer"
+              title={TOOLTIP_CONFERIR_CTE}
+              onSelect={onConferirCte}
+            >
+              <span className="flex items-center gap-2">{LABEL_CONFERIR_CTE}</span>
+            </DropdownMenuItem>
+          </>
+        )}
+        {row.chave_acesso && (
+          <>
+            {(nfe || cte) && <DropdownMenuSeparator />}
+            <DropdownMenuItem className="cursor-pointer" onSelect={onCopiarChave}>
+              <span className="flex items-center gap-2">
+                <Copy className="h-4 w-4 shrink-0" />
+                {copiadoId === row.id ? 'Chave copiada!' : 'Copiar chave'}
+              </span>
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 function statusEntradaBadge(status: string): string {
   const map: Record<string, string> = {
@@ -738,7 +915,7 @@ const CentralDfe = () => {
         )}
         {!loading && !error && linhasExibidas.length > 0 && (
           <>
-            <DataTable className="min-w-[68rem]">
+            <DataTable className="min-w-[62rem]">
               <thead>
                 <tr>
                   <th className="whitespace-nowrap">Tipo</th>
@@ -750,7 +927,7 @@ const CentralDfe = () => {
                   <th className="min-w-[7.5rem]">Status de entrada</th>
                   <th className="min-w-[7rem]">Manifestação</th>
                   <th className="whitespace-nowrap">XML</th>
-                  <th className={CLASSE_COLUNA_ACOES_TH}>Ações</th>
+                  <th className="w-[5.5rem] text-right whitespace-nowrap">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -802,124 +979,24 @@ const CentralDfe = () => {
                         {xmlStatus.label}
                       </StatusBadge>
                     </td>
-                    <td className={CLASSE_COLUNA_ACOES_TD}>
-                      <div className="flex items-center gap-0.5 flex-wrap">
-                        {!isCteTransportadora(row) && (
-                          <button
-                            type="button"
-                            className="erp-btn-ghost p-1.5"
-                            title={isNfeFornecedorAplicavel(row) ? 'Ver detalhe / manifestação' : 'Ver detalhe'}
-                            onClick={() => abrirDetalhe(row, manifestacao)}
-                          >
-                            <Eye className="h-4 w-4" />
-                          </button>
-                        )}
-                        {exibirManifestar && isNfeFornecedorAplicavel(row) && (
-                          <button
-                            type="button"
-                            className="erp-btn-ghost inline-flex items-center gap-1 px-2 py-1 text-xs font-medium"
-                            title="Manifestar NF-e (ação manual)"
-                            disabled={loadingAcaoManual}
-                            onClick={() => void iniciarManifestacaoManual(row, manifestacao)}
-                          >
-                            <Stamp className="h-4 w-4 shrink-0" />
-                            Manifestar
-                          </button>
-                        )}
-                        {exibirArmazenarXml && isNfeFornecedorAplicavel(row) && (
-                          <button
-                            type="button"
-                            className="erp-btn-ghost inline-flex items-center gap-1 px-2 py-1 text-xs font-medium"
-                            title={TOOLTIP_ARMAZENAR_XML_NFE}
-                            disabled={loadingAcaoManual}
-                            onClick={() => void iniciarArmazenarXmlManual(row, manifestacao, somenteResumo)}
-                          >
-                            <FileDown className="h-4 w-4 shrink-0" />
-                            Armazenar XML
-                          </button>
-                        )}
-                        {exibirAbrirBaseImportada && isNfeFornecedorAplicavel(row) && (
-                          <Link
-                            to={rotaAbrirBaseImportada(row)}
-                            className="erp-btn-ghost inline-flex items-center gap-1 px-2 py-1 text-xs font-medium"
-                            title={tooltipAbrirBaseImportada(row)}
-                          >
-                            <ExternalLink className="h-4 w-4 shrink-0" />
-                            {labelAbrirBaseImportada(row)}
-                          </Link>
-                        )}
-                        {isNfeFornecedorAplicavel(row) && manifestacao && (
-                          <button
-                            type="button"
-                            className="erp-btn-ghost inline-flex items-center gap-1 px-2 py-1 text-xs"
-                            title="Ver histórico de manifestação"
-                            onClick={() => abrirDetalhe(row, manifestacao)}
-                          >
-                            Histórico
-                          </button>
-                        )}
-                        {isCteTransportadora(row) && (
-                          <>
-                            <button
-                              type="button"
-                              className="erp-btn-ghost inline-flex items-center gap-1 px-2 py-1 text-xs font-medium"
-                              title={TOOLTIP_VER_CTE}
-                              onClick={() => abrirDetalheCteLocal(row)}
-                            >
-                              {LABEL_VER_CTE}
-                            </button>
-                            {podeArmazenarXmlCte(row) && (
-                              <button
-                                type="button"
-                                className="erp-btn-ghost inline-flex items-center gap-1 px-2 py-1 text-xs font-medium"
-                                title={TOOLTIP_ARMAZENAR_XML_CTE}
-                                disabled={loadingAcaoManual}
-                                onClick={() => setConfirmArmazenarCte(row)}
-                              >
-                                <FileDown className="h-4 w-4 shrink-0" />
-                                {LABEL_ARMAZENAR_XML_CTE}
-                              </button>
-                            )}
-                            {exibirAbrirBaseImportada && podeAbrirBaseImportada(row) && (
-                              <Link
-                                to={rotaAbrirBaseImportada(row)}
-                                className="erp-btn-ghost inline-flex items-center gap-1 px-2 py-1 text-xs font-medium"
-                                title={tooltipAbrirBaseImportada(row)}
-                              >
-                                <ExternalLink className="h-4 w-4 shrink-0" />
-                                {labelAbrirBaseImportada(row)}
-                              </Link>
-                            )}
-                            <button
-                              type="button"
-                              className="erp-btn-ghost inline-flex items-center gap-1 px-2 py-1 text-xs font-medium"
-                              title={TOOLTIP_CONFERIR_CTE}
-                              onClick={() => abrirConferenciaCte(row)}
-                            >
-                              {LABEL_CONFERIR_CTE}
-                            </button>
-                          </>
-                        )}
-                        {row.detalhe_rota && !somenteResumo && !exibirAbrirBaseImportada && !isCteTransportadora(row) && (
-                          <Link
-                            to={row.detalhe_rota}
-                            className="erp-btn-ghost p-1.5 inline-flex"
-                            title={tooltipAbrirBaseImportada(row)}
-                          >
-                            <ExternalLink className="h-4 w-4" />
-                          </Link>
-                        )}
-                        {row.chave_acesso && (
-                          <button
-                            type="button"
-                            className="erp-btn-ghost p-1.5"
-                            title={copiadoId === row.id ? 'Copiado!' : 'Copiar chave'}
-                            onClick={() => void copiarChave(row)}
-                          >
-                            <Copy className="h-4 w-4" />
-                          </button>
-                        )}
-                      </div>
+                    <td className="text-right align-middle w-[5.5rem]">
+                      <CentralDfeAcoesLinha
+                        row={row}
+                        manifestacao={manifestacao}
+                        somenteResumo={somenteResumo}
+                        loadingAcaoManual={loadingAcaoManual}
+                        copiadoId={copiadoId}
+                        exibirManifestar={exibirManifestar}
+                        exibirArmazenarXml={exibirArmazenarXml}
+                        exibirAbrirBaseImportada={exibirAbrirBaseImportada}
+                        onAbrirDetalhe={() => abrirDetalhe(row, manifestacao)}
+                        onManifestar={() => void iniciarManifestacaoManual(row, manifestacao)}
+                        onArmazenarXmlNfe={() => void iniciarArmazenarXmlManual(row, manifestacao, somenteResumo)}
+                        onAbrirDetalheCte={() => abrirDetalheCteLocal(row)}
+                        onArmazenarXmlCte={() => setConfirmArmazenarCte(row)}
+                        onConferirCte={() => abrirConferenciaCte(row)}
+                        onCopiarChave={() => void copiarChave(row)}
+                      />
                     </td>
                   </tr>
                   );
