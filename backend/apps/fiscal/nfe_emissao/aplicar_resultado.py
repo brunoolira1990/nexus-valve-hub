@@ -28,6 +28,15 @@ def _parse_dh_recbto(val: str):
     return dt
 
 
+def _sincronizar_pedido_pos_autorizacao_sefaz(nf: NFeSaida) -> None:
+    """Recalcula status/quantidades do pedido após autorização SEFAZ (sem efeitos estoque/financeiro)."""
+    if not nf.pedido_venda_id:
+        return
+    from apps.comercial.faturamento_pedido_venda import sincronizar_pedido_com_nfe_fiscal_ativa
+
+    sincronizar_pedido_com_nfe_fiscal_ativa(nf.pedido_venda_id)
+
+
 def aplicar_resultado_sefaz_homologacao(
     nf: NFeSaida,
     resultado: ResultadoAutorizacaoSefaz,
@@ -158,6 +167,8 @@ def aplicar_resultado_sefaz_homologacao(
         nf.cstat_autorizacao,
         nf.protocolo_autorizacao or '',
     )
+    if resultado.autorizado:
+        _sincronizar_pedido_pos_autorizacao_sefaz(nf)
     return nf
 
 
@@ -299,6 +310,8 @@ def aplicar_resultado_sefaz_producao(
         nf.cstat_autorizacao,
         nf.protocolo_autorizacao or '',
     )
+    if resultado.autorizado:
+        _sincronizar_pedido_pos_autorizacao_sefaz(nf)
     return nf
 
 

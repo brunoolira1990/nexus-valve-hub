@@ -5,7 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from apps.comercial.models import FaturamentoPedidoVenda, PedidoVenda
+from apps.comercial.models import FaturamentoPedidoVenda, ItemPedidoVenda, PedidoVenda
 from apps.comercial.pedido_venda_apresentacao import label_emissao_sefaz
 from apps.comercial.services.alocacao_atendimento_busca import chave_acesso_resumida
 from apps.fiscal.models import NFeSaida
@@ -151,3 +151,61 @@ def resumo_nfe_fiscal_ativa_pedido(historico: list[dict[str, Any]]) -> dict[str,
         'tem_nfe_fiscal_ativa': bool(ativas),
         'nfe_fiscal_ativa_ids': [h['nfe_saida_id'] for h in ativas],
     }
+
+
+def listar_nfs_fiscais_ativas_pedido(pedido: PedidoVenda | int) -> list[NFeSaida]:
+    pedido_id = pedido.pk if isinstance(pedido, PedidoVenda) else int(pedido)
+    ativas: list[NFeSaida] = []
+    for nf in (
+        NFeSaida.objects.filter(pedido_venda_id=pedido_id)
+        .prefetch_related('itens__item_faturamento_pedido__item_pedido')
+        .order_by('-pk')
+    ):
+        if classificar_papel_fiscal_nfe_pedido(nf) == 'ativa':
+            ativas.append(nf)
+    return ativas
+
+
+def quantidades_cobertas_nfe_fiscal_ativa(pedido: PedidoVenda | int) -> dict[int, Decimal]:
+    """Soma quantidades por item_pedido_id cobertas por NF-e fiscalmente ativas."""
+    cobertura: dict[int, Decimal] = {}
+    for nf in listar_nfs_fiscais_ativas_pedido(pedido):
+        for linha in nf.itens.all():
+            item_fat = linha.item_faturamento_pedido
+            if not item_fat or not item_fat.item_pedido_id:
+                continue
+            pid = item_fat.item_pedido_id
+            cobertura[pid] = cobertura.get(pid, Decimal('0')) + _dec(linha.quantidade)
+    return cobertura
+
+
+def derivar_status_comercial_nfe_fiscal_ativa(pedido: PedidoVenda) -> str | None:
+    """
+    Status comercial derivado de NF-e autorizada não cancelada.
+    Retorna FATURADO, PARCIALMENTE_FATURADO ou None se não houver NF ativa.
+    """
+    from apps.comercial.faturamento_pedido_venda import _round_qty, quantidade_pedida_item
+
+    itens = list(pedido.itens.exclude(status_item=ItemPedidoVenda.StatusItem.CANCELADO))
+    if not itens:
+        return None
+
+    cobertura = quantidades_cobertas_nfe_fiscal_ativa(pedido)
+    if not cobertura:
+        return None
+
+    todos = True
+    algum = False
+    for item in itens:
+        pedida = quantidade_pedida_item(item)
+        coberta = _round_qty(cobertura.get(item.pk, Decimal('0')))
+        if coberta > 0:
+            algum = True
+        if coberta + Decimal('0.0005') < pedida:
+            todos = False
+
+    if todos and algum:
+        return 'FATURADO'
+    if algum:
+        return 'PARCIALMENTE_FATURADO'
+    return None

@@ -191,8 +191,65 @@ def recalcular_status_pedido(pedido: PedidoVenda) -> None:
     else:
         novo = pedido.status or 'ABERTO'
 
+    from apps.comercial.pedido_nfe_historico import derivar_status_comercial_nfe_fiscal_ativa
+
+    status_fiscal = derivar_status_comercial_nfe_fiscal_ativa(pedido)
+    if status_fiscal:
+        rank = {'ABERTO': 0, 'EM_FATURAMENTO': 1, 'PARCIALMENTE_FATURADO': 2, 'FATURADO': 3}
+        if rank.get(status_fiscal, 0) > rank.get((novo or '').upper(), 0):
+            novo = status_fiscal
+
     pedido.status = novo
     pedido.save(update_fields=['status'])
+
+
+def sincronizar_quantidades_faturadas_nfe_fiscal_ativa(pedido: PedidoVenda) -> bool:
+    """
+    Repõe quantidade_faturada dos itens conforme NF-e fiscalmente ativas (idempotente).
+    Usado após reemissão/autorização quando cancelamento SEFAZ havia estornado saldo comercial.
+    """
+    from apps.comercial.pedido_nfe_historico import quantidades_cobertas_nfe_fiscal_ativa
+
+    cobertura = quantidades_cobertas_nfe_fiscal_ativa(pedido)
+    if not cobertura:
+        return False
+
+    alterou = False
+    for item in pedido.itens.exclude(status_item=ItemPedidoVenda.StatusItem.CANCELADO):
+        alvo = _round_qty(min(quantidade_pedida_item(item), cobertura.get(item.pk, Decimal('0'))))
+        atual = _round_qty(_dec(item.quantidade_faturada))
+        if alvo > atual:
+            item.quantidade_faturada = alvo
+            item.save(update_fields=['quantidade_faturada'])
+            recalcular_status_item(item)
+            alterou = True
+    return alterou
+
+
+def sincronizar_pedido_com_nfe_fiscal_ativa(pedido: PedidoVenda | int) -> bool:
+    """Alinha quantidades e status comercial com NF-e fiscal ativa (reparo idempotente)."""
+    pedido = (
+        PedidoVenda.objects.prefetch_related('itens', 'faturamentos')
+        .get(pk=pedido.pk if isinstance(pedido, PedidoVenda) else int(pedido))
+    )
+    status_antes = pedido.status
+    sincronizar_quantidades_faturadas_nfe_fiscal_ativa(pedido)
+    recalcular_status_pedido(pedido)
+    pedido.refresh_from_db(fields=['status'])
+    return pedido.status != status_antes
+
+
+def sincronizar_status_pedidos_nfe_fiscal_lote(pedido_ids: list[int]) -> dict[int, str]:
+    """Reparo em lote para listagem — retorna {pedido_id: status} dos pedidos atualizados."""
+    atualizados: dict[int, str] = {}
+    for pid in pedido_ids:
+        try:
+            if sincronizar_pedido_com_nfe_fiscal_ativa(pid):
+                pedido = PedidoVenda.objects.only('status').get(pk=pid)
+                atualizados[pid] = pedido.status or ''
+        except PedidoVenda.DoesNotExist:
+            continue
+    return atualizados
 
 
 def _valor_faturado_item(item: ItemPedidoVenda) -> Decimal:
@@ -235,6 +292,7 @@ def montar_resumo_faturamento(pedido: PedidoVenda) -> dict[str, Any]:
     from apps.fiscal.nfe_saida_pedido_cancelamento import sincronizar_efeitos_comerciais_pedido
 
     sincronizar_efeitos_comerciais_pedido(pedido)
+    sincronizar_pedido_com_nfe_fiscal_ativa(pedido)
 
     pedido = (
         PedidoVenda.objects.select_related('cliente')

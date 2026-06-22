@@ -20,6 +20,7 @@ from apps.comercial.faturamento_pedido_venda import (
     estornar_faturamento_pedido,
     montar_resumo_faturamento,
     reparar_vinculo_faturamento_nfe,
+    sincronizar_pedido_com_nfe_fiscal_ativa,
 )
 from apps.comercial.models import (
     FaturamentoPedidoVenda,
@@ -279,3 +280,48 @@ class FaturamentoPedidoVendaTests(TestCase):
         self.assertTrue(r['reparado'])
         fat.refresh_from_db()
         self.assertEqual(fat.nfe_saida_id, nf)
+
+    def test_pedido_volta_faturado_apos_nova_nfe_autorizada_pos_cancelamento(self):
+        from apps.comercial.pedido_nfe_historico import montar_historico_nfe_pedido_venda, resumo_nfe_fiscal_ativa_pedido
+        from apps.fiscal.nfe_saida_from_faturamento import gerar_nfe_saida_from_faturamento
+        from apps.fiscal.nfe_saida_pedido_cancelamento import aplicar_efeitos_comerciais_pos_cancelamento_sefaz
+
+        pedido, item = _pedido_com_itens()
+        criado = criar_faturamento_pedido(pedido, {'itens': [{'item_pedido_id': item.pk, 'quantidade': '10'}]})
+        confirmar_faturamento_pedido(pedido, criado['faturamento_id'])
+        fat_id = criado['faturamento_id']
+
+        nf1_id = gerar_nfe_saida_from_faturamento(pedido, fat_id)['nfe_saida_id']
+        nf1 = NFeSaida.objects.get(pk=nf1_id)
+        nf1.status_emissao_sefaz = 'AUTORIZADA_PRODUCAO'
+        nf1.status = 'CANCELADA_PRODUCAO'
+        nf1.protocolo_autorizacao = '135260000000001'
+        nf1.save(update_fields=['status_emissao_sefaz', 'status', 'protocolo_autorizacao'])
+
+        aplicar_efeitos_comerciais_pos_cancelamento_sefaz(nf1)
+        pedido.refresh_from_db()
+        item.refresh_from_db()
+        self.assertEqual(pedido.status, 'ABERTO')
+        self.assertEqual(item.quantidade_faturada, Decimal('0'))
+
+        nf2_id = gerar_nfe_saida_from_faturamento(pedido, fat_id)['nfe_saida_id']
+        nf2 = NFeSaida.objects.get(pk=nf2_id)
+        nf2.status_emissao_sefaz = 'AUTORIZADA_PRODUCAO'
+        nf2.status = 'AUTORIZADA_PRODUCAO'
+        nf2.protocolo_autorizacao = '135260000000002'
+        nf2.save(update_fields=['status_emissao_sefaz', 'status', 'protocolo_autorizacao'])
+
+        sincronizar_pedido_com_nfe_fiscal_ativa(pedido)
+        pedido.refresh_from_db()
+        item.refresh_from_db()
+        self.assertEqual(pedido.status, 'FATURADO')
+        self.assertEqual(item.quantidade_faturada, Decimal('10'))
+
+        historico = montar_historico_nfe_pedido_venda(pedido)
+        resumo = resumo_nfe_fiscal_ativa_pedido(historico)
+        self.assertEqual(len(historico), 2)
+        self.assertTrue(resumo['tem_nfe_fiscal_ativa'])
+        self.assertEqual(resumo['nfe_fiscal_ativa_ids'], [nf2.pk])
+        papeis = {h['nfe_saida_id']: h['papel_fiscal'] for h in historico}
+        self.assertEqual(papeis[nf1.pk], 'historico')
+        self.assertEqual(papeis[nf2.pk], 'ativa')

@@ -302,6 +302,24 @@ class PedidoVendaViewSet(FriendlyDestroyMixin, AutocompleteOrPaginationMixin, vi
             ctx['listagem'] = True
         return ctx
 
+    def list(self, request, *args, **kwargs):
+        response = super().list(request, *args, **kwargs)
+        data = response.data
+        results = data.get('results') if isinstance(data, dict) else data
+        if not isinstance(results, list) or not results:
+            return response
+        ids = [r.get('id') for r in results if r.get('id')]
+        if not ids:
+            return response
+        from apps.comercial.faturamento_pedido_venda import sincronizar_status_pedidos_nfe_fiscal_lote
+
+        atualizados = sincronizar_status_pedidos_nfe_fiscal_lote(ids)
+        for row in results:
+            pid = row.get('id')
+            if pid in atualizados:
+                row['status'] = atualizados[pid]
+        return response
+
     def get_queryset(self):
         qs = super().get_queryset()
         if getattr(self, 'action', None) == 'list':
