@@ -1844,6 +1844,8 @@ export interface ResumoFaturamentoPedido {
   }[];
   tem_inconsistencia_fiscal?: boolean;
   tem_inconsistencia_bloqueante_nfe?: boolean;
+  tem_nfe_fiscal_ativa?: boolean;
+  nfe_fiscal_ativa_ids?: number[];
   valor_total_pedido_salvo?: string;
   valor_total_recalculado?: boolean;
 }
@@ -1858,9 +1860,20 @@ export interface HistoricoNfeSaidaPedido {
   serie_fiscal?: string;
   status_emissao_sefaz?: string;
   status: string;
+  status_fiscal_label?: string;
+  badge_status?: string;
   data: string;
   faturamento_id: number | null;
   valor_total: string;
+  chave_acesso_resumida?: string;
+  protocolo_autorizacao?: string;
+  protocolo_cancelamento?: string;
+  cstat_autorizacao?: string;
+  ambiente_emissao?: string;
+  ambiente_label?: string;
+  papel_fiscal?: 'ativa' | 'historico' | 'pendente' | 'rejeitada';
+  mensagem_papel_fiscal?: string;
+  vinculo_faturamento_ativo?: boolean;
   cancelada_em: string | null;
   motivo_cancelamento?: string;
   efeitos_autorizacao_aplicados_em: string | null;

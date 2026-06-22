@@ -270,6 +270,30 @@ export function badgeHistoricoNfe(h: HistoricoNfeSaidaPedido) {
   return badgeNfeSaidaStatus(h.status);
 }
 
+export function getHistoricoNfePapelBadge(
+  papel: HistoricoNfeSaidaPedido['papel_fiscal'],
+): string | null {
+  if (papel === 'ativa') return 'autorizada';
+  if (papel === 'historico') return 'cancelada';
+  if (papel === 'pendente') return 'rascunho';
+  if (papel === 'rejeitada') return 'rejeitada_homologacao';
+  return null;
+}
+
+export function classificarHistoricoNfePedido(h: HistoricoNfeSaidaPedido): NfeResumoPedidoCaso {
+  if (isNfeCanceladaOperacional({ nfe_saida_status: h.status }) || h.papel_fiscal === 'historico') {
+    return 'cancelada';
+  }
+  const sefaz = (h.status_emissao_sefaz || '').trim().toUpperCase();
+  const st = (h.status || '').trim().toUpperCase();
+  if (sefaz === 'AUTORIZADA_HOMOLOGACAO' || st === 'AUTORIZADA_HOMOLOGACAO') return 'autorizada_homolog';
+  if (sefaz === 'AUTORIZADA_PRODUCAO' || st === 'AUTORIZADA' || h.papel_fiscal === 'ativa') {
+    return 'autorizada_producao';
+  }
+  if (h.papel_fiscal === 'rejeitada' || st.includes('REJEIT') || sefaz.includes('REJEIT')) return 'rejeitada';
+  return 'rascunho';
+}
+
 export function historicoNfeTitulo(h: HistoricoNfeSaidaPedido): string {
   if (h.titulo_exibicao?.trim()) return h.titulo_exibicao.trim();
   return formatNFeTitulo({

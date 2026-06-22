@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  classificarHistoricoNfePedido,
   classificarNfeResumoPedido,
   faturamentoIndicaNfeGerada,
   formatNFePedidoDisplay,
@@ -134,5 +135,21 @@ describe('pedidoVendaModalUi', () => {
     expect(getNFeFiscalBadgeTokens(linhaCancelada)).toEqual(['cancelada']);
     expect(formatNFeTitulo(linhaCancelada)).toMatch(/cancelada/i);
     expect(formatNFeTitulo(linhaCancelada)).not.toMatch(/autorizada/i);
+  });
+
+  it('histórico fiscal classifica NF cancelada antes de autorizada SEFAZ', () => {
+    const h = {
+      nfe_saida_id: 10,
+      numero: 'NF-10',
+      status: 'CANCELADA_PRODUCAO',
+      status_emissao_sefaz: 'AUTORIZADA_PRODUCAO',
+      papel_fiscal: 'historico' as const,
+      data: '2026-01-01',
+      faturamento_id: 1,
+      valor_total: '100.00',
+      cancelada_em: '2026-01-02T10:00:00',
+      efeitos_autorizacao_aplicados_em: null,
+    };
+    expect(classificarHistoricoNfePedido(h)).toBe('cancelada');
   });
 });

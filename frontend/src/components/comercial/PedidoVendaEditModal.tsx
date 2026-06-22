@@ -28,7 +28,6 @@ import { ItemComercialMetricasGrid } from '@/components/comercial/ItemComercialM
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatDateBr } from '@/lib/dateBr';
 import { formatCurrencyBRL, formatQuantidadeBR } from '@/lib/formatBr';
-import { badgeNfeSaidaStatus, formatDateTimeBr } from '@/lib/nfeSaidaUi';
 import {
   classificarNfeResumoPedido,
   getFaturamentoStatusLabel,
@@ -36,7 +35,6 @@ import {
   getNfeEmissaoSefazLabel,
   getPedidoModalFooterActions,
   getStatusItemLabel,
-  historicoNfeTitulo,
   linhaFaturamentoNfeAmigavel,
   mensagemNfeFaturamentoInconsistencia,
   MSG_ALERTA_FATURAMENTO_SEM_ATENDIMENTO,
@@ -47,6 +45,7 @@ import {
   tokenStatusComercialPedido,
 } from '@/lib/pedidoVendaModalUi';
 import { PedidoVendaFiscalNfeAcoes } from '@/components/comercial/PedidoVendaFiscalNfeAcoes';
+import { PedidoVendaNfeHistoricoList } from '@/components/comercial/PedidoVendaNfeHistoricoList';
 import { StatusBadge } from '@/components/nexus/StatusBadge';
 import { previewCondicaoPagamento } from '@/lib/condicaoPagamento';
 import {
@@ -1023,6 +1022,15 @@ export function PedidoVendaEditModal({
               </p>
             ) : (
               <div className="space-y-3">
+                {(faturamentoResumo?.historico_nfe_saida ?? []).length > 0 ? (
+                  <div className="rounded-md border border-border p-4 space-y-2">
+                    <p className="text-sm font-medium">Histórico fiscal de NF-e</p>
+                    <PedidoVendaNfeHistoricoList
+                      historico={faturamentoResumo?.historico_nfe_saida ?? []}
+                      compacto
+                    />
+                  </div>
+                ) : null}
                 {(faturamentoResumo?.faturamentos_nfe ?? []).map((f) => {
                   const inconsistencia = mensagemNfeFaturamentoInconsistencia(f);
                   const sefazLabel = getNfeEmissaoSefazLabel(f.nfe_status_emissao_sefaz, f.nfe_saida_status);
@@ -1159,65 +1167,6 @@ export function PedidoVendaEditModal({
                     </div>
                   );
                 })}
-                {(faturamentoResumo?.historico_nfe_saida ?? []).length > 0 ? (
-                  <details className="rounded-md border border-border p-4">
-                    <summary className="text-sm font-medium cursor-pointer select-none">
-                      Histórico comercial/fiscal de NF-e
-                    </summary>
-                    <p className="text-xs text-muted-foreground mt-2 mb-3">
-                      Registros anteriores (cancelamentos, versões). Não substitui o bloco fiscal ativo acima.
-                    </p>
-                    <ul className="space-y-3">
-                      {(faturamentoResumo?.historico_nfe_saida ?? []).map((h) => {
-                        const badge = badgeNfeSaidaStatus(h.status);
-                        const cancelada = (h.status || '').toUpperCase().includes('CANCELADA');
-                        const saldoLiberado = Boolean(h.efeitos_cancelamento_aplicados_em);
-                        return (
-                          <li
-                            key={h.nfe_saida_id}
-                            className="rounded-md border border-border/80 p-3 space-y-2"
-                          >
-                            <div className="flex flex-wrap items-center gap-2 justify-between">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="font-medium text-sm">{historicoNfeTitulo(h)}</span>
-                                <span className={badge.className}>{badge.label}</span>
-                                {cancelada ? <StatusBadge status="cancelada" /> : null}
-                              </div>
-                              <span className="text-xs text-muted-foreground">
-                                {formatDateBr(h.data)} · {formatCurrencyBRL(h.valor_total)}
-                              </span>
-                            </div>
-                            <div className="text-xs text-muted-foreground grid grid-cols-1 sm:grid-cols-2 gap-1">
-                              <span>Faturamento: {h.faturamento_id ? `#${h.faturamento_id}` : '—'}</span>
-                              {h.numero_interno ? (
-                                <span>Ref. interna: {h.numero_interno}</span>
-                              ) : null}
-                              {h.efeitos_autorizacao_aplicados_em ? (
-                                <span>Autorização interna: {formatDateTimeBr(h.efeitos_autorizacao_aplicados_em)}</span>
-                              ) : null}
-                              {h.cancelada_em ? (
-                                <span>Cancelada em: {formatDateTimeBr(h.cancelada_em)}</span>
-                              ) : null}
-                              {h.motivo_cancelamento ? (
-                                <span className="sm:col-span-2">Motivo: {h.motivo_cancelamento}</span>
-                              ) : null}
-                            </div>
-                            {saldoLiberado ? (
-                              <p className="text-xs text-emerald-800 dark:text-emerald-200 rounded-md bg-emerald-600/10 px-2 py-1.5">
-                                NF-e cancelada — saldo do pedido liberado para novo faturamento.
-                              </p>
-                            ) : null}
-                            <PedidoVendaFiscalNfeAcoes
-                              nfeSaidaId={h.nfe_saida_id}
-                              nfeStatusEmissaoSefaz={h.status_emissao_sefaz}
-                              nfeSaidaStatus={h.status}
-                            />
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </details>
-                ) : null}
               </div>
             )}
           </TabsContent>

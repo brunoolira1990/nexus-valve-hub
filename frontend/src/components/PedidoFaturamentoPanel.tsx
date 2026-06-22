@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ExternalLink, RotateCcw } from 'lucide-react';
 import { AlocacaoAtendimentoGerenciarSection } from '@/components/comercial/AlocacaoAtendimentoGerenciarPanel';
+import { PedidoVendaNfeHistoricoList } from '@/components/comercial/PedidoVendaNfeHistoricoList';
 import { AtendimentoOperacionalResumo } from '@/components/comercial/AtendimentoOperacionalResumo';
 import { pedidosVendaService } from '@/services/api/comercial';
 import { apiErrorMessage } from '@/services/api/config';
@@ -313,10 +314,29 @@ export function PedidoFaturamentoPanel({ pedidoId, itens = [], onAtualizado, emb
         </div>
       ) : null}
 
-      {faturamentosNfe.length > 0 ? (
-        <div className="rounded border border-border p-3 space-y-2">
-          <p className="text-xs font-medium">Faturamentos e NF-e</p>
-          {faturamentosNfe.map((f) => {
+      {faturamentosNfe.length > 0 || (resumo.historico_nfe_saida ?? []).length > 0 ? (
+        <div className="rounded border border-border p-3 space-y-4">
+          <div>
+            <p className="text-xs font-medium">Faturamentos e NF-e</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Operações de faturamento e histórico fiscal completo de todas as NF-e geradas neste pedido.
+            </p>
+          </div>
+
+          {(resumo.historico_nfe_saida ?? []).length > 0 ? (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-foreground">NF-e do pedido (histórico fiscal)</p>
+              <PedidoVendaNfeHistoricoList
+                historico={resumo.historico_nfe_saida ?? []}
+                intro="Todas as NF-e vinculadas — autorizadas, canceladas, pendentes ou rejeitadas. NF-e cancelada permanece visível mesmo após nova emissão."
+              />
+            </div>
+          ) : null}
+
+          {faturamentosNfe.length > 0 ? (
+            <div className="space-y-2 border-t border-border/60 pt-3">
+              <p className="text-xs font-medium text-foreground">Faturamentos em andamento</p>
+              {faturamentosNfe.map((f) => {
             const inconsistencia = mensagemNfeFaturamentoInconsistencia(f);
             const casoNfe = classificarNfeResumoPedido(f);
             const nfeCancelada = casoNfe === 'cancelada';
@@ -473,34 +493,9 @@ export function PedidoFaturamentoPanel({ pedidoId, itens = [], onAtualizado, emb
               </div>
             );
           })}
+            </div>
+          ) : null}
         </div>
-      ) : null}
-
-      {(resumo.historico_nfe_saida ?? []).length > 0 ? (
-        <details className="rounded border border-border p-3 space-y-2">
-          <summary className="text-xs font-medium cursor-pointer select-none">
-            Histórico de NF-e do pedido
-          </summary>
-          <ul className="space-y-2 pt-2">
-            {(resumo.historico_nfe_saida ?? []).map((h) => {
-              const cancelada = (h.status || '').toUpperCase().includes('CANCELADA');
-              return (
-                <li key={h.nfe_saida_id} className="text-sm flex flex-wrap items-center gap-2 border-b border-border/60 pb-2 last:border-0">
-                  <span className="font-medium">{h.titulo_exibicao || h.numero}</span>
-                  {cancelada ? <StatusBadge status="cancelada" /> : null}
-                  <button
-                    type="button"
-                    className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1"
-                    onClick={() => navigate(`/nfe-saida?nfe=${h.nfe_saida_id}`)}
-                  >
-                    <ExternalLink className="h-3 w-3" />
-                    Abrir
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </details>
       ) : null}
 
       <AtendimentoOperacionalResumo

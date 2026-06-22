@@ -359,44 +359,18 @@ def montar_resumo_faturamento(pedido: PedidoVenda) -> dict[str, Any]:
             },
         )
 
+    from apps.comercial.pedido_nfe_historico import (
+        montar_historico_nfe_pedido_venda,
+        resumo_nfe_fiscal_ativa_pedido,
+    )
     from apps.comercial.services.resumo_atendimento_operacional import (
         obter_resumo_atendimento_operacional,
     )
 
     resumo_operacional_pedido = obter_resumo_atendimento_operacional(pedido)
 
-    historico_nfe = []
-    for nf in NFeSaida.objects.filter(pedido_venda_id=pedido.pk).select_related(
-        'faturamento_pedido_venda',
-        'pedido_venda',
-    ).order_by('-id'):
-        ap = montar_apresentacao_nfe_saida(nf)
-        historico_nfe.append(
-            {
-                'nfe_saida_id': nf.pk,
-                'numero': nf.numero,
-                'numero_interno': ap['numero_interno'],
-                'titulo_exibicao': ap['titulo_exibicao'],
-                'numero_faturamento': ap['numero_faturamento'],
-                'numero_fiscal': ap['numero_fiscal'],
-                'serie_fiscal': ap['serie_fiscal'],
-                'status': nf.status,
-                'status_emissao_sefaz': nf.status_emissao_sefaz,
-                'data': nf.data.isoformat() if nf.data else '',
-                'faturamento_id': nf.faturamento_pedido_venda_id,
-                'valor_total': str(_round_money(_dec(nf.valor_total))),
-                'cancelada_em': nf.cancelada_em.isoformat() if nf.cancelada_em else None,
-                'motivo_cancelamento': (nf.motivo_cancelamento or '').strip(),
-                'efeitos_autorizacao_aplicados_em': (
-                    nf.efeitos_autorizacao_aplicados_em.isoformat() if nf.efeitos_autorizacao_aplicados_em else None
-                ),
-                'efeitos_cancelamento_aplicados_em': (
-                    nf.efeitos_cancelamento_aplicados_em.isoformat()
-                    if nf.efeitos_cancelamento_aplicados_em
-                    else None
-                ),
-            },
-        )
+    historico_nfe = montar_historico_nfe_pedido_venda(pedido)
+    resumo_fiscal_ativa = resumo_nfe_fiscal_ativa_pedido(historico_nfe)
 
     return {
         'pedido_id': pedido.pk,
@@ -420,6 +394,7 @@ def montar_resumo_faturamento(pedido: PedidoVenda) -> dict[str, Any]:
         'faturamentos_rascunho': rascunhos,
         'faturamentos_nfe': faturamentos_nfe,
         'historico_nfe_saida': historico_nfe,
+        **resumo_fiscal_ativa,
         'itens': itens_resumo,
         'resumo_atendimento_operacional': resumo_operacional_pedido,
     }
