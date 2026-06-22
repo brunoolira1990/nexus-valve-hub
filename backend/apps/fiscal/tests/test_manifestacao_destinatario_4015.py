@@ -20,7 +20,11 @@ from apps.fiscal.manifestacao_destinatario.constants import (
     EVENTO_NAO_REALIZADA,
 )
 from apps.fiscal.manifestacao_destinatario.resnfe_parser import parse_resnfe_xml
-from apps.fiscal.manifestacao_destinatario.uf_chave import uf_autorizadora_por_chave
+from apps.fiscal.manifestacao_destinatario.uf_chave import (
+    aplicar_corgao_evento_manifestacao,
+    corgao_ibge_por_chave,
+    uf_autorizadora_por_chave,
+)
 from apps.fiscal.models import NFeDestinadaManifestacao, NFeDestinadaManifestacaoEvento
 
 
@@ -85,6 +89,27 @@ class ManifestacaoDestinatarioTests(TestCase):
             'MG',
         )
 
+    def test_corgao_ibge_por_chave(self):
+        self.assertEqual(
+            corgao_ibge_por_chave('35260622222222222222550010000001234567890123'),
+            '35',
+        )
+        self.assertEqual(
+            corgao_ibge_por_chave('31260622222222222222550010000001234567890123'),
+            '31',
+        )
+
+    def test_aplicar_corgao_evento_manifestacao(self):
+        import xml.etree.ElementTree as ET
+
+        xml = ET.fromstring(
+            b'<evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">'
+            b'<infEvento Id="ID"><cOrgao>91</cOrgao></infEvento></evento>',
+        )
+        aplicar_corgao_evento_manifestacao(xml, '35')
+        corgao = next(el.text for el in xml.iter() if el.tag.split('}')[-1] == 'cOrgao')
+        self.assertEqual(corgao, '35')
+
     @patch('apps.fiscal.manifestacao_destinatario.manifestacao_service._montar_assinar_evento_manifestacao')
     @patch('apps.fiscal.manifestacao_destinatario.manifestacao_service.transmitir_evento_nfe')
     @patch('apps.fiscal.manifestacao_destinatario.manifestacao_service.carregar_certificado_empresa')
@@ -115,6 +140,7 @@ class ManifestacaoDestinatarioTests(TestCase):
         self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.content)
         mock_assinar.assert_called_once()
         self.assertEqual(mock_assinar.call_args.kwargs['uf'], 'MG')
+        self.assertEqual(mock_assinar.call_args.kwargs['corgao'], '31')
         mock_comm.assert_called_once()
         self.assertEqual(mock_comm.call_args.args[0], 'MG')
 

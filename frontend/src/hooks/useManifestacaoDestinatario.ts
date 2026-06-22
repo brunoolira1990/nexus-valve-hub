@@ -39,6 +39,13 @@ export function useManifestacaoDestinatario(
   const [loadingSyncResumos, setLoadingSyncResumos] = useState(false);
   const [loadingAcaoManual, setLoadingAcaoManual] = useState(false);
 
+  useEffect(() => {
+    if (manifestRow) {
+      setEventoSel('');
+      setJustificativa('');
+    }
+  }, [manifestRow?.id, manifestRow?.chave_acesso]);
+
   const registrarDocumentoLocal = useCallback((doc: NFeDestinadaDocumento) => {
     setManifestacaoMap((prev) => {
       const next = new Map(prev);

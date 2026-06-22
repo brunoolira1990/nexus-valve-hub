@@ -97,15 +97,23 @@ export function ManifestacaoDestinatarioModals({
   onExecutarManifestacao,
   onExecutarBaixarXml,
 }: Props) {
+  const fecharModalManifestacao = () => {
+    onEventoSelChange('');
+    onJustificativaChange('');
+    onManifestRowChange(null);
+  };
+
   return (
     <>
-      <Dialog open={Boolean(manifestRow)} onOpenChange={(open) => !open && onManifestRowChange(null)}>
+      <Dialog open={Boolean(manifestRow)} onOpenChange={(open) => !open && fecharModalManifestacao()}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Manifestar NF-e destinada</DialogTitle>
           </DialogHeader>
+          {manifestRow && (
+          <div key={`manifestacao-${manifestRow.id}-${manifestRow.chave_acesso}`}>
           <p className="text-sm text-muted-foreground">
-            Chave: {manifestRow ? chaveNfeResumida(manifestRow.chave_acesso) : '—'}
+            Chave: {chaveNfeResumida(manifestRow.chave_acesso)}
           </p>
           <p className="text-xs text-muted-foreground border rounded-md p-2 bg-muted/40">
             A atualização da Central DF-e não envia eventos fiscais. Escolha o evento abaixo e confirme
@@ -113,20 +121,31 @@ export function ManifestacaoDestinatarioModals({
           </p>
           <div className="space-y-3">
             <Label>Selecione o evento (sem pré-seleção automática)</Label>
-            <div className="space-y-2">
+            <div className="space-y-2" role="radiogroup" aria-label="Evento de manifestação">
               {EVENTOS_MANIFESTACAO.map((ev) => (
-                <label key={ev} className="flex items-start gap-2 border rounded-md p-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="evento_manifestacao"
-                    checked={eventoSel === ev}
-                    onChange={() => onEventoSelChange(ev)}
+                <button
+                  key={ev}
+                  type="button"
+                  role="radio"
+                  aria-checked={eventoSel === ev}
+                  className={`flex w-full items-start gap-2 border rounded-md p-3 text-left transition-colors ${
+                    eventoSel === ev
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                      : 'border-border hover:bg-muted/40'
+                  }`}
+                  onClick={() => onEventoSelChange(ev)}
+                >
+                  <span
+                    className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border ${
+                      eventoSel === ev ? 'border-primary bg-primary' : 'border-muted-foreground/50'
+                    }`}
+                    aria-hidden
                   />
                   <span>
                     <span className="font-medium block">{LABEL_EVENTO_MANIFESTACAO[ev]}</span>
                     <span className="text-xs text-muted-foreground">{DESCRICAO_EVENTO_MANIFESTACAO[ev]}</span>
                   </span>
-                </label>
+                </button>
               ))}
             </div>
             {eventoSel === 'OPERACAO_NAO_REALIZADA' && (
@@ -137,12 +156,14 @@ export function ManifestacaoDestinatarioModals({
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => onManifestRowChange(null)}>Cancelar</Button>
+            <Button variant="outline" onClick={fecharModalManifestacao}>Cancelar</Button>
             <Button disabled={!eventoSel || loadingAcao} onClick={onExecutarManifestacao}>
               {loadingAcao ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Confirmar manifestação
             </Button>
           </DialogFooter>
+          </div>
+          )}
         </DialogContent>
       </Dialog>
 

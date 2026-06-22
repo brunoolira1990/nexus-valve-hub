@@ -25,7 +25,10 @@ from apps.fiscal.manifestacao_destinatario.manifestacao_evento_parser import (
 )
 from apps.fiscal.manifestacao_destinatario.uf_chave import (
     MSG_CHAVE_UF_INVALIDA,
+    aplicar_corgao_evento_manifestacao,
+    corgao_ibge_por_chave,
     uf_autorizadora_por_chave,
+    validar_chave_nfe_manifestacao,
 )
 from apps.fiscal.models import NFeDestinadaManifestacao, NFeDestinadaManifestacaoEvento
 from apps.fiscal.nfe_historica_classificacao import norm_digits
@@ -69,6 +72,7 @@ def _montar_assinar_evento_manifestacao(
     cnpj: str,
     chave: str,
     uf: str,
+    corgao: str,
     operacao: int,
     justificativa: str,
     cert_path: str,
@@ -84,11 +88,12 @@ def _montar_assinar_evento_manifestacao(
             f'PyNFe indisponível ({exc}). Instale PyNFe e dependências de integração SEFAZ.',
         ) from exc
 
+    uf_sigla = (uf or 'SP').strip().upper()
     evento = EventoManifestacaoDest(
         cnpj=cnpj,
         chave=chave,
         data_emissao=datetime.datetime.now(),
-        uf=(uf or 'SP').strip().lower(),
+        uf=uf_sigla,
         n_seq_evento=1,
         operacao=operacao,
     )
@@ -96,6 +101,7 @@ def _montar_assinar_evento_manifestacao(
         evento.justificativa = justificativa
     serializador = SerializacaoXML(_fonte_dados, homologacao=False)
     xml_evento = serializador.serializar_evento(evento)
+    aplicar_corgao_evento_manifestacao(xml_evento, corgao)
     assinador = AssinaturaA1(cert_path, senha)
     return assinador.assinar(xml_evento)
 
@@ -279,7 +285,9 @@ def manifestar_documento_destinatario(
         raise ManifestacaoDestinatarioError(MSG_CERTIFICADO)
 
     try:
+        chave_acesso = validar_chave_nfe_manifestacao(documento.chave_acesso or '')
         uf = uf_autorizadora_por_chave(chave_acesso)
+        corgao = corgao_ibge_por_chave(chave_acesso)
     except ValueError as exc:
         raise ManifestacaoDestinatarioError(str(exc) or MSG_CHAVE_UF_INVALIDA) from exc
 
@@ -291,6 +299,7 @@ def manifestar_documento_destinatario(
         cnpj=cnpj,
         chave=chave_acesso,
         uf=uf,
+        corgao=corgao,
         operacao=operacao,
         justificativa=justificativa_limpa,
         cert_path=cert_info.caminho,
@@ -349,13 +358,14 @@ def manifestar_documento_destinatario(
     xmotivo = parsed.xmotivo_efetivo
 
     logger.info(
-        'Manifestação destinatário doc=%s chave=%s evento=%s cStat_evento=%s cStat_lote=%s uf=%s',
+        'Manifestação destinatário doc=%s chave=%s evento=%s cStat_evento=%s cStat_lote=%s uf=%s cOrgao=%s',
         documento.pk,
         documento.chave_acesso[:8] + '...',
         evento_norm,
         parsed.c_stat_evento,
         parsed.c_stat_lote,
         uf,
+        corgao,
     )
 
     return {
