@@ -10,7 +10,9 @@ import {
   getPedidoModalFooterActions,
   getStatusItemLabel,
   isPedidoTabEditable,
+  mensagemFaturamentoLiberadoPosCancelamento,
   mensagemNfeFaturamentoInconsistencia,
+  pedidoFaturamentoPermiteEstorno,
   pedidoFaturadoSemAtendimento,
   tituloResumoNfePedido,
 } from '@/lib/pedidoVendaModalUi';
@@ -151,5 +153,23 @@ describe('pedidoVendaModalUi', () => {
       efeitos_autorizacao_aplicados_em: null,
     };
     expect(classificarHistoricoNfePedido(h)).toBe('cancelada');
+  });
+
+  it('estorno bloqueado quando saldo já liberado por cancelamento NF-e', () => {
+    const f = {
+      faturamento_id: 1,
+      status: 'PRONTO_PARA_NFE',
+      observacao: '',
+      criado_em: '',
+      itens_count: 1,
+      nfe_saida_id: null,
+      nfe_saida_numero: '',
+      nfe_saida_status: '',
+      pode_estornar_pre_autorizacao: false,
+      saldo_liberado_por_cancelamento_nfe: true,
+      pode_gerar_nova_nfe: true,
+    };
+    expect(pedidoFaturamentoPermiteEstorno(f)).toBe(false);
+    expect(mensagemFaturamentoLiberadoPosCancelamento(f)).toMatch(/Emitir nova NF-e/i);
   });
 });

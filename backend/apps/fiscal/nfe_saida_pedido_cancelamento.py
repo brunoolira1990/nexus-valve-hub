@@ -79,6 +79,22 @@ def _estornar_quantidades_pedido_da_nfe(nf: NFeSaida) -> tuple[list[dict[str, An
     return estorno_resumo, pedido_ids
 
 
+def faturamento_teve_estorno_por_cancelamento_nfe(faturamento: FaturamentoPedidoVenda) -> bool:
+    """Faturamento cujo saldo comercial já foi liberado após cancelamento SEFAZ de NF-e vinculada."""
+    return NFeSaida.objects.filter(
+        faturamento_pedido_venda_id=faturamento.pk,
+        efeitos_cancelamento_aplicados_em__isnull=False,
+    ).exists()
+
+
+def nf_cancelada_vinculada_faturamento(faturamento: FaturamentoPedidoVenda) -> NFeSaida | None:
+    """NF-e cancelada SEFAZ ainda vinculada ao faturamento (histórico)."""
+    for nf in NFeSaida.objects.filter(faturamento_pedido_venda_id=faturamento.pk).order_by('-pk'):
+        if nf_cancelada_sefaz(nf):
+            return nf
+    return None
+
+
 @transaction.atomic
 def aplicar_efeitos_comerciais_pos_cancelamento_sefaz(
     nfe_saida: NFeSaida | int,

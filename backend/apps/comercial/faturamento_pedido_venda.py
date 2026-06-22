@@ -44,6 +44,34 @@ def _round_qty(v: Decimal) -> Decimal:
     return v.quantize(Decimal('0.001'))
 
 
+def calcular_estorno_restante_faturamento(
+    faturamento: FaturamentoPedidoVenda,
+) -> tuple[list[dict[str, Any]], bool]:
+    """
+    Quantidade ainda estornável por item do faturamento (mínimo entre linha e saldo faturado).
+    Retorna (detalhe por item, estorno_ja_aplicado_total).
+    """
+    detalhe: list[dict[str, Any]] = []
+    restante_total = Decimal('0')
+    for linha in faturamento.itens.select_related('item_pedido'):
+        item = linha.item_pedido
+        if item.status_item == ItemPedidoVenda.StatusItem.CANCELADO:
+            continue
+        qtd_linha = _round_qty(_dec(linha.quantidade))
+        qtd_faturada = _round_qty(_dec(item.quantidade_faturada))
+        qtd_restante = _round_qty(min(qtd_linha, qtd_faturada))
+        restante_total += qtd_restante
+        detalhe.append(
+            {
+                'item_pedido_id': item.pk,
+                'quantidade_faturamento': str(qtd_linha),
+                'quantidade_faturada_item': str(qtd_faturada),
+                'quantidade_a_estornar': str(qtd_restante),
+            },
+        )
+    return detalhe, restante_total <= Decimal('0')
+
+
 def quantidade_pedida_item(item: ItemPedidoVenda) -> Decimal:
     return _round_qty(_dec(item.quantidade_negociada or item.quantidade))
 
@@ -248,7 +276,11 @@ def montar_resumo_faturamento(pedido: PedidoVenda) -> dict[str, Any]:
     from apps.fiscal.nfe_emissao.cancelamento_dados import montar_resumo_cancelamento_nfe_saida
     from apps.fiscal.nfe_saida_apresentacao import montar_apresentacao_nfe_saida
     from apps.fiscal.nfe_saida_ciclo_vida import avaliar_estorno_faturamento
-    from apps.fiscal.nfe_saida_pedido_cancelamento import nf_cancelada_sefaz
+    from apps.fiscal.nfe_saida_pedido_cancelamento import (
+        faturamento_teve_estorno_por_cancelamento_nfe,
+        nf_cancelada_sefaz,
+        nf_cancelada_vinculada_faturamento,
+    )
 
     faturamentos_nfe = []
     for f in (
@@ -259,14 +291,23 @@ def montar_resumo_faturamento(pedido: PedidoVenda) -> dict[str, Any]:
             ),
         )
         .select_related('nfe_saida', 'nfe_saida__pedido_venda', 'nfe_saida__faturamento_pedido_venda')
+        .prefetch_related('itens__item_pedido')
         .order_by('-id')
     ):
         pode_estornar, motivo_bloqueio_estorno = avaliar_estorno_faturamento(faturamento=f, nf=f.nfe_saida)
-        cancel_resumo = (
-            montar_resumo_cancelamento_nfe_saida(f.nfe_saida) if f.nfe_saida_id and f.nfe_saida else {}
-        )
+        _, estorno_ja_aplicado = calcular_estorno_restante_faturamento(f)
+        saldo_liberado_cancelamento = faturamento_teve_estorno_por_cancelamento_nfe(f)
+        nf_cancel_hist = None
+        if f.nfe_saida_id and f.nfe_saida:
+            cancel_resumo = montar_resumo_cancelamento_nfe_saida(f.nfe_saida)
+        else:
+            nf_cancel_hist = nf_cancelada_vinculada_faturamento(f)
+            cancel_resumo = (
+                montar_resumo_cancelamento_nfe_saida(nf_cancel_hist) if nf_cancel_hist else {}
+            )
         nfe_cancelada = bool(cancel_resumo.get('cancelada')) or (
-            f.nfe_saida_id and nf_cancelada_sefaz(f.nfe_saida)
+            (f.nfe_saida_id and f.nfe_saida and nf_cancelada_sefaz(f.nfe_saida))
+            or nf_cancel_hist is not None
         )
         faturamentos_nfe.append(
             {
@@ -278,6 +319,8 @@ def montar_resumo_faturamento(pedido: PedidoVenda) -> dict[str, Any]:
                 'itens_count': f.itens.count(),
                 'pode_estornar_pre_autorizacao': pode_estornar,
                 'motivo_bloqueio_estorno': motivo_bloqueio_estorno,
+                'estorno_ja_aplicado': estorno_ja_aplicado,
+                'saldo_liberado_por_cancelamento_nfe': saldo_liberado_cancelamento,
                 'nfe_saida_id': f.nfe_saida_id,
                 'nfe_saida_numero': f.nfe_saida.numero if f.nfe_saida_id else '',
                 'nfe_saida_status': f.nfe_saida.status if f.nfe_saida_id else '',
@@ -604,6 +647,7 @@ def estornar_faturamento_pedido(
         nf_esta_descartada_ou_inativa,
         validar_motivo_estorno_ou_descarte,
     )
+    from apps.fiscal.nfe_saida_pedido_cancelamento import faturamento_teve_estorno_por_cancelamento_nfe
 
     motivo = validar_motivo_estorno_ou_descarte(motivo)
 
@@ -611,7 +655,38 @@ def estornar_faturamento_pedido(
         return cancelar_faturamento_pedido(pedido, faturamento_id)
 
     if fat.status == FaturamentoPedidoVenda.Status.CANCELADO:
-        raise ValueError('Faturamento já foi estornado.')
+        return {
+            'faturamento_id': fat.pk,
+            'pedido_id': pedido.pk,
+            'status': fat.status,
+            'ja_estava_estornado': True,
+            'mensagens': ['Faturamento já foi estornado.'],
+        }
+
+    if faturamento_teve_estorno_por_cancelamento_nfe(fat):
+        return {
+            'faturamento_id': fat.pk,
+            'pedido_id': pedido.pk,
+            'status': fat.status,
+            'ja_estava_estornado': True,
+            'mensagens': [
+                'Saldo comercial já liberado após cancelamento da NF-e.',
+                'Use Emitir nova NF-e — nenhuma quantidade adicional foi alterada.',
+            ],
+        }
+
+    _, estorno_ja_aplicado = calcular_estorno_restante_faturamento(fat)
+    if estorno_ja_aplicado:
+        return {
+            'faturamento_id': fat.pk,
+            'pedido_id': pedido.pk,
+            'status': fat.status,
+            'ja_estava_estornado': True,
+            'mensagens': [
+                'Faturamento já estornado ou liberado.',
+                'Nenhuma quantidade adicional foi alterada.',
+            ],
+        }
 
     pode_est, msg_est = avaliar_estorno_faturamento(faturamento=fat)
     if not pode_est:
@@ -631,18 +706,31 @@ def estornar_faturamento_pedido(
         descartar_nfe_no_estorno_faturamento(nf, motivo=motivo, usuario=usuario, faturamento=fat)
         nf_id_descartada = nf.pk
 
+    itens_alterados = 0
     for linha in fat.itens.select_related('item_pedido'):
         item = linha.item_pedido
         if item.status_item == ItemPedidoVenda.StatusItem.CANCELADO:
             continue
-        nova_faturada = _round_qty(_dec(item.quantidade_faturada) - _dec(linha.quantidade))
-        if nova_faturada < 0:
-            raise ValueError(
-                f'Inconsistência: quantidade faturada do item {item.pk} ficaria negativa ao estornar.',
-            )
+        qtd_a_estornar = _round_qty(min(_dec(linha.quantidade), _dec(item.quantidade_faturada)))
+        if qtd_a_estornar <= 0:
+            continue
+        itens_alterados += 1
+        nova_faturada = _round_qty(_dec(item.quantidade_faturada) - qtd_a_estornar)
         item.quantidade_faturada = nova_faturada
         item.save(update_fields=['quantidade_faturada'])
         recalcular_status_item(item)
+
+    if itens_alterados == 0:
+        return {
+            'faturamento_id': fat.pk,
+            'pedido_id': pedido.pk,
+            'status': fat.status,
+            'ja_estava_estornado': True,
+            'mensagens': [
+                'Faturamento já estornado ou liberado.',
+                'Nenhuma quantidade adicional foi alterada.',
+            ],
+        }
 
     obs = (fat.observacao or '').strip()
     if motivo.strip():

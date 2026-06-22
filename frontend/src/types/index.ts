@@ -1829,6 +1829,8 @@ export interface ResumoFaturamentoPedido {
     nfe_motivo_cancelamento?: string;
     nfe_cancelada_em?: string | null;
     pode_gerar_nova_nfe?: boolean;
+    estorno_ja_aplicado?: boolean;
+    saldo_liberado_por_cancelamento_nfe?: boolean;
     pode_estornar_pre_autorizacao?: boolean;
     motivo_bloqueio_estorno?: string;
   }[];

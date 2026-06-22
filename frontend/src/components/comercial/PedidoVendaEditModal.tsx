@@ -40,6 +40,7 @@ import {
   MSG_ALERTA_FATURAMENTO_SEM_ATENDIMENTO,
   MSG_PEDIDO_FATURADO_SEM_ATENDIMENTO,
   pedidoFaturadoSemAtendimento,
+  pedidoFaturamentoPermiteEstorno,
   referenciaInternaNfe,
   tituloResumoNfePedido,
   tokenStatusComercialPedido,
@@ -251,8 +252,8 @@ export function PedidoVendaEditModal({
   );
 
   const nfesVinculadas = (faturamentoResumo?.faturamentos_nfe ?? []).filter((f) => f.nfe_saida_id);
-  const linhaEstornoResumo = (faturamentoResumo?.faturamentos_nfe ?? []).find(
-    (f) => f.pode_estornar_pre_autorizacao !== false,
+  const linhaEstornoResumo = (faturamentoResumo?.faturamentos_nfe ?? []).find((f) =>
+    pedidoFaturamentoPermiteEstorno(f),
   );
   const semNfeGerada =
     (faturamentoResumo?.faturamentos_nfe ?? []).length === 0 &&
@@ -460,7 +461,7 @@ export function PedidoVendaEditModal({
                       <ExternalLink className="h-3 w-3" />
                       Abrir NF-e
                     </button>
-                    {f.pode_estornar_pre_autorizacao !== false ? (
+                    {pedidoFaturamentoPermiteEstorno(f) ? (
                       <button
                         type="button"
                         className="erp-btn-outline erp-btn-sm text-destructive border-destructive/40 inline-flex items-center gap-1"
@@ -1259,7 +1260,12 @@ export function PedidoVendaEditModal({
             const r = await pedidosVendaService.estornarFaturamento(pedidoId, estornoModal.faturamentoId, {
               motivo,
             });
-            toast.success(r.mensagens?.[0] || 'Faturamento estornado. Pedido reaberto para edição.');
+            const msg = r.mensagens?.[0] || 'Faturamento estornado. Pedido reaberto para edição.';
+            if (r.ja_estava_estornado) {
+              toast.info(msg);
+            } else {
+              toast.success(msg);
+            }
             setEstornoModal(null);
             const novo = await pedidosVendaService.resumoFaturamento(pedidoId);
             setFaturamentoResumo(novo);

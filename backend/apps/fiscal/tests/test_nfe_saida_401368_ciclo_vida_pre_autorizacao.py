@@ -86,11 +86,12 @@ class CicloVidaPreAutorizacao401368Tests(TestCase):
         pedido.refresh_from_db()
         self.assertEqual(pedido.status, 'ABERTO')
 
-    def test_segundo_estorno_retorna_erro(self):
+    def test_segundo_estorno_retorna_idempotente(self):
         pedido, _, fat_id, _ = self._pedido_faturado_com_nfe()
         estornar_faturamento_pedido(pedido, fat_id, motivo=_motivo())
-        with self.assertRaisesMessage(ValueError, 'já foi estornado'):
-            estornar_faturamento_pedido(pedido, fat_id, motivo=_motivo())
+        r = estornar_faturamento_pedido(pedido, fat_id, motivo=_motivo())
+        self.assertTrue(r.get('ja_estava_estornado'))
+        self.assertIn('já foi estornado', (r.get('mensagens') or [''])[0].lower())
 
     def test_descartar_nfe_rascunho(self):
         _, _, _, nf_id = self._pedido_faturado_com_nfe()

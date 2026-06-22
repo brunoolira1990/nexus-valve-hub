@@ -176,6 +176,31 @@ export function referenciaInternaNfe(linha: FaturamentoNfeLinha): string | null 
   return null;
 }
 
+export function pedidoFaturamentoPermiteEstorno(
+  f: Pick<FaturamentoNfeLinha, 'pode_estornar_pre_autorizacao' | 'saldo_liberado_por_cancelamento_nfe'>,
+): boolean {
+  if (f.saldo_liberado_por_cancelamento_nfe) return false;
+  return f.pode_estornar_pre_autorizacao === true;
+}
+
+export function mensagemFaturamentoLiberadoPosCancelamento(
+  f: Pick<
+    FaturamentoNfeLinha,
+    'saldo_liberado_por_cancelamento_nfe' | 'estorno_ja_aplicado' | 'motivo_bloqueio_estorno' | 'pode_gerar_nova_nfe'
+  >,
+): string | null {
+  if (f.saldo_liberado_por_cancelamento_nfe) {
+    return 'Saldo comercial já liberado após cancelamento da NF-e. Use Emitir nova NF-e.';
+  }
+  if (f.estorno_ja_aplicado && f.pode_gerar_nova_nfe) {
+    return 'Faturamento liberado — quantidades do pedido já estão coerentes para nova NF-e.';
+  }
+  if (f.motivo_bloqueio_estorno?.trim()) {
+    return f.motivo_bloqueio_estorno.trim();
+  }
+  return null;
+}
+
 export function faturamentoIndicaNfeGerada(status: string | undefined | null): boolean {
   return (status || '').trim().toUpperCase() === 'GERADO_NFE';
 }

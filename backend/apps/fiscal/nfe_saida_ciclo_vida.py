@@ -116,8 +116,22 @@ def avaliar_estorno_faturamento(
     faturamento: FaturamentoPedidoVenda,
     nf: NFeSaida | None = None,
 ) -> tuple[bool, str]:
+    from apps.comercial.faturamento_pedido_venda import calcular_estorno_restante_faturamento
+    from apps.fiscal.nfe_saida_pedido_cancelamento import faturamento_teve_estorno_por_cancelamento_nfe
+
     if faturamento.status == FaturamentoPedidoVenda.Status.CANCELADO:
         return False, 'Faturamento já foi estornado.'
+    if faturamento_teve_estorno_por_cancelamento_nfe(faturamento):
+        return (
+            False,
+            'Saldo comercial já liberado após cancelamento da NF-e. Use Emitir nova NF-e.',
+        )
+    _, estorno_ja_aplicado = calcular_estorno_restante_faturamento(faturamento)
+    if estorno_ja_aplicado and faturamento.status in (
+        FaturamentoPedidoVenda.Status.PRONTO_PARA_NFE,
+        FaturamentoPedidoVenda.Status.GERADO_NFE,
+    ):
+        return False, 'Faturamento já estornado ou liberado — quantidades do pedido já estão coerentes.'
     if faturamento.status == FaturamentoPedidoVenda.Status.RASCUNHO:
         return True, ''
     if faturamento.status not in (

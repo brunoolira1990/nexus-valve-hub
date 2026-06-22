@@ -13,10 +13,12 @@ import {
   getFaturamentoStatusLabel,
   getNFeFiscalBadgeTokens,
   linhaFaturamentoNfeAmigavel,
+  mensagemFaturamentoLiberadoPosCancelamento,
   mensagemNfeFaturamentoInconsistencia,
   MSG_ALERTA_FATURAMENTO_SEM_ATENDIMENTO,
   pedidoComercialFaturado,
   pedidoFaturadoSemAtendimento,
+  pedidoFaturamentoPermiteEstorno,
   resumoBloqueiaGeracaoNfe,
   tituloResumoNfePedido,
 } from '@/lib/pedidoVendaModalUi';
@@ -166,7 +168,12 @@ export function PedidoFaturamentoPanel({ pedidoId, itens = [], onAtualizado, emb
     setError(null);
     try {
       const r = await pedidosVendaService.estornarFaturamento(pedidoId, faturamentoId, { motivo });
-      toast.success(r.mensagens?.[0] || 'Faturamento estornado. Pedido reaberto para edição.');
+      const msg = r.mensagens?.[0] || 'Faturamento estornado. Pedido reaberto para edição.';
+      if (r.ja_estava_estornado) {
+        toast.info(msg);
+      } else {
+        toast.success(msg);
+      }
       await load();
       onAtualizado?.();
     } catch (e) {
@@ -208,7 +215,7 @@ export function PedidoFaturamentoPanel({ pedidoId, itens = [], onAtualizado, emb
     resumo.resumo_atendimento_operacional,
   );
   const faturamentosNfe = resumo.faturamentos_nfe ?? [];
-  const linhaEstorno = faturamentosNfe.find((f) => f.pode_estornar_pre_autorizacao !== false);
+  const linhaEstorno = faturamentosNfe.find((f) => pedidoFaturamentoPermiteEstorno(f));
   const bloqueiaGeracaoNfe = resumoBloqueiaGeracaoNfe(resumo);
   const avisoTotalDesatualizado = (resumo.inconsistencias ?? []).some(
     (i) => i.codigo === 'valor_total_pedido_desatualizado',
@@ -340,6 +347,8 @@ export function PedidoFaturamentoPanel({ pedidoId, itens = [], onAtualizado, emb
             const inconsistencia = mensagemNfeFaturamentoInconsistencia(f);
             const casoNfe = classificarNfeResumoPedido(f);
             const nfeCancelada = casoNfe === 'cancelada';
+            const msgLiberado = mensagemFaturamentoLiberadoPosCancelamento(f);
+            const permiteEstorno = pedidoFaturamentoPermiteEstorno(f);
             return (
               <div
                 key={f.faturamento_id}
@@ -385,7 +394,10 @@ export function PedidoFaturamentoPanel({ pedidoId, itens = [], onAtualizado, emb
                       >
                         {f.pode_gerar_nova_nfe ? 'Emitir nova NF-e' : 'Gerar NF-e rascunho'}
                       </button>
-                      {f.pode_estornar_pre_autorizacao !== false ? (
+                      {msgLiberado ? (
+                        <span className="text-xs text-muted-foreground">{msgLiberado}</span>
+                      ) : null}
+                      {permiteEstorno ? (
                         <button
                           type="button"
                           className="erp-btn-outline erp-btn-sm text-destructive border-destructive/40"
@@ -399,7 +411,7 @@ export function PedidoFaturamentoPanel({ pedidoId, itens = [], onAtualizado, emb
                         >
                           Estornar faturamento
                         </button>
-                      ) : f.motivo_bloqueio_estorno ? (
+                      ) : f.motivo_bloqueio_estorno && !msgLiberado ? (
                         <span className="text-xs text-muted-foreground">{f.motivo_bloqueio_estorno}</span>
                       ) : null}
                     </>
@@ -416,7 +428,7 @@ export function PedidoFaturamentoPanel({ pedidoId, itens = [], onAtualizado, emb
                       >
                         Reparar vínculo NF-e
                       </button>
-                      {f.pode_estornar_pre_autorizacao !== false ? (
+                      {permiteEstorno ? (
                         <button
                           type="button"
                           className="erp-btn-outline erp-btn-sm text-destructive border-destructive/40"
@@ -454,7 +466,9 @@ export function PedidoFaturamentoPanel({ pedidoId, itens = [], onAtualizado, emb
                       ) : (
                         <>
                           <span className="text-xs text-muted-foreground">{getFaturamentoStatusLabel(f.status)}</span>
-                          {f.pode_estornar_pre_autorizacao !== false ? (
+                          {msgLiberado ? (
+                            <span className="text-xs text-muted-foreground">{msgLiberado}</span>
+                          ) : permiteEstorno ? (
                             <button
                               type="button"
                               className="erp-btn-outline erp-btn-sm text-destructive border-destructive/40"
