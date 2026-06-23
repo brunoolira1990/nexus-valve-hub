@@ -8,7 +8,13 @@ from typing import Any
 from django.db import transaction
 
 from apps.cadastros.models import Empresa
-from apps.fiscal.central_dfe.service import TIPO_CTE, TIPO_NFE_ENTRADA, normalizar_cnpj
+from apps.fiscal.central_dfe.service import (
+    TIPO_CTE,
+    TIPO_NFE_ENTRADA,
+    _chaves_nfe_entrada_lancadas,
+    _xml_conteudo_armazenado,
+    documento_central_nfe_historica,
+)
 from apps.fiscal.dfe_classificacao import eh_documento_homologacao
 from apps.fiscal.manifestacao_destinatario.baixar_xml_service import (
     BaixarXmlDestinatarioError,
@@ -32,6 +38,8 @@ XML_STATUS_PENDENTE = 'PENDENTE'
 XML_STATUS_DISPONIVEL = 'DISPONIVEL'
 XML_STATUS_ERRO = 'ERRO'
 
+MSG_XML_NAO_PERSISTIDO = 'XML não foi persistido na Base NF-e Entrada Importada.'
+
 
 class ArmazenarXmlCentralError(ValueError):
     pass
@@ -53,7 +61,43 @@ def _cte_pertence_empresa(cte: CTeHistoricoImportado, empresa: Empresa) -> bool:
     }
 
 
-from apps.fiscal.xml_armazenamento import sincronizar_manifestacao_com_nf_historica
+def _nf_historica_com_xml_or_raise(nf_id: int | None) -> NFeEntradaHistoricaImportada:
+    if not nf_id:
+        raise ArmazenarXmlCentralError(MSG_XML_NAO_PERSISTIDO)
+    nf = (
+        NFeEntradaHistoricaImportada.objects.select_related(
+            'fornecedor_emitente',
+            'empresa_destinataria',
+            'conferencia',
+        )
+        .filter(pk=nf_id)
+        .first()
+    )
+    if nf is None or not _xml_conteudo_armazenado(nf):
+        raise ArmazenarXmlCentralError(MSG_XML_NAO_PERSISTIDO)
+    return nf
+
+
+def _resposta_armazenamento_nfe(
+    *,
+    empresa: Empresa,
+    nf: NFeEntradaHistoricaImportada,
+    manifestacao_id: int | None,
+    duplicado: bool,
+    mensagem: str,
+) -> dict[str, Any]:
+    documento = documento_central_nfe_historica(nf, empresa, _chaves_nfe_entrada_lancadas())
+    return {
+        'tipo_documento': TIPO_NFE_ENTRADA,
+        'chave_acesso': (nf.chave_acesso or '').strip(),
+        'xml_armazenado': True,
+        'xml_status': XML_STATUS_ARMAZENADO,
+        'nf_entrada_historica_id': nf.pk,
+        'manifestacao_id': manifestacao_id,
+        'duplicado': duplicado,
+        'mensagem': mensagem,
+        'documento': documento.to_dict() if documento is not None else None,
+    }
 
 
 @transaction.atomic
@@ -80,15 +124,14 @@ def armazenar_xml_nfe_central(
         documento = sincronizar_manifestacao_com_nf_historica(nf, usuario=usuario)
         if documento is None:
             raise ArmazenarXmlCentralError('NF-e sem empresa destinataria vinculada.')
-        return {
-            'tipo_documento': TIPO_NFE_ENTRADA,
-            'xml_armazenado': True,
-            'xml_status': XML_STATUS_ARMAZENADO,
-            'nf_entrada_historica_id': nf.pk,
-            'manifestacao_id': documento.pk,
-            'duplicado': True,
-            'mensagem': 'XML já armazenado na Base NF-e Entrada Importada.',
-        }
+        nf = _nf_historica_com_xml_or_raise(nf.pk)
+        return _resposta_armazenamento_nfe(
+            empresa=empresa,
+            nf=nf,
+            manifestacao_id=documento.pk,
+            duplicado=True,
+            mensagem='XML já armazenado na Base NF-e Entrada Importada.',
+        )
 
     manifestacao = NFeDestinadaManifestacao.objects.filter(
         pk=documento_id,
@@ -98,15 +141,14 @@ def armazenar_xml_nfe_central(
         raise ArmazenarXmlCentralError('Documento NF-e não encontrado na Central DF-e.')
 
     if manifestacao.status_xml == NFeDestinadaManifestacao.StatusXml.BAIXADO and manifestacao.nf_entrada_historica_id:
-        return {
-            'tipo_documento': TIPO_NFE_ENTRADA,
-            'xml_armazenado': True,
-            'xml_status': XML_STATUS_ARMAZENADO,
-            'nf_entrada_historica_id': manifestacao.nf_entrada_historica_id,
-            'manifestacao_id': manifestacao.pk,
-            'duplicado': True,
-            'mensagem': 'XML já armazenado na Base NF-e Entrada Importada.',
-        }
+        nf = _nf_historica_com_xml_or_raise(manifestacao.nf_entrada_historica_id)
+        return _resposta_armazenamento_nfe(
+            empresa=empresa,
+            nf=nf,
+            manifestacao_id=manifestacao.pk,
+            duplicado=True,
+            mensagem='XML já armazenado na Base NF-e Entrada Importada.',
+        )
 
     try:
         if manifestacao.nf_entrada_historica_id is None and len((manifestacao.chave_acesso or '').strip()) == 44:
@@ -129,15 +171,16 @@ def armazenar_xml_nfe_central(
         raise ArmazenarXmlCentralError(str(exc)) from exc
 
     manifestacao.refresh_from_db()
-    return {
-        'tipo_documento': TIPO_NFE_ENTRADA,
-        'xml_armazenado': True,
-        'xml_status': XML_STATUS_ARMAZENADO,
-        'nf_entrada_historica_id': resultado.get('nf_entrada_historica_id'),
-        'manifestacao_id': manifestacao.pk,
-        'duplicado': bool(resultado.get('duplicado')),
-        'mensagem': 'XML armazenado na Base NF-e Entrada Importada.',
-    }
+    nf_id = resultado.get('nf_entrada_historica_id') or manifestacao.nf_entrada_historica_id
+    nf = _nf_historica_com_xml_or_raise(nf_id)
+
+    return _resposta_armazenamento_nfe(
+        empresa=empresa,
+        nf=nf,
+        manifestacao_id=manifestacao.pk,
+        duplicado=bool(resultado.get('duplicado')),
+        mensagem='XML armazenado na Base NF-e Entrada Importada.',
+    )
 
 
 @transaction.atomic

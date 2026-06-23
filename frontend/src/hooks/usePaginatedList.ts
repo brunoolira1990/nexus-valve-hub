@@ -45,8 +45,8 @@ export function usePaginatedList<T>({
     setPage(1);
   }, [debouncedSearch, pageSize, ordering, filters]);
 
-  const reload = useCallback(async () => {
-    if (!enabled) return;
+  const reload = useCallback(async (): Promise<PaginatedResponse<T> | undefined> => {
+    if (!enabled) return undefined;
     setLoading(true);
     setError(null);
     try {
@@ -62,9 +62,11 @@ export function usePaginatedList<T>({
       if (response.total_pages > 0 && page > response.total_pages) {
         setPage(response.total_pages);
       }
+      return response;
     } catch (err) {
       setData(null);
       setError(apiErrorMessage(err, { fallback: 'Não foi possível carregar os dados. Tente novamente.' }));
+      return undefined;
     } finally {
       setLoading(false);
     }

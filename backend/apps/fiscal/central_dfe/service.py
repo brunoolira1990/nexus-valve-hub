@@ -46,6 +46,8 @@ STATUS_ENTRADA_LABELS = {
     'JA_LANCADO': 'Já lançado no ERP',
 }
 
+LABEL_BASE_NFE_ENTRADA_IMPORTADA = 'Base NF-e Entrada Importada'
+
 # Visão principal: fila de entrada — sem lançamento operacional nem tratamento concluído.
 VISAO_PADRAO_STATUSES = frozenset({'PENDENTE_ENTRADA', 'IMPORTADO_BASE'})
 
@@ -408,6 +410,69 @@ def _status_entrada_nfe(conf_status: str | None, chave: str, chaves_lancadas: se
     return 'IMPORTADO_BASE', STATUS_ENTRADA_LABELS['IMPORTADO_BASE']
 
 
+def _xml_conteudo_armazenado(doc: NFeEntradaHistoricaImportada) -> bool:
+    return bool((getattr(doc, 'xml_conteudo', None) or '').strip())
+
+
+def _xml_status_nfe_historica(doc: NFeEntradaHistoricaImportada) -> tuple[str, str, bool]:
+    if _xml_conteudo_armazenado(doc):
+        return 'ARMAZENADO', 'XML armazenado', True
+    return 'PENDENTE', 'Pendente XML', False
+
+
+def _status_entrada_label_nfe_historica(status_entrada: str, *, xml_armazenado: bool) -> str:
+    if xml_armazenado:
+        return LABEL_BASE_NFE_ENTRADA_IMPORTADA
+    return STATUS_ENTRADA_LABELS.get(status_entrada, status_entrada)
+
+
+def documento_central_nfe_historica(
+    doc: NFeEntradaHistoricaImportada,
+    empresa: Empresa,
+    chaves_lancadas: set[str] | None = None,
+) -> DocumentoCentralDfe | None:
+    """Monta linha da Central DF-e para NF-e na Base NF-e Entrada Importada."""
+    if eh_documento_homologacao(doc):
+        return None
+    chave = (doc.chave_acesso or '').strip()
+    lancadas = chaves_lancadas if chaves_lancadas is not None else _chaves_nfe_entrada_lancadas()
+    conf = getattr(doc, 'conferencia', None)
+    conf_status = conf.status if conf else ''
+    status_entrada, _ = _status_entrada_nfe(conf_status, chave, lancadas)
+    xml_status, xml_status_label, xml_armazenado = _xml_status_nfe_historica(doc)
+    status_label = _status_entrada_label_nfe_historica(status_entrada, xml_armazenado=xml_armazenado)
+    emit_nome = (
+        doc.fornecedor_emitente.razao_social if doc.fornecedor_emitente_id else _json_participante(doc.emit_json)[0]
+    )
+    emit_cnpj = (
+        doc.fornecedor_emitente.cnpj if doc.fornecedor_emitente_id else _json_participante(doc.emit_json)[1]
+    )
+    uf = (doc.dest_json or {}).get('UF') or (doc.emit_json or {}).get('UF') or ''
+    return DocumentoCentralDfe(
+        id=doc.id,
+        tipo_documento=TIPO_NFE_ENTRADA,
+        chave_resumida=chave_resumida(chave),
+        chave_acesso=chave,
+        numero=doc.numero,
+        serie=doc.serie,
+        data_emissao=doc.dh_emissao,
+        data_importacao=doc.importado_em,
+        emitente_nome=emit_nome,
+        emitente_cnpj=normalizar_cnpj(emit_cnpj),
+        uf=str(uf or '')[:2].upper(),
+        valor_total=doc.valor_total_nf,
+        status_entrada=status_entrada,
+        status_entrada_label=status_label,
+        tipo_label=TIPO_LABELS[TIPO_NFE_ENTRADA],
+        detalhe_rota=ROTAS_DETALHE[TIPO_NFE_ENTRADA] if xml_armazenado else '',
+        empresa_id=empresa.pk,
+        xml_status=xml_status,
+        xml_status_label=xml_status_label,
+        xml_armazenado=xml_armazenado,
+        manifestacao_aplicavel=True,
+    )
+
+
 def _status_entrada_cte(status_conf: str | None) -> tuple[str, str]:
     conf = (status_conf or 'IMPORTADO').upper()
     if conf in {'IGNORADO', 'CANCELADO'}:
@@ -445,51 +510,23 @@ def _coletar_nfe_entrada_recebida(
     empresa_cnpj = normalizar_cnpj(empresa.cnpj)
     rows: list[DocumentoCentralDfe] = []
     for doc in qs.iterator(chunk_size=200):
-        if eh_documento_homologacao(doc):
-            continue
+        if empresa_cnpj:
+            emit_cnpj = (
+                doc.fornecedor_emitente.cnpj if doc.fornecedor_emitente_id else _json_participante(doc.emit_json)[1]
+            )
+            if normalizar_cnpj(emit_cnpj) == empresa_cnpj:
+                continue
         chave = (doc.chave_acesso or '').strip()
         if not filtros.incluir_tratados and chave and chave in chaves_lancadas:
             continue
         conf = getattr(doc, 'conferencia', None)
         conf_status = conf.status if conf else ''
-        status_entrada, status_label = _status_entrada_nfe(conf_status, chave, chaves_lancadas)
+        status_entrada, _ = _status_entrada_nfe(conf_status, chave, chaves_lancadas)
         if not filtros.incluir_tratados and status_entrada not in VISAO_PADRAO_STATUSES:
             continue
-        emit_nome = (
-            doc.fornecedor_emitente.razao_social if doc.fornecedor_emitente_id else _json_participante(doc.emit_json)[0]
-        )
-        emit_cnpj = (
-            doc.fornecedor_emitente.cnpj if doc.fornecedor_emitente_id else _json_participante(doc.emit_json)[1]
-        )
-        emit_cnpj_norm = normalizar_cnpj(emit_cnpj)
-        if empresa_cnpj and emit_cnpj_norm == empresa_cnpj:
-            continue
-        uf = (doc.dest_json or {}).get('UF') or (doc.emit_json or {}).get('UF') or ''
-        rows.append(
-            DocumentoCentralDfe(
-                id=doc.id,
-                tipo_documento=TIPO_NFE_ENTRADA,
-                chave_resumida=chave_resumida(chave),
-                chave_acesso=chave,
-                numero=doc.numero,
-                serie=doc.serie,
-                data_emissao=doc.dh_emissao,
-                data_importacao=doc.importado_em,
-                emitente_nome=emit_nome,
-                emitente_cnpj=normalizar_cnpj(emit_cnpj),
-                uf=str(uf or '')[:2].upper(),
-                valor_total=doc.valor_total_nf,
-                status_entrada=status_entrada,
-                status_entrada_label=status_label,
-                tipo_label=TIPO_LABELS[TIPO_NFE_ENTRADA],
-                detalhe_rota=ROTAS_DETALHE[TIPO_NFE_ENTRADA],
-                empresa_id=empresa.pk,
-                xml_status='ARMAZENADO',
-                xml_status_label='XML armazenado',
-                xml_armazenado=True,
-                manifestacao_aplicavel=True,
-            ),
-        )
+        row = documento_central_nfe_historica(doc, empresa, chaves_lancadas)
+        if row is not None:
+            rows.append(row)
     return rows
 
 

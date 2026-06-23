@@ -400,9 +400,10 @@ function filtersShallowEqual(a: Record<string, string>, b: Record<string, string
 }
 
 function resumoParaLinhaCentral(m: NFeDestinadaDocumento): CentralDfeDocumento {
-  const xmlArmazenado = m.status_xml === 'BAIXADO';
+  const xmlArmazenado = m.status_xml === 'BAIXADO' || Boolean(m.nf_entrada_historica_id);
+  const nfHistoricaId = m.nf_entrada_historica_id;
   return {
-    id: m.id,
+    id: xmlArmazenado && nfHistoricaId ? nfHistoricaId : m.id,
     tipo_documento: 'NFE_ENTRADA',
     chave_resumida: m.chave_resumida,
     chave_acesso: m.chave_acesso,
@@ -415,12 +416,12 @@ function resumoParaLinhaCentral(m: NFeDestinadaDocumento): CentralDfeDocumento {
     uf: '',
     valor_total: m.valor_nf,
     status_entrada: 'IMPORTADO_BASE',
-    status_entrada_label: 'Resumo DF-e — pendente XML',
+    status_entrada_label: xmlArmazenado ? 'Base NF-e Entrada Importada' : 'Resumo DF-e — pendente XML',
     tipo_label: 'NF-e Fornecedor',
-    detalhe_rota: '',
+    detalhe_rota: xmlArmazenado ? '/nfe-entrada-historica-importada' : '',
     empresa_id: m.empresa_id,
     xml_status: xmlArmazenado ? 'ARMAZENADO' : m.status_xml === 'DISPONIVEL' ? 'DISPONIVEL' : m.status_xml === 'ERRO' ? 'ERRO' : 'PENDENTE',
-    xml_status_label: labelStatusXmlManifestacao(m.status_xml),
+    xml_status_label: labelStatusXmlManifestacao(xmlArmazenado ? 'BAIXADO' : m.status_xml),
     xml_armazenado: xmlArmazenado,
     manifestacao_aplicavel: true,
   };
@@ -579,9 +580,14 @@ const CentralDfe = () => {
   }, [carregarManifestacao, chavesCentralNfeKey]);
 
   const recarregarTudo = useCallback(async () => {
-    await reload();
-    await carregarManifestacao(chavesCentralNfe);
-  }, [reload, carregarManifestacao, chavesCentralNfe]);
+    const response = await reload();
+    const chaves = new Set(
+      (response?.results ?? [])
+        .filter((row) => row.tipo_documento === 'NFE_ENTRADA' && row.chave_acesso)
+        .map((row) => row.chave_acesso),
+    );
+    await carregarManifestacao(chaves);
+  }, [reload, carregarManifestacao]);
 
   useEffect(() => {
     chavesCentralNfeRef.current = chavesCentralNfe;
@@ -1054,9 +1060,9 @@ const CentralDfe = () => {
                     : statusXmlExibicao(manifestacao, row);
                   const exibirManifestar = podeManifestarNfe(manifestacao, row);
                   const exibirArmazenarXml = podeArmazenarXmlNfe(manifestacao, row);
-                  const exibirAbrirBaseImportada =
-                    xmlJaArmazenado(manifestacao, row) || podeAbrirBaseImportada(row);
-                  const exibirBaixarXml = exibirAbrirBaseImportada && !somenteResumo;
+                  const xmlArmazenado = xmlJaArmazenado(manifestacao, row);
+                  const exibirAbrirBaseImportada = xmlArmazenado || podeAbrirBaseImportada(row);
+                  const exibirBaixarXml = exibirAbrirBaseImportada && xmlArmazenado;
 
                   return (
                   <tr key={`${somenteResumo ? 'resumo' : row.tipo_documento}-${row.id}-${row.chave_acesso}`} className="group">

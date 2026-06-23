@@ -39,6 +39,7 @@ export type CentralDfeDocumento = {
 
 export type ArmazenarXmlCentralResponse = {
   tipo_documento: string;
+  chave_acesso?: string;
   xml_armazenado: boolean;
   xml_status: string;
   nf_entrada_historica_id?: number;
@@ -46,6 +47,7 @@ export type ArmazenarXmlCentralResponse = {
   manifestacao_id?: number;
   duplicado?: boolean;
   mensagem?: string;
+  documento?: CentralDfeDocumento;
 };
 
 export type CentralDfeListResponse = PaginatedResponse<CentralDfeDocumento> & {

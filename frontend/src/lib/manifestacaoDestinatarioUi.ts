@@ -135,9 +135,10 @@ export function podeBaixarXmlLinha(
 }
 
 export function xmlJaArmazenado(
-  manifestacao: { status_xml: StatusXmlDestinada } | null,
+  manifestacao: { status_xml: StatusXmlDestinada; nf_entrada_historica_id?: number | null } | null,
   row: Pick<CentralDfeDocumento, 'xml_armazenado' | 'xml_status'>,
 ): boolean {
   if (row.xml_armazenado || row.xml_status === 'ARMAZENADO') return true;
-  return manifestacao?.status_xml === 'BAIXADO';
+  if (manifestacao?.status_xml === 'BAIXADO') return true;
+  return Boolean(manifestacao?.nf_entrada_historica_id);
 }

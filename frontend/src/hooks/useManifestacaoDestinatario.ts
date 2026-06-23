@@ -53,6 +53,37 @@ export function useManifestacaoDestinatario(
     setManifestacaoSomenteResumo((prev) => prev.filter((row) => row.chave_acesso !== doc.chave_acesso));
   }, []);
 
+  const aplicarArmazenamentoXmlNfeLocal = useCallback(
+    (
+      chaveAcesso: string,
+      payload: { nf_entrada_historica_id: number; manifestacao_id?: number },
+    ) => {
+      setManifestacaoMap((prev) => {
+        const atual = prev.get(chaveAcesso);
+        if (!atual) return prev;
+        const next = new Map(prev);
+        next.set(chaveAcesso, {
+          ...atual,
+          status_xml: 'BAIXADO',
+          nf_entrada_historica_id: payload.nf_entrada_historica_id,
+        });
+        return next;
+      });
+      setManifestacaoSomenteResumo((prev) =>
+        prev.map((row) =>
+          row.chave_acesso === chaveAcesso
+            ? {
+                ...row,
+                status_xml: 'BAIXADO',
+                nf_entrada_historica_id: payload.nf_entrada_historica_id,
+              }
+            : row,
+        ),
+      );
+    },
+    [],
+  );
+
   const carregarManifestacao = useCallback(
     async (chavesCentral: Set<string>) => {
       if (!empresaId) {
@@ -270,18 +301,30 @@ export function useManifestacaoDestinatario(
     if (!confirmArmazenar || !empresaId) return;
     const { row, manifestacao, somenteResumo } = confirmArmazenar;
     const documentoId = somenteResumo && manifestacao ? manifestacao.id : row.id;
+    const chaveAcesso = (row.chave_acesso || manifestacao?.chave_acesso || '').trim();
     setLoadingAcaoManual(true);
     try {
-      await centralDfeService.armazenarXmlNfe(documentoId, {
+      const resp = await centralDfeService.armazenarXmlNfe(documentoId, {
         empresa_id: empresaId,
         confirmacao_explicita: true,
       });
-      toast.success('XML importado e armazenado na Base NF-e Entrada Importada.');
+      if (!resp.xml_armazenado || !resp.nf_entrada_historica_id) {
+        throw new Error(resp.mensagem || 'XML não foi persistido na Base NF-e Entrada Importada.');
+      }
+      if (chaveAcesso) {
+        aplicarArmazenamentoXmlNfeLocal(chaveAcesso, {
+          nf_entrada_historica_id: resp.nf_entrada_historica_id,
+          manifestacao_id: resp.manifestacao_id,
+        });
+      }
+      toast.success(resp.mensagem || 'XML importado e armazenado na Base NF-e Entrada Importada.');
       setConfirmArmazenar(null);
       setConfirmBaixar(null);
-      await carregarManifestacao(chavesCentral ?? new Set());
-      await carregarFechamento();
       await onAfter?.();
+      const chavesAtualizadas = chavesCentral ?? new Set<string>();
+      if (chaveAcesso) chavesAtualizadas.add(chaveAcesso);
+      await carregarManifestacao(chavesAtualizadas);
+      await carregarFechamento();
     } catch (e) {
       toast.error(apiErrorMessage(e, { fallback: 'Não foi possível armazenar XML da NF-e.' }));
     } finally {
