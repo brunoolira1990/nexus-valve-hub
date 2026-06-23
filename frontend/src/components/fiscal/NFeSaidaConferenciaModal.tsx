@@ -40,6 +40,7 @@ import {
   mensagemProntaParaEmissao,
   nfeSalvarFormularioBloqueado,
   nfePodeDescartarRascunho,
+  mensagemConfirmacaoDescarteRascunho,
 } from '@/lib/nfeSaidaUi';
 import {
   GRUPO_VALIDACAO_LABELS,
@@ -1952,7 +1953,10 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
         open={descarteOpen}
         onOpenChange={setDescarteOpen}
         title="Descartar NF-e rascunho"
-        description="A NF-e será marcada como descartada internamente. O histórico, XML preliminar e DANFE de conferência são preservados."
+        description={mensagemConfirmacaoDescarteRascunho({
+          numero_nfe: nfe.numero_nfe as string | undefined,
+          serie_nfe: conf.emissao_sefaz?.serie_nfe || (nfe.serie_nfe as string | undefined),
+        })}
         avisoSefaz="Nenhum evento será enviado à SEFAZ porque a NF-e não está autorizada."
         detalhes={
           <p className="text-sm text-muted-foreground">

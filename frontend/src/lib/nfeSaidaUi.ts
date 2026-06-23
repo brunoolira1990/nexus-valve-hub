@@ -321,6 +321,8 @@ const LABELS_TIPO_EVENTO: Record<string, string> = {
   ESTORNO_FATURAMENTO: 'Estorno de faturamento',
   ESTORNO_FATURAMENTO_PRE_AUTORIZACAO_NFE: 'Estorno antes da autorização SEFAZ',
   DESCARTE_RASCUNHO_NFE: 'Descarte interno de rascunho',
+  NUMERACAO_LIBERADA_DESCARTE: 'Numeração liberada (descarte local)',
+  NUMERACAO_REUTILIZADA: 'Numeração reutilizada',
   OBSERVACAO: 'Observação',
   NFE_AUTORIZADA_HOMOLOGACAO: 'Autorizada homologação SEFAZ',
   CONSULTA_SITUACAO_SEFAZ: 'Consulta SEFAZ',
@@ -339,10 +341,18 @@ export function nfePodeDescartarRascunho(nfe: {
   status_emissao_sefaz?: string | null;
   protocolo_autorizacao?: string | null;
   cstat_autorizacao?: string | null;
+  recibo_lote?: string | null;
 }): { pode: boolean; motivo: string } {
   const st = (nfe.status || '').toUpperCase();
   if (st === STATUS_NFE_DESCARTADA) {
     return { pode: false, motivo: 'NF-e já descartada internamente.' };
+  }
+  const sefaz = (nfe.status_emissao_sefaz || '').toUpperCase();
+  if (sefaz === 'AGUARDANDO_PROCESSAMENTO' || sefaz === 'LOTE_PROCESSADO_SEM_PROTOCOLO') {
+    return {
+      pode: false,
+      motivo: 'NF-e com processamento SEFAZ pendente ou incerto. Consulte a situação antes de descartar.',
+    };
   }
   if (st === 'AUTORIZADA_HOMOLOGACAO' || (nfe.status_emissao_sefaz || '') === 'AUTORIZADA_HOMOLOGACAO') {
     return {
@@ -357,6 +367,20 @@ export function nfePodeDescartarRascunho(nfe: {
     return { pode: false, motivo: `Status ${nfe.status} não permite descarte interno.` };
   }
   return { pode: true, motivo: '' };
+}
+
+export function mensagemConfirmacaoDescarteRascunho(nfe: {
+  numero_nfe?: string | null;
+  serie_nfe?: string | null;
+}): string {
+  const base =
+    'Esta NF-e ainda não foi transmitida para a SEFAZ. Ao excluir, o rascunho será descartado internamente e o histórico local será preservado.';
+  const num = (nfe.numero_nfe || '').replace(/^0+/, '') || '';
+  if (num) {
+    const serie = (nfe.serie_nfe || '').trim();
+    return `${base} O número fiscal ${num}${serie ? ` (série ${serie})` : ''} poderá ser reutilizado na próxima NF-e da mesma série e ambiente.`;
+  }
+  return `${base} Se houver numeração fiscal reservada localmente, ela poderá ser reutilizada na próxima NF-e da mesma série.`;
 }
 
 export function nfeRascunhoSemAutorizacao(nfe: {

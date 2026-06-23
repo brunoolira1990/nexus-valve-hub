@@ -15,6 +15,7 @@ from apps.fiscal.nfe_emissao.serie_fiscal import (
     serie_para_chave,
     validar_serie_autorizacao_normal,
 )
+from apps.fiscal.nfe_emissao.numeracao_liberacao import reservar_numero_liberado_disponivel
 from apps.fiscal.nfe_integracao.nfe_chave_acesso import ChaveAcessoNFe, aamm_da_emissao, montar_chave_acesso_nfe
 from apps.fiscal.nfe_saida_efeitos import _lock_nfe_saida, _registrar_evento
 
@@ -127,8 +128,8 @@ def reservar_numeracao_nfe(
     if not cfg:
         raise NFeNumeracaoError('Configuração de numeração indisponível.')
 
-    nnf_int = int(cfg.proximo_numero)
-    if nnf_int < 1 or nnf_int > 999_999_999:
+    nnf_int, numero_liberado = reservar_numero_liberado_disponivel(cfg, nfe_saida=nf, usuario=usuario)
+    if numero_liberado is None and (nnf_int < 1 or nnf_int > 999_999_999):
         raise NFeNumeracaoError('Próximo número fiscal fora do intervalo permitido.')
 
     if ambiente != NFeSaida.AmbienteEmissao.PRODUCAO:
@@ -177,21 +178,30 @@ def reservar_numeracao_nfe(
         ],
     )
 
-    cfg.proximo_numero = nnf_int + 1
     cfg.ultimo_numero_reservado = nnf_int
+    if numero_liberado is None:
+        cfg.proximo_numero = nnf_int + 1
     cfg.save(update_fields=['proximo_numero', 'ultimo_numero_reservado', 'atualizado_em'])
 
+    resumo_evento: dict = {
+        'serie': serie,
+        'numero_nfe': nnf,
+        'chave_acesso': chave.chave_44,
+        'ambiente': ambiente,
+    }
+    if numero_liberado is not None:
+        resumo_evento['numero_reutilizado'] = True
+        resumo_evento['nfe_saida_origem_id'] = numero_liberado.nfe_saida_origem_id
+        resumo_evento['reutilizacao_id'] = numero_liberado.pk
     _registrar_evento(
         nf,
         tipo='NUMERACAO_RESERVADA',
         status_novo=nf.status_emissao_sefaz,
-        resumo={
-            'serie': serie,
-            'numero_nfe': nnf,
-            'chave_acesso': chave.chave_44,
-            'ambiente': ambiente,
-        },
-        observacao=f'Numeração reservada: série {serie}, nNF {nnf}.',
+        resumo=resumo_evento,
+        observacao=(
+            f'Numeração reservada: série {serie}, nNF {nnf}'
+            + (' (reutilizada de descarte local).' if numero_liberado else '.')
+        ),
         usuario=usuario,
     )
     return NumeracaoReservada(

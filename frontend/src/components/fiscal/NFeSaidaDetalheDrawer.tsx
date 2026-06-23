@@ -20,7 +20,7 @@ import {
   formatStatusNfe,
 } from '@/lib/nfeSaidaApresentacaoFormat';
 import { getNfeFiscalSummaryBadge } from '@/lib/nfeSaidaListagemCompacta';
-import { formatDateTimeBr, nfePodeDescartarRascunho } from '@/lib/nfeSaidaUi';
+import { formatDateTimeBr, mensagemConfirmacaoDescarteRascunho, nfePodeDescartarRascunho } from '@/lib/nfeSaidaUi';
 import { MotivoAcaoDestrutivaModal } from '@/components/comercial/MotivoAcaoDestrutivaModal';
 import { GerarContasReceberNfeModal } from '@/components/fiscal/GerarContasReceberNfeModal';
 import { NFeConsultaSefazModal } from '@/components/fiscal/NFeConsultaSefazModal';
@@ -441,7 +441,10 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
         open={descarteOpen}
         onOpenChange={setDescarteOpen}
         title="Descartar NF-e rascunho"
-        description="A NF-e será marcada como descartada internamente. O histórico, XML preliminar e DANFE de conferência são preservados."
+        description={mensagemConfirmacaoDescarteRascunho({
+          numero_nfe: nfe?.numero_nfe,
+          serie_nfe: nfe?.serie_nfe,
+        })}
         avisoSefaz="Nenhum evento será enviado à SEFAZ porque a NF-e não está autorizada."
         detalhes={
           nfe ? (

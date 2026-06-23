@@ -15,6 +15,7 @@ from apps.comercial.models import FaturamentoPedidoVenda, PedidoVenda
 from apps.fiscal.models import NFeSaida, NFeSaidaEvento
 from apps.fiscal.nfe_saida_bloqueio import STATUS_NFE_RASCUNHO, nf_autorizada_homologacao
 from apps.fiscal.nfe_saida_from_faturamento import STATUS_NFE_RASCUNHO as STATUS_RASCUNHO_FAT
+from apps.fiscal.nfe_emissao.numeracao_liberacao import liberar_numero_fiscal_apos_descarte
 from apps.fiscal.nfe_saida_efeitos import _lock_faturamento, _lock_nfe_saida, _nf_autorizada_interna
 
 STATUS_NFE_DESCARTADA_INTERNA = 'DESCARTADA_INTERNA'
@@ -100,6 +101,15 @@ def avaliar_descarte_nfe_rascunho(nf: NFeSaida) -> tuple[bool, str]:
         return False, 'NF-e rascunho já foi descartada internamente.'
     if nf_possui_autorizacao_sefaz_efetiva(nf):
         return False, 'Não é possível descartar: NF-e possui autorização ou protocolo SEFAZ.'
+    sefaz_st = (nf.status_emissao_sefaz or '').strip()
+    if sefaz_st in (
+        NFeSaida.StatusEmissaoSefaz.AGUARDANDO_PROCESSAMENTO,
+        NFeSaida.StatusEmissaoSefaz.LOTE_PROCESSADO_SEM_PROTOCOLO,
+    ):
+        return (
+            False,
+            'NF-e com processamento SEFAZ pendente ou incerto. Consulte a situação antes de descartar.',
+        )
     if st in ('CANCELADA_INTERNA', 'CANCELADA', 'CANCELADO'):
         return False, 'NF-e já está cancelada internamente.'
     if st in _STATUS_BLOQUEIA_DESCARTE:
@@ -249,6 +259,8 @@ def descartar_nfe_rascunho(
     status_anterior = nf.status or ''
     _marcar_nfe_descartada_interna(nf, motivo=motivo, usuario=usuario)
 
+    liberacao = liberar_numero_fiscal_apos_descarte(nf, motivo=motivo, usuario=usuario)
+
     fat_id = nf.faturamento_pedido_venda_id
     pedido_id = nf.pedido_venda_id
     if liberar_faturamento and fat_id:
@@ -256,20 +268,29 @@ def descartar_nfe_rascunho(
         if fat.nfe_saida_id == nf.pk:
             _liberar_faturamento_para_nova_nfe(fat)
 
+    mensagens = [
+        'NF-e rascunho descartada internamente. '
+        'Nenhum evento foi enviado à SEFAZ porque a NF-e não estava autorizada.',
+    ]
+    if liberacao and liberacao.get('liberado') and liberacao.get('numero'):
+        mensagens.append(
+            f'Número fiscal {liberacao["numero"]} liberado e poderá ser reutilizado na próxima NF-e '
+            f'da mesma série e ambiente.',
+        )
+    elif liberacao and liberacao.get('motivo_bloqueio'):
+        mensagens.append(liberacao['motivo_bloqueio'])
+
     return {
         'nfe_saida_id': nf.pk,
         'status_anterior': status_anterior,
         'status': nf.status,
         'pedido_id': pedido_id,
         'faturamento_id': fat_id,
-        'mensagem': (
-            'NF-e rascunho descartada internamente. '
-            'Nenhum evento foi enviado à SEFAZ porque a NF-e não estava autorizada.'
+        'numeracao_liberada': liberacao,
+        'mensagem': mensagens[0] + (
+            f' {mensagens[1]}' if len(mensagens) > 1 else ''
         ),
-        'mensagens': [
-            'NF-e rascunho descartada internamente. '
-            'Nenhum evento foi enviado à SEFAZ porque a NF-e não estava autorizada.',
-        ],
+        'mensagens': mensagens,
     }
 
 
@@ -291,6 +312,7 @@ def descartar_nfe_no_estorno_faturamento(
         usuario=usuario,
         tipo_evento=NFeSaidaEvento.TipoEvento.ESTORNO_FATURAMENTO_PRE_AUTORIZACAO_NFE,
     )
+    liberar_numero_fiscal_apos_descarte(nf, motivo=motivo, usuario=usuario)
     faturamento.nfe_saida_id = None
     faturamento.nfe_saida_gerada_em = None
     faturamento.save(update_fields=['nfe_saida', 'nfe_saida_gerada_em', 'atualizado_em'])

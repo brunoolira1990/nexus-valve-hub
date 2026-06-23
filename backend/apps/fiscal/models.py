@@ -470,6 +470,8 @@ class NFeSaidaEvento(models.Model):
             'Estorno de faturamento antes da autorização SEFAZ',
         )
         DESCARTE_RASCUNHO_NFE = 'DESCARTE_RASCUNHO_NFE', 'Descarte interno de NF-e rascunho'
+        NUMERACAO_LIBERADA_DESCARTE = 'NUMERACAO_LIBERADA_DESCARTE', 'Numeração liberada após descarte local'
+        NUMERACAO_REUTILIZADA = 'NUMERACAO_REUTILIZADA', 'Numeração reutilizada de descarte local'
         IMPOSTOS_ATUALIZADOS = 'IMPOSTOS_ATUALIZADOS', 'Impostos atualizados da regra atual'
         CONFERENCIA_SALVA = 'CONFERENCIA_SALVA', 'Conferência salva'
         CONFERENCIA_VALIDADA = 'CONFERENCIA_VALIDADA', 'Conferência validada'
@@ -1395,6 +1397,60 @@ class NFeNumeracaoConfiguracao(models.Model):
             f'{self.empresa_id} mod{self.modelo_documento} {self.ambiente} '
             f'{self.tipo_operacao} série {self.serie} próx={self.proximo_numero}'
         )
+
+
+class NFeNumeracaoNumeroLiberado(models.Model):
+    """Número fiscal liberado após descarte de NF-e nunca transmitida à SEFAZ (reutilização segura)."""
+
+    configuracao = models.ForeignKey(
+        NFeNumeracaoConfiguracao,
+        on_delete=models.CASCADE,
+        related_name='numeros_liberados',
+    )
+    numero = models.PositiveIntegerField()
+    nfe_saida_origem = models.ForeignKey(
+        'fiscal.NFeSaida',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='numeracao_liberada_origem',
+    )
+    liberado_em = models.DateTimeField(auto_now_add=True)
+    liberado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='numeros_nfe_liberados',
+    )
+    motivo = models.TextField(blank=True)
+    consumido_em = models.DateTimeField(null=True, blank=True)
+    nfe_saida_consumo = models.ForeignKey(
+        'fiscal.NFeSaida',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='numeracao_reutilizada_de',
+    )
+
+    class Meta:
+        ordering = ['configuracao_id', 'numero']
+        verbose_name = 'Número NF-e liberado para reutilização'
+        verbose_name_plural = 'Números NF-e liberados para reutilização'
+        indexes = [
+            models.Index(fields=['configuracao', 'consumido_em', 'numero']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['configuracao', 'numero'],
+                condition=models.Q(consumido_em__isnull=True),
+                name='uniq_nfe_numero_liberado_disponivel',
+            ),
+        ]
+
+    def __str__(self) -> str:
+        estado = 'disponível' if self.consumido_em is None else 'consumido'
+        return f'NF-e nº {self.numero} ({estado}) cfg#{self.configuracao_id}'
 
 
 class AlocacaoAtendimento(models.Model):
