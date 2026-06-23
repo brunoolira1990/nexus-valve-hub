@@ -122,9 +122,12 @@ class PedidoVendaPdfLayoutTests(TestCase):
         self.assertIn('Ped:', texto)
         self.assertIn('Cód.', texto)
 
-    def test_pdf_preserva_campos_faturamento_no_bloco_condicoes(self):
+    def test_pdf_condicoes_essenciais_e_faturamento_nos_itens(self):
         pedido = _pedido_com_itens(1)
         texto = _pdf_text(gerar_pedido_venda_pdf_bytes(pedido))
-        self.assertIn('Valor faturado', texto)
+        self.assertIn('Vendedor', texto)
+        self.assertIn('Forma de pagamento', texto)
+        self.assertIn('Prazo de entrega', texto)
+        self.assertNotIn('Valor faturado', texto)
         self.assertIn('faturamento', texto.lower())
         self.assertIn('Qtd. pedida', texto)

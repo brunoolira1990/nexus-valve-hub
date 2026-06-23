@@ -902,7 +902,8 @@ def build_item_line_table(
 
 
 # Larguras proporcionais da tabela de itens do pedido de venda (soma = 1.0).
-_PV_BATCH_COL_FRACS = (0.065, 0.075, 0.125, 0.135, 0.105, 0.095, 0.095, 0.165)
+# Total e colunas monetárias mais largas; descrição ocupa linha inteira acima.
+_PV_BATCH_COL_FRACS = (0.060, 0.070, 0.120, 0.130, 0.100, 0.090, 0.090, 0.190)
 
 
 def build_pedido_venda_items_batch_table(
@@ -993,8 +994,8 @@ def build_pedido_venda_items_batch_table(
     ]
     span_cmds: list = []
     row_idx = 1
-    pad_row = 1.85 if readable_compact else (1.0 if ultra_compact else 1.5)
-    pad_h = 4.5 if readable_compact else (3.5 if ultra_compact else 4.0)
+    pad_row = 2.0 if readable_compact else (1.0 if ultra_compact else 1.5)
+    pad_h = 5.0 if readable_compact else (3.5 if ultra_compact else 4.0)
 
     for item_idx, linha in enumerate(linhas):
         desc = linha['descricao']
@@ -1045,7 +1046,7 @@ def build_pedido_venda_items_batch_table(
             span_cmds.append(('SPAN', (0, row_idx), (7, row_idx)))
             row_idx += 1
 
-    tbl = Table(table_rows, colWidths=cw, repeatRows=1)
+    tbl = Table(table_rows, colWidths=cw, repeatRows=1, hAlign='LEFT')
     style_cmds = [
         ('BOX', (0, 0), (-1, -1), 0.32, C_FRAME_LIGHT),
         ('BACKGROUND', (0, 0), (-1, 0), C_TABLE_HEADER_BG),
@@ -1176,13 +1177,14 @@ def build_financial_summary_block(
     ph_right: ParagraphStyle,
     compact: bool = False,
     ultra_compact: bool = False,
+    full_width: bool = False,
 ) -> Table:
-    """PdfFinancialSummary: bloco à direita, fechamento visual forte."""
+    """PdfFinancialSummary: bloco à direita ou largura útil total (`full_width`)."""
     if ultra_compact:
-        fs, lead = 7.1, 8.5
-        block_w = page_w * 0.56
-        pad, pad_big = 1.8, 3.4
-        fs_tot, fs_lbl = 10.8, 7.6
+        fs, lead = 7.15, 8.6
+        block_w = page_w if full_width else page_w * 0.56
+        pad, pad_big = 1.9, 3.5
+        fs_tot, fs_lbl = 11.0, 7.8
         w_lbl, w_val = block_w * 0.56, block_w * 0.44
     elif compact:
         fs, lead = 7.6, 9.0
@@ -1280,8 +1282,11 @@ def build_financial_summary_block(
                 ]
             )
         )
-        tot_wrap = Table([[tot_inner]], colWidths=[page_w], hAlign='RIGHT')
-        tot_wrap.setStyle(TableStyle([('ALIGN', (0, 0), (-1, -1), 'RIGHT'), ('LEFTPADDING', (0, 0), (-1, -1), 0)]))
+        tot_wrap = Table([[tot_inner]], colWidths=[page_w], hAlign='LEFT')
+        align_wrap = 'LEFT' if full_width else 'RIGHT'
+        tot_wrap.setStyle(
+            TableStyle([('ALIGN', (0, 0), (-1, -1), align_wrap), ('LEFTPADDING', (0, 0), (-1, -1), 0)])
+        )
         return tot_wrap
 
     tot_rows = [
@@ -1350,6 +1355,7 @@ def build_financial_summary_section(
     compact: bool = True,
     tight: bool = False,
     ultra_compact: bool = False,
+    full_width: bool = False,
 ) -> list:
     """Título + resumo financeiro (reutilizável em pedidos / propostas)."""
     tbl = build_financial_summary_block(
@@ -1365,6 +1371,7 @@ def build_financial_summary_section(
         ph_right=ph_right,
         compact=compact and not ultra_compact,
         ultra_compact=ultra_compact,
+        full_width=full_width,
     )
     if ultra_compact:
         sp = 0.25 * mm

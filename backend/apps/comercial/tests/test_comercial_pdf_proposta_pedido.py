@@ -319,7 +319,8 @@ class PedidoVendaPdfResponseTests(ComercialPdfBaseFixture):
             text += page.extract_text() or ''
         self.assertIn(self.pedido.numero, text)
         self.assertIn('Cliente PDF', text)
-        self.assertIn('Valor faturado', text)
+        self.assertIn('Vendedor', text)
+        self.assertIn('Ped:', text)
 
     def test_pdf_nao_altera_status_pedido(self):
         c = APIClient()
@@ -383,6 +384,6 @@ class PedidoVendaPdfFaturamentoTests(ComercialPdfBaseFixture):
         text = ''
         for page in PdfReader(io.BytesIO(pdf_bytes)).pages:
             text += page.extract_text() or ''
-        self.assertIn('Valor faturado', text)
+        self.assertIn('Faturada:', text)
         self.assertNotIn('NF-PDF-001', text)
         self.assertNotIn('NF-e vinculada', text)

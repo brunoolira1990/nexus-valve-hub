@@ -46,13 +46,11 @@ from .comercial_pdf_shared import (
     logotipo_path_empresa,
     logotipo_path_fallback,
     nome_vendedor,
-    parcelas_exibicao,
     prazo_entrega_exibicao_pedido,
     resolver_ncm_item_comercial,
     vencimentos_exibicao,
 )
 from .faturamento_pedido_venda import (
-    montar_resumo_faturamento,
     quantidade_pendente_item,
     quantidade_pedida_item,
     preco_unitario_item,
@@ -152,15 +150,67 @@ def _bloco_descricao_item_compact(it: ItemPedidoVenda, nota: str) -> str:
     )
 
 
+def _validade_exibicao_pedido(pedido: PedidoVenda) -> str:
+    try:
+        if pedido.proposta_id and pedido.proposta and pedido.proposta.validade:
+            return fmt_date_br(pedido.proposta.validade)
+    except Exception:
+        pass
+    vencs = list(pedido.vencimentos_previstos or [])
+    txt = vencimentos_exibicao(vencs)
+    return txt if txt and txt != '—' else '—'
+
+
+def _frete_condicoes_pedido(pedido: PedidoVenda, frete_valor) -> str | None:
+    if dec(frete_valor) > 0:
+        return format_currency_br(frete_valor)
+    try:
+        if pedido.proposta_id and pedido.proposta:
+            ft = (pedido.proposta.frete_texto or '').strip()
+            if ft:
+                return ft
+    except Exception:
+        pass
+    return None
+
+
+def _linhas_condicoes_comerciais_pdf(
+    pedido: PedidoVenda,
+    *,
+    vend_nome: str,
+    frete_valor,
+) -> list[tuple[str, str]]:
+    """Campos essenciais no PDF — demais dados permanecem no ERP e no resumo financeiro."""
+    rows: list[tuple[str, str]] = [
+        ('Vendedor:', vend_nome),
+        ('Validade:', _validade_exibicao_pedido(pedido)),
+        (
+            'Forma de pagamento:',
+            condicao_pagamento_pdf_amigavel(
+                pedido.condicao_pagamento_texto or '',
+                list(pedido.dias_parcelas or []),
+            ),
+        ),
+        (
+            'Prazo de entrega:',
+            prazo_entrega_pdf_amigavel(prazo_entrega_exibicao_pedido(pedido)),
+        ),
+    ]
+    st = label_status_pedido(pedido.status)
+    if st and st.strip() and st != '—':
+        rows.append(('Status:', st))
+    frete_txt = _frete_condicoes_pedido(pedido, frete_valor)
+    if frete_txt:
+        rows.append(('Frete:', frete_txt))
+    return rows
+
+
 def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
     numero_txt = txt_or_emdash(pedido.numero)
     meta_title = f'Pedido de Venda {numero_txt}'
 
     empresa = getattr(pedido, 'empresa_emitente', None)
     logo_path = logotipo_path_empresa(empresa) or logotipo_path_fallback()
-
-    resumo_fat = montar_resumo_faturamento(pedido)
-    totais = calcular_totais_pedido_venda(pedido)
 
     _ph, ph_small, ph_right, ph_center, _ph_white = base_paragraph_styles()
 
@@ -252,48 +302,21 @@ def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
         story.append(Spacer(1, 0.75 * mm if layout_dez_itens and not layout_denso else (0.65 * mm if layout_denso else 0.85 * mm)))
 
         vend_nome = nome_vendedor(vendedor_ref=getattr(pedido, 'vendedor_ref', None), vendedor_texto=pedido.vendedor)
-        origem = '—'
-        try:
-            if pedido.proposta_id and pedido.proposta:
-                origem = f'Proposta {pedido.proposta.numero or pedido.proposta_id}'
-        except Exception:
-            if pedido.proposta_id:
-                origem = f'Proposta #{pedido.proposta_id}'
 
-        vencs = list(pedido.vencimentos_previstos or [])
-        venc_label = 'Vencimento:' if len(vencs) == 1 else 'Vencimentos:'
-        cond_rows = [
-            ('Vendedor:', vend_nome),
-            ('Origem:', origem),
-            (
-                'Pagamento:',
-                condicao_pagamento_pdf_amigavel(
-                    pedido.condicao_pagamento_texto or '',
-                    list(pedido.dias_parcelas or []),
-                ),
-            ),
-            ('Parcelas:', parcelas_exibicao(
-                quantidade_parcelas=pedido.quantidade_parcelas,
-                vencimentos_previstos=vencs,
-                dias_parcelas=list(pedido.dias_parcelas or []),
-            )),
-            (venc_label, vencimentos_exibicao(vencs)),
-            ('Prazo previsto de entrega:', prazo_entrega_pdf_amigavel(prazo_entrega_exibicao_pedido(pedido))),
-            ('Valor total pedido:', format_currency_br(totais.valor_total)),
-            ('Valor faturado:', format_currency_br(dec(resumo_fat.get('valor_faturado')))),
-            ('Valor pendente:', format_currency_br(
-                max(Decimal('0'), totais.valor_total - dec(resumo_fat.get('valor_faturado')))
-            )),
-            ('Status faturamento:', label_status_pedido(resumo_fat.get('status'))),
-        ]
+        totais_itens = calcular_totais_pedido_venda(pedido, itens=itens)
+        cond_rows = _linhas_condicoes_comerciais_pdf(
+            pedido,
+            vend_nome=vend_nome,
+            frete_valor=totais_itens.frete,
+        )
         story.extend(
             build_conditions_commercial_grid(
                 'Condições comerciais',
                 cond_rows,
                 page_w=page_w,
                 ph_small=ph_small,
-                pairs_per_row=3,
-                label_width_frac=0.34,
+                pairs_per_row=2 if layout_dez_itens else 3,
+                label_width_frac=0.32,
                 tight=layout_denso,
             )
         )
@@ -302,7 +325,6 @@ def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
         story.append(build_section_title('Itens do pedido', ph_small=ph_small, compact=True, page_w=page_w))
         story.append(Spacer(1, 0.45 * mm if usar_tabela_lote else (0.5 * mm if layout_dez_itens else 0.55 * mm)))
 
-        totais_itens = calcular_totais_pedido_venda(pedido, itens=itens)
         subtotal = totais_itens.subtotal_produtos
         total_desc = totais_itens.desconto_total
 
@@ -409,6 +431,7 @@ def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
                 compact=True,
                 tight=layout_denso,
                 ultra_compact=layout_dez_itens,
+                full_width=layout_dez_itens,
             )
         )
 

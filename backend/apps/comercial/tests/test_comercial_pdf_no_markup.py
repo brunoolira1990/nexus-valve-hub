@@ -101,7 +101,7 @@ class ComercialPdfNoMarkupTests(TestCase):
         pdf_bytes = gerar_pedido_venda_pdf_bytes(pedido)
         _assert_sem_nobr_cru(self, pdf_bytes, contexto='Pedido de Venda')
         texto = _pdf_text(pdf_bytes)
-        self.assertIn('Valor faturado', texto)
+        self.assertIn('Faturada:', texto)
         self.assertIn('R$ 500,00', texto)
         self.assertIn('R$ 250,00', texto)
 
