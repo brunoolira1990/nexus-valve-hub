@@ -1725,6 +1725,19 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         return response.Response(payload)
 
     def perform_destroy(self, instance):
+        from apps.fiscal.nfe_emissao.numeracao_liberacao import (
+            liberar_numero_fiscal_apos_descarte,
+            nf_pode_liberar_numero_fiscal,
+        )
+
+        if (instance.numero_nfe or '').strip():
+            pode, _ = nf_pode_liberar_numero_fiscal(instance)
+            if pode:
+                liberar_numero_fiscal_apos_descarte(
+                    instance,
+                    motivo='Liberação automática de numeração antes da exclusão local da NF-e.',
+                    usuario=self.request.user if self.request.user.is_authenticated else None,
+                )
         reverter_todos_itens_saida(instance)
         Certificado.objects.filter(nf_saida=instance).delete()
         instance.delete()

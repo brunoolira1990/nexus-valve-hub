@@ -472,6 +472,10 @@ class NFeSaidaEvento(models.Model):
         DESCARTE_RASCUNHO_NFE = 'DESCARTE_RASCUNHO_NFE', 'Descarte interno de NF-e rascunho'
         NUMERACAO_LIBERADA_DESCARTE = 'NUMERACAO_LIBERADA_DESCARTE', 'Numeração liberada após descarte local'
         NUMERACAO_REUTILIZADA = 'NUMERACAO_REUTILIZADA', 'Numeração reutilizada de descarte local'
+        NUMERACAO_RECUPERADA_LOCALMENTE = (
+            'NUMERACAO_RECUPERADA_LOCALMENTE',
+            'Numeração recuperada administrativamente (local)',
+        )
         IMPOSTOS_ATUALIZADOS = 'IMPOSTOS_ATUALIZADOS', 'Impostos atualizados da regra atual'
         CONFERENCIA_SALVA = 'CONFERENCIA_SALVA', 'Conferência salva'
         CONFERENCIA_VALIDADA = 'CONFERENCIA_VALIDADA', 'Conferência validada'
