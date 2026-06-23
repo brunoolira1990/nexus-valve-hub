@@ -282,18 +282,20 @@ def _status_saldo_global_pedido(q_pedido: Decimal, q_total_conferida: Decimal) -
 
 def _coletar_vinculos_globais_por_item_pedido(
     pedido_compra_id: int,
+    *,
+    somente_baixadas: bool = True,
 ) -> dict[int, dict[int, dict]]:
     """
     item_pedido_id → conferencia_id → {quantidade, nf_numero, nf_serie, conferencia_id}.
-  """
-    linhas_qs = (
-        ItemNFeEntradaConferencia.objects.filter(
-            conferencia__pedido_compra_id=pedido_compra_id,
-            item_pedido_compra_id__isnull=False,
-        )
-        .exclude(status=ItemNFeEntradaConferencia.Status.IGNORADO)
-        .select_related('conferencia__nf_entrada_historica')
-    )
+    Por padrão considera apenas conferências com baixa de pedido aplicada.
+    """
+    linhas_qs = ItemNFeEntradaConferencia.objects.filter(
+        conferencia__pedido_compra_id=pedido_compra_id,
+        item_pedido_compra_id__isnull=False,
+    ).exclude(status=ItemNFeEntradaConferencia.Status.IGNORADO)
+    if somente_baixadas:
+        linhas_qs = linhas_qs.filter(conferencia__pedido_baixa_aplicado_em__isnull=False)
+    linhas_qs = linhas_qs.select_related('conferencia__nf_entrada_historica')
     por_item: dict[int, dict[int, dict]] = {}
     for linha in linhas_qs:
         pid = linha.item_pedido_compra_id
@@ -308,7 +310,7 @@ def _coletar_vinculos_globais_por_item_pedido(
                 'quantidade': Decimal('0'),
             },
         )
-        bucket_conf['quantidade'] += _dec(linha.quantidade_nf)
+        bucket_conf['quantidade'] += _dec(linha.quantidade_pedido_baixada or linha.quantidade_nf)
     return por_item
 
 

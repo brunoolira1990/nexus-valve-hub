@@ -1711,6 +1711,7 @@ class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             'preparado_em',
             'estoque_aplicado_em',
             'estoque_aplicado_observacao',
+            'pedido_baixa_aplicado_em',
             'itens',
         )
 
@@ -1845,6 +1846,9 @@ class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):
         data['preparado_em'] = instance.preparado_em.isoformat() if instance.preparado_em else None
         data['estoque_aplicado_em'] = (
             instance.estoque_aplicado_em.isoformat() if instance.estoque_aplicado_em else None
+        )
+        data['pedido_baixa_aplicado_em'] = (
+            instance.pedido_baixa_aplicado_em.isoformat() if instance.pedido_baixa_aplicado_em else None
         )
         elegibilidades = [
             (row.get('elegibilidade_estoque') or {})

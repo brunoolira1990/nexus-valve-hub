@@ -1681,6 +1681,8 @@ export interface ItemPedido {
   produto_id: number;
   produto_nome: string;
   quantidade: number;
+  quantidade_recebida?: number;
+  saldo_pendente?: number;
   unidade_negociada?: string;
   quantidade_negociada?: number;
   unidade_estoque_calculada?: string;
@@ -2210,6 +2212,7 @@ export interface NFeEntradaConferencia {
   preparado_em?: string | null;
   estoque_aplicado_em?: string | null;
   estoque_aplicado_observacao?: string;
+  pedido_baixa_aplicado_em?: string | null;
   chave_acesso?: string;
   financeiro?: {
     financeiro_gerado?: boolean;
@@ -2253,6 +2256,13 @@ export interface ResultadoAplicacaoEstoque {
   itens_ignorados: ItemIgnoradoAplicacaoEstoque[];
   pendencias: PendenciaAplicacaoEstoque[];
   alertas: string[];
+  pedido_compra_baixa?: {
+    aplicado?: boolean;
+    ja_baixado?: boolean;
+    mensagem?: string;
+    pedido_compra_status?: string;
+    itens_baixados?: Array<{ item_pedido_compra_id: number; quantidade_baixada: string }>;
+  };
   conferencia?: NFeEntradaConferencia;
   detail?: string;
 }

@@ -12,7 +12,10 @@ from apps.financeiro.constants import FormaPagamentoCodigo
 from apps.financeiro.models import CategoriaFinanceira, CentroCusto, ContaFinanceira, TituloFinanceiro
 from apps.financeiro.services.titulo import TOLERANCIA_PARCELAS, criar_titulo_financeiro
 from apps.fiscal.models import NFeEntradaConferencia, NFeEntradaHistoricaImportada
-from apps.fiscal.nfe_entrada_duplicatas import montar_parcelas_sugeridas_nf_entrada
+from apps.fiscal.nfe_entrada_duplicatas import (
+    ORIGEM_PARCELAS_XML,
+    montar_parcelas_sugeridas_nf_entrada,
+)
 
 CENTAVO = Decimal('0.01')
 
@@ -260,7 +263,7 @@ def preview_contas_pagar_de_nfe_entrada(nf: NFeEntradaHistoricaImportada) -> dic
         raise ValueError(motivo)
 
     total = _round_money(nf.valor_total_nf or 0)
-    parcelas = montar_parcelas_sugeridas_nf_entrada(nf, conf)
+    parcelas, origem_parcelas, aviso_origem_parcelas = montar_parcelas_sugeridas_nf_entrada(nf, conf)
     flags = montar_flags_financeiro_nfe_entrada(nf, conf)
     forn = nf.fornecedor_emitente
     pedido_numero = conf.pedido_compra.numero if conf and conf.pedido_compra_id else ''
@@ -288,6 +291,9 @@ def preview_contas_pagar_de_nfe_entrada(nf: NFeEntradaHistoricaImportada) -> dic
         },
         'parcelas': parcelas,
         'quantidade_parcelas_sugeridas': len(parcelas),
+        'origem_parcelas': origem_parcelas,
+        'aviso_origem_parcelas': aviso_origem_parcelas,
+        'parcelas_do_xml': origem_parcelas == ORIGEM_PARCELAS_XML,
         'categoria_sugerida_id': sugerir_categoria_despesa_id(servico=_eh_nota_servico(nf)),
     }
 
@@ -303,7 +309,12 @@ def _parse_iso_date(value: str | date | None) -> date | None:
         return None
 
 
-def _validar_parcelas_payload(parcelas: list[dict], total: Decimal) -> list[dict]:
+def _validar_parcelas_payload(
+    parcelas: list[dict],
+    total: Decimal,
+    *,
+    preservar_valores_xml: bool = False,
+) -> list[dict]:
     if not parcelas:
         raise ValueError('Informe ao menos uma parcela.')
 
@@ -331,7 +342,7 @@ def _validar_parcelas_payload(parcelas: list[dict], total: Decimal) -> list[dict
     diff = abs(soma - total)
     if diff > TOLERANCIA_PARCELAS:
         raise ValueError(MSG_SOMA_PARCELAS)
-    if diff > 0 and normalizadas:
+    if diff > 0 and normalizadas and not preservar_valores_xml:
         ajuste = total - soma
         normalizadas[-1]['valor'] = _round_money(normalizadas[-1]['valor'] + ajuste)
 
@@ -415,6 +426,7 @@ def gerar_contas_pagar_de_nfe_entrada(
     confirmar_pendencias_operacionais: bool = False,
     usuario=None,
 ) -> TituloFinanceiro:
+    nf = NFeEntradaHistoricaImportada.objects.select_for_update(of=('self',)).get(pk=nf.pk)
     conf = _resolve_conferencia(nf)
     flags = montar_flags_financeiro_nfe_entrada(nf, conf)
     motivo = flags.get('motivo_bloqueio_financeiro') or ''
@@ -430,7 +442,12 @@ def gerar_contas_pagar_de_nfe_entrada(
     _validar_conta_financeira(conta_financeira_prevista_id)
     _validar_forma_pagamento(forma_pagamento_prevista_codigo)
 
-    parcelas_norm = _validar_parcelas_payload(parcelas, total)
+    _, origem_parcelas, _ = montar_parcelas_sugeridas_nf_entrada(nf, conf)
+    parcelas_norm = _validar_parcelas_payload(
+        parcelas,
+        total,
+        preservar_valores_xml=origem_parcelas == ORIGEM_PARCELAS_XML,
+    )
     primeiro_venc = min(p['data_vencimento'] for p in parcelas_norm)
     origem_numero = numero_nfe_entrada_exibicao(nf)
     data_emissao = nf.dh_emissao.date() if nf.dh_emissao else date.today()

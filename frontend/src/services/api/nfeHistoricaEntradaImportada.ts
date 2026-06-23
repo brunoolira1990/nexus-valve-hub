@@ -194,6 +194,9 @@ export type NFeGerarContasPagarPreview = {
   };
   parcelas: NFeGerarContasPagarParcela[];
   quantidade_parcelas_sugeridas: number;
+  origem_parcelas?: 'XML' | 'PEDIDO' | 'EMISSAO';
+  aviso_origem_parcelas?: string;
+  parcelas_do_xml?: boolean;
   categoria_sugerida_id: number | null;
 };
 

@@ -171,6 +171,18 @@ export function GerarContasPagarNfeEntradaModal({ open, nfeEntradaId, onClose, o
     <Modal isOpen={open} onClose={onClose} title="Gerar contas a pagar" size="lg" footer={footer}>
       <p className="text-sm text-muted-foreground mb-4">Revise as parcelas antes de gerar o financeiro.</p>
 
+      {preview?.aviso_origem_parcelas ? (
+        <p className="text-sm text-sky-900 bg-sky-50 border border-sky-200 rounded-md px-3 py-2 mb-4">
+          {preview.aviso_origem_parcelas}
+        </p>
+      ) : null}
+
+      {preview?.origem_parcelas === 'XML' ? (
+        <p className="text-sm text-emerald-900 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2 mb-4">
+          Parcelas sugeridas a partir das duplicatas do XML (vencimentos e valores preservados).
+        </p>
+      ) : null}
+
       {preview?.possui_pendencias_operacionais ? (
         <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-4">
           {preview.aviso_pendencias_wizard ||

@@ -1262,6 +1262,7 @@ class ItemPedidoCompraSerializer(serializers.ModelSerializer):
         source='produto',
     )
     produto_nome = serializers.SerializerMethodField(read_only=True)
+    saldo_pendente = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = ItemPedidoCompra
@@ -1270,6 +1271,8 @@ class ItemPedidoCompraSerializer(serializers.ModelSerializer):
             'produto_id',
             'produto_nome',
             'quantidade',
+            'quantidade_recebida',
+            'saldo_pendente',
             'unidade_negociada',
             'quantidade_negociada',
             'unidade_estoque_calculada',
@@ -1296,6 +1299,14 @@ class ItemPedidoCompraSerializer(serializers.ModelSerializer):
 
     def get_produto_nome(self, obj):
         return obj.produto.descricao
+
+    def get_saldo_pendente(self, obj):
+        q_pedido = _dec(obj.quantidade_negociada) or _dec(obj.quantidade)
+        q_rec = _dec(obj.quantidade_recebida)
+        saldo = q_pedido - q_rec
+        if saldo < 0:
+            saldo = Decimal('0')
+        return float(saldo)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

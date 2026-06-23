@@ -2336,6 +2336,28 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
             },
         )
 
+    @action(detail=True, methods=['post'], url_path='conferencia/baixar-pedido-compra')
+    @transaction.atomic
+    def baixar_pedido_compra_conferencia(self, request, pk=None):
+        """Baixa pedido de compra vinculado (idempotente) sem movimentar estoque."""
+        from apps.fiscal.pedido_compra_baixa import aplicar_baixa_pedido_compra_conferencia
+
+        nf = self.get_queryset().get(pk=pk)
+        conferencia = self._get_or_build_conferencia(nf)
+        conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
+        try:
+            resultado = aplicar_baixa_pedido_compra_conferencia(conferencia, usuario=request.user)
+        except ValueError as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
+        return response.Response(
+            {
+                **resultado,
+                'conferencia': NFeEntradaConferenciaSerializer(conferencia).data,
+            },
+        )
+
     @action(detail=True, methods=['get'], url_path='financeiro/preview-contas-pagar')
     def preview_contas_pagar(self, request, pk=None):
         """ERP 4.0.14.4 — preview de contas a pagar (sem persistir)."""

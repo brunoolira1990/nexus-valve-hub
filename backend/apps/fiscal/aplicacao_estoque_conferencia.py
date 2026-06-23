@@ -27,6 +27,7 @@ from apps.fiscal.models import (
     ItemNFeEntradaConferencia,
     NFeEntradaConferencia,
 )
+from apps.fiscal.pedido_compra_baixa import aplicar_baixa_pedido_compra_conferencia
 from apps.regras_fiscais.entrada_fiscal import (
     avaliar_item_entrada_fiscal,
     carregar_regras_fiscais_entrada_ativas,
@@ -62,6 +63,7 @@ class ResultadoAplicacaoEstoqueDict(TypedDict):
     itens_ignorados: list[ItemIgnoradoEstoqueDict]
     pendencias: list[PendenciaAplicacaoEstoqueDict]
     alertas: list[str]
+    pedido_compra_baixa: dict[str, Any]
 
 
 @dataclass
@@ -255,6 +257,7 @@ def _montar_resultado_plano(
         'itens_ignorados': [],
         'pendencias': [],
         'alertas': [],
+        'pedido_compra_baixa': {},
     }
 
     if conferencia.estoque_aplicado_em:
@@ -467,6 +470,12 @@ def aplicar_estoque_fisico_conferencia(
     )
 
     _atualizar_atendimentos_pos_aplicacao_fisica(conferencia, agora)
+
+    if conferencia.pedido_compra_id:
+        resultado['pedido_compra_baixa'] = aplicar_baixa_pedido_compra_conferencia(
+            conferencia,
+            usuario=usuario,
+        )
 
     resultado['aplicado'] = True
     return resultado

@@ -911,6 +911,14 @@ class NFeEntradaConferencia(models.Model):
         related_name='conferencias_estoque_aplicado',
     )
     estoque_aplicado_observacao = models.TextField(blank=True)
+    pedido_baixa_aplicado_em = models.DateTimeField(null=True, blank=True)
+    pedido_baixa_aplicado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='conferencias_pedido_baixa_aplicado',
+    )
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
 
@@ -990,6 +998,12 @@ class ItemNFeEntradaConferencia(models.Model):
         blank=True,
         related_name='itens_conferencia_entrada',
     )
+    quantidade_pedido_baixada = models.DecimalField(
+        max_digits=14,
+        decimal_places=3,
+        default=Decimal('0'),
+    )
+    pedido_baixa_aplicada_em = models.DateTimeField(null=True, blank=True)
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
 

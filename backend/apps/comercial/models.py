@@ -592,6 +592,7 @@ class ItemPedidoCompra(models.Model):
     pedido = models.ForeignKey(PedidoCompra, on_delete=models.CASCADE, related_name='itens')
     produto = models.ForeignKey('produtos.Produto', on_delete=models.PROTECT)
     quantidade = models.DecimalField(max_digits=14, decimal_places=3)
+    quantidade_recebida = models.DecimalField(max_digits=14, decimal_places=3, default=Decimal('0'))
     valor_unitario = models.DecimalField(max_digits=14, decimal_places=2)
     unidade_negociada = models.CharField(max_length=16, blank=True)
     quantidade_negociada = models.DecimalField(max_digits=14, decimal_places=3, default=Decimal('0'))

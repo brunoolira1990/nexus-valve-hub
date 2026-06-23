@@ -263,6 +263,12 @@ const NFeEntradaConferenciaPage = () => {
       }
       setModalAplicarOpen(false);
       setPreviewAplicar(null);
+      const baixa = res.pedido_compra_baixa;
+      if (baixa?.aplicado) {
+        toast.success(baixa.mensagem || 'Pedido de compra baixado.');
+      } else if (baixa?.ja_baixado) {
+        toast.info(baixa.mensagem || 'Pedido de compra já estava baixado para esta NF-e.');
+      }
     } catch (e: unknown) {
       const err = e as { response?: { data?: ResultadoAplicacaoEstoque & { detail?: string } } };
       const data = err.response?.data;
@@ -327,6 +333,9 @@ const NFeEntradaConferenciaPage = () => {
             <div>{dados.status}</div>
             {estoqueJaAplicado ? (
               <span className="erp-badge-success text-[10px] mt-1 inline-block">Estoque aplicado</span>
+            ) : null}
+            {dados.pedido_baixa_aplicado_em ? (
+              <span className="erp-badge-success text-[10px] mt-1 inline-block ml-1">Pedido baixado</span>
             ) : null}
           </div>
           <div><div className="text-muted-foreground text-xs">Emissão</div><div>{dados.data_emissao?.slice(0, 10)}</div></div>
