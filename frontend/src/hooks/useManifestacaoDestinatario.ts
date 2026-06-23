@@ -26,8 +26,7 @@ export function useManifestacaoDestinatario(
   const [fechamento, setFechamento] = useState<FechamentoManifestacaoPreview | null>(null);
   const [detalhe, setDetalhe] = useState<NFeDestinadaDetalhe | null>(null);
   const [manifestRow, setManifestRow] = useState<NFeDestinadaDocumento | null>(null);
-  const [eventoSel, setEventoSel] = useState<EventoManifestacaoDestinatario | ''>('');
-  const [justificativa, setJustificativa] = useState('');
+  const [manifestModalKey, setManifestModalKey] = useState(0);
   const [confirmBaixar, setConfirmBaixar] = useState<NFeDestinadaDocumento | null>(null);
   const [confirmArmazenar, setConfirmArmazenar] = useState<{
     row: CentralDfeDocumento;
@@ -39,12 +38,11 @@ export function useManifestacaoDestinatario(
   const [loadingSyncResumos, setLoadingSyncResumos] = useState(false);
   const [loadingAcaoManual, setLoadingAcaoManual] = useState(false);
 
-  useEffect(() => {
-    if (manifestRow) {
-      setEventoSel('');
-      setJustificativa('');
-    }
-  }, [manifestRow?.id, manifestRow?.chave_acesso]);
+  const abrirModalManifestacao = useCallback((doc: NFeDestinadaDocumento) => {
+    setManifestModalKey((k) => k + 1);
+    setManifestRow(doc);
+    setDfeDetalheRow(null);
+  }, []);
 
   const registrarDocumentoLocal = useCallback((doc: NFeDestinadaDocumento) => {
     setManifestacaoMap((prev) => {
@@ -155,7 +153,7 @@ export function useManifestacaoDestinatario(
         setLoadingAcaoManual(false);
       }
     },
-    [empresaId, manifestacaoMap, registrarDocumentoLocal, carregarFechamento],
+    [empresaId, manifestacaoMap, registrarDocumentoLocal, carregarFechamento, abrirModalManifestacao],
   );
 
   const iniciarManifestacaoManual = async (
@@ -164,10 +162,7 @@ export function useManifestacaoDestinatario(
   ) => {
     const doc = manifestacao ?? (await prepararManifestacaoPorDfe(row));
     if (!doc) return;
-    setManifestRow(doc);
-    setEventoSel('');
-    setJustificativa('');
-    setDfeDetalheRow(null);
+    abrirModalManifestacao(doc);
   };
 
   const iniciarArmazenarXmlManual = async (
@@ -226,13 +221,18 @@ export function useManifestacaoDestinatario(
   );
 
   /** Ação manual exclusiva — envia evento fiscal SEFAZ. */
-  const executarManifestacao = async (onAfter?: () => void | Promise<void>, chavesCentral?: Set<string>) => {
-    if (!manifestRow || !eventoSel) return;
+  const executarManifestacao = async (
+    evento: EventoManifestacaoDestinatario,
+    justificativa: string,
+    onAfter?: () => void | Promise<void>,
+    chavesCentral?: Set<string>,
+  ) => {
+    if (!manifestRow) return;
     const manifestId = manifestRow.id;
     setLoadingAcaoManual(true);
     try {
       const resp = await manifestacaoDestinatarioService.manifestar(manifestRow.id, {
-        evento: eventoSel,
+        evento,
         justificativa,
         confirmacao_explicita: true,
       });
@@ -254,8 +254,6 @@ export function useManifestacaoDestinatario(
         'Manifestação registrada.';
       toast.success(msgSucesso);
       setManifestRow(null);
-      setEventoSel('');
-      setJustificativa('');
       await carregarManifestacao(chavesCentral ?? new Set());
       await carregarFechamento();
       await onAfter?.();
@@ -320,10 +318,8 @@ export function useManifestacaoDestinatario(
     setDetalhe,
     manifestRow,
     setManifestRow,
-    eventoSel,
-    setEventoSel,
-    justificativa,
-    setJustificativa,
+    manifestModalKey,
+    abrirModalManifestacao,
     confirmBaixar,
     setConfirmBaixar,
     confirmArmazenar,

@@ -1,4 +1,5 @@
 import { Loader2 } from 'lucide-react';
+import { useState } from 'react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,13 +51,88 @@ const fmtMoney = (v: string | number | null | undefined): string => {
   return `R$ ${Number.isFinite(n) ? n.toFixed(2) : '0.00'}`;
 };
 
+type ManifestacaoEventoFormProps = {
+  documento: NFeDestinadaDocumento;
+  loadingAcao: boolean;
+  onCancel: () => void;
+  onConfirm: (evento: EventoManifestacaoDestinatario, justificativa: string) => void;
+};
+
+function ManifestacaoEventoForm({
+  documento,
+  loadingAcao,
+  onCancel,
+  onConfirm,
+}: ManifestacaoEventoFormProps) {
+  const [eventoSel, setEventoSel] = useState<EventoManifestacaoDestinatario | null>(null);
+  const [justificativa, setJustificativa] = useState('');
+
+  return (
+    <div>
+      <p className="text-sm text-muted-foreground">
+        Chave: {chaveNfeResumida(documento.chave_acesso)}
+      </p>
+      <p className="text-xs text-muted-foreground border rounded-md p-2 bg-muted/40">
+        A atualização da Central DF-e não envia eventos fiscais. Escolha o evento abaixo e confirme
+        explicitamente para manifestar esta NF-e.
+      </p>
+      <div className="space-y-3">
+        <Label>Selecione o evento (sem pré-seleção automática)</Label>
+        <div className="space-y-2" role="radiogroup" aria-label="Evento de manifestação">
+          {EVENTOS_MANIFESTACAO.map((ev) => {
+            const selecionado = eventoSel === ev;
+            return (
+              <button
+                key={ev}
+                type="button"
+                role="radio"
+                aria-checked={selecionado}
+                className={`flex w-full items-start gap-2 border rounded-md p-3 text-left transition-colors ${
+                  selecionado
+                    ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                    : 'border-border hover:bg-muted/40'
+                }`}
+                onClick={() => setEventoSel(ev)}
+              >
+                <span
+                  className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border ${
+                    selecionado ? 'border-primary bg-primary' : 'border-muted-foreground/50 bg-background'
+                  }`}
+                  aria-hidden
+                />
+                <span>
+                  <span className="font-medium block">{LABEL_EVENTO_MANIFESTACAO[ev]}</span>
+                  <span className="text-xs text-muted-foreground">{DESCRICAO_EVENTO_MANIFESTACAO[ev]}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {eventoSel === 'OPERACAO_NAO_REALIZADA' && (
+          <div>
+            <Label>Justificativa (obrigatória)</Label>
+            <Textarea value={justificativa} onChange={(e) => setJustificativa(e.target.value)} rows={3} />
+          </div>
+        )}
+      </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={onCancel}>Cancelar</Button>
+        <Button
+          disabled={!eventoSel || loadingAcao}
+          onClick={() => eventoSel && onConfirm(eventoSel, justificativa)}
+        >
+          {loadingAcao ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+          Confirmar manifestação
+        </Button>
+      </DialogFooter>
+    </div>
+  );
+}
+
 type Props = {
   manifestRow: NFeDestinadaDocumento | null;
+  manifestModalKey: number;
   onManifestRowChange: (row: NFeDestinadaDocumento | null) => void;
-  eventoSel: EventoManifestacaoDestinatario | '';
-  onEventoSelChange: (ev: EventoManifestacaoDestinatario | '') => void;
-  justificativa: string;
-  onJustificativaChange: (v: string) => void;
   detalhe: NFeDestinadaDetalhe | null;
   onDetalheChange: (d: NFeDestinadaDetalhe | null) => void;
   dfeDetalheRow: CentralDfeDocumento | null;
@@ -70,17 +146,14 @@ type Props = {
   onConfirmBaixarChange: (row: NFeDestinadaDocumento | null) => void;
   confirmArmazenarAberto?: boolean;
   loadingAcao: boolean;
-  onExecutarManifestacao: () => void;
+  onExecutarManifestacao: (evento: EventoManifestacaoDestinatario, justificativa: string) => void;
   onExecutarBaixarXml: () => void;
 };
 
 export function ManifestacaoDestinatarioModals({
   manifestRow,
+  manifestModalKey,
   onManifestRowChange,
-  eventoSel,
-  onEventoSelChange,
-  justificativa,
-  onJustificativaChange,
   detalhe,
   onDetalheChange,
   dfeDetalheRow,
@@ -98,8 +171,6 @@ export function ManifestacaoDestinatarioModals({
   onExecutarBaixarXml,
 }: Props) {
   const fecharModalManifestacao = () => {
-    onEventoSelChange('');
-    onJustificativaChange('');
     onManifestRowChange(null);
   };
 
@@ -111,58 +182,13 @@ export function ManifestacaoDestinatarioModals({
             <DialogTitle>Manifestar NF-e destinada</DialogTitle>
           </DialogHeader>
           {manifestRow && (
-          <div key={`manifestacao-${manifestRow.id}-${manifestRow.chave_acesso}`}>
-          <p className="text-sm text-muted-foreground">
-            Chave: {chaveNfeResumida(manifestRow.chave_acesso)}
-          </p>
-          <p className="text-xs text-muted-foreground border rounded-md p-2 bg-muted/40">
-            A atualização da Central DF-e não envia eventos fiscais. Escolha o evento abaixo e confirme
-            explicitamente para manifestar esta NF-e.
-          </p>
-          <div className="space-y-3">
-            <Label>Selecione o evento (sem pré-seleção automática)</Label>
-            <div className="space-y-2" role="radiogroup" aria-label="Evento de manifestação">
-              {EVENTOS_MANIFESTACAO.map((ev) => (
-                <button
-                  key={ev}
-                  type="button"
-                  role="radio"
-                  aria-checked={eventoSel === ev}
-                  className={`flex w-full items-start gap-2 border rounded-md p-3 text-left transition-colors ${
-                    eventoSel === ev
-                      ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                      : 'border-border hover:bg-muted/40'
-                  }`}
-                  onClick={() => onEventoSelChange(ev)}
-                >
-                  <span
-                    className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border ${
-                      eventoSel === ev ? 'border-primary bg-primary' : 'border-muted-foreground/50'
-                    }`}
-                    aria-hidden
-                  />
-                  <span>
-                    <span className="font-medium block">{LABEL_EVENTO_MANIFESTACAO[ev]}</span>
-                    <span className="text-xs text-muted-foreground">{DESCRICAO_EVENTO_MANIFESTACAO[ev]}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-            {eventoSel === 'OPERACAO_NAO_REALIZADA' && (
-              <div>
-                <Label>Justificativa (obrigatória)</Label>
-                <Textarea value={justificativa} onChange={(e) => onJustificativaChange(e.target.value)} rows={3} />
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={fecharModalManifestacao}>Cancelar</Button>
-            <Button disabled={!eventoSel || loadingAcao} onClick={onExecutarManifestacao}>
-              {loadingAcao ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Confirmar manifestação
-            </Button>
-          </DialogFooter>
-          </div>
+            <ManifestacaoEventoForm
+              key={`manifestacao-${manifestRow.id}-${manifestRow.chave_acesso}-${manifestModalKey}`}
+              documento={manifestRow}
+              loadingAcao={loadingAcao}
+              onCancel={fecharModalManifestacao}
+              onConfirm={onExecutarManifestacao}
+            />
           )}
         </DialogContent>
       </Dialog>

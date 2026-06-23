@@ -81,6 +81,15 @@ def resolver_url_status_servico(comunicacao: Any, *, modelo: str = 'nfe') -> str
         return ''
 
 
+def resolver_url_evento_manifestacao(comunicacao: Any) -> str:
+    """URL do NFeRecepcaoEvento4 no Ambiente Nacional (manifestação do destinatário)."""
+    try:
+        return str(comunicacao._get_url_an(consulta='EVENTOS') or '')
+    except Exception as exc:
+        logger.debug('Falha ao resolver URL manifestação AN: %s', exc)
+        return ''
+
+
 def criar_comunicacao_sefaz(
     uf: str,
     caminho_certificado: str,

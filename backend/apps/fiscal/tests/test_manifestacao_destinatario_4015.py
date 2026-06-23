@@ -21,8 +21,11 @@ from apps.fiscal.manifestacao_destinatario.constants import (
 )
 from apps.fiscal.manifestacao_destinatario.resnfe_parser import parse_resnfe_xml
 from apps.fiscal.manifestacao_destinatario.uf_chave import (
-    aplicar_corgao_evento_manifestacao,
+    CORGAO_MANIFESTACAO_DESTINATARIO,
+    UF_SERVICO_MANIFESTACAO,
+    chave_prefixo_uf,
     corgao_ibge_por_chave,
+    garantir_corgao_ambiente_nacional,
     uf_autorizadora_por_chave,
 )
 from apps.fiscal.models import NFeDestinadaManifestacao, NFeDestinadaManifestacaoEvento
@@ -99,22 +102,28 @@ class ManifestacaoDestinatarioTests(TestCase):
             '31',
         )
 
-    def test_aplicar_corgao_evento_manifestacao(self):
+    def test_garantir_corgao_ambiente_nacional(self):
         import xml.etree.ElementTree as ET
 
         xml = ET.fromstring(
             b'<evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">'
-            b'<infEvento Id="ID"><cOrgao>91</cOrgao></infEvento></evento>',
+            b'<infEvento Id="ID"><cOrgao>35</cOrgao></infEvento></evento>',
         )
-        aplicar_corgao_evento_manifestacao(xml, '35')
+        garantir_corgao_ambiente_nacional(xml)
         corgao = next(el.text for el in xml.iter() if el.tag.split('}')[-1] == 'cOrgao')
-        self.assertEqual(corgao, '35')
+        self.assertEqual(corgao, CORGAO_MANIFESTACAO_DESTINATARIO)
+
+    def test_chave_prefixo_uf(self):
+        self.assertEqual(
+            chave_prefixo_uf('35260622222222222222550010000001234567890123'),
+            '35',
+        )
 
     @patch('apps.fiscal.manifestacao_destinatario.manifestacao_service._montar_assinar_evento_manifestacao')
     @patch('apps.fiscal.manifestacao_destinatario.manifestacao_service.transmitir_evento_nfe')
     @patch('apps.fiscal.manifestacao_destinatario.manifestacao_service.carregar_certificado_empresa')
     @patch('apps.fiscal.manifestacao_destinatario.manifestacao_service.criar_comunicacao_sefaz')
-    def test_manifestacao_usa_uf_da_chave_nao_da_empresa(self, mock_comm, mock_cert, mock_tx, mock_assinar):
+    def test_manifestacao_usa_ambiente_nacional_nao_uf_da_chave(self, mock_comm, mock_cert, mock_tx, mock_assinar):
         from apps.fiscal.nfe_integracao.adapters.certificado_a1 import CertificadoA1Info
 
         mock_cert.return_value = CertificadoA1Info(
@@ -139,10 +148,8 @@ class ManifestacaoDestinatarioTests(TestCase):
         )
         self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.content)
         mock_assinar.assert_called_once()
-        self.assertEqual(mock_assinar.call_args.kwargs['uf'], 'MG')
-        self.assertEqual(mock_assinar.call_args.kwargs['corgao'], '31')
         mock_comm.assert_called_once()
-        self.assertEqual(mock_comm.call_args.args[0], 'MG')
+        self.assertEqual(mock_comm.call_args.args[0], UF_SERVICO_MANIFESTACAO)
 
     def test_listagem_sem_xml_completo(self):
         doc = self._doc()

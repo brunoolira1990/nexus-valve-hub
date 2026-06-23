@@ -429,10 +429,8 @@ const CentralDfe = () => {
     setDetalhe,
     manifestRow,
     setManifestRow,
-    eventoSel,
-    setEventoSel,
-    justificativa,
-    setJustificativa,
+    manifestModalKey,
+    abrirModalManifestacao,
     confirmBaixar,
     setConfirmBaixar,
     confirmArmazenar,
@@ -738,10 +736,6 @@ const CentralDfe = () => {
 
   const fecharManifestacao = (row: NFeDestinadaDocumento | null) => {
     setManifestRow(row);
-    if (!row) {
-      setEventoSel('');
-      setJustificativa('');
-    }
   };
 
   const copiarChave = async (row: CentralDfeDocumento) => {
@@ -1081,11 +1075,8 @@ const CentralDfe = () => {
 
       <ManifestacaoDestinatarioModals
         manifestRow={manifestRow}
+        manifestModalKey={manifestModalKey}
         onManifestRowChange={fecharManifestacao}
-        eventoSel={eventoSel}
-        onEventoSelChange={setEventoSel}
-        justificativa={justificativa}
-        onJustificativaChange={setJustificativa}
         detalhe={detalhe}
         onDetalheChange={setDetalhe}
         dfeDetalheRow={dfeDetalheRow}
@@ -1107,10 +1098,7 @@ const CentralDfe = () => {
           );
         }}
         onAbrirManifestacaoDocumento={(doc) => {
-          setManifestRow(doc);
-          setEventoSel('');
-          setJustificativa('');
-          setDfeDetalheRow(null);
+          abrirModalManifestacao(doc);
           setDetalhe(null);
         }}
         onAbrirHistoricoDocumento={(doc) => {
@@ -1125,7 +1113,9 @@ const CentralDfe = () => {
         }}
         confirmArmazenarAberto={Boolean(confirmArmazenar)}
         loadingAcao={loadingAcaoManual}
-        onExecutarManifestacao={() => void executarManifestacao(() => recarregarTudo(), chavesCentralNfe)}
+        onExecutarManifestacao={(evento, justificativa) =>
+          void executarManifestacao(evento, justificativa, () => recarregarTudo(), chavesCentralNfe)
+        }
         onExecutarBaixarXml={() => void executarArmazenarXmlNfe(() => recarregarTudo(), chavesCentralNfe)}
       />
 
