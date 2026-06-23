@@ -18,6 +18,7 @@
 - **Formato:** `PV-AAAAMMDD-NNNN`
 - **Sequência:** por dia, com base na `data` do pedido
 - **Conversão proposta → pedido:** sempre gera número **próprio** de PV; vínculo com a proposta fica em `proposta_id` / badge / link na UI — **não** embute `PROP-…` no número do pedido (descartado padrão `PV-{numero_proposta}`).
+- **Ordem dos itens:** exibição, API, PDF do pedido, faturamento, NF-e rascunho/conferência e DANFE de prévia listam itens na **ordem de inclusão** (`id` ascendente). Não há reordenação por código, descrição ou NCM.
 
 ## Registros legados (compatibilidade)
 

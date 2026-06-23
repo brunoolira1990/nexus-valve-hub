@@ -185,18 +185,22 @@ class NFeSaidaPreviewTests(TestCase):
         self.assertTrue(pdf.startswith(b'%PDF'))
         self.assertIn('danfe-conferencia', meta['filename'])
 
-    def test_danfe_ordenar_itens_por_descricao(self):
+    def test_itens_mantem_ordem_inclusao_no_preview(self):
         nf = _nf_rascunho()
         dados = gerar_dados_preview_nfe_saida(nf)
         nomes = [i['x_prod'] for i in dados['itens']]
-        self.assertEqual(nomes[0], 'Alpha Item')
-        self.assertEqual(nomes[1], 'Zebra Item')
+        self.assertEqual(nomes[0], 'Zebra Item')
+        self.assertEqual(nomes[1], 'Alpha Item')
 
     def test_recomendacoes_aplicadas_e_nao_aplicadas(self):
         nf = _nf_rascunho()
         dados = gerar_dados_preview_nfe_saida(nf)
         aplicadas = dados['recomendacoes']['recomendacoes_aplicadas']
-        self.assertTrue(any('ordenados' in a.lower() for a in aplicadas))
+        nao_aplicadas = dados['recomendacoes']['recomendacoes_nao_aplicadas']
+        self.assertFalse(any('ordenados' in a.lower() for a in aplicadas))
+        self.assertTrue(
+            any('ordem de inclusão' in a.lower() for a in nao_aplicadas),
+        )
         self.assertTrue(any('PIS/COFINS' in a for a in aplicadas))
 
     def test_manual_alerta(self):

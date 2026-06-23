@@ -113,7 +113,9 @@ def gerar_nfe_saida_from_faturamento(
     if st_pedido in STATUS_PEDIDO_CANCELADO:
         raise ValueError('Pedido cancelado não pode gerar NF-e Saída.')
 
-    linhas = list(fat.itens.select_related('produto', 'item_pedido').all())
+    from apps.core.ordenacao_itens import listar_itens_por_inclusao
+
+    linhas = listar_itens_por_inclusao(fat.itens.select_related('produto', 'item_pedido'))
     if not linhas:
         raise ValueError('Faturamento sem itens para gerar NF-e Saída.')
 

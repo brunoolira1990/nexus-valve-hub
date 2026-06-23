@@ -283,7 +283,7 @@ def obter_recomendacoes_nfe_danfe(nfe_saida: NFeSaida) -> dict[str, Any]:
         elif key == 'danfe_paisagem':
             aplicadas.append(label)
         elif key == 'ordenar_itens_por_descricao':
-            aplicadas.append(label)
+            nao_aplicadas.append(f'{label} (ordem de inclusão do documento tem prioridade)')
         elif key in ('ocultar_destaque_pis_cofins', 'ocultar_destaque_icms_st_itens'):
             aplicadas.append(label)
         elif key == 'exibir_email_destinatario':
@@ -305,9 +305,11 @@ def obter_recomendacoes_nfe_danfe(nfe_saida: NFeSaida) -> dict[str, Any]:
 
 
 def _ordenar_itens(nf: NFeSaida, itens: list[ItemNFeSaida], recs: dict[str, bool]) -> list[ItemNFeSaida]:
-    if recs.get('ordenar_itens_por_descricao'):
-        return sorted(itens, key=lambda i: (_descricao_item(i).upper(), i.pk))
-    return list(itens)
+    """Ordem de inclusão (id ASC). Recomendações fiscais não reordenam por descrição."""
+    from apps.core.ordenacao_itens import listar_itens_por_inclusao
+
+    _ = nf, recs
+    return listar_itens_por_inclusao(itens)
 
 
 def gerar_dados_preview_nfe_saida(
@@ -315,6 +317,7 @@ def gerar_dados_preview_nfe_saida(
     *,
     incluir_validacao_emissao: bool = True,
 ) -> dict[str, Any]:
+    from apps.core.ordenacao_itens import listar_itens_por_inclusao
     from apps.fiscal.nfe_saida_xml_nfelib import fone_nfe_digits
     from apps.fiscal.nfe_transp_bindings import montar_transporte_dados_nfe
 
@@ -345,7 +348,7 @@ def gerar_dados_preview_nfe_saida(
     if uf_origem and uf_destino:
         id_dest = '1' if uf_origem == uf_destino else '2'
 
-    itens_raw = list(nf.itens.select_related('produto').all())
+    itens_raw = listar_itens_por_inclusao(nf.itens.select_related('produto'))
     itens_ord = _ordenar_itens(nf, itens_raw, recs)
 
     linhas = []

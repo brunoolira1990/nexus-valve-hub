@@ -607,6 +607,9 @@ class ItemNFeSaida(models.Model):
     observacao_item = models.TextField(blank=True)
     informacao_adicional_item = models.TextField(blank=True)
 
+    class Meta:
+        ordering = ['id']
+
 
 class AtendimentoEstoque(models.Model):
     class OrigemTipo(models.TextChoices):

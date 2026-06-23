@@ -456,6 +456,9 @@ class ItemPedidoVenda(models.Model):
         default=StatusItem.PENDENTE,
     )
 
+    class Meta:
+        ordering = ['id']
+
 
 class FaturamentoPedidoVenda(models.Model):
     """Solicitação de faturamento parcial/total — preparação para NF-e (sem emissão nesta fase)."""

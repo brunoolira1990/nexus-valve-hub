@@ -5,6 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
+from apps.core.ordenacao_itens import listar_itens_por_inclusao
 from apps.fiscal.models import ItemNFeSaida, NFeSaida
 from apps.fiscal.nfe_saida_bloqueio import (
     dados_complementares_editaveis,
@@ -488,7 +489,7 @@ def montar_conferencia_nfe_saida(
         nf = garantir_ambiente_emissao_nfe_saida(nf)
         itens_rows = [
             _montar_item_conferencia(nf, item, idx)
-            for idx, item in enumerate(nf.itens.all().order_by('pk'), start=1)
+            for idx, item in enumerate(listar_itens_por_inclusao(nf.itens.all()), start=1)
         ]
         totais_fiscais = _somar_totais_fiscais(itens_rows)
         soma_produtos = sum((_dec(i['valor_total']) for i in itens_rows), Decimal('0'))

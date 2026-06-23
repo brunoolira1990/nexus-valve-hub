@@ -514,7 +514,9 @@ def validar_nfe_saida_para_emissao(
         )
 
     # --- Itens ---
-    itens = list(nf.itens.select_related('produto', 'item_faturamento_pedido').all())
+    from apps.core.ordenacao_itens import listar_itens_por_inclusao
+
+    itens = listar_itens_por_inclusao(nf.itens.select_related('produto', 'item_faturamento_pedido'))
     if not itens:
         _add(
             grupos,
