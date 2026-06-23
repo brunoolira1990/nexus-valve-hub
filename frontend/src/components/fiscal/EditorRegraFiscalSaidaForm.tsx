@@ -310,6 +310,41 @@ export const EditorRegraFiscalSaidaForm = ({ abaForm, form, setForm }: Props) =>
               <input className="erp-input mt-1" value={form.reducao_bc_st} onChange={(e) => f('reducao_bc_st', e.target.value)} />
             </div>
           </div>
+          <h4 className="font-medium text-xs mt-4 mb-2 text-muted-foreground">DIFAL (venda interestadual — não contribuinte)</h4>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+            <div>
+              <label className="erp-label">DIFAL aplicável</label>
+              <select
+                className="erp-select mt-1"
+                value={form.difal_aplicavel}
+                onChange={(e) => f('difal_aplicavel', e.target.value as '' | 'sim' | 'nao')}
+              >
+                {BOOL_TRI_OPCOES.map((o) => (
+                  <option key={o.value || 'nc'} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="erp-label">Alíquota ICMS interestadual (%)</label>
+              <input
+                className="erp-input mt-1"
+                value={form.aliquota_icms_interestadual}
+                onChange={(e) => f('aliquota_icms_interestadual', e.target.value)}
+                placeholder="Ex.: 12"
+              />
+            </div>
+            <div>
+              <label className="erp-label">Alíquota ICMS interna UF destino (%)</label>
+              <input
+                className="erp-input mt-1"
+                value={form.aliquota_icms_interna_destino}
+                onChange={(e) => f('aliquota_icms_interna_destino', e.target.value)}
+                placeholder="Ex.: 20"
+              />
+            </div>
+          </div>
           <h4 className="font-medium text-xs mt-4 mb-2 text-muted-foreground">FCP</h4>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>

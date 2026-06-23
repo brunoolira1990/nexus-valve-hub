@@ -432,6 +432,26 @@ class RegraFiscalSaida(models.Model):
     mva_st = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
     reducao_bc_st = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
 
+    difal_aplicavel = models.BooleanField(
+        null=True,
+        blank=True,
+        help_text='Calcula DIFAL/ICMSUFDest em venda interestadual a consumidor final não contribuinte.',
+    )
+    aliquota_icms_interestadual = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text='Alíquota interestadual (pICMSInter) para DIFAL.',
+    )
+    aliquota_icms_interna_destino = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text='Alíquota interna da UF destino (pICMSUFDest) para DIFAL.',
+    )
+
     fcp_aplicavel = models.BooleanField(null=True, blank=True)
     aliquota_fcp = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
     aliquota_fcp_st = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)

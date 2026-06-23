@@ -338,6 +338,9 @@ def gerar_dados_preview_nfe_saida(
     cli = nf.cliente
     uf_origem = _text(emp.uf) if emp else ''
     uf_destino = _text(cli.uf) if cli else ''
+    from apps.fiscal.nfe_destinatario_fiscal import resolver_perfil_destinatario_nf
+
+    perfil_dest = resolver_perfil_destinatario_nf(nf)
     id_dest = '1'
     if uf_origem and uf_destino:
         id_dest = '1' if uf_origem == uf_destino else '2'
@@ -351,6 +354,9 @@ def gerar_dados_preview_nfe_saida(
     for idx, item in enumerate(itens_ord, start=1):
         snap_f = item.snapshot_fiscal or {}
         snap_c = item.snapshot_comercial or {}
+        from apps.fiscal.snapshot_fiscal_helpers import get_difal_snapshot
+
+        difal_snap = get_difal_snapshot(snap_f)
         v_prod = _valor_linha(item)
         soma_prod += v_prod
         desconto = dec(snap_c.get('desconto', 0))
@@ -377,6 +383,7 @@ def gerar_dados_preview_nfe_saida(
                     'cst': _text(snap_f.get('cst_icms')),
                     'aliquota': _text(snap_f.get('aliquota_icms') or snap_f.get('icms_saida_percentual')),
                 },
+                'difal': difal_snap,
                 'ipi': {
                     'cst': _text(snap_f.get('cst_ipi')),
                     'aliquota': _text(snap_f.get('aliquota_ipi') or snap_f.get('ipi_saida_percentual')),
@@ -444,6 +451,7 @@ def gerar_dados_preview_nfe_saida(
             'cnpj': _digits(cli.cnpj) if cli else '',
             'x_nome': _text(cli.razao_social) if cli else '',
             'ie': _text(cli.ie) if cli else '',
+            'ind_ie_dest': perfil_dest.ind_ie_dest,
             'uf': uf_destino,
             'email': _text(cli.email_nf or cli.email) if cli else '',
             'exibir_email': bool(recs.get('exibir_email_destinatario') and cli),
@@ -539,11 +547,30 @@ def _ender(parent: ET.Element, prefix: str, *, logr, nro, compl, bairro, mun, uf
 
 
 def _build_imposto_det(imposto: ET.Element, snap: dict, linha: dict) -> None:
+    from apps.fiscal.snapshot_fiscal_helpers import get_difal_snapshot
+
     icms = ET.SubElement(imposto, 'ICMS')
     icms_grp = ET.SubElement(icms, 'ICMS00')
     _sub(icms_grp, 'CST', linha['icms']['cst'] or '00')
     if linha['icms']['aliquota']:
         _sub(icms_grp, 'pICMS', linha['icms']['aliquota'])
+
+    difal = get_difal_snapshot(snap)
+    v_icms_dest = difal.get('v_icms_uf_dest') or ''
+    if v_icms_dest and dec(v_icms_dest) > 0:
+        uf_dest = ET.SubElement(icms, 'ICMSUFDest')
+        _sub(uf_dest, 'vBCUFDest', difal.get('v_bc_uf_dest') or linha.get('v_prod'))
+        if difal.get('v_bc_fcp_uf_dest'):
+            _sub(uf_dest, 'vBCFCPUFDest', difal['v_bc_fcp_uf_dest'])
+        if difal.get('p_fcp_uf_dest'):
+            _sub(uf_dest, 'pFCPUFDest', difal['p_fcp_uf_dest'])
+        _sub(uf_dest, 'pICMSUFDest', difal.get('p_icms_uf_dest'))
+        _sub(uf_dest, 'pICMSInter', difal.get('p_icms_inter'))
+        _sub(uf_dest, 'pICMSInterPart', difal.get('p_icms_inter_part') or '100.00')
+        if difal.get('v_fcp_uf_dest'):
+            _sub(uf_dest, 'vFCPUFDest', difal['v_fcp_uf_dest'])
+        _sub(uf_dest, 'vICMSUFDest', v_icms_dest)
+        _sub(uf_dest, 'vICMSUFRemet', difal.get('v_icms_uf_remet') or '0.00')
 
     if linha['ipi']['cst'] or linha['ipi']['aliquota']:
         ipi = ET.SubElement(imposto, 'IPI')
@@ -612,6 +639,9 @@ def _xml_preview_string(dados: dict[str, Any]) -> str:
         fone=emit.get('fone') or emit.get('telefone'),
     )
 
+    from apps.fiscal.nfe_difal_calculo import agregar_totais_difal
+    from apps.fiscal.snapshot_fiscal_helpers import get_difal_snapshot
+
     dest = dados['destinatario']
     dest_el = ET.SubElement(inf, 'dest')
     if len(dest['cnpj']) == 14:
@@ -619,7 +649,7 @@ def _xml_preview_string(dados: dict[str, Any]) -> str:
     elif dest['cnpj']:
         _sub(dest_el, 'CPF', dest['cnpj'])
     _sub(dest_el, 'xNome', dest['x_nome'])
-    _sub(dest_el, 'indIEDest', '1' if dest['ie'] else '9')
+    _sub(dest_el, 'indIEDest', dest.get('ind_ie_dest') or ('1' if dest['ie'] else '9'))
     if dest['ie']:
         _sub(dest_el, 'IE', dest['ie'])
     _ender(
@@ -671,6 +701,15 @@ def _xml_preview_string(dados: dict[str, Any]) -> str:
     icms_tot = ET.SubElement(total, 'ICMSTot')
     _sub(icms_tot, 'vProd', dados['totais']['v_prod'])
     _sub(icms_tot, 'vDesc', dados['totais']['v_desc'])
+    totais = dados.get('totais') or {}
+    difal_totais = agregar_totais_difal([linha.get('difal') or get_difal_snapshot(linha.get('snapshot_fiscal')) for linha in dados['itens']])
+    totais = {**totais, **difal_totais}
+    if totais.get('v_icms_uf_dest'):
+        _sub(icms_tot, 'vICMSUFDest', totais['v_icms_uf_dest'])
+    if totais.get('v_fcp_uf_dest'):
+        _sub(icms_tot, 'vFCPUFDest', totais['v_fcp_uf_dest'])
+    if totais.get('v_icms_uf_remet'):
+        _sub(icms_tot, 'vICMSUFRemet', totais['v_icms_uf_remet'])
     _sub(icms_tot, 'vNF', dados['totais']['v_nf'])
 
     tr = dados.get('transporte') or {}

@@ -26,6 +26,7 @@ from apps.fiscal.nfe_saida_preview import (
 )
 from apps.fiscal.snapshot_fiscal_helpers import (
     get_cofins_snapshot,
+    get_difal_snapshot,
     get_icms_snapshot,
     get_ipi_snapshot,
     get_pis_snapshot,
@@ -193,6 +194,31 @@ def _build_icms(snap: dict, linha: dict):
             pICMS=p_icms,
             vICMS=v_icms,
         )
+
+    difal = get_difal_snapshot(snap)
+    if difal.get('aplicavel') in (True, 'True', 'true', '1') or _dec(difal.get('v_icms_uf_dest')) > 0:
+        icms_uf_dest_cls = getattr(
+            nfe.Tnfe.InfNfe.Det.Imposto.Icms,
+            'ICMSUFDest',
+            getattr(nfe.Tnfe.InfNfe.Det.Imposto.Icms, 'Icmsufdest', None),
+        )
+        if icms_uf_dest_cls is not None:
+            kwargs: dict[str, Any] = {
+                'vBCUFDest': _dec(difal.get('v_bc_uf_dest') or linha.get('v_prod')),
+                'pICMSUFDest': _dec(difal.get('p_icms_uf_dest')),
+                'pICMSInter': _dec(difal.get('p_icms_inter')),
+                'pICMSInterPart': _dec(difal.get('p_icms_inter_part') or '100'),
+                'vICMSUFDest': _dec(difal.get('v_icms_uf_dest')),
+                'vICMSUFRemet': _dec(difal.get('v_icms_uf_remet')),
+            }
+            v_bc_fcp = _dec(difal.get('v_bc_fcp_uf_dest'))
+            p_fcp = _dec(difal.get('p_fcp_uf_dest'))
+            v_fcp = _dec(difal.get('v_fcp_uf_dest'))
+            if p_fcp > 0 or v_fcp > 0:
+                kwargs['vBCFCPUFDest'] = v_bc_fcp or kwargs['vBCUFDest']
+                kwargs['pFCPUFDest'] = p_fcp
+                kwargs['vFCPUFDest'] = v_fcp
+            icms_wrap.ICMSUFDest = icms_uf_dest_cls(**kwargs)
     return icms_wrap
 
 
@@ -394,7 +420,7 @@ def montar_tnfe_oficial(dados: dict[str, Any], *, nfe_saida: NFeSaida | None = N
     doc = _digits(dest.get('cnpj'))
     dest_kw: dict[str, Any] = {
         'xNome': _text(dest.get('x_nome'))[:60] or 'Destinatário',
-        'indIEDest': '1' if _text(dest.get('ie')) else '9',
+        'indIEDest': _text(dest.get('ind_ie_dest')) or ('1' if _text(dest.get('ie')) else '9'),
     }
     if len(doc) == 14:
         dest_kw['CNPJ'] = doc
@@ -455,18 +481,24 @@ def serializar_tnfe(tnfe: Any, *, pretty: bool = True) -> str:
 
 def _enriquecer_totais_impostos(dados: dict[str, Any]) -> None:
     """Agrega totais de impostos a partir dos snapshots dos itens."""
+    from apps.fiscal.nfe_difal_calculo import agregar_totais_difal
+
     v_bc = v_icms = v_pis = v_cofins = v_ipi = Decimal('0')
+    difais: list[dict] = []
     for linha in dados.get('itens') or []:
         snap = linha.get('snapshot_fiscal') or {}
         icms = get_icms_snapshot(snap)
         pis = get_pis_snapshot(snap)
         cof = get_cofins_snapshot(snap)
         ipi = get_ipi_snapshot(snap)
+        difal = get_difal_snapshot(snap)
         v_bc += _dec(icms.get('base'))
         v_icms += _dec(icms.get('valor'))
         v_pis += _dec(pis.get('valor'))
         v_cofins += _dec(cof.get('valor'))
         v_ipi += _dec(ipi.get('valor'))
+        if difal:
+            difais.append(difal)
     tot = dict(dados.get('totais') or {})
     if v_bc:
         tot.setdefault('v_bc', f'{v_bc:.2f}')
@@ -478,6 +510,8 @@ def _enriquecer_totais_impostos(dados: dict[str, Any]) -> None:
         tot.setdefault('v_cofins', f'{v_cofins:.2f}')
     if v_ipi:
         tot.setdefault('v_ipi', f'{v_ipi:.2f}')
+    totais_difal = agregar_totais_difal(difais)
+    tot.update(totais_difal)
     dados['totais'] = tot
 
 

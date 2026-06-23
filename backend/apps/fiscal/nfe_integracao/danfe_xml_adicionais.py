@@ -271,6 +271,23 @@ def montar_inf_cpl_nfe(
         partes.append(manual)
 
     blocos = deduplicar_textos_inf_cpl(partes)
+    from apps.fiscal.nfe_difal_calculo import agregar_totais_difal, texto_difal_inf_complementar
+    from apps.fiscal.snapshot_fiscal_helpers import get_difal_snapshot
+
+    difal_totais = agregar_totais_difal(
+        [
+            get_difal_snapshot(
+                (itens_db or {}).get(linha.get('item_id')).snapshot_fiscal
+                if itens_db and linha.get('item_id') in itens_db
+                else linha.get('snapshot_fiscal')
+            )
+            for linha in linhas
+        ],
+    )
+    texto_difal = texto_difal_inf_complementar(difal_totais)
+    if texto_difal:
+        blocos.append(texto_difal)
+    blocos = deduplicar_textos_inf_cpl(blocos)
     blocos_xml = [re.sub(r'\s+', ' ', b.replace('\n', ' ')).strip() for b in blocos]
     inf_cpl = ' '.join(b for b in blocos_xml if b)[:_MAX_INF_CPL_XML_CHARS].strip()
     inf_fisco = _para_maiusculas(nfe_saida.informacoes_fisco)[:2000]

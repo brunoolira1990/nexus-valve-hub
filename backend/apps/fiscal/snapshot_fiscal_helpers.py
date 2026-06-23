@@ -131,6 +131,24 @@ def get_icms_snapshot(snapshot: dict | None) -> dict[str, str]:
     }
 
 
+def get_difal_snapshot(snapshot: dict | None) -> dict[str, str]:
+    raw = (snapshot or {}).get('difal')
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        'aplicavel': _snap_val(raw, 'aplicavel'),
+        'v_bc_uf_dest': _snap_val(raw, 'v_bc_uf_dest'),
+        'v_bc_fcp_uf_dest': _snap_val(raw, 'v_bc_fcp_uf_dest'),
+        'p_fcp_uf_dest': _snap_val(raw, 'p_fcp_uf_dest'),
+        'p_icms_uf_dest': _snap_val(raw, 'p_icms_uf_dest'),
+        'p_icms_inter': _snap_val(raw, 'p_icms_inter'),
+        'p_icms_inter_part': _snap_val(raw, 'p_icms_inter_part'),
+        'v_fcp_uf_dest': _snap_val(raw, 'v_fcp_uf_dest'),
+        'v_icms_uf_dest': _snap_val(raw, 'v_icms_uf_dest'),
+        'v_icms_uf_remet': _snap_val(raw, 'v_icms_uf_remet'),
+    }
+
+
 def get_ipi_snapshot(snapshot: dict | None) -> dict[str, str]:
     snap = snapshot or {}
     return {

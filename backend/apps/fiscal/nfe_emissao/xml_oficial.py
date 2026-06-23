@@ -138,9 +138,10 @@ def montar_tnfe_emissao(
     doc = _digits(dest.get('cnpj'))
     dest_nome = HOMOLOG_DEST_XNOME if tp_amb == '2' else (_text(dest.get('x_nome'))[:60] or 'Destinatário')
     dest_ie = normalizar_ie_xml(dest.get('ie'))
+    ind_ie = _text(dest.get('ind_ie_dest')) or ('1' if dest_ie else '9')
     dest_kw: dict[str, Any] = {
         'xNome': dest_nome,
-        'indIEDest': '1' if dest_ie else '9',
+        'indIEDest': ind_ie,
     }
     if len(doc) == 14:
         dest_kw['CNPJ'] = doc

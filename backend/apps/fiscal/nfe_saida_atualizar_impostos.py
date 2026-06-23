@@ -51,7 +51,14 @@ from apps.comercial.pricing import normalize_ncm
 from apps.regras_fiscais.saida_fiscal import (
     BuscaRegraFiscalSaidaDict,
     buscar_regra_fiscal_nfe_saida_rascunho,
+    _resultado_nao_encontrada,
 )
+from apps.fiscal.nfe_difal_calculo import (
+    calcular_difal_item,
+    deve_aplicar_difal,
+    validar_parametros_difal_regra,
+)
+from apps.fiscal.nfe_destinatario_fiscal import resolver_perfil_destinatario_nf
 
 MSG_BLOQUEIO_STATUS = 'Impostos só podem ser atualizados em NF-e rascunho.'
 
@@ -80,6 +87,8 @@ _CAMPOS_COMPARACAO: list[tuple[str, str]] = [
     ('valor_cbs', 'Valor CBS'),
     ('aliquota_ibs_estadual', 'Alíquota IBS estadual'),
     ('valor_ibs_estadual', 'Valor IBS estadual'),
+    ('difal_v_icms_uf_dest', 'DIFAL ICMS UF destino'),
+    ('difal_v_fcp_uf_dest', 'DIFAL FCP UF destino'),
 ]
 
 
@@ -252,6 +261,8 @@ def _flatten_compare(snap: dict | None) -> dict[str, str]:
         'valor_cbs': _text(full_ref.get('valor_cbs')),
         'aliquota_ibs_estadual': _text(full_ref.get('aliquota_ibs_estadual')),
         'valor_ibs_estadual': _text(full_ref.get('valor_ibs_estadual') or full_ref.get('valor_ibs_uf')),
+        'difal_v_icms_uf_dest': _text((snap.get('difal') or {}).get('v_icms_uf_dest')),
+        'difal_v_fcp_uf_dest': _text((snap.get('difal') or {}).get('v_fcp_uf_dest')),
     }
     return out
 
@@ -410,6 +421,28 @@ def montar_snapshot_fiscal_de_regra_atual(
         norm_rec = normalizar_recomendacoes_nfe(regra.recomendacoes_nfe)
         if norm_rec:
             snap['recomendacoes_nfe'] = norm_rec
+
+    ufo = _uf_origem_nf(nf)
+    ufd = _uf_destino_nf(nf)
+    perfil = resolver_perfil_destinatario_nf(nf)
+    if regra is not None and deve_aplicar_difal(
+        uf_origem=ufo,
+        uf_destino=ufd,
+        destinatario_contribuinte=perfil.destinatario_contribuinte,
+        consumidor_final=perfil.consumidor_final,
+        regra=regra,
+    ):
+        pendencias_difal = validar_parametros_difal_regra(
+            regra,
+            uf_destino=ufd,
+            nome_item=_descricao_item(item),
+        )
+        if pendencias_difal:
+            snap['difal_pendencias'] = pendencias_difal
+        else:
+            snap['difal'] = calcular_difal_item(v_prod, regra)
+            snap['difal_aplicavel'] = True
+
     return normalize_snapshot_fiscal_for_nfe(snap)
 
 
@@ -427,35 +460,7 @@ def _buscar_regra_para_item(
     if endereco_result and endereco_result.bloqueio_fiscal:
         cliente = _cliente_nf(nf)
         msg = mensagem_endereco_inconsistente_nf(cliente, endereco_result) if cliente else 'Cliente não informado.'
-        return (
-            {
-                'origem': 'NAO_ENCONTRADA',
-                'regra_id': None,
-                'regra_legada_id': None,
-                'cfop': '',
-                'cfop_st': '',
-                'cst_icms': '',
-                'modalidade_bc_icms': '',
-                'reducao_bc_icms': '',
-                'aliquota_icms': '0',
-                'cst_ipi': '',
-                'aliquota_ipi': '0',
-                'cst_pis': '',
-                'aliquota_pis': '0',
-                'cst_cofins': '',
-                'aliquota_cofins': '0',
-                'movimenta_estoque': True,
-                'gera_financeiro': True,
-                'deduzir_icms_base_pis': False,
-                'deduzir_icms_base_cofins': False,
-                'tem_reforma_configurada': False,
-                'tem_recomendacoes_nfe': False,
-                'mensagens': [],
-            },
-            None,
-            [msg],
-            {},
-        )
+        return _resultado_nao_encontrada(), None, [msg], {}
 
     if len(ncm) < 8:
         if item.produto_id and not ncm:
@@ -464,38 +469,11 @@ def _buscar_regra_para_item(
         msg = _mensagem_regra_nao_encontrada(ncm, ufo, ufd)
         if len(ncm) < 8:
             msg = 'NCM incompleto para buscar regra fiscal.'
-        return (
-            {
-                'origem': 'NAO_ENCONTRADA',
-                'regra_id': None,
-                'regra_legada_id': None,
-                'cfop': '',
-                'cfop_st': '',
-                'cst_icms': '',
-                'modalidade_bc_icms': '',
-                'reducao_bc_icms': '',
-                'aliquota_icms': '0',
-                'cst_ipi': '',
-                'aliquota_ipi': '0',
-                'cst_pis': '',
-                'aliquota_pis': '0',
-                'cst_cofins': '',
-                'aliquota_cofins': '0',
-                'movimenta_estoque': True,
-                'gera_financeiro': True,
-                'deduzir_icms_base_pis': False,
-                'deduzir_icms_base_cofins': False,
-                'tem_reforma_configurada': False,
-                'tem_recomendacoes_nfe': False,
-                'mensagens': [],
-            },
-            None,
-            [msg],
-            {},
-        )
+        return _resultado_nao_encontrada(), None, [msg], {}
 
     ncm_busca = normalize_ncm(ncm)
     cenario_id = _resolver_cenario_id_nf(nf, item)
+    perfil = resolver_perfil_destinatario_nf(nf)
 
     busca, regra, filtros_busca = buscar_regra_fiscal_nfe_saida_rascunho(
         produto_id=item.produto_id,
@@ -504,6 +482,8 @@ def _buscar_regra_para_item(
         uf_destino=ufd,
         cenario_id=cenario_id,
         produto=item.produto if item.produto_id else None,
+        destinatario_contribuinte=perfil.destinatario_contribuinte,
+        consumidor_final=perfil.consumidor_final,
         tipo_operacao='VENDA',
     )
     if busca['origem'] == 'NAO_ENCONTRADA':

@@ -1205,6 +1205,9 @@ export interface RegraFiscalSaida {
   aliquota_icms_st?: number | string | null;
   mva_st?: number | string | null;
   reducao_bc_st?: number | string | null;
+  difal_aplicavel?: boolean | null;
+  aliquota_icms_interestadual?: number | string | null;
+  aliquota_icms_interna_destino?: number | string | null;
   fcp_aplicavel?: boolean | null;
   aliquota_fcp?: number | string | null;
   aliquota_fcp_st?: number | string | null;

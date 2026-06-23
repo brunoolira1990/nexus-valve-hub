@@ -200,7 +200,7 @@ def montar_tnfe_preliminar(
     doc = _digits(dest.get('cnpj'))
     dest_kw: dict[str, Any] = {
         'xNome': _text(dest.get('x_nome'))[:60] or 'Destinatário',
-        'indIEDest': '1' if _text(dest.get('ie')) else '9',
+        'indIEDest': _text(dest.get('ind_ie_dest')) or ('1' if _text(dest.get('ie')) else '9'),
     }
     if len(doc) == 14:
         dest_kw['CNPJ'] = doc

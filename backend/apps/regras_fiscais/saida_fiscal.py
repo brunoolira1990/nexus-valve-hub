@@ -45,6 +45,11 @@ class BuscaRegraFiscalSaidaDict(TypedDict):
     deduzir_icms_base_cofins: bool
     tem_reforma_configurada: bool
     tem_recomendacoes_nfe: bool
+    difal_aplicavel: bool
+    aliquota_icms_interestadual: str
+    aliquota_icms_interna_destino: str
+    fcp_destino_aplicavel: bool
+    aliquota_fcp_destino: str
     mensagens: list[str]
 
 
@@ -335,6 +340,11 @@ def _resultado_de_regra_saida(regra: RegraFiscalSaida) -> BuscaRegraFiscalSaidaD
         'deduzir_icms_base_cofins': bool(regra.deduzir_icms_base_cofins),
         'tem_reforma_configurada': reforma_tributaria_preenchida(regra.reforma_tributaria),
         'tem_recomendacoes_nfe': recomendacoes_nfe_preenchidas(regra.recomendacoes_nfe),
+        'difal_aplicavel': bool(regra.difal_aplicavel),
+        'aliquota_icms_interestadual': _fmt_aliquota(regra.aliquota_icms_interestadual),
+        'aliquota_icms_interna_destino': _fmt_aliquota(regra.aliquota_icms_interna_destino),
+        'fcp_destino_aplicavel': bool(regra.fcp_aplicavel),
+        'aliquota_fcp_destino': _fmt_aliquota(regra.aliquota_fcp),
         'mensagens': [],
     }
 
@@ -364,6 +374,11 @@ def _resultado_de_regra_legada(regra: RegraFiscal) -> BuscaRegraFiscalSaidaDict:
         'deduzir_icms_base_cofins': False,
         'tem_reforma_configurada': False,
         'tem_recomendacoes_nfe': False,
+        'difal_aplicavel': False,
+        'aliquota_icms_interestadual': '0',
+        'aliquota_icms_interna_destino': '0',
+        'fcp_destino_aplicavel': False,
+        'aliquota_fcp_destino': '0',
         'mensagens': [],
     }
 
@@ -393,6 +408,11 @@ def _resultado_nao_encontrada(*, mensagens: list[str] | None = None) -> BuscaReg
         'deduzir_icms_base_cofins': False,
         'tem_reforma_configurada': False,
         'tem_recomendacoes_nfe': False,
+        'difal_aplicavel': False,
+        'aliquota_icms_interestadual': '0',
+        'aliquota_icms_interna_destino': '0',
+        'fcp_destino_aplicavel': False,
+        'aliquota_fcp_destino': '0',
         'mensagens': mensagens or [],
     }
 
@@ -538,6 +558,7 @@ def buscar_regra_fiscal_nfe_saida_rascunho(
     cenario_id: int | None = None,
     produto=None,
     destinatario_contribuinte: str | None = None,
+    consumidor_final: bool | None = None,
     tipo_operacao: str = 'VENDA',
 ) -> tuple[BuscaRegraFiscalSaidaDict, RegraFiscalSaida | None, dict[str, Any]]:
     """
@@ -561,6 +582,7 @@ def buscar_regra_fiscal_nfe_saida_rascunho(
         uf_origem=filtros['uf_origem'],
         uf_destino=filtros['uf_destino'],
         destinatario_contribuinte=destinatario_contribuinte,
+        consumidor_final=consumidor_final,
         tipo_operacao=filtros['tipo_operacao'],
         cenario_id=cid,
         produto=produto,

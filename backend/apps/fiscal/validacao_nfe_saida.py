@@ -350,6 +350,17 @@ def validar_nfe_saida_para_emissao(
                 grupo='cliente',
                 mensagem='Cliente sem inscrição estadual (IE); confira contribuinte ICMS.',
             )
+        from apps.fiscal.nfe_destinatario_fiscal import resolver_perfil_destinatario_nf
+
+        perfil_cli = resolver_perfil_destinatario_nf(nf)
+        for inc in perfil_cli.inconsistencias:
+            _add(
+                grupos,
+                tipo=TIPO_PENDENCIA,
+                codigo='CLIENTE_CADASTRO_FISCAL_INCONSISTENTE',
+                grupo='cliente',
+                mensagem=inc,
+            )
         if getattr(cli, 'bloqueado', False):
             _add(
                 grupos,
@@ -692,6 +703,64 @@ def validar_nfe_saida_para_emissao(
                     mensagem=msg_cbenef,
                     item_id=item.pk,
                 )
+            pendencias_difal = snap_f.get('difal_pendencias') or []
+            if pendencias_difal:
+                for msg_difal in pendencias_difal:
+                    _add(
+                        grupos,
+                        tipo=TIPO_PENDENCIA,
+                        codigo='DIFAL_PARAMETROS_INCOMPLETOS',
+                        grupo='fiscal',
+                        mensagem=str(msg_difal),
+                        item_id=item.pk,
+                    )
+            from apps.fiscal.nfe_difal_calculo import validar_parametros_difal_regra
+            from apps.fiscal.nfe_destinatario_fiscal import resolver_perfil_destinatario_nf
+            from apps.regras_fiscais.models import RegraFiscalSaida
+
+            perfil_nf = resolver_perfil_destinatario_nf(nf)
+            regra_id = snap_f.get('regra_fiscal_saida_id')
+            if (
+                regra_id
+                and uf_origem
+                and uf_destino
+                and uf_origem != uf_destino
+                and perfil_nf.destinatario_contribuinte
+                == RegraFiscalSaida.DestinatarioContribuinte.NAO_CONTRIBUINTE
+                and perfil_nf.consumidor_final is True
+                and not snap_f.get('difal')
+                and not pendencias_difal
+            ):
+                try:
+                    regra_difal = RegraFiscalSaida.objects.get(pk=int(regra_id))
+                except (RegraFiscalSaida.DoesNotExist, TypeError, ValueError):
+                    regra_difal = None
+                if regra_difal and regra_difal.difal_aplicavel:
+                    for msg_difal in validar_parametros_difal_regra(
+                        regra_difal,
+                        uf_destino=uf_destino,
+                        nome_item=rotulo,
+                    ):
+                        _add(
+                            grupos,
+                            tipo=TIPO_PENDENCIA,
+                            codigo='DIFAL_PARAMETROS_INCOMPLETOS',
+                            grupo='fiscal',
+                            mensagem=msg_difal,
+                            item_id=item.pk,
+                        )
+                    if not validar_parametros_difal_regra(regra_difal, uf_destino=uf_destino):
+                        _add(
+                            grupos,
+                            tipo=TIPO_PENDENCIA,
+                            codigo='DIFAL_NAO_CALCULADO',
+                            grupo='fiscal',
+                            mensagem=(
+                                f'{rotulo}: operação interestadual a não contribuinte exige DIFAL '
+                                'calculado. Atualize os impostos da NF-e.'
+                            ),
+                            item_id=item.pk,
+                        )
             from apps.fiscal.snapshot_fiscal_helpers import (
                 get_reforma_tributaria_snapshot,
                 reforma_configurada_no_snapshot,

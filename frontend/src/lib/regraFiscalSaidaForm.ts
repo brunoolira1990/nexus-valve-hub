@@ -22,8 +22,9 @@ export type FormRegraFiscalSaida = Omit<
   RegraFiscalSaida,
   'id' | 'criado_em' | 'atualizado_em' | 'label_configuracao' | 'status_configuracao' | 'resumo_impostos'
 > & {
-  icms_st_aplicavel: '' | 'sim' | 'nao';
-  fcp_aplicavel: '' | 'sim' | 'nao';
+    icms_st_aplicavel: '' | 'sim' | 'nao';
+    difal_aplicavel: '' | 'sim' | 'nao';
+    fcp_aplicavel: '' | 'sim' | 'nao';
   consumidor_final_tri: '' | 'sim' | 'nao';
   reforma_tributaria: ReformaTributariaForm;
   recomendacoes_nfe: RecomendacoesNfeForm;
@@ -55,6 +56,9 @@ export const emptyFormRegraFiscalSaida: FormRegraFiscalSaida = {
   aliquota_icms_st: '',
   mva_st: '',
   reducao_bc_st: '',
+  difal_aplicavel: '',
+  aliquota_icms_interestadual: '',
+  aliquota_icms_interna_destino: '',
   fcp_aplicavel: '',
   aliquota_fcp: '',
   aliquota_fcp_st: '',

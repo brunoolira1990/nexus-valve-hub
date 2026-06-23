@@ -87,6 +87,9 @@ def build_icms_tot_bindings(nfe_module: Any, tot: dict[str, Any]) -> Any:
     """ICMSTot com todos os campos obrigatórios zerados quando ausentes."""
     Icmstot = nfe_module.Tnfe.InfNfe.Total.Icmstot
     z = '0.00'
+    v_fcp_uf_dest = _dec_str(tot.get('v_fcp_uf_dest'))
+    v_icms_uf_dest = _dec_str(tot.get('v_icms_uf_dest'))
+    v_icms_uf_remet = _dec_str(tot.get('v_icms_uf_remet'))
     return Icmstot(
         vBC=_dec_str(tot.get('v_bc')),
         vICMS=_dec_str(tot.get('v_icms')),
@@ -107,6 +110,9 @@ def build_icms_tot_bindings(nfe_module: Any, tot: dict[str, Any]) -> Any:
         vCOFINS=_dec_str(tot.get('v_cofins')),
         vOutro=z,
         vNF=_dec_str(tot.get('v_nf')),
+        vFCPUFDest=v_fcp_uf_dest if v_fcp_uf_dest != z else z,
+        vICMSUFDest=v_icms_uf_dest if v_icms_uf_dest != z else z,
+        vICMSUFRemet=v_icms_uf_remet if v_icms_uf_remet != z else z,
     )
 
 
