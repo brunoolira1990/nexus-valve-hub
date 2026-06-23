@@ -263,6 +263,7 @@ def build_commercial_order_header(
     page_width: float,
     ph_small: ParagraphStyle,
     ph_center: ParagraphStyle,
+    compact: bool = False,
 ) -> Table:
     """
     Cabeçalho em três colunas: logo (proporcional, sem borda), dados compactos do emitente, documento (tipo, nº, meta).
@@ -275,11 +276,13 @@ def build_commercial_order_header(
         iw, ih = _read_logo_pixel_size(logo_path)
     else:
         iw, ih = 361.0, 198.0
+    logo_max_h = (13.2 * mm) if compact else _HEADER_LOGO_MAX_DRAW_H
+    logo_max_w = (38.0 * mm) if compact else _HEADER_LOGO_MAX_DRAW_W
     _lw, _lh, cw_logo, _rh = _logo_fit_proportional_box(
         iw,
         ih,
-        max_draw_w=_HEADER_LOGO_MAX_DRAW_W,
-        max_draw_h=_HEADER_LOGO_MAX_DRAW_H,
+        max_draw_w=logo_max_w,
+        max_draw_h=logo_max_h,
         pad_x=_HEADER_LOGO_PAD_X,
         pad_y=_HEADER_LOGO_PAD_Y,
     )
@@ -383,8 +386,8 @@ def build_commercial_order_header(
         'HdrN',
         parent=ph_small,
         fontName='Helvetica-Bold',
-        fontSize=13.2,
-        leading=16.2,
+        fontSize=11.2 if compact else 13.2,
+        leading=14.0 if compact else 16.2,
         textColor=C_BRAND_PRIMARY,
         alignment=TA_RIGHT,
     )
@@ -392,8 +395,8 @@ def build_commercial_order_header(
         'HdrM',
         parent=ph_small,
         fontName='Helvetica',
-        fontSize=7.25,
-        leading=10.55,
+        fontSize=6.85 if compact else 7.25,
+        leading=9.2 if compact else 10.55,
         textColor=colors.HexColor('#475569'),
         alignment=TA_RIGHT,
     )
@@ -587,26 +590,29 @@ def build_conditions_commercial_grid(
     ph_small: ParagraphStyle,
     pairs_per_row: int = 3,
     label_width_frac: float = 0.34,
+    tight: bool = False,
 ) -> list:
     """Condições em grelha densa (até `pairs_per_row` pares por linha): menos altura que 2×2."""
     slots = max(1, min(3, int(pairs_per_row)))
     lf = max(0.26, min(0.44, float(label_width_frac)))
+    lbl_fs = 6.55 if tight else 6.85
+    val_fs = 6.75 if tight else 7.05
     p_lbl = ParagraphStyle(
         'NxCgL',
         parent=ph_small,
         fontName='Helvetica-Bold',
-        fontSize=6.85,
-        leading=8.35,
+        fontSize=lbl_fs,
+        leading=8.0 if tight else 8.35,
         textColor=C_PRIMARY,
     )
     p_val = ParagraphStyle(
         'NxCgV',
         parent=ph_small,
-        fontSize=7.05,
-        leading=8.45,
+        fontSize=val_fs,
+        leading=8.1 if tight else 8.45,
         textColor=C_SLATE_TEXT,
     )
-    gutter = 1.35 * mm
+    gutter = 1.1 * mm if tight else 1.35 * mm
     w_pair = (page_w - (slots - 1) * gutter) / float(slots)
     w_lab = w_pair * lf
     w_val = w_pair * (1.0 - lf)
@@ -630,14 +636,15 @@ def build_conditions_commercial_grid(
         i += slots
 
     inner_tbl = Table(grid_rows, colWidths=col6)
+    pad_cell = 2.0 if tight else 3.0
     line_cmds = [
         ('BOX', (0, 0), (-1, -1), 0.32, C_FRAME_LIGHT),
         ('ROWBACKGROUNDS', (0, 0), (-1, -1), [colors.white, colors.HexColor('#f8fafc')]),
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('TOPPADDING', (0, 0), (-1, -1), 3.0),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 3.0),
-        ('LEFTPADDING', (0, 0), (-1, -1), 4.5),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 4.5),
+        ('TOPPADDING', (0, 0), (-1, -1), pad_cell),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), pad_cell),
+        ('LEFTPADDING', (0, 0), (-1, -1), 3.8 if tight else 4.5),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 3.8 if tight else 4.5),
     ]
     for s in range(slots - 1):
         col_after = 2 * s + 1
@@ -645,9 +652,10 @@ def build_conditions_commercial_grid(
             ('LINEAFTER', (col_after, 0), (col_after, -1), 0.2, colors.HexColor('#e2e8f0'))
         )
     inner_tbl.setStyle(TableStyle(line_cmds))
+    sp_title = 0.55 * mm if tight else 0.85 * mm
     return [
         build_section_title(section_title, ph_small=ph_small, compact=True, page_w=page_w),
-        Spacer(1, 0.85 * mm),
+        Spacer(1, sp_title),
         inner_tbl,
     ]
 
@@ -893,6 +901,150 @@ def build_item_line_table(
     return card
 
 
+def build_pedido_venda_items_batch_table(
+    *,
+    page_w: float,
+    ph_small: ParagraphStyle,
+    linhas: list[dict],
+    ultra_compact: bool = False,
+    nota_na_descricao: bool = False,
+) -> Table:
+    """
+    Tabela única de itens do pedido de venda — cabeçalho compartilhado, menos altura que cards individuais.
+    Cada linha em `linhas` deve conter: codigo, descricao, descricao_markup, unidade, qtd_txt,
+    valor_unit, valor_produtos, desconto, ipi, icms_st, total, nota_rodape.
+    """
+    p_desc = ParagraphStyle(
+        'PvBtD',
+        parent=ph_small,
+        fontName='Helvetica-Bold',
+        fontSize=7.6 if ultra_compact else 8.4,
+        leading=9.0 if ultra_compact else 10.0,
+        textColor=C_HEADER_DEEP,
+        alignment=TA_LEFT,
+    )
+    p_cod = ParagraphStyle(
+        'PvBtC',
+        parent=ph_small,
+        fontName='Helvetica',
+        fontSize=6.4 if ultra_compact else 6.8,
+        leading=7.6 if ultra_compact else 8.0,
+        textColor=C_MUTED,
+        alignment=TA_RIGHT,
+    )
+    p_h = ParagraphStyle(
+        'PvBtH',
+        parent=ph_small,
+        fontName='Helvetica-Bold',
+        fontSize=5.95 if ultra_compact else 6.2,
+        leading=7.0 if ultra_compact else 7.4,
+        textColor=C_MUTED,
+        alignment=TA_CENTER,
+    )
+    p_hr = ParagraphStyle('PvBtHR', parent=p_h, alignment=TA_RIGHT)
+    p_cell = ParagraphStyle(
+        'PvBtN',
+        parent=ph_small,
+        fontSize=6.55 if ultra_compact else 6.9,
+        leading=7.6 if ultra_compact else 8.0,
+        textColor=C_SLATE_TEXT,
+        alignment=TA_CENTER,
+    )
+    p_cell_r = ParagraphStyle('PvBtNR', parent=p_cell, alignment=TA_RIGHT)
+    p_tot = ParagraphStyle(
+        'PvBtT',
+        parent=ph_small,
+        fontName='Helvetica-Bold',
+        fontSize=6.8 if ultra_compact else 7.2,
+        leading=7.8 if ultra_compact else 8.2,
+        textColor=C_HEADER_DEEP,
+        alignment=TA_RIGHT,
+    )
+    p_note = ParagraphStyle(
+        'PvBtNote',
+        parent=ph_small,
+        fontSize=5.95 if ultra_compact else 6.2,
+        leading=7.0 if ultra_compact else 7.4,
+        textColor=C_MUTED,
+        alignment=TA_LEFT,
+    )
+
+    cw = [page_w / 8] * 8
+    table_rows: list[list] = [
+        [
+            Paragraph('<b>Un.</b>', p_h),
+            Paragraph('<b>Qtd.</b>', p_h),
+            Paragraph('<b>Unit.</b>', p_hr),
+            Paragraph('<b>Prod.</b>', p_hr),
+            Paragraph('<b>Desc.</b>', p_hr),
+            Paragraph('<b>IPI</b>', p_hr),
+            Paragraph('<b>ST</b>', p_hr),
+            Paragraph('<b>Total</b>', p_hr),
+        ]
+    ]
+    span_cmds: list = []
+    row_idx = 1
+    pad_row = 1.0 if ultra_compact else 1.5
+
+    for linha in linhas:
+        desc = linha['descricao']
+        nota = (linha.get('nota_rodape') or '').strip()
+        if nota_na_descricao and nota:
+            if linha.get('descricao_markup'):
+                desc_html = f'{desc}<br/><font size="5.8" color="#64748b">{escape(nota)}</font>'
+            else:
+                desc_html = (
+                    f'<b>{escape(desc)}</b><br/>'
+                    f'<font size="5.8" color="#64748b">{escape(nota)}</font>'
+                )
+            desc_para = Paragraph(desc_html, p_desc)
+        else:
+            desc_para = Paragraph(
+                desc if linha.get('descricao_markup') else escape(desc),
+                p_desc,
+            )
+        cod_para = Paragraph(f'Cód. {escape(linha["codigo"])}', p_cod)
+        table_rows.append([desc_para, '', '', '', '', '', cod_para, ''])
+        span_cmds.append(('SPAN', (0, row_idx), (5, row_idx)))
+        span_cmds.append(('SPAN', (6, row_idx), (7, row_idx)))
+        row_idx += 1
+
+        table_rows.append(
+            [
+                Paragraph(nobr(linha['unidade']), p_cell),
+                Paragraph(nobr(linha['qtd_txt']), p_cell),
+                Paragraph(format_currency_br(linha['valor_unit']), p_cell_r),
+                Paragraph(format_currency_br(linha['valor_produtos']), p_cell_r),
+                Paragraph(format_currency_br(linha['desconto']), p_cell_r),
+                Paragraph(format_currency_br(linha['ipi']), p_cell_r),
+                Paragraph(format_currency_br(linha['icms_st']), p_cell_r),
+                Paragraph(format_currency_br(linha['total']), p_tot),
+            ]
+        )
+        row_idx += 1
+
+        if nota and not nota_na_descricao:
+            table_rows.append([Paragraph(escape(nota), p_note), '', '', '', '', '', '', ''])
+            span_cmds.append(('SPAN', (0, row_idx), (7, row_idx)))
+            row_idx += 1
+
+    tbl = Table(table_rows, colWidths=cw, repeatRows=1)
+    style_cmds = [
+        ('BOX', (0, 0), (-1, -1), 0.32, C_FRAME_LIGHT),
+        ('BACKGROUND', (0, 0), (-1, 0), C_TABLE_HEADER_BG),
+        ('LINEABOVE', (0, 0), (-1, 0), 0.3, colors.HexColor('#e2e8f0')),
+        ('LINEBELOW', (0, 0), (-1, 0), 0.2, colors.HexColor('#e2e8f0')),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), pad_row),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), pad_row),
+        ('LEFTPADDING', (0, 0), (-1, -1), 3.5 if ultra_compact else 4.0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 3.5 if ultra_compact else 4.0),
+    ]
+    style_cmds.extend(span_cmds)
+    tbl.setStyle(TableStyle(style_cmds))
+    return tbl
+
+
 def build_item_product_card(
     *,
     codigo: str,
@@ -1006,17 +1158,113 @@ def build_financial_summary_block(
     ph_small: ParagraphStyle,
     ph_right: ParagraphStyle,
     compact: bool = False,
+    ultra_compact: bool = False,
 ) -> Table:
     """PdfFinancialSummary: bloco à direita, fechamento visual forte."""
-    fs = 7.6 if compact else 9
-    lead = 9.0 if compact else 11
+    if ultra_compact:
+        fs, lead = 6.75, 8.0
+        w_lbl, w_val = 42 * mm, 34 * mm
+        pad, pad_big = 1.2, 2.4
+        fs_tot, fs_lbl = 9.5, 7.2
+    elif compact:
+        fs, lead = 7.6, 9.0
+        w_lbl, w_val = 48 * mm, 40 * mm
+        pad, pad_big = 3.2, 5.5
+        fs_tot, fs_lbl = 12.5, 8.8
+    else:
+        fs, lead = 9, 11
+        w_lbl, w_val = 58 * mm, 50 * mm
+        pad, pad_big = 5, 9
+        fs_tot, fs_lbl = 14, 10
     p_tot = ParagraphStyle('TotL', parent=ph_small, fontSize=fs, leading=lead)
     p_tot_r = ParagraphStyle('TotR', parent=ph_right, fontSize=fs, leading=lead)
-    w_lbl, w_val = (48 * mm, 40 * mm) if compact else (58 * mm, 50 * mm)
-    pad = 3.2 if compact else 5
-    pad_big = 5.5 if compact else 9
-    fs_tot = 12.5 if compact else 14
-    fs_lbl = 8.8 if compact else 10
+
+    def _par_lbl(txt: str) -> Paragraph:
+        return Paragraph(txt, p_tot)
+
+    def _par_val(val) -> Paragraph:
+        return Paragraph(format_currency_br(val), p_tot_r)
+
+    if ultra_compact:
+        half = (w_lbl + w_val) / 2.0
+        w_lbl_h, w_val_h = half * 0.58, half * 0.42
+        left_rows = [
+            [_par_lbl('Subtotal produtos'), _par_val(subtotal_produtos)],
+            [_par_lbl('Desconto total'), _par_val(desconto_total)],
+            [_par_lbl('Frete'), _par_val(frete)],
+        ]
+        right_rows = [
+            [_par_lbl('Outras despesas'), _par_val(outras_despesas)],
+            [_par_lbl('IPI'), _par_val(ipi)],
+            [_par_lbl('ICMS ST'), _par_val(icms_st)],
+        ]
+        left_tbl = Table(left_rows, colWidths=[w_lbl_h, w_val_h])
+        right_tbl = Table(right_rows, colWidths=[w_lbl_h, w_val_h])
+        pair_style = TableStyle(
+            [
+                ('FONT', (0, 0), (-1, -1), 'Helvetica', fs),
+                ('TEXTCOLOR', (0, 0), (-1, -1), C_SLATE_TEXT),
+                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('TOPPADDING', (0, 0), (-1, -1), pad),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), pad),
+                ('LEFTPADDING', (0, 0), (-1, -1), pad),
+                ('RIGHTPADDING', (0, 0), (-1, -1), pad),
+            ]
+        )
+        left_tbl.setStyle(pair_style)
+        right_tbl.setStyle(pair_style)
+        cols = Table([[left_tbl, right_tbl]], colWidths=[half, half])
+        cols.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('LEFTPADDING', (0, 0), (-1, -1), 0)]))
+        tot_row = Table(
+            [
+                [
+                    Paragraph(
+                        f'<b><font size="{fs_lbl}" color="#ffffff">VALOR TOTAL FINAL</font></b>',
+                        ParagraphStyle('TotLF', parent=p_tot, textColor=colors.white, fontName='Helvetica-Bold'),
+                    ),
+                    Paragraph(
+                        f'<b><font size="{fs_tot}" color="#ffffff">{format_currency_br(valor_total_final)}</font></b>',
+                        ParagraphStyle(
+                            'TotRF',
+                            parent=p_tot_r,
+                            textColor=colors.white,
+                            fontName='Helvetica-Bold',
+                            fontSize=fs_tot,
+                        ),
+                    ),
+                ]
+            ],
+            colWidths=[w_lbl, w_val],
+        )
+        tot_row.setStyle(
+            TableStyle(
+                [
+                    ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('TOPPADDING', (0, 0), (-1, -1), pad_big),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), pad_big),
+                    ('LEFTPADDING', (0, 0), (-1, -1), pad + 1),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), pad + 1),
+                    ('BACKGROUND', (0, 0), (-1, -1), C_BRAND_PRIMARY),
+                    ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
+                ]
+            )
+        )
+        tot_inner = Table([[cols], [tot_row]], colWidths=[w_lbl + w_val])
+        tot_inner.setStyle(
+            TableStyle(
+                [
+                    ('BOX', (0, 0), (-1, -1), 0.5, C_FRAME_LIGHT),
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.white),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+                ]
+            )
+        )
+        tot_wrap = Table([[tot_inner]], colWidths=[page_w], hAlign='RIGHT')
+        tot_wrap.setStyle(TableStyle([('ALIGN', (0, 0), (-1, -1), 'RIGHT'), ('LEFTPADDING', (0, 0), (-1, -1), 0)]))
+        return tot_wrap
 
     tot_rows = [
         [Paragraph('Subtotal produtos', p_tot), Paragraph(format_currency_br(subtotal_produtos), p_tot_r)],
@@ -1083,6 +1331,7 @@ def build_financial_summary_section(
     ph_right: ParagraphStyle,
     compact: bool = True,
     tight: bool = False,
+    ultra_compact: bool = False,
 ) -> list:
     """Título + resumo financeiro (reutilizável em pedidos / propostas)."""
     tbl = build_financial_summary_block(
@@ -1096,9 +1345,15 @@ def build_financial_summary_section(
         valor_total_final=valor_total_final,
         ph_small=ph_small,
         ph_right=ph_right,
-        compact=compact,
+        compact=compact and not ultra_compact,
+        ultra_compact=ultra_compact,
     )
-    sp = 0.35 * mm if tight else 0.65 * mm
+    if ultra_compact:
+        sp = 0.25 * mm
+    elif tight:
+        sp = 0.35 * mm
+    else:
+        sp = 0.65 * mm
     return [
         build_section_title('Resumo financeiro', ph_small=ph_small, compact=True, page_w=page_w),
         Spacer(1, sp),
