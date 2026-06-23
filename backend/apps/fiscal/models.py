@@ -919,6 +919,11 @@ class NFeEntradaConferencia(models.Model):
         blank=True,
         related_name='conferencias_pedido_baixa_aplicado',
     )
+    data_entrada = models.DateField(
+        null=True,
+        blank=True,
+        help_text='Data operacional/fiscal de entrada informada pelo usuário na finalização.',
+    )
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
 

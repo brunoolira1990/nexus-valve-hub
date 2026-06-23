@@ -6,11 +6,14 @@ from decimal import Decimal
 from typing import Any, TypedDict
 
 from django.db import transaction
-from django.utils import timezone
 
 from apps.comercial.models import ItemPedidoCompra, PedidoCompra
 from apps.fiscal.conferencia_pedido import _quantidade_proxima
 from apps.fiscal.models import ItemNFeEntradaConferencia, NFeEntradaConferencia
+from apps.fiscal.nfe_entrada_data_entrada import (
+    datetime_operacional_data_entrada,
+    resolver_data_entrada_conferencia,
+)
 
 MSG_JA_BAIXADO = 'Pedido de compra já foi baixado para esta NF-e Entrada.'
 MSG_SEM_PEDIDO = 'Nenhum pedido de compra vinculado à conferência.'
@@ -135,7 +138,8 @@ def aplicar_baixa_pedido_compra_conferencia(
         if q_baixar > saldo and not _quantidade_proxima(q_baixar, saldo):
             raise ValueError(MSG_QTD_EXCEDE_SALDO.format(item_id=item_pc.id))
 
-    agora = timezone.now()
+    data_entrada = resolver_data_entrada_conferencia(conferencia)
+    momento_baixa = datetime_operacional_data_entrada(data_entrada)
     itens_baixados: list[dict[str, Any]] = []
 
     for linha in linhas:
@@ -151,7 +155,7 @@ def aplicar_baixa_pedido_compra_conferencia(
         if linha_locked.pedido_baixa_aplicada_em:
             raise ValueError(MSG_JA_BAIXADO)
         linha_locked.quantidade_pedido_baixada = q_baixar
-        linha_locked.pedido_baixa_aplicada_em = agora
+        linha_locked.pedido_baixa_aplicada_em = momento_baixa
         linha_locked.save(
             update_fields=['quantidade_pedido_baixada', 'pedido_baixa_aplicada_em', 'atualizado_em'],
         )
@@ -171,7 +175,7 @@ def aplicar_baixa_pedido_compra_conferencia(
     pedido = PedidoCompra.objects.select_for_update(of=('self',)).get(pk=pedido.pk)
     status_atualizado = _atualizar_status_pedido_compra(pedido)
 
-    conferencia.pedido_baixa_aplicado_em = agora
+    conferencia.pedido_baixa_aplicado_em = momento_baixa
     if usuario and getattr(usuario, 'is_authenticated', False):
         conferencia.pedido_baixa_aplicado_por = usuario
     conferencia.save(

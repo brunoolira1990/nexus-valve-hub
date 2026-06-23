@@ -175,6 +175,7 @@ const NFeEntradaConferenciaPage = () => {
     try {
       const payload = {
         pedido_compra_id: dados.pedido_compra_id,
+        data_entrada: dados.data_entrada || null,
         divergencias_aceitas: dados.divergencias_aceitas,
         observacao_divergencias: dados.observacao_divergencias,
         itens: dados.itens.map((it) => ({
@@ -208,6 +209,10 @@ const NFeEntradaConferenciaPage = () => {
 
   const abrirModalAplicar = async () => {
     if (!nfId) return;
+    if (!dados?.data_entrada) {
+      setErro('Informe a data de entrada da NF-e antes de aplicar estoque físico.');
+      return;
+    }
     setModalAplicarOpen(true);
     setModalAplicarErro('');
     setConfirmarAlertasAplicar(false);
@@ -230,6 +235,7 @@ const NFeEntradaConferenciaPage = () => {
     if (!dados || !nfId) return null;
     const payload = {
       pedido_compra_id: dados.pedido_compra_id,
+      data_entrada: dados.data_entrada || null,
       divergencias_aceitas: dados.divergencias_aceitas,
       observacao_divergencias: dados.observacao_divergencias,
       itens: dados.itens.map((it) => ({
@@ -254,6 +260,7 @@ const NFeEntradaConferenciaPage = () => {
       const res = await nfeEntradaConferenciaService.aplicarEstoque(nfId, {
         confirmar_alertas: confirmarAlertasAplicar,
         observacao: obsAplicar,
+        data_entrada: dados?.data_entrada || undefined,
       });
       if (res.conferencia) {
         setDados(res.conferencia);
@@ -285,11 +292,16 @@ const NFeEntradaConferenciaPage = () => {
 
   const preparar = async () => {
     if (!dados) return;
+    if (!dados.data_entrada) {
+      setErro('Informe a data de entrada da NF-e antes de preparar estoque.');
+      return;
+    }
     setBusy(true);
     setErro('');
     try {
       const payload = {
         pedido_compra_id: dados.pedido_compra_id,
+        data_entrada: dados.data_entrada || null,
         divergencias_aceitas: dados.divergencias_aceitas,
         observacao_divergencias: dados.observacao_divergencias,
         itens: dados.itens.map((it) => ({
@@ -339,6 +351,21 @@ const NFeEntradaConferenciaPage = () => {
             ) : null}
           </div>
           <div><div className="text-muted-foreground text-xs">Emissão</div><div>{dados.data_emissao?.slice(0, 10)}</div></div>
+          <div>
+            <div className="text-muted-foreground text-xs">Data de entrada *</div>
+            <input
+              type="date"
+              className="erp-input mt-1 w-full max-w-[11rem]"
+              value={dados.data_entrada?.slice(0, 10) || ''}
+              disabled={estoqueJaAplicado}
+              onChange={(e) =>
+                setDados((prev) => (prev ? { ...prev, data_entrada: e.target.value || null } : prev))
+              }
+            />
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Competência operacional/fiscal da entrada. Pode ser diferente da emissão (ex.: virada de mês).
+            </p>
+          </div>
           <div><div className="text-muted-foreground text-xs">Valor total</div><div>R$ {Number(dados.valor_total || 0).toFixed(2)}</div></div>
           <div className="md:col-span-2">
             <div className="text-muted-foreground text-xs">Pedido de compra vinculado</div>

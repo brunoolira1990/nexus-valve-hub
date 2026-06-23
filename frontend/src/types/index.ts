@@ -2197,6 +2197,7 @@ export interface NFeEntradaConferencia {
   numero: string;
   serie: string;
   data_emissao: string;
+  data_entrada?: string | null;
   valor_total: number;
   fornecedor_nome: string;
   fornecedor_cnpj: string;

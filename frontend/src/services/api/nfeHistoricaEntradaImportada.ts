@@ -18,6 +18,7 @@ export type NFeEntradaHistoricaList = {
   numero: string;
   serie: string;
   dh_emissao: string;
+  conferencia_data_entrada?: string | null;
   valor_total_nf: number;
   valor_produtos: number;
   v_frete: number;

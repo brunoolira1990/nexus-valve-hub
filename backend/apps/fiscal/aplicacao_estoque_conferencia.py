@@ -28,6 +28,10 @@ from apps.fiscal.models import (
     NFeEntradaConferencia,
 )
 from apps.fiscal.pedido_compra_baixa import aplicar_baixa_pedido_compra_conferencia
+from apps.fiscal.nfe_entrada_data_entrada import (
+    datetime_operacional_data_entrada,
+    resolver_data_entrada_conferencia,
+)
 from apps.regras_fiscais.entrada_fiscal import (
     avaliar_item_entrada_fiscal,
     carregar_regras_fiscais_entrada_ativas,
@@ -129,10 +133,7 @@ def resolver_ou_criar_corrida(
 
 
 def _data_recebimento_conferencia(conferencia: NFeEntradaConferencia) -> date:
-    nf = conferencia.nf_entrada_historica
-    if nf.dh_emissao:
-        return nf.dh_emissao.date()
-    return timezone.localdate()
+    return resolver_data_entrada_conferencia(conferencia)
 
 
 def _avaliar_contexto_itens(
@@ -281,6 +282,17 @@ def _montar_resultado_plano(
         )
         return resultado
 
+    try:
+        resolver_data_entrada_conferencia(conferencia)
+    except ValueError as exc:
+        resultado['pendencias'].append(
+            {
+                'item_conferencia_id': None,
+                'motivo': str(exc),
+            },
+        )
+        return resultado
+
     if not conferencia.nf_entrada_historica.fornecedor_emitente_id:
         resultado['pendencias'].append(
             {
@@ -401,10 +413,10 @@ def aplicar_estoque_fisico_conferencia(
     fornecedor_id = nf.fornecedor_emitente_id
     data_rec = _data_recebimento_conferencia(conferencia)
     nf_ref = nf.numero or ''
+    momento_operacional = datetime_operacional_data_entrada(data_rec)
 
     resultado = preview
     resultado['itens_aplicados'] = []
-    agora = timezone.now()
 
     for plano in aplicaveis:
         item = ItemNFeEntradaConferencia.objects.select_for_update(of=('self',)).get(pk=plano.item.pk)
@@ -429,7 +441,7 @@ def aplicar_estoque_fisico_conferencia(
         ec.saldo = saldo_anterior + qtd
         ec.save(update_fields=['saldo'])
 
-        item.estoque_aplicado_em = agora
+        item.estoque_aplicado_em = momento_operacional
         item.quantidade_estoque_aplicada = qtd
         item.corrida_estoque = corrida
         item.estoque_corrida = ec
@@ -456,7 +468,7 @@ def aplicar_estoque_fisico_conferencia(
             },
         )
 
-    conferencia.estoque_aplicado_em = agora
+    conferencia.estoque_aplicado_em = momento_operacional
     conferencia.estoque_aplicado_observacao = (observacao or '').strip()
     if usuario and getattr(usuario, 'is_authenticated', False):
         conferencia.estoque_aplicado_por = usuario
@@ -469,7 +481,7 @@ def aplicar_estoque_fisico_conferencia(
         ],
     )
 
-    _atualizar_atendimentos_pos_aplicacao_fisica(conferencia, agora)
+    _atualizar_atendimentos_pos_aplicacao_fisica(conferencia, momento_operacional)
 
     if conferencia.pedido_compra_id:
         resultado['pedido_compra_baixa'] = aplicar_baixa_pedido_compra_conferencia(

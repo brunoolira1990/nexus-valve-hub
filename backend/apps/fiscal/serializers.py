@@ -1215,6 +1215,7 @@ class NFeEntradaHistoricaImportadaListSerializer(serializers.ModelSerializer):
     fornecedor_id = serializers.SerializerMethodField(read_only=True)
     conferencia_status = serializers.SerializerMethodField(read_only=True)
     conferencia_preparado_em = serializers.SerializerMethodField(read_only=True)
+    conferencia_data_entrada = serializers.SerializerMethodField(read_only=True)
     classificacao_dfe = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
@@ -1250,6 +1251,7 @@ class NFeEntradaHistoricaImportadaListSerializer(serializers.ModelSerializer):
             'historica',
             'conferencia_status',
             'conferencia_preparado_em',
+            'conferencia_data_entrada',
             'classificacao_dfe',
         )
 
@@ -1291,6 +1293,13 @@ class NFeEntradaHistoricaImportadaListSerializer(serializers.ModelSerializer):
         except ObjectDoesNotExist:
             return None
         return c.preparado_em.isoformat() if c.preparado_em else None
+
+    def get_conferencia_data_entrada(self, obj):
+        try:
+            c = obj.conferencia
+        except ObjectDoesNotExist:
+            return None
+        return c.data_entrada.isoformat() if c.data_entrada else None
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -1677,6 +1686,7 @@ class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):
     numero = serializers.SerializerMethodField(read_only=True)
     serie = serializers.SerializerMethodField(read_only=True)
     data_emissao = serializers.SerializerMethodField(read_only=True)
+    data_entrada = serializers.DateField(required=False, allow_null=True)
     valor_total = serializers.SerializerMethodField(read_only=True)
     pedido_compra_numero = serializers.SerializerMethodField(read_only=True)
     resumo_pedido = serializers.SerializerMethodField(read_only=True)
@@ -1695,6 +1705,7 @@ class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             'serie',
             'chave_acesso',
             'data_emissao',
+            'data_entrada',
             'valor_total',
             'fornecedor_nome',
             'fornecedor_cnpj',
@@ -1750,6 +1761,12 @@ class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         attrs = super().validate(attrs)
         normalize_operational_fields(attrs, {'status', 'observacao_divergencias'})
+        data_entrada = attrs.get('data_entrada')
+        if data_entrada is not None and self.instance:
+            if self.instance.estoque_aplicado_em and data_entrada != self.instance.data_entrada:
+                raise serializers.ValidationError(
+                    {'data_entrada': 'Não é permitido alterar a data de entrada após aplicar estoque.'},
+                )
         return attrs
 
     def _inject_fiscal_entrada_context(self, conferencia: NFeEntradaConferencia) -> None:
@@ -1850,6 +1867,7 @@ class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):
         data['pedido_baixa_aplicado_em'] = (
             instance.pedido_baixa_aplicado_em.isoformat() if instance.pedido_baixa_aplicado_em else None
         )
+        data['data_entrada'] = instance.data_entrada.isoformat() if instance.data_entrada else None
         elegibilidades = [
             (row.get('elegibilidade_estoque') or {})
             for row in (data.get('itens') or [])

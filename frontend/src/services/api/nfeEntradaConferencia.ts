@@ -19,7 +19,7 @@ export const nfeEntradaConferenciaService = {
     ).data,
   aplicarEstoque: async (
     nfeHistoricaId: number,
-    payload: { confirmar_alertas?: boolean; observacao?: string },
+    payload: { confirmar_alertas?: boolean; observacao?: string; data_entrada?: string },
   ) =>
     (
       await api.post<ResultadoAplicacaoEstoque>(

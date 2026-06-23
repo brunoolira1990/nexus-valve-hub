@@ -82,6 +82,7 @@ from .nfe_historica_entrada_fiscal import (
     queryset_compras_nf_entrada_historica,
     separar_totais_e_indicadores_entrada,
 )
+from .nfe_entrada_data_entrada import filtrar_entrada_historica_por_competencia
 from .nfe_historica_fiscal import (
     agrupar_por_mes,
     agrupar_por_trimestre,
@@ -1962,9 +1963,10 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
             di, df, meta = resolver_periodo(request.query_params)
         except PeriodoInvalido as exc:
             raise ValidationError({'detail': str(exc)}) from exc
-        qs = NFeEntradaHistoricaImportada.objects.filter(
-            dh_emissao__date__gte=di,
-            dh_emissao__date__lte=df,
+        qs = filtrar_entrada_historica_por_competencia(
+            NFeEntradaHistoricaImportada.objects.all(),
+            di,
+            df,
         )
         qs = queryset_compras_nf_entrada_historica(qs)
         p = request.query_params
@@ -2148,6 +2150,7 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
                     'observacao_divergencias',
                     conferencia.observacao_divergencias,
                 ),
+                'data_entrada': payload.get('data_entrada', conferencia.data_entrada),
             },
             partial=True,
         )
@@ -2295,6 +2298,17 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
             payload = request.data or {}
             confirmar_alertas = bool(payload.get('confirmar_alertas'))
             observacao = str(payload.get('observacao') or '')
+            if payload.get('data_entrada') and not conferencia.estoque_aplicado_em:
+                from apps.fiscal.nfe_entrada_data_entrada import parse_data_entrada
+
+                data_entrada = parse_data_entrada(payload.get('data_entrada'))
+                if not data_entrada:
+                    return response.Response(
+                        {'detail': 'Data de entrada inválida.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                conferencia.data_entrada = data_entrada
+                conferencia.save(update_fields=['data_entrada', 'atualizado_em'])
         else:
             confirmar_alertas = str(request.query_params.get('confirmar_alertas', '')).lower() in {
                 '1',

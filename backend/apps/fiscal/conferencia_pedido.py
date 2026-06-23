@@ -7,6 +7,7 @@ from typing import Any, TypedDict
 
 from apps.comercial.models import ItemPedidoCompra
 from apps.fiscal.models import ItemNFeEntradaConferencia, NFeEntradaConferencia
+from apps.fiscal.nfe_entrada_data_entrada import MSG_DATA_ENTRADA_OBRIGATORIA
 from apps.regras_fiscais.entrada_fiscal import MSG_SEM_REGRA_FISCAL_ENTRADA
 
 STATUS_ELEGIBILIDADE_APTO = 'APTO'
@@ -479,6 +480,9 @@ def validar_preparar_estoque_conferencia(
     }
     if conferencia.divergencias_aceitas:
         statuses_ok.add(ItemNFeEntradaConferencia.Status.DIVERGENTE)
+
+    if not conferencia.data_entrada:
+        pendencias.insert(0, MSG_DATA_ENTRADA_OBRIGATORIA)
 
     faltam_produto: list[int] = []
     for it in itens:

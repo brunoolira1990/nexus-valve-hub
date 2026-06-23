@@ -22,6 +22,7 @@ export type CentralDfeDocumento = {
   serie: string;
   data_emissao: string | null;
   data_importacao: string | null;
+  data_entrada?: string | null;
   emitente_nome: string;
   emitente_cnpj: string;
   uf: string;

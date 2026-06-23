@@ -85,6 +85,7 @@ class DocumentoCentralDfe:
     serie: str
     data_emissao: datetime | date | None
     data_importacao: datetime | None
+    data_entrada: date | None = None
     emitente_nome: str
     emitente_cnpj: str
     uf: str
@@ -109,6 +110,7 @@ class DocumentoCentralDfe:
             'serie': self.serie,
             'data_emissao': self._iso(self.data_emissao),
             'data_importacao': self._iso(self.data_importacao),
+            'data_entrada': self._iso(self.data_entrada),
             'emitente_nome': self.emitente_nome,
             'emitente_cnpj': self.emitente_cnpj,
             'uf': self.uf,
@@ -438,6 +440,7 @@ def documento_central_nfe_historica(
     lancadas = chaves_lancadas if chaves_lancadas is not None else _chaves_nfe_entrada_lancadas()
     conf = getattr(doc, 'conferencia', None)
     conf_status = conf.status if conf else ''
+    data_entrada = conf.data_entrada if conf else None
     status_entrada, _ = _status_entrada_nfe(conf_status, chave, lancadas)
     xml_status, xml_status_label, xml_armazenado = _xml_status_nfe_historica(doc)
     status_label = _status_entrada_label_nfe_historica(status_entrada, xml_armazenado=xml_armazenado)
@@ -457,6 +460,7 @@ def documento_central_nfe_historica(
         serie=doc.serie,
         data_emissao=doc.dh_emissao,
         data_importacao=doc.importado_em,
+        data_entrada=data_entrada,
         emitente_nome=emit_nome,
         emitente_cnpj=normalizar_cnpj(emit_cnpj),
         uf=str(uf or '')[:2].upper(),

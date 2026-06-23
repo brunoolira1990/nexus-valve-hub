@@ -26,7 +26,13 @@ from apps.fiscal.nfe_entrada_duplicatas import (
     montar_parcelas_sugeridas_nf_entrada,
 )
 from apps.fiscal.nfe_entrada_financeiro import preview_contas_pagar_de_nfe_entrada
+from apps.corridas.models import Corrida
 from apps.fiscal.pedido_compra_baixa import MSG_JA_BAIXADO, aplicar_baixa_pedido_compra_conferencia
+from apps.fiscal.nfe_entrada_data_entrada import (
+    MSG_DATA_ENTRADA_OBRIGATORIA,
+    data_competencia_entrada_nf,
+)
+from apps.fiscal.conferencia_pedido import validar_preparar_estoque_conferencia
 from apps.produtos.models import FamiliaProduto, Produto
 from apps.regras_fiscais.models import RegraFiscalEntrada
 
@@ -53,7 +59,7 @@ XML_COM_DUP = """<?xml version="1.0" encoding="UTF-8"?>
 </nfeProc>"""
 
 
-def _setup_pedido_conferencia(suffix: str, *, qty='10.000', vincular=True):
+def _setup_pedido_conferencia(suffix: str, *, qty='10.000', vincular=True, data_entrada=None):
     forn = Fornecedor.objects.create(razao_social=f'Forn {suffix}', cnpj=_cnpj(), uf='SP')
     fam = FamiliaProduto.objects.create(
         codigo_figura=f'F{suffix}'[:16],
@@ -106,6 +112,7 @@ def _setup_pedido_conferencia(suffix: str, *, qty='10.000', vincular=True):
         pedido_compra=pedido,
         status=NFeEntradaConferencia.Status.PREPARADA,
         preparado_em=timezone.now(),
+        data_entrada=data_entrada or date(2026, 6, 5),
     )
     linha, _ = conf.itens.get_or_create(item_nfe_historico=item_nf)
     linha.produto = prod
@@ -197,3 +204,31 @@ class NFeEntradaPedidoBaixaTests(TestCase):
         ctx['item_pc'].refresh_from_db()
         self.assertEqual(ctx['pedido'].status, status_antes)
         self.assertEqual(ctx['item_pc'].quantidade_recebida, Decimal('0'))
+        self.assertEqual(preview['parcelas'][1]['vencimento'], '2026-05-01')
+
+    def test_preparar_exige_data_entrada(self):
+        ctx = _setup_pedido_conferencia('semdata')
+        ctx['conf'].data_entrada = None
+        ctx['conf'].save(update_fields=['data_entrada'])
+        itens = list(ctx['conf'].itens.all())
+        pendencias, _ = validar_preparar_estoque_conferencia(ctx['conf'], itens)
+        self.assertTrue(any(MSG_DATA_ENTRADA_OBRIGATORIA in p for p in pendencias))
+
+    def test_competencia_entrada_virada_mes(self):
+        ctx = _setup_pedido_conferencia(
+            'virada',
+            data_entrada=date(2026, 7, 5),
+        )
+        ctx['nf'].dh_emissao = timezone.make_aware(datetime(2026, 6, 30, 18, 0))
+        ctx['nf'].save(update_fields=['dh_emissao'])
+        self.assertEqual(data_competencia_entrada_nf(ctx['nf']), date(2026, 7, 5))
+        self.assertNotEqual(ctx['nf'].dh_emissao.date(), date(2026, 7, 5))
+
+    def test_aplicar_estoque_usa_data_entrada_corrida(self):
+        ctx = _setup_pedido_conferencia('datacorr', data_entrada=date(2026, 7, 5))
+        ctx['nf'].dh_emissao = timezone.make_aware(datetime(2026, 6, 30, 18, 0))
+        ctx['nf'].save(update_fields=['dh_emissao'])
+        res = aplicar_estoque_fisico_conferencia(ctx['conf'], confirmar_alertas=True)
+        self.assertTrue(res['aplicado'])
+        corrida = Corrida.objects.get(numero=ctx['linha'].corrida)
+        self.assertEqual(corrida.data_recebimento, date(2026, 7, 5))
