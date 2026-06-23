@@ -201,7 +201,9 @@ const NFeEntradaConferenciaPage = () => {
         toast.success('Conferência salva.');
       }
     } catch (e) {
-      setErro(apiErrorMessage(e));
+      const msg = apiErrorMessage(e);
+      setErro(msg);
+      toast.error(msg.split('\n')[0] || 'Não foi possível salvar a conferência.');
     } finally {
       setBusy(false);
     }
@@ -318,11 +320,16 @@ const NFeEntradaConferenciaPage = () => {
       const saved = await nfeEntradaConferenciaService.salvar(nfId, payload);
       setDados(saved);
       await hydrateProdutoCache(saved);
-      const next = await nfeEntradaConferenciaService.prepararEstoque(nfId);
+      const next = await nfeEntradaConferenciaService.prepararEstoque(nfId, {
+        data_entrada: dados.data_entrada || null,
+      });
       setDados(next);
       setAvisoPedido('');
+      toast.success('Conferência preparada para estoque (status PREPARADA).');
     } catch (e) {
-      setErro(prepararEstoqueErrorMessage(e));
+      const msg = prepararEstoqueErrorMessage(e);
+      setErro(msg);
+      toast.error(msg.split('\n')[0] || 'Não foi possível preparar estoque.');
     } finally {
       setBusy(false);
     }

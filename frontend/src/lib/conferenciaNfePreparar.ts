@@ -5,6 +5,8 @@ type PrepararEstoqueErrorBody = {
   detail?: string;
   pendencias?: string[];
   bloqueio_fiscal?: boolean;
+  data_entrada_ausente?: boolean;
+  migrations_pendentes?: boolean;
 };
 
 /** Mensagem de erro ao preparar estoque (inclui pendências e bloqueio fiscal). */
@@ -13,6 +15,16 @@ export function prepararEstoqueErrorMessage(err: unknown): string {
   const data = ax.response?.data;
   const pendencias = data?.pendencias;
 
+  if (data?.migrations_pendentes && data?.detail) {
+    return data.detail;
+  }
+
+  if (data?.data_entrada_ausente) {
+    return [
+      'Informe e salve a data de entrada da NF-e antes de preparar estoque.',
+      ...(pendencias || []),
+    ].join('\n');
+  }
   if (data?.bloqueio_fiscal) {
     const configEntrada = pendencias?.some((p) =>
       /entrada fiscal|regra fiscal de entrada/i.test(p),

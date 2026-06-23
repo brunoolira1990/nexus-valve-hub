@@ -13,6 +13,27 @@ MSG_DATA_ENTRADA_OBRIGATORIA = (
     'Informe a data de entrada da NF-e antes de finalizar (preparar estoque, aplicar recebimento ou baixar pedido).'
 )
 MSG_DATA_ENTRADA_INVALIDA = 'Data de entrada inválida.'
+MSG_MIGRATIONS_PENDENTES_NFE_ENTRADA = (
+    'O banco de dados está desatualizado para o fluxo de NF-e Entrada. '
+    'Solicite ao operador a aplicação das migrations: '
+    'fiscal 0050, fiscal 0051, fiscal 0052 e comercial 0035.'
+)
+
+
+def mensagem_erro_schema_nfe_entrada(exc: BaseException) -> str | None:
+    """Detecta colunas ausentes das entregas 4.0.15.2.19/2.20 e retorna mensagem clara."""
+    texto = str(exc).lower()
+    marcadores = (
+        'data_entrada',
+        'pedido_baixa_aplicado',
+        'pedido_baixa_aplicada',
+        'quantidade_recebida',
+        'quantidade_pedido_baixada',
+        'xml_conteudo',
+    )
+    if any(m in texto for m in marcadores):
+        return MSG_MIGRATIONS_PENDENTES_NFE_ENTRADA
+    return None
 
 
 def parse_data_entrada(value: str | date | None) -> date | None:
@@ -64,10 +85,6 @@ def filtrar_entrada_historica_por_competencia(
     data_inicio: date,
     data_fim: date,
 ) -> QuerySet[NFeEntradaHistoricaImportada]:
-    """
-    Filtra NF-e entrada histórica pelo período de competência operacional.
-    Prioriza conferencia.data_entrada; sem data informada, usa dh_emissao (notas ainda não finalizadas).
-    """
     return qs.filter(
         Q(conferencia__data_entrada__gte=data_inicio, conferencia__data_entrada__lte=data_fim)
         | Q(

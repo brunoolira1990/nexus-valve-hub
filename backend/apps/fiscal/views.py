@@ -82,7 +82,7 @@ from .nfe_historica_entrada_fiscal import (
     queryset_compras_nf_entrada_historica,
     separar_totais_e_indicadores_entrada,
 )
-from .nfe_entrada_data_entrada import filtrar_entrada_historica_por_competencia
+from .nfe_entrada_data_entrada import filtrar_entrada_historica_por_competencia, mensagem_erro_schema_nfe_entrada, parse_data_entrada
 from .nfe_historica_fiscal import (
     agrupar_por_mes,
     agrupar_por_trimestre,
@@ -2126,20 +2126,69 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
             .first()
         )
 
+    @staticmethod
+    def _aplicar_data_entrada_payload(
+        conferencia: NFeEntradaConferencia,
+        payload: dict,
+        *,
+        bloquear_apos_estoque: bool = True,
+    ) -> str | None:
+        """Persiste data_entrada do payload. Retorna mensagem de erro ou None."""
+        if 'data_entrada' not in payload:
+            return None
+        if bloquear_apos_estoque and conferencia.estoque_aplicado_em:
+            return None
+        parsed = parse_data_entrada(payload.get('data_entrada'))
+        raw = payload.get('data_entrada')
+        if raw not in (None, '') and parsed is None:
+            return 'Data de entrada inválida.'
+        conferencia.data_entrada = parsed
+        conferencia.save(update_fields=['data_entrada', 'atualizado_em'])
+        return None
+
+    @staticmethod
+    def _resposta_erro_schema_nfe_entrada(exc: BaseException):
+        msg = mensagem_erro_schema_nfe_entrada(exc)
+        if msg:
+            return response.Response({'detail': msg, 'migrations_pendentes': True}, status=500)
+        return None
+
     @action(detail=True, methods=['get', 'post'], url_path='conferencia')
     def conferencia(self, request, pk=None):
         if request.method == 'POST':
             return self._salvar_conferencia(request, pk)
-        nf = self.get_queryset().prefetch_related('itens').get(pk=pk)
-        conferencia = self._get_or_build_conferencia(nf)
-        conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
-        return response.Response(NFeEntradaConferenciaSerializer(conferencia).data)
+        try:
+            nf = self.get_queryset().prefetch_related('itens').get(pk=pk)
+            conferencia = self._get_or_build_conferencia(nf)
+            conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
+            return response.Response(NFeEntradaConferenciaSerializer(conferencia).data)
+        except Exception as exc:  # noqa: BLE001
+            resp = self._resposta_erro_schema_nfe_entrada(exc)
+            if resp:
+                return resp
+            raise
+
+    def _salvar_conferencia(self, request, pk=None):
+        try:
+            return self._salvar_conferencia_impl(request, pk)
+        except Exception as exc:  # noqa: BLE001
+            resp = self._resposta_erro_schema_nfe_entrada(exc)
+            if resp:
+                return resp
+            raise
 
     @transaction.atomic
-    def _salvar_conferencia(self, request, pk=None):
+    def _salvar_conferencia_impl(self, request, pk=None):
         nf = self.get_queryset().prefetch_related('itens').get(pk=pk)
         conferencia = self._get_or_build_conferencia(nf)
         payload = request.data or {}
+        data_entrada_val = (
+            parse_data_entrada(payload['data_entrada'])
+            if 'data_entrada' in payload
+            else conferencia.data_entrada
+        )
+        if 'data_entrada' in payload and payload.get('data_entrada') not in (None, '') and data_entrada_val is None:
+            return response.Response({'detail': 'Data de entrada inválida.'}, status=status.HTTP_400_BAD_REQUEST)
         conf_serializer = NFeEntradaConferenciaSerializer(
             conferencia,
             data={
@@ -2150,7 +2199,7 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
                     'observacao_divergencias',
                     conferencia.observacao_divergencias,
                 ),
-                'data_entrada': payload.get('data_entrada', conferencia.data_entrada),
+                'data_entrada': data_entrada_val,
             },
             partial=True,
         )
@@ -2205,9 +2254,24 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
     @action(detail=True, methods=['post'], url_path='preparar-estoque')
     @transaction.atomic
     def preparar_estoque(self, request, pk=None):
+        try:
+            return self._preparar_estoque_impl(request, pk)
+        except Exception as exc:  # noqa: BLE001
+            resp = self._resposta_erro_schema_nfe_entrada(exc)
+            if resp:
+                return resp
+            raise
+
+    @transaction.atomic
+    def _preparar_estoque_impl(self, request, pk=None):
         nf = self.get_queryset().prefetch_related('itens').get(pk=pk)
         conferencia = self._get_or_build_conferencia(nf)
         conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
+        payload = request.data or {}
+        erro_data = self._aplicar_data_entrada_payload(conferencia, payload)
+        if erro_data:
+            return response.Response({'detail': erro_data}, status=status.HTTP_400_BAD_REQUEST)
+        conferencia.refresh_from_db()
         for item_obj in conferencia.itens.all():
             aplicar_pos_save_item_conferencia(item_obj, conferencia)
         conferencia.refresh_from_db()
@@ -2216,13 +2280,15 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
         )
         pendencias, bloqueio_fiscal = validar_preparar_estoque_conferencia(conferencia, itens)
         if pendencias:
-            payload: dict = {
+            payload_resp: dict = {
                 'detail': 'Não foi possível preparar estoque.',
                 'pendencias': pendencias,
             }
             if bloqueio_fiscal:
-                payload['bloqueio_fiscal'] = True
-            return response.Response(payload, status=400)
+                payload_resp['bloqueio_fiscal'] = True
+            if not conferencia.data_entrada:
+                payload_resp['data_entrada_ausente'] = True
+            return response.Response(payload_resp, status=400)
         conferencia.status = NFeEntradaConferencia.Status.CONFERIDA
         conferencia.preparado_em = timezone.now()
         conferencia.status = NFeEntradaConferencia.Status.PREPARADA
@@ -2289,6 +2355,15 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
 
     @action(detail=True, methods=['get', 'post'], url_path='conferencia/aplicar-estoque')
     def aplicar_estoque_conferencia(self, request, pk=None):
+        try:
+            return self._aplicar_estoque_conferencia_impl(request, pk)
+        except Exception as exc:  # noqa: BLE001
+            resp = self._resposta_erro_schema_nfe_entrada(exc)
+            if resp:
+                return resp
+            raise
+
+    def _aplicar_estoque_conferencia_impl(self, request, pk=None):
         nf = self.get_queryset().get(pk=pk)
         conferencia = self._get_or_build_conferencia(nf)
         conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
@@ -2298,17 +2373,10 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
             payload = request.data or {}
             confirmar_alertas = bool(payload.get('confirmar_alertas'))
             observacao = str(payload.get('observacao') or '')
-            if payload.get('data_entrada') and not conferencia.estoque_aplicado_em:
-                from apps.fiscal.nfe_entrada_data_entrada import parse_data_entrada
-
-                data_entrada = parse_data_entrada(payload.get('data_entrada'))
-                if not data_entrada:
-                    return response.Response(
-                        {'detail': 'Data de entrada inválida.'},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-                conferencia.data_entrada = data_entrada
-                conferencia.save(update_fields=['data_entrada', 'atualizado_em'])
+            erro_data = self._aplicar_data_entrada_payload(conferencia, payload)
+            if erro_data:
+                return response.Response({'detail': erro_data}, status=status.HTTP_400_BAD_REQUEST)
+            conferencia.refresh_from_db()
         else:
             confirmar_alertas = str(request.query_params.get('confirmar_alertas', '')).lower() in {
                 '1',

@@ -214,6 +214,12 @@ class NFeEntradaPedidoBaixaTests(TestCase):
         pendencias, _ = validar_preparar_estoque_conferencia(ctx['conf'], itens)
         self.assertTrue(any(MSG_DATA_ENTRADA_OBRIGATORIA in p for p in pendencias))
 
+    def test_mensagem_erro_schema_migrations(self):
+        from apps.fiscal.nfe_entrada_data_entrada import mensagem_erro_schema_nfe_entrada
+
+        exc = Exception('column fiscal_nfeentradaconferencia.data_entrada does not exist')
+        self.assertIn('fiscal 0052', mensagem_erro_schema_nfe_entrada(exc) or '')
+
     def test_competencia_entrada_virada_mes(self):
         ctx = _setup_pedido_conferencia(
             'virada',

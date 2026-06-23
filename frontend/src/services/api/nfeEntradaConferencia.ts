@@ -8,8 +8,8 @@ export const nfeEntradaConferenciaService = {
     (await api.get<NFeEntradaConferencia>(`${base}${nfeHistoricaId}/conferencia/`)).data,
   salvar: async (nfeHistoricaId: number, payload: Partial<NFeEntradaConferencia>) =>
     (await api.post<NFeEntradaConferencia>(`${base}${nfeHistoricaId}/conferencia/`, payload)).data,
-  prepararEstoque: async (nfeHistoricaId: number) =>
-    (await api.post<NFeEntradaConferencia>(`${base}${nfeHistoricaId}/preparar-estoque/`, {})).data,
+  prepararEstoque: async (nfeHistoricaId: number, payload?: { data_entrada?: string | null }) =>
+    (await api.post<NFeEntradaConferencia>(`${base}${nfeHistoricaId}/preparar-estoque/`, payload ?? {})).data,
   previewAplicarEstoque: async (nfeHistoricaId: number, confirmarAlertas = false) =>
     (
       await api.get<ResultadoAplicacaoEstoque>(
