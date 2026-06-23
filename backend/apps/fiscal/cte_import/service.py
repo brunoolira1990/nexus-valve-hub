@@ -9,6 +9,7 @@ from apps.cadastros.models import Empresa, Fornecedor, Transportadora
 from ..cte_historico_conferencia import _status_inicial_importacao
 from ..models import CTeHistoricoImportado
 from ..services.reforma_tributaria import enriquecer_reforma_e_outros_json_cte
+from apps.fiscal.xml_armazenamento import ORIGEM_IMPORTACAO_MANUAL, persistir_xml_cte
 from .parser import parse_cte_xml
 
 
@@ -78,13 +79,28 @@ def importar_arquivos_cte(arquivos: list[tuple[str, bytes]]) -> dict[str, Any]:
             continue
 
         if CTeHistoricoImportado.objects.filter(chave_acesso=parsed.chave_acesso).exists():
-            duplicados.append(
-                {
-                    'arquivo': nome,
-                    'chave_acesso': parsed.chave_acesso,
-                    'mensagem': 'Esta chave de CT-e já foi importada.',
-                }
-            )
+            existente = CTeHistoricoImportado.objects.get(chave_acesso=parsed.chave_acesso)
+            if persistir_xml_cte(
+                existente,
+                conteudo,
+                origem=ORIGEM_IMPORTACAO_MANUAL,
+                nome_arquivo=nome,
+            ):
+                duplicados.append(
+                    {
+                        'arquivo': nome,
+                        'chave_acesso': parsed.chave_acesso,
+                        'mensagem': 'XML completo armazenado para registro já existente.',
+                    },
+                )
+            else:
+                duplicados.append(
+                    {
+                        'arquivo': nome,
+                        'chave_acesso': parsed.chave_acesso,
+                        'mensagem': 'Esta chave de CT-e já foi importada.',
+                    },
+                )
             continue
 
         try:
@@ -154,6 +170,13 @@ def importar_arquivos_cte(arquivos: list[tuple[str, bytes]]) -> dict[str, Any]:
                     status_conferencia=st_conf,
                     apto_operacional=False,
                     ignorado_operacionalmente=False,
+                )
+                persistir_xml_cte(
+                    cte,
+                    conteudo,
+                    origem=ORIGEM_IMPORTACAO_MANUAL,
+                    nome_arquivo=nome,
+                    forcar=True,
                 )
         except Exception as e:
             erros.append({'arquivo': nome, 'mensagem': f'Falha ao gravar: {e}'})

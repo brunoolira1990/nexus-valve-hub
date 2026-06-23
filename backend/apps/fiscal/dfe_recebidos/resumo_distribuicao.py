@@ -38,10 +38,12 @@ def upsert_resnfe_destinada(
             'ambiente': NFeDestinadaManifestacao.Ambiente.PRODUCAO,
             'classificacao_dfe': 'BASE_DFE_IMPORTADA',
             'resumo_json': parsed.resumo_json,
-            'status_xml': NFeDestinadaManifestacao.StatusXml.RESUMO,
         },
     )
-    if not created and obj.status_xml == NFeDestinadaManifestacao.StatusXml.PENDENTE:
+    if created:
+        obj.status_xml = NFeDestinadaManifestacao.StatusXml.RESUMO
+        obj.save(update_fields=['status_xml', 'consultado_em'])
+    elif obj.status_xml == NFeDestinadaManifestacao.StatusXml.PENDENTE:
         obj.status_xml = NFeDestinadaManifestacao.StatusXml.RESUMO
         obj.save(update_fields=['status_xml', 'consultado_em'])
     return obj, created

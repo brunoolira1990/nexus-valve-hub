@@ -850,6 +850,7 @@ class NFeEntradaHistoricaImportada(models.Model):
     historica = models.BooleanField(default=True)
 
     nome_arquivo = models.CharField(max_length=255, blank=True)
+    xml_conteudo = models.TextField(blank=True)
     importado_em = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -1203,6 +1204,7 @@ class CTeHistoricoImportado(models.Model):
     historico = models.BooleanField(default=True)
 
     nome_arquivo = models.CharField(max_length=255, blank=True)
+    xml_conteudo = models.TextField(blank=True)
     importado_em = models.DateTimeField(auto_now_add=True)
 
     class StatusConferencia(models.TextChoices):

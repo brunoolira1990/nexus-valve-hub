@@ -14,6 +14,7 @@ from apps.fiscal.manifestacao_destinatario.audit import registrar_evento_manifes
 from apps.fiscal.models import NFeDestinadaManifestacao, NFeDestinadaManifestacaoEvento
 from apps.fiscal.nfe_historica_classificacao import norm_digits
 from apps.fiscal.nfe_import.service_entrada import importar_arquivos_entrada
+from apps.fiscal.xml_armazenamento import ORIGEM_MANIFESTACAO_DOWNLOAD, persistir_xml_nfe_entrada
 from apps.fiscal.nfe_integracao.adapters.certificado_a1 import carregar_certificado_empresa
 from apps.fiscal.nfe_integracao.adapters.exceptions import CertificadoA1Error, PyNFeComunicacaoError
 from apps.fiscal.nfe_integracao.adapters.pynfe_adapter import (
@@ -147,6 +148,17 @@ def baixar_xml_documento_destinatario(
 
         dup = NFeEntradaHistoricaImportada.objects.filter(chave_acesso=chave).first()
         nf_hist_id = dup.pk if dup else None
+
+    if nf_hist_id:
+        nf_hist = NFeEntradaHistoricaImportada.objects.filter(pk=nf_hist_id).first()
+        if nf_hist:
+            persistir_xml_nfe_entrada(
+                nf_hist,
+                xml_bytes,
+                origem=ORIGEM_MANIFESTACAO_DOWNLOAD,
+                nome_arquivo=nome,
+                forcar=True,
+            )
 
     agora = timezone.now()
     documento.status_xml = NFeDestinadaManifestacao.StatusXml.BAIXADO

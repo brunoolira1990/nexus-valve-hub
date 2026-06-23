@@ -15,6 +15,13 @@ export const STATUS_MANIFESTACAO_FINAL = new Set<StatusManifestacao>([
   'NAO_REALIZADA',
 ]);
 
+/** Manifestação concluída que normalmente libera download do XML na SEFAZ. */
+export const STATUS_MANIFESTACAO_LIBERA_IMPORTAR_XML = new Set<StatusManifestacao>([
+  'CIENTE',
+  'CONFIRMADA',
+  'NAO_REALIZADA',
+]);
+
 export const LABEL_MANIFESTACAO_NAO_APLICAVEL = 'Não aplicável';
 export const LABEL_MANIFESTACAO_PENDENTE = 'Pendente manifestação';
 export const LABEL_XML_NAO_APLICAVEL = 'Não aplicável';
@@ -97,17 +104,26 @@ export function podeManifestarNfe(
   return !STATUS_MANIFESTACAO_FINAL.has(manifestacao.status_manifestacao);
 }
 
-export function podeBaixarXml(status: StatusXmlDestinada | string | undefined): boolean {
-  return Boolean(status && status !== 'BAIXADO' && status !== 'ARMAZENADO' && status !== 'RESUMO');
+export function statusXmlPendenteArmazenamento(status: StatusXmlDestinada | string | undefined): boolean {
+  return Boolean(
+    status
+    && status !== 'BAIXADO'
+    && status !== 'ARMAZENADO'
+    && status !== 'ERRO',
+  );
 }
 
 export function podeArmazenarXmlNfe(
-  manifestacao: { status_xml: StatusXmlDestinada } | null,
+  manifestacao: { status_xml: StatusXmlDestinada; status_manifestacao?: StatusManifestacao } | null,
   row: Pick<CentralDfeDocumento, 'tipo_documento' | 'xml_armazenado' | 'xml_status'>,
 ): boolean {
   if (!isNfeFornecedorAplicavel(row)) return false;
   if (row.xml_armazenado || row.xml_status === 'ARMAZENADO') return false;
-  if (manifestacao) return podeBaixarXml(manifestacao.status_xml);
+  if (!manifestacao) return false;
+  if (!statusXmlPendenteArmazenamento(manifestacao.status_xml)) return false;
+  if (manifestacao.status_xml === 'RESUMO') {
+    return STATUS_MANIFESTACAO_LIBERA_IMPORTAR_XML.has(manifestacao.status_manifestacao);
+  }
   return true;
 }
 

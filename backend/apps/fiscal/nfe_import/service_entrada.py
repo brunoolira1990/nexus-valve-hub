@@ -16,6 +16,11 @@ from .service_entrada_propria import mensagem_rejeicao_entrada_propria_em_outro_
 from ..services.reforma_tributaria import enriquecer_reforma_e_outros_json_nf
 from .falha_xml import falha_com_traceback, montar_falha_importacao_xml
 from .parser_entrada import parse_nfe_entrada_xml
+from apps.fiscal.xml_armazenamento import (
+    ORIGEM_IMPORTACAO_MANUAL,
+    persistir_xml_nfe_entrada,
+    sincronizar_manifestacao_com_nf_historica,
+)
 
 
 def _norm_digits(val: str) -> str:
@@ -76,7 +81,29 @@ def importar_arquivos_entrada(arquivos: list[tuple[str, bytes]]) -> dict[str, An
             continue
 
         if NFeEntradaHistoricaImportada.objects.filter(chave_acesso=parsed.chave_acesso).exists():
-            duplicadas.append({'arquivo': nome, 'chave_acesso': parsed.chave_acesso, 'mensagem': 'Esta chave de NF-e já foi importada.'})
+            existente = NFeEntradaHistoricaImportada.objects.get(chave_acesso=parsed.chave_acesso)
+            if persistir_xml_nfe_entrada(
+                existente,
+                conteudo,
+                origem=ORIGEM_IMPORTACAO_MANUAL,
+                nome_arquivo=nome,
+            ):
+                sincronizar_manifestacao_com_nf_historica(existente)
+                duplicadas.append(
+                    {
+                        'arquivo': nome,
+                        'chave_acesso': parsed.chave_acesso,
+                        'mensagem': 'XML completo armazenado para registro já existente.',
+                    },
+                )
+            else:
+                duplicadas.append(
+                    {
+                        'arquivo': nome,
+                        'chave_acesso': parsed.chave_acesso,
+                        'mensagem': 'Esta chave de NF-e já foi importada.',
+                    },
+                )
             continue
 
         classificacao = classificar_por_empresa(parsed.emit_json, parsed.dest_json)
@@ -199,6 +226,13 @@ def importar_arquivos_entrada(arquivos: list[tuple[str, bytes]]) -> dict[str, An
                     papel_empresa_no_documento=papel,
                     nome_arquivo=nome[:255],
                 )
+                persistir_xml_nfe_entrada(
+                    nf,
+                    conteudo,
+                    origem=ORIGEM_IMPORTACAO_MANUAL,
+                    nome_arquivo=nome,
+                    forcar=True,
+                )
                 ItemNFeEntradaHistoricaImportada.objects.bulk_create(
                     [
                         ItemNFeEntradaHistoricaImportada(
@@ -210,6 +244,7 @@ def importar_arquivos_entrada(arquivos: list[tuple[str, bytes]]) -> dict[str, An
                         for it in parsed.itens
                     ]
                 )
+                sincronizar_manifestacao_com_nf_historica(nf)
         except Exception as e:
             erros.append(
                 falha_com_traceback(

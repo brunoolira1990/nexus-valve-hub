@@ -2052,6 +2052,24 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
         result = importar_arquivos_entrada(batch)
         return response.Response(result, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=['get'], url_path='download-xml')
+    def download_xml(self, request, pk=None):
+        from django.http import HttpResponse
+
+        nf = self.get_object()
+        xml = (nf.xml_conteudo or '').strip()
+        if not xml:
+            return response.Response(
+                {'detail': 'XML completo não armazenado para este documento.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        chave = (nf.chave_acesso or str(nf.pk)).strip()
+        return HttpResponse(
+            xml,
+            content_type='application/xml; charset=utf-8',
+            headers={'Content-Disposition': f'attachment; filename="nfe-entrada-{chave}.xml"'},
+        )
+
     def _get_or_build_conferencia(self, nf: NFeEntradaHistoricaImportada) -> NFeEntradaConferencia:
         conferencia, created = NFeEntradaConferencia.objects.get_or_create(nf_entrada_historica=nf)
         if created:
@@ -2550,6 +2568,24 @@ class CTeHistoricoImportadoViewSet(AutocompleteOrPaginationMixin, viewsets.ReadO
             batch.append((getattr(f, 'name', '') or 'cte.xml', raw))
         result = importar_arquivos_cte(batch)
         return response.Response(result, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['get'], url_path='download-xml')
+    def download_xml(self, request, pk=None):
+        from django.http import HttpResponse
+
+        cte = self.get_object()
+        xml = (cte.xml_conteudo or '').strip()
+        if not xml:
+            return response.Response(
+                {'detail': 'XML completo não armazenado para este documento.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        chave = (cte.chave_acesso or str(cte.pk)).strip()
+        return HttpResponse(
+            xml,
+            content_type='application/xml; charset=utf-8',
+            headers={'Content-Disposition': f'attachment; filename="cte-{chave}.xml"'},
+        )
 
     def _base_cte_gerencial(self, request):
         try:

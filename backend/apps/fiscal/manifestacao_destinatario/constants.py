@@ -53,6 +53,11 @@ DESCRICAO_EVENTO_USUARIO = {
 
 EVENTOS_EXIGEM_JUSTIFICATIVA = frozenset({EVENTO_NAO_REALIZADA})
 
+# Eventos que habilitam download do XML completo na distribuição DF-e (sem baixar automaticamente).
+EVENTOS_LIBERAM_DOWNLOAD_XML = frozenset(
+    {EVENTO_CIENCIA, EVENTO_CONFIRMACAO, EVENTO_NAO_REALIZADA},
+)
+
 MIN_JUSTIFICATIVA = 15
 MAX_JUSTIFICATIVA = 255
 

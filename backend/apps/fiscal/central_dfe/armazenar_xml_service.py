@@ -10,7 +10,6 @@ from django.db import transaction
 from apps.cadastros.models import Empresa
 from apps.fiscal.central_dfe.service import TIPO_CTE, TIPO_NFE_ENTRADA, normalizar_cnpj
 from apps.fiscal.dfe_classificacao import eh_documento_homologacao
-from apps.fiscal.manifestacao_destinatario.audit import registrar_evento_manifestacao
 from apps.fiscal.manifestacao_destinatario.baixar_xml_service import (
     BaixarXmlDestinatarioError,
     baixar_xml_documento_destinatario,
@@ -22,9 +21,9 @@ from apps.fiscal.manifestacao_destinatario.iniciar_por_chave_service import (
 from apps.fiscal.models import (
     CTeHistoricoImportado,
     NFeDestinadaManifestacao,
-    NFeDestinadaManifestacaoEvento,
     NFeEntradaHistoricaImportada,
 )
+from apps.fiscal.xml_armazenamento import sincronizar_manifestacao_com_nf_historica
 
 logger = logging.getLogger(__name__)
 
@@ -54,56 +53,7 @@ def _cte_pertence_empresa(cte: CTeHistoricoImportado, empresa: Empresa) -> bool:
     }
 
 
-def _sincronizar_manifestacao_com_nf_historica(
-    nf: NFeEntradaHistoricaImportada,
-    *,
-    usuario=None,
-) -> NFeDestinadaManifestacao:
-    empresa = nf.empresa_destinataria
-    if empresa is None:
-        raise ArmazenarXmlCentralError('NF-e sem empresa destinataria vinculada.')
-
-    cnpj_dest = normalizar_cnpj(empresa.cnpj)
-    emit_nome = ''
-    emit_cnpj = ''
-    if nf.fornecedor_emitente_id and nf.fornecedor_emitente:
-        emit_nome = nf.fornecedor_emitente.razao_social or ''
-        emit_cnpj = normalizar_cnpj(nf.fornecedor_emitente.cnpj)
-    elif nf.emit_json:
-        emit_nome = (nf.emit_json.get('xNome') or nf.emit_json.get('xFant') or '').strip()
-        emit_cnpj = normalizar_cnpj(str(nf.emit_json.get('CNPJ') or nf.emit_json.get('CPF') or ''))
-
-    tp_amb = (nf.tp_amb or '1').strip()
-    ambiente = (
-        NFeDestinadaManifestacao.Ambiente.PRODUCAO
-        if tp_amb == '1'
-        else NFeDestinadaManifestacao.Ambiente.HOMOLOGACAO
-    )
-
-    documento, created = NFeDestinadaManifestacao.objects.update_or_create(
-        empresa=empresa,
-        chave_acesso=nf.chave_acesso,
-        defaults={
-            'cnpj_destinatario': cnpj_dest,
-            'cnpj_emitente': emit_cnpj,
-            'razao_social_emitente': (emit_nome or '')[:255],
-            'dh_emissao': nf.dh_emissao,
-            'valor_nf': nf.valor_total_nf,
-            'ambiente': ambiente,
-            'classificacao_dfe': 'BASE_DFE_IMPORTADA',
-            'status_xml': NFeDestinadaManifestacao.StatusXml.BAIXADO,
-            'nf_entrada_historica': nf,
-        },
-    )
-    if created:
-        registrar_evento_manifestacao(
-            documento=documento,
-            tipo_acao=NFeDestinadaManifestacaoEvento.TipoAcao.CONSULTA,
-            descricao='Registro de manifestação vinculado à NF-e já armazenada na Base DF-e Importada.',
-            usuario=usuario,
-            ambiente=ambiente,
-        )
-    return documento
+from apps.fiscal.xml_armazenamento import sincronizar_manifestacao_com_nf_historica
 
 
 @transaction.atomic
@@ -127,7 +77,9 @@ def armazenar_xml_nfe_central(
     if nf is not None:
         if eh_documento_homologacao(nf):
             raise ArmazenarXmlCentralError('NF-e de homologação não é armazenada como base fiscal oficial.')
-        documento = _sincronizar_manifestacao_com_nf_historica(nf, usuario=usuario)
+        documento = sincronizar_manifestacao_com_nf_historica(nf, usuario=usuario)
+        if documento is None:
+            raise ArmazenarXmlCentralError('NF-e sem empresa destinataria vinculada.')
         return {
             'tipo_documento': TIPO_NFE_ENTRADA,
             'xml_armazenado': True,

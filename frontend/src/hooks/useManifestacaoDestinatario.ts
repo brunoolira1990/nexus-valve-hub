@@ -276,7 +276,7 @@ export function useManifestacaoDestinatario(
         empresa_id: empresaId,
         confirmacao_explicita: true,
       });
-      toast.success('XML armazenado na Base NF-e Entrada Importada.');
+      toast.success('XML importado e armazenado na Base NF-e Entrada Importada.');
       setConfirmArmazenar(null);
       setConfirmBaixar(null);
       await carregarManifestacao(chavesCentral ?? new Set());

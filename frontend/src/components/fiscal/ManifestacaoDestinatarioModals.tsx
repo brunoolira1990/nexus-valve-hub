@@ -23,6 +23,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { StatusBadge } from '@/components/nexus/StatusBadge';
 import { chaveNfeResumida } from '@/lib/chaveNfeResumida';
 import {
+  LABEL_IMPORTAR_XML_NFE,
+  TOOLTIP_IMPORTAR_XML_NFE,
+} from '@/lib/centralDfeUi';
+import {
   EVENTOS_MANIFESTACAO,
   podeArmazenarXmlNfe,
   podeManifestarNfe,
@@ -221,18 +225,29 @@ export function ManifestacaoDestinatarioModals({
                     Manifestar
                   </Button>
                 )}
-                {podeArmazenarXmlNfe(detalhe, { tipo_documento: 'NFE_ENTRADA', xml_armazenado: detalhe.status_xml === 'BAIXADO', xml_status: detalhe.status_xml === 'BAIXADO' ? 'ARMAZENADO' : 'PENDENTE' }) && (
+                {podeArmazenarXmlNfe(
+                  {
+                    status_xml: detalhe.status_xml,
+                    status_manifestacao: detalhe.status_manifestacao,
+                  },
+                  {
+                    tipo_documento: 'NFE_ENTRADA',
+                    xml_armazenado: detalhe.status_xml === 'BAIXADO',
+                    xml_status: detalhe.status_xml === 'BAIXADO' ? 'ARMAZENADO' : 'PENDENTE',
+                  },
+                ) && (
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
                     disabled={loadingAcao}
+                    title={TOOLTIP_IMPORTAR_XML_NFE}
                     onClick={() => {
                       onDetalheChange(null);
                       onConfirmBaixarChange(detalhe);
                     }}
                   >
-                    Armazenar XML
+                    {LABEL_IMPORTAR_XML_NFE}
                   </Button>
                 )}
               </div>
@@ -300,8 +315,8 @@ export function ManifestacaoDestinatarioModals({
                     </Button>
                   )}
                   {podeArmazenarXmlNfe(manifestacaoDetalhe, dfeDetalheRow) && (
-                    <Button type="button" size="sm" variant="outline" disabled={loadingAcao} onClick={onIniciarBaixarXml}>
-                      Armazenar XML
+                    <Button type="button" size="sm" variant="outline" disabled={loadingAcao} title={TOOLTIP_IMPORTAR_XML_NFE} onClick={onIniciarBaixarXml}>
+                      {LABEL_IMPORTAR_XML_NFE}
                     </Button>
                   )}
                   {manifestacaoDetalhe && (
@@ -331,9 +346,9 @@ export function ManifestacaoDestinatarioModals({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Armazenar XML da NF-e?</AlertDialogTitle>
+            <AlertDialogTitle>Importar XML da NF-e?</AlertDialogTitle>
             <AlertDialogDescription>
-              O XML será baixado (quando necessário) e armazenado na Base NF-e Entrada Importada, sem gerar
+              O XML será baixado da SEFAZ (quando disponível) e armazenado na Base NF-e Entrada Importada, sem gerar
               financeiro, estoque ou apuração automática.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -341,7 +356,7 @@ export function ManifestacaoDestinatarioModals({
             <AlertDialogCancel disabled={loadingAcao}>Cancelar</AlertDialogCancel>
             <AlertDialogAction disabled={loadingAcao} onClick={onExecutarBaixarXml}>
               {loadingAcao ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Armazenar XML
+              {LABEL_IMPORTAR_XML_NFE}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

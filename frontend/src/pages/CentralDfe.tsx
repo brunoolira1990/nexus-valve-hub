@@ -36,7 +36,10 @@ import {
   labelAbrirBaseImportada,
   labelStatusXmlManifestacao,
   LABEL_ARMAZENAR_XML_CTE,
+  LABEL_BAIXAR_XML,
   LABEL_CONFERIR_CTE,
+  LABEL_IMPORTAR_XML_CTE,
+  LABEL_IMPORTAR_XML_NFE,
   LABEL_VER_CTE,
   podeAbrirBaseImportada,
   podeArmazenarXmlCte,
@@ -45,10 +48,14 @@ import {
   statusXmlCteExibicao,
   tooltipAbrirBaseImportada,
   TOOLTIP_ARMAZENAR_XML_CTE,
-  TOOLTIP_ARMAZENAR_XML_NFE,
+  TOOLTIP_BAIXAR_XML,
   TOOLTIP_CONFERIR_CTE,
+  TOOLTIP_IMPORTAR_XML_CTE,
+  TOOLTIP_IMPORTAR_XML_NFE,
   TOOLTIP_VER_CTE,
 } from '@/lib/centralDfeUi';
+import { nfeHistoricaEntradaImportadaService } from '@/services/api/nfeHistoricaEntradaImportada';
+import { cteHistoricoImportadoService } from '@/services/api/cteHistoricoImportado';
 import { chaveNfeResumida } from '@/lib/chaveNfeResumida';
 import {
   centralDfeService,
@@ -81,13 +88,13 @@ const fmtCnpj = (cnpj: string): string => {
 
 /** XML + Ações fixas à direita — sempre visíveis com scroll horizontal nas demais colunas. */
 const CLASSE_COLUNA_XML_TH =
-  'sticky right-[5.5rem] z-10 min-w-[6.5rem] w-[6.5rem] bg-muted/95 shadow-[-2px_0_4px_-2px_hsl(var(--border))]';
+  'sticky right-[5.75rem] z-10 min-w-[7rem] w-[7rem] bg-muted/95 shadow-[-2px_0_4px_-2px_hsl(var(--border))]';
 const CLASSE_COLUNA_XML_TD =
-  'sticky right-[5.5rem] z-10 min-w-[6.5rem] w-[6.5rem] bg-card shadow-[-2px_0_4px_-2px_hsl(var(--border))] group-hover:bg-muted/50';
+  'sticky right-[5.75rem] z-10 min-w-[7rem] w-[7rem] bg-card shadow-[-2px_0_4px_-2px_hsl(var(--border))] group-hover:bg-muted/50';
 const CLASSE_COLUNA_ACOES_TH =
-  'sticky right-0 z-20 min-w-[5.5rem] w-[5.5rem] bg-muted/95 text-right shadow-[-4px_0_6px_-2px_hsl(var(--border))]';
+  'sticky right-0 z-20 min-w-[5.75rem] w-[5.75rem] bg-muted/95 text-right shadow-[-4px_0_6px_-2px_hsl(var(--border))]';
 const CLASSE_COLUNA_ACOES_TD =
-  'sticky right-0 z-20 min-w-[5.5rem] w-[5.5rem] bg-card text-right align-middle shadow-[-4px_0_6px_-2px_hsl(var(--border))] group-hover:bg-muted/50';
+  'sticky right-0 z-20 min-w-[5.75rem] w-[5.75rem] bg-card text-right align-middle shadow-[-4px_0_6px_-2px_hsl(var(--border))] group-hover:bg-muted/50';
 
 type CentralDfeAcoesLinhaProps = {
   row: CentralDfeDocumento;
@@ -97,10 +104,12 @@ type CentralDfeAcoesLinhaProps = {
   copiadoId: number | null;
   exibirManifestar: boolean;
   exibirArmazenarXml: boolean;
+  exibirBaixarXml: boolean;
   exibirAbrirBaseImportada: boolean;
   onAbrirDetalhe: () => void;
   onManifestar: () => void;
   onArmazenarXmlNfe: () => void;
+  onBaixarXml: () => void;
   onAbrirDetalheCte: () => void;
   onArmazenarXmlCte: () => void;
   onConferirCte: () => void;
@@ -115,10 +124,12 @@ function CentralDfeAcoesLinha({
   copiadoId,
   exibirManifestar,
   exibirArmazenarXml,
+  exibirBaixarXml,
   exibirAbrirBaseImportada,
   onAbrirDetalhe,
   onManifestar,
   onArmazenarXmlNfe,
+  onBaixarXml,
   onAbrirDetalheCte,
   onArmazenarXmlCte,
   onConferirCte,
@@ -165,12 +176,24 @@ function CentralDfeAcoesLinha({
               <DropdownMenuItem
                 className="cursor-pointer"
                 disabled={loadingAcaoManual}
-                title={TOOLTIP_ARMAZENAR_XML_NFE}
+                title={TOOLTIP_IMPORTAR_XML_NFE}
                 onSelect={onArmazenarXmlNfe}
               >
                 <span className="flex items-center gap-2">
                   <FileDown className="h-4 w-4 shrink-0" />
-                  Armazenar XML
+                  {LABEL_IMPORTAR_XML_NFE}
+                </span>
+              </DropdownMenuItem>
+            )}
+            {exibirBaixarXml && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                title={TOOLTIP_BAIXAR_XML}
+                onSelect={onBaixarXml}
+              >
+                <span className="flex items-center gap-2">
+                  <FileDown className="h-4 w-4 shrink-0" />
+                  {LABEL_BAIXAR_XML}
                 </span>
               </DropdownMenuItem>
             )}
@@ -219,12 +242,24 @@ function CentralDfeAcoesLinha({
               <DropdownMenuItem
                 className="cursor-pointer"
                 disabled={loadingAcaoManual}
-                title={TOOLTIP_ARMAZENAR_XML_CTE}
+                title={TOOLTIP_IMPORTAR_XML_CTE}
                 onSelect={onArmazenarXmlCte}
               >
                 <span className="flex items-center gap-2">
                   <FileDown className="h-4 w-4 shrink-0" />
-                  {LABEL_ARMAZENAR_XML_CTE}
+                  {LABEL_IMPORTAR_XML_CTE}
+                </span>
+              </DropdownMenuItem>
+            )}
+            {exibirBaixarXml && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                title={TOOLTIP_BAIXAR_XML}
+                onSelect={onBaixarXml}
+              >
+                <span className="flex items-center gap-2">
+                  <FileDown className="h-4 w-4 shrink-0" />
+                  {LABEL_BAIXAR_XML}
                 </span>
               </DropdownMenuItem>
             )}
@@ -745,6 +780,25 @@ const CentralDfe = () => {
     window.setTimeout(() => setCopiadoId(null), 2000);
   };
 
+  const baixarXmlArmazenado = async (row: CentralDfeDocumento) => {
+    try {
+      const chave = (row.chave_acesso || String(row.id)).replace(/\D/g, '').slice(0, 44) || String(row.id);
+      const blob =
+        row.tipo_documento === 'CTE'
+          ? await cteHistoricoImportadoService.downloadXml(row.id)
+          : await nfeHistoricaEntradaImportadaService.downloadXml(row.id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${row.tipo_documento === 'CTE' ? 'cte' : 'nfe'}-${chave}.xml`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success('XML exportado do armazenamento local.');
+    } catch (e) {
+      toast.error(apiErrorMessage(e, { fallback: 'Não foi possível baixar o XML armazenado.' }));
+    }
+  };
+
   const empresaLabel = empresaInfo?.razao_social || contexto?.empresa?.nome_exibicao || 'empresa ativa';
 
   const aplicarPeriodoEmissao = (inicio: string, fim: string) => {
@@ -983,7 +1037,9 @@ const CentralDfe = () => {
                   <th className="whitespace-nowrap w-[5.5rem]">Emissão</th>
                   <th className="text-right whitespace-nowrap w-[5.5rem]">Valor</th>
                   <th className="min-w-[6.5rem]">Status de entrada</th>
-                  <th className="min-w-[6.5rem]">Manifestação</th>
+                  <th className="min-w-[5.5rem] max-w-[6rem]" title="Manifestação do Destinatário">
+                    Manifest.
+                  </th>
                   <th className={`whitespace-nowrap ${CLASSE_COLUNA_XML_TH}`}>XML</th>
                   <th className={`${CLASSE_COLUNA_ACOES_TH} whitespace-nowrap`}>Ações</th>
                 </tr>
@@ -1000,6 +1056,7 @@ const CentralDfe = () => {
                   const exibirArmazenarXml = podeArmazenarXmlNfe(manifestacao, row);
                   const exibirAbrirBaseImportada =
                     xmlJaArmazenado(manifestacao, row) || podeAbrirBaseImportada(row);
+                  const exibirBaixarXml = exibirAbrirBaseImportada && !somenteResumo;
 
                   return (
                   <tr key={`${somenteResumo ? 'resumo' : row.tipo_documento}-${row.id}-${row.chave_acesso}`} className="group">
@@ -1046,10 +1103,12 @@ const CentralDfe = () => {
                         copiadoId={copiadoId}
                         exibirManifestar={exibirManifestar}
                         exibirArmazenarXml={exibirArmazenarXml}
+                        exibirBaixarXml={exibirBaixarXml}
                         exibirAbrirBaseImportada={exibirAbrirBaseImportada}
                         onAbrirDetalhe={() => abrirDetalhe(row, manifestacao)}
                         onManifestar={() => void iniciarManifestacaoManual(row, manifestacao)}
                         onArmazenarXmlNfe={() => void iniciarArmazenarXmlManual(row, manifestacao, somenteResumo)}
+                        onBaixarXml={() => void baixarXmlArmazenado(row)}
                         onAbrirDetalheCte={() => abrirDetalheCteLocal(row)}
                         onArmazenarXmlCte={() => setConfirmArmazenarCte(row)}
                         onConferirCte={() => abrirConferenciaCte(row)}

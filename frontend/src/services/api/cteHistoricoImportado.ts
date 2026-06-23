@@ -178,6 +178,10 @@ export const cteHistoricoImportadoService = {
     return unwrapListResults(response.data);
   },
   getById: async (id: number) => (await api.get<CTeHistoricoDetalhe>(`${base}${id}/`)).data,
+  downloadXml: async (id: number) => {
+    const response = await api.get<Blob>(`${base}${id}/download-xml/`, { responseType: 'blob' });
+    return response.data;
+  },
   importarXmls: async (files: File[]) => {
     const fd = new FormData();
     files.forEach((f) => fd.append('arquivos', f));

@@ -14,6 +14,7 @@ from apps.fiscal.manifestacao_destinatario.constants import (
     CODIGO_SEFAZ_POR_EVENTO,
     DESCRICAO_EVENTO_USUARIO,
     EVENTOS_EXIGEM_JUSTIFICATIVA,
+    EVENTOS_LIBERAM_DOWNLOAD_XML,
     EVENTOS_MANIFESTACAO,
     MAX_JUSTIFICATIVA,
     MIN_JUSTIFICATIVA,
@@ -250,15 +251,24 @@ def _persistir_sucesso_manifestacao(
         documento.manifestado_em = agora
         documento.ultimo_cstat = cstat
         documento.ultimo_xmotivo = xmotivo[:255]
-        documento.save(
-            update_fields=[
-                'status_manifestacao',
-                'manifestado_em',
-                'ultimo_cstat',
-                'ultimo_xmotivo',
-                'consultado_em',
-            ],
-        )
+        update_fields = [
+            'status_manifestacao',
+            'manifestado_em',
+            'ultimo_cstat',
+            'ultimo_xmotivo',
+            'consultado_em',
+        ]
+        if (
+            evento_norm in EVENTOS_LIBERAM_DOWNLOAD_XML
+            and documento.status_xml
+            not in (
+                NFeDestinadaManifestacao.StatusXml.BAIXADO,
+                NFeDestinadaManifestacao.StatusXml.DISPONIVEL,
+            )
+        ):
+            documento.status_xml = NFeDestinadaManifestacao.StatusXml.DISPONIVEL
+            update_fields.append('status_xml')
+        documento.save(update_fields=update_fields)
 
         if _evento_ja_registrado_historico(documento, codigo):
             return None

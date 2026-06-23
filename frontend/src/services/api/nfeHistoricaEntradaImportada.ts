@@ -130,6 +130,10 @@ export const nfeHistoricaEntradaImportadaService = {
   apuracaoMensalEntrada: async (query: URLSearchParams) =>
     (await api.get<ApuracaoMensalNFeEntradaHistResponse>(`${base}apuracao-mensal-entrada/?${query.toString()}`)).data,
   getById: async (id: number) => (await api.get<NFeEntradaHistoricaDetalhe>(`${base}${id}/`)).data,
+  downloadXml: async (id: number) => {
+    const response = await api.get<Blob>(`${base}${id}/download-xml/`, { responseType: 'blob' });
+    return response.data;
+  },
   importarXmls: async (files: File[]) => {
     const fd = new FormData();
     files.forEach((f) => fd.append('arquivos', f));
