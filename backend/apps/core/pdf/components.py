@@ -760,6 +760,8 @@ def build_item_line_table(
     page_w: float,
     ph_small: ParagraphStyle,
     descricao_markup: bool = False,
+    nota_rodape: str | None = None,
+    dense: bool = False,
 ) -> Table:
     """Item em formato tabela compacta: descrição em destaque, código secundário, métricas densas."""
     p_cod = ParagraphStyle(
@@ -847,13 +849,14 @@ def build_item_line_table(
         Paragraph(format_currency_br(icms_st), p_cell_r),
         Paragraph(format_currency_br(total), p_tot),
     ]
+    pad_cell = 1 if dense else 2
     metrics = Table([head, data], colWidths=cw)
     metrics.setStyle(
         TableStyle(
             [
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('TOPPADDING', (0, 0), (-1, -1), 2),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+                ('TOPPADDING', (0, 0), (-1, -1), pad_cell),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), pad_cell),
                 ('LINEABOVE', (0, 0), (-1, 0), 0.3, colors.HexColor('#e2e8f0')),
                 ('LINEBELOW', (0, 0), (-1, 0), 0.2, colors.HexColor('#e2e8f0')),
                 ('BACKGROUND', (0, 0), (-1, 0), C_TABLE_HEADER_BG),
@@ -861,16 +864,29 @@ def build_item_line_table(
         )
     )
 
-    card = Table([[top], [metrics]], colWidths=[page_w])
+    card_rows: list = [[top], [metrics]]
+    if nota_rodape:
+        p_note = ParagraphStyle(
+            'NxLnNote',
+            parent=ph_small,
+            fontSize=6.4,
+            leading=7.6,
+            textColor=C_MUTED,
+            alignment=TA_LEFT,
+        )
+        card_rows.append([Paragraph(escape(nota_rodape), p_note)])
+
+    pad_box = 2.2 if dense else 3.5
+    card = Table(card_rows, colWidths=[page_w])
     card.setStyle(
         TableStyle(
             [
                 ('BOX', (0, 0), (-1, -1), 0.32, C_FRAME_LIGHT),
                 ('BACKGROUND', (0, 0), (-1, -1), colors.white),
-                ('TOPPADDING', (0, 0), (-1, -1), 3.5),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 3.5),
-                ('LEFTPADDING', (0, 0), (-1, -1), 5),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+                ('TOPPADDING', (0, 0), (-1, -1), pad_box),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), pad_box),
+                ('LEFTPADDING', (0, 0), (-1, -1), 4 if dense else 5),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 4 if dense else 5),
             ]
         )
     )
@@ -1066,6 +1082,7 @@ def build_financial_summary_section(
     ph_small: ParagraphStyle,
     ph_right: ParagraphStyle,
     compact: bool = True,
+    tight: bool = False,
 ) -> list:
     """Título + resumo financeiro (reutilizável em pedidos / propostas)."""
     tbl = build_financial_summary_block(
@@ -1081,9 +1098,10 @@ def build_financial_summary_section(
         ph_right=ph_right,
         compact=compact,
     )
+    sp = 0.35 * mm if tight else 0.65 * mm
     return [
         build_section_title('Resumo financeiro', ph_small=ph_small, compact=True, page_w=page_w),
-        Spacer(1, 0.65 * mm),
+        Spacer(1, sp),
         tbl,
     ]
 

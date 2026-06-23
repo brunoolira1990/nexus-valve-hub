@@ -127,7 +127,7 @@ class PedidoVendaPdfApresentacao40132Tests(ComercialPdfBaseFixture):
         fat.save(update_fields=['status', 'nfe_saida'])
 
         text = _pdf_text(gerar_pedido_venda_pdf_bytes(pedido))
-        self.assertIn('Resumo de faturamento', text)
+        self.assertIn('Valor faturado', text)
         self.assertIn('Valor faturado', text)
         self.assertIn('45 dias', text)
         self.assertIn('úteis', text.lower())

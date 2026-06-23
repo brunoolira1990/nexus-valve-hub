@@ -33,7 +33,7 @@ from apps.core.pdf.formatters import (
     qty_br,
     txt_or_emdash,
 )
-from apps.core.pdf.styles import C_BORDER, C_MUTED, C_PRIMARY, SPACE_SM, SPACE_XS, base_paragraph_styles
+from apps.core.pdf.styles import C_BORDER, C_PRIMARY, base_paragraph_styles
 
 from .comercial_pdf_shared import (
     descricao_pdf_com_linha_ncm,
@@ -109,29 +109,17 @@ def _total_linha_pv(it: ItemPedidoVenda) -> Decimal:
     return max(Decimal('0'), q * p - d)
 
 
-def _linha_faturamento_item(it: ItemPedidoVenda, ph_small: ParagraphStyle, page_w: float) -> Table:
+def _nota_faturamento_item(it: ItemPedidoVenda) -> str:
     q_ped = quantidade_pedida_item(it)
     q_fat = dec(it.quantidade_faturada)
     q_pend = quantidade_pendente_item(it)
     from .pedido_venda_apresentacao import label_status_item
 
     st = label_status_item(it.status_item or 'PENDENTE')
-    txt = (
+    return (
         f'Qtd. pedida: {qty_br(q_ped)} · Faturada: {qty_br(q_fat)} · '
         f'Pendente: {qty_br(q_pend)} · Status: {st}'
     )
-    p = ParagraphStyle('PvFat', parent=ph_small, fontSize=6.6, leading=8, textColor=C_MUTED)
-    tbl = Table([[Paragraph(txt, p)]], colWidths=[page_w])
-    tbl.setStyle(
-        TableStyle(
-            [
-                ('TOPPADDING', (0, 0), (-1, -1), 0),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-                ('LEFTPADDING', (0, 0), (-1, -1), 2),
-            ]
-        )
-    )
-    return tbl
 
 
 def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
@@ -184,7 +172,7 @@ def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
                 ph_center=ph_center,
             )
         )
-        story.append(Spacer(1, SPACE_SM))
+        story.append(Spacer(1, 1.2 * mm))
 
         cli = getattr(pedido, 'cliente', None)
         if cli is not None:
@@ -215,7 +203,7 @@ def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
                 )
             )
         story.append(cli_tbl)
-        story.append(Spacer(1, 1.35 * mm))
+        story.append(Spacer(1, 0.85 * mm))
 
         vend_nome = nome_vendedor(vendedor_ref=getattr(pedido, 'vendedor_ref', None), vendedor_texto=pedido.vendedor)
         origem = '—'
@@ -226,28 +214,11 @@ def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
             if pedido.proposta_id:
                 origem = f'Proposta #{pedido.proposta_id}'
 
-        meta_rows = [
-            ('Vendedor:', vend_nome),
-            ('Origem:', origem),
-        ]
-        meta_tbl_data = [[Paragraph(f'<b>{k}</b> {nobr(v)}', p_party_norm)] for k, v in meta_rows]
-        meta_tbl = Table(meta_tbl_data, colWidths=[page_w])
-        meta_tbl.setStyle(
-            TableStyle(
-                [
-                    ('BOX', (0, 0), (-1, -1), 0.45, C_BORDER),
-                    ('TOPPADDING', (0, 0), (-1, -1), 4),
-                    ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-                    ('LEFTPADDING', (0, 0), (-1, -1), 5),
-                ]
-            )
-        )
-        story.append(meta_tbl)
-        story.append(Spacer(1, 1.15 * mm))
-
         vencs = list(pedido.vencimentos_previstos or [])
         venc_label = 'Vencimento:' if len(vencs) == 1 else 'Vencimentos:'
         cond_rows = [
+            ('Vendedor:', vend_nome),
+            ('Origem:', origem),
             (
                 'Pagamento:',
                 condicao_pagamento_pdf_amigavel(
@@ -262,20 +233,6 @@ def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
             )),
             (venc_label, vencimentos_exibicao(vencs)),
             ('Prazo previsto de entrega:', prazo_entrega_pdf_amigavel(prazo_entrega_exibicao_pedido(pedido))),
-        ]
-        story.extend(
-            build_conditions_commercial_grid(
-                'Condições comerciais',
-                cond_rows,
-                page_w=page_w,
-                ph_small=ph_small,
-                pairs_per_row=2,
-                label_width_frac=0.31,
-            )
-        )
-        story.append(Spacer(1, 1.0 * mm))
-
-        fat_rows = [
             ('Valor total pedido:', format_currency_br(totais.valor_total)),
             ('Valor faturado:', format_currency_br(dec(resumo_fat.get('valor_faturado')))),
             ('Valor pendente:', format_currency_br(
@@ -285,18 +242,18 @@ def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
         ]
         story.extend(
             build_conditions_commercial_grid(
-                'Resumo de faturamento',
-                fat_rows,
+                'Condições comerciais',
+                cond_rows,
                 page_w=page_w,
                 ph_small=ph_small,
-                pairs_per_row=2,
-                label_width_frac=0.35,
+                pairs_per_row=3,
+                label_width_frac=0.34,
             )
         )
 
-        story.append(Spacer(1, 1.15 * mm))
+        story.append(Spacer(1, 0.75 * mm))
         story.append(build_section_title('Itens do pedido', ph_small=ph_small, compact=True, page_w=page_w))
-        story.append(Spacer(1, 0.95 * mm))
+        story.append(Spacer(1, 0.55 * mm))
 
         itens = list(pedido.itens.select_related('produto').order_by('id'))
         totais_itens = calcular_totais_pedido_venda(pedido, itens=itens)
@@ -322,34 +279,38 @@ def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
             )
         for idx, it in enumerate(itens):
             if idx:
-                story.append(Spacer(1, SPACE_XS))
+                story.append(Spacer(1, 0.65 * mm))
             linha_total = _total_linha_pv(it)
             q_raw = quantidade_pedida_item(it)
             pu = preco_unitario_item(it)
             desc_v = dec(it.desconto)
             vp = q_raw * pu
             un = (it.unidade_negociada or '').strip().upper()[:16] or '—'
-            bloco = [
-                build_item_line_table(
-                    codigo=_codigo_item_pv(it),
-                    descricao=_desc_item_pv(it),
-                    descricao_markup=True,
-                    unidade=un,
-                    qtd_txt=qty_br(q_raw),
-                    valor_unit=pu,
-                    valor_produtos=vp,
-                    desconto=desc_v,
-                    ipi=Decimal('0'),
-                    icms_st=Decimal('0'),
-                    total=linha_total,
-                    page_w=page_w,
-                    ph_small=ph_small,
-                ),
-                _linha_faturamento_item(it, ph_small, page_w),
-            ]
-            story.append(KeepTogether(bloco))
+            story.append(
+                KeepTogether(
+                    [
+                        build_item_line_table(
+                            codigo=_codigo_item_pv(it),
+                            descricao=_desc_item_pv(it),
+                            descricao_markup=True,
+                            unidade=un,
+                            qtd_txt=qty_br(q_raw),
+                            valor_unit=pu,
+                            valor_produtos=vp,
+                            desconto=desc_v,
+                            ipi=Decimal('0'),
+                            icms_st=Decimal('0'),
+                            total=linha_total,
+                            page_w=page_w,
+                            ph_small=ph_small,
+                            nota_rodape=_nota_faturamento_item(it),
+                            dense=True,
+                        ),
+                    ]
+                )
+            )
 
-        story.append(Spacer(1, 1.2 * mm))
+        story.append(Spacer(1, 0.75 * mm))
         story.extend(
             build_financial_summary_section(
                 page_w=page_w,
@@ -363,6 +324,7 @@ def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
                 ph_small=ph_small,
                 ph_right=ph_right,
                 compact=True,
+                tight=True,
             )
         )
 
@@ -375,7 +337,7 @@ def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
             obs_parts.append(f'Internas: {intern}')
         obs_txt = '\n'.join(obs_parts) if obs_parts else None
 
-        story.append(Spacer(1, 0.95 * mm))
+        story.append(Spacer(1, 0.55 * mm))
         story.extend(
             build_observations_block_commercial(
                 texto=obs_txt,

@@ -94,7 +94,8 @@ class PedidoVendaPdfTotaisTests(TestCase):
         self.assertIn('500,00', text)
         self.assertIn('Subtotal produtos', text)
         self.assertIn('VALOR TOTAL FINAL', text)
-        self.assertIn('Valor total pedido', text)
+        self.assertIn('Valor total', text)
+        self.assertIn('pedido:', text.replace('\n', ' '))
         self.assertIn('Valor pendente', text)
         self.assertIn('Valor faturado', text)
         # Não deve usar unitário como total final
