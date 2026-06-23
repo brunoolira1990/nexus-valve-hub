@@ -901,6 +901,10 @@ def build_item_line_table(
     return card
 
 
+# Larguras proporcionais da tabela de itens do pedido de venda (soma = 1.0).
+_PV_BATCH_COL_FRACS = (0.065, 0.075, 0.125, 0.135, 0.105, 0.095, 0.095, 0.165)
+
+
 def build_pedido_venda_items_batch_table(
     *,
     page_w: float,
@@ -908,18 +912,23 @@ def build_pedido_venda_items_batch_table(
     linhas: list[dict],
     ultra_compact: bool = False,
     nota_na_descricao: bool = False,
+    readable_compact: bool = False,
+    descricao_largura_total: bool = False,
 ) -> Table:
     """
     Tabela única de itens do pedido de venda — cabeçalho compartilhado, menos altura que cards individuais.
     Cada linha em `linhas` deve conter: codigo, descricao, descricao_markup, unidade, qtd_txt,
     valor_unit, valor_produtos, desconto, ipi, icms_st, total, nota_rodape.
+    `readable_compact` prioriza legibilidade mantendo densidade para até ~10 itens por página.
     """
+    compact = readable_compact or ultra_compact
+    inline_nota = nota_na_descricao or descricao_largura_total
     p_desc = ParagraphStyle(
         'PvBtD',
         parent=ph_small,
         fontName='Helvetica-Bold',
-        fontSize=7.6 if ultra_compact else 8.4,
-        leading=9.0 if ultra_compact else 10.0,
+        fontSize=8.0 if readable_compact else (7.6 if ultra_compact else 8.4),
+        leading=9.6 if readable_compact else (9.0 if ultra_compact else 10.0),
         textColor=C_HEADER_DEEP,
         alignment=TA_LEFT,
     )
@@ -927,8 +936,8 @@ def build_pedido_venda_items_batch_table(
         'PvBtC',
         parent=ph_small,
         fontName='Helvetica',
-        fontSize=6.4 if ultra_compact else 6.8,
-        leading=7.6 if ultra_compact else 8.0,
+        fontSize=6.75 if readable_compact else (6.4 if ultra_compact else 6.8),
+        leading=8.0 if readable_compact else (7.6 if ultra_compact else 8.0),
         textColor=C_MUTED,
         alignment=TA_RIGHT,
     )
@@ -936,8 +945,8 @@ def build_pedido_venda_items_batch_table(
         'PvBtH',
         parent=ph_small,
         fontName='Helvetica-Bold',
-        fontSize=5.95 if ultra_compact else 6.2,
-        leading=7.0 if ultra_compact else 7.4,
+        fontSize=6.35 if compact else 6.2,
+        leading=7.6 if readable_compact else (7.0 if ultra_compact else 7.4),
         textColor=C_MUTED,
         alignment=TA_CENTER,
     )
@@ -945,8 +954,8 @@ def build_pedido_venda_items_batch_table(
     p_cell = ParagraphStyle(
         'PvBtN',
         parent=ph_small,
-        fontSize=6.55 if ultra_compact else 6.9,
-        leading=7.6 if ultra_compact else 8.0,
+        fontSize=7.0 if readable_compact else (6.55 if ultra_compact else 6.9),
+        leading=8.3 if readable_compact else (7.6 if ultra_compact else 8.0),
         textColor=C_SLATE_TEXT,
         alignment=TA_CENTER,
     )
@@ -955,21 +964,21 @@ def build_pedido_venda_items_batch_table(
         'PvBtT',
         parent=ph_small,
         fontName='Helvetica-Bold',
-        fontSize=6.8 if ultra_compact else 7.2,
-        leading=7.8 if ultra_compact else 8.2,
+        fontSize=7.35 if readable_compact else (6.8 if ultra_compact else 7.2),
+        leading=8.5 if readable_compact else (7.8 if ultra_compact else 8.2),
         textColor=C_HEADER_DEEP,
         alignment=TA_RIGHT,
     )
     p_note = ParagraphStyle(
         'PvBtNote',
         parent=ph_small,
-        fontSize=5.95 if ultra_compact else 6.2,
-        leading=7.0 if ultra_compact else 7.4,
+        fontSize=6.35 if readable_compact else (5.95 if ultra_compact else 6.2),
+        leading=7.5 if readable_compact else (7.0 if ultra_compact else 7.4),
         textColor=C_MUTED,
         alignment=TA_LEFT,
     )
 
-    cw = [page_w / 8] * 8
+    cw = [page_w * f for f in _PV_BATCH_COL_FRACS]
     table_rows: list[list] = [
         [
             Paragraph('<b>Un.</b>', p_h),
@@ -984,18 +993,19 @@ def build_pedido_venda_items_batch_table(
     ]
     span_cmds: list = []
     row_idx = 1
-    pad_row = 1.0 if ultra_compact else 1.5
+    pad_row = 1.85 if readable_compact else (1.0 if ultra_compact else 1.5)
+    pad_h = 4.5 if readable_compact else (3.5 if ultra_compact else 4.0)
 
-    for linha in linhas:
+    for item_idx, linha in enumerate(linhas):
         desc = linha['descricao']
         nota = (linha.get('nota_rodape') or '').strip()
-        if nota_na_descricao and nota:
+        if inline_nota and nota and not descricao_largura_total:
             if linha.get('descricao_markup'):
-                desc_html = f'{desc}<br/><font size="5.8" color="#64748b">{escape(nota)}</font>'
+                desc_html = f'{desc}<br/><font size="6.5" color="#64748b">{escape(nota)}</font>'
             else:
                 desc_html = (
                     f'<b>{escape(desc)}</b><br/>'
-                    f'<font size="5.8" color="#64748b">{escape(nota)}</font>'
+                    f'<font size="6.5" color="#64748b">{escape(nota)}</font>'
                 )
             desc_para = Paragraph(desc_html, p_desc)
         else:
@@ -1003,10 +1013,17 @@ def build_pedido_venda_items_batch_table(
                 desc if linha.get('descricao_markup') else escape(desc),
                 p_desc,
             )
-        cod_para = Paragraph(f'Cód. {escape(linha["codigo"])}', p_cod)
-        table_rows.append([desc_para, '', '', '', '', '', cod_para, ''])
-        span_cmds.append(('SPAN', (0, row_idx), (5, row_idx)))
-        span_cmds.append(('SPAN', (6, row_idx), (7, row_idx)))
+
+        if descricao_largura_total:
+            table_rows.append([desc_para, '', '', '', '', '', '', ''])
+            span_cmds.append(('SPAN', (0, row_idx), (7, row_idx)))
+        else:
+            cod_para = Paragraph(f'Cód. {escape(linha["codigo"])}', p_cod)
+            table_rows.append([desc_para, '', '', '', '', '', cod_para, ''])
+            span_cmds.append(('SPAN', (0, row_idx), (5, row_idx)))
+            span_cmds.append(('SPAN', (6, row_idx), (7, row_idx)))
+        if item_idx:
+            span_cmds.append(('LINEABOVE', (0, row_idx), (-1, row_idx), 0.18, colors.HexColor('#e8edf3')))
         row_idx += 1
 
         table_rows.append(
@@ -1023,7 +1040,7 @@ def build_pedido_venda_items_batch_table(
         )
         row_idx += 1
 
-        if nota and not nota_na_descricao:
+        if nota and not inline_nota:
             table_rows.append([Paragraph(escape(nota), p_note), '', '', '', '', '', '', ''])
             span_cmds.append(('SPAN', (0, row_idx), (7, row_idx)))
             row_idx += 1
@@ -1037,8 +1054,8 @@ def build_pedido_venda_items_batch_table(
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('TOPPADDING', (0, 0), (-1, -1), pad_row),
         ('BOTTOMPADDING', (0, 0), (-1, -1), pad_row),
-        ('LEFTPADDING', (0, 0), (-1, -1), 3.5 if ultra_compact else 4.0),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 3.5 if ultra_compact else 4.0),
+        ('LEFTPADDING', (0, 0), (-1, -1), pad_h),
+        ('RIGHTPADDING', (0, 0), (-1, -1), pad_h),
     ]
     style_cmds.extend(span_cmds)
     tbl.setStyle(TableStyle(style_cmds))
@@ -1162,10 +1179,11 @@ def build_financial_summary_block(
 ) -> Table:
     """PdfFinancialSummary: bloco à direita, fechamento visual forte."""
     if ultra_compact:
-        fs, lead = 6.75, 8.0
-        w_lbl, w_val = 42 * mm, 34 * mm
-        pad, pad_big = 1.2, 2.4
-        fs_tot, fs_lbl = 9.5, 7.2
+        fs, lead = 7.1, 8.5
+        block_w = page_w * 0.56
+        pad, pad_big = 1.8, 3.4
+        fs_tot, fs_lbl = 10.8, 7.6
+        w_lbl, w_val = block_w * 0.56, block_w * 0.44
     elif compact:
         fs, lead = 7.6, 9.0
         w_lbl, w_val = 48 * mm, 40 * mm
@@ -1186,8 +1204,8 @@ def build_financial_summary_block(
         return Paragraph(format_currency_br(val), p_tot_r)
 
     if ultra_compact:
-        half = (w_lbl + w_val) / 2.0
-        w_lbl_h, w_val_h = half * 0.58, half * 0.42
+        half = block_w / 2.0
+        w_lbl_h, w_val_h = half * 0.56, half * 0.44
         left_rows = [
             [_par_lbl('Subtotal produtos'), _par_val(subtotal_produtos)],
             [_par_lbl('Desconto total'), _par_val(desconto_total)],
@@ -1235,7 +1253,7 @@ def build_financial_summary_block(
                     ),
                 ]
             ],
-            colWidths=[w_lbl, w_val],
+            colWidths=[block_w * 0.56, block_w * 0.44],
         )
         tot_row.setStyle(
             TableStyle(
@@ -1251,7 +1269,7 @@ def build_financial_summary_block(
                 ]
             )
         )
-        tot_inner = Table([[cols], [tot_row]], colWidths=[w_lbl + w_val])
+        tot_inner = Table([[cols], [tot_row]], colWidths=[block_w])
         tot_inner.setStyle(
             TableStyle(
                 [

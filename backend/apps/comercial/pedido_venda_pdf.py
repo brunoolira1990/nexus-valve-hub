@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from xml.sax.saxutils import escape
+
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import KeepTogether, Paragraph, Spacer, Table, TableStyle
@@ -37,6 +39,7 @@ from apps.core.pdf.formatters import (
 from apps.core.pdf.styles import C_BORDER, C_PRIMARY, base_paragraph_styles
 
 from .comercial_pdf_shared import (
+    NCM_NAO_INFORMADO,
     descricao_pdf_com_linha_ncm,
     endereco_cliente,
     endereco_empresa,
@@ -128,6 +131,27 @@ def _nota_faturamento_item(it: ItemPedidoVenda, *, abreviada: bool = False) -> s
     )
 
 
+def _bloco_descricao_item_compact(it: ItemPedidoVenda, nota: str) -> str:
+    """Descrição em destaque + metadados (NCM, código, faturamento) em linha secundária única."""
+    snap_fiscal = it.snapshot_fiscal if isinstance(it.snapshot_fiscal, dict) else None
+    snap_prod = it.snapshot_produto if isinstance(it.snapshot_produto, dict) else None
+    ncm = resolver_ncm_item_comercial(
+        produto=getattr(it, 'produto', None) if it.produto_id else None,
+        snapshot_produto=snap_prod,
+        snapshot_fiscal=snap_fiscal,
+    )
+    desc_safe = escape(_descricao_base_pv(it).strip() or '—')
+    cod_safe = escape(_codigo_item_pv(it))
+    ncm_safe = escape((ncm or '').strip() or NCM_NAO_INFORMADO)
+    nota_safe = escape(nota)
+    return (
+        f'{desc_safe}<br/>'
+        f'<font size="6.5" color="#64748b">'
+        f'NCM: {ncm_safe} · Cód. {cod_safe} · {nota_safe}'
+        f'</font>'
+    )
+
+
 def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
     numero_txt = txt_or_emdash(pedido.numero)
     meta_title = f'Pedido de Venda {numero_txt}'
@@ -151,11 +175,12 @@ def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
 
         itens = list(pedido.itens.select_related('produto').order_by('id'))
         layout_dez_itens = len(itens) <= _LAYOUT_DEZ_ITENS_MAX and not obs_longa
+        layout_denso = layout_dez_itens and len(itens) >= 7
         usar_tabela_lote = len(itens) > 1 and not obs_longa
 
-        party_fs_title = 6.9 if layout_dez_itens else 7.2
-        party_fs_bold = 7.6 if layout_dez_itens else 8.0
-        party_fs_norm = 7.0 if layout_dez_itens else 7.5
+        party_fs_title = 6.9 if layout_denso else 7.2
+        party_fs_bold = 7.6 if layout_denso else 8.0
+        party_fs_norm = 7.0 if layout_denso else 7.5
         p_party_title = ParagraphStyle(
             'PvT', parent=ph_small, fontName='Helvetica-Bold', fontSize=party_fs_title, leading=8.6, textColor=C_PRIMARY
         )
@@ -190,10 +215,10 @@ def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
                 page_width=page_w,
                 ph_small=ph_small,
                 ph_center=ph_center,
-                compact=layout_dez_itens,
+                compact=layout_denso,
             )
         )
-        story.append(Spacer(1, 0.85 * mm if layout_dez_itens else 1.2 * mm))
+        story.append(Spacer(1, 0.95 * mm if layout_dez_itens and not layout_denso else (0.85 * mm if layout_denso else 1.2 * mm)))
 
         cli = getattr(pedido, 'cliente', None)
         if cli is not None:
@@ -224,7 +249,7 @@ def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
                 )
             )
         story.append(cli_tbl)
-        story.append(Spacer(1, 0.65 * mm if layout_dez_itens else 0.85 * mm))
+        story.append(Spacer(1, 0.75 * mm if layout_dez_itens and not layout_denso else (0.65 * mm if layout_denso else 0.85 * mm)))
 
         vend_nome = nome_vendedor(vendedor_ref=getattr(pedido, 'vendedor_ref', None), vendedor_texto=pedido.vendedor)
         origem = '—'
@@ -269,13 +294,13 @@ def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
                 ph_small=ph_small,
                 pairs_per_row=3,
                 label_width_frac=0.34,
-                tight=layout_dez_itens,
+                tight=layout_denso,
             )
         )
 
-        story.append(Spacer(1, 0.55 * mm if layout_dez_itens else 0.75 * mm))
+        story.append(Spacer(1, 0.65 * mm if layout_dez_itens else 0.75 * mm))
         story.append(build_section_title('Itens do pedido', ph_small=ph_small, compact=True, page_w=page_w))
-        story.append(Spacer(1, 0.3 * mm if usar_tabela_lote else (0.4 * mm if layout_dez_itens else 0.55 * mm)))
+        story.append(Spacer(1, 0.45 * mm if usar_tabela_lote else (0.5 * mm if layout_dez_itens else 0.55 * mm)))
 
         totais_itens = calcular_totais_pedido_venda(pedido, itens=itens)
         subtotal = totais_itens.subtotal_produtos
@@ -304,10 +329,15 @@ def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
                 q_raw = quantidade_pedida_item(it)
                 pu = preco_unitario_item(it)
                 desc_v = dec(it.desconto)
+                nota = _nota_faturamento_item(it, abreviada=layout_dez_itens)
                 linhas_lote.append(
                     {
                         'codigo': _codigo_item_pv(it),
-                        'descricao': _desc_item_pv(it),
+                        'descricao': (
+                            _bloco_descricao_item_compact(it, nota)
+                            if layout_dez_itens
+                            else _desc_item_pv(it)
+                        ),
                         'descricao_markup': True,
                         'unidade': (it.unidade_negociada or '').strip().upper()[:16] or '—',
                         'qtd_txt': qty_br(q_raw),
@@ -317,7 +347,7 @@ def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
                         'ipi': Decimal('0'),
                         'icms_st': Decimal('0'),
                         'total': _total_linha_pv(it),
-                        'nota_rodape': _nota_faturamento_item(it, abreviada=layout_dez_itens),
+                        'nota_rodape': nota if not layout_dez_itens else '',
                     }
                 )
             story.append(
@@ -325,8 +355,8 @@ def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
                     page_w=page_w,
                     ph_small=ph_small,
                     linhas=linhas_lote,
-                    ultra_compact=layout_dez_itens,
-                    nota_na_descricao=layout_dez_itens,
+                    readable_compact=layout_dez_itens,
+                    descricao_largura_total=layout_dez_itens,
                 )
             )
         else:
@@ -363,7 +393,7 @@ def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
                     )
                 )
 
-        story.append(Spacer(1, 0.55 * mm if layout_dez_itens else 0.75 * mm))
+        story.append(Spacer(1, 0.5 * mm if layout_dez_itens else 0.75 * mm))
         story.extend(
             build_financial_summary_section(
                 page_w=page_w,
@@ -377,7 +407,7 @@ def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
                 ph_small=ph_small,
                 ph_right=ph_right,
                 compact=True,
-                tight=layout_dez_itens,
+                tight=layout_denso,
                 ultra_compact=layout_dez_itens,
             )
         )
@@ -389,7 +419,7 @@ def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
             obs_parts.append(f'Internas: {intern_obs}')
         obs_txt = '\n'.join(obs_parts) if obs_parts else None
 
-        story.append(Spacer(1, 0.4 * mm if layout_dez_itens else 0.55 * mm))
+        story.append(Spacer(1, 0.35 * mm if layout_dez_itens else 0.55 * mm))
         story.extend(
             build_observations_block_commercial(
                 texto=obs_txt,

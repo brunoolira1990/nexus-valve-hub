@@ -115,6 +115,13 @@ class PedidoVendaPdfLayoutTests(TestCase):
         self.assertIn('Observação operacional longa', texto)
         self.assertGreaterEqual(_page_count(pdf_bytes), 1)
 
+    def test_pdf_tabela_compacta_exibe_ncm_e_faturamento_inline(self):
+        pedido = _pedido_com_itens(3)
+        texto = _pdf_text(gerar_pedido_venda_pdf_bytes(pedido))
+        self.assertIn('NCM:', texto)
+        self.assertIn('Ped:', texto)
+        self.assertIn('Cód.', texto)
+
     def test_pdf_preserva_campos_faturamento_no_bloco_condicoes(self):
         pedido = _pedido_com_itens(1)
         texto = _pdf_text(gerar_pedido_venda_pdf_bytes(pedido))
