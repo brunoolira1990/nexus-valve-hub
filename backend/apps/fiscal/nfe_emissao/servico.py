@@ -249,10 +249,23 @@ def validar_xml_nfe_saida_schema(nfe_saida: NFeSaida, *, usuario=None) -> dict[s
 
 @transaction.atomic
 def reservar_numeracao_nfe_saida(nfe_saida: NFeSaida, *, usuario=None) -> dict[str, Any]:
-    validar_pre_emissao_homologacao(nfe_saida)
+    from apps.fiscal.nfe_emissao.ambiente_emissao_nfe import (
+        garantir_ambiente_emissao_nfe_saida,
+        resolver_ambiente_emissao_nfe,
+    )
+
+    nf = _lock_nfe_saida(nfe_saida.pk)
+    garantir_ambiente_emissao_nfe_saida(nf)
+    ambiente = resolver_ambiente_emissao_nfe(nf)
+    if ambiente == NFeSaida.AmbienteEmissao.PRODUCAO:
+        from apps.fiscal.nfe_emissao.validacao_producao import validar_pre_emissao_producao
+
+        validar_pre_emissao_producao(nf)
+    else:
+        validar_pre_emissao_homologacao(nf)
     num = reservar_numeracao_nfe(
-        nfe_saida,
-        ambiente=NFeSaida.AmbienteEmissao.HOMOLOGACAO,
+        nf,
+        ambiente=ambiente,
         usuario=usuario,
     )
     nf = NFeSaida.objects.get(pk=nfe_saida.pk)
@@ -268,9 +281,19 @@ def reservar_numeracao_nfe_saida(nfe_saida: NFeSaida, *, usuario=None) -> dict[s
 
 @transaction.atomic
 def gerar_xml_nfe_saida_oficial(nfe_saida: NFeSaida, *, usuario=None) -> dict[str, Any]:
+    from apps.fiscal.nfe_emissao.ambiente_emissao_nfe import (
+        garantir_ambiente_emissao_nfe_saida,
+        resolver_ambiente_emissao_nfe,
+    )
+
     nf = _lock_nfe_saida(nfe_saida.pk)
     if not nf.numero_nfe:
-        reservar_numeracao_nfe(nf, ambiente=NFeSaida.AmbienteEmissao.HOMOLOGACAO, usuario=usuario)
+        garantir_ambiente_emissao_nfe_saida(nf)
+        reservar_numeracao_nfe(
+            nf,
+            ambiente=resolver_ambiente_emissao_nfe(nf),
+            usuario=usuario,
+        )
         nf.refresh_from_db()
 
     xml_bytes = gerar_xml_oficial_emissao(nf)

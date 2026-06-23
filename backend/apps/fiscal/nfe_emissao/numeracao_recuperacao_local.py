@@ -8,7 +8,11 @@ from typing import Any
 from django.db import transaction
 
 from apps.fiscal.models import NFeNumeracaoConfiguracao, NFeNumeracaoNumeroLiberado, NFeSaida, NFeSaidaEvento
-from apps.fiscal.nfe_emissao.numeracao import _nnf_str, _serie_digits, obter_config_numeracao
+from apps.fiscal.nfe_emissao.numeracao import (
+    _nnf_str,
+    _serie_digits,
+    resolver_config_numeracao_nfe_saida,
+)
 from apps.fiscal.nfe_emissao.numeracao_liberacao import (
     _numero_inteiro_nf,
     nf_pode_liberar_numero_fiscal,
@@ -62,25 +66,17 @@ def _resolver_configuracao(
 ) -> NFeNumeracaoConfiguracao:
     serie_norm = _serie_digits(serie)
     try:
-        return obter_config_numeracao(empresa_id, ambiente=ambiente, modelo=modelo)
-    except Exception:
-        cfg = (
-            NFeNumeracaoConfiguracao.objects.filter(
-                empresa_id=empresa_id,
-                ambiente=ambiente,
-                modelo_documento=modelo,
-                tipo_operacao=NFeNumeracaoConfiguracao.TipoOperacao.SAIDA,
-                serie=serie_norm,
-                ativo=True,
-            )
-            .first()
+        return resolver_config_numeracao_nfe_saida(
+            empresa_id,
+            ambiente=ambiente,
+            modelo=modelo,
+            serie_nfe=serie_norm,
         )
-        if cfg is None:
-            raise ValueError(
-                f'Configuração de numeração não encontrada para empresa #{empresa_id}, '
-                f'série {serie_norm}, ambiente {ambiente}, modelo {modelo}.',
-            )
-        return cfg
+    except Exception as exc:
+        raise ValueError(
+            f'Configuração de numeração não encontrada para empresa #{empresa_id}, '
+            f'série {serie_norm}, ambiente {ambiente}, modelo {modelo}.',
+        ) from exc
 
 
 def _nfs_mesma_serie_ambiente(

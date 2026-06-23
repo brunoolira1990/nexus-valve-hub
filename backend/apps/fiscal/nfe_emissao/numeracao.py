@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from django.db import transaction
 from django.utils import timezone
 
-from apps.fiscal.models import NFeNumeracaoConfiguracao, NFeSaida
+from apps.fiscal.models import NFeNumeracaoConfiguracao, NFeNumeracaoNumeroLiberado, NFeSaida
 from apps.fiscal.nfe_emissao.empresa_emitente import resolver_empresa_emitente_nfe
 from apps.fiscal.nfe_emissao.serie_fiscal import (
     normalizar_serie_xml,
@@ -48,27 +48,94 @@ def _codigo_numerico() -> str:
     return f'{secrets.randbelow(100_000_000):08d}'
 
 
+def _configs_numeracao_saida_qs(
+    empresa_id: int,
+    *,
+    ambiente: str,
+    modelo: str = '55',
+):
+    return NFeNumeracaoConfiguracao.objects.filter(
+        empresa_id=empresa_id,
+        ambiente=ambiente,
+        modelo_documento=modelo,
+        tipo_operacao=NFeNumeracaoConfiguracao.TipoOperacao.SAIDA,
+        ativo=True,
+    )
+
+
+def _config_por_serie(configs, serie: str) -> NFeNumeracaoConfiguracao | None:
+    serie_norm = _serie_digits(serie)
+    for cfg in configs:
+        if _serie_digits(cfg.serie) == serie_norm:
+            return cfg
+    return None
+
+
+def resolver_config_numeracao_nfe_saida(
+    empresa_id: int,
+    *,
+    ambiente: str,
+    modelo: str = '55',
+    serie_nfe: str | None = None,
+) -> NFeNumeracaoConfiguracao:
+    """
+    Resolve a configuração de numeração por empresa/ambiente/modelo/série.
+    Sem série na NF-e: prioriza config com número no pool (menor nNF primeiro).
+    """
+    configs = list(_configs_numeracao_saida_qs(empresa_id, ambiente=ambiente, modelo=modelo).order_by('serie'))
+    if not configs:
+        raise NFeNumeracaoError(
+            f'Configuração de numeração NF-e não encontrada para empresa #{empresa_id} '
+            f'(ambiente={ambiente}, modelo={modelo}). Cadastre em Fiscal / NF-e / Numeração.',
+        )
+
+    if serie_nfe:
+        cfg = _config_por_serie(configs, serie_nfe)
+        if cfg is None:
+            raise NFeNumeracaoError(
+                f'Configuração de numeração não encontrada para empresa #{empresa_id}, '
+                f'série {_serie_digits(serie_nfe)}, ambiente {ambiente}.',
+            )
+        return cfg
+
+    if len(configs) == 1:
+        return configs[0]
+
+    cfg_ids = [c.pk for c in configs]
+    pool_row = (
+        NFeNumeracaoNumeroLiberado.objects.filter(
+            configuracao_id__in=cfg_ids,
+            consumido_em__isnull=True,
+        )
+        .order_by('numero', 'pk')
+        .select_related('configuracao')
+        .first()
+    )
+    if pool_row is not None:
+        return pool_row.configuracao
+
+    return configs[0]
+
+
 def obter_config_numeracao(
     empresa_id: int,
     *,
     ambiente: str = NFeNumeracaoConfiguracao.Ambiente.HOMOLOGACAO,
     modelo: str = '55',
+    serie: str | None = None,
 ) -> NFeNumeracaoConfiguracao:
-    cfg = (
-        NFeNumeracaoConfiguracao.objects.filter(
-            empresa_id=empresa_id,
+    if serie is not None:
+        cfg = resolver_config_numeracao_nfe_saida(
+            empresa_id,
             ambiente=ambiente,
-            modelo_documento=modelo,
-            tipo_operacao=NFeNumeracaoConfiguracao.TipoOperacao.SAIDA,
-            ativo=True,
+            modelo=modelo,
+            serie_nfe=serie,
         )
-        .order_by('serie')
-        .first()
-    )
-    if not cfg:
-        raise NFeNumeracaoError(
-            f'Configuração de numeração NF-e não encontrada para empresa #{empresa_id} '
-            f'(ambiente={ambiente}, modelo={modelo}). Cadastre em Fiscal / NF-e / Numeração.',
+    else:
+        cfg = resolver_config_numeracao_nfe_saida(
+            empresa_id,
+            ambiente=ambiente,
+            modelo=modelo,
         )
     if ambiente != 'producao':
         try:
@@ -76,6 +143,29 @@ def obter_config_numeracao(
         except Exception as exc:
             raise NFeNumeracaoError(str(exc)) from exc
     return cfg
+
+
+def _travar_config_numeracao_nfe_saida(
+    empresa_id: int,
+    *,
+    ambiente: str,
+    modelo: str = '55',
+    serie_nfe: str | None = None,
+) -> NFeNumeracaoConfiguracao:
+    cfg = resolver_config_numeracao_nfe_saida(
+        empresa_id,
+        ambiente=ambiente,
+        modelo=modelo,
+        serie_nfe=serie_nfe,
+    )
+    locked = (
+        NFeNumeracaoConfiguracao.objects.select_for_update()
+        .filter(pk=cfg.pk)
+        .first()
+    )
+    if locked is None:
+        raise NFeNumeracaoError('Configuração de numeração indisponível.')
+    return locked
 
 
 @transaction.atomic
@@ -119,17 +209,23 @@ def reservar_numeracao_nfe(
         )
 
     empresa = resolver_empresa_emitente_nfe(nf)
-    cfg = (
-        NFeNumeracaoConfiguracao.objects.select_for_update()
-        .filter(pk=obter_config_numeracao(empresa.pk, ambiente=ambiente).pk)
-        .first()
+    cfg = _travar_config_numeracao_nfe_saida(
+        empresa.pk,
+        ambiente=ambiente,
+        serie_nfe=nf.serie_nfe or None,
     )
-    if not cfg:
-        raise NFeNumeracaoError('Configuração de numeração indisponível.')
 
     from apps.fiscal.nfe_emissao.numeracao_liberacao import reservar_numero_liberado_disponivel
 
     nnf_int, numero_liberado = reservar_numero_liberado_disponivel(cfg, nfe_saida=nf, usuario=usuario)
+    if numero_liberado is not None:
+        logger.info(
+            'NUMERACAO_POOL_CONSUMIDA nfe_id=%s cfg_id=%s numero=%s pool_id=%s',
+            nf.pk,
+            cfg.pk,
+            nnf_int,
+            numero_liberado.pk,
+        )
     if numero_liberado is None and (nnf_int < 1 or nnf_int > 999_999_999):
         raise NFeNumeracaoError('Próximo número fiscal fora do intervalo permitido.')
 

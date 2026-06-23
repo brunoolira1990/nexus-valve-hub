@@ -9,7 +9,11 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.fiscal.models import NFeNumeracaoConfiguracao, NFeNumeracaoNumeroLiberado, NFeSaida, NFeSaidaEvento
-from apps.fiscal.nfe_emissao.numeracao import _nnf_str, _serie_digits, obter_config_numeracao
+from apps.fiscal.nfe_emissao.numeracao import (
+    _nnf_str,
+    _serie_digits,
+    resolver_config_numeracao_nfe_saida,
+)
 from apps.fiscal.nfe_saida_ciclo_vida import STATUS_NFE_DESCARTADA_INTERNA, nf_possui_autorizacao_sefaz_efetiva
 from apps.fiscal.nfe_saida_envio_email import nf_inutilizada_operacional
 from apps.fiscal.nfe_saida_efeitos import _registrar_evento
@@ -95,15 +99,18 @@ def nf_pode_liberar_numero_fiscal(nf: NFeSaida) -> tuple[bool, str]:
 
 
 def _resolver_config_numeracao_nf(nf: NFeSaida) -> NFeNumeracaoConfiguracao | None:
-    if not nf.empresa_emitente_id or not nf.ambiente_emissao or not nf.serie_nfe:
+    if not nf.empresa_emitente_id or not nf.ambiente_emissao:
         return None
     try:
-        return obter_config_numeracao(
+        return resolver_config_numeracao_nfe_saida(
             nf.empresa_emitente_id,
             ambiente=nf.ambiente_emissao,
             modelo='55',
+            serie_nfe=nf.serie_nfe or None,
         )
     except Exception:
+        if not nf.serie_nfe:
+            return None
         return (
             NFeNumeracaoConfiguracao.objects.filter(
                 empresa_id=nf.empresa_emitente_id,
