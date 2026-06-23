@@ -15,7 +15,6 @@ from apps.fiscal.nfe_emissao.serie_fiscal import (
     serie_para_chave,
     validar_serie_autorizacao_normal,
 )
-from apps.fiscal.nfe_emissao.numeracao_liberacao import reservar_numero_liberado_disponivel
 from apps.fiscal.nfe_integracao.nfe_chave_acesso import ChaveAcessoNFe, aamm_da_emissao, montar_chave_acesso_nfe
 from apps.fiscal.nfe_saida_efeitos import _lock_nfe_saida, _registrar_evento
 
@@ -127,6 +126,8 @@ def reservar_numeracao_nfe(
     )
     if not cfg:
         raise NFeNumeracaoError('Configuração de numeração indisponível.')
+
+    from apps.fiscal.nfe_emissao.numeracao_liberacao import reservar_numero_liberado_disponivel
 
     nnf_int, numero_liberado = reservar_numero_liberado_disponivel(cfg, nfe_saida=nf, usuario=usuario)
     if numero_liberado is None and (nnf_int < 1 or nnf_int > 999_999_999):

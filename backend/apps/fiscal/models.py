@@ -1438,7 +1438,10 @@ class NFeNumeracaoNumeroLiberado(models.Model):
         verbose_name = 'Número NF-e liberado para reutilização'
         verbose_name_plural = 'Números NF-e liberados para reutilização'
         indexes = [
-            models.Index(fields=['configuracao', 'consumido_em', 'numero']),
+            models.Index(
+                fields=['configuracao', 'consumido_em', 'numero'],
+                name='fiscal_nfe__configu_8a1f2d_idx',
+            ),
         ]
         constraints = [
             models.UniqueConstraint(

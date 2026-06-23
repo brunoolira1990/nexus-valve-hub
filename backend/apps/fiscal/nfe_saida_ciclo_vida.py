@@ -15,7 +15,6 @@ from apps.comercial.models import FaturamentoPedidoVenda, PedidoVenda
 from apps.fiscal.models import NFeSaida, NFeSaidaEvento
 from apps.fiscal.nfe_saida_bloqueio import STATUS_NFE_RASCUNHO, nf_autorizada_homologacao
 from apps.fiscal.nfe_saida_from_faturamento import STATUS_NFE_RASCUNHO as STATUS_RASCUNHO_FAT
-from apps.fiscal.nfe_emissao.numeracao_liberacao import liberar_numero_fiscal_apos_descarte
 from apps.fiscal.nfe_saida_efeitos import _lock_faturamento, _lock_nfe_saida, _nf_autorizada_interna
 
 STATUS_NFE_DESCARTADA_INTERNA = 'DESCARTADA_INTERNA'
@@ -259,6 +258,8 @@ def descartar_nfe_rascunho(
     status_anterior = nf.status or ''
     _marcar_nfe_descartada_interna(nf, motivo=motivo, usuario=usuario)
 
+    from apps.fiscal.nfe_emissao.numeracao_liberacao import liberar_numero_fiscal_apos_descarte
+
     liberacao = liberar_numero_fiscal_apos_descarte(nf, motivo=motivo, usuario=usuario)
 
     fat_id = nf.faturamento_pedido_venda_id
@@ -312,6 +313,8 @@ def descartar_nfe_no_estorno_faturamento(
         usuario=usuario,
         tipo_evento=NFeSaidaEvento.TipoEvento.ESTORNO_FATURAMENTO_PRE_AUTORIZACAO_NFE,
     )
+    from apps.fiscal.nfe_emissao.numeracao_liberacao import liberar_numero_fiscal_apos_descarte
+
     liberar_numero_fiscal_apos_descarte(nf, motivo=motivo, usuario=usuario)
     faturamento.nfe_saida_id = None
     faturamento.nfe_saida_gerada_em = None
