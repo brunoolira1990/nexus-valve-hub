@@ -885,7 +885,7 @@ def build_item_line_table(
         card_rows.append([Paragraph(escape(nota_rodape), p_note)])
 
     pad_box = 2.2 if dense else 3.5
-    card = Table(card_rows, colWidths=[page_w])
+    card = Table(card_rows, colWidths=[page_w], hAlign='LEFT')
     card.setStyle(
         TableStyle(
             [
@@ -903,7 +903,41 @@ def build_item_line_table(
 
 # Larguras proporcionais da tabela de itens do pedido de venda (soma = 1.0).
 # Total e colunas monetárias mais largas; descrição ocupa linha inteira acima.
-_PV_BATCH_COL_FRACS = (0.060, 0.070, 0.120, 0.130, 0.100, 0.090, 0.090, 0.190)
+_RAW_PV_BATCH_COL_FRACS = (0.060, 0.070, 0.120, 0.130, 0.100, 0.090, 0.090, 0.190)
+
+
+def _normalize_width_fracs(fracs: tuple[float, ...]) -> tuple[float, ...]:
+    total = sum(fracs)
+    if not fracs or total <= 0:
+        raise ValueError('fracs must have positive sum')
+    if abs(total - 1.0) < 1e-6:
+        return fracs
+    return tuple(f / total for f in fracs)
+
+
+_PV_BATCH_COL_FRACS = _normalize_width_fracs(_RAW_PV_BATCH_COL_FRACS)
+
+
+def pedido_venda_items_batch_col_fracs() -> tuple[float, ...]:
+    """Frações de largura das colunas da tabela de itens (soma 1.0)."""
+    return _PV_BATCH_COL_FRACS
+
+
+def wrap_plate_full_width(block: Table, page_w: float) -> Table:
+    """Envolve bloco para ocupar a largura útil do frame, alinhado à esquerda."""
+    outer = Table([[block]], colWidths=[page_w], hAlign='LEFT')
+    outer.setStyle(
+        TableStyle(
+            [
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+                ('TOPPADDING', (0, 0), (-1, -1), 0),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
+    return outer
 
 
 def build_pedido_venda_items_batch_table(
@@ -1060,7 +1094,7 @@ def build_pedido_venda_items_batch_table(
     ]
     style_cmds.extend(span_cmds)
     tbl.setStyle(TableStyle(style_cmds))
-    return tbl
+    return wrap_plate_full_width(tbl, page_w)
 
 
 def build_item_product_card(
@@ -1288,6 +1322,57 @@ def build_financial_summary_block(
             TableStyle([('ALIGN', (0, 0), (-1, -1), align_wrap), ('LEFTPADDING', (0, 0), (-1, -1), 0)])
         )
         return tot_wrap
+
+    if full_width:
+        block_w = page_w
+        w_lbl, w_val = block_w * 0.56, block_w * 0.44
+        tot_rows = [
+            [_par_lbl('Subtotal produtos'), _par_val(subtotal_produtos)],
+            [_par_lbl('Desconto total'), _par_val(desconto_total)],
+            [_par_lbl('Frete'), _par_val(frete)],
+            [_par_lbl('Outras despesas'), _par_val(outras_despesas)],
+            [_par_lbl('IPI'), _par_val(ipi)],
+            [_par_lbl('ICMS ST'), _par_val(icms_st)],
+            [
+                Paragraph(
+                    f'<b><font size="{fs_lbl}" color="#ffffff">VALOR TOTAL FINAL</font></b>',
+                    ParagraphStyle('TotLF', parent=p_tot, textColor=colors.white, fontName='Helvetica-Bold'),
+                ),
+                Paragraph(
+                    f'<b><font size="{fs_tot}" color="#ffffff">{format_currency_br(valor_total_final)}</font></b>',
+                    ParagraphStyle(
+                        'TotRF',
+                        parent=p_tot_r,
+                        textColor=colors.white,
+                        fontName='Helvetica-Bold',
+                        fontSize=fs_tot,
+                    ),
+                ),
+            ],
+        ]
+        tot_inner = Table(tot_rows, colWidths=[w_lbl, w_val], hAlign='LEFT')
+        tot_inner.setStyle(
+            TableStyle(
+                [
+                    ('FONT', (0, 0), (-1, -2), 'Helvetica', fs),
+                    ('TEXTCOLOR', (0, 0), (-1, -2), C_SLATE_TEXT),
+                    ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('TOPPADDING', (0, 0), (-1, -2), pad),
+                    ('BOTTOMPADDING', (0, 0), (-1, -2), pad),
+                    ('TOPPADDING', (0, -1), (-1, -1), pad_big),
+                    ('BOTTOMPADDING', (0, -1), (-1, -1), pad_big),
+                    ('LEFTPADDING', (0, 0), (-1, -1), pad + 1),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), pad + 1),
+                    ('BOX', (0, 0), (-1, -1), 0.5, C_FRAME_LIGHT),
+                    ('BACKGROUND', (0, 0), (-1, -2), colors.white),
+                    ('BACKGROUND', (0, -1), (-1, -1), C_BRAND_PRIMARY),
+                    ('TEXTCOLOR', (0, -1), (-1, -1), colors.white),
+                    ('LINEABOVE', (0, -1), (-1, -1), 0.5, colors.white),
+                ]
+            )
+        )
+        return wrap_plate_full_width(tot_inner, page_w)
 
     tot_rows = [
         [Paragraph('Subtotal produtos', p_tot), Paragraph(format_currency_br(subtotal_produtos), p_tot_r)],

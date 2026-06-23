@@ -131,3 +131,40 @@ class PedidoVendaPdfLayoutTests(TestCase):
         self.assertNotIn('Valor faturado', texto)
         self.assertIn('faturamento', texto.lower())
         self.assertIn('Qtd. pedida', texto)
+
+    def test_fracoes_colunas_itens_somam_largura_util(self):
+        from apps.core.pdf.components import pedido_venda_items_batch_col_fracs
+
+        self.assertAlmostEqual(sum(pedido_venda_items_batch_col_fracs()), 1.0, places=6)
+
+    def test_tabela_itens_ocupa_largura_util_do_frame(self):
+        from decimal import Decimal
+
+        from apps.core.pdf.base import default_page_content_width
+        from apps.core.pdf.components import build_pedido_venda_items_batch_table
+        from apps.core.pdf.styles import base_paragraph_styles
+
+        page_w = default_page_content_width()
+        _ph, ph_small, *_rest = base_paragraph_styles()
+        linha = {
+            'codigo': 'COD-1',
+            'descricao': 'Produto teste',
+            'descricao_markup': False,
+            'unidade': 'PC',
+            'qtd_txt': '1',
+            'valor_unit': Decimal('100'),
+            'valor_produtos': Decimal('100'),
+            'desconto': Decimal('0'),
+            'ipi': Decimal('0'),
+            'icms_st': Decimal('0'),
+            'total': Decimal('100'),
+            'nota_rodape': '',
+        }
+        tbl = build_pedido_venda_items_batch_table(
+            page_w=page_w,
+            ph_small=ph_small,
+            linhas=[linha],
+            readable_compact=True,
+            descricao_largura_total=True,
+        )
+        self.assertAlmostEqual(sum(tbl._colWidths), page_w, delta=0.5)

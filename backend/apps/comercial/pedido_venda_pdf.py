@@ -431,7 +431,7 @@ def gerar_pedido_venda_pdf_bytes(pedido: PedidoVenda) -> bytes:
                 compact=True,
                 tight=layout_denso,
                 ultra_compact=layout_dez_itens,
-                full_width=layout_dez_itens,
+                full_width=True,
             )
         )
 
