@@ -85,7 +85,6 @@ class DocumentoCentralDfe:
     serie: str
     data_emissao: datetime | date | None
     data_importacao: datetime | None
-    data_entrada: date | None = None
     emitente_nome: str
     emitente_cnpj: str
     uf: str
@@ -95,6 +94,7 @@ class DocumentoCentralDfe:
     tipo_label: str
     detalhe_rota: str
     empresa_id: int | None = None
+    data_entrada: date | None = None
     xml_status: str = 'ARMAZENADO'
     xml_status_label: str = 'XML armazenado'
     xml_armazenado: bool = True
