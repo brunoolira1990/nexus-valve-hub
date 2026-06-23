@@ -8,7 +8,6 @@ from typing import Any
 from django.utils import timezone
 
 from apps.cadastros.models import Empresa
-from apps.fiscal.dfe_classificacao import normalizar_cnpj
 from apps.fiscal.manifestacao_destinatario.audit import registrar_evento_manifestacao
 from apps.fiscal.models import (
     CTeHistoricoImportado,
@@ -16,6 +15,7 @@ from apps.fiscal.models import (
     NFeDestinadaManifestacaoEvento,
     NFeEntradaHistoricaImportada,
 )
+from apps.fiscal.nfe_historica_classificacao import norm_digits
 
 logger = logging.getLogger(__name__)
 
@@ -117,15 +117,15 @@ def sincronizar_manifestacao_com_nf_historica(
     if empresa is None:
         return None
 
-    cnpj_dest = normalizar_cnpj(empresa.cnpj)
+    cnpj_dest = norm_digits(empresa.cnpj)
     emit_nome = ''
     emit_cnpj = ''
     if nf.fornecedor_emitente_id and nf.fornecedor_emitente:
         emit_nome = nf.fornecedor_emitente.razao_social or ''
-        emit_cnpj = normalizar_cnpj(nf.fornecedor_emitente.cnpj)
+        emit_cnpj = norm_digits(nf.fornecedor_emitente.cnpj)
     elif nf.emit_json:
         emit_nome = (nf.emit_json.get('xNome') or nf.emit_json.get('xFant') or '').strip()
-        emit_cnpj = normalizar_cnpj(str(nf.emit_json.get('CNPJ') or nf.emit_json.get('CPF') or ''))
+        emit_cnpj = norm_digits(str(nf.emit_json.get('CNPJ') or nf.emit_json.get('CPF') or ''))
 
     tp_amb = (nf.tp_amb or '1').strip()
     ambiente = (
