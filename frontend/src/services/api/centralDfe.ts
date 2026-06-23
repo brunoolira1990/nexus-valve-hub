@@ -47,6 +47,8 @@ export type ArmazenarXmlCentralResponse = {
   manifestacao_id?: number;
   duplicado?: boolean;
   mensagem?: string;
+  detalhe_rota?: string;
+  download_xml_url?: string;
   documento?: CentralDfeDocumento;
 };
 
@@ -130,7 +132,7 @@ export const centralDfeService = {
   /** Armazena XML NF-e na Base NF-e Entrada Importada — ação manual explícita. */
   async armazenarXmlNfe(
     documentoId: number,
-    payload: { empresa_id: number; confirmacao_explicita: boolean },
+    payload: { empresa_id: number; confirmacao_explicita: boolean; chave_acesso?: string },
   ): Promise<ArmazenarXmlCentralResponse> {
     const { data } = await api.post<ArmazenarXmlCentralResponse>(
       `${base}${documentoId}/armazenar-xml-nfe/`,

@@ -139,6 +139,6 @@ export function xmlJaArmazenado(
   row: Pick<CentralDfeDocumento, 'xml_armazenado' | 'xml_status'>,
 ): boolean {
   if (row.xml_armazenado || row.xml_status === 'ARMAZENADO') return true;
-  if (manifestacao?.status_xml === 'BAIXADO') return true;
-  return Boolean(manifestacao?.nf_entrada_historica_id);
+  if (manifestacao?.status_xml === 'BAIXADO' && manifestacao.nf_entrada_historica_id) return true;
+  return false;
 }

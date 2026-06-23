@@ -399,8 +399,21 @@ function filtersShallowEqual(a: Record<string, string>, b: Record<string, string
   return true;
 }
 
+function mesclarLinhaCentral(
+  row: CentralDfeDocumento,
+  reconciliada: CentralDfeDocumento | undefined,
+): CentralDfeDocumento {
+  if (!reconciliada) return row;
+  return {
+    ...row,
+    ...reconciliada,
+    id: reconciliada.id,
+    chave_acesso: reconciliada.chave_acesso || row.chave_acesso,
+  };
+}
+
 function resumoParaLinhaCentral(m: NFeDestinadaDocumento): CentralDfeDocumento {
-  const xmlArmazenado = m.status_xml === 'BAIXADO' || Boolean(m.nf_entrada_historica_id);
+  const xmlArmazenado = m.status_xml === 'BAIXADO' && Boolean(m.nf_entrada_historica_id);
   const nfHistoricaId = m.nf_entrada_historica_id;
   return {
     id: xmlArmazenado && nfHistoricaId ? nfHistoricaId : m.id,
@@ -460,6 +473,7 @@ const CentralDfe = () => {
   const {
     manifestacaoMap,
     manifestacaoSomenteResumo,
+    documentosCentralPorChave,
     fechamento,
     detalhe,
     setDetalhe,
@@ -555,25 +569,53 @@ const CentralDfe = () => {
     const chavesPagina = new Set(
       items.filter((row) => row.chave_acesso).map((row) => row.chave_acesso),
     );
-    const central = items.map((row) => ({
-      row,
-      manifestacao:
-        row.tipo_documento === 'NFE_ENTRADA' ? manifestacaoMap.get(row.chave_acesso) ?? null : null,
-      somenteResumo: false,
-    }));
+    for (const [chave, doc] of documentosCentralPorChave) {
+      if (doc.xml_armazenado) chavesPagina.add(chave);
+    }
+    const central = items.map((row) => {
+      const reconciliada = row.chave_acesso
+        ? documentosCentralPorChave.get(row.chave_acesso)
+        : undefined;
+      const merged = mesclarLinhaCentral(row, reconciliada);
+      return {
+        row: merged,
+        manifestacao:
+          merged.tipo_documento === 'NFE_ENTRADA'
+            ? manifestacaoMap.get(merged.chave_acesso) ?? null
+            : null,
+        somenteResumo: false,
+      };
+    });
+    const extrasReconciliados = [...documentosCentralPorChave.entries()]
+      .filter(([chave, doc]) => doc.xml_armazenado && !items.some((row) => row.chave_acesso === chave))
+      .map(([, doc]) => ({
+        row: doc,
+        manifestacao: manifestacaoMap.get(doc.chave_acesso) ?? null,
+        somenteResumo: false,
+      }));
     const extras = manifestacaoSomenteResumo
       .filter((m) => !chavesPagina.has(m.chave_acesso))
-      .map((m) => ({
-        row: resumoParaLinhaCentral(m),
-        manifestacao: m,
-        somenteResumo: true,
-      }));
-    return [...central, ...extras].sort((a, b) => {
+      .filter((m) => {
+        const reconciliada = documentosCentralPorChave.get(m.chave_acesso);
+        return !reconciliada?.xml_armazenado;
+      })
+      .map((m) => {
+        const reconciliada = documentosCentralPorChave.get(m.chave_acesso);
+        const row = reconciliada?.xml_armazenado
+          ? reconciliada
+          : resumoParaLinhaCentral(m);
+        return {
+          row,
+          manifestacao: m,
+          somenteResumo: !reconciliada?.xml_armazenado,
+        };
+      });
+    return [...central, ...extrasReconciliados, ...extras].sort((a, b) => {
       const da = a.row.data_emissao || '';
       const db = b.row.data_emissao || '';
       return db.localeCompare(da);
     });
-  }, [items, manifestacaoMap, manifestacaoSomenteResumo]);
+  }, [items, manifestacaoMap, manifestacaoSomenteResumo, documentosCentralPorChave]);
 
   useEffect(() => {
     void carregarManifestacao(chavesCentralNfe);

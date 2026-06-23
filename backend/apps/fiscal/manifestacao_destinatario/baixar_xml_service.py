@@ -79,13 +79,19 @@ def baixar_xml_documento_destinatario(
         pk=documento.pk,
     )
 
-    if documento.status_xml == NFeDestinadaManifestacao.StatusXml.BAIXADO:
-        return {
-            'documento_id': documento.pk,
-            'status_xml': documento.status_xml,
-            'nf_entrada_historica_id': documento.nf_entrada_historica_id,
-            'mensagem': 'XML já baixado anteriormente.',
-        }
+    if documento.status_xml == NFeDestinadaManifestacao.StatusXml.BAIXADO and documento.nf_entrada_historica_id:
+        from apps.fiscal.models import NFeEntradaHistoricaImportada
+
+        nf_existente = NFeEntradaHistoricaImportada.objects.filter(
+            pk=documento.nf_entrada_historica_id,
+        ).first()
+        if nf_existente and (nf_existente.xml_conteudo or '').strip():
+            return {
+                'documento_id': documento.pk,
+                'status_xml': documento.status_xml,
+                'nf_entrada_historica_id': documento.nf_entrada_historica_id,
+                'mensagem': 'XML já baixado anteriormente.',
+            }
 
     chave = (documento.chave_acesso or '').strip()
     if len(chave) != 44:
@@ -152,13 +158,24 @@ def baixar_xml_documento_destinatario(
     if nf_hist_id:
         nf_hist = NFeEntradaHistoricaImportada.objects.filter(pk=nf_hist_id).first()
         if nf_hist:
-            persistir_xml_nfe_entrada(
+            gravou = persistir_xml_nfe_entrada(
                 nf_hist,
                 xml_bytes,
                 origem=ORIGEM_MANIFESTACAO_DOWNLOAD,
                 nome_arquivo=nome,
                 forcar=True,
             )
+            if not gravou:
+                raise BaixarXmlDestinatarioError(
+                    'Não foi possível gravar o XML na Base NF-e Entrada Importada.',
+                )
+            nf_hist.refresh_from_db()
+            if not (nf_hist.xml_conteudo or '').strip():
+                raise BaixarXmlDestinatarioError(
+                    'XML não foi persistido na Base NF-e Entrada Importada.',
+                )
+    else:
+        raise BaixarXmlDestinatarioError('NF-e não foi vinculada na Base NF-e Entrada Importada.')
 
     agora = timezone.now()
     documento.status_xml = NFeDestinadaManifestacao.StatusXml.BAIXADO

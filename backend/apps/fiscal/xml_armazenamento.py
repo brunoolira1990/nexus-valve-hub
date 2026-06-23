@@ -15,6 +15,7 @@ from apps.fiscal.models import (
     NFeDestinadaManifestacaoEvento,
     NFeEntradaHistoricaImportada,
 )
+from apps.fiscal.central_dfe.service import _xml_conteudo_armazenado
 from apps.fiscal.nfe_historica_classificacao import norm_digits
 
 logger = logging.getLogger(__name__)
@@ -145,11 +146,17 @@ def sincronizar_manifestacao_com_nf_historica(
             'valor_nf': nf.valor_total_nf,
             'ambiente': ambiente,
             'classificacao_dfe': 'BASE_DFE_IMPORTADA',
-            'status_xml': NFeDestinadaManifestacao.StatusXml.BAIXADO,
             'nf_entrada_historica': nf,
         },
     )
+    xml_armazenado = _xml_conteudo_armazenado(nf)
     if created:
+        documento.status_xml = (
+            NFeDestinadaManifestacao.StatusXml.BAIXADO
+            if xml_armazenado
+            else NFeDestinadaManifestacao.StatusXml.RESUMO
+        )
+        documento.save(update_fields=['status_xml', 'consultado_em'])
         registrar_evento_manifestacao(
             documento=documento,
             tipo_acao=NFeDestinadaManifestacaoEvento.TipoAcao.CONSULTA,
@@ -157,10 +164,13 @@ def sincronizar_manifestacao_com_nf_historica(
             usuario=usuario,
             ambiente=ambiente,
         )
-    elif documento.status_xml != NFeDestinadaManifestacao.StatusXml.BAIXADO:
-        documento.status_xml = NFeDestinadaManifestacao.StatusXml.BAIXADO
+    else:
+        update_fields = ['nf_entrada_historica', 'consultado_em']
         documento.nf_entrada_historica = nf
-        documento.save(update_fields=['status_xml', 'nf_entrada_historica', 'consultado_em'])
+        if xml_armazenado and documento.status_xml != NFeDestinadaManifestacao.StatusXml.BAIXADO:
+            documento.status_xml = NFeDestinadaManifestacao.StatusXml.BAIXADO
+            update_fields.append('status_xml')
+        documento.save(update_fields=update_fields)
     return documento
 
 

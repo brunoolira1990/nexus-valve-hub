@@ -5,7 +5,7 @@ from __future__ import annotations
 from django.db import transaction
 
 from apps.cadastros.models import Empresa
-from apps.fiscal.central_dfe.service import _json_participante, normalizar_cnpj
+from apps.fiscal.central_dfe.service import _json_participante, _xml_conteudo_armazenado, normalizar_cnpj
 from apps.fiscal.dfe_classificacao import eh_documento_homologacao
 from apps.fiscal.manifestacao_destinatario.audit import registrar_evento_manifestacao
 from apps.fiscal.models import NFeDestinadaManifestacao, NFeDestinadaManifestacaoEvento, NFeEntradaHistoricaImportada
@@ -60,11 +60,10 @@ def iniciar_manifestacao_por_chave(
             ).first()
             if nf_link:
                 existente.nf_entrada_historica = nf_link
-                if existente.status_xml in (
-                    NFeDestinadaManifestacao.StatusXml.PENDENTE,
-                    NFeDestinadaManifestacao.StatusXml.RESUMO,
-                ):
+                if _xml_conteudo_armazenado(nf_link):
                     existente.status_xml = NFeDestinadaManifestacao.StatusXml.BAIXADO
+                elif existente.status_xml == NFeDestinadaManifestacao.StatusXml.PENDENTE:
+                    existente.status_xml = NFeDestinadaManifestacao.StatusXml.RESUMO
                 existente.save(update_fields=['nf_entrada_historica', 'status_xml', 'consultado_em'])
         return existente, False
 
@@ -97,6 +96,11 @@ def iniciar_manifestacao_por_chave(
     )
     emit_nome, emit_cnpj = _emitente_nf(nf)
 
+    status_xml_inicial = (
+        NFeDestinadaManifestacao.StatusXml.BAIXADO
+        if _xml_conteudo_armazenado(nf)
+        else NFeDestinadaManifestacao.StatusXml.RESUMO
+    )
     documento = NFeDestinadaManifestacao.objects.create(
         empresa=empresa,
         chave_acesso=chave,
@@ -108,7 +112,7 @@ def iniciar_manifestacao_por_chave(
         ambiente=ambiente,
         classificacao_dfe='BASE_DFE_IMPORTADA',
         status_manifestacao=NFeDestinadaManifestacao.StatusManifestacao.PENDENTE,
-        status_xml=NFeDestinadaManifestacao.StatusXml.BAIXADO,
+        status_xml=status_xml_inicial,
         nf_entrada_historica=nf,
     )
 

@@ -695,15 +695,20 @@ def coletar_documentos_central_dfe(
     rows.extend(_coletar_nfe_entrada_recebida(filtros, empresa, chaves_lancadas))
     rows.extend(_coletar_nfe_resumo_destinada(filtros, empresa, chaves_lancadas, chaves_historica))
     rows.extend(_coletar_cte_recebido(filtros, empresa))
-    chaves_vistas: set[str] = set()
-    dedup: list[DocumentoCentralDfe] = []
+    por_chave: dict[str, DocumentoCentralDfe] = {}
+    sem_chave: list[DocumentoCentralDfe] = []
     for row in rows:
         chave = (row.chave_acesso or '').strip()
-        if chave:
-            if chave in chaves_vistas:
-                continue
-            chaves_vistas.add(chave)
-        dedup.append(row)
+        if not chave:
+            sem_chave.append(row)
+            continue
+        atual = por_chave.get(chave)
+        if atual is None:
+            por_chave[chave] = row
+            continue
+        if row.xml_armazenado and not atual.xml_armazenado:
+            por_chave[chave] = row
+    dedup = list(por_chave.values()) + sem_chave
     rows = [r for r in dedup if _match_filtros_pos_query(r, filtros)]
     return ordenar_documentos_central(rows, filtros.ordering)
 

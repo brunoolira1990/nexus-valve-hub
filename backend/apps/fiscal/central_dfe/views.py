@@ -86,9 +86,11 @@ class CentralDfeViewSet(viewsets.ViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
+            chave_raw = (ser.validated_data.get('chave_acesso') or '').strip()
             resultado = armazenar_xml_nfe_central(
                 empresa_id=ser.validated_data['empresa_id'],
                 documento_id=int(pk),
+                chave_acesso=chave_raw or None,
                 usuario=request.user,
                 confirmacao_explicita=True,
             )

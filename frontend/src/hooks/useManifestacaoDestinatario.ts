@@ -37,6 +37,9 @@ export function useManifestacaoDestinatario(
   const [dfeDetalheRow, setDfeDetalheRow] = useState<CentralDfeDocumento | null>(null);
   const [loadingSyncResumos, setLoadingSyncResumos] = useState(false);
   const [loadingAcaoManual, setLoadingAcaoManual] = useState(false);
+  const [documentosCentralPorChave, setDocumentosCentralPorChave] = useState<
+    Map<string, CentralDfeDocumento>
+  >(new Map());
 
   const abrirModalManifestacao = useCallback((doc: NFeDestinadaDocumento) => {
     setManifestModalKey((k) => k + 1);
@@ -56,8 +59,15 @@ export function useManifestacaoDestinatario(
   const aplicarArmazenamentoXmlNfeLocal = useCallback(
     (
       chaveAcesso: string,
-      payload: { nf_entrada_historica_id: number; manifestacao_id?: number },
+      payload: { nf_entrada_historica_id: number; manifestacao_id?: number; documento?: CentralDfeDocumento },
     ) => {
+      if (payload.documento?.chave_acesso) {
+        setDocumentosCentralPorChave((prev) => {
+          const next = new Map(prev);
+          next.set(payload.documento!.chave_acesso, payload.documento!);
+          return next;
+        });
+      }
       setManifestacaoMap((prev) => {
         const atual = prev.get(chaveAcesso);
         if (!atual) return prev;
@@ -70,15 +80,7 @@ export function useManifestacaoDestinatario(
         return next;
       });
       setManifestacaoSomenteResumo((prev) =>
-        prev.map((row) =>
-          row.chave_acesso === chaveAcesso
-            ? {
-                ...row,
-                status_xml: 'BAIXADO',
-                nf_entrada_historica_id: payload.nf_entrada_historica_id,
-              }
-            : row,
-        ),
+        prev.filter((row) => row.chave_acesso !== chaveAcesso),
       );
     },
     [],
@@ -302,21 +304,29 @@ export function useManifestacaoDestinatario(
     const { row, manifestacao, somenteResumo } = confirmArmazenar;
     const documentoId = somenteResumo && manifestacao ? manifestacao.id : row.id;
     const chaveAcesso = (row.chave_acesso || manifestacao?.chave_acesso || '').trim();
+    if (chaveAcesso.length !== 44) {
+      toast.error('Chave de acesso inválida para importar XML.');
+      return;
+    }
     setLoadingAcaoManual(true);
     try {
       const resp = await centralDfeService.armazenarXmlNfe(documentoId, {
         empresa_id: empresaId,
         confirmacao_explicita: true,
+        chave_acesso: chaveAcesso,
       });
-      if (!resp.xml_armazenado || !resp.nf_entrada_historica_id) {
+      if (
+        !resp.xml_armazenado
+        || !resp.nf_entrada_historica_id
+        || !resp.documento?.xml_armazenado
+      ) {
         throw new Error(resp.mensagem || 'XML não foi persistido na Base NF-e Entrada Importada.');
       }
-      if (chaveAcesso) {
-        aplicarArmazenamentoXmlNfeLocal(chaveAcesso, {
-          nf_entrada_historica_id: resp.nf_entrada_historica_id,
-          manifestacao_id: resp.manifestacao_id,
-        });
-      }
+      aplicarArmazenamentoXmlNfeLocal(chaveAcesso, {
+        nf_entrada_historica_id: resp.nf_entrada_historica_id,
+        manifestacao_id: resp.manifestacao_id,
+        documento: resp.documento,
+      });
       toast.success(resp.mensagem || 'XML importado e armazenado na Base NF-e Entrada Importada.');
       setConfirmArmazenar(null);
       setConfirmBaixar(null);
@@ -356,6 +366,7 @@ export function useManifestacaoDestinatario(
   return {
     manifestacaoMap,
     manifestacaoSomenteResumo,
+    documentosCentralPorChave,
     fechamento,
     detalhe,
     setDetalhe,
