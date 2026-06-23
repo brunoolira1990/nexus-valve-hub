@@ -166,6 +166,24 @@ export function toApiDecimal(v: string | number | null | undefined): number | nu
   return Number.isFinite(n) ? n : null;
 }
 
+/** Normaliza texto opcional: vazio → null quando o backend espera ausência de valor. */
+export function textoOpcionalParaApi(v: string | null | undefined): string | null {
+  const s = (v ?? '').trim();
+  return s || null;
+}
+
+export function abaRegraEntradaParaErro(mensagem: string): string | null {
+  const msg = mensagem.toLowerCase();
+  if (/cst|csosn|icms|fcp|modalidade_bc/.test(msg)) return 'icms';
+  if (/ipi/.test(msg)) return 'ipi';
+  if (/pis/.test(msg)) return 'pis';
+  if (/cofins/.test(msg)) return 'cofins';
+  if (/reforma|ibs|cbs/.test(msg)) return 'reforma';
+  if (/severidade|estoque|crédito|credito|certificado|efeito/.test(msg)) return 'efeitos';
+  if (/cfop|uf|fornecedor|tipo.?oper|classifica/.test(msg)) return 'cfop';
+  return null;
+}
+
 export function tituloMatchRegraFiscal(rf: ResultadoFiscalEntrada | undefined): string | undefined {
   const motivos = (rf?.regra_match_motivos || []).filter((m) => m !== 'Critérios gerais');
   if (!motivos.length) return undefined;

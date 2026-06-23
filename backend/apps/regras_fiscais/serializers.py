@@ -282,33 +282,46 @@ class RegraFiscalEntradaSerializer(serializers.ModelSerializer):
 
         cfop_origem = val('cfop_origem')
         cfop_legado = val('cfop')
+        cfop_entrada = val('cfop_entrada')
         if cfop_origem and 'cfop' not in attrs:
             attrs['cfop'] = cfop_origem
         elif cfop_legado and 'cfop_origem' not in attrs:
             attrs['cfop_origem'] = cfop_legado
 
-        ativo = attrs.get('ativo') if 'ativo' in attrs else (inst.ativo if inst else True)
-        if ativo:
-            cfop_val = cfop_origem or cfop_legado
-            if not cfop_val:
-                raise serializers.ValidationError({'cfop_entrada': 'Informe o CFOP.'})
-            tipo_op = val('tipo_operacao_fiscal')
-            nome = val('nome')
-            desc = val('descricao_cenario')
-            if not tipo_op and not nome and not desc:
-                raise serializers.ValidationError({'tipo_operacao_fiscal': 'Informe a natureza da operação.'})
-            cst = val('cst_icms_esperado')
-            csosn = val('csosn_esperado')
-            if not (cst or csosn):
-                raise serializers.ValidationError({'cst_icms_esperado': 'Informe o CST/CSOSN.'})
-
         escopo = attrs.get('escopo') or (inst.escopo if inst else None)
+
+        def _tem_criterio_classificacao() -> bool:
+            if escopo and getattr(escopo, 'tipo_escopo', '') != 'GERAL':
+                return True
+            return any(
+                [
+                    cfop_origem or cfop_legado or cfop_entrada,
+                    val('ncm'),
+                    val('uf_origem'),
+                    val('uf_destino'),
+                    val('tipo_operacao_fiscal'),
+                    attrs.get('produto') or (inst.produto_id if inst else None),
+                    attrs.get('fornecedor') or (inst.fornecedor_id if inst else None),
+                ],
+            )
+
+        ativo = attrs.get('ativo') if 'ativo' in attrs else (inst.ativo if inst else True)
+        if ativo and not _tem_criterio_classificacao():
+            raise serializers.ValidationError(
+                {
+                    'detail': (
+                        'Informe ao menos um critério de classificação '
+                        '(CFOP origem, CFOP entrada, UF, tipo de operação ou fornecedor).'
+                    ),
+                },
+            )
+
         if escopo:
             return attrs
 
         tem = any(
             [
-                cfop_origem or cfop_legado,
+                cfop_origem or cfop_legado or cfop_entrada,
                 val('ncm'),
                 val('uf_origem'),
                 val('uf_destino'),

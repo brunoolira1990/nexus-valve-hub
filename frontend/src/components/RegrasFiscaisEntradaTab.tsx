@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Copy, CopyPlus, Pencil, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Modal } from '@/components/Modal';
 import {
   cfopOrigemRegraEntrada,
@@ -14,6 +15,8 @@ import {
   labelStatusConfiguracao,
   resumoEfeitosMatriz,
   toApiDecimal,
+  textoOpcionalParaApi,
+  abaRegraEntradaParaErro,
   type RegrasFiscaisEntradaPrefill,
   type ReformaTributariaForm,
 } from '@/lib/regrasFiscaisEntradaHelpers';
@@ -189,14 +192,38 @@ function normalizarFormParaApi(
   ctx: { escopoId: number; cenarioId: number },
 ): Omit<RegraFiscalEntrada, 'id' | 'criado_em' | 'atualizado_em'> {
   const cfopOrigem = (form.cfop_origem || form.cfop || '').trim();
+  const cfopEntrada = (form.cfop_entrada || '').trim();
   return {
     ...form,
     escopo_id: ctx.escopoId,
     cenario_id: ctx.cenarioId,
     nome: (form.nome || '').trim() || 'Configuração',
-    descricao_cenario: '',
+    codigo: (form.codigo || '').trim(),
+    descricao_cenario: (form.descricao_cenario || '').trim(),
     cfop_origem: cfopOrigem,
     cfop: cfopOrigem,
+    cfop_entrada: cfopEntrada,
+    uf_origem: (form.uf_origem || '').trim(),
+    uf_destino: (form.uf_destino || '').trim(),
+    tipo_operacao_fiscal: (form.tipo_operacao_fiscal || '') as TipoOperacaoFiscalEntrada,
+    fornecedor_id: form.fornecedor_id ?? null,
+    produto_id: form.produto_id ?? null,
+    ncm: (form.ncm || '').trim(),
+    cst_icms_esperado: (form.cst_icms_esperado || '').trim(),
+    csosn_esperado: (form.csosn_esperado || '').trim(),
+    cst_pis_esperado: (form.cst_pis_esperado || '').trim(),
+    cst_cofins_esperado: (form.cst_cofins_esperado || '').trim(),
+    cst_ipi_esperado: (form.cst_ipi_esperado || '').trim(),
+    modalidade_bc_icms: textoOpcionalParaApi(form.modalidade_bc_icms) ?? '',
+    motivo_desoneracao_icms: textoOpcionalParaApi(form.motivo_desoneracao_icms) ?? '',
+    codigo_beneficio_icms: textoOpcionalParaApi(form.codigo_beneficio_icms) ?? '',
+    cst_icms_st_esperado: (form.cst_icms_st_esperado || '').trim(),
+    tipo_calculo_ipi: textoOpcionalParaApi(form.tipo_calculo_ipi) ?? '',
+    enquadramento_ipi: textoOpcionalParaApi(form.enquadramento_ipi) ?? '',
+    tipo_calculo_pis: textoOpcionalParaApi(form.tipo_calculo_pis) ?? '',
+    tipo_calculo_cofins: textoOpcionalParaApi(form.tipo_calculo_cofins) ?? '',
+    mensagem_padrao: textoOpcionalParaApi(form.mensagem_padrao) ?? '',
+    observacoes: textoOpcionalParaApi(form.observacoes) ?? '',
     aliquota_icms: toApiDecimal(form.aliquota_icms),
     reducao_bc_icms: toApiDecimal(form.reducao_bc_icms),
     aliquota_icms_st: toApiDecimal(form.aliquota_icms_st),
@@ -220,6 +247,18 @@ function normalizarFormParaApi(
     valor_fcp_unidade: toApiDecimal(form.valor_fcp_unidade),
     reforma_tributaria: reformaToApi(form.reforma_tributaria),
   };
+}
+
+function temCriterioClassificacaoEntrada(form: FormRegraEntrada): boolean {
+  return Boolean(
+    (form.cfop_origem || form.cfop || '').trim()
+      || (form.cfop_entrada || '').trim()
+      || (form.uf_origem || '').trim()
+      || (form.uf_destino || '').trim()
+      || (form.tipo_operacao_fiscal || '').trim()
+      || form.fornecedor_id
+      || (form.ncm || '').trim(),
+  );
 }
 
 function formFromRegra(regra: RegraFiscalEntrada): typeof empty {
@@ -428,8 +467,8 @@ export const RegrasFiscaisEntradaTab = ({ autoOpenNew, prefill }: Props) => {
       await regrasFiscaisEntradaService.duplicar(cfgDuplicar.id, dupForm);
       setModalDuplicarOpen(false);
       if (cenarioAtual && escopoAtual) void loadMatriz(cenarioAtual.id, escopoAtual.id);
-    } catch {
-      setErro('Não foi possível duplicar. Verifique se já existe configuração para esta UF/CFOP.');
+    } catch (e) {
+      setErro(apiErrorMessage(e, { fallback: 'Não foi possível duplicar. Verifique se já existe configuração para esta UF/CFOP.' }));
     }
   };
 
@@ -444,17 +483,19 @@ export const RegrasFiscaisEntradaTab = ({ autoOpenNew, prefill }: Props) => {
       });
       setResultadoCopia(res);
       void loadMatriz(cenarioAtual.id, escopoAtual.id);
-    } catch {
-      setErro('Não foi possível copiar as configurações.');
+    } catch (e) {
+      setErro(apiErrorMessage(e, { fallback: 'Não foi possível copiar as configurações.' }));
     }
   };
 
   const handleSave = async () => {
     if (!escopoAtual || !cenarioAtual) return;
     setErro('');
-    const cfopOrigem = (form.cfop_origem || form.cfop || '').trim();
-    if (!cfopOrigem && !form.uf_origem && !form.uf_destino) {
-      setErro('Informe ao menos CFOP origem ou UF origem/destino.');
+    if (!temCriterioClassificacaoEntrada(form)) {
+      setErro(
+        'Informe ao menos um critério na aba Classificação (CFOP origem, CFOP entrada, UF, tipo de operação, fornecedor ou NCM).',
+      );
+      setAbaForm('cfop');
       return;
     }
     try {
@@ -464,11 +505,17 @@ export const RegrasFiscaisEntradaTab = ({ autoOpenNew, prefill }: Props) => {
       });
       if (editing) await regrasFiscaisEntradaService.update(editing.id, payload);
       else await regrasFiscaisEntradaService.create(payload);
+      toast.success(editing ? 'Classificação de entrada atualizada.' : 'Classificação de entrada criada.');
       setModalOpen(false);
       void loadMatriz(cenarioAtual.id, escopoAtual.id);
       void loadEscopos(cenarioAtual.id);
-    } catch {
-      setErro('Não foi possível salvar. Verifique os campos obrigatórios.');
+    } catch (e) {
+      const msg = apiErrorMessage(e, {
+        fallback: 'Não foi possível salvar a regra fiscal de entrada. Verifique os campos informados.',
+      });
+      setErro(msg);
+      const aba = abaRegraEntradaParaErro(msg);
+      if (aba) setAbaForm(aba as AbaFormRegra);
     }
   };
 
@@ -491,8 +538,8 @@ export const RegrasFiscaisEntradaTab = ({ autoOpenNew, prefill }: Props) => {
       setNovoEscopoNcm('');
       setNovoEscopoProdutoId('');
       void loadEscopos(cenarioAtual.id);
-    } catch {
-      setErro('Não foi possível criar o escopo. Verifique NCM ou produto.');
+    } catch (e) {
+      setErro(apiErrorMessage(e, { fallback: 'Não foi possível criar o escopo. Verifique NCM ou produto.' }));
     }
   };
 

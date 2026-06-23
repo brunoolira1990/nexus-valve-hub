@@ -147,7 +147,7 @@ class RegrasFiscaisMinimas4014101Tests(TestCase):
         uso = validar_regra_fiscal_entrada_para_uso()
         self.assertTrue(uso['valida'])
 
-    def test_cadastro_bloqueia_ativar_entrada_sem_cst(self):
+    def test_cadastro_permite_ativar_entrada_sem_cst_marca_incompleta(self):
         regra = RegraFiscalEntrada.objects.create(
             nome='Rascunho',
             ativo=False,
@@ -159,8 +159,28 @@ class RegrasFiscaisMinimas4014101Tests(TestCase):
             {'ativo': True},
             format='json',
         )
-        self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('cst', str(r.json()).lower())
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        body = r.json()
+        self.assertTrue(body.get('ativo'))
+        self.assertTrue(body.get('incompleta'))
+
+    def test_cadastro_permite_entrada_ativa_so_com_cfop_entrada_e_uf(self):
+        r = self.client.post(
+            '/api/regras-fiscais-entrada/',
+            {
+                'nome': 'Classificação CFOP entrada',
+                'ativo': True,
+                'cfop_entrada': '1102',
+                'uf_origem': 'SP',
+                'uf_destino': 'RJ',
+                'prioridade': 10,
+            },
+            format='json',
+        )
+        self.assertEqual(r.status_code, status.HTTP_201_CREATED)
+        body = r.json()
+        self.assertEqual(body['cfop_entrada'], '1102')
+        self.assertTrue(body.get('incompleta'))
 
     def test_cadastro_permite_inativa_incompleta(self):
         r = self.client.post(
