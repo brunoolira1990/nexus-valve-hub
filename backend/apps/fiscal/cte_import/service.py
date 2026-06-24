@@ -57,13 +57,9 @@ def _resolve_empresa_from_party(party: dict[str, Any]) -> Empresa | None:
 
 
 def _resolve_fornecedor_from_party(party: dict[str, Any]) -> Fornecedor | None:
-    doc = _norm_digits(party.get('CNPJ') or party.get('CPF') or '')
-    if len(doc) != 14:
-        return None
-    for forn in Fornecedor.objects.only('id', 'cnpj'):
-        if _norm_digits(forn.cnpj) == doc:
-            return forn
-    return None
+    from apps.fiscal.nfe_historica_classificacao import resolve_fornecedor_from_party
+
+    return resolve_fornecedor_from_party(party)
 
 
 def importar_arquivos_cte(arquivos: list[tuple[str, bytes]]) -> dict[str, Any]:

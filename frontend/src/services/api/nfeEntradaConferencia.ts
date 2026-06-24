@@ -56,4 +56,18 @@ export const nfeEntradaConferenciaService = {
         payload,
       )
     ).data,
+  vincularFornecedor: async (nfeHistoricaId: number, fornecedorId: number) =>
+    (
+      await api.post<{ conferencia: NFeEntradaConferencia }>(
+        `${base}${nfeHistoricaId}/fornecedor/vincular/`,
+        { fornecedor_id: fornecedorId },
+      )
+    ).data,
+  cadastrarVincularFornecedor: async (nfeHistoricaId: number, payload: Record<string, unknown>) =>
+    (
+      await api.post<{ conferencia: NFeEntradaConferencia }>(
+        `${base}${nfeHistoricaId}/fornecedor/cadastrar-vincular/`,
+        payload,
+      )
+    ).data,
 };

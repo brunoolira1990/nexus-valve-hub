@@ -74,6 +74,15 @@ def nfe_entrada_xml_valido_para_financeiro(nf: NFeEntradaHistoricaImportada) -> 
     return bool((nf.numero or '').strip()) and _round_money(nf.valor_total_nf or 0) > 0
 
 
+def _garantir_fornecedor_identificado(nf: NFeEntradaHistoricaImportada) -> NFeEntradaHistoricaImportada:
+    if nf.fornecedor_emitente_id:
+        return nf
+    from apps.fiscal.fornecedor_entrada import tentar_vincular_fornecedor_nfe_entrada
+
+    tentar_vincular_fornecedor_nfe_entrada(nf, persistir=True)
+    return NFeEntradaHistoricaImportada.objects.select_related('fornecedor_emitente').get(pk=nf.pk)
+
+
 def motivo_bloqueio_financeiro_real(
     nf: NFeEntradaHistoricaImportada,
     conferencia: NFeEntradaConferencia | None = None,
@@ -81,6 +90,7 @@ def motivo_bloqueio_financeiro_real(
     vinculados: list[TituloFinanceiro] | None = None,
 ) -> str:
     """Retorna motivo de bloqueio financeiro real ou string vazia se pode gerar."""
+    nf = _garantir_fornecedor_identificado(nf)
     conf = conferencia if conferencia is not None else _resolve_conferencia(nf)
     titulos = vinculados if vinculados is not None else list(titulos_vinculados_nfe_entrada(nf))
     if titulos:
@@ -207,6 +217,7 @@ def montar_flags_financeiro_nfe_entrada(
     nf: NFeEntradaHistoricaImportada,
     conferencia: NFeEntradaConferencia | None = None,
 ) -> dict[str, Any]:
+    nf = _garantir_fornecedor_identificado(nf)
     conf = conferencia if conferencia is not None else _resolve_conferencia(nf)
     vinculados = list(titulos_vinculados_nfe_entrada(nf))
     financeiro_gerado = bool(vinculados)
@@ -257,6 +268,7 @@ def _eh_nota_servico(nf: NFeEntradaHistoricaImportada) -> bool:
 
 
 def preview_contas_pagar_de_nfe_entrada(nf: NFeEntradaHistoricaImportada) -> dict[str, Any]:
+    nf = _garantir_fornecedor_identificado(nf)
     conf = _resolve_conferencia(nf)
     motivo = motivo_bloqueio_financeiro_real(nf, conf)
     if motivo:

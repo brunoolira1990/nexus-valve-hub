@@ -2194,6 +2194,34 @@ export interface ResumoPedidoConferencia {
   saldo_pedido_global: SaldoPedidoGlobalItem[];
 }
 
+export interface FornecedorEntradaStatus {
+  status: 'vinculado' | 'encontrado_unico' | 'nao_encontrado' | 'duplicidade' | 'sem_cnpj';
+  fornecedor_id?: number | null;
+  fornecedor_nome?: string;
+  fornecedor_cnpj?: string;
+  cnpj_documento?: string;
+  candidatos?: Array<{ id: number; razao_social: string; cnpj: string; ativo: boolean }>;
+  mensagem?: string;
+  vinculo_automatico?: boolean;
+  identificado?: boolean;
+  pode_cadastrar?: boolean;
+  pode_vincular_manual?: boolean;
+  sugestao_cadastro?: {
+    razao_social?: string;
+    nome_fantasia?: string;
+    cnpj?: string;
+    ie?: string;
+    logradouro?: string;
+    numero?: string;
+    complemento?: string;
+    bairro?: string;
+    cidade?: string;
+    uf?: string;
+    cep?: string;
+    ativo?: boolean;
+  };
+}
+
 export interface NFeEntradaConferencia {
   id: number;
   nf_entrada_historica: number;
@@ -2204,6 +2232,8 @@ export interface NFeEntradaConferencia {
   valor_total: number;
   fornecedor_nome: string;
   fornecedor_cnpj: string;
+  fornecedor_id?: number | null;
+  fornecedor?: FornecedorEntradaStatus | null;
   status: 'PENDENTE' | 'CONFERIDA' | 'PREPARADA' | 'CANCELADA';
   pedido_compra_id?: number | null;
   pedido_compra_numero?: string;

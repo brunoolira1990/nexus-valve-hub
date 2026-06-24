@@ -1,4 +1,5 @@
 import type { ClassificacaoDfe } from '@/components/fiscal/DfeClassificacaoBadges';
+import type { FornecedorEntradaStatus } from '@/types';
 import api from './config';
 import { buildListParams, type ListQueryParams, type PaginatedResponse, unwrapListResults } from '@/lib/apiList';
 
@@ -91,6 +92,7 @@ export type CTeDocumentoVinculadoResumo = {
 };
 
 export type CTeHistoricoDetalhe = CTeHistoricoList & {
+  fornecedor?: FornecedorEntradaStatus | null;
   modelo: string;
   tp_amb: string;
   nat_op: string;
@@ -232,5 +234,15 @@ export const cteHistoricoImportadoService = {
     (await api.post<CTeConferenciaResposta>(`${base}${id}/marcar-divergente/`, payload)).data,
   ignorarOperacional: async (id: number, payload: { motivo: string; observacao?: string }) =>
     (await api.post<CTeConferenciaResposta>(`${base}${id}/ignorar-operacional/`, payload)).data,
+  vincularFornecedor: async (id: number, fornecedorId: number) =>
+    (await api.post<{ cte: CTeHistoricoDetalhe; fornecedor: FornecedorEntradaStatus }>(
+      `${base}${id}/fornecedor/vincular/`,
+      { fornecedor_id: fornecedorId },
+    )).data,
+  cadastrarVincularFornecedor: async (id: number, payload: Record<string, unknown>) =>
+    (await api.post<{ cte: CTeHistoricoDetalhe; fornecedor: FornecedorEntradaStatus }>(
+      `${base}${id}/fornecedor/cadastrar-vincular/`,
+      payload,
+    )).data,
 };
 

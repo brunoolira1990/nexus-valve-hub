@@ -56,13 +56,12 @@ def resolve_cliente_from_party(party: dict[str, Any] | None) -> Cliente | None:
 
 
 def resolve_fornecedor_from_party(party: dict[str, Any] | None) -> Fornecedor | None:
-    doc = documento_party(party)
-    if len(doc) != 14:
+    from apps.fiscal.fornecedor_entrada import StatusIdentificacaoFornecedor, identificar_fornecedor_por_party
+
+    resultado = identificar_fornecedor_por_party(party)
+    if resultado.status != StatusIdentificacaoFornecedor.ENCONTRADO_UNICO or not resultado.fornecedor_id:
         return None
-    for forn in Fornecedor.objects.only('id', 'cnpj'):
-        if norm_digits(forn.cnpj) == doc:
-            return forn
-    return None
+    return Fornecedor.objects.filter(pk=resultado.fornecedor_id).first()
 
 
 @dataclass

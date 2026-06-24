@@ -1683,6 +1683,8 @@ class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):
     itens = ItemNFeEntradaConferenciaSerializer(many=True, required=False)
     fornecedor_nome = serializers.SerializerMethodField(read_only=True)
     fornecedor_cnpj = serializers.SerializerMethodField(read_only=True)
+    fornecedor_id = serializers.SerializerMethodField(read_only=True)
+    fornecedor = serializers.SerializerMethodField(read_only=True)
     numero = serializers.SerializerMethodField(read_only=True)
     serie = serializers.SerializerMethodField(read_only=True)
     data_emissao = serializers.SerializerMethodField(read_only=True)
@@ -1709,6 +1711,8 @@ class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             'valor_total',
             'fornecedor_nome',
             'fornecedor_cnpj',
+            'fornecedor_id',
+            'fornecedor',
             'pedido_compra_id',
             'pedido_compra_numero',
             'resumo_pedido',
@@ -1726,11 +1730,34 @@ class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             'itens',
         )
 
+    def _status_fornecedor_conferencia(self, obj: NFeEntradaConferencia) -> dict:
+        cache = self.context.setdefault('_status_fornecedor_conferencia', {})
+        if obj.id not in cache:
+            from apps.fiscal.fornecedor_entrada import montar_status_fornecedor_nfe_entrada
+
+            nf = obj.nf_entrada_historica
+            cache[obj.id] = montar_status_fornecedor_nfe_entrada(nf, auto_vincular=True)
+            obj.nf_entrada_historica.refresh_from_db(fields=['fornecedor_emitente'])
+        return cache[obj.id]
+
+    def get_fornecedor(self, obj):
+        return self._status_fornecedor_conferencia(obj)
+
+    def get_fornecedor_id(self, obj):
+        status = self._status_fornecedor_conferencia(obj)
+        return status.get('fornecedor_id') or obj.nf_entrada_historica.fornecedor_emitente_id
+
     def get_fornecedor_nome(self, obj):
+        status = self._status_fornecedor_conferencia(obj)
+        if status.get('fornecedor_nome'):
+            return status['fornecedor_nome']
         nf = obj.nf_entrada_historica
         return nf.fornecedor_emitente.razao_social if nf.fornecedor_emitente_id else (nf.emit_json or {}).get('xNome', '')
 
     def get_fornecedor_cnpj(self, obj):
+        status = self._status_fornecedor_conferencia(obj)
+        if status.get('fornecedor_cnpj'):
+            return status['fornecedor_cnpj']
         nf = obj.nf_entrada_historica
         return nf.fornecedor_emitente.cnpj if nf.fornecedor_emitente_id else (nf.emit_json or {}).get('CNPJ', '')
 
@@ -2426,6 +2453,7 @@ class CTeHistoricoImportadoSerializer(serializers.ModelSerializer):
     empresa_nome = serializers.SerializerMethodField(read_only=True)
     papel_empresa = serializers.SerializerMethodField(read_only=True)
     fornecedor_remetente_nome = serializers.SerializerMethodField(read_only=True)
+    fornecedor = serializers.SerializerMethodField(read_only=True)
     classificacao_dfe = serializers.SerializerMethodField(read_only=True)
     documentos_vinculados_resumo = serializers.SerializerMethodField(read_only=True)
     conferido_por_nome = serializers.SerializerMethodField(read_only=True)
@@ -2482,6 +2510,7 @@ class CTeHistoricoImportadoSerializer(serializers.ModelSerializer):
             'empresa_recebedora',
             'fornecedor_remetente',
             'fornecedor_remetente_nome',
+            'fornecedor',
             'empresa_id',
             'empresa_nome',
             'papel_empresa',
@@ -2543,7 +2572,22 @@ class CTeHistoricoImportadoSerializer(serializers.ModelSerializer):
     def get_motivo_visual(self, obj):
         return _cte_status_visual(obj)['motivo_visual']
 
+    def _status_fornecedor_cte(self, obj: CTeHistoricoImportado) -> dict:
+        cache = self.context.setdefault('_status_fornecedor_cte', {})
+        if obj.id not in cache:
+            from apps.fiscal.fornecedor_entrada import montar_status_fornecedor_cte_entrada
+
+            cache[obj.id] = montar_status_fornecedor_cte_entrada(obj, auto_vincular=True)
+            obj.refresh_from_db(fields=['fornecedor_remetente'])
+        return cache[obj.id]
+
+    def get_fornecedor(self, obj):
+        return self._status_fornecedor_cte(obj)
+
     def get_fornecedor_remetente_nome(self, obj):
+        status = self._status_fornecedor_cte(obj)
+        if status.get('fornecedor_nome'):
+            return status['fornecedor_nome']
         return obj.fornecedor_remetente.razao_social if obj.fornecedor_remetente_id else (obj.rem_json or {}).get('xNome', '')
 
     def get_empresa_id(self, obj):
@@ -2901,3 +2945,22 @@ class NFeGerarContasPagarSerializer(serializers.Serializer):
     conta_financeira_prevista = serializers.IntegerField(required=False, allow_null=True)
     observacoes = serializers.CharField(required=False, allow_blank=True)
     confirmar_pendencias_operacionais = serializers.BooleanField(required=False, default=False)
+
+
+class VincularFornecedorEntradaSerializer(serializers.Serializer):
+    fornecedor_id = serializers.IntegerField(min_value=1)
+
+
+class CadastrarFornecedorEntradaSerializer(serializers.Serializer):
+    razao_social = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    nome_fantasia = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    cnpj = serializers.CharField(required=False, allow_blank=True, max_length=20)
+    ie = serializers.CharField(required=False, allow_blank=True, max_length=32)
+    logradouro = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    numero = serializers.CharField(required=False, allow_blank=True, max_length=32)
+    complemento = serializers.CharField(required=False, allow_blank=True, max_length=128)
+    bairro = serializers.CharField(required=False, allow_blank=True, max_length=128)
+    cidade = serializers.CharField(required=False, allow_blank=True, max_length=128)
+    uf = serializers.CharField(required=False, allow_blank=True, max_length=2)
+    cep = serializers.CharField(required=False, allow_blank=True, max_length=16)
+    ativo = serializers.BooleanField(required=False, default=True)

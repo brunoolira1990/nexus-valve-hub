@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { Modal } from '@/components/Modal';
 import { PageHeader } from '@/components/PageHeader';
 import { GerarContasPagarNfeEntradaModal } from '@/components/fiscal/GerarContasPagarNfeEntradaModal';
+import { FornecedorEntradaAcoes } from '@/components/fiscal/FornecedorEntradaAcoes';
 import { NFeEntradaFinanceiroAcoes } from '@/components/fiscal/NFeEntradaFinanceiroAcoes';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import {
@@ -399,6 +400,20 @@ const NFeEntradaConferenciaPage = () => {
                 Vincule itens do pedido linha a linha para comparar Pedido × NF (opcional para preparar).
               </p>
             )}
+          </div>
+          <div className="md:col-span-4">
+            <FornecedorEntradaAcoes
+              status={dados.fornecedor}
+              busy={busy}
+              onVincular={async (fornecedorId) => {
+                const res = await nfeEntradaConferenciaService.vincularFornecedor(nfId, fornecedorId);
+                setDados(res.conferencia);
+              }}
+              onCadastrar={async (payload) => {
+                const res = await nfeEntradaConferenciaService.cadastrarVincularFornecedor(nfId, payload);
+                setDados(res.conferencia);
+              }}
+            />
           </div>
           <div className="md:col-span-4 pt-2 border-t border-border/60">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">Ações financeiras</p>

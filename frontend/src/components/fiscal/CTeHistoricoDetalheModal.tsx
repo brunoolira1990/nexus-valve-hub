@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Modal } from '@/components/Modal';
+import { FornecedorEntradaAcoes } from '@/components/fiscal/FornecedorEntradaAcoes';
 import { DfeClassificacaoBadges } from '@/components/fiscal/DfeClassificacaoBadges';
 import { StatusBadge } from '@/components/nexus/StatusBadge';
 import { NexusButton } from '@/components/nexus';
@@ -169,6 +170,25 @@ export function CTeHistoricoDetalheModal({
                   </div>
                 ))
               )}
+              {cteId ? (
+                <div className="md:col-span-2">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Fornecedor / remetente</p>
+                  <FornecedorEntradaAcoes
+                    status={detalhe.fornecedor}
+                    busy={busy}
+                    onVincular={async (fornecedorId) => {
+                      const res = await cteHistoricoImportadoService.vincularFornecedor(cteId, fornecedorId);
+                      setDetalhe(res.cte);
+                      onConferenciaAtualizada?.();
+                    }}
+                    onCadastrar={async (payload) => {
+                      const res = await cteHistoricoImportadoService.cadastrarVincularFornecedor(cteId, payload);
+                      setDetalhe(res.cte);
+                      onConferenciaAtualizada?.();
+                    }}
+                  />
+                </div>
+              ) : null}
             </div>
           )}
 

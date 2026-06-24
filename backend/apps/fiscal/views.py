@@ -2453,6 +2453,60 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
             },
         )
 
+    @action(detail=True, methods=['get'], url_path='fornecedor/status')
+    def status_fornecedor(self, request, pk=None):
+        from apps.fiscal.fornecedor_entrada import montar_status_fornecedor_nfe_entrada
+
+        nf = self.get_object()
+        return response.Response(montar_status_fornecedor_nfe_entrada(nf, auto_vincular=True))
+
+    @action(detail=True, methods=['post'], url_path='fornecedor/vincular')
+    def vincular_fornecedor(self, request, pk=None):
+        from apps.fiscal.fornecedor_entrada import montar_status_fornecedor_nfe_entrada, vincular_fornecedor_nfe_entrada
+        from apps.fiscal.serializers import NFeEntradaConferenciaSerializer, VincularFornecedorEntradaSerializer
+
+        nf = self.get_object()
+        ser = VincularFornecedorEntradaSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        try:
+            nf = vincular_fornecedor_nfe_entrada(nf, ser.validated_data['fornecedor_id'])
+        except ValueError as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        conferencia = self._get_or_build_conferencia(nf)
+        conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
+        return response.Response(
+            {
+                'fornecedor': montar_status_fornecedor_nfe_entrada(nf, auto_vincular=False),
+                'conferencia': NFeEntradaConferenciaSerializer(conferencia).data,
+            },
+        )
+
+    @action(detail=True, methods=['post'], url_path='fornecedor/cadastrar-vincular')
+    def cadastrar_vincular_fornecedor(self, request, pk=None):
+        from apps.fiscal.fornecedor_entrada import cadastrar_ou_vincular_fornecedor_nfe_entrada, montar_status_fornecedor_nfe_entrada
+        from apps.fiscal.serializers import CadastrarFornecedorEntradaSerializer, NFeEntradaConferenciaSerializer
+
+        nf = self.get_object()
+        ser = CadastrarFornecedorEntradaSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        try:
+            fornecedor, criado, nf = cadastrar_ou_vincular_fornecedor_nfe_entrada(nf, ser.validated_data)
+        except ValueError as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        conferencia = self._get_or_build_conferencia(nf)
+        conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
+        return response.Response(
+            {
+                'fornecedor': montar_status_fornecedor_nfe_entrada(nf, auto_vincular=False),
+                'fornecedor_criado': criado,
+                'fornecedor_id': fornecedor.id,
+                'conferencia': NFeEntradaConferenciaSerializer(conferencia).data,
+            },
+            status=status.HTTP_201_CREATED if criado else status.HTTP_200_OK,
+        )
+
     @action(detail=True, methods=['get'], url_path='financeiro/preview-contas-pagar')
     def preview_contas_pagar(self, request, pk=None):
         """ERP 4.0.14.4 — preview de contas a pagar (sem persistir)."""
@@ -2559,6 +2613,7 @@ class CTeHistoricoImportadoViewSet(AutocompleteOrPaginationMixin, viewsets.ReadO
     queryset = CTeHistoricoImportado.objects.select_related(
         'transportadora',
         'empresa_tomadora',
+        'fornecedor_remetente',
         'conferido_por',
     ).all()
     permission_classes = [IsAuthenticated]
@@ -2614,6 +2669,57 @@ class CTeHistoricoImportadoViewSet(AutocompleteOrPaginationMixin, viewsets.ReadO
         if self.action == 'list':
             return CTeHistoricoImportadoListSerializer
         return CTeHistoricoImportadoSerializer
+
+    @action(detail=True, methods=['get'], url_path='fornecedor/status')
+    def status_fornecedor(self, request, pk=None):
+        from apps.fiscal.fornecedor_entrada import montar_status_fornecedor_cte_entrada
+
+        cte = self.get_object()
+        return response.Response(montar_status_fornecedor_cte_entrada(cte, auto_vincular=True))
+
+    @action(detail=True, methods=['post'], url_path='fornecedor/vincular')
+    def vincular_fornecedor(self, request, pk=None):
+        from apps.fiscal.fornecedor_entrada import montar_status_fornecedor_cte_entrada, vincular_fornecedor_cte_entrada
+        from apps.fiscal.serializers import CTeHistoricoImportadoSerializer, VincularFornecedorEntradaSerializer
+
+        cte = self.get_object()
+        ser = VincularFornecedorEntradaSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        try:
+            cte = vincular_fornecedor_cte_entrada(cte, ser.validated_data['fornecedor_id'])
+        except ValueError as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return response.Response(
+            {
+                'fornecedor': montar_status_fornecedor_cte_entrada(cte, auto_vincular=False),
+                'cte': CTeHistoricoImportadoSerializer(cte).data,
+            },
+        )
+
+    @action(detail=True, methods=['post'], url_path='fornecedor/cadastrar-vincular')
+    def cadastrar_vincular_fornecedor(self, request, pk=None):
+        from apps.fiscal.fornecedor_entrada import (
+            cadastrar_ou_vincular_fornecedor_cte_entrada,
+            montar_status_fornecedor_cte_entrada,
+        )
+        from apps.fiscal.serializers import CadastrarFornecedorEntradaSerializer, CTeHistoricoImportadoSerializer
+
+        cte = self.get_object()
+        ser = CadastrarFornecedorEntradaSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        try:
+            fornecedor, criado, cte = cadastrar_ou_vincular_fornecedor_cte_entrada(cte, ser.validated_data)
+        except ValueError as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return response.Response(
+            {
+                'fornecedor': montar_status_fornecedor_cte_entrada(cte, auto_vincular=False),
+                'fornecedor_criado': criado,
+                'fornecedor_id': fornecedor.id,
+                'cte': CTeHistoricoImportadoSerializer(cte).data,
+            },
+            status=status.HTTP_201_CREATED if criado else status.HTTP_200_OK,
+        )
 
     @action(detail=True, methods=['post'], url_path='conferir')
     def conferir(self, request, pk=None):
