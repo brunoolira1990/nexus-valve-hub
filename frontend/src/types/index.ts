@@ -493,6 +493,7 @@ export interface ItemCertificadoQualidade {
   rastreabilidade_status?: RastreabilidadeCqStatus;
   rastreabilidade_label?: string;
   rastreabilidade_mensagens?: string[];
+  rastreabilidade_avisos?: string[];
   rastreabilidade_motivos?: string[];
   tem_certificado_fornecedor?: boolean;
   certificado_fornecedor_status?: string | null;

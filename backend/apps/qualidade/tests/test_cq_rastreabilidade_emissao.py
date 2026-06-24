@@ -170,9 +170,20 @@ class CQRastreabilidadeAvaliacaoTests(TestCase):
         self.assertTrue(av['estoque_aplicado_origem'])
 
     def test_item_pendente_sem_produto(self):
-        av = avaliar_rastreabilidade_item_certificado_qualidade(_item_cq_padrao(produto=None))
+        av = avaliar_rastreabilidade_item_certificado_qualidade(
+            _item_cq_padrao(produto=None, codigo_produto='', descricao_material=''),
+        )
         self.assertEqual(av['status'], 'PENDENTE')
         self.assertIn('SEM_PRODUTO', av['motivos'])
+
+    def test_item_manual_sem_cf_completo(self):
+        from apps.qualidade.rastreabilidade_cq import AVISO_SEM_CF_MANUAL
+
+        av = avaliar_rastreabilidade_item_certificado_qualidade(_item_cq_padrao())
+        self.assertEqual(av['status'], 'COMPLETA')
+        self.assertIn('CF_NAO_VINCULADO_MANUAL', av['motivos'])
+        self.assertIn(AVISO_SEM_CF_MANUAL, av['avisos'])
+        self.assertNotIn('SEM_CERTIFICADO_FORNECEDOR', av['motivos'])
 
     def test_item_parcial_sem_estoque(self):
         ctx = _cadeia_rastreabilidade_completa('PSE')
@@ -206,7 +217,17 @@ class CQRastreabilidadeAvaliacaoTests(TestCase):
             item_certificado_fornecedor_origem_id=ctx['item_cf'].id,
             incluir_no_certificado=True,
         )
-        pendente = _item_cq_padrao(produto=None, incluir_no_certificado=True)
+        pendente = _item_cq_padrao(
+            produto=None,
+            codigo_produto='',
+            descricao_material='',
+            corrida='',
+            lote='',
+            norma='',
+            composicao_json={},
+            ensaio_tracao_json={},
+            incluir_no_certificado=True,
+        )
         resumo = montar_resumo_rastreabilidade_certificado([completo, pendente])
         self.assertEqual(resumo['completos'], 1)
         self.assertEqual(resumo['pendentes'], 1)
@@ -295,6 +316,33 @@ class CQRastreabilidadeEmissaoSerializerTests(TestCase):
         ser = CertificadoQualidadeSerializer(data=self._payload_emitido())
         self.assertTrue(ser.is_valid(), ser.errors)
 
+    def test_emitido_manual_sem_cf_e_sem_nf_passa(self):
+        item = _item_cq_padrao(produto=self.ctx['prod'].id)
+        payload = self._payload_emitido()
+        payload['nota_fiscal_numero'] = ''
+        payload['itens'] = [item]
+        ser = CertificadoQualidadeSerializer(data=payload)
+        self.assertTrue(ser.is_valid(), ser.errors)
+
+    def test_emitido_sem_dados_tecnicos_bloqueia(self):
+        item = _item_cq_padrao(
+            produto=self.ctx['prod'].id,
+            norma='',
+            composicao_json={},
+            ensaio_tracao_json={},
+            ensaio_impacto_json={},
+        )
+        payload = self._payload_emitido(item_extra={
+            'norma': '',
+            'composicao_json': {},
+            'ensaio_tracao_json': {},
+            'ensaio_impacto_json': {},
+        })
+        payload['itens'] = [item]
+        ser = CertificadoQualidadeSerializer(data=payload)
+        self.assertFalse(ser.is_valid())
+        self.assertIn('rastreabilidade', ser.errors)
+
     def test_resumo_na_serializacao(self):
         cert = CertificadoQualidade.objects.create(
             status=CertificadoQualidade.Status.RASCUNHO,
@@ -368,6 +416,30 @@ class CQRastreabilidadeEmissaoAPITests(TestCase):
         self.assertEqual(r.status_code, 400, r.content)
         body = r.json()
         self.assertIn('rastreabilidade', body)
+
+    def test_api_emitido_manual_sem_cf_ok(self):
+        r = self.client.post(
+            self.url,
+            {
+                'status': 'emitido',
+                'tipo_certificado': 'PADRAO_POR_NFE',
+                'numero': 'CQ501',
+                'serie': '',
+                'cliente': self.cliente.id,
+                'cliente_nome_snapshot': self.cliente.razao_social,
+                'data_emissao': '2026-06-20',
+                'texto_padrao': 'T',
+                'itens': [_item_cq_padrao(produto=self.ctx['prod'].id)],
+            },
+            format='json',
+            HTTP_HOST='localhost',
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        body = r.json()
+        self.assertEqual(body['status'], 'emitido')
+        self.assertTrue(body['resumo_rastreabilidade']['pode_emitir'])
+        self.assertIn('CF_NAO_VINCULADO_MANUAL', body['itens'][0]['rastreabilidade_motivos'])
+        self.assertEqual(body['itens'][0]['origem_rastreabilidade_tipo'], 'manual')
 
     def test_pdf_preview_com_pendente_ok(self):
         cert = CertificadoQualidade.objects.create(

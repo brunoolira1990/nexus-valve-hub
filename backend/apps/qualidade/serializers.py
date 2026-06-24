@@ -74,6 +74,7 @@ class ItemCertificadoQualidadeSerializer(serializers.ModelSerializer):
     rastreabilidade_status = serializers.SerializerMethodField()
     rastreabilidade_label = serializers.SerializerMethodField()
     rastreabilidade_mensagens = serializers.SerializerMethodField()
+    rastreabilidade_avisos = serializers.SerializerMethodField()
     rastreabilidade_motivos = serializers.SerializerMethodField()
     tem_certificado_fornecedor = serializers.SerializerMethodField()
     certificado_fornecedor_status = serializers.SerializerMethodField()
@@ -119,6 +120,7 @@ class ItemCertificadoQualidadeSerializer(serializers.ModelSerializer):
             'rastreabilidade_status',
             'rastreabilidade_label',
             'rastreabilidade_mensagens',
+            'rastreabilidade_avisos',
             'rastreabilidade_motivos',
             'tem_certificado_fornecedor',
             'certificado_fornecedor_status',
@@ -131,6 +133,7 @@ class ItemCertificadoQualidadeSerializer(serializers.ModelSerializer):
             'rastreabilidade_status',
             'rastreabilidade_label',
             'rastreabilidade_mensagens',
+            'rastreabilidade_avisos',
             'rastreabilidade_motivos',
             'tem_certificado_fornecedor',
             'certificado_fornecedor_status',
@@ -154,6 +157,9 @@ class ItemCertificadoQualidadeSerializer(serializers.ModelSerializer):
 
     def get_rastreabilidade_mensagens(self, obj: ItemCertificadoQualidade) -> list[str]:
         return self._avaliacao_rastreabilidade(obj)['mensagens']
+
+    def get_rastreabilidade_avisos(self, obj: ItemCertificadoQualidade) -> list[str]:
+        return self._avaliacao_rastreabilidade(obj).get('avisos', [])
 
     def get_rastreabilidade_motivos(self, obj: ItemCertificadoQualidade) -> list[str]:
         return self._avaliacao_rastreabilidade(obj)['motivos']
@@ -326,8 +332,6 @@ class CertificadoQualidadeSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({'numero': 'O número do certificado emitido deve iniciar com CQ.'})
             if not cliente_ok:
                 raise serializers.ValidationError({'cliente_nome_snapshot': 'Informe o cliente para emitir.'})
-            if not nf_ok:
-                raise serializers.ValidationError({'nota_fiscal_numero': 'Informe a NF para emitir.'})
             if not data_ok:
                 raise serializers.ValidationError({'data_emissao': 'Informe a data de emissão.'})
             base = itens if itens is not None else list(
@@ -368,6 +372,12 @@ class CertificadoQualidadeSerializer(serializers.ModelSerializer):
         instance.itens.all().delete()
         for i, item in enumerate(itens_data, start=1):
             comps = item.pop('componentes', []) or []
+            tem_cf = bool(
+                item.get('certificado_fornecedor_origem_id')
+                or item.get('item_certificado_fornecedor_origem_id')
+            )
+            if not tem_cf and not (item.get('origem_rastreabilidade_tipo') or '').strip():
+                item['origem_rastreabilidade_tipo'] = 'manual'
             obj = ItemCertificadoQualidade.objects.create(
                 certificado=instance,
                 ordem=item.get('ordem') or i,

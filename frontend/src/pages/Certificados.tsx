@@ -81,6 +81,11 @@ const CONFIRMAR_CANCELAMENTO_CERTIFICADO_QUALIDADE =
   + 'O registro permanece no sistema para rastreabilidade. O PDF passará a exibir a marca CANCELADO e não deve ser usado como documento válido.\n\n'
   + 'Deseja continuar?';
 
+const AVISO_SEM_CF_MANUAL =
+  'Sem Certificado do Fornecedor vinculado. Os dados técnicos deste CQ foram informados manualmente.';
+
+const LABEL_OBRIGATORIO_EMITIR = ' *';
+
 const emptyForm = (): Omit<CertificadoQualidade, 'id' | 'criado_em' | 'atualizado_em' | 'numero_formatado'> => ({
   numero: '',
   serie: '',
@@ -277,6 +282,22 @@ const Certificados = () => {
       pode_emitir: incl.length > 0 && parciais === 0 && pendentes === 0,
     };
   }, [form.resumo_rastreabilidade, form.itens]);
+
+  const itensComAvisoCfManual = useMemo(
+    () => form.itens.filter(
+      (it) => it.incluir_no_certificado !== false
+        && (
+          (it.rastreabilidade_avisos?.length ?? 0) > 0
+          || it.rastreabilidade_motivos?.includes('CF_NAO_VINCULADO_MANUAL')
+          || (
+            !it.tem_certificado_fornecedor
+            && !it.certificado_fornecedor_origem_id
+            && !it.item_certificado_fornecedor_origem_id
+          )
+        ),
+    ),
+    [form.itens],
+  );
 
   const extrairErrosRastreabilidade = (e: unknown): string[] => {
     const data = (e as AxiosError<{ rastreabilidade?: string[] }>).response?.data;
@@ -1122,12 +1143,18 @@ const Certificados = () => {
         {saveError ? <p className="text-sm text-destructive mb-2">{saveError}</p> : null}
         {rastreabilidadeErros.length > 0 ? (
           <div className="mb-3 rounded border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-            <p className="font-medium mb-1">Rastreabilidade incompleta para emissão definitiva:</p>
+            <p className="font-medium mb-1">Pendências obrigatórias para emissão definitiva:</p>
             <ul className="list-disc pl-5 text-xs space-y-0.5">
               {rastreabilidadeErros.map((msg) => (
                 <li key={msg}>{msg}</li>
               ))}
             </ul>
+          </div>
+        ) : null}
+        {form.status !== 'cancelado' && itensComAvisoCfManual.length > 0 ? (
+          <div className="mb-3 rounded border border-sky-300/70 bg-sky-50/90 dark:border-sky-800 dark:bg-sky-950/25 px-3 py-2 text-sm text-sky-950 dark:text-sky-100">
+            <p className="font-medium mb-1">Origem manual dos dados técnicos</p>
+            <p className="text-xs">{AVISO_SEM_CF_MANUAL}</p>
           </div>
         ) : null}
         {mensagens.length ? (
@@ -1146,9 +1173,9 @@ const Certificados = () => {
           </div>
         ) : null}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div><label className="erp-label">Número</label><input className="erp-input mt-1" value={form.numero} onChange={(e) => setF('numero', e.target.value)} /></div>
+          <div><label className="erp-label">Número{LABEL_OBRIGATORIO_EMITIR}</label><input className="erp-input mt-1" value={form.numero} onChange={(e) => setF('numero', e.target.value)} /></div>
           <div><label className="erp-label">Série</label><input className="erp-input mt-1" value={form.serie} onChange={(e) => setF('serie', e.target.value)} /></div>
-          <div><label className="erp-label">Data</label><input type="date" className="erp-input mt-1" value={form.data_emissao || ''} onChange={(e) => setF('data_emissao', e.target.value)} /></div>
+          <div><label className="erp-label">Data{LABEL_OBRIGATORIO_EMITIR}</label><input type="date" className="erp-input mt-1" value={form.data_emissao || ''} onChange={(e) => setF('data_emissao', e.target.value)} /></div>
           <div>
             <label className="erp-label">Status</label>
             <select
@@ -1165,7 +1192,7 @@ const Certificados = () => {
               <p className="text-xs text-muted-foreground mt-1">Status bloqueado após cancelamento.</p>
             ) : null}
           </div>
-          <div className="md:col-span-2"><label className="erp-label">Cliente</label><input className="erp-input mt-1" value={form.cliente_nome_snapshot} onChange={(e) => setF('cliente_nome_snapshot', e.target.value)} /></div>
+          <div className="md:col-span-2"><label className="erp-label">Cliente{LABEL_OBRIGATORIO_EMITIR}</label><input className="erp-input mt-1" value={form.cliente_nome_snapshot} onChange={(e) => setF('cliente_nome_snapshot', e.target.value)} /></div>
           <div><label className="erp-label">CNPJ Cliente</label><input className="erp-input mt-1" value={form.cliente_cnpj_snapshot || ''} onChange={(e) => setF('cliente_cnpj_snapshot', e.target.value)} /></div>
           <div><label className="erp-label">Pedido Cliente</label><input className="erp-input mt-1" value={form.pedido_cliente || ''} onChange={(e) => setF('pedido_cliente', e.target.value)} /></div>
         </div>
@@ -1254,8 +1281,15 @@ const Certificados = () => {
                     ) : null}
                   </span>
                 </summary>
+                {it.incluir_no_certificado !== false && (it.rastreabilidade_avisos?.length ?? 0) > 0 ? (
+                  <ul className="text-[11px] text-sky-800 dark:text-sky-300 mt-1 mb-2 list-disc pl-5">
+                    {it.rastreabilidade_avisos!.map((msg) => (
+                      <li key={msg}>{msg}</li>
+                    ))}
+                  </ul>
+                ) : null}
                 {it.incluir_no_certificado !== false && (it.rastreabilidade_mensagens?.length ?? 0) > 0 ? (
-                  <ul className="text-[11px] text-muted-foreground mt-1 mb-2 list-disc pl-5">
+                  <ul className="text-[11px] text-amber-800 dark:text-amber-300 mt-1 mb-2 list-disc pl-5">
                     {it.rastreabilidade_mensagens!.map((msg) => (
                       <li key={msg}>{msg}</li>
                     ))}
@@ -1264,11 +1298,11 @@ const Certificados = () => {
                 <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
                   <div><label className="erp-label">Ordem</label><input className="erp-input mt-1" value={it.ordem} onChange={(e) => updateItem(idx, { ordem: +e.target.value })} /></div>
                   <div><label className="erp-label">Código</label><input className="erp-input mt-1" value={it.codigo_produto} onChange={(e) => updateItem(idx, { codigo_produto: e.target.value })} /></div>
-                  <div className="md:col-span-2"><label className="erp-label">Descrição</label><input className="erp-input mt-1" value={it.descricao_material} onChange={(e) => updateItem(idx, { descricao_material: e.target.value })} /></div>
+                  <div className="md:col-span-2"><label className="erp-label">Descrição{LABEL_OBRIGATORIO_EMITIR}</label><input className="erp-input mt-1" value={it.descricao_material} onChange={(e) => updateItem(idx, { descricao_material: e.target.value })} /></div>
                   <div><label className="erp-label">Qtd</label><input className="erp-input mt-1" value={it.quantidade} onChange={(e) => updateItem(idx, { quantidade: +e.target.value })} /></div>
                   <div><label className="erp-label">Un</label><input className="erp-input mt-1" value={it.unidade} onChange={(e) => updateItem(idx, { unidade: e.target.value })} /></div>
-                  <div><label className="erp-label">Norma</label><input className="erp-input mt-1" value={it.norma} onChange={(e) => updateItem(idx, { norma: e.target.value })} /></div>
-                  <div><label className="erp-label">Lote</label><input className="erp-input mt-1" value={it.lote || ''} onChange={(e) => updateItem(idx, { lote: e.target.value })} /></div>
+                  <div><label className="erp-label">Norma{LABEL_OBRIGATORIO_EMITIR}</label><input className="erp-input mt-1" value={it.norma} onChange={(e) => updateItem(idx, { norma: e.target.value })} /></div>
+                  <div><label className="erp-label">Lote{LABEL_OBRIGATORIO_EMITIR}</label><input className="erp-input mt-1" value={it.lote || ''} onChange={(e) => updateItem(idx, { lote: e.target.value })} /></div>
                   <div><label className="erp-label">NCM</label><input className="erp-input mt-1" value={it.ncm || ''} onChange={(e) => updateItem(idx, { ncm: e.target.value })} /></div>
                   <div className="md:col-span-3">
                     <label className="erp-label">Tipo de dados técnicos</label>
@@ -1404,7 +1438,7 @@ const Certificados = () => {
                       </p>
                       <div className="flex flex-col sm:flex-row gap-2 mt-1 sm:items-end">
                         <div className="flex-1">
-                          <label className="erp-label">Corrida manual</label>
+                          <label className="erp-label">Corrida manual{LABEL_OBRIGATORIO_EMITIR}</label>
                           <input
                             className="erp-input mt-1"
                             placeholder="Ex.: HEN-001"
@@ -1594,7 +1628,7 @@ const Certificados = () => {
                   </div>
                   <div className="md:col-span-6 rounded border border-border p-2">
                     <div className="flex items-center justify-between mb-2 gap-2">
-                      <p className="text-xs font-semibold">Composição química</p>
+                      <p className="text-xs font-semibold">Composição química{LABEL_OBRIGATORIO_EMITIR}</p>
                       <button
                         type="button"
                         className="erp-btn-outline erp-btn-sm"
@@ -1643,7 +1677,7 @@ const Certificados = () => {
                     </div>
                   </div>
                   <div className="md:col-span-6 rounded border border-border p-2">
-                    <p className="text-xs font-semibold mb-2">Teste de tração</p>
+                    <p className="text-xs font-semibold mb-2">Teste de tração{LABEL_OBRIGATORIO_EMITIR}</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                       {TRACAO_FIELDS.map((f) => (
                         <div key={f.key}>

@@ -20,6 +20,13 @@ LABEL_POR_STATUS = {
     'PENDENTE': 'Rastreabilidade pendente',
 }
 
+AVISO_SEM_CF_MANUAL = (
+    'Sem Certificado do Fornecedor vinculado. '
+    'Os dados técnicos deste CQ foram informados manualmente.'
+)
+
+MOTIVOS_INFORMATIVOS = frozenset({'CF_NAO_VINCULADO_MANUAL'})
+
 
 def _strip(value: Any) -> str:
     return str(value or '').strip()
@@ -48,6 +55,14 @@ def _tem_produto(item: ItemCertificadoQualidade | Mapping[str, Any]) -> bool:
     if produto:
         return True
     return bool(_get_attr(item, 'produto_id'))
+
+
+def _tem_produto_ou_descricao(item: ItemCertificadoQualidade | Mapping[str, Any]) -> bool:
+    if _tem_produto(item):
+        return True
+    codigo = _strip(_get_attr(item, 'codigo_produto'))
+    descricao = _strip(_get_attr(item, 'descricao_material'))
+    return bool(codigo or descricao)
 
 
 def _componentes_ativos(
@@ -167,11 +182,12 @@ def avaliar_rastreabilidade_item_certificado_qualidade(
 ) -> dict[str, Any]:
     """Avalia rastreabilidade de um item do CQ (modelo ou dict do payload)."""
     mensagens: list[str] = []
+    avisos: list[str] = []
     motivos: list[str] = []
     pendente = False
     parcial = False
 
-    tem_produto = _tem_produto(item)
+    tem_produto = _tem_produto_ou_descricao(item)
     tem_corrida_lote = _tem_corrida_lote(item)
     tem_dados_tecnicos = _tem_dados_tecnicos_minimos(item, componentes=componentes)
 
@@ -188,7 +204,7 @@ def avaliar_rastreabilidade_item_certificado_qualidade(
 
     if not tem_produto:
         pendente = True
-        mensagens.append('Produto não vinculado.')
+        mensagens.append('Produto ou descrição técnica não informados.')
         motivos.append('SEM_PRODUTO')
 
     if not tem_corrida_lote:
@@ -202,9 +218,8 @@ def avaliar_rastreabilidade_item_certificado_qualidade(
         motivos.append('SEM_DADOS_TECNICOS')
 
     if not tem_certificado_fornecedor:
-        pendente = True
-        mensagens.append('Sem certificado fornecedor registrado.')
-        motivos.append('SEM_CERTIFICADO_FORNECEDOR')
+        avisos.append(AVISO_SEM_CF_MANUAL)
+        motivos.append('CF_NAO_VINCULADO_MANUAL')
     elif cert_cf:
         if certificado_fornecedor_status == CertificadoFornecedorEntrada.Status.CANCELADO:
             pendente = True
@@ -229,12 +244,12 @@ def avaliar_rastreabilidade_item_certificado_qualidade(
         mensagens.append('Vínculo com item do certificado fornecedor não informado.')
         motivos.append('SEM_ITEM_CF')
 
-    if item_cf is not None and not item_conf:
+    if tem_certificado_fornecedor and item_cf is not None and not item_conf:
         parcial = True
         mensagens.append('Origem da conferência não vinculada.')
         motivos.append('SEM_CONFERENCIA_ORIGEM')
 
-    if item_conf is not None and not estoque_aplicado:
+    if tem_certificado_fornecedor and item_conf is not None and not estoque_aplicado:
         parcial = True
         mensagens.append('Estoque físico ainda não aplicado.')
         motivos.append('ESTOQUE_NAO_APLICADO')
@@ -250,6 +265,7 @@ def avaliar_rastreabilidade_item_certificado_qualidade(
         'status': status,
         'label': LABEL_POR_STATUS[status],
         'mensagens': list(dict.fromkeys(mensagens)),
+        'avisos': list(dict.fromkeys(avisos)),
         'motivos': list(dict.fromkeys(motivos)),
         'tem_produto': tem_produto,
         'tem_corrida_lote': tem_corrida_lote,
