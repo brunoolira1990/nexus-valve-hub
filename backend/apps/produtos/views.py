@@ -36,6 +36,7 @@ from django.db.models import Q, Value
 from django.db.models.functions import Coalesce
 from apps.produtos.polegadas import extract_mm_from_term
 from apps.produtos.produto_busca import aplicar_filtro_busca_produto, produto_busca_rank
+from apps.produtos.painel_operacional import montar_painel_resumo_produto
 from apps.produtos.sorting import (
     natural_codigo_completo_key,
     natural_codigo_figura_key,
@@ -298,6 +299,11 @@ class ProdutoViewSet(FriendlyDestroyMixin, AutocompleteOrPaginationMixin, viewse
                 'mensagem': r.mensagem,
             },
         )
+
+    @action(detail=True, methods=['get'], url_path='painel/resumo')
+    def painel_resumo(self, request, pk=None):
+        produto = self.get_object()
+        return Response(montar_painel_resumo_produto(produto))
 
 
 class PolegadaViewSet(viewsets.ModelViewSet):

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Pencil, Plus, Trash2, LayoutDashboard } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
 import {
@@ -48,6 +48,7 @@ import {
 import { normalizarDescricaoProduto } from '@/lib/descricaoProduto';
 import { ConversaoMedidasBlock, type CampoHeranca } from '@/components/produtos/ConversaoMedidasBlock';
 import { ProdutoComposicaoPanel } from '@/components/produtos/ProdutoComposicaoPanel';
+import { ProdutoPainelOperacionalDrawer } from '@/components/produtos/ProdutoPainelOperacionalDrawer';
 import { NcmAutocomplete, type NcmOption } from '@/components/produtos/NcmAutocomplete';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import { PolegadaAutocomplete } from '@/components/produtos/PolegadaAutocomplete';
@@ -327,6 +328,8 @@ const Produtos = () => {
   const [famSaveErr, setFamSaveErr] = useState<string | null>(null);
   const [editingFamilia, setEditingFamilia] = useState<FamiliaProduto | null>(null);
   const [listNotice, setListNotice] = useState<string | null>(null);
+  const [painelProduto, setPainelProduto] = useState<Produto | null>(null);
+  const [painelOpen, setPainelOpen] = useState(false);
 
   const codigoFiguraNorm = (famQuick.codigo_figura || '').trim().toLowerCase();
   const familiaDuplicada = useMemo(
@@ -770,6 +773,11 @@ const Produtos = () => {
         : null,
     );
     setModalOpen(true);
+  };
+
+  const openPainelOperacional = (produto: Produto) => {
+    setPainelProduto(produto);
+    setPainelOpen(true);
   };
 
   useEffect(() => {
@@ -1380,6 +1388,15 @@ const Produtos = () => {
                     <td>R$ {e.preco_venda.toFixed(2)}</td>
                     <td>
                       <div className="flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openPainelOperacional(e)}
+                          className="erp-btn-ghost erp-btn-sm"
+                          title="Painel operacional"
+                          aria-label="Painel operacional"
+                        >
+                          <LayoutDashboard className="h-4 w-4" />
+                        </button>
                         <button type="button" onClick={() => openEdit(e)} className="erp-btn-ghost erp-btn-sm">
                           <Pencil className="h-4 w-4" />
                         </button>
@@ -2204,6 +2221,15 @@ const Produtos = () => {
           </button>
         </div>
       </Modal>
+
+      <ProdutoPainelOperacionalDrawer
+        produto={painelProduto}
+        open={painelOpen}
+        onClose={() => {
+          setPainelOpen(false);
+          setPainelProduto(null);
+        }}
+      />
     </div>
   );
 };

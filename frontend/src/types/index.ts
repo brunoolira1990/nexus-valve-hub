@@ -410,6 +410,99 @@ export interface Produto {
   dimensoes_json?: Record<string, number | string | null>;
 }
 
+export interface ProdutoPainelResumoProduto {
+  id: number;
+  codigo: string;
+  descricao: string;
+  material: string;
+  norma: string;
+  polegada: string;
+  ncm: string;
+}
+
+export interface ProdutoPainelResumoEstoque {
+  saldo_fisico: string;
+  reservado: string;
+  disponivel: string;
+}
+
+export interface ProdutoPainelResumoUltimaCompra {
+  origem: string;
+  fornecedor: string;
+  fornecedor_id?: number | null;
+  data: string | null;
+  valor_unitario: string;
+  pedido_compra_id?: number | null;
+  pedido_compra_numero?: string | null;
+  nf_entrada_id?: number | null;
+  nf_entrada_numero?: string | null;
+  nf_entrada_historica_id?: number | null;
+  conferencia_id?: number | null;
+}
+
+export interface ProdutoPainelResumoUltimaVenda {
+  origem: string;
+  cliente: string;
+  cliente_id?: number | null;
+  pedido_id?: number | null;
+  pedido_numero?: string | null;
+  nf: string | null;
+  nf_id?: number | null;
+  data: string | null;
+}
+
+export interface ProdutoPainelResumoUltimaNfEntrada {
+  origem: string;
+  numero: string;
+  nf_entrada_id?: number | null;
+  nf_entrada_historica_id?: number | null;
+  conferencia_id?: number | null;
+  fornecedor: string;
+  fornecedor_id?: number | null;
+  data: string | null;
+  quantidade: string;
+  valor_unitario: string;
+}
+
+export interface ProdutoPainelResumoUltimaNfSaida {
+  numero: string;
+  nf_id: number;
+  cliente: string;
+  cliente_id?: number | null;
+  data: string | null;
+  quantidade: string;
+  valor_unitario: string;
+}
+
+export interface ProdutoPainelResumoUltimoCq {
+  numero: string;
+  certificado_qualidade_id: number;
+  cliente: string;
+  cliente_id?: number | null;
+  data: string | null;
+  status: string;
+}
+
+export interface ProdutoPainelResumoUltimaCorrida {
+  corrida: string;
+  corrida_id?: number | null;
+  fornecedor: string;
+  saldo_atual: string;
+  data_recebimento?: string | null;
+  origem?: string;
+}
+
+export interface ProdutoPainelResumo {
+  produto: ProdutoPainelResumoProduto;
+  estoque: ProdutoPainelResumoEstoque;
+  ultima_compra: ProdutoPainelResumoUltimaCompra | null;
+  ultima_venda: ProdutoPainelResumoUltimaVenda | null;
+  ultima_nf_entrada: ProdutoPainelResumoUltimaNfEntrada | null;
+  ultima_nf_saida: ProdutoPainelResumoUltimaNfSaida | null;
+  ultimo_cq: ProdutoPainelResumoUltimoCq | null;
+  ultima_corrida: ProdutoPainelResumoUltimaCorrida | null;
+}
+
 export interface ComposicaoQuimica {
   C: number; Mn: number; P: number; S: number; Si: number; Ni: number;
   Cr: number; Mo: number; Cu: number; V: number; Nb: number; Al: number;
