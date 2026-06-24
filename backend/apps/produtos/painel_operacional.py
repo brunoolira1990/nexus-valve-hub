@@ -1,4 +1,4 @@
-"""Painel operacional do produto — Fase 1 (resumo somente leitura)."""
+"""Painel operacional do produto — Centro de Informações (somente leitura)."""
 
 from __future__ import annotations
 
@@ -20,6 +20,8 @@ from apps.produtos.serializers import ProdutoSerializer
 from apps.produtos.snapshot import build_produto_snapshot
 from apps.qualidade.corridas_disponiveis import listar_corridas_disponiveis_produto
 from apps.qualidade.models import CertificadoQualidade
+
+LIMITE_HISTORICO = 10
 
 
 def _fmt_money(value) -> str:
@@ -397,8 +399,377 @@ def _buscar_ultima_corrida(produto: Produto) -> dict | None:
     }
 
 
+def _publicar_linha(linha: dict) -> dict:
+    return {k: v for k, v in linha.items() if not k.startswith('_')}
+
+
+def _coletar_linhas_compra(produto_id: int) -> list[dict]:
+    linhas: list[dict] = []
+
+    itens_pc = (
+        ItemPedidoCompra.objects
+        .select_related('pedido__fornecedor')
+        .filter(produto_id=produto_id)
+        .order_by('-pedido__data', '-id')
+    )
+    pedido_ids = [i.pedido_id for i in itens_pc]
+    nfs_por_pedido: dict[int, NFeEntrada] = {}
+    if pedido_ids:
+        for nf in NFeEntrada.objects.filter(pedido_compra_id__in=pedido_ids).order_by('-data', '-id'):
+            if nf.pedido_compra_id and nf.pedido_compra_id not in nfs_por_pedido:
+                nfs_por_pedido[nf.pedido_compra_id] = nf
+
+    for item_pc in itens_pc:
+        pedido = item_pc.pedido
+        nf = nfs_por_pedido.get(pedido.id)
+        unit = Decimal(str(item_pc.valor_unitario or 0))
+        qty = Decimal(str(item_pc.quantidade or 0))
+        total = Decimal(str(item_pc.valor_total_item or 0))
+        if total <= 0 and qty > 0:
+            total = qty * unit
+        linhas.append({
+            'origem': 'pedido_compra',
+            '_data_ordem': pedido.data,
+            'data': _iso_date(pedido.data),
+            'fornecedor': pedido.fornecedor.razao_social if pedido.fornecedor_id else '',
+            'fornecedor_id': pedido.fornecedor_id,
+            'nf': nf.numero if nf else None,
+            'pedido_compra_id': pedido.id,
+            'pedido_compra_numero': pedido.numero,
+            'nf_entrada_id': nf.id if nf else None,
+            'quantidade': f'{qty:.3f}',
+            'valor_unitario': _fmt_money(unit),
+            'valor_total': _fmt_money(total),
+            '_unit_decimal': unit,
+        })
+
+    for item_ne in (
+        ItemNFeEntrada.objects
+        .select_related('nf__fornecedor', 'nf__pedido_compra')
+        .filter(produto_id=produto_id)
+        .order_by('-nf__data', '-id')
+    ):
+        nf = item_ne.nf
+        qty = Decimal(str(item_ne.quantidade or 0))
+        total = Decimal(str(item_ne.valor or 0))
+        unit = (total / qty) if qty > 0 else Decimal('0')
+        linhas.append({
+            'origem': 'nfe_entrada',
+            '_data_ordem': nf.data,
+            'data': _iso_date(nf.data),
+            'fornecedor': nf.fornecedor.razao_social if nf.fornecedor_id else '',
+            'fornecedor_id': nf.fornecedor_id,
+            'nf': nf.numero,
+            'pedido_compra_id': nf.pedido_compra_id,
+            'pedido_compra_numero': nf.pedido_compra.numero if nf.pedido_compra_id else None,
+            'nf_entrada_id': nf.id,
+            'quantidade': f'{qty:.3f}',
+            'valor_unitario': _fmt_unit_price(total, qty),
+            'valor_total': _fmt_money(total),
+            '_unit_decimal': unit,
+        })
+
+    for item_conf in (
+        ItemNFeEntradaConferencia.objects
+        .select_related(
+            'conferencia__nf_entrada_historica',
+            'conferencia__nf_entrada_historica__fornecedor_emitente',
+            'item_pedido_compra__pedido__fornecedor',
+        )
+        .filter(produto_id=produto_id)
+        .exclude(status=ItemNFeEntradaConferencia.Status.IGNORADO)
+        .order_by('-conferencia__nf_entrada_historica__dh_emissao', '-id')
+    ):
+        if not item_conf.conferencia_id:
+            continue
+        nf_hist = item_conf.conferencia.nf_entrada_historica
+        dt = nf_hist.dh_emissao.date() if nf_hist.dh_emissao else date.min
+        fornecedor = ''
+        fornecedor_id = None
+        if nf_hist.fornecedor_emitente_id:
+            fornecedor = nf_hist.fornecedor_emitente.razao_social
+            fornecedor_id = nf_hist.fornecedor_emitente_id
+        pedido_pc = None
+        if item_conf.item_pedido_compra_id:
+            pedido_pc = item_conf.item_pedido_compra.pedido
+            if not fornecedor and pedido_pc.fornecedor_id:
+                fornecedor = pedido_pc.fornecedor.razao_social
+                fornecedor_id = pedido_pc.fornecedor_id
+        unit = Decimal(str(item_conf.valor_unitario_nf or 0))
+        qty = Decimal(str(item_conf.quantidade_nf or 0))
+        total = Decimal(str(item_conf.valor_total_nf or 0))
+        if total <= 0 and qty > 0:
+            total = qty * unit
+        linhas.append({
+            'origem': 'nfe_entrada_conferencia',
+            '_data_ordem': dt,
+            'data': _iso_date(dt if dt != date.min else None),
+            'fornecedor': fornecedor,
+            'fornecedor_id': fornecedor_id,
+            'nf': nf_hist.numero,
+            'pedido_compra_id': pedido_pc.id if pedido_pc else None,
+            'pedido_compra_numero': pedido_pc.numero if pedido_pc else None,
+            'nf_entrada_historica_id': nf_hist.id,
+            'conferencia_id': item_conf.conferencia_id,
+            'quantidade': f'{qty:.3f}',
+            'valor_unitario': _fmt_money(unit),
+            'valor_total': _fmt_money(total),
+            '_unit_decimal': unit,
+        })
+
+    linhas.sort(key=lambda r: (r['_data_ordem'], r.get('nf_entrada_id') or r.get('nf_entrada_historica_id') or 0), reverse=True)
+    return linhas
+
+
+def _coletar_linhas_venda(produto_id: int) -> list[dict]:
+    linhas: list[dict] = []
+
+    for item_pv in (
+        ItemPedidoVenda.objects
+        .select_related('pedido__cliente')
+        .filter(produto_id=produto_id)
+        .order_by('-pedido__data', '-id')
+    ):
+        pedido = item_pv.pedido
+        qty = Decimal(str(item_pv.quantidade or 0))
+        unit = Decimal(str(item_pv.valor_unitario or 0))
+        desconto = Decimal(str(item_pv.desconto or 0))
+        total = qty * unit - desconto
+        if total < 0:
+            total = Decimal('0')
+        linhas.append({
+            'origem': 'pedido_venda',
+            '_data_ordem': pedido.data,
+            'data': _iso_date(pedido.data),
+            'cliente': pedido.cliente.razao_social if pedido.cliente_id else '',
+            'cliente_id': pedido.cliente_id,
+            'pedido_id': pedido.id,
+            'pedido_numero': pedido.numero,
+            'nf': None,
+            'nf_id': None,
+            'quantidade': f'{qty:.3f}',
+            'valor_unitario': _fmt_money(unit),
+            'valor_total': _fmt_money(total),
+            '_unit_decimal': unit,
+        })
+
+    for item_ns in (
+        ItemNFeSaida.objects
+        .select_related(
+            'nf__cliente',
+            'nf__pedido_venda',
+            'item_faturamento_pedido__item_pedido__pedido',
+        )
+        .filter(produto_id=produto_id)
+        .order_by('-nf__data', '-id')
+    ):
+        nf = item_ns.nf
+        pedido = nf.pedido_venda
+        if not pedido and item_ns.item_faturamento_pedido_id:
+            item_pv_fat = item_ns.item_faturamento_pedido.item_pedido
+            if item_pv_fat:
+                pedido = item_pv_fat.pedido
+        qty = Decimal(str(item_ns.quantidade or 0))
+        total = Decimal(str(item_ns.valor or 0))
+        unit = (total / qty) if qty > 0 else Decimal('0')
+        linhas.append({
+            'origem': 'nfe_saida',
+            '_data_ordem': nf.data,
+            'data': _iso_date(nf.data),
+            'cliente': nf.cliente.razao_social if nf.cliente_id else '',
+            'cliente_id': nf.cliente_id,
+            'pedido_id': pedido.id if pedido else None,
+            'pedido_numero': pedido.numero if pedido else None,
+            'nf': nf.numero,
+            'nf_id': nf.id,
+            'quantidade': f'{qty:.3f}',
+            'valor_unitario': _fmt_unit_price(total, qty),
+            'valor_total': _fmt_money(total),
+            '_unit_decimal': unit,
+        })
+
+    linhas.sort(key=lambda r: (r['_data_ordem'], r.get('nf_id') or 0), reverse=True)
+    return linhas
+
+
+def _montar_inteligencia_preco(linhas: list[dict], *, campo_parte: str) -> dict | None:
+    """campo_parte: fornecedor ou cliente."""
+    precos = [
+        (r['_unit_decimal'], r['_data_ordem'], r.get(campo_parte) or '', r)
+        for r in linhas
+        if r.get('_unit_decimal', Decimal('0')) > 0
+    ]
+    if not precos:
+        return None
+
+    menor = min(precos, key=lambda x: x[0])
+    maior = max(precos, key=lambda x: x[0])
+    ultimo = max(precos, key=lambda x: (x[1], x[3].get('nf_id') or x[3].get('nf_entrada_id') or 0))
+    media = sum(p[0] for p in precos) / Decimal(len(precos))
+
+    return {
+        'menor_preco': _fmt_money(menor[0]),
+        'maior_preco': _fmt_money(maior[0]),
+        'preco_medio': f'{media:.4f}',
+        'ultimo_preco': _fmt_money(ultimo[0]),
+        f'{campo_parte}_menor_preco': menor[2],
+        f'{campo_parte}_maior_preco': maior[2],
+        f'{campo_parte}_ultimo_preco': ultimo[2],
+        'data_ultimo_preco': _iso_date(ultimo[1]),
+        'quantidade_registros': len(precos),
+    }
+
+
+def _montar_historico_compras(produto_id: int) -> list[dict]:
+    return [_publicar_linha(r) for r in _coletar_linhas_compra(produto_id)[:LIMITE_HISTORICO]]
+
+
+def _montar_historico_vendas(produto_id: int) -> list[dict]:
+    return [_publicar_linha(r) for r in _coletar_linhas_venda(produto_id)[:LIMITE_HISTORICO]]
+
+
+def _montar_inteligencia_compras(produto_id: int) -> dict | None:
+    return _montar_inteligencia_preco(_coletar_linhas_compra(produto_id), campo_parte='fornecedor')
+
+
+def _montar_inteligencia_vendas(produto_id: int) -> dict | None:
+    return _montar_inteligencia_preco(_coletar_linhas_venda(produto_id), campo_parte='cliente')
+
+
+def _montar_bloco_qualidade(produto: Produto) -> dict:
+    certificados = []
+    for cq in (
+        CertificadoQualidade.objects
+        .select_related('cliente')
+        .filter(itens__produto_id=produto.id)
+        .distinct()
+        .order_by('-data_emissao', '-criado_em')[:LIMITE_HISTORICO]
+    ):
+        cliente = cq.cliente_nome_snapshot or (cq.cliente.razao_social if cq.cliente_id else '')
+        certificados.append({
+            'numero': cq.numero_formatado or cq.numero,
+            'certificado_qualidade_id': cq.id,
+            'cliente': cliente,
+            'cliente_id': cq.cliente_id,
+            'data': _iso_date(cq.data_emissao),
+            'status': cq.status,
+        })
+
+    corridas = []
+    saldos = {
+        ec.corrida_id: ec.saldo
+        for ec in EstoqueCorrida.objects.filter(produto_id=produto.id).select_related('corrida')
+    }
+    for corrida in (
+        Corrida.objects
+        .select_related('fornecedor')
+        .filter(produto_id=produto.id)
+        .order_by('-data_recebimento', '-id')[:LIMITE_HISTORICO]
+    ):
+        saldo = saldos.get(corrida.id, Decimal('0'))
+        corridas.append({
+            'corrida': corrida.numero,
+            'corrida_id': corrida.id,
+            'fornecedor': corrida.fornecedor.razao_social if corrida.fornecedor_id else '',
+            'fornecedor_id': corrida.fornecedor_id,
+            'data_recebimento': _iso_date(corrida.data_recebimento),
+            'saldo_atual': f'{saldo:.3f}',
+            'nf_entrada': corrida.nf_entrada or '',
+        })
+
+    return {
+        'certificados': certificados,
+        'corridas': corridas,
+    }
+
+
+def _montar_bloco_fiscal(produto_id: int) -> dict:
+    nf_entrada: list[dict] = []
+
+    for item_ne in (
+        ItemNFeEntrada.objects
+        .select_related('nf__fornecedor')
+        .filter(produto_id=produto_id)
+        .order_by('-nf__data', '-id')[:LIMITE_HISTORICO]
+    ):
+        nf = item_ne.nf
+        qty = Decimal(str(item_ne.quantidade or 0))
+        total = Decimal(str(item_ne.valor or 0))
+        nf_entrada.append({
+            'origem': 'nfe_entrada',
+            'numero': nf.numero,
+            'nf_entrada_id': nf.id,
+            'fornecedor': nf.fornecedor.razao_social if nf.fornecedor_id else '',
+            'fornecedor_id': nf.fornecedor_id,
+            'data': _iso_date(nf.data),
+            'quantidade': f'{qty:.3f}',
+            'valor_unitario': _fmt_unit_price(total, qty),
+            'valor_total': _fmt_money(total),
+        })
+
+    for item_conf in (
+        ItemNFeEntradaConferencia.objects
+        .select_related(
+            'conferencia__nf_entrada_historica',
+            'conferencia__nf_entrada_historica__fornecedor_emitente',
+        )
+        .filter(produto_id=produto_id)
+        .exclude(status=ItemNFeEntradaConferencia.Status.IGNORADO)
+        .order_by('-conferencia__nf_entrada_historica__dh_emissao', '-id')[:LIMITE_HISTORICO]
+    ):
+        if not item_conf.conferencia_id:
+            continue
+        nf_hist = item_conf.conferencia.nf_entrada_historica
+        dt = nf_hist.dh_emissao.date() if nf_hist.dh_emissao else None
+        fornecedor = ''
+        if nf_hist.fornecedor_emitente_id:
+            fornecedor = nf_hist.fornecedor_emitente.razao_social
+        qty = Decimal(str(item_conf.quantidade_nf or 0))
+        total = Decimal(str(item_conf.valor_total_nf or 0))
+        nf_entrada.append({
+            'origem': 'nfe_entrada_conferencia',
+            'numero': nf_hist.numero,
+            'nf_entrada_historica_id': nf_hist.id,
+            'conferencia_id': item_conf.conferencia_id,
+            'fornecedor': fornecedor,
+            'data': _iso_date(dt),
+            'quantidade': f'{qty:.3f}',
+            'valor_unitario': _fmt_money(item_conf.valor_unitario_nf),
+            'valor_total': _fmt_money(total),
+        })
+
+    nf_entrada.sort(key=lambda r: r.get('data') or '', reverse=True)
+    nf_entrada = nf_entrada[:LIMITE_HISTORICO]
+
+    nf_saida = []
+    for item_ns in (
+        ItemNFeSaida.objects
+        .select_related('nf__cliente')
+        .filter(produto_id=produto_id)
+        .order_by('-nf__data', '-id')[:LIMITE_HISTORICO]
+    ):
+        nf = item_ns.nf
+        qty = Decimal(str(item_ns.quantidade or 0))
+        total = Decimal(str(item_ns.valor or 0))
+        nf_saida.append({
+            'numero': nf.numero,
+            'nf_id': nf.id,
+            'cliente': nf.cliente.razao_social if nf.cliente_id else '',
+            'cliente_id': nf.cliente_id,
+            'data': _iso_date(nf.data),
+            'quantidade': f'{qty:.3f}',
+            'valor_unitario': _fmt_unit_price(total, qty),
+            'valor_total': _fmt_money(total),
+        })
+
+    return {
+        'nf_entrada': nf_entrada,
+        'nf_saida': nf_saida,
+    }
+
+
 def montar_painel_resumo_produto(produto: Produto) -> dict:
-    """Agrega resumo operacional somente leitura para o produto."""
+    """Agrega centro de informações do produto (somente leitura)."""
     pid = produto.id
     return {
         'produto': _montar_bloco_produto(produto),
@@ -409,4 +780,10 @@ def montar_painel_resumo_produto(produto: Produto) -> dict:
         'ultima_nf_saida': _buscar_ultima_nf_saida(pid),
         'ultimo_cq': _buscar_ultimo_cq(pid),
         'ultima_corrida': _buscar_ultima_corrida(produto),
+        'historico_compras': _montar_historico_compras(pid),
+        'historico_vendas': _montar_historico_vendas(pid),
+        'inteligencia_compras': _montar_inteligencia_compras(pid),
+        'inteligencia_vendas': _montar_inteligencia_vendas(pid),
+        'qualidade': _montar_bloco_qualidade(produto),
+        'fiscal': _montar_bloco_fiscal(pid),
     }

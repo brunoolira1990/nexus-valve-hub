@@ -492,6 +492,102 @@ export interface ProdutoPainelResumoUltimaCorrida {
   origem?: string;
 }
 
+export interface ProdutoPainelHistoricoCompra {
+  origem: string;
+  data: string | null;
+  fornecedor: string;
+  fornecedor_id?: number | null;
+  nf?: string | null;
+  pedido_compra_id?: number | null;
+  pedido_compra_numero?: string | null;
+  nf_entrada_id?: number | null;
+  nf_entrada_historica_id?: number | null;
+  conferencia_id?: number | null;
+  quantidade: string;
+  valor_unitario: string;
+  valor_total: string;
+}
+
+export interface ProdutoPainelHistoricoVenda {
+  origem: string;
+  data: string | null;
+  cliente: string;
+  cliente_id?: number | null;
+  pedido_id?: number | null;
+  pedido_numero?: string | null;
+  nf?: string | null;
+  nf_id?: number | null;
+  quantidade: string;
+  valor_unitario: string;
+  valor_total: string;
+}
+
+export interface ProdutoPainelInteligenciaCompras {
+  menor_preco: string;
+  maior_preco: string;
+  preco_medio: string;
+  ultimo_preco: string;
+  fornecedor_menor_preco: string;
+  fornecedor_maior_preco: string;
+  fornecedor_ultimo_preco: string;
+  data_ultimo_preco: string | null;
+  quantidade_registros: number;
+}
+
+export interface ProdutoPainelInteligenciaVendas {
+  menor_preco: string;
+  maior_preco: string;
+  preco_medio: string;
+  ultimo_preco: string;
+  cliente_menor_preco: string;
+  cliente_maior_preco: string;
+  cliente_ultimo_preco: string;
+  data_ultimo_preco: string | null;
+  quantidade_registros: number;
+}
+
+export interface ProdutoPainelQualidadeCertificado {
+  numero: string;
+  certificado_qualidade_id: number;
+  cliente: string;
+  cliente_id?: number | null;
+  data: string | null;
+  status: string;
+}
+
+export interface ProdutoPainelQualidadeCorrida {
+  corrida: string;
+  corrida_id: number;
+  fornecedor: string;
+  fornecedor_id?: number | null;
+  data_recebimento: string | null;
+  saldo_atual: string;
+  nf_entrada: string;
+}
+
+export interface ProdutoPainelFiscalNfEntrada {
+  origem: string;
+  numero: string;
+  nf_entrada_id?: number | null;
+  nf_entrada_historica_id?: number | null;
+  conferencia_id?: number | null;
+  fornecedor: string;
+  data: string | null;
+  quantidade: string;
+  valor_unitario: string;
+  valor_total: string;
+}
+
+export interface ProdutoPainelFiscalNfSaida {
+  numero: string;
+  nf_id: number;
+  cliente: string;
+  data: string | null;
+  quantidade: string;
+  valor_unitario: string;
+  valor_total: string;
+}
+
 export interface ProdutoPainelResumo {
   produto: ProdutoPainelResumoProduto;
   estoque: ProdutoPainelResumoEstoque;
@@ -501,6 +597,18 @@ export interface ProdutoPainelResumo {
   ultima_nf_saida: ProdutoPainelResumoUltimaNfSaida | null;
   ultimo_cq: ProdutoPainelResumoUltimoCq | null;
   ultima_corrida: ProdutoPainelResumoUltimaCorrida | null;
+  historico_compras: ProdutoPainelHistoricoCompra[];
+  historico_vendas: ProdutoPainelHistoricoVenda[];
+  inteligencia_compras: ProdutoPainelInteligenciaCompras | null;
+  inteligencia_vendas: ProdutoPainelInteligenciaVendas | null;
+  qualidade: {
+    certificados: ProdutoPainelQualidadeCertificado[];
+    corridas: ProdutoPainelQualidadeCorrida[];
+  };
+  fiscal: {
+    nf_entrada: ProdutoPainelFiscalNfEntrada[];
+    nf_saida: ProdutoPainelFiscalNfSaida[];
+  };
 }
 
 export interface ComposicaoQuimica {

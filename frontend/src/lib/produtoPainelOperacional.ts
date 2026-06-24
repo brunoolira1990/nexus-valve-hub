@@ -1,4 +1,6 @@
 import type {
+  ProdutoPainelFiscalNfEntrada,
+  ProdutoPainelHistoricoCompra,
   ProdutoPainelResumo,
   ProdutoPainelResumoUltimaCompra,
   ProdutoPainelResumoUltimaCorrida,
@@ -13,23 +15,41 @@ export type PainelDocumentoLink = {
   to: string;
 };
 
+type PainelCompraLinkSource =
+  | ProdutoPainelResumoUltimaCompra
+  | ProdutoPainelHistoricoCompra
+  | null;
+
+type PainelNfEntradaLinkSource =
+  | ProdutoPainelResumoUltimaNfEntrada
+  | ProdutoPainelFiscalNfEntrada
+  | null;
+
 export function painelValorExibicao(value: string | number | null | undefined): string {
   if (value === null || value === undefined || value === '') return '—';
   return String(value);
 }
 
-export function buildPainelCompraLinks(block: ProdutoPainelResumoUltimaCompra | null): PainelDocumentoLink[] {
+function painelNumeroNfEntrada(block: PainelCompraLinkSource): string | number | undefined {
+  if (!block) return undefined;
+  if ('nf_entrada_numero' in block && block.nf_entrada_numero) return block.nf_entrada_numero;
+  if ('nf' in block && block.nf) return block.nf;
+  return undefined;
+}
+
+export function buildPainelCompraLinks(block: PainelCompraLinkSource): PainelDocumentoLink[] {
   if (!block) return [];
   const links: PainelDocumentoLink[] = [];
+  const nfNumero = painelNumeroNfEntrada(block);
   if (block.pedido_compra_id) {
     links.push({ label: `Pedido ${block.pedido_compra_numero || block.pedido_compra_id}`, to: '/pedidos-compra' });
   }
   if (block.nf_entrada_id) {
-    links.push({ label: `NF entrada ${block.nf_entrada_numero || block.nf_entrada_id}`, to: '/nfe-entrada' });
+    links.push({ label: `NF entrada ${nfNumero || block.nf_entrada_id}`, to: '/nfe-entrada' });
   }
   if (block.nf_entrada_historica_id) {
     links.push({
-      label: `Conferência NF ${block.nf_entrada_numero || block.nf_entrada_historica_id}`,
+      label: `Conferência NF ${nfNumero || block.nf_entrada_historica_id}`,
       to: `/nfe-entrada/${block.nf_entrada_historica_id}/conferencia`,
     });
   }
@@ -51,7 +71,7 @@ export function buildPainelVendaLinks(block: ProdutoPainelResumoUltimaVenda | nu
   return links;
 }
 
-export function buildPainelNfEntradaLinks(block: ProdutoPainelResumoUltimaNfEntrada | null): PainelDocumentoLink[] {
+export function buildPainelNfEntradaLinks(block: PainelNfEntradaLinkSource): PainelDocumentoLink[] {
   if (!block) return [];
   if (block.nf_entrada_historica_id) {
     return [{
@@ -89,6 +109,14 @@ export function produtoPainelTemHistorico(resumo: ProdutoPainelResumo): boolean 
     || resumo.ultima_nf_entrada
     || resumo.ultima_nf_saida
     || resumo.ultimo_cq
-    || resumo.ultima_corrida,
+    || resumo.ultima_corrida
+    || (resumo.historico_compras?.length ?? 0) > 0
+    || (resumo.historico_vendas?.length ?? 0) > 0
+    || resumo.inteligencia_compras
+    || resumo.inteligencia_vendas
+    || (resumo.qualidade?.certificados?.length ?? 0) > 0
+    || (resumo.qualidade?.corridas?.length ?? 0) > 0
+    || (resumo.fiscal?.nf_entrada?.length ?? 0) > 0
+    || (resumo.fiscal?.nf_saida?.length ?? 0) > 0,
   );
 }
