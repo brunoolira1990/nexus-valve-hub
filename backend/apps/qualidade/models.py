@@ -1,5 +1,9 @@
 from django.db import models
 from django.db.models import Q
+import re
+
+_RE_CQ_NUMERO_AUTO = re.compile(r'^CQ-(\d{8})-(\d{4})$', re.I)
+_RE_CQ_NUMERO_AUTO_COMPACTO = re.compile(r'^CQ(\d{8})(\d{4})$', re.I)
 
 
 def _split_numero_serie(numero: str, serie: str) -> tuple[str, str]:
@@ -23,6 +27,42 @@ def _normalize_numero_cq(numero: str) -> str:
     if not cleaned.startswith('CQ'):
         cleaned = f'CQ{cleaned}'
     return cleaned
+
+
+def is_numero_cq_formato_automatico(numero: str | None) -> bool:
+    raw = (numero or '').strip().upper()
+    if not raw:
+        return False
+    if _RE_CQ_NUMERO_AUTO.match(raw):
+        return True
+    compacto = _normalize_numero_cq(raw)
+    return bool(_RE_CQ_NUMERO_AUTO_COMPACTO.match(compacto))
+
+
+def formatar_numero_cq_exibicao(numero: str) -> str:
+    """Exibe CQ-AAAAMMDD-NNNN para numeração automática; preserva legado (ex.: CQ300)."""
+    raw = (numero or '').strip().upper()
+    if not raw:
+        return ''
+    m = _RE_CQ_NUMERO_AUTO.match(raw)
+    if m:
+        return f'CQ-{m.group(1)}-{m.group(2)}'
+    compacto = _normalize_numero_cq(raw)
+    m2 = _RE_CQ_NUMERO_AUTO_COMPACTO.match(compacto)
+    if m2:
+        return f'CQ-{m2.group(1)}-{m2.group(2)}'
+    return compacto
+
+
+def normalizar_numero_cq_armazenamento(numero: str) -> str:
+    """Normaliza número para persistência sem quebrar formato automático com hífens."""
+    raw = (numero or '').strip()
+    if not raw:
+        return ''
+    if is_numero_cq_formato_automatico(raw):
+        return raw.upper()
+    numero_base, _ = _split_numero_serie(raw, '')
+    return _normalize_numero_cq(numero_base)
 
 
 class Certificado(models.Model):
@@ -100,7 +140,7 @@ class CertificadoQualidade(models.Model):
     @property
     def numero_formatado(self) -> str:
         numero_base, serie_base = _split_numero_serie(self.numero, self.serie)
-        numero_norm = _normalize_numero_cq(numero_base)
+        numero_norm = formatar_numero_cq_exibicao(numero_base)
         if not numero_norm:
             return ''
         if serie_base:
@@ -322,3 +362,18 @@ class ComponenteCertificadoFornecedorEntrada(models.Model):
 
     class Meta:
         ordering = ['ordem', 'id']
+
+
+class SequenciaCertificadoQualidade(models.Model):
+    """Sequência diária CQ-AAAAMMDD-NNNN."""
+
+    data_referencia = models.DateField(db_index=True, unique=True)
+    proximo_numero = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        verbose_name = 'Sequência certificado de qualidade'
+        verbose_name_plural = 'Sequências certificado de qualidade'
+        ordering = ['-data_referencia']
+
+    def __str__(self):
+        return f'CQ {self.data_referencia} → próximo {self.proximo_numero}'

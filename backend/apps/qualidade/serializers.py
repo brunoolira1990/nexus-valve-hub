@@ -17,11 +17,16 @@ from .models import (
     ItemCertificadoQualidadeComponente,
     _normalize_numero_cq,
     _split_numero_serie,
+    normalizar_numero_cq_armazenamento,
 )
 from .rastreabilidade_cq import (
     avaliar_rastreabilidade_item_certificado_qualidade,
     montar_resumo_rastreabilidade_certificado,
     validar_rastreabilidade_emissao_certificado_qualidade,
+)
+from .services.numeracao_certificado_qualidade import (
+    gerar_numero_certificado_qualidade,
+    numero_certificado_qualidade_vazio,
 )
 
 
@@ -250,6 +255,12 @@ class CertificadoQualidadeSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ('criado_em', 'atualizado_em', 'resumo_rastreabilidade', 'rastreabilidade_resumo_label')
 
+    def get_fields(self):
+        fields = super().get_fields()
+        if self.instance is not None:
+            fields['numero'].read_only = True
+        return fields
+
     def get_numero_formatado(self, obj: CertificadoQualidade) -> str:
         return obj.numero_formatado
 
@@ -295,10 +306,17 @@ class CertificadoQualidadeSerializer(serializers.ModelSerializer):
         )
         if 'numero' in attrs:
             attrs['numero'] = to_operational_upper(attrs.get('numero')) or ''
+        if self.instance:
+            if numero_certificado_qualidade_vazio(self.instance.numero):
+                attrs['numero'] = gerar_numero_certificado_qualidade()
+            else:
+                attrs['numero'] = self.instance.numero
+        elif numero_certificado_qualidade_vazio(attrs.get('numero', '')):
+            attrs['numero'] = gerar_numero_certificado_qualidade()
         numero_in = attrs.get('numero') if 'numero' in attrs else (self.instance.numero if self.instance else '')
         serie_in = attrs.get('serie') if 'serie' in attrs else (self.instance.serie if self.instance else '')
         numero_sem_serie, serie_resolvida = _split_numero_serie(numero_in, serie_in)
-        numero_normalizado = _normalize_numero_cq(numero_sem_serie)
+        numero_normalizado = normalizar_numero_cq_armazenamento(numero_sem_serie)
         attrs['numero'] = numero_normalizado
         attrs['serie'] = serie_resolvida
         if numero_normalizado:
@@ -392,11 +410,15 @@ class CertificadoQualidadeSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         itens = validated_data.pop('itens', [])
+        if numero_certificado_qualidade_vazio(validated_data.get('numero')):
+            validated_data['numero'] = gerar_numero_certificado_qualidade()
         obj = CertificadoQualidade.objects.create(**validated_data)
         self._upsert_itens(obj, itens)
         return obj
 
     def update(self, instance, validated_data):
+        if (instance.numero or '').strip():
+            validated_data.pop('numero', None)
         itens = validated_data.pop('itens', None)
         for k, v in validated_data.items():
             setattr(instance, k, v)

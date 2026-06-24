@@ -1173,7 +1173,18 @@ const Certificados = () => {
           </div>
         ) : null}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div><label className="erp-label">Número{LABEL_OBRIGATORIO_EMITIR}</label><input className="erp-input mt-1" value={form.numero} onChange={(e) => setF('numero', e.target.value)} /></div>
+          <div>
+            <label className="erp-label">Número</label>
+            <input
+              className="erp-input mt-1 bg-muted/40 read-only:cursor-default"
+              readOnly
+              value={form.numero || editing?.numero_formatado || ''}
+              placeholder="Número gerado automaticamente ao salvar."
+            />
+            {!editing ? (
+              <p className="text-xs text-muted-foreground mt-1">Número gerado automaticamente ao salvar.</p>
+            ) : null}
+          </div>
           <div><label className="erp-label">Série</label><input className="erp-input mt-1" value={form.serie} onChange={(e) => setF('serie', e.target.value)} /></div>
           <div><label className="erp-label">Data{LABEL_OBRIGATORIO_EMITIR}</label><input type="date" className="erp-input mt-1" value={form.data_emissao || ''} onChange={(e) => setF('data_emissao', e.target.value)} /></div>
           <div>

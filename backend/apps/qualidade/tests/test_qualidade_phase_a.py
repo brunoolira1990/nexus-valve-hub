@@ -73,7 +73,7 @@ class CertificadoQualidadeSerializerPhaseATests(TestCase):
         self.assertEqual(obj.status, CertificadoQualidade.Status.RASCUNHO)
         self.assertEqual(obj.nota_fiscal_numero, '98765')
 
-    def test_emissao_sem_numero_falha(self):
+    def test_emissao_sem_numero_gera_automatico(self):
         ser = CertificadoQualidadeSerializer(
             data={
                 'status': CertificadoQualidade.Status.EMITIDO,
@@ -90,8 +90,9 @@ class CertificadoQualidadeSerializerPhaseATests(TestCase):
                 'itens': [_item_padrao()],
             }
         )
-        self.assertFalse(ser.is_valid())
-        self.assertIn('numero', ser.errors)
+        self.assertTrue(ser.is_valid(), ser.errors)
+        obj = ser.save()
+        self.assertTrue(obj.numero.startswith('CQ-'))
 
     def test_emissao_sem_item_incluido_falha(self):
         ser = CertificadoQualidadeSerializer(
