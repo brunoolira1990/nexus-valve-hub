@@ -1544,49 +1544,9 @@ const Produtos = () => {
                 <input className="erp-input mt-1" value={form.descricao} onChange={(e) => f('descricao', e.target.value)} />
               </div>
               <div>
-                <label className="erp-label">Material</label>
-                <select className="erp-select mt-1 w-full" value={form.material} onChange={(e) => f('material', e.target.value)}>
-                  <option value="">Selecione...</option>
-                  {form.material && !MATERIAIS.includes(form.material) ? (
-                    <option value={form.material}>{form.material}</option>
-                  ) : null}
-                  {MATERIAIS.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="erp-label">Norma</label>
-                <input className="erp-input mt-1" value={form.norma} onChange={(e) => f('norma', e.target.value)} />
-              </div>
-              <div>
-                <label className="erp-label">NCM</label>
-                <NcmAutocomplete
-                  value={ncmProdutoOption}
-                  onChange={(opt) => {
-                    setNcmProdutoOption(opt);
-                    f('ncm', opt?.codigo || '');
-                  }}
-                  searchNcm={(term, limit) => ncmApiService.search(term, limit)}
-                />
-              </div>
-              <div>
-                <label className="erp-label">Unidade</label>
+                <label className="erp-label">Unidade comercial</label>
                 <input className="erp-input mt-1" value={form.unidade || ''} onChange={(e) => f('unidade', e.target.value)} />
-              </div>
-              <div>
-                <label className="erp-label">Tipo de Peça</label>
-                <input className="erp-input mt-1" value={form.tipo_peca} onChange={(e) => f('tipo_peca', e.target.value)} />
-              </div>
-              <div>
-                <label className="erp-label">Pressão Nominal</label>
-                <input className="erp-input mt-1" value={form.pressao_nominal} onChange={(e) => f('pressao_nominal', e.target.value)} />
-              </div>
-              <div>
-                <label className="erp-label">Conexão (texto livre)</label>
-                <input className="erp-input mt-1" value={form.conexao} onChange={(e) => f('conexao', e.target.value)} />
+                <p className="text-xs text-muted-foreground mt-1">Unidade padrão de negociação (ex.: PC, KG). Detalhes fiscais na aba Fiscal.</p>
               </div>
               <div>
                 <label className="erp-label">Preço Custo</label>
@@ -1604,6 +1564,41 @@ const Produtos = () => {
           </TabsContent>
 
           <TabsContent value="classificacao" className="mt-0 space-y-4">
+            <section className="rounded-lg border border-border bg-muted/20 p-4 space-y-4">
+              <p className="text-sm font-semibold text-foreground">Identidade técnica</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div>
+                  <label className="erp-label">Material</label>
+                  <select className="erp-select mt-1 w-full" value={form.material} onChange={(e) => f('material', e.target.value)}>
+                    <option value="">Selecione...</option>
+                    {form.material && !MATERIAIS.includes(form.material) ? (
+                      <option value={form.material}>{form.material}</option>
+                    ) : null}
+                    {MATERIAIS.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="erp-label">Norma</label>
+                  <input className="erp-input mt-1" value={form.norma} onChange={(e) => f('norma', e.target.value)} />
+                </div>
+                <div>
+                  <label className="erp-label">Tipo de peça</label>
+                  <input className="erp-input mt-1" value={form.tipo_peca} onChange={(e) => f('tipo_peca', e.target.value)} />
+                </div>
+                <div>
+                  <label className="erp-label">Pressão nominal</label>
+                  <input className="erp-input mt-1" value={form.pressao_nominal} onChange={(e) => f('pressao_nominal', e.target.value)} />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="erp-label">Conexão (texto livre)</label>
+                  <input className="erp-input mt-1" value={form.conexao} onChange={(e) => f('conexao', e.target.value)} />
+                </div>
+              </div>
+            </section>
         {modo === 'INTERNO' && familias.length === 0 && (
           <p className="text-sm text-amber-800 dark:text-amber-200 mb-3">
             Nenhuma família cadastrada. Use &quot;Nova família / figura&quot; ou rode no backend:{' '}
@@ -1865,7 +1860,8 @@ const Produtos = () => {
               ) : null}
               {(previewNcm || previewUnidade) && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  NCM efetivo: {previewNcm || '—'} | Unidade efetiva: {previewUnidade || '—'}
+                  Unidade efetiva sugerida: {previewUnidade || '—'}
+                  {previewNcm ? ' · NCM definido na aba Fiscal' : ''}
                 </p>
               )}
               <p className="text-xs text-muted-foreground mt-2">Descrição sugerida</p>
@@ -1914,6 +1910,8 @@ const Produtos = () => {
           </div>
         )}
 
+        <section className="space-y-3">
+          <p className="text-sm font-semibold text-foreground">Conversões e unidades técnicas</p>
         <ConversaoMedidasBlock
           usaConversao={!!form.usa_conversao_dimensional}
           onUsaConversaoChange={(v) => f('usa_conversao_dimensional', v)}
@@ -1949,50 +1947,67 @@ const Produtos = () => {
           observacoes={form.observacoes_conversao || ''}
           onObservacoesChange={(v) => f('observacoes_conversao', v)}
           heranca={familiaSel ? herancaConv : undefined}
+          ocultarUnidadeFiscal
         />
+        </section>
         {editing?.id ? (
-          <ProdutoComposicaoPanel
-            produtoId={editing.id}
-            produtosOpcoes={items.map((p) => ({
-              id: p.id,
-              codigo_completo: p.codigo_completo,
-              descricao: p.descricao,
-            }))}
-          />
+          <section className="rounded-lg border border-border p-4 space-y-3">
+            <p className="text-sm font-semibold text-foreground">Composição do produto</p>
+            <ProdutoComposicaoPanel
+              produtoId={editing.id}
+              produtosOpcoes={items.map((p) => ({
+                id: p.id,
+                codigo_completo: p.codigo_completo,
+                descricao: p.descricao,
+              }))}
+            />
+          </section>
         ) : null}
 
           </TabsContent>
 
           <TabsContent value="fiscal" className="mt-0 space-y-4">
-            <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-2">
-              <p className="text-sm font-semibold">NCM efetivo</p>
+            <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-2">
+              <p className="text-sm font-semibold">NCM efetivo para tributação</p>
               <p className="text-lg font-mono">
                 {form.ncm || editing?.ncm_efetivo?.codigo || familiaSel?.ncm_padrao_info?.codigo || 'NÃO DEFINIDO'}
               </p>
               <p className="text-xs text-muted-foreground">
-                Origem: {form.ncm ? 'produto' : (familiaSel?.ncm_padrao_id || editing?.ncm_origem === 'familia' ? 'família' : 'não definido')}
+                Este é o código utilizado em NF-e e regras fiscais. Origem:{' '}
+                {form.ncm ? 'override no produto' : (familiaSel?.ncm_padrao_id || editing?.ncm_origem === 'familia' ? 'família / figura' : 'não definido')}
               </p>
               {editing?.ncm_efetivo?.descricao ? (
                 <p className="text-sm text-muted-foreground">{editing.ncm_efetivo.descricao}</p>
               ) : null}
-              {form.ncm ? (
-                <button
-                  type="button"
-                  className="erp-btn-outline erp-btn-sm mt-2"
-                  onClick={() => {
-                    f('ncm', '');
-                    setNcmProdutoOption(null);
-                  }}
-                >
-                  Usar padrão da família
-                </button>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  Para alterar o NCM, use a aba Dados gerais ou defina override na família.
-                </p>
-              )}
             </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <label className="erp-label">NCM no produto (override opcional)</label>
+                <NcmAutocomplete
+                  value={ncmProdutoOption}
+                  onChange={(opt) => {
+                    setNcmProdutoOption(opt);
+                    f('ncm', opt?.codigo || '');
+                  }}
+                  searchNcm={(term, limit) => ncmApiService.search(term, limit)}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Preencha para sobrescrever o NCM da família. Vazio = herda da família/figura.
+                </p>
+                {form.ncm ? (
+                  <button
+                    type="button"
+                    className="erp-btn-outline erp-btn-sm mt-2"
+                    onClick={() => {
+                      f('ncm', '');
+                      setNcmProdutoOption(null);
+                    }}
+                  >
+                    Remover override e usar NCM da família
+                  </button>
+                ) : null}
+              </div>
               <div>
                 <label className="erp-label">NCM específico (legado)</label>
                 <input className="erp-input mt-1" value={form.ncm_especifico || ''} onChange={(e) => f('ncm_especifico', e.target.value)} />
@@ -2010,6 +2025,7 @@ const Produtos = () => {
                 <p className="erp-input mt-1 bg-muted/40 cursor-default">
                   {editing?.unidade_estoque_efetiva || form.unidade_estoque || form.unidade || '—'}
                 </p>
+                <p className="text-xs text-muted-foreground mt-1">Somente leitura. Ajuste unidades na aba Classificação industrial.</p>
               </div>
             </div>
           </TabsContent>

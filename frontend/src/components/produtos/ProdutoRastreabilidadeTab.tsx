@@ -6,6 +6,14 @@ import { buildPainelCorridaLinks, painelValorExibicao } from '@/lib/produtoPaine
 import { produtosService } from '@/services/api/produtos';
 import type { ProdutoPainelResumoUltimaCorrida } from '@/types';
 
+const FASES_FUTURAS = [
+  'Histórico de corridas',
+  'Histórico de CQ',
+  'Certificados do fornecedor',
+  'Clientes atendidos por corrida',
+  'NFs relacionadas',
+] as const;
+
 type Props = {
   produtoId?: number;
   active?: boolean;
@@ -50,8 +58,15 @@ export function ProdutoRastreabilidadeTab({ produtoId, active = true }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-dashed border-border bg-muted/30 p-4 text-sm text-muted-foreground">
-        Rastreabilidade detalhada será implementada em fase futura.
+      <div className="rounded-lg border border-dashed border-border bg-muted/30 p-4">
+        <p className="text-sm text-muted-foreground">
+          Rastreabilidade detalhada será implementada em fase futura.
+        </p>
+        <ul className="mt-3 space-y-1.5 text-sm text-muted-foreground list-disc pl-5">
+          {FASES_FUTURAS.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
       </div>
 
       {loading ? (
@@ -63,7 +78,8 @@ export function ProdutoRastreabilidadeTab({ produtoId, active = true }: Props) {
 
       {!loading && ultimaCorrida ? (
         <article className="rounded-lg border border-border bg-card p-4 shadow-sm max-w-xl">
-          <h4 className="text-sm font-semibold text-foreground mb-3">Última corrida conhecida</h4>
+          <h4 className="text-sm font-semibold text-foreground mb-1">Resumo atual</h4>
+          <p className="text-xs text-muted-foreground mb-3">Última corrida conhecida (somente leitura)</p>
           <div className="space-y-2 text-sm">
             <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
               <span className="text-muted-foreground sm:w-28">Corrida</span>

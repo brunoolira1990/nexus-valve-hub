@@ -68,6 +68,8 @@ type Props = {
     valorFamiliaTexto: (campo: CampoHeranca) => string | null;
   };
   rotulos?: { limparUnidades?: string };
+  /** Oculta unidade fiscal quando editada em outra aba (ex.: Fiscal). */
+  ocultarUnidadeFiscal?: boolean;
 };
 
 function BadgeHeranca({ texto, variante }: { texto: string; variante: 'familia' | 'override' }) {
@@ -193,6 +195,7 @@ export function ConversaoMedidasBlock({
   onObservacoesChange,
   heranca,
   rotulos,
+  ocultarUnidadeFiscal = false,
 }: Props) {
   const limparUnidades = rotulos?.limparUnidades ?? 'Limpar (herdar da família no produto)';
   const vis = visibilidadePorTipoFisico(tipoFisicoEfetivo, usaConversao);
@@ -299,10 +302,12 @@ export function ConversaoMedidasBlock({
             <label className="erp-label">Unidade de compra padrão</label>
             {selUnidade(unidadeCompra, onUnidadeCompraChange)}
           </LinhaHeranca>
-          <LinhaHeranca campo="unidade_fiscal" heranca={heranca}>
-            <label className="erp-label">Unidade fiscal</label>
-            {selUnidade(unidadeFiscal, onUnidadeFiscalChange)}
-          </LinhaHeranca>
+          {!ocultarUnidadeFiscal ? (
+            <LinhaHeranca campo="unidade_fiscal" heranca={heranca}>
+              <label className="erp-label">Unidade fiscal</label>
+              {selUnidade(unidadeFiscal, onUnidadeFiscalChange)}
+            </LinhaHeranca>
+          ) : null}
         </div>
         <LinhaHeranca campo="unidades_venda" heranca={heranca}>
           <GrupoCheckboxesUnidades
