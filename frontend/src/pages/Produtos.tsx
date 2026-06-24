@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Pencil, Plus, Trash2, LayoutDashboard } from 'lucide-react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
 import {
@@ -48,7 +48,9 @@ import {
 import { normalizarDescricaoProduto } from '@/lib/descricaoProduto';
 import { ConversaoMedidasBlock, type CampoHeranca } from '@/components/produtos/ConversaoMedidasBlock';
 import { ProdutoComposicaoPanel } from '@/components/produtos/ProdutoComposicaoPanel';
-import { ProdutoPainelOperacionalDrawer } from '@/components/produtos/ProdutoPainelOperacionalDrawer';
+import { ProdutoPainelOperacionalTab } from '@/components/produtos/ProdutoPainelOperacionalTab';
+import { ProdutoRastreabilidadeTab } from '@/components/produtos/ProdutoRastreabilidadeTab';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { NcmAutocomplete, type NcmOption } from '@/components/produtos/NcmAutocomplete';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import { PolegadaAutocomplete } from '@/components/produtos/PolegadaAutocomplete';
@@ -328,8 +330,11 @@ const Produtos = () => {
   const [famSaveErr, setFamSaveErr] = useState<string | null>(null);
   const [editingFamilia, setEditingFamilia] = useState<FamiliaProduto | null>(null);
   const [listNotice, setListNotice] = useState<string | null>(null);
-  const [painelProduto, setPainelProduto] = useState<Produto | null>(null);
-  const [painelOpen, setPainelOpen] = useState(false);
+  const [produtoFichaTab, setProdutoFichaTab] = useState('geral');
+
+  useEffect(() => {
+    if (modalOpen) setProdutoFichaTab('geral');
+  }, [modalOpen]);
 
   const codigoFiguraNorm = (famQuick.codigo_figura || '').trim().toLowerCase();
   const familiaDuplicada = useMemo(
@@ -773,11 +778,6 @@ const Produtos = () => {
         : null,
     );
     setModalOpen(true);
-  };
-
-  const openPainelOperacional = (produto: Produto) => {
-    setPainelProduto(produto);
-    setPainelOpen(true);
   };
 
   useEffect(() => {
@@ -1388,15 +1388,6 @@ const Produtos = () => {
                     <td>R$ {e.preco_venda.toFixed(2)}</td>
                     <td>
                       <div className="flex gap-1">
-                        <button
-                          type="button"
-                          onClick={() => openPainelOperacional(e)}
-                          className="erp-btn-ghost erp-btn-sm"
-                          title="Painel operacional"
-                          aria-label="Painel operacional"
-                        >
-                          <LayoutDashboard className="h-4 w-4" />
-                        </button>
                         <button type="button" onClick={() => openEdit(e)} className="erp-btn-ghost erp-btn-sm">
                           <Pencil className="h-4 w-4" />
                         </button>
@@ -1463,7 +1454,7 @@ const Produtos = () => {
         )}
       </div>
 
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Produto' : 'Novo Produto'} size="lg">
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Produto' : 'Novo Produto'} size="xl">
         {saveError && <p className="text-sm text-destructive mb-3">{saveError}</p>}
         {duplicateCodigo ? (
           <div className="mb-3 flex flex-wrap gap-2">
@@ -1509,6 +1500,110 @@ const Produtos = () => {
           </div>
         </div>
 
+        <Tabs value={produtoFichaTab} onValueChange={setProdutoFichaTab} className="w-full">
+          <TabsList className="flex flex-wrap h-auto gap-1 mb-4 w-full justify-start">
+            <TabsTrigger value="geral">Dados gerais</TabsTrigger>
+            <TabsTrigger value="classificacao">Classificação industrial</TabsTrigger>
+            <TabsTrigger value="fiscal">Fiscal</TabsTrigger>
+            <TabsTrigger value="painel">Painel operacional</TabsTrigger>
+            <TabsTrigger value="rastreabilidade">Rastreabilidade</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="geral" className="mt-0 space-y-4">
+            {modo === 'MANUAL' && (
+              <div>
+                <label className="erp-label">Código manual / fabricante</label>
+                <input
+                  className="erp-input mt-1 font-mono"
+                  value={form.codigo_completo}
+                  onChange={(e) => f('codigo_completo', e.target.value)}
+                  placeholder="Ex.: AV4000-F04-4DZ"
+                />
+                <p className="text-xs text-muted-foreground mt-1">Preencha a descrição manualmente.</p>
+              </div>
+            )}
+            {modo === 'INTERNO' && (
+              <div className="rounded-md border border-border bg-muted/20 p-3">
+                <label className="erp-label">Código</label>
+                <p className="font-mono font-semibold text-lg mt-1">{previewCodigo || editing?.codigo_completo || '—'}</p>
+                {previewCodigoDuplicado ? (
+                  <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">Já existe produto com este código.</p>
+                ) : null}
+              </div>
+            )}
+            {modo === 'LEGADO' && (
+              <div className="rounded-md border border-border bg-muted/20 p-3">
+                <label className="erp-label">Código (prévia legado)</label>
+                <p className="font-mono font-semibold text-lg mt-1">{genCodigoLegadoPreview(form) || editing?.codigo_completo || '—'}</p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="md:col-span-2 lg:col-span-3">
+                <label className="erp-label">Descrição</label>
+                <input className="erp-input mt-1" value={form.descricao} onChange={(e) => f('descricao', e.target.value)} />
+              </div>
+              <div>
+                <label className="erp-label">Material</label>
+                <select className="erp-select mt-1 w-full" value={form.material} onChange={(e) => f('material', e.target.value)}>
+                  <option value="">Selecione...</option>
+                  {form.material && !MATERIAIS.includes(form.material) ? (
+                    <option value={form.material}>{form.material}</option>
+                  ) : null}
+                  {MATERIAIS.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="erp-label">Norma</label>
+                <input className="erp-input mt-1" value={form.norma} onChange={(e) => f('norma', e.target.value)} />
+              </div>
+              <div>
+                <label className="erp-label">NCM</label>
+                <NcmAutocomplete
+                  value={ncmProdutoOption}
+                  onChange={(opt) => {
+                    setNcmProdutoOption(opt);
+                    f('ncm', opt?.codigo || '');
+                  }}
+                  searchNcm={(term, limit) => ncmApiService.search(term, limit)}
+                />
+              </div>
+              <div>
+                <label className="erp-label">Unidade</label>
+                <input className="erp-input mt-1" value={form.unidade || ''} onChange={(e) => f('unidade', e.target.value)} />
+              </div>
+              <div>
+                <label className="erp-label">Tipo de Peça</label>
+                <input className="erp-input mt-1" value={form.tipo_peca} onChange={(e) => f('tipo_peca', e.target.value)} />
+              </div>
+              <div>
+                <label className="erp-label">Pressão Nominal</label>
+                <input className="erp-input mt-1" value={form.pressao_nominal} onChange={(e) => f('pressao_nominal', e.target.value)} />
+              </div>
+              <div>
+                <label className="erp-label">Conexão (texto livre)</label>
+                <input className="erp-input mt-1" value={form.conexao} onChange={(e) => f('conexao', e.target.value)} />
+              </div>
+              <div>
+                <label className="erp-label">Preço Custo</label>
+                <input type="number" step="0.01" className="erp-input mt-1" value={form.preco_custo} onChange={(e) => f('preco_custo', +e.target.value)} />
+              </div>
+              <div>
+                <label className="erp-label">Preço Venda</label>
+                <input type="number" step="0.01" className="erp-input mt-1" value={form.preco_venda} onChange={(e) => f('preco_venda', +e.target.value)} />
+              </div>
+              <div>
+                <label className="erp-label">Estoque Mínimo</label>
+                <input type="number" className="erp-input mt-1" value={form.estoque_minimo} onChange={(e) => f('estoque_minimo', +e.target.value)} />
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="classificacao" className="mt-0 space-y-4">
         {modo === 'INTERNO' && familias.length === 0 && (
           <p className="text-sm text-amber-800 dark:text-amber-200 mb-3">
             Nenhuma família cadastrada. Use &quot;Nova família / figura&quot; ou rode no backend:{' '}
@@ -1789,21 +1884,8 @@ const Produtos = () => {
           </div>
         )}
 
-        {modo === 'MANUAL' && (
-          <div className="mb-4">
-            <label className="erp-label">Código manual / fabricante</label>
-            <input
-              className="erp-input mt-1 font-mono"
-              value={form.codigo_completo}
-              onChange={(e) => f('codigo_completo', e.target.value)}
-              placeholder="Ex.: AV4000-F04-4DZ"
-            />
-            <p className="text-xs text-muted-foreground mt-1">Não será gerado código automaticamente. Preencha a descrição manualmente.</p>
-          </div>
-        )}
-
         {modo === 'LEGADO' && (
-          <div className="mb-4 p-3 rounded-md border border-border bg-muted/20">
+          <div className="p-3 rounded-md border border-border bg-muted/20">
             <p className="text-xs text-muted-foreground mb-2">
               Cadastro legado: apenas segmentos preenchidos entram no código (sem reticências).
             </p>
@@ -1829,102 +1911,9 @@ const Produtos = () => {
                 <input className="erp-input mt-1" value={form.polegada_secundaria} onChange={(e) => f('polegada_secundaria', e.target.value)} />
               </div>
             </div>
-            <p className="text-xs mt-2 font-mono">
-              Prévia: <span className="font-bold">{genCodigoLegadoPreview(form) || '—'}</span>
-            </p>
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="md:col-span-3">
-            <label className="erp-label">Descrição</label>
-            <input className="erp-input mt-1" value={form.descricao} onChange={(e) => f('descricao', e.target.value)} />
-          </div>
-          <div>
-            <label className="erp-label">Material</label>
-            <select className="erp-select mt-1 w-full" value={form.material} onChange={(e) => f('material', e.target.value)}>
-              <option value="">Selecione...</option>
-              {form.material && !MATERIAIS.includes(form.material) ? (
-                <option value={form.material}>{form.material}</option>
-              ) : null}
-              {MATERIAIS.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="erp-label">Tipo de Peça</label>
-            <input className="erp-input mt-1" value={form.tipo_peca} onChange={(e) => f('tipo_peca', e.target.value)} />
-          </div>
-          <div>
-            <label className="erp-label">Pressão Nominal</label>
-            <input className="erp-input mt-1" value={form.pressao_nominal} onChange={(e) => f('pressao_nominal', e.target.value)} />
-          </div>
-          <div>
-            <label className="erp-label">Norma</label>
-            <input className="erp-input mt-1" value={form.norma} onChange={(e) => f('norma', e.target.value)} />
-          </div>
-          <div>
-            <label className="erp-label">Conexão (texto livre)</label>
-            <input className="erp-input mt-1" value={form.conexao} onChange={(e) => f('conexao', e.target.value)} />
-          </div>
-          <div>
-            <label className="erp-label">NCM (override opcional)</label>
-            <NcmAutocomplete
-              value={ncmProdutoOption}
-              onChange={(opt) => {
-                setNcmProdutoOption(opt);
-                f('ncm', opt?.codigo || '');
-              }}
-              searchNcm={(term, limit) => ncmApiService.search(term, limit)}
-            />
-            <p className="text-xs text-muted-foreground mt-1">
-              NCM efetivo: {form.ncm || familiaSel?.ncm_padrao_info?.codigo || 'NÃO DEFINIDO'} | Origem: {form.ncm ? 'produto' : (familiaSel?.ncm_padrao_id ? 'familia' : 'nao_definido')}
-            </p>
-            {form.ncm ? (
-              <button
-                type="button"
-                className="erp-btn-outline erp-btn-sm mt-2"
-                onClick={() => {
-                  f('ncm', '');
-                  setNcmProdutoOption(null);
-                }}
-              >
-                Usar padrão da família
-              </button>
-            ) : (
-              <p className="text-xs text-muted-foreground mt-2">
-                Usando valor da família. Preencha o campo para sobrescrever neste produto.
-              </p>
-            )}
-          </div>
-          <div>
-            <label className="erp-label">Unidade</label>
-            <input className="erp-input mt-1" value={form.unidade || ''} onChange={(e) => f('unidade', e.target.value)} />
-          </div>
-          <div>
-            <label className="erp-label">NCM específico (legado)</label>
-            <input className="erp-input mt-1" value={form.ncm_especifico || ''} onChange={(e) => f('ncm_especifico', e.target.value)} />
-          </div>
-          <div>
-            <label className="erp-label">Unidade específica (override)</label>
-            <input className="erp-input mt-1" value={form.unidade_especifica || ''} onChange={(e) => f('unidade_especifica', e.target.value)} />
-          </div>
-          <div>
-            <label className="erp-label">Preço Custo</label>
-            <input type="number" step="0.01" className="erp-input mt-1" value={form.preco_custo} onChange={(e) => f('preco_custo', +e.target.value)} />
-          </div>
-          <div>
-            <label className="erp-label">Preço Venda</label>
-            <input type="number" step="0.01" className="erp-input mt-1" value={form.preco_venda} onChange={(e) => f('preco_venda', +e.target.value)} />
-          </div>
-          <div>
-            <label className="erp-label">Estoque Mínimo</label>
-            <input type="number" className="erp-input mt-1" value={form.estoque_minimo} onChange={(e) => f('estoque_minimo', +e.target.value)} />
-          </div>
-        </div>
         <ConversaoMedidasBlock
           usaConversao={!!form.usa_conversao_dimensional}
           onUsaConversaoChange={(v) => f('usa_conversao_dimensional', v)}
@@ -1971,6 +1960,69 @@ const Produtos = () => {
             }))}
           />
         ) : null}
+
+          </TabsContent>
+
+          <TabsContent value="fiscal" className="mt-0 space-y-4">
+            <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-2">
+              <p className="text-sm font-semibold">NCM efetivo</p>
+              <p className="text-lg font-mono">
+                {form.ncm || editing?.ncm_efetivo?.codigo || familiaSel?.ncm_padrao_info?.codigo || 'NÃO DEFINIDO'}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Origem: {form.ncm ? 'produto' : (familiaSel?.ncm_padrao_id || editing?.ncm_origem === 'familia' ? 'família' : 'não definido')}
+              </p>
+              {editing?.ncm_efetivo?.descricao ? (
+                <p className="text-sm text-muted-foreground">{editing.ncm_efetivo.descricao}</p>
+              ) : null}
+              {form.ncm ? (
+                <button
+                  type="button"
+                  className="erp-btn-outline erp-btn-sm mt-2"
+                  onClick={() => {
+                    f('ncm', '');
+                    setNcmProdutoOption(null);
+                  }}
+                >
+                  Usar padrão da família
+                </button>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Para alterar o NCM, use a aba Dados gerais ou defina override na família.
+                </p>
+              )}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="erp-label">NCM específico (legado)</label>
+                <input className="erp-input mt-1" value={form.ncm_especifico || ''} onChange={(e) => f('ncm_especifico', e.target.value)} />
+              </div>
+              <div>
+                <label className="erp-label">Unidade específica (override)</label>
+                <input className="erp-input mt-1" value={form.unidade_especifica || ''} onChange={(e) => f('unidade_especifica', e.target.value)} />
+              </div>
+              <div>
+                <label className="erp-label">Unidade fiscal</label>
+                <input className="erp-input mt-1" value={form.unidade_fiscal || ''} onChange={(e) => f('unidade_fiscal', e.target.value)} />
+              </div>
+              <div>
+                <label className="erp-label">Unidade estoque efetiva</label>
+                <p className="erp-input mt-1 bg-muted/40 cursor-default">
+                  {editing?.unidade_estoque_efetiva || form.unidade_estoque || form.unidade || '—'}
+                </p>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="painel" className="mt-0">
+            <ProdutoPainelOperacionalTab produtoId={editing?.id} active={produtoFichaTab === 'painel'} />
+          </TabsContent>
+
+          <TabsContent value="rastreabilidade" className="mt-0">
+            <ProdutoRastreabilidadeTab produtoId={editing?.id} active={produtoFichaTab === 'rastreabilidade'} />
+          </TabsContent>
+        </Tabs>
+
         <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
           <button type="button" onClick={() => setModalOpen(false)} className="erp-btn-outline">
             Cancelar
@@ -2221,15 +2273,6 @@ const Produtos = () => {
           </button>
         </div>
       </Modal>
-
-      <ProdutoPainelOperacionalDrawer
-        produto={painelProduto}
-        open={painelOpen}
-        onClose={() => {
-          setPainelOpen(false);
-          setPainelProduto(null);
-        }}
-      />
     </div>
   );
 };
