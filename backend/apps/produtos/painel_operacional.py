@@ -112,7 +112,7 @@ def _buscar_ultima_compra(produto_id: int) -> dict | None:
 
     item_ne = (
         ItemNFeEntrada.objects
-        .select_related('nf__fornecedor')
+        .select_related('nf__fornecedor', 'nf__pedido_compra')
         .filter(produto_id=produto_id)
         .order_by('-nf__data', '-id')
         .first()
@@ -251,7 +251,7 @@ def _buscar_ultima_nf_entrada(produto_id: int) -> dict | None:
 
     item_ne = (
         ItemNFeEntrada.objects
-        .select_related('nf__fornecedor')
+        .select_related('nf__fornecedor', 'nf__pedido_compra')
         .filter(produto_id=produto_id)
         .order_by('-nf__data', '-id')
         .first()
@@ -334,17 +334,17 @@ def _buscar_ultima_nf_saida(produto_id: int) -> dict | None:
     }
 
 
-def _buscar_ultimo_cq(produto_id: int) -> dict | None:
-    cq = (
+def _listar_certificados_produto(produto_id: int) -> list[CertificadoQualidade]:
+    return list(
         CertificadoQualidade.objects
         .select_related('cliente')
         .filter(itens__produto_id=produto_id)
         .distinct()
-        .order_by('-data_emissao', '-criado_em')
-        .first()
+        .order_by('-data_emissao', '-criado_em')[:LIMITE_HISTORICO]
     )
-    if not cq:
-        return None
+
+
+def _serializar_certificado_cq(cq: CertificadoQualidade) -> dict:
     cliente = cq.cliente_nome_snapshot or (cq.cliente.razao_social if cq.cliente_id else '')
     return {
         'numero': cq.numero_formatado or cq.numero,
@@ -356,6 +356,13 @@ def _buscar_ultimo_cq(produto_id: int) -> dict | None:
     }
 
 
+def _buscar_ultimo_cq(produto_id: int, certificados: list[CertificadoQualidade] | None = None) -> dict | None:
+    cqs = certificados if certificados is not None else _listar_certificados_produto(produto_id)[:1]
+    if not cqs:
+        return None
+    return _serializar_certificado_cq(cqs[0])
+
+
 def _buscar_ultima_corrida(produto: Produto) -> dict | None:
     corrida = (
         Corrida.objects
@@ -364,8 +371,8 @@ def _buscar_ultima_corrida(produto: Produto) -> dict | None:
         .order_by('-data_recebimento', '-id')
         .first()
     )
+    rows = listar_corridas_disponiveis_produto(produto.id)
     if not corrida:
-        rows = listar_corridas_disponiveis_produto(produto.id)
         if not rows:
             return None
         row = rows[0]
@@ -381,7 +388,6 @@ def _buscar_ultima_corrida(produto: Produto) -> dict | None:
     est = EstoqueCorrida.objects.filter(produto_id=produto.id, corrida_id=corrida.id).first()
     saldo = f'{est.saldo:.3f}' if est else '0.000'
 
-    rows = listar_corridas_disponiveis_produto(produto.id)
     fornecedor = corrida.fornecedor.razao_social if corrida.fornecedor_id else ''
     for row in rows:
         if (row.get('corrida') or '').strip().upper() == (corrida.numero or '').strip().upper():
@@ -397,6 +403,16 @@ def _buscar_ultima_corrida(produto: Produto) -> dict | None:
         'saldo_atual': saldo,
         'data_recebimento': _iso_date(corrida.data_recebimento),
     }
+
+
+def _unit_venda_pedido(qty: Decimal, unit: Decimal, desconto: Decimal) -> tuple[Decimal, Decimal]:
+    """Retorna (unitário exibido, unitário efetivo para inteligência)."""
+    total = qty * unit - desconto
+    if total < 0:
+        total = Decimal('0')
+    efetivo = (total / qty) if qty > 0 else Decimal('0')
+    unit_exib = efetivo if desconto > 0 and qty > 0 else unit
+    return unit_exib, efetivo
 
 
 def _publicar_linha(linha: dict) -> dict:
@@ -534,6 +550,7 @@ def _coletar_linhas_venda(produto_id: int) -> list[dict]:
         qty = Decimal(str(item_pv.quantidade or 0))
         unit = Decimal(str(item_pv.valor_unitario or 0))
         desconto = Decimal(str(item_pv.desconto or 0))
+        unit_exib, unit_efetivo = _unit_venda_pedido(qty, unit, desconto)
         total = qty * unit - desconto
         if total < 0:
             total = Decimal('0')
@@ -548,9 +565,9 @@ def _coletar_linhas_venda(produto_id: int) -> list[dict]:
             'nf': None,
             'nf_id': None,
             'quantidade': f'{qty:.3f}',
-            'valor_unitario': _fmt_money(unit),
+            'valor_unitario': _fmt_money(unit_exib),
             'valor_total': _fmt_money(total),
-            '_unit_decimal': unit,
+            '_unit_decimal': unit_efetivo,
         })
 
     for item_ns in (
@@ -620,40 +637,25 @@ def _montar_inteligencia_preco(linhas: list[dict], *, campo_parte: str) -> dict 
     }
 
 
-def _montar_historico_compras(produto_id: int) -> list[dict]:
-    return [_publicar_linha(r) for r in _coletar_linhas_compra(produto_id)[:LIMITE_HISTORICO]]
+def _montar_historico_compras(linhas: list[dict]) -> list[dict]:
+    return [_publicar_linha(r) for r in linhas[:LIMITE_HISTORICO]]
 
 
-def _montar_historico_vendas(produto_id: int) -> list[dict]:
-    return [_publicar_linha(r) for r in _coletar_linhas_venda(produto_id)[:LIMITE_HISTORICO]]
+def _montar_historico_vendas(linhas: list[dict]) -> list[dict]:
+    return [_publicar_linha(r) for r in linhas[:LIMITE_HISTORICO]]
 
 
-def _montar_inteligencia_compras(produto_id: int) -> dict | None:
-    return _montar_inteligencia_preco(_coletar_linhas_compra(produto_id), campo_parte='fornecedor')
+def _montar_inteligencia_compras(linhas: list[dict]) -> dict | None:
+    return _montar_inteligencia_preco(linhas, campo_parte='fornecedor')
 
 
-def _montar_inteligencia_vendas(produto_id: int) -> dict | None:
-    return _montar_inteligencia_preco(_coletar_linhas_venda(produto_id), campo_parte='cliente')
+def _montar_inteligencia_vendas(linhas: list[dict]) -> dict | None:
+    return _montar_inteligencia_preco(linhas, campo_parte='cliente')
 
 
-def _montar_bloco_qualidade(produto: Produto) -> dict:
-    certificados = []
-    for cq in (
-        CertificadoQualidade.objects
-        .select_related('cliente')
-        .filter(itens__produto_id=produto.id)
-        .distinct()
-        .order_by('-data_emissao', '-criado_em')[:LIMITE_HISTORICO]
-    ):
-        cliente = cq.cliente_nome_snapshot or (cq.cliente.razao_social if cq.cliente_id else '')
-        certificados.append({
-            'numero': cq.numero_formatado or cq.numero,
-            'certificado_qualidade_id': cq.id,
-            'cliente': cliente,
-            'cliente_id': cq.cliente_id,
-            'data': _iso_date(cq.data_emissao),
-            'status': cq.status,
-        })
+def _montar_bloco_qualidade(produto: Produto, certificados: list[CertificadoQualidade] | None = None) -> dict:
+    cqs = certificados if certificados is not None else _listar_certificados_produto(produto.id)
+    certificados_out = [_serializar_certificado_cq(cq) for cq in cqs]
 
     corridas = []
     saldos = {
@@ -678,7 +680,7 @@ def _montar_bloco_qualidade(produto: Produto) -> dict:
         })
 
     return {
-        'certificados': certificados,
+        'certificados': certificados_out,
         'corridas': corridas,
     }
 
@@ -771,6 +773,9 @@ def _montar_bloco_fiscal(produto_id: int) -> dict:
 def montar_painel_resumo_produto(produto: Produto) -> dict:
     """Agrega centro de informações do produto (somente leitura)."""
     pid = produto.id
+    linhas_compra = _coletar_linhas_compra(pid)
+    linhas_venda = _coletar_linhas_venda(pid)
+    certificados = _listar_certificados_produto(pid)
     return {
         'produto': _montar_bloco_produto(produto),
         'estoque': _montar_bloco_estoque(produto),
@@ -778,12 +783,12 @@ def montar_painel_resumo_produto(produto: Produto) -> dict:
         'ultima_venda': _buscar_ultima_venda(pid),
         'ultima_nf_entrada': _buscar_ultima_nf_entrada(pid),
         'ultima_nf_saida': _buscar_ultima_nf_saida(pid),
-        'ultimo_cq': _buscar_ultimo_cq(pid),
+        'ultimo_cq': _buscar_ultimo_cq(pid, certificados),
         'ultima_corrida': _buscar_ultima_corrida(produto),
-        'historico_compras': _montar_historico_compras(pid),
-        'historico_vendas': _montar_historico_vendas(pid),
-        'inteligencia_compras': _montar_inteligencia_compras(pid),
-        'inteligencia_vendas': _montar_inteligencia_vendas(pid),
-        'qualidade': _montar_bloco_qualidade(produto),
+        'historico_compras': _montar_historico_compras(linhas_compra),
+        'historico_vendas': _montar_historico_vendas(linhas_venda),
+        'inteligencia_compras': _montar_inteligencia_compras(linhas_compra),
+        'inteligencia_vendas': _montar_inteligencia_vendas(linhas_venda),
+        'qualidade': _montar_bloco_qualidade(produto, certificados),
         'fiscal': _montar_bloco_fiscal(pid),
     }
