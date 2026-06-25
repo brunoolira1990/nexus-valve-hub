@@ -1,4 +1,4 @@
-"""Resolução read-only do XML autorizado (procNFe) para DANFE — sem alterar persistência."""
+"""Resolução do XML autorizado (procNFe) para DANFE e download."""
 
 from __future__ import annotations
 
@@ -12,11 +12,7 @@ def _xml_tem_protocolo(xml: str) -> bool:
     return bool(re.search(r'<[\w:]*protNFe\b', xml, flags=re.IGNORECASE))
 
 
-def resolver_xml_autorizado_danfe(nfe_saida: NFeSaida) -> str:
-    """
-    Retorna procNFe/XML autorizado para renderização do DANFE final.
-    Não grava nem altera campos da NF-e.
-    """
+def _montar_xml_autorizado(nfe_saida: NFeSaida) -> str:
     xml = (nfe_saida.xml_autorizado or '').strip()
     if xml:
         return xml
@@ -47,3 +43,17 @@ def resolver_xml_autorizado_danfe(nfe_saida: NFeSaida) -> str:
     raise DanfeBfrError(
         'XML autorizado não disponível. Baixe o XML autorizado antes de gerar o DANFE.',
     )
+
+
+def resolver_xml_autorizado_danfe(nfe_saida: NFeSaida, *, persistir: bool = False) -> str:
+    """
+    Retorna procNFe/XML autorizado para renderização do DANFE final.
+
+    Com ``persistir=True``, grava ``xml_autorizado`` quando montado a partir de
+    assinado + protocolo (evita DANFE cair na prévia nfelib após autorização).
+    """
+    xml = _montar_xml_autorizado(nfe_saida)
+    if persistir and not (nfe_saida.xml_autorizado or '').strip() and xml.strip():
+        nfe_saida.xml_autorizado = xml
+        nfe_saida.save(update_fields=['xml_autorizado'])
+    return xml

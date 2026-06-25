@@ -92,9 +92,18 @@ def nf_tem_xml_autorizado_local(nf: NFeSaida) -> bool:
     return bool((nf.xml_autorizado or '').strip())
 
 
+def nf_tem_xml_autorizado_resolvido(nf: NFeSaida) -> bool:
+    """XML autorizado no campo ou montável a partir de assinado + protocolo SEFAZ."""
+    if nf_tem_xml_autorizado_local(nf):
+        return True
+    from apps.fiscal.nfe_saida_envio_email import tem_xml_autorizado_disponivel
+
+    return tem_xml_autorizado_disponivel(nf)
+
+
 def pode_visualizar_danfe_xml_autorizado(nf: NFeSaida) -> bool:
     """DANFE/XML autorizado a partir de arquivos locais — inclui NF-e cancelada após autorização."""
-    if not nf_tem_xml_autorizado_local(nf):
+    if not nf_tem_xml_autorizado_resolvido(nf):
         return False
     if nf_autorizada_producao(nf) or nf_autorizada_homologacao(nf):
         return True

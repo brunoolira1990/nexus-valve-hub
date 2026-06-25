@@ -760,11 +760,9 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def _tem_xml_autorizado_resumo(obj: NFeSaida) -> bool:
-        if (obj.xml_autorizado or '').strip():
-            return True
-        from apps.fiscal.nfe_saida_envio_email import tem_xml_autorizado_disponivel
+        from apps.fiscal.nfe_saida_bloqueio import nf_tem_xml_autorizado_resolvido
 
-        return tem_xml_autorizado_disponivel(obj)
+        return nf_tem_xml_autorizado_resolvido(obj)
 
     def get_resumo_emissao_sefaz(self, obj):
         st = (obj.status_emissao_sefaz or '').strip()

@@ -1496,7 +1496,7 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
 
         nf = self.get_object()
         try:
-            xml = resolver_xml_autorizado_danfe(nf)
+            xml = resolver_xml_autorizado_danfe(nf, persistir=True)
         except DanfeBfrError as exc:
             return response.Response({'mensagem': str(exc)}, status=404)
         if not (xml or '').strip():

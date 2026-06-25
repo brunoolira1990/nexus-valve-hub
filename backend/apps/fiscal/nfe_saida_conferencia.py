@@ -10,6 +10,7 @@ from apps.fiscal.models import ItemNFeSaida, NFeSaida
 from apps.fiscal.nfe_saida_bloqueio import (
     dados_complementares_editaveis,
     itens_comerciais_editaveis,
+    nf_tem_xml_autorizado_resolvido,
     origem_comercial_travada,
     pode_atualizar_impostos_nfe,
 )
@@ -381,7 +382,7 @@ def _montar_emissao_sefaz_payload(nf: NFeSaida) -> dict[str, Any]:
         'motivo_autorizacao': nf.motivo_autorizacao,
         'autorizada_em': nf.autorizada_em.isoformat() if nf.autorizada_em else None,
         'tem_xml_assinado': bool((nf.xml_assinado or '').strip()),
-        'tem_xml_autorizado': bool((nf.xml_autorizado or '').strip()),
+        'tem_xml_autorizado': nf_tem_xml_autorizado_resolvido(nf),
         'tem_xml_nfe_gerado': bool((nf.xml_nfe_gerado or '').strip()),
         'tem_xml_envio_lote': bool((nf.xml_envio_lote or '').strip()),
         'tem_xml_retorno': bool((nf.xml_retorno or nf.xml_retorno_lote or '').strip()),

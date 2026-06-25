@@ -478,7 +478,7 @@ def gerar_danfe_bfr_producao_autorizada(nfe_saida) -> tuple[bytes, dict[str, Any
 
     from apps.fiscal.nfe_integracao.danfe_xml_autorizado import resolver_xml_autorizado_danfe
 
-    xml = resolver_xml_autorizado_danfe(nfe_saida)
+    xml = resolver_xml_autorizado_danfe(nfe_saida, persistir=True)
 
     if not _xml_tem_protocolo(xml):
         raise DanfeBfrError('XML autorizado sem protocolo SEFAZ — DANFE indisponível.')
@@ -524,7 +524,7 @@ def gerar_danfe_bfr_homologacao_autorizada(nfe_saida) -> tuple[bytes, dict[str, 
 
     from apps.fiscal.nfe_integracao.danfe_xml_autorizado import resolver_xml_autorizado_danfe
 
-    xml = resolver_xml_autorizado_danfe(nfe_saida)
+    xml = resolver_xml_autorizado_danfe(nfe_saida, persistir=True)
 
     if not _xml_tem_protocolo(xml):
         raise DanfeBfrError('XML autorizado sem protocolo SEFAZ — DANFE indisponível.')

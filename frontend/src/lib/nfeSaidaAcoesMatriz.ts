@@ -222,15 +222,20 @@ export function podeEnviarDanfeXml(ctx: NFeSaidaContextoAcao): boolean {
   return (ctx.autorizadaHomolog || ctx.autorizadaProducao) && ctx.temXmlAutorizado;
 }
 
-/** DANFE final (XML autorizado) — exige protocolo local; rascunho/pronta usa prévia de conferência. */
+/** DANFE final (XML autorizado) — NF autorizada/cancelada usa XML SEFAZ, não prévia nfelib. */
 export function deveUsarDanfeAutorizado(
   ctx: Pick<
     NFeSaidaContextoAcao,
     'autorizadaHomolog' | 'autorizadaProducao' | 'cancelada' | 'temXmlAutorizado'
   >,
 ): boolean {
-  if (!ctx.temXmlAutorizado) return false;
-  return ctx.autorizadaHomolog || ctx.autorizadaProducao || ctx.cancelada;
+  if (ctx.autorizadaHomolog || ctx.autorizadaProducao) {
+    return true;
+  }
+  if (ctx.cancelada) {
+    return ctx.temXmlAutorizado;
+  }
+  return false;
 }
 
 export function deveUsarDanfeAutorizadoLinha(row: {

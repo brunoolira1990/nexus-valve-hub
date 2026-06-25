@@ -10,6 +10,7 @@ from apps.fiscal.nfe_emissao.empresa_emitente import resolver_empresa_emitente_n
 from apps.fiscal.nfe_emissao.numeracao import NFeNumeracaoError, obter_config_numeracao
 from apps.fiscal.nfe_emissao.permissoes_producao import MSG_SEM_PERMISSAO_USUARIO, usuario_pode_emitir_nfe_producao
 from apps.fiscal.nfe_emissao.validacao_producao import montar_validacao_emissao_producao
+from apps.fiscal.nfe_saida_bloqueio import nf_tem_xml_autorizado_resolvido
 from apps.fiscal.nfe_saida_prontidao import status_conferencia_display
 
 
@@ -152,5 +153,5 @@ def montar_emissao_producao_conferencia(nf: NFeSaida, usuario=None) -> dict[str,
         'cstat_autorizacao': nf.cstat_autorizacao or '',
         'motivo_autorizacao': nf.motivo_autorizacao or '',
         'chave_acesso': nf.chave_acesso or '',
-        'tem_xml_autorizado': bool((nf.xml_autorizado or '').strip()),
+        'tem_xml_autorizado': nf_tem_xml_autorizado_resolvido(nf),
     }

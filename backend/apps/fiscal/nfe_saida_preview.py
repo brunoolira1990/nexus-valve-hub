@@ -850,6 +850,12 @@ def gerar_preview_danfe_nfe_saida(nfe_saida: NFeSaida) -> tuple[bytes, dict[str,
         ]
         return pdf, meta
 
+    if nf_autorizada_producao(nfe_saida) or nf_autorizada_homologacao(nfe_saida):
+        if pode_visualizar_danfe_xml_autorizado(nfe_saida):
+            from apps.fiscal.nfe_saida_danfe_autorizado import gerar_danfe_autorizado_nfe_saida
+
+            return gerar_danfe_autorizado_nfe_saida(nfe_saida)
+
     if pode_visualizar_danfe_xml_autorizado(nfe_saida):
         ambiente = '1' if nf_autorizada_producao(nfe_saida) else '2'
         raise DanfeBfrRenderError(
