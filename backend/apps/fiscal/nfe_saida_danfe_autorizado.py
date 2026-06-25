@@ -45,6 +45,20 @@ def gerar_danfe_autorizado_nfe_saida(nfe_saida: NFeSaida) -> tuple[bytes, dict[s
             ambiente=ambiente,
             erro_tipo=type(exc).__name__,
         ) from exc
+    except Exception as exc:
+        from apps.fiscal.nfe_saida_bloqueio import nf_autorizada_homologacao, nf_autorizada_producao
+
+        ambiente = '1' if nf_autorizada_producao(nfe_saida) else '2'
+        if nf_autorizada_homologacao(nfe_saida):
+            ambiente = '2'
+        raise DanfeBfrRenderError(
+            f'Não foi possível gerar o DANFE a partir do XML autorizado: {exc}',
+            nfe_saida_id=nfe_saida.pk,
+            numero=nfe_saida.numero,
+            status=nfe_saida.status,
+            ambiente=ambiente,
+            erro_tipo=type(exc).__name__,
+        ) from exc
     if not pdf or meta.get('bloqueado'):
         raise DanfeBfrRenderError(
             'Não foi possível gerar o DANFE a partir do XML autorizado.',

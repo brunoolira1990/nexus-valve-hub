@@ -126,6 +126,9 @@ def tem_xml_autorizado_disponivel(nf: NFeSaida) -> bool:
         return bool((xml or '').strip())
     except DanfeBfrError:
         return False
+    except Exception:
+        logger.exception('Falha ao resolver XML autorizado nfe_id=%s', nf.pk)
+        return False
 
 
 def danfe_anexo_disponivel(nf: NFeSaida) -> bool:

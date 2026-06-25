@@ -1523,15 +1523,24 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         from apps.fiscal.nfe_saida_danfe_autorizado import gerar_danfe_autorizado_nfe_saida
 
         nf = self.get_object()
-        if not pode_visualizar_danfe_xml_autorizado(nf):
+        try:
+            if not pode_visualizar_danfe_xml_autorizado(nf):
+                return response.Response(
+                    {
+                        'mensagem': (
+                            'DANFE autorizado indisponível. '
+                            'É necessário XML autorizado local (NF-e autorizada ou cancelada com protocolo).'
+                        ),
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).exception('danfe_autorizado disponibilidade nfe_id=%s', nf.pk)
             return response.Response(
-                {
-                    'mensagem': (
-                        'DANFE autorizado indisponível. '
-                        'É necessário XML autorizado local (NF-e autorizada ou cancelada com protocolo).'
-                    ),
-                },
-                status=status.HTTP_409_CONFLICT,
+                {'detail': str(exc), 'mensagens': [str(exc)]},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
         from apps.fiscal.nfe_saida_arquivo_autorizado import (
             content_disposition_attachment,
@@ -1552,6 +1561,19 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
                 'numero': nf.numero,
             }
             return response.Response(payload, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).exception('danfe_autorizado nfe_id=%s', nf.pk)
+            return response.Response(
+                {
+                    'detail': f'Não foi possível gerar o DANFE autorizado: {exc}',
+                    'mensagens': [str(exc)],
+                    'bloqueado': True,
+                    'nfe_saida_id': nf.pk,
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
         if not pdf:
             return response.Response(
                 {'mensagem': 'Não foi possível gerar o DANFE autorizado.'},
