@@ -195,10 +195,11 @@ def _build_icms(snap: dict, linha: dict):
             vICMS=v_icms,
         )
 
-    from apps.fiscal.nfe_difal_calculo import difal_emitido_no_item
+    from apps.fiscal.nfe_difal_calculo import valores_difal_item_xml
 
     difal = get_difal_snapshot(snap)
-    if difal_emitido_no_item(difal):
+    valores = valores_difal_item_xml(difal)
+    if valores is not None:
         icms_uf_dest_cls = getattr(
             nfe.Tnfe.InfNfe.Det.Imposto.Icms,
             'ICMSUFDest',
@@ -210,12 +211,12 @@ def _build_icms(snap: dict, linha: dict):
                 'pICMSUFDest': _dec(difal.get('p_icms_uf_dest')),
                 'pICMSInter': _dec(difal.get('p_icms_inter')),
                 'pICMSInterPart': _dec(difal.get('p_icms_inter_part') or '100'),
-                'vICMSUFDest': _dec(difal.get('v_icms_uf_dest')),
-                'vICMSUFRemet': _dec(difal.get('v_icms_uf_remet')),
+                'vICMSUFDest': valores['v_icms_uf_dest'],
+                'vICMSUFRemet': valores['v_icms_uf_remet'],
             }
             v_bc_fcp = _dec(difal.get('v_bc_fcp_uf_dest'))
             p_fcp = _dec(difal.get('p_fcp_uf_dest'))
-            v_fcp = _dec(difal.get('v_fcp_uf_dest'))
+            v_fcp = valores['v_fcp_uf_dest']
             if p_fcp > 0 or v_fcp > 0:
                 kwargs['vBCFCPUFDest'] = v_bc_fcp or kwargs['vBCUFDest']
                 kwargs['pFCPUFDest'] = p_fcp
@@ -444,6 +445,9 @@ def montar_tnfe_oficial(dados: dict[str, Any], *, nfe_saida: NFeSaida | None = N
     if not inf.det:
         raise NFeXmlNfelibError('NF-e sem itens: não é possível gerar XML oficial.')
 
+    from apps.fiscal.nfe_difal_calculo import aplicar_totais_difal_em_dados
+
+    aplicar_totais_difal_em_dados(dados)
     inf.total = build_total_nfe_bindings(nfe, dados)
 
     from apps.fiscal.nfe_transp_bindings import aplicar_transp_nfelib
@@ -483,24 +487,20 @@ def serializar_tnfe(tnfe: Any, *, pretty: bool = True) -> str:
 
 def _enriquecer_totais_impostos(dados: dict[str, Any]) -> None:
     """Agrega totais de impostos a partir dos snapshots dos itens."""
-    from apps.fiscal.nfe_difal_calculo import agregar_totais_difal
+    from apps.fiscal.nfe_difal_calculo import aplicar_totais_difal_em_dados
 
     v_bc = v_icms = v_pis = v_cofins = v_ipi = Decimal('0')
-    difais: list[dict] = []
     for linha in dados.get('itens') or []:
         snap = linha.get('snapshot_fiscal') or {}
         icms = get_icms_snapshot(snap)
         pis = get_pis_snapshot(snap)
         cof = get_cofins_snapshot(snap)
         ipi = get_ipi_snapshot(snap)
-        difal = get_difal_snapshot(snap)
         v_bc += _dec(icms.get('base'))
         v_icms += _dec(icms.get('valor'))
         v_pis += _dec(pis.get('valor'))
         v_cofins += _dec(cof.get('valor'))
         v_ipi += _dec(ipi.get('valor'))
-        if difal:
-            difais.append(difal)
     tot = dict(dados.get('totais') or {})
     if v_bc:
         tot.setdefault('v_bc', f'{v_bc:.2f}')
@@ -512,9 +512,8 @@ def _enriquecer_totais_impostos(dados: dict[str, Any]) -> None:
         tot.setdefault('v_cofins', f'{v_cofins:.2f}')
     if v_ipi:
         tot.setdefault('v_ipi', f'{v_ipi:.2f}')
-    totais_difal = agregar_totais_difal(difais)
-    tot.update(totais_difal)
     dados['totais'] = tot
+    aplicar_totais_difal_em_dados(dados)
 
 
 def gerar_xml_oficial_nfe_saida(nfe_saida: NFeSaida) -> dict[str, Any]:

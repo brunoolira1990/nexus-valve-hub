@@ -135,6 +135,13 @@ def valores_difal_item_xml(difal: dict[str, Any]) -> dict[str, Decimal] | None:
     }
 
 
+CHAVES_TOTAIS_DIFAL = ('v_fcp_uf_dest', 'v_icms_uf_dest', 'v_icms_uf_remet')
+
+
+class NFeDifalXmlInconsistenteError(ValueError):
+    """ICMSTot DIFAL/FCP divergente dos itens — SEFAZ rejeita (ex.: cStat 798)."""
+
+
 def agregar_totais_difal(snapshots_difal: list[dict[str, Any]]) -> dict[str, str]:
     """Soma DIFAL/FCP alinhada ao que é serializado por item (evita cStat 798)."""
     v_fcp = Decimal('0')
@@ -149,11 +156,73 @@ def agregar_totais_difal(snapshots_difal: list[dict[str, Any]]) -> dict[str, str
         v_remet += valores['v_icms_uf_remet']
     if v_dest <= 0 and v_fcp <= 0 and v_remet <= 0:
         return {}
-    return {
-        'v_fcp_uf_dest': _q2(v_fcp),
-        'v_icms_uf_dest': _q2(v_dest),
-        'v_icms_uf_remet': _q2(v_remet),
-    }
+    out: dict[str, str] = {}
+    if v_dest > 0:
+        out['v_icms_uf_dest'] = _q2(v_dest)
+    if v_fcp > 0:
+        out['v_fcp_uf_dest'] = _q2(v_fcp)
+    if v_remet > 0:
+        out['v_icms_uf_remet'] = _q2(v_remet)
+    return out
+
+
+def coletar_snapshots_difal_de_linhas(linhas: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    from apps.fiscal.snapshot_fiscal_helpers import get_difal_snapshot
+
+    return [get_difal_snapshot(linha.get('snapshot_fiscal') or {}) for linha in linhas]
+
+
+def aplicar_totais_difal_em_dados(dados: dict[str, Any]) -> None:
+    """Recalcula totais DIFAL/FCP no payload antes de montar ICMSTot (XML SEFAZ)."""
+    tot = dict(dados.get('totais') or {})
+    for key in CHAVES_TOTAIS_DIFAL:
+        tot.pop(key, None)
+    tot.update(agregar_totais_difal(coletar_snapshots_difal_de_linhas(dados.get('itens') or [])))
+    dados['totais'] = tot
+
+
+def _icms_uf_dest_det(det) -> object | None:
+    icms = det.imposto.ICMS
+    return getattr(icms, 'ICMSUFDest', None) or getattr(icms, 'Icmsufdest', None)
+
+
+def somar_vfcp_uf_dest_tnfe(tnfe) -> Decimal:
+    total = Decimal('0')
+    for det in tnfe.infNFe.det:
+        ufdest = _icms_uf_dest_det(det)
+        if ufdest is not None and ufdest.vFCPUFDest is not None:
+            total += _dec(ufdest.vFCPUFDest)
+    return total
+
+
+def somar_vicms_uf_dest_tnfe(tnfe) -> Decimal:
+    total = Decimal('0')
+    for det in tnfe.infNFe.det:
+        ufdest = _icms_uf_dest_det(det)
+        if ufdest is not None and ufdest.vICMSUFDest is not None:
+            total += _dec(ufdest.vICMSUFDest)
+    return total
+
+
+def validar_consistencia_difal_tnfe(tnfe) -> None:
+    """Bloqueia transmissão se ICMSTot DIFAL/FCP não bater com a soma dos itens."""
+    icms_tot = tnfe.infNFe.total.ICMSTot
+    soma_fcp = somar_vfcp_uf_dest_tnfe(tnfe)
+    total_fcp = _dec(icms_tot.vFCPUFDest)
+    if soma_fcp != total_fcp:
+        raise NFeDifalXmlInconsistenteError(
+            'Inconsistência FCP UF destino no XML de transmissão: '
+            f'soma dos itens R$ {_q2(soma_fcp)} ≠ total ICMSTot R$ {_q2(total_fcp)} '
+            '(SEFAZ cStat 798). Atualize impostos na conferência e valide novamente.'
+        )
+    soma_dest = somar_vicms_uf_dest_tnfe(tnfe)
+    total_dest = _dec(icms_tot.vICMSUFDest)
+    if soma_dest != total_dest:
+        raise NFeDifalXmlInconsistenteError(
+            'Inconsistência ICMS UF destino no XML de transmissão: '
+            f'soma dos itens R$ {_q2(soma_dest)} ≠ total ICMSTot R$ {_q2(total_dest)}. '
+            'Atualize impostos na conferência e valide novamente.'
+        )
 
 
 def texto_difal_inf_complementar(totais_difal: dict[str, str]) -> str:

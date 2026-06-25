@@ -157,6 +157,9 @@ def montar_tnfe_emissao(
     if not inf.det:
         raise NFeXmlEmissaoError('NF-e sem itens: não é possível gerar XML oficial.')
 
+    from apps.fiscal.nfe_difal_calculo import aplicar_totais_difal_em_dados
+
+    aplicar_totais_difal_em_dados(dados)
     tot = dados.get('totais') or {}
     inf.total = build_total_nfe_bindings(nfe, dados)
     duplicatas = duplicatas_para_xml(nfe_saida)
@@ -254,9 +257,14 @@ def gerar_xml_oficial_emissao(nfe_saida: NFeSaida) -> bytes:
             codigo_numerico=nfe_saida.codigo_numerico,
             tp_amb=tp_amb,
         )
+        from apps.fiscal.nfe_difal_calculo import NFeDifalXmlInconsistenteError, validar_consistencia_difal_tnfe
+
+        validar_consistencia_difal_tnfe(tnfe)
         xml = serializar_tnfe_nfe(tnfe)
     except NFeXmlEmissaoError:
         raise
+    except NFeDifalXmlInconsistenteError as exc:
+        raise NFeXmlEmissaoError(str(exc)) from exc
     except Exception as exc:
         raise NFeXmlEmissaoError(f'Falha ao gerar XML oficial: {exc}') from exc
 
