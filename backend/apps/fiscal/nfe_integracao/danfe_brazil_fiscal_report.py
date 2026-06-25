@@ -127,6 +127,7 @@ class DanfeNexus:
 
                 from apps.fiscal.nfe_integracao.danfe_xml_adicionais import (
                     inf_cpl_prioriza_pedido_para_danfe,
+                    inf_cpl_xml_para_exibicao_danfe,
                     montar_inf_cpl_para_danfe,
                 )
 
@@ -135,7 +136,7 @@ class DanfeNexus:
                     obs = montar_inf_cpl_para_danfe(self._nexus_nfe_saida)
                 else:
                     obs_raw = extract_text(self.inf_adic, 'infCpl') or ''
-                    obs = normalizar_infcpl_para_danfe_pdf(obs_raw)
+                    obs = inf_cpl_xml_para_exibicao_danfe(obs_raw)
 
                 _dest_end, cpl, cpl_truncado = self._get_dest_end_text(self.dest)
                 if cpl_truncado and cpl:

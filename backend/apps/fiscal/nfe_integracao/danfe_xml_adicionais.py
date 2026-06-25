@@ -485,6 +485,35 @@ def enriquecer_linhas_xml_nfe(
     return itens_db
 
 
+def inf_cpl_xml_para_exibicao_danfe(texto_xml: str) -> str:
+    """
+    Converte infCpl do XML (linha única com espaços) em blocos com quebras — somente DANFE.
+    O XML transmitido permanece sem \\n (exigência XSD).
+    """
+    texto = _preservar_linhas_inf_cpl(texto_xml)
+    if not texto or '\n' in texto:
+        return texto
+    marcadores = (
+        'PEDIDO DE COMPRA:',
+        'VALOR ICMS UF DESTINO',
+        'VALOR FCP UF DESTINO',
+    )
+    for marcador in marcadores:
+        texto = re.sub(
+            rf'([.!?])\s+({re.escape(marcador)})',
+            rf'\1\n\2',
+            texto,
+            flags=re.IGNORECASE,
+        )
+        texto = re.sub(
+            rf'(?<=\S)\s+({re.escape(marcador)})',
+            r'\n\1',
+            texto,
+            flags=re.IGNORECASE,
+        )
+    return '\n'.join(ln.strip() for ln in texto.split('\n') if ln.strip())
+
+
 def inf_cpl_prioriza_pedido_para_danfe(
     inf_cpl: str,
     *,

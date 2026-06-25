@@ -13,6 +13,7 @@ from apps.fiscal.nfe_integracao.danfe_brazil_fiscal_report import (
     gerar_danfe_bfr_nfe_preliminar,
 )
 from apps.fiscal.nfe_integracao.danfe_xml_adicionais import (
+    inf_cpl_xml_para_exibicao_danfe,
     montar_inf_ad_prod_item,
     montar_inf_cpl_nfe,
     montar_inf_cpl_para_danfe,
@@ -217,6 +218,18 @@ class DanfeBfrInfSemanticaTests(TestCase):
         nf.save(update_fields=['observacoes_internas'])
         inf_cpl, _ = montar_inf_cpl_nfe(nf)
         self.assertNotIn('SEGREDO', inf_cpl)
+
+    def test_inf_cpl_xml_para_exibicao_danfe_insere_quebras(self):
+        xml_linha = (
+            'NAO ACEITAREMOS DEVOLUCAO APOS 7 DIAS. '
+            'PEDIDO DE COMPRA: 42287 VALOR ICMS UF DESTINO R$ 1981.36 — '
+            'VALOR FCP UF DESTINO R$ 146.77'
+        )
+        danfe = inf_cpl_xml_para_exibicao_danfe(xml_linha)
+        linhas = [ln for ln in danfe.split('\n') if ln.strip()]
+        self.assertGreaterEqual(len(linhas), 3)
+        self.assertIn('PEDIDO DE COMPRA: 42287', linhas[1])
+        self.assertIn('VALOR ICMS UF DESTINO', linhas[2])
 
     def test_inf_cpl_danfe_inclui_difal_sem_payload_explicito(self):
         nf = _nf_pronta()

@@ -83,6 +83,35 @@ def _metricas_bloco_infcpl(
     return line_h, h_desc, max_lines, font_size_cont
 
 
+def _quebrar_paragrafo_infcpl(
+    danfe: Danfe,
+    paragrafo: str,
+    escala: float,
+    *,
+    block_height: float = INFCPL_ALTURA_BLOCO_PRIMEIRA_PAGINA,
+) -> list[str]:
+    """Quebra um parágrafo (sem \\n internos) em linhas visuais."""
+    _ativar_escala_infcpl(danfe, escala)
+    try:
+        largura = largura_campo_infcpl(danfe)
+        line_h, _, _, font_size_cont = _metricas_bloco_infcpl(
+            danfe,
+            escala,
+            block_height=block_height,
+        )
+        danfe.set_font(danfe.default_font, '', font_size_cont)
+        return danfe.multi_cell(
+            w=largura,
+            h=line_h,
+            text=paragrafo or '',
+            align='L',
+            dry_run=True,
+            output=MethodReturnValue.LINES,
+        )
+    finally:
+        _desativar_escala_infcpl(danfe)
+
+
 def _quebrar_linhas_infcpl(
     danfe: Danfe,
     texto: str,
@@ -90,27 +119,32 @@ def _quebrar_linhas_infcpl(
     *,
     block_height: float = INFCPL_ALTURA_BLOCO_PRIMEIRA_PAGINA,
 ) -> tuple[list[str], int]:
-    """Quebra o texto em linhas (dry-run) e retorna (linhas, max_lines no bloco)."""
-    _ativar_escala_infcpl(danfe, escala)
-    try:
-        largura = largura_campo_infcpl(danfe)
-        line_h, _, max_lines, font_size_cont = _metricas_bloco_infcpl(
-            danfe,
-            escala,
-            block_height=block_height,
+    """
+    Quebra o texto em linhas visuais (dry-run).
+
+    Respeita \\n como quebra explícita entre blocos (somente DANFE); cada bloco
+    é word-wrapped de forma independente.
+    """
+    _, _, max_lines, _ = _metricas_bloco_infcpl(
+        danfe,
+        escala,
+        block_height=block_height,
+    )
+    texto_norm = (texto or '').replace('\r\n', '\n').replace('\r', '\n')
+    todas: list[str] = []
+    for paragrafo in texto_norm.split('\n'):
+        seg = ' '.join(paragrafo.split())
+        if not seg:
+            continue
+        todas.extend(
+            _quebrar_paragrafo_infcpl(
+                danfe,
+                seg,
+                escala,
+                block_height=block_height,
+            ),
         )
-        danfe.set_font(danfe.default_font, '', font_size_cont)
-        linhas = danfe.multi_cell(
-            w=largura,
-            h=line_h,
-            text=texto or '',
-            align='L',
-            dry_run=True,
-            output=MethodReturnValue.LINES,
-        )
-        return linhas, max_lines
-    finally:
-        _desativar_escala_infcpl(danfe)
+    return todas, max_lines
 
 
 def medir_linhas_infcpl(
