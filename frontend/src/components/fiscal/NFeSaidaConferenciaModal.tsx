@@ -397,6 +397,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
       }
       await load();
       setHistoricoRefreshKey((k) => k + 1);
+      onSaved();
     } catch (err) {
       const ax = err as { code?: string; message?: string };
       const msg =
@@ -1584,6 +1585,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                 onEmissaoConcluida={async () => {
                   await load();
                   setHistoricoRefreshKey((k) => k + 1);
+                  onSaved();
                 }}
               />
             </div>

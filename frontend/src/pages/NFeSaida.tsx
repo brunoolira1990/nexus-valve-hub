@@ -435,10 +435,13 @@ const NFeSaida = () => {
         />
         <NFeSaidaConferenciaModal
           nfeId={editing.id}
-          onClose={() => setModalOpen(false)}
+          onClose={() => {
+            setModalOpen(false);
+            void load();
+          }}
           onSaved={() => {
-          /* Lista atualizada apenas após validação/marcar pronta via aplicarRespostaProntidao */
-        }}
+            void load();
+          }}
         />
       </div>
     );
