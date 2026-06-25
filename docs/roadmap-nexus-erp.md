@@ -38,7 +38,7 @@ Essa separação evita misturar “o que entrou” com “o que vamos emitir” 
 
 | Módulo | Status | Prioridade | O que já existe | O que falta | Próxima fase recomendada |
 |--------|--------|------------|-----------------|-------------|-------------------------|
-| Cadastros mestres | Concluído parcial | Média | Clientes, fornecedores, empresas, produtos, famílias; **cadastro visual por abas**; **Centro de Informações do Produto** (painel operacional) | Contatos, endereços múltiplos, IE, regime, dados bancários refinados; aba Rastreabilidade (futura) | Cadastros 1 — Diagnóstico |
+| Cadastros mestres | Concluído parcial | Média | Clientes, fornecedores, empresas, produtos, famílias; **cadastro visual por abas**; **Centro de Informações do Produto** (painel operacional + rastreabilidade) | Contatos, endereços múltiplos, IE, regime, dados bancários refinados | Cadastros 1 — Diagnóstico |
 | CRM | Não iniciado | Baixa | — | Leads, pipeline, atividades | CRM 1 |
 | Propostas | Em evolução | Alta | CRUD, itens, precificação, fiscal legado/cenário, comparativo, homologação | Versionamento, aprovação, PDF, condições avançadas | Propostas 2.0 |
 | Pedido de venda | Concluído parcial | Alta | Modelo, API, UI básica, conversão a partir de proposta | Status operacional, reserva, faturamento parcial, vínculos estoque/NF/financeiro | Pedido Venda 2 |
@@ -1285,7 +1285,7 @@ Correções operacionais após deploy 4.0.15.2.1:
 
 - Drawer removido; aba **Painel Operacional** dentro do modal de produto (`ProdutoPainelOperacionalTab.tsx`).
 - Carregamento sob demanda ao abrir a aba.
-- Aba **Rastreabilidade** reservada para fase futura (`ProdutoRastreabilidadeTab.tsx` placeholder).
+- Aba **Rastreabilidade** implementada (`ProdutoRastreabilidadeTab.tsx`) — ver ERP 4.0.15.2.41.
 - **Sem** alteração no save do cadastro de produto.
 
 ## ERP 4.0.15.2.38 — Consolidação visual do cadastro de produto
@@ -1322,4 +1322,11 @@ Auditoria de dados, performance e consistência:
 - **Ressalva documentada:** inteligência de compras pode contar PC + NF + conferência do mesmo evento (consolidação atual).
 - Links parciais: pedido compra, NF entrada ERP, CQ e corrida abrem listagens (sem deep link por ID).
 - Commit `829e003` — `fix(produtos): validar dados e performance do painel operacional`.
-- **Próxima evolução sugerida:** aba Rastreabilidade; deduplicação opcional na inteligência de compras; deep links quando telas de destino suportarem `?id=`.
+- **Próxima evolução sugerida:** deduplicação opcional na inteligência de compras; deep links quando telas de destino suportarem `?id=`.
+
+## ERP 4.0.15.2.41 — Rastreabilidade do produto na ficha
+
+- `GET /api/produtos/{id}/painel/rastreabilidade/` — consolidação somente leitura por corrida/lote.
+- Blocos: corridas (saldo, origem técnica, CF), certificados de qualidade, certificados de fornecedor, NF-e entrada e NF-e saída vinculadas.
+- Serviço `apps/produtos/painel_rastreabilidade.py`; aba no modal de produto com carregamento sob demanda.
+- **Sem** migration; **sem** novas regras de negócio; **sem** alterar estoque/fiscal/CQ/corridas/cadastro.

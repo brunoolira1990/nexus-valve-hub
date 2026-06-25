@@ -100,7 +100,32 @@ export function buildPainelCorridaLinks(block: ProdutoPainelResumoUltimaCorrida 
   return [{ label: `Corrida ${block.corrida}`, to: '/corridas' }];
 }
 
+export function buildRastreabilidadeCorridaLink(codigo: string): PainelDocumentoLink {
+  return { label: `Corrida ${codigo}`, to: '/corridas' };
+}
+
+export function buildRastreabilidadeCqLink(id: number, numero: string): PainelDocumentoLink {
+  return { label: `CQ ${numero}`, to: '/certificados' };
+}
+
+export function buildRastreabilidadeCfLink(id: number, numero: string): PainelDocumentoLink {
+  return { label: `CF ${numero}`, to: '/certificados-fornecedor' };
+}
+
+export function buildRastreabilidadeNfEntradaLink(id: number, numero: string): PainelDocumentoLink {
+  return { label: `NF entrada ${numero}`, to: '/nfe-entrada' };
+}
+
+export function buildRastreabilidadeNfEntradaConferenciaLink(id: number, numero: string): PainelDocumentoLink {
+  return { label: `Conferência NF ${numero}`, to: `/nfe-entrada/${id}/conferencia` };
+}
+
+export function buildRastreabilidadeNfSaidaLink(id: number, numero: string): PainelDocumentoLink {
+  return { label: `NF saída ${numero}`, to: `/nfe-saida?nfe=${id}` };
+}
+
 export const PAINEL_SEM_HISTORICO = 'Sem registro para este produto.';
+export const RASTREABILIDADE_SEM_REGISTRO = 'Nenhum registro encontrado.';
 
 export function produtoPainelTemHistorico(resumo: ProdutoPainelResumo): boolean {
   return Boolean(

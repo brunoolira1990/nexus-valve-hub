@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.http import JsonResponse
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -37,6 +38,7 @@ from django.db.models.functions import Coalesce
 from apps.produtos.polegadas import extract_mm_from_term
 from apps.produtos.produto_busca import aplicar_filtro_busca_produto, produto_busca_rank
 from apps.produtos.painel_operacional import montar_painel_resumo_produto
+from apps.produtos.painel_rastreabilidade import montar_painel_rastreabilidade
 from apps.produtos.sorting import (
     natural_codigo_completo_key,
     natural_codigo_figura_key,
@@ -304,6 +306,11 @@ class ProdutoViewSet(FriendlyDestroyMixin, AutocompleteOrPaginationMixin, viewse
     def painel_resumo(self, request, pk=None):
         produto = self.get_object()
         return Response(montar_painel_resumo_produto(produto))
+
+    @action(detail=True, methods=['get'], url_path='painel/rastreabilidade')
+    def painel_rastreabilidade(self, request, pk=None):
+        produto = self.get_object()
+        return JsonResponse(montar_painel_rastreabilidade(produto))
 
 
 class PolegadaViewSet(viewsets.ModelViewSet):

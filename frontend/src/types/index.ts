@@ -611,6 +611,61 @@ export interface ProdutoPainelResumo {
   };
 }
 
+export interface CorridaRastreabilidade {
+  id: number;
+  codigo: string;
+  lote: string | null;
+  saldo: number;
+  fornecedor_nome: string | null;
+  origem_tecnica: string;
+  nf_entrada_numero: string | null;
+  possui_cf: boolean;
+}
+
+export interface CertificadoQualidadeRastreabilidade {
+  id: number;
+  numero: string;
+  cliente_nome: string | null;
+  data_emissao: string | null;
+  status: string;
+  corridas: { id: number; codigo: string }[];
+}
+
+export interface CertificadoFornecedorRastreabilidade {
+  id: number;
+  numero: string;
+  fornecedor_nome: string;
+  data_emissao: string | null;
+  corridas: { id: number; codigo: string }[];
+  nf_entrada_referencia: string | null;
+}
+
+export interface NFeEntradaRastreabilidade {
+  id: number;
+  numero: string;
+  fornecedor_nome: string;
+  data_entrada: string | null;
+  corrida_codigo: string | null;
+  status: string;
+}
+
+export interface NFeSaidaRastreabilidade {
+  id: number;
+  numero: string;
+  cliente_nome: string;
+  data_emissao: string | null;
+  pedido_numero: string | null;
+  corrida_codigo: string | null;
+}
+
+export interface ProdutoRastreabilidade {
+  corridas: CorridaRastreabilidade[];
+  certificados_qualidade: CertificadoQualidadeRastreabilidade[];
+  certificados_fornecedor: CertificadoFornecedorRastreabilidade[];
+  nfs_entrada: NFeEntradaRastreabilidade[];
+  nfs_saida: NFeSaidaRastreabilidade[];
+}
+
 export interface ComposicaoQuimica {
   C: number; Mn: number; P: number; S: number; Si: number; Ni: number;
   Cr: number; Mo: number; Cu: number; V: number; Nb: number; Al: number;

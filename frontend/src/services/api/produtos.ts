@@ -5,7 +5,7 @@ import {
   type PaginatedResponse,
   unwrapListResults,
 } from '@/lib/apiList';
-import type { FamiliaProduto, Polegada, Produto, ProdutoPainelResumo, RoscaConexao, ScheduleEspessura } from '@/types';
+import type { FamiliaProduto, Polegada, Produto, ProdutoPainelResumo, ProdutoRastreabilidade, RoscaConexao, ScheduleEspessura } from '@/types';
 
 const path = 'produtos/';
 const famPath = 'familias-produto/';
@@ -106,6 +106,8 @@ export const produtosService = {
   getById: async (id: number) => (await api.get<Produto>(`${path}${id}/`)).data,
   getPainelResumo: async (id: number) =>
     (await api.get<ProdutoPainelResumo>(`${path}${id}/painel/resumo/`)).data,
+  getPainelRastreabilidade: async (id: number) =>
+    (await api.get<ProdutoRastreabilidade>(`${path}${id}/painel/rastreabilidade/`)).data,
   create: async (data: Omit<Produto, 'id'>) => (await api.post<Produto>(path, stripReadOnly(data))).data,
   update: async (id: number, data: Partial<Produto>) =>
     (await api.patch<Produto>(`${path}${id}/`, stripReadOnly(data))).data,
