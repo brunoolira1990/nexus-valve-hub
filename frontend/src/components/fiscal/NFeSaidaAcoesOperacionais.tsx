@@ -86,8 +86,11 @@ export function NFeSaidaAcoesOperacionais({
         temXmlAutorizado: Boolean(emissaoSefaz?.tem_xml_autorizado),
       });
       if (usarAutorizado) {
-        const { blob } = await nfeSaidasService.danfeAutorizadoBlob(nfeId);
-        openBlobInNewTab(blob);
+        const { blob, filename } = await nfeSaidasService.danfeAutorizadoBlob(nfeId);
+        const abriu = openBlobInNewTab(blob, filename);
+        if (!abriu) {
+          toast.info('Download do DANFE iniciado (pop-up bloqueado pelo navegador).');
+        }
         return;
       }
       const { blob, meta } = await nfeSaidasService.previewDanfeBlob(nfeId);

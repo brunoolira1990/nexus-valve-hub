@@ -337,6 +337,39 @@ def gerar_danfe_bfr_de_xml_string(
         raise
     except Exception as exc:
         logger.warning('Falha BrazilFiscalReport ao gerar DANFE: %s', type(exc).__name__)
+        if nfe_saida is not None:
+            try:
+                pdf = DanfeNexus.render(
+                    xml_limpo,
+                    config,
+                    marca_dagua=marca,
+                    cancelada_bfr=cancelada_bfr,
+                    emit_extras=None,
+                    nfe_saida=None,
+                )
+                if pdf.startswith(b'%PDF'):
+                    return pdf
+            except Exception:
+                pass
+        from apps.fiscal.nfe_integracao.danfe_xml_autorizado import extrair_nfe_xml_para_bfr
+
+        nfe_xml = extrair_nfe_xml_para_bfr(xml_limpo)
+        if nfe_xml and nfe_xml != xml_limpo:
+            try:
+                nfe_limpo = sanitizar_xml_para_bfr(nfe_xml)
+                pdf = DanfeNexus.render(
+                    nfe_limpo,
+                    config,
+                    marca_dagua=marca,
+                    cancelada_bfr=cancelada_bfr,
+                    emit_extras=None,
+                    nfe_saida=None,
+                )
+                if pdf.startswith(b'%PDF'):
+                    logger.info('DANFE gerado via fallback NFe sem procNFe')
+                    return pdf
+            except Exception:
+                pass
         raise DanfeBfrError(f'Não foi possível gerar o DANFE: {exc}') from exc
 
     if not pdf.startswith(b'%PDF'):

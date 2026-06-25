@@ -97,6 +97,11 @@ export function apiErrorMessage(err: unknown, options: ApiErrorMessageOptions = 
     return fallback;
   }
 
+  const plainMessage = err instanceof Error ? err.message?.trim() : '';
+  if (plainMessage && plainMessage !== 'Request failed with status code 503') {
+    return sanitize(plainMessage, fallback);
+  }
+
   if (!d) {
     return sanitize(ax.message || '', fallback || 'Erro de conexão com o servidor.');
   }

@@ -53,11 +53,16 @@ export function downloadBlobFile(blob: Blob, filename: string) {
   }
 }
 
-export function openBlobInNewTab(blob: Blob) {
+export function openBlobInNewTab(blob: Blob, filename = 'documento.pdf') {
   if (!blob?.size) {
     throw new Error('O arquivo retornado está vazio.');
   }
   const url = URL.createObjectURL(blob);
-  window.open(url, '_blank', 'noopener,noreferrer');
+  const opened = window.open(url, '_blank', 'noopener,noreferrer');
+  if (!opened) {
+    downloadBlobFile(blob, filename);
+    return false;
+  }
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return true;
 }

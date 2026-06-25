@@ -312,6 +312,16 @@ def aplicar_resultado_sefaz_producao(
     )
     if resultado.autorizado:
         _sincronizar_pedido_pos_autorizacao_sefaz(nf)
+        try:
+            from apps.fiscal.nfe_integracao.danfe_xml_autorizado import resolver_xml_autorizado_danfe
+
+            resolver_xml_autorizado_danfe(nf, persistir=True)
+        except Exception:
+            logger.warning(
+                'Não foi possível gravar procNFe completo após autorização produção nfe_id=%s',
+                nf.pk,
+                exc_info=True,
+            )
     return nf
 
 

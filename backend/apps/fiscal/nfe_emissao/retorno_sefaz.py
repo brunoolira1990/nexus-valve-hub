@@ -281,8 +281,14 @@ def processar_retorno_autorizacao_nfe(
     if autorizado and prot_el is not None and xml_assinado:
         try:
             xml_autorizado = _montar_proc_nfe_de_assinado(xml_assinado, prot_el)
-        except Exception:
-            xml_autorizado = xml_protocolo
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                'Falha ao montar procNFe na autorização — será remontado no DANFE: %s',
+                exc,
+            )
+            xml_autorizado = ''
     elif autorizado and _local(root.tag) == 'nfeProc':
         xml_autorizado = _serializar_elemento(root)
 

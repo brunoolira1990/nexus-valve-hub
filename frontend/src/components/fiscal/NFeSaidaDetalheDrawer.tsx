@@ -95,8 +95,11 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
     setDanfeLoading(true);
     try {
       if (deveUsarDanfeAutorizado(contextoAcao)) {
-        const { blob } = await nfeSaidasService.danfeAutorizadoBlob(nfe.id);
-        openBlobInNewTab(blob);
+        const { blob, filename } = await nfeSaidasService.danfeAutorizadoBlob(nfe.id);
+        const abriu = openBlobInNewTab(blob, filename);
+        if (!abriu) {
+          toast.info('Download do DANFE iniciado (pop-up bloqueado pelo navegador).');
+        }
         return;
       }
       const { blob } = await nfeSaidasService.previewDanfeBlob(nfe.id);
