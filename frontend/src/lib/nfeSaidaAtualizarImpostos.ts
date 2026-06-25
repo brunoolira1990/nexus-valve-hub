@@ -185,6 +185,7 @@ export function totalTextosFiscaisSugeridos(preview: AtualizarImpostosPreviewRes
 
 export function temAlteracaoAplicavel(preview: AtualizarImpostosPreviewResponse | null): boolean {
   if (!preview?.pode_aplicar || preview.bloqueado) return false;
+  if (preview.reaplicar_fiscal_pos_emissao) return true;
   const impostos = preview.resumo?.itens_com_alteracao ?? 0;
   const textos = totalTextosFiscaisSugeridos(preview);
   const rec = preview.resumo?.recomendacoes_sugeridas ?? 0;
@@ -258,6 +259,9 @@ export function mensagemPosPreview(preview: AtualizarImpostosPreviewResponse): s
   if (preview.bloqueado) return preview.mensagem || 'Atualização bloqueada.';
   if (!preview.pode_aplicar) {
     return mensagemConfirmarDesabilitado(preview);
+  }
+  if (preview.reaplicar_fiscal_pos_emissao && (preview.resumo?.itens_com_alteracao ?? 0) === 0) {
+    return 'Reaplicar snapshots fiscais após rejeição SEFAZ e invalidar XML da tentativa anterior.';
   }
   if (totalTextosFiscaisSugeridos(preview) > 0 && (preview.resumo?.itens_com_alteracao ?? 0) === 0) {
     return 'Há textos fiscais/recomendações para aplicar.';

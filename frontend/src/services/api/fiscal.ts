@@ -250,6 +250,7 @@ export type TextosFiscaisPreview = {
 export type AtualizarImpostosPreviewResponse = {
   nfe_saida_id: number;
   pode_aplicar: boolean;
+  reaplicar_fiscal_pos_emissao?: boolean;
   bloqueado?: boolean;
   mensagem?: string;
   resumo: {

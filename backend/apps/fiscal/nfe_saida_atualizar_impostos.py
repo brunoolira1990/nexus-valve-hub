@@ -62,6 +62,40 @@ from apps.fiscal.nfe_destinatario_fiscal import resolver_perfil_destinatario_nf
 
 MSG_BLOQUEIO_STATUS = 'Impostos só podem ser atualizados em NF-e rascunho.'
 
+_STATUS_REAPLICAR_FISCAL_POS_EMISSAO = frozenset(
+    {
+        NFeSaida.StatusEmissaoSefaz.REJEITADA_PRODUCAO,
+        NFeSaida.StatusEmissaoSefaz.REJEITADA_HOMOLOGACAO,
+        NFeSaida.StatusEmissaoSefaz.ERRO_TRANSMISSAO,
+        'REJEITADA',
+    },
+)
+
+
+def nf_permite_reaplicar_fiscal_pos_emissao(nf: NFeSaida) -> bool:
+    """Permite reaplicar snapshots após rejeição/erro SEFAZ mesmo sem diff na regra."""
+    return (nf.status_emissao_sefaz or '').strip().upper() in _STATUS_REAPLICAR_FISCAL_POS_EMISSAO
+
+
+def _limpar_xml_emissao_para_reaplicar_fiscal(nf: NFeSaida) -> list[str]:
+    """Remove XML de tentativa anterior para forçar regeneração na próxima emissão."""
+    nf.xml_nfe_gerado = ''
+    nf.xml_assinado = ''
+    nf.xml_envio_lote = ''
+    nf.xml_retorno = ''
+    nf.xml_autorizado = ''
+    update_fields = [
+        'xml_nfe_gerado',
+        'xml_assinado',
+        'xml_envio_lote',
+        'xml_retorno',
+        'xml_autorizado',
+    ]
+    if nf.chave_acesso and nf.numero_nfe:
+        nf.status_emissao_sefaz = NFeSaida.StatusEmissaoSefaz.NUMERACAO_RESERVADA
+        update_fields.append('status_emissao_sefaz')
+    return update_fields
+
 _CAMPOS_COMPARACAO: list[tuple[str, str]] = [
     ('cfop', 'CFOP'),
     ('cst_icms', 'CST ICMS'),
@@ -665,10 +699,20 @@ def preparar_atualizacao_impostos_nfe(nf: NFeSaida, *, usuario=None) -> dict[str
         any(a.get('campo') == 'recomendacoes_nfe' for a in (row.get('alteracoes') or []))
         for row in itens_rows
     )
-    pode_aplicar = com_regra > 0 and (tem_alteracao_item or tem_textos or tem_rec_snapshot) and not endereco_result.bloqueio_fiscal
+    reaplicar_pos_emissao = nf_permite_reaplicar_fiscal_pos_emissao(nf)
+    pode_aplicar = (
+        com_regra > 0
+        and (tem_alteracao_item or tem_textos or tem_rec_snapshot or reaplicar_pos_emissao)
+        and not endereco_result.bloqueio_fiscal
+    )
 
     if endereco_result.bloqueio_fiscal:
         alertas_globais.append('Corrija o endereço fiscal do cliente antes de aplicar regra fiscal.')
+    elif reaplicar_pos_emissao and com_regra and not tem_alteracao_item and not tem_textos:
+        alertas_globais.append(
+            'NF-e com rejeição/erro SEFAZ: confirme para reaplicar os snapshots fiscais, '
+            'invalidar o XML da tentativa anterior e revalidar a conferência antes de emitir novamente.',
+        )
     elif com_regra and not pode_aplicar:
         alertas_globais.append('Nenhuma alteração fiscal ou texto fiscal encontrado com a regra atual.')
     elif tem_textos and not tem_alteracao_item:
@@ -677,6 +721,7 @@ def preparar_atualizacao_impostos_nfe(nf: NFeSaida, *, usuario=None) -> dict[str
     return {
         'nfe_saida_id': nf.pk,
         'pode_aplicar': pode_aplicar,
+        'reaplicar_fiscal_pos_emissao': reaplicar_pos_emissao,
         'bloqueado': False,
         'mensagem': '',
         'resumo': {
@@ -716,6 +761,8 @@ def aplicar_atualizacao_impostos_nfe(
             if preview.get('alertas')
             else 'Nenhuma alteração fiscal para aplicar.',
         )
+
+    reaplicar_pos_emissao = bool(preview.get('reaplicar_fiscal_pos_emissao'))
 
     motivo_txt = (motivo or '').strip() or 'Atualização fiscal a partir da regra fiscal atual.'
 
@@ -767,7 +814,7 @@ def aplicar_atualizacao_impostos_nfe(
             )
             if regra is not None:
                 regras_aplicar.append(regra)
-            if not row['alteracoes']:
+            if not row['alteracoes'] and not reaplicar_pos_emissao:
                 continue
             snap_novo = row['_snapshot_novo']
             snap_antes = item.snapshot_fiscal or {}
@@ -816,12 +863,20 @@ def aplicar_atualizacao_impostos_nfe(
         from apps.fiscal.nfe_saida_prontidao import invalidar_prontidao_apos_atualizar_fiscal
 
         invalidar_xml_preliminar_armazenado(nf_locked)
+        if reaplicar_pos_emissao:
+            campos_xml = _limpar_xml_emissao_para_reaplicar_fiscal(nf_locked)
+            nf_locked.save(update_fields=campos_xml)
         invalidar_prontidao_apos_atualizar_fiscal(nf_locked, usuario=usuario)
 
         if aplicados > 0 and preview['resumo']['itens_com_regra'] > 0:
             obs_evt = (
                 f'Atualização fiscal executada. Regra aplicada no cenário padrão de saída. '
                 f'{aplicados} item(ns) com alteração fiscal. Dados comerciais preservados. {motivo_txt}'
+            )
+        elif reaplicar_pos_emissao and aplicados > 0:
+            obs_evt = (
+                f'Reaplicação fiscal após rejeição/erro SEFAZ. {aplicados} item(ns) '
+                f'com snapshot fiscal normalizado. XML anterior invalidado. {motivo_txt}'
             )
         elif preview['resumo']['itens_sem_regra'] > 0:
             obs_evt = (
