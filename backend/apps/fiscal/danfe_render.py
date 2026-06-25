@@ -128,8 +128,12 @@ def _levantar_erro_bfr(
     )
     if not html_fallback_permitido():
         log_danfe_fallback_bloqueado(nfe_id=nf.pk, motivo=str(exc), trace_id=trace_id)
+    detalhe = str(exc).strip()
+    mensagem = MSG_BFR_FALHA_USUARIO
+    if detalhe and detalhe not in mensagem:
+        mensagem = f'{mensagem} {detalhe}'
     raise DanfeBfrRenderError(
-        MSG_BFR_FALHA_USUARIO,
+        mensagem,
         nfe_saida_id=nf.pk,
         numero=nf.numero,
         status=nf.status,

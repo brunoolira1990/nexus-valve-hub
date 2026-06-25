@@ -568,12 +568,17 @@ def gerar_danfe_bfr_autorizada(nfe_saida) -> tuple[bytes, dict[str, Any]]:
 
 def gerar_danfe_bfr_de_nfe_saida_preview(nfe_saida) -> tuple[bytes, dict[str, Any]]:
     """Fluxo legado POC — delega para XML preliminar quando possível."""
+    from apps.fiscal.nfe_saida_xml_nfelib import NFeXmlNfelibError
+
     try:
         return gerar_danfe_bfr_nfe_preliminar(nfe_saida)
     except (DanfeBfrError, DanfeBfrIndisponivelError):
         from apps.fiscal.nfe_saida_preview import gerar_preview_xml_nfe_saida
 
-        preview = gerar_preview_xml_nfe_saida(nfe_saida)
+        try:
+            preview = gerar_preview_xml_nfe_saida(nfe_saida)
+        except NFeXmlNfelibError as exc:
+            raise DanfeBfrError(str(exc)) from exc
         if preview.get('bloqueado'):
             return b'', {
                 'bloqueado': True,

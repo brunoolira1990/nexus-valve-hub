@@ -214,6 +214,9 @@ def montar_tnfe_preliminar(
     itens_db = enriquecer_linhas_xml_nfe(nfe_saida, dados)
     inf.det = [_build_det(linha) for linha in dados.get('itens') or []]
 
+    from apps.fiscal.nfe_difal_calculo import aplicar_totais_difal_em_dados
+
+    aplicar_totais_difal_em_dados(dados, det_list=inf.det)
     inf.total = build_total_nfe_bindings(nfe, dados)
 
     from apps.fiscal.nfe_emissao.xml_serializacao import build_cobr_bindings, build_pag_bindings
@@ -407,14 +410,17 @@ def gerar_xml_nfe_preliminar(nfe_saida: NFeSaida, *, persistir: bool | None = No
 
     for linha in dados.get('itens') or []:
         item_pk = linha.get('item_id')
-        if item_pk and not linha.get('snapshot_fiscal'):
+        if item_pk:
             try:
                 item = ItemNFeSaida.objects.get(pk=item_pk, nf=nfe_saida)
                 linha['snapshot_fiscal'] = item.snapshot_fiscal or {}
             except ItemNFeSaida.DoesNotExist:
-                linha['snapshot_fiscal'] = {}
+                linha['snapshot_fiscal'] = linha.get('snapshot_fiscal') or {}
     _enriquecer_totais_impostos(dados)
-    preparar_dados_serializacao_xml(dados)
+    try:
+        preparar_dados_serializacao_xml(dados)
+    except NFeXmlNfelibError as exc:
+        raise NFeXmlPreliminarError(str(exc)) from exc
 
     try:
         numeracao = resolver_numero_fiscal_preliminar(nfe_saida)
@@ -436,6 +442,8 @@ def gerar_xml_nfe_preliminar(nfe_saida: NFeSaida, *, persistir: bool | None = No
         codigo_numerico=numeracao.codigo_numerico,
     )
 
+    from apps.fiscal.nfe_difal_calculo import NFeDifalXmlInconsistenteError
+
     try:
         tnfe = montar_tnfe_preliminar(
             dados,
@@ -446,6 +454,8 @@ def gerar_xml_nfe_preliminar(nfe_saida: NFeSaida, *, persistir: bool | None = No
         )
         xml = serializar_tnfe_preliminar(tnfe)
     except NFeXmlNfelibError as exc:
+        raise NFeXmlPreliminarError(str(exc)) from exc
+    except NFeDifalXmlInconsistenteError as exc:
         raise NFeXmlPreliminarError(str(exc)) from exc
     except Exception as exc:
         raise NFeXmlPreliminarError(f'Falha ao montar XML preliminar: {exc}') from exc

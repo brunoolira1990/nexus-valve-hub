@@ -554,11 +554,15 @@ def gerar_xml_oficial_nfe_saida(nfe_saida: NFeSaida) -> dict[str, Any]:
     _enriquecer_totais_impostos(dados)
     preparar_dados_serializacao_xml(dados)
 
+    from apps.fiscal.nfe_difal_calculo import NFeDifalXmlInconsistenteError
+
     try:
         tnfe = montar_tnfe_oficial(dados, nfe_saida=nfe_saida)
         xml = serializar_tnfe(tnfe)
     except NFeXmlNfelibError:
         raise
+    except NFeDifalXmlInconsistenteError as exc:
+        raise NFeXmlNfelibError(str(exc)) from exc
     except Exception as exc:
         raise NFeXmlNfelibError(f'Falha ao gerar XML oficial: {exc}') from exc
 
