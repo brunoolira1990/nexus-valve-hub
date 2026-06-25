@@ -137,6 +137,47 @@ def _linhas_inf_cpl_de_blocos(blocos: list[str]) -> list[str]:
 _SEPARADOR_INF_CPL_XML = ' '
 _SEPARADOR_INF_CPL_DANFE = '\n'
 
+_RE_DIFAL_INF_CPL = re.compile(r'UF DESTINO|FCP UF', re.I)
+_RE_PEDIDO_INF_CPL = re.compile(r'PEDIDO DE COMPRA', re.I)
+
+
+def _resolver_contexto_inf_cpl(
+    nfe_saida: NFeSaida,
+    dados: dict[str, Any] | None,
+    itens_db: dict[int, ItemNFeSaida] | None,
+) -> tuple[dict[str, Any], dict[int, ItemNFeSaida], list[dict[str, Any]]]:
+    """Garante payload de itens/snapshots para DIFAL e demais blocos do infCpl."""
+    if itens_db is None:
+        itens_db = {it.pk: it for it in nfe_saida.itens.all()}
+    linhas_payload = (dados or {}).get('itens') or []
+    if not linhas_payload:
+        from apps.fiscal.nfe_saida_preview import gerar_dados_preview_nfe_saida
+
+        dados = gerar_dados_preview_nfe_saida(nfe_saida, incluir_validacao_emissao=False)
+        linhas_payload = list(dados.get('itens') or [])
+    elif dados is None:
+        dados = {'itens': linhas_payload}
+    return dados, itens_db, linhas_payload
+
+
+def _compactar_linhas_inf_cpl_danfe(linhas: list[str]) -> list[str]:
+    """Une pedido + DIFAL na mesma linha visual do DANFE para reduzir corte no rodapé."""
+    out: list[str] = []
+    i = 0
+    while i < len(linhas):
+        ln = linhas[i]
+        if (
+            i + 1 < len(linhas)
+            and _RE_PEDIDO_INF_CPL.search(ln)
+            and _RE_DIFAL_INF_CPL.search(linhas[i + 1])
+        ):
+            out.append(f'{ln} {linhas[i + 1]}')
+            i += 2
+            continue
+        out.append(ln)
+        i += 1
+    return out
+
 
 def _juntar_linhas_inf_cpl(linhas: list[str], *, separador: str = _SEPARADOR_INF_CPL_XML) -> str:
     return separador.join(linhas)[:_MAX_INF_CPL_XML_CHARS].strip()
@@ -285,7 +326,7 @@ def montar_linhas_inf_cpl_nfe(
     4. Informações adicionais manuais da NF-e (conferência)
     5. Totais DIFAL/FCP (quando aplicável)
     """
-    linhas_payload = (dados or {}).get('itens') or []
+    dados, itens_db, linhas_payload = _resolver_contexto_inf_cpl(nfe_saida, dados, itens_db)
     regras = _coletar_regras_fiscais_nfe(nfe_saida)
 
     partes: list[str] = []
@@ -347,6 +388,7 @@ def montar_inf_cpl_para_danfe(
 ) -> str:
     """infCpl apenas para exibição no DANFE — blocos em linhas separadas."""
     linhas = montar_linhas_inf_cpl_nfe(nfe_saida, dados, itens_db=itens_db)
+    linhas = _compactar_linhas_inf_cpl_danfe(linhas)
     return _juntar_linhas_inf_cpl(linhas, separador=_SEPARADOR_INF_CPL_DANFE)
 
 

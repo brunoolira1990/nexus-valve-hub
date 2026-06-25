@@ -218,6 +218,28 @@ class DanfeBfrInfSemanticaTests(TestCase):
         inf_cpl, _ = montar_inf_cpl_nfe(nf)
         self.assertNotIn('SEGREDO', inf_cpl)
 
+    def test_inf_cpl_danfe_inclui_difal_sem_payload_explicito(self):
+        nf = _nf_pronta()
+        item = nf.itens.first()
+        self.assertIsNotNone(item)
+        snap = dict(item.snapshot_fiscal or {})
+        snap['difal'] = {
+            'v_icms_uf_dest': '1981.36',
+            'v_fcp_uf_dest': '146.77',
+        }
+        item.snapshot_fiscal = snap
+        item.save(update_fields=['snapshot_fiscal'])
+
+        inf_cpl_danfe = montar_inf_cpl_para_danfe(nf)
+        self.assertIn('VALOR ICMS UF DESTINO', inf_cpl_danfe)
+        self.assertIn('1981.36', inf_cpl_danfe)
+        self.assertIn('VALOR FCP UF DESTINO', inf_cpl_danfe)
+        self.assertIn('146.77', inf_cpl_danfe)
+
+        inf_cpl_xml, _ = montar_inf_cpl_nfe(nf)
+        self.assertIn('VALOR ICMS UF DESTINO', inf_cpl_xml)
+        self.assertNotIn('\n', inf_cpl_xml)
+
     def test_danfe_continua_gerando(self):
         nf = _nf_pronta()
         pdf, _ = gerar_danfe_bfr_nfe_preliminar(nf)
