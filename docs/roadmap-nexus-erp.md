@@ -38,18 +38,18 @@ Essa separação evita misturar “o que entrou” com “o que vamos emitir” 
 
 | Módulo | Status | Prioridade | O que já existe | O que falta | Próxima fase recomendada |
 |--------|--------|------------|-----------------|-------------|-------------------------|
-| Cadastros mestres | Concluído parcial | Média | Clientes, fornecedores, empresas, produtos, famílias | Contatos, endereços múltiplos, IE, regime, dados bancários refinados | Cadastros 1 — Diagnóstico |
+| Cadastros mestres | Concluído parcial | Média | Clientes, fornecedores, empresas, produtos, famílias; **cadastro visual por abas**; **Centro de Informações do Produto** (painel operacional) | Contatos, endereços múltiplos, IE, regime, dados bancários refinados; aba Rastreabilidade (futura) | Cadastros 1 — Diagnóstico |
 | CRM | Não iniciado | Baixa | — | Leads, pipeline, atividades | CRM 1 |
 | Propostas | Em evolução | Alta | CRUD, itens, precificação, fiscal legado/cenário, comparativo, homologação | Versionamento, aprovação, PDF, condições avançadas | Propostas 2.0 |
 | Pedido de venda | Concluído parcial | Alta | Modelo, API, UI básica, conversão a partir de proposta | Status operacional, reserva, faturamento parcial, vínculos estoque/NF/financeiro | Pedido Venda 2 |
-| Fiscal entrada | Em evolução | Alta | Classificação, validação XML, bloqueio, conferência, estoque | Snapshot persistido, relatórios de divergência/crédito | Fiscal Entrada 4 |
+| Fiscal entrada | Em evolução | Alta | Classificação, validação XML, bloqueio, conferência, estoque; finalização vinculada a PC; data de entrada obrigatória; **identificação de fornecedor para CP** | Snapshot persistido, relatórios de divergência/crédito | Fiscal Entrada 4 |
 | Fiscal saída / Cenário | Em evolução | Alta | Cenário, regras, editor guiado, homologação e histórico 3.10 | NF-e consumindo cenário, DANFE/XML | NF-e Saída 1 |
-| NF-e saída | Concluído parcial | Alta | Módulo operacional, modos atendimento estoque | Consumir `RegraFiscalSaida`, XML/DANFE do cenário, CC-e/cancelamento | NF-e Saída 1 |
+| NF-e saída | Concluído parcial | Alta | Módulo operacional, modos atendimento estoque; **DIFAL** venda interestadual não contribuinte; **pool de numeração** e reutilização de número não transmitido | Consumir `RegraFiscalSaida`, XML/DANFE do cenário, CC-e/cancelamento produção | NF-e Saída 1 |
 | NF-e entrada própria | Em evolução | Alta | Importar XML entrada própria já emitida (4.0.14.x) | Emissão própria, devolução/recusa, retorno remessa, vínculo NF saída | Entrada Própria 1 |
 | Remessas | Não iniciado | Média | CFOPs no catálogo auxiliar de saída | Modelo, emissão, retorno, controle pendente | Remessa 1 |
-| Estoque / rastreabilidade | Em evolução | Alta | AtendimentoEstoque, aplicação física, CQ + rastreio | Kardex, estorno, relatório ponta a ponta | Estoque 3.13 |
-| Qualidade | Concluído parcial | Média | CF, CQ, busca corrida, vínculo conferência | Relatório CQ, dashboard pendências | Qualidade 4 |
-| Financeiro | **Base operacional (4.0.14)** | Alta | CR/CP manual, baixa, estorno | Geração a partir de NF-e (ação explícita), conciliação, DRE | Financeiro 2 |
+| Estoque / rastreabilidade | Em evolução | Alta | AtendimentoEstoque, aplicação física, CQ + rastreio; **painel consolidado por produto** (saldo, histórico compra/venda, fiscal, CQ, corridas — somente leitura) | Kardex, estorno, relatório ponta a ponta | Estoque 3.13 |
+| Qualidade | Concluído parcial | Média | CF, CQ, busca corrida, vínculo conferência; **numeração automática CQ**; **CQ manual sem CF obrigatório** | Relatório CQ, dashboard pendências | Qualidade 4 |
+| Financeiro | **Base operacional (4.0.14)** | Alta | CR/CP manual, baixa, estorno; geração manual CR/CP a partir de NF-e; **fornecedor identificado na entrada** para liberar CP | Conciliação, DRE, automação na autorização NF-e | Financeiro 2 |
 | Contábil | Futuro | Baixa | Tela placeholder | Plano de contas, lançamentos, DRE | Contábil 1 |
 | Relatórios / BI / auditoria | Concluído parcial | Média | Apuração fiscal, painéis gerenciais parciais | Dashboards unificados, auditoria de alterações | BI 1 |
 
@@ -536,7 +536,7 @@ Controle do que **sai**, **permanece em terceiros** e **retorna** (industrializa
 - [ ] Kardex
 - [ ] Estorno controlado
 - [ ] Relatório ponta a ponta
-- [ ] Histórico por produto/corrida
+- [x] Histórico consolidado por produto (painel operacional — leitura, ERP 4.0.15.2.39)
 
 ---
 
@@ -604,7 +604,8 @@ Base para fiscal, comercial e estoque. Refinar progressivamente.
 - [ ] Cliente completo
 - [ ] Fornecedor completo
 - [ ] Transportadora
-- [ ] Produto completo
+- [x] Produto — cadastro visual por abas (dados gerais, classificação industrial, fiscal, painel operacional — ERP 4.0.15.2.38)
+- [x] Produto — centro de informações operacional (ERP 4.0.15.2.39)
 - [ ] Contatos
 - [ ] Endereços múltiplos
 - [ ] Dados fiscais refinados
@@ -840,7 +841,7 @@ Documentos complementares existentes:
 
 ---
 
-*Última atualização: 15/06/2026 — ERP 4.0.15.2.1 deploy produção fiscal completa (NF-e Saída + Manifestação + Central DF-e); ver `docs/deploy-erp-40152-manifestacao-dfe-producao.md`.*
+*Última atualização: 24/06/2026 — ERP 4.0.15.2.40 (validação painel operacional); ver seções 4.0.15.2.2–4.0.15.2.40 abaixo.*
 
 ## ERP 4.0.13.6.2 — Padronização segura dos campos comerciais
 
@@ -1229,3 +1230,95 @@ Escopo futuro (referência):
 - Bloqueios financeiros reais: fornecedor, valor, cancelamento, duplicidade, XML inválido.
 - Geração com pendências operacionais exige **ciência explícita** do usuário no wizard.
 - Salvar conferência com pendências mantém divergências abertas e **não gera** financeiro automaticamente.
+
+## ERP 4.0.15.2.2 — Estabilização fiscal entrada e Central DF-e (pós-deploy)
+
+Correções operacionais após deploy 4.0.15.2.1:
+
+- Reconciliação de XML importado da Central DF-e por chave.
+- Salvamento de regras fiscais de entrada.
+- Finalização de NF-e entrada vinculada ao pedido de compra.
+- Data de entrada obrigatória na finalização da NF-e.
+- Ordem de campos corrigida em `DocumentoCentralDfe`.
+- Conclusão da conferência de NF-e entrada.
+- **Sem** alteração de apuração automática, estoque automático ou financeiro automático.
+
+## ERP 4.0.15.2.3 — DIFAL e numeração NF-e saída
+
+- DIFAL para venda interestadual a não contribuinte (`regras_fiscais` migration `0013`).
+- Reutilização de número de NF-e saída não transmitida.
+- Consumo correto do pool de numeração na reserva (`nfe_emissao/numeracao.py`).
+- Recuperação de numeração local (ex.: nº 366) em ambiente de desenvolvimento.
+- **Sem** alteração de estoque ou financeiro na emissão.
+
+## ERP 4.0.15.2.4 — Comercial: ordenação de itens e PDF do Pedido de Venda
+
+- Ordenação de itens por ordem de inclusão em pedidos (compra/venda), faturamento e documentos fiscais (migrations `0036` comercial, `0056` fiscal).
+- Correção erro 500 na listagem de pedidos de venda.
+- PDF do Pedido de Venda compacto: layout para até 10 itens sem quebra desnecessária; refinamento de largura e legibilidade dos blocos.
+- **Sem** alteração fiscal na emissão NF-e, estoque ou financeiro.
+
+## ERP 4.0.15.2.5 — Fornecedor da entrada e liberação de Contas a Pagar
+
+- Identificação e vínculo assistido de fornecedor em NF-e/CT-e de entrada (`fornecedor_entrada.py`).
+- Auto-vínculo em conferência e financeiro quando aplicável.
+- Liberação de geração de Contas a Pagar quando fornecedor estiver identificado.
+- UI de ações de fornecedor em NF-e entrada e CT-e.
+- Testes `test_fornecedor_entrada.py`.
+- **Sem** geração automática de CP; ação manual do wizard 4.0.14.4 preservada.
+
+## ERP 4.0.15.2.6 — Qualidade: CQ manual e numeração automática
+
+- CQ manual permitido sem certificado de fornecedor vinculado (quando regra de negócio permitir).
+- Numeração automática de certificado de qualidade (`0012_sequencia_certificado_qualidade`).
+- **Sem** alteração de rastreabilidade obrigatória em emissão definitiva de CQ.
+
+## ERP 4.0.15.2.36 — Painel Operacional do Produto (Fase 1)
+
+- `GET /api/produtos/{id}/painel/resumo/` — resumo somente leitura.
+- Blocos: estoque (físico, reservado, disponível), última compra, última venda, última NF entrada/saída, último CQ, última corrida.
+- Serviço `apps/produtos/painel_operacional.py`; reutiliza `montar_saldo_consolidado_produto` e `listar_corridas_disponiveis_produto`.
+- **Sem** migration, **sem** alterar estoque/fiscal/CQ/corridas.
+
+## ERP 4.0.15.2.37 — Painel integrado na ficha do produto
+
+- Drawer removido; aba **Painel Operacional** dentro do modal de produto (`ProdutoPainelOperacionalTab.tsx`).
+- Carregamento sob demanda ao abrir a aba.
+- Aba **Rastreabilidade** reservada para fase futura (`ProdutoRastreabilidadeTab.tsx` placeholder).
+- **Sem** alteração no save do cadastro de produto.
+
+## ERP 4.0.15.2.38 — Consolidação visual do cadastro de produto
+
+- Reorganização das abas do modal sem alterar regras de negócio.
+- **Dados gerais:** código, descrição, unidade comercial, preços, estoque mínimo.
+- **Classificação industrial:** material, norma, família, dimensional, conversões, composição.
+- **Fiscal:** NCM efetivo centralizado; `ConversaoMedidasBlock` com `ocultarUnidadeFiscal`.
+- **Sem** migration; **sem** alteração fiscal/estoque no backend.
+
+## ERP 4.0.15.2.39 — Centro de Informações do Produto
+
+Expansão do painel operacional em centro de informações (somente leitura, dados existentes):
+
+| Subseção | Conteúdo |
+|----------|----------|
+| Resumo | Estoque + últimos movimentos (fase 1) |
+| Compras | Histórico (10) + inteligência de preços (menor/maior/médio/último) |
+| Vendas | Histórico (10) + inteligência de preços |
+| Qualidade | Últimos CQs e corridas vinculadas (10 cada) |
+| Fiscal | Últimas NF-e entrada e saída (10 cada) |
+
+- Mesmo endpoint `GET /api/produtos/{id}/painel/resumo/`; frontend com sub-abas internas.
+- **Sem** migration; **sem** novas regras de negócio; **sem** alterar estoque/financeiro/fiscal/CQ/corridas.
+
+## ERP 4.0.15.2.40 — Validação técnica do painel operacional
+
+Auditoria de dados, performance e consistência:
+
+- Estoque validado contra `montar_saldo_consolidado_produto`.
+- Preço efetivo de venda com desconto alinhado ao módulo comercial na inteligência e histórico.
+- Reuso de coleta de linhas compra/venda e certificados CQ por request (~34 queries, ~50–80 ms).
+- Eliminação de chamadas duplicadas (`listar_corridas_disponiveis`, CQ).
+- **Ressalva documentada:** inteligência de compras pode contar PC + NF + conferência do mesmo evento (consolidação atual).
+- Links parciais: pedido compra, NF entrada ERP, CQ e corrida abrem listagens (sem deep link por ID).
+- Commit `829e003` — `fix(produtos): validar dados e performance do painel operacional`.
+- **Próxima evolução sugerida:** aba Rastreabilidade; deduplicação opcional na inteligência de compras; deep links quando telas de destino suportarem `?id=`.
