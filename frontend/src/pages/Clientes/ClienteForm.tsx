@@ -34,7 +34,13 @@ import {
 import { isValidCnpj, normalizeCnpj } from '@/lib/cnpj';
 import { digitsOnly, formatCep, formatCnpj, formatPhone } from '@/lib/masks';
 import { parsePaymentCondition } from '@/lib/paymentTerms';
-import type { Cliente, Transportadora } from '@/types';
+import {
+  ClienteContatosAdicionaisEditor,
+  contatosClienteParaApi,
+  enderecosEntregaParaApi,
+} from '@/components/clientes/ClienteContatosAdicionaisEditor';
+import { ClienteEnderecosEntregaEditor } from '@/components/clientes/ClienteEnderecosEntregaEditor';
+import type { Cliente, ContatoCliente, EnderecoEntregaCliente, Transportadora } from '@/types';
 import { REGIMES_CADASTRO, TIPOS_CONTA, UFS } from '@/types';
 
 const emailOrEmpty = z.union([z.literal(''), z.string().email('E-mail inválido')]);
@@ -49,6 +55,7 @@ const schema = z.object({
     .refine((v) => isValidCnpj(v), 'CNPJ inválido'),
   ddd: z.string(),
   ie: z.string(),
+  ie_isento: z.boolean(),
   inscricao_municipal: z.string(),
   suframa: z.string(),
   cep: z.string(),
@@ -101,12 +108,17 @@ const tipoContaOptions = [{ value: '', label: 'Selecione…' }, ...TIPOS_CONTA];
 
 const ufOptions = UFS.map((u) => ({ value: u, label: u }));
 
-function toApiPayload(values: ClienteFormInput): Omit<Cliente, 'id'> {
+function toApiPayload(
+  values: ClienteFormInput,
+  enderecosEntrega: EnderecoEntregaCliente[],
+  contatos: ContatoCliente[],
+): Omit<Cliente, 'id'> {
   return {
     razao_social: values.razao_social,
     nome_fantasia: values.nome_fantasia,
     cnpj: normalizeCnpj(values.cnpj),
-    ie: values.ie,
+    ie: values.ie_isento ? '' : values.ie,
+    ie_isento: values.ie_isento,
     logradouro: values.logradouro,
     numero: values.numero,
     complemento: values.complemento,
@@ -139,6 +151,8 @@ function toApiPayload(values: ClienteFormInput): Omit<Cliente, 'id'> {
     regime_tributario: values.regime_tributario,
     integracao_texto: values.integracao_texto,
     informacoes_complementares_nfe: values.informacoes_complementares_nfe,
+    enderecos_entrega: enderecosEntregaParaApi(enderecosEntrega),
+    contatos: contatosClienteParaApi(contatos),
   };
 }
 
@@ -149,6 +163,7 @@ export function clientToFormValues(c: Partial<Cliente>): ClienteFormInput {
     cnpj: formatCnpj(c.cnpj ?? ''),
     ddd: digitsOnly(c.ddd ?? '', 4),
     ie: c.ie ?? '',
+    ie_isento: c.ie_isento ?? (c.ie ?? '').trim().toUpperCase() === 'ISENTO',
     inscricao_municipal: c.inscricao_municipal ?? '',
     suframa: c.suframa ?? '',
     cep: formatCep(c.cep ?? ''),
@@ -186,6 +201,8 @@ export function clientToFormValues(c: Partial<Cliente>): ClienteFormInput {
 type Props = {
   defaultValues: ClienteFormInput;
   transportadoras: Transportadora[];
+  enderecosEntregaInicial?: EnderecoEntregaCliente[];
+  contatosIniciais?: ContatoCliente[];
   onSubmit: (payload: Omit<Cliente, 'id'>) => Promise<void>;
   onCancel: () => void;
   saving?: boolean;
@@ -207,8 +224,21 @@ function AlertaEnderecoFiscal({ mensagem }: { mensagem: string }) {
   );
 }
 
-export function ClienteForm({ defaultValues, transportadoras, onSubmit, onCancel, saving, enderecoFiscalInicial }: Props) {
+export function ClienteForm({
+  defaultValues,
+  transportadoras,
+  enderecosEntregaInicial = [],
+  contatosIniciais = [],
+  onSubmit,
+  onCancel,
+  saving,
+  enderecoFiscalInicial,
+}: Props) {
   const [tab, setTab] = useState<string>(TAB_ITEMS[0].id);
+  const [enderecosEntrega, setEnderecosEntrega] = useState<EnderecoEntregaCliente[]>(
+    () => enderecosEntregaInicial,
+  );
+  const [contatos, setContatos] = useState<ContatoCliente[]>(() => contatosIniciais);
   const [cnpjLookupLoading, setCnpjLookupLoading] = useState(false);
   const consultaIe = useConsultaIeSefaz();
   const [cnpjLookupMessage, setCnpjLookupMessage] = useState<string | null>(null);
@@ -229,14 +259,23 @@ export function ClienteForm({ defaultValues, transportadoras, onSubmit, onCancel
     setError,
     clearErrors,
     getValues,
+    watch,
     formState: { errors },
   } = useForm<ClienteFormInput>({
     resolver: zodResolver(schema),
     defaultValues,
   });
   const aplicarIeNoFormulario = (valor: string) => {
+    setValue('ie_isento', false, { shouldDirty: true });
     setValue('ie', valor, { shouldDirty: true, shouldValidate: true });
   };
+  const ieIsento = watch('ie_isento');
+
+  useEffect(() => {
+    if (ieIsento) {
+      setValue('ie', '', { shouldDirty: true, shouldValidate: true });
+    }
+  }, [ieIsento, setValue]);
   const cnpjField = register('cnpj');
   const cepField = register('cep');
   const dddField = register('ddd');
@@ -498,14 +537,28 @@ export function ClienteForm({ defaultValues, transportadoras, onSubmit, onCancel
             onAplicarCampo={aplicarSugestaoCnpj}
             onAplicarTodas={aplicarTodasSugestoesCnpj}
           />
-          <InputField label="Inscrição Estadual (IE)" operationalUpper {...register('ie')} />
-          <ConsultaIeSefazControls
-            consultaIe={consultaIe}
-            getCnpj={() => getValues('cnpj')}
-            getUf={() => getValues('uf')}
-            getIeAtual={() => getValues('ie')}
-            onAplicarIe={aplicarIeNoFormulario}
+          <CheckboxField
+            control={control}
+            name="ie_isento"
+            label="Isento de Inscrição Estadual"
           />
+          {!ieIsento ? (
+            <>
+              <InputField label="Inscrição Estadual (IE)" operationalUpper {...register('ie')} />
+              <ConsultaIeSefazControls
+                consultaIe={consultaIe}
+                getCnpj={() => getValues('cnpj')}
+                getUf={() => getValues('uf')}
+                getIeAtual={() => getValues('ie')}
+                onAplicarIe={aplicarIeNoFormulario}
+              />
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground md:col-span-2">
+              Cliente marcado como isento de IE. O perfil fiscal da NF-e usará indIEDest=2 (contribuinte
+              isento).
+            </p>
+          )}
           <div className="md:col-span-2 flex flex-wrap gap-2 pt-1">
             <CheckboxField control={control} name="ativo" label="Cadastro ativo" />
             <CheckboxField control={control} name="bloqueado" label="Bloqueado para venda" />
@@ -515,6 +568,7 @@ export function ClienteForm({ defaultValues, transportadoras, onSubmit, onCancel
 
       {tab === 'endereco' && (
         <>
+          <p className="text-sm font-semibold text-foreground md:col-span-2">Endereço fiscal</p>
           <AlertaEnderecoFiscal mensagem={enderecoFiscalAlerta} />
           <div>
             <InputField label="CEP" {...cepField} onChange={onCepChange} onBlur={onCepBlur} onKeyDown={onCepKeyDown} />
@@ -542,6 +596,7 @@ export function ClienteForm({ defaultValues, transportadoras, onSubmit, onCancel
           <InputField label="Bairro" operationalUpper {...register('bairro')} />
           <InputField label="Cidade" operationalUpper {...register('cidade')} />
           <SelectField label="Estado (UF)" options={ufOptions} {...register('uf')} />
+          <ClienteEnderecosEntregaEditor value={enderecosEntrega} onChange={setEnderecosEntrega} />
         </>
       )}
 
@@ -563,6 +618,7 @@ export function ClienteForm({ defaultValues, transportadoras, onSubmit, onCancel
             {...register('email_nf')}
             error={errors.email_nf?.message}
           />
+          <ClienteContatosAdicionaisEditor value={contatos} onChange={setContatos} />
         </>
       )}
 
@@ -634,25 +690,20 @@ export function ClienteForm({ defaultValues, transportadoras, onSubmit, onCancel
 
       {tab === 'observacoes' && (
         <>
-          <div className="md:col-span-2 rounded-md border-2 border-primary/30 bg-primary/5 p-3 space-y-3">
-            <p className="text-sm font-semibold text-foreground">
-              Informações que saem na NF-e / DANFE
-            </p>
-            <TextareaField
-              label="Informações complementares para NF-e/DANFE"
-              className="min-h-[160px] bg-background"
-              placeholder="Ex.: ENDEREÇO DE ENTREGA RUA MIGUEL LANGONE 341 - HORÁRIO DE ENTREGA DAS 7:00 AS 15:00 HORAS"
-              operationalUpper
-              {...register('informacoes_complementares_nfe')}
-            />
-            <p className="text-xs text-muted-foreground">
-              Este texto aparece nos <strong>Dados Adicionais</strong> de toda NF-e deste cliente. Também disponível
-              na aba <strong>NF-e / DANFE</strong>.
-            </p>
-          </div>
+          <p className="text-sm text-muted-foreground md:col-span-2">
+            Informações que saem na NF-e/DANFE são editadas na aba{' '}
+            <button
+              type="button"
+              className="text-primary hover:underline"
+              onClick={() => setTab('nfe-danfe')}
+            >
+              NF-e / DANFE
+            </button>
+            .
+          </p>
           <TextareaField
             label="Observações internas (não saem na NF-e)"
-            className="min-h-[140px]"
+            className="min-h-[180px] md:col-span-2"
             placeholder="Uso interno: vendas, financeiro, logística — não imprime na DANFE."
             operationalUpper
             {...register('observacoes')}
@@ -666,7 +717,7 @@ export function ClienteForm({ defaultValues, transportadoras, onSubmit, onCancel
     <CadastroFormShell title="Cliente">
       <form
         onSubmit={handleSubmit(async (values) => {
-          await onSubmit(toApiPayload(values));
+          await onSubmit(toApiPayload(values, enderecosEntrega, contatos));
         })}
         className="space-y-4"
       >

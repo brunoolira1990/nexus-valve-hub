@@ -105,6 +105,10 @@ class Cliente(models.Model):
     nome_fantasia = models.CharField(max_length=255, blank=True)
     cnpj = models.CharField(max_length=20, unique=True, validators=[validar_cnpj_django])
     ie = models.CharField(max_length=32, blank=True)
+    ie_isento = models.BooleanField(
+        default=False,
+        help_text='Cliente isento de Inscrição Estadual (indIEDest=2 na NF-e).',
+    )
     logradouro = models.CharField(max_length=255, blank=True)
     numero = models.CharField(max_length=32, blank=True)
     complemento = models.CharField(max_length=128, blank=True)
@@ -162,6 +166,78 @@ class Cliente(models.Model):
         super().clean()
         if self.cnpj and _norm_cnpj(self.cnpj) == '':
             raise ValidationError({'cnpj': 'Informe um CNPJ válido ou deixe em branco.'})
+
+
+class EnderecoEntregaCliente(models.Model):
+    """
+    Endereços de entrega do cliente.
+
+    O endereço fiscal permanece nos campos embutidos de Cliente (logradouro, cep, etc.),
+    usados pelo <dest> da NF-e e por endereco_fiscal — sem migração de dados existentes.
+    """
+
+    cliente = models.ForeignKey(
+        Cliente,
+        on_delete=models.CASCADE,
+        related_name='enderecos_entrega',
+    )
+    identificacao = models.CharField(
+        max_length=120,
+        blank=True,
+        help_text='Apelido para diferenciar endereços (ex.: Filial Campinas).',
+    )
+    cep = models.CharField(max_length=16, blank=True)
+    logradouro = models.CharField(max_length=255, blank=True)
+    numero = models.CharField(max_length=32, blank=True)
+    complemento = models.CharField(max_length=128, blank=True)
+    bairro = models.CharField(max_length=128, blank=True)
+    cidade = models.CharField(max_length=128, blank=True)
+    uf = models.CharField(max_length=2, blank=True)
+    principal = models.BooleanField(
+        default=False,
+        help_text='Endereço de entrega padrão quando houver mais de um.',
+    )
+
+    class Meta:
+        ordering = ['-principal', 'id']
+        verbose_name = 'Endereço de entrega do cliente'
+        verbose_name_plural = 'Endereços de entrega do cliente'
+
+    def __str__(self):
+        rotulo = (self.identificacao or self.logradouro or '').strip()
+        return rotulo or f'Entrega #{self.pk}'
+
+
+class ContatoCliente(models.Model):
+    class Tipo(models.TextChoices):
+        COMERCIAL = 'COMERCIAL', 'Comercial'
+        FINANCEIRO = 'FINANCEIRO', 'Financeiro'
+        TECNICO = 'TECNICO', 'Técnico'
+        OUTRO = 'OUTRO', 'Outro'
+
+    cliente = models.ForeignKey(
+        Cliente,
+        on_delete=models.CASCADE,
+        related_name='contatos',
+    )
+    tipo = models.CharField(max_length=16, choices=Tipo.choices, default=Tipo.COMERCIAL)
+    nome = models.CharField(max_length=255, blank=True)
+    telefone = models.CharField(max_length=32, blank=True)
+    celular = models.CharField(max_length=32, blank=True)
+    email = models.EmailField(blank=True)
+    principal = models.BooleanField(
+        default=False,
+        help_text='Contato principal dentro do mesmo tipo.',
+    )
+
+    class Meta:
+        ordering = ['tipo', '-principal', 'id']
+        verbose_name = 'Contato do cliente'
+        verbose_name_plural = 'Contatos do cliente'
+
+    def __str__(self):
+        nome = (self.nome or '').strip()
+        return nome or f'{self.get_tipo_display()} #{self.pk}'
 
 
 class Fornecedor(models.Model):

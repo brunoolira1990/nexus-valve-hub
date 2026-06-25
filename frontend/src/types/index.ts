@@ -30,12 +30,38 @@ export interface Empresa {
   senha_certificado?: string;
 }
 
+export type TipoContatoCliente = 'COMERCIAL' | 'FINANCEIRO' | 'TECNICO' | 'OUTRO';
+
+export interface EnderecoEntregaCliente {
+  id?: number;
+  identificacao: string;
+  cep: string;
+  logradouro: string;
+  numero: string;
+  complemento: string;
+  bairro: string;
+  cidade: string;
+  uf: string;
+  principal: boolean;
+}
+
+export interface ContatoCliente {
+  id?: number;
+  tipo: TipoContatoCliente;
+  nome: string;
+  telefone: string;
+  celular: string;
+  email: string;
+  principal: boolean;
+}
+
 export interface Cliente {
   id: number;
   razao_social: string;
   nome_fantasia: string;
   cnpj: string;
   ie: string;
+  ie_isento: boolean;
   logradouro: string;
   numero: string;
   complemento: string;
@@ -69,6 +95,8 @@ export interface Cliente {
   regime_tributario: string;
   integracao_texto: string;
   informacoes_complementares_nfe?: string;
+  enderecos_entrega?: EnderecoEntregaCliente[];
+  contatos?: ContatoCliente[];
   endereco_fiscal?: {
     consistente?: boolean;
     bloqueio_fiscal?: boolean;

@@ -1037,6 +1037,7 @@ const Propostas = () => {
         nome_fantasia: nome,
         cnpj,
         ie: '',
+        ie_isento: false,
         logradouro: '',
         numero: '',
         complemento: '',

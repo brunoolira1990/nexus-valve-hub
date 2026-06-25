@@ -74,7 +74,7 @@ class EmpresaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
 
 class ClienteViewSet(FriendlyDestroyMixin, AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
     destroy_entity_label = 'cliente'
-    queryset = Cliente.objects.all()
+    queryset = Cliente.objects.prefetch_related('enderecos_entrega', 'contatos')
     serializer_class = ClienteSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = NexusPageNumberPagination

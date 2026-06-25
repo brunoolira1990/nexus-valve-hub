@@ -10,7 +10,16 @@ from .colaborador_acesso import montar_acesso_colaborador, PERFIS_DISPONIVEIS
 from .colaborador_senha import email_operacional_valido, usuario_eh_admin
 from .colaborador_sync import sincronizar_vendedor_colaborador, vendedor_id_colaborador
 from .colaborador_usuario import validar_usuario_colaborador_unico
-from .models import Cliente, Colaborador, Empresa, Fornecedor, Transportadora
+from .cliente_nested_sync import sincronizar_contatos_cliente, sincronizar_enderecos_entrega
+from .models import (
+    Cliente,
+    Colaborador,
+    ContatoCliente,
+    Empresa,
+    EnderecoEntregaCliente,
+    Fornecedor,
+    Transportadora,
+)
 
 
 class EmpresaSerializer(serializers.ModelSerializer):
@@ -95,6 +104,61 @@ class EmpresaSerializer(serializers.ModelSerializer):
         return data
 
 
+class EnderecoEntregaClienteSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False)
+
+    class Meta:
+        model = EnderecoEntregaCliente
+        fields = (
+            'id',
+            'identificacao',
+            'cep',
+            'logradouro',
+            'numero',
+            'complemento',
+            'bairro',
+            'cidade',
+            'uf',
+            'principal',
+        )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        normalize_operational_fields(
+            attrs,
+            {
+                'identificacao',
+                'logradouro',
+                'numero',
+                'complemento',
+                'bairro',
+                'cidade',
+                'uf',
+            },
+        )
+        return attrs
+
+
+class ContatoClienteSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False)
+
+    class Meta:
+        model = ContatoCliente
+        fields = ('id', 'tipo', 'nome', 'telefone', 'celular', 'email', 'principal')
+
+    def validate_tipo(self, value):
+        valor = (value or '').strip().upper()
+        validos = {c[0] for c in ContatoCliente.Tipo.choices}
+        if valor not in validos:
+            raise serializers.ValidationError('Tipo de contato inválido.')
+        return valor
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        normalize_operational_fields(attrs, {'nome'})
+        return attrs
+
+
 class ClienteSerializer(serializers.ModelSerializer):
     transportadora_padrao_id = serializers.PrimaryKeyRelatedField(
         queryset=Transportadora.objects.all(),
@@ -102,10 +166,33 @@ class ClienteSerializer(serializers.ModelSerializer):
         allow_null=True,
         required=False,
     )
+    enderecos_entrega = EnderecoEntregaClienteSerializer(many=True, required=False)
+    contatos = ContatoClienteSerializer(many=True, required=False)
 
     class Meta:
         model = Cliente
         exclude = ('transportadora_padrao',)
+
+    def _normalizar_principais_enderecos(self, items: list[dict]) -> list[dict]:
+        principal_idx = next((i for i, item in enumerate(items) if item.get('principal')), None)
+        if principal_idx is None and items:
+            items[0]['principal'] = True
+            return items
+        for i, item in enumerate(items):
+            item['principal'] = i == principal_idx
+        return items
+
+    def _normalizar_principais_contatos(self, items: list[dict]) -> list[dict]:
+        por_tipo: dict[str, list[int]] = {}
+        for i, item in enumerate(items):
+            tipo = (item.get('tipo') or ContatoCliente.Tipo.COMERCIAL).strip().upper()
+            item['tipo'] = tipo
+            por_tipo.setdefault(tipo, []).append(i)
+        for indices in por_tipo.values():
+            principal_idx = next((i for i in indices if items[i].get('principal')), indices[0])
+            for i in indices:
+                items[i]['principal'] = i == principal_idx
+        return items
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -144,7 +231,37 @@ class ClienteSerializer(serializers.ModelSerializer):
         dias = parse_payment_condition(texto)
         attrs['dias_parcelas'] = dias
         attrs['quantidade_parcelas'] = len(dias)
+        ie_isento = attrs.get('ie_isento', self.instance.ie_isento if self.instance else False)
+        if ie_isento:
+            attrs['ie_isento'] = True
+            attrs['ie'] = ''
+        enderecos = attrs.get('enderecos_entrega')
+        if enderecos is not None:
+            attrs['enderecos_entrega'] = self._normalizar_principais_enderecos(enderecos)
+        contatos = attrs.get('contatos')
+        if contatos is not None:
+            attrs['contatos'] = self._normalizar_principais_contatos(contatos)
         return attrs
+
+    def create(self, validated_data):
+        enderecos = validated_data.pop('enderecos_entrega', [])
+        contatos = validated_data.pop('contatos', [])
+        cliente = super().create(validated_data)
+        if enderecos:
+            sincronizar_enderecos_entrega(cliente, enderecos)
+        if contatos:
+            sincronizar_contatos_cliente(cliente, contatos)
+        return cliente
+
+    def update(self, instance, validated_data):
+        enderecos = validated_data.pop('enderecos_entrega', None)
+        contatos = validated_data.pop('contatos', None)
+        cliente = super().update(instance, validated_data)
+        if enderecos is not None:
+            sincronizar_enderecos_entrega(cliente, enderecos)
+        if contatos is not None:
+            sincronizar_contatos_cliente(cliente, contatos)
+        return cliente
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

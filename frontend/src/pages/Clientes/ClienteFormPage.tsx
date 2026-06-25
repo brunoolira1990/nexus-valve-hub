@@ -4,7 +4,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { clientesService } from '@/services/api/clientes';
 import { transportadorasService } from '@/services/api/transportadoras';
 import { apiErrorMessage } from '@/services/api/config';
-import type { Cliente, Transportadora } from '@/types';
+import type { Cliente, ContatoCliente, EnderecoEntregaCliente, Transportadora } from '@/types';
 import type { EnderecoFiscalResumo } from '@/lib/enderecoFiscal';
 import { ClienteForm, clientToFormValues, type ClienteFormInput } from './ClienteForm';
 
@@ -20,6 +20,8 @@ const ClienteFormPage = () => {
   const [defaults, setDefaults] = useState<ClienteFormInput>(() => clientToFormValues({}));
   const [transportadoras, setTransportadoras] = useState<Transportadora[]>([]);
   const [enderecoFiscalInicial, setEnderecoFiscalInicial] = useState<EnderecoFiscalResumo | null>(null);
+  const [enderecosEntregaInicial, setEnderecosEntregaInicial] = useState<EnderecoEntregaCliente[]>([]);
+  const [contatosIniciais, setContatosIniciais] = useState<ContatoCliente[]>([]);
 
   useEffect(() => {
     transportadorasService.getAll().then(setTransportadoras).catch(() => setTransportadoras([]));
@@ -29,6 +31,8 @@ const ClienteFormPage = () => {
     if (!isEdit) {
       setDefaults(clientToFormValues({}));
       setEnderecoFiscalInicial(null);
+      setEnderecosEntregaInicial([]);
+      setContatosIniciais([]);
       setLoading(false);
       return;
     }
@@ -41,6 +45,8 @@ const ClienteFormPage = () => {
         if (!cancelled) {
           setDefaults(clientToFormValues(c));
           setEnderecoFiscalInicial(c.endereco_fiscal ?? null);
+          setEnderecosEntregaInicial(c.enderecos_entrega ?? []);
+          setContatosIniciais(c.contatos ?? []);
           setFormKey((k) => k + 1);
         }
       } catch (e) {
@@ -83,6 +89,8 @@ const ClienteFormPage = () => {
           key={formKey}
           defaultValues={defaults}
           transportadoras={transportadoras}
+          enderecosEntregaInicial={enderecosEntregaInicial}
+          contatosIniciais={contatosIniciais}
           onSubmit={handleSubmit}
           onCancel={() => navigate('/clientes')}
           saving={saving}

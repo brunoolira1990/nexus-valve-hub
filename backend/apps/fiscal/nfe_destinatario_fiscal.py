@@ -46,10 +46,11 @@ def resolver_perfil_destinatario_cliente(
     if not _text(cliente.uf):
         inconsistencias.append('Cliente sem UF de destino.')
 
+    ie_isento = bool(getattr(cliente, 'ie_isento', False))
     ie = _text(getattr(cliente, 'ie', ''))
     ie_upper = ie.upper()
 
-    if ie_upper in ('ISENTO', 'ISENTA'):
+    if ie_isento or ie_upper in ('ISENTO', 'ISENTA'):
         return PerfilDestinatarioFiscal(
             destinatario_contribuinte=RegraFiscalSaida.DestinatarioContribuinte.NAO_CONTRIBUINTE,
             ind_ie_dest='2',

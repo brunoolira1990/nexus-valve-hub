@@ -53,6 +53,7 @@ export function clienteQuickToPayload(q: ClienteQuickForm): Omit<Cliente, 'id'> 
     nome_fantasia: q.nome_fantasia.trim(),
     cnpj: normalizeCnpj(q.cnpj),
     ie: q.ie.trim(),
+    ie_isento: false,
     logradouro: q.logradouro.trim(),
     numero: q.numero.trim(),
     complemento: '',
