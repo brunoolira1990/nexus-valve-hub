@@ -476,6 +476,10 @@ def montar_snapshot_fiscal_de_regra_atual(
         else:
             snap['difal'] = calcular_difal_item(v_prod, regra)
             snap['difal_aplicavel'] = True
+    else:
+        snap.pop('difal', None)
+        snap.pop('difal_aplicavel', None)
+        snap.pop('difal_pendencias', None)
 
     return normalize_snapshot_fiscal_for_nfe(snap)
 

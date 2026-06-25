@@ -159,7 +159,7 @@ def montar_tnfe_emissao(
 
     from apps.fiscal.nfe_difal_calculo import aplicar_totais_difal_em_dados
 
-    aplicar_totais_difal_em_dados(dados)
+    aplicar_totais_difal_em_dados(dados, det_list=inf.det)
     tot = dados.get('totais') or {}
     inf.total = build_total_nfe_bindings(nfe, dados)
     duplicatas = duplicatas_para_xml(nfe_saida)
@@ -202,12 +202,12 @@ def _preparar_dados_emissao(nfe_saida: NFeSaida, *, incluir_validacao_emissao: b
     itens_payload = []
     for linha in dados.get('itens') or []:
         item_id = linha.get('item_id')
-        if item_id and not linha.get('snapshot_fiscal'):
+        if item_id:
             try:
                 item = ItemNFeSaida.objects.get(pk=item_id, nf=nfe_saida)
                 linha['snapshot_fiscal'] = item.snapshot_fiscal or {}
             except ItemNFeSaida.DoesNotExist:
-                linha['snapshot_fiscal'] = {}
+                linha['snapshot_fiscal'] = linha.get('snapshot_fiscal') or {}
         itens_payload.append(linha)
     dados['itens'] = itens_payload
     _enriquecer_totais_impostos(dados)

@@ -149,6 +149,21 @@ def get_difal_snapshot(snapshot: dict | None) -> dict[str, str]:
     }
 
 
+def resolver_difal_snapshot_linha(linha: dict[str, Any]) -> dict[str, str]:
+    """DIFAL do snapshot fiscal do item, com fallback para ``linha['difal']`` do preview."""
+    from apps.fiscal.nfe_difal_calculo import difal_emitido_no_item
+
+    primary = get_difal_snapshot(linha.get('snapshot_fiscal') or {})
+    if difal_emitido_no_item(primary):
+        return primary
+    raw_fb = linha.get('difal')
+    if isinstance(raw_fb, dict):
+        fallback = get_difal_snapshot({'difal': raw_fb})
+        if difal_emitido_no_item(fallback):
+            return fallback
+    return primary
+
+
 def get_ipi_snapshot(snapshot: dict | None) -> dict[str, str]:
     snap = snapshot or {}
     return {

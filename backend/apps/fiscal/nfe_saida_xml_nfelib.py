@@ -196,8 +196,9 @@ def _build_icms(snap: dict, linha: dict):
         )
 
     from apps.fiscal.nfe_difal_calculo import valores_difal_item_xml
+    from apps.fiscal.snapshot_fiscal_helpers import resolver_difal_snapshot_linha
 
-    difal = get_difal_snapshot(snap)
+    difal = resolver_difal_snapshot_linha(linha)
     valores = valores_difal_item_xml(difal)
     if valores is not None:
         icms_uf_dest_cls = getattr(
@@ -205,23 +206,28 @@ def _build_icms(snap: dict, linha: dict):
             'ICMSUFDest',
             getattr(nfe.Tnfe.InfNfe.Det.Imposto.Icms, 'Icmsufdest', None),
         )
-        if icms_uf_dest_cls is not None:
-            kwargs: dict[str, Any] = {
-                'vBCUFDest': _dec(difal.get('v_bc_uf_dest') or linha.get('v_prod')),
-                'pICMSUFDest': _dec(difal.get('p_icms_uf_dest')),
-                'pICMSInter': _dec(difal.get('p_icms_inter')),
-                'pICMSInterPart': _dec(difal.get('p_icms_inter_part') or '100'),
-                'vICMSUFDest': valores['v_icms_uf_dest'],
-                'vICMSUFRemet': valores['v_icms_uf_remet'],
-            }
-            v_bc_fcp = _dec(difal.get('v_bc_fcp_uf_dest'))
-            p_fcp = _dec(difal.get('p_fcp_uf_dest'))
-            v_fcp = valores['v_fcp_uf_dest']
-            if p_fcp > 0 or v_fcp > 0:
-                kwargs['vBCFCPUFDest'] = v_bc_fcp or kwargs['vBCUFDest']
-                kwargs['pFCPUFDest'] = p_fcp
-                kwargs['vFCPUFDest'] = v_fcp
-            icms_wrap.ICMSUFDest = icms_uf_dest_cls(**kwargs)
+        if icms_uf_dest_cls is None:
+            from apps.fiscal.nfe_saida_xml_nfelib import NFeXmlNfelibError
+
+            raise NFeXmlNfelibError(
+                'Binding nfelib sem grupo ICMSUFDest — não é possível serializar DIFAL/FCP no XML.',
+            )
+        kwargs: dict[str, Any] = {
+            'vBCUFDest': _dec(difal.get('v_bc_uf_dest') or linha.get('v_prod')),
+            'pICMSUFDest': _dec(difal.get('p_icms_uf_dest')),
+            'pICMSInter': _dec(difal.get('p_icms_inter')),
+            'pICMSInterPart': _dec(difal.get('p_icms_inter_part') or '100'),
+            'vICMSUFDest': valores['v_icms_uf_dest'],
+            'vICMSUFRemet': valores['v_icms_uf_remet'],
+        }
+        v_bc_fcp = _dec(difal.get('v_bc_fcp_uf_dest'))
+        p_fcp = _dec(difal.get('p_fcp_uf_dest'))
+        v_fcp = valores['v_fcp_uf_dest']
+        if p_fcp > 0 or v_fcp > 0:
+            kwargs['vBCFCPUFDest'] = v_bc_fcp or kwargs['vBCUFDest']
+            kwargs['pFCPUFDest'] = p_fcp
+            kwargs['vFCPUFDest'] = v_fcp
+        icms_wrap.ICMSUFDest = icms_uf_dest_cls(**kwargs)
     return icms_wrap
 
 
@@ -447,7 +453,7 @@ def montar_tnfe_oficial(dados: dict[str, Any], *, nfe_saida: NFeSaida | None = N
 
     from apps.fiscal.nfe_difal_calculo import aplicar_totais_difal_em_dados
 
-    aplicar_totais_difal_em_dados(dados)
+    aplicar_totais_difal_em_dados(dados, det_list=inf.det)
     inf.total = build_total_nfe_bindings(nfe, dados)
 
     from apps.fiscal.nfe_transp_bindings import aplicar_transp_nfelib
@@ -532,14 +538,14 @@ def gerar_xml_oficial_nfe_saida(nfe_saida: NFeSaida) -> dict[str, Any]:
     itens_payload = []
     for linha in dados.get('itens') or []:
         item_id = linha.get('item_id')
-        if item_id and not linha.get('snapshot_fiscal'):
+        if item_id:
             from apps.fiscal.models import ItemNFeSaida
 
             try:
                 item = ItemNFeSaida.objects.get(pk=item_id, nf=nfe_saida)
                 linha['snapshot_fiscal'] = item.snapshot_fiscal or {}
             except ItemNFeSaida.DoesNotExist:
-                linha['snapshot_fiscal'] = {}
+                linha['snapshot_fiscal'] = linha.get('snapshot_fiscal') or {}
         itens_payload.append(linha)
     dados['itens'] = itens_payload
     from apps.fiscal.nfe_integracao.danfe_xml_adicionais import enriquecer_linhas_xml_nfe

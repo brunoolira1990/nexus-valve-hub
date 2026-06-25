@@ -9,10 +9,13 @@ from decimal import Decimal
 from django.test import TestCase, override_settings
 
 from apps.fiscal.nfe_difal_calculo import (
+    NFeDifalXmlInconsistenteError,
     agregar_totais_difal,
+    aplicar_totais_difal_em_dados,
     difal_emitido_no_item,
     valores_difal_item_xml,
 )
+from apps.fiscal.snapshot_fiscal_helpers import resolver_difal_snapshot_linha
 from apps.fiscal.nfe_integracao.adapters.nfelib_adapter import nfelib_disponivel
 from apps.fiscal.nfe_saida_xml_nfelib import (
     _enriquecer_totais_impostos,
@@ -121,6 +124,40 @@ class DifalCalculoCstat798Tests(TestCase):
         totais = agregar_totais_difal([difal])
         self.assertNotIn('v_fcp_uf_dest', totais)
         self.assertEqual(totais['v_icms_uf_dest'], '50.00')
+
+    def test_resolver_difal_usa_fallback_linha(self):
+        linha = {
+            'snapshot_fiscal': {'cfop': '6108'},
+            'difal': {
+                'v_fcp_uf_dest': '20.00',
+                'p_fcp_uf_dest': '2.00',
+                'v_icms_uf_dest': '0.00',
+                'v_icms_uf_remet': '0.00',
+            },
+        }
+        difal = resolver_difal_snapshot_linha(linha)
+        self.assertTrue(difal_emitido_no_item(difal))
+        self.assertEqual(difal['v_fcp_uf_dest'], '20.00')
+
+    def test_aplicar_totais_bloqueia_snapshots_sem_serializacao_no_det(self):
+        dados = {
+            'itens': [
+                {
+                    'snapshot_fiscal': {
+                        'difal': {
+                            'v_fcp_uf_dest': '146.77',
+                            'p_fcp_uf_dest': '2.00',
+                            'v_icms_uf_dest': '0.00',
+                            'v_icms_uf_remet': '0.00',
+                        },
+                    },
+                },
+            ],
+            'totais': {},
+        }
+        with self.assertRaises(NFeDifalXmlInconsistenteError) as ctx:
+            aplicar_totais_difal_em_dados(dados, det_list=[])
+        self.assertIn('ausente nos itens do XML', str(ctx.exception))
 
 
 @override_settings(**DIFAL_SETTINGS)
