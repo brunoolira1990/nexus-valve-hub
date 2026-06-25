@@ -192,6 +192,14 @@ def _icms_grupo_det(det) -> object | None:
 
 
 def _icms_uf_dest_det(det) -> object | None:
+    imposto = det.imposto
+    ufdest = (
+        getattr(imposto, 'ICMSUFDest', None)
+        or getattr(imposto, 'Icmsufdest', None)
+        or getattr(imposto, 'icmsufdest', None)
+    )
+    if ufdest is not None:
+        return ufdest
     icms = _icms_grupo_det(det)
     if icms is None:
         return None

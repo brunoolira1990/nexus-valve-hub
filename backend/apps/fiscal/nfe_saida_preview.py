@@ -564,7 +564,7 @@ def _build_imposto_det(imposto: ET.Element, snap: dict, linha: dict) -> None:
     valores = valores_difal_item_xml(difal)
     if valores is not None:
         v_icms_dest = _dec_str(valores['v_icms_uf_dest'])
-        uf_dest = ET.SubElement(icms, 'ICMSUFDest')
+        uf_dest = ET.SubElement(imposto, 'ICMSUFDest')
         _sub(uf_dest, 'vBCUFDest', difal.get('v_bc_uf_dest') or linha.get('v_prod'))
         if difal.get('v_bc_fcp_uf_dest'):
             _sub(uf_dest, 'vBCFCPUFDest', difal['v_bc_fcp_uf_dest'])

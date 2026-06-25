@@ -60,6 +60,13 @@ def _linha_com_difal(
 
 
 def _icms_uf_dest(det) -> object | None:
+    imposto = det.imposto
+    ufdest = (
+        getattr(imposto, 'ICMSUFDest', None)
+        or getattr(imposto, 'Icmsufdest', None)
+    )
+    if ufdest is not None:
+        return ufdest
     icms = det.imposto.ICMS
     return getattr(icms, 'ICMSUFDest', None) or getattr(icms, 'Icmsufdest', None)
 

@@ -147,6 +147,75 @@ def _ender_dest(dados: dict[str, Any]):
     )
 
 
+def _p_icms_inter_uf_dest_enum(p_icms_inter: Any) -> Any:
+    """Enum XSD pICMSInter (4.00 / 7.00 / 12.00) para ICMSUFDest."""
+    from nfelib.nfe.bindings.v4_0.leiaute_nfe_v4_00 import IcmsufdestPIcmsinter
+
+    val = _dec(p_icms_inter).quantize(Decimal('0.01'))
+    for member in IcmsufdestPIcmsinter:
+        if Decimal(member.value) == val:
+            return member
+    if val <= Decimal('4'):
+        return IcmsufdestPIcmsinter.VALUE_4_00
+    if val <= Decimal('7'):
+        return IcmsufdestPIcmsinter.VALUE_7_00
+    return IcmsufdestPIcmsinter.VALUE_12_00
+
+
+def _icms_uf_dest_binding_target(nfe_module: Any) -> tuple[type | None, str]:
+    """
+    Localiza a classe ICMSUFDest no binding nfelib.
+
+    NF-e 4.00 / nfelib >= 2.5: grupo fica em ``imposto/ICMSUFDest`` (irmão de ICMS).
+  Legado: algumas versões aninhavam em ``ICMS/ICMSUFDest``.
+    """
+    imposto_cls = nfe_module.Tnfe.InfNfe.Det.Imposto
+    item_cls = getattr(imposto_cls, 'Icmsufdest', None)
+    if item_cls is not None:
+        return item_cls, 'imposto'
+    icms_cls = imposto_cls.Icms
+    legacy_cls = getattr(icms_cls, 'ICMSUFDest', None) or getattr(icms_cls, 'Icmsufdest', None)
+    if legacy_cls is not None:
+        return legacy_cls, 'icms'
+    return None, ''
+
+
+def _build_icms_uf_dest(nfe_module: Any, snap: dict, linha: dict) -> tuple[Any | None, str]:
+    """Monta ICMSUFDest (DIFAL/FCP destino) quando aplicável ao item."""
+    from apps.fiscal.nfe_difal_calculo import valores_difal_item_xml
+    from apps.fiscal.nfe_emissao.xml_serializacao import _dec_str
+    from apps.fiscal.snapshot_fiscal_helpers import resolver_difal_snapshot_linha
+
+    difal = resolver_difal_snapshot_linha(linha)
+    valores = valores_difal_item_xml(difal)
+    if valores is None:
+        return None, ''
+
+    item_cls, target = _icms_uf_dest_binding_target(nfe_module)
+    if item_cls is None:
+        raise NFeXmlNfelibError(
+            'Binding nfelib sem grupo ICMSUFDest — não é possível serializar DIFAL/FCP no XML.',
+        )
+
+    v_bc_uf = _dec_str(difal.get('v_bc_uf_dest') or linha.get('v_prod'))
+    kwargs: dict[str, Any] = {
+        'vBCUFDest': v_bc_uf,
+        'pICMSUFDest': _dec_str(difal.get('p_icms_uf_dest'), 4),
+        'pICMSInter': _p_icms_inter_uf_dest_enum(difal.get('p_icms_inter')),
+        'pICMSInterPart': _dec_str(difal.get('p_icms_inter_part') or '100', 4),
+        'vICMSUFDest': _dec_str(valores['v_icms_uf_dest']),
+        'vICMSUFRemet': _dec_str(valores['v_icms_uf_remet']),
+    }
+    p_fcp = _dec(difal.get('p_fcp_uf_dest'))
+    v_fcp = valores['v_fcp_uf_dest']
+    if p_fcp > 0 or v_fcp > 0:
+        v_bc_fcp = _dec_str(difal.get('v_bc_fcp_uf_dest') or v_bc_uf)
+        kwargs['vBCFCPUFDest'] = v_bc_fcp
+        kwargs['pFCPUFDest'] = _dec_str(p_fcp, 4)
+        kwargs['vFCPUFDest'] = _dec_str(v_fcp)
+    return item_cls(**kwargs), target
+
+
 def _build_icms(snap: dict, linha: dict):
     from nfelib.nfe.bindings.v4_0 import nfe_v4_00 as nfe
 
@@ -195,39 +264,6 @@ def _build_icms(snap: dict, linha: dict):
             vICMS=v_icms,
         )
 
-    from apps.fiscal.nfe_difal_calculo import valores_difal_item_xml
-    from apps.fiscal.snapshot_fiscal_helpers import resolver_difal_snapshot_linha
-
-    difal = resolver_difal_snapshot_linha(linha)
-    valores = valores_difal_item_xml(difal)
-    if valores is not None:
-        icms_uf_dest_cls = getattr(
-            nfe.Tnfe.InfNfe.Det.Imposto.Icms,
-            'ICMSUFDest',
-            getattr(nfe.Tnfe.InfNfe.Det.Imposto.Icms, 'Icmsufdest', None),
-        )
-        if icms_uf_dest_cls is None:
-            from apps.fiscal.nfe_saida_xml_nfelib import NFeXmlNfelibError
-
-            raise NFeXmlNfelibError(
-                'Binding nfelib sem grupo ICMSUFDest — não é possível serializar DIFAL/FCP no XML.',
-            )
-        kwargs: dict[str, Any] = {
-            'vBCUFDest': _dec(difal.get('v_bc_uf_dest') or linha.get('v_prod')),
-            'pICMSUFDest': _dec(difal.get('p_icms_uf_dest')),
-            'pICMSInter': _dec(difal.get('p_icms_inter')),
-            'pICMSInterPart': _dec(difal.get('p_icms_inter_part') or '100'),
-            'vICMSUFDest': valores['v_icms_uf_dest'],
-            'vICMSUFRemet': valores['v_icms_uf_remet'],
-        }
-        v_bc_fcp = _dec(difal.get('v_bc_fcp_uf_dest'))
-        p_fcp = _dec(difal.get('p_fcp_uf_dest'))
-        v_fcp = valores['v_fcp_uf_dest']
-        if p_fcp > 0 or v_fcp > 0:
-            kwargs['vBCFCPUFDest'] = v_bc_fcp or kwargs['vBCUFDest']
-            kwargs['pFCPUFDest'] = p_fcp
-            kwargs['vFCPUFDest'] = v_fcp
-        icms_wrap.ICMSUFDest = icms_uf_dest_cls(**kwargs)
     return icms_wrap
 
 
@@ -330,13 +366,21 @@ def _build_det(linha: dict) -> Any:
 
     ipi = _build_ipi(snap)
     from apps.fiscal.reforma_tributaria.xml import build_reforma_tributaria_item_bindings
+    from nfelib.nfe.bindings.v4_0 import nfe_v4_00 as nfe
+
+    icms_wrap = _build_icms(snap, linha)
+    icms_uf_dest, uf_dest_target = _build_icms_uf_dest(nfe, snap, linha)
+    if uf_dest_target == 'icms' and icms_uf_dest is not None:
+        icms_wrap.ICMSUFDest = icms_uf_dest
 
     imposto_kw: dict[str, Any] = {
-        'ICMS': _build_icms(snap, linha),
+        'ICMS': icms_wrap,
         'PIS': _build_pis(snap),
         'COFINS': _build_cofins(snap),
         'IPI': ipi,
     }
+    if uf_dest_target == 'imposto' and icms_uf_dest is not None:
+        imposto_kw['ICMSUFDest'] = icms_uf_dest
     ibscbs = build_reforma_tributaria_item_bindings(linha)
     if ibscbs is not None:
         imposto_kw['IBSCBS'] = ibscbs
