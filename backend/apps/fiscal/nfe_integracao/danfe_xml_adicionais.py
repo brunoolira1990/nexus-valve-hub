@@ -51,6 +51,16 @@ def _normalizar_espacos(texto: str) -> str:
     return re.sub(r'\s+', ' ', _text(texto))
 
 
+def _preservar_linhas_inf_cpl(texto: str) -> str:
+    """Colapsa espaços por linha, mantendo quebras explícitas entre mensagens."""
+    linhas: list[str] = []
+    for segmento in (texto or '').replace('\r\n', '\n').replace('\r', '\n').split('\n'):
+        linha = _normalizar_espacos(segmento)
+        if linha:
+            linhas.append(linha)
+    return '\n'.join(linhas)
+
+
 def _para_maiusculas(texto: str) -> str:
     return _normalizar_espacos(texto).upper()
 
@@ -103,19 +113,37 @@ def _coletar_regras_fiscais_nfe(nfe_saida: NFeSaida) -> list[Any]:
 
 
 def _bloco_inf_cpl(texto: str) -> str:
-    """Normaliza, valida e devolve bloco em maiúsculas."""
+    """Normaliza, valida e devolve bloco em maiúsculas (uma linha lógica)."""
     t = _para_maiusculas(texto)
     if not t or not _texto_permitido_inf_cpl(t):
         return ''
     return t
 
 
+def _linhas_inf_cpl_de_blocos(blocos: list[str]) -> list[str]:
+    """
+    Cada fonte/bloco vira uma ou mais linhas do infCpl.
+    Quebras explícitas (\\n) dentro do texto também geram linhas separadas.
+    """
+    linhas: list[str] = []
+    for bloco in blocos:
+        for segmento in re.split(r'\r?\n', _text(bloco)):
+            linha = _bloco_inf_cpl(segmento)
+            if linha:
+                linhas.append(linha)
+    return deduplicar_textos_inf_cpl(linhas)
+
+
+def _juntar_linhas_inf_cpl(linhas: list[str]) -> str:
+    return '\n'.join(linhas)[:_MAX_INF_CPL_XML_CHARS].strip()
+
+
 def _textos_regra_fiscal(regras: list[Any]) -> list[str]:
     partes: list[str] = []
     for regra in regras:
-        bloco = _bloco_inf_cpl(getattr(regra, 'informacoes_complementares', ''))
-        if bloco:
-            partes.append(bloco)
+        t = _text(getattr(regra, 'informacoes_complementares', ''))
+        if t:
+            partes.append(t)
     return deduplicar_textos_inf_cpl(partes)
 
 
@@ -134,11 +162,11 @@ def _texto_cliente_complementar(nfe_saida: NFeSaida) -> str:
     cliente = _cliente_nfe(nfe_saida)
     if not cliente:
         return ''
-    return _bloco_inf_cpl(getattr(cliente, 'informacoes_complementares_nfe', ''))
+    return _text(getattr(cliente, 'informacoes_complementares_nfe', ''))
 
 
 def _texto_nf_manual(nfe_saida: NFeSaida) -> str:
-    return _bloco_inf_cpl(nfe_saida.informacoes_adicionais)
+    return _text(nfe_saida.informacoes_adicionais)
 
 
 def _pedido_ja_citado(textos: list[str], pedido: str) -> bool:
@@ -245,12 +273,13 @@ def montar_inf_cpl_nfe(
     itens_db: dict[int, ItemNFeSaida] | None = None,
 ) -> tuple[str, str]:
     """
-    infCpl — quatro fontes, nesta ordem, cada uma em linha separada, em maiúsculas:
+    infCpl — fontes em linhas separadas (\\n), nesta ordem, em maiúsculas:
 
     1. Informações complementares (NF) da regra fiscal
-    2. Informações complementares do cliente (cadastro)
-    3. Informações adicionais manuais da NF-e (conferência)
-    4. Pedido de compra do cliente (cabeçalho)
+    2. Pedido de compra do cliente (cabeçalho)
+    3. Informações complementares do cliente (cadastro)
+    4. Informações adicionais manuais da NF-e (conferência)
+    5. Totais DIFAL/FCP (quando aplicável)
     """
     linhas = (dados or {}).get('itens') or []
     regras = _coletar_regras_fiscais_nfe(nfe_saida)
@@ -288,8 +317,8 @@ def montar_inf_cpl_nfe(
     if texto_difal:
         blocos.append(texto_difal)
     blocos = deduplicar_textos_inf_cpl(blocos)
-    blocos_xml = [re.sub(r'\s+', ' ', b.replace('\n', ' ')).strip() for b in blocos]
-    inf_cpl = ' '.join(b for b in blocos_xml if b)[:_MAX_INF_CPL_XML_CHARS].strip()
+    linhas = _linhas_inf_cpl_de_blocos(blocos)
+    inf_cpl = _juntar_linhas_inf_cpl(linhas)
     inf_fisco = _para_maiusculas(nfe_saida.informacoes_fisco)[:2000]
     if inf_fisco and len(inf_fisco) > 200:
         inf_fisco = inf_fisco[:197] + '...'
@@ -424,26 +453,27 @@ def inf_cpl_prioriza_pedido_para_danfe(
     e clip visual na 1ª página — sem alterar o infCpl transmitido.
     Use max_len apenas em cenários legados que exijam limite explícito.
     """
-    texto = _normalizar_espacos(inf_cpl)
+    texto = _preservar_linhas_inf_cpl(inf_cpl)
     if not texto:
         return ''
     limite = max_len if max_len is not None else _MAX_INF_CPL_XML_CHARS
     if len(texto) <= limite:
         return texto
-    m = re.search(
-        r'(PEDIDO DE COMPRA(?: DO CLIENTE)?:\s*[^.]+(?:\.|$))',
-        texto,
-        flags=re.IGNORECASE,
+    linhas = texto.split('\n')
+    m_idx = next(
+        (i for i, ln in enumerate(linhas) if re.search(r'PEDIDO DE COMPRA', ln, re.I)),
+        None,
     )
-    if not m:
+    if m_idx is None:
         return texto[: limite - 3].rstrip() + '...'
-    pedido_bloco = m.group(1).strip()
-    resto = (texto[: m.start()] + ' ' + texto[m.end() :]).strip()
-    espaco_resto = limite - len(pedido_bloco) - 1
+    pedido_linha = linhas[m_idx]
+    outras = [ln for i, ln in enumerate(linhas) if i != m_idx]
+    resto = '\n'.join(outras)
+    espaco_resto = limite - len(pedido_linha) - 1
     if espaco_resto <= 0:
-        return pedido_bloco[:limite]
+        return pedido_linha[:limite]
     prefixo = resto[:espaco_resto].rstrip()
-    return f'{prefixo} {pedido_bloco}'.strip()[:limite]
+    return f'{prefixo}\n{pedido_linha}'.strip()[:limite]
 
 
 def montar_informacoes_complementares_danfe(

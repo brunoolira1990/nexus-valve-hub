@@ -79,6 +79,7 @@ class DanfeBfrAcabamentoTests(TestCase):
         self.assertIn('PEDIDO DE COMPRA: 5050', inf_cpl)
         self.assertIn('TEXTO FISCAL PERMITIDO', inf_cpl)
         self.assertIn('INSTRUÇÃO MANUAL'.replace('Ç', 'C'), inf_cpl.replace('Ç', 'C'))
+        self.assertIn('\n', inf_cpl)
         self.assertLess(len(inf_cpl), 420)
         self.assertNotIn('XML preliminar', inf_cpl)
         self.assertNotIn('não transmitir', inf_cpl.lower())
