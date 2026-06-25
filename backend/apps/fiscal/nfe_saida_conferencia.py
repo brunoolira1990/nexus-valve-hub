@@ -526,6 +526,8 @@ def montar_conferencia_nfe_saida(
         perm_prod = montar_permissoes_emissao_producao(nf, usuario=usuario)
         permissoes.update(perm_prod)
 
+        from apps.fiscal.nfe_saida_duplicatas import duplicatas_nfe_para_api
+
         payload: dict[str, Any] = {
             'nfe': {
                 'id': nf.pk,
@@ -533,6 +535,9 @@ def montar_conferencia_nfe_saida(
                 'status': nf.status,
                 'data': nf.data.isoformat(),
                 'valor_total': float(nf.valor_total),
+                'quantidade_parcelas': nf.quantidade_parcelas or 0,
+                'dias_parcelas': list(nf.dias_parcelas or []),
+                'duplicatas_nfe': duplicatas_nfe_para_api(nf),
                 'cliente_id': nf.cliente_id,
                 'cliente_nome': nf.cliente.razao_social,
                 'pedido_venda_id': nf.pedido_venda_id,

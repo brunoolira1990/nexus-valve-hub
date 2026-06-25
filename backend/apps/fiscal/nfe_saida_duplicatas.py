@@ -170,6 +170,32 @@ def aplicar_duplicatas_nfe_saida(nf: NFeSaida, *, save: bool = True) -> list[dic
     return dups
 
 
+def recalcular_duplicatas_por_data_emissao(nf: NFeSaida, *, save: bool = True) -> list[dict[str, Any]]:
+    """
+    Recalcula vencimentos das duplicatas a partir da data de emissão da NF-e e do plano
+    de parcelas (dias corridos sobre a data base), ignorando vencimentos herdados do pedido.
+    """
+    base = nf.data or date.today()
+    days = _resolve_dias_parcelas(nf)
+
+    if _pagamento_a_vista(days):
+        nf.titulos_receber = []
+        nf.vencimentos_finais = []
+        nf.quantidade_parcelas = 0
+        if save and nf.pk:
+            nf.save(
+                update_fields=['titulos_receber', 'vencimentos_finais', 'quantidade_parcelas'],
+            )
+        return []
+
+    if not days:
+        return []
+
+    nf.vencimentos_finais = compute_due_dates(base, days)
+    nf.titulos_receber = []
+    return aplicar_duplicatas_nfe_saida(nf, save=save)
+
+
 def assegurar_duplicatas_nfe_saida(nf: NFeSaida, *, save: bool = True) -> list[dict[str, Any]]:
     """Garante duplicatas calculadas e persistidas quando aplicável."""
     if _titulos_ja_preenchidos(nf):

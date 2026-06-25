@@ -206,6 +206,10 @@ def validar_conferencia_nfe(nf: NFeSaida, *, usuario=None) -> dict[str, Any]:
         raise ValueError('NF-e não está em rascunho ou não possui itens para validar conferência.')
 
     with medir_nfe_perf('validar_conferencia', nfe_id=nf.pk) as perf:
+        from apps.fiscal.nfe_saida_duplicatas import recalcular_duplicatas_por_data_emissao
+
+        recalcular_duplicatas_por_data_emissao(nf, save=True)
+        perf.marcar('duplicatas_ms')
         validacao = validar_nfe_saida_para_emissao(nf, modo=MODO_VALIDACAO_COMPLETO)
         perf.marcar('checklist_ms')
         anterior = nf.status_conferencia

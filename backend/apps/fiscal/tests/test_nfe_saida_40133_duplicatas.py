@@ -241,3 +241,34 @@ class NFeSaida40133DuplicatasTests(TestCase):
         fat = _faturamento_pronto(pedido, item)
         nf = NFeSaida.objects.get(pk=gerar_nfe_saida_from_faturamento(pedido, fat.pk)['nfe_saida_id'])
         self.assertEqual(gerar_duplicatas_nfe_saida(nf), [])
+
+    def test_validar_conferencia_recalcula_vencimentos_por_data_emissao(self):
+        from apps.fiscal.nfe_saida_prontidao import validar_conferencia_nfe
+
+        pedido, item = _pedido_multi_parcelas()
+        pedido.data = date(2026, 1, 1)
+        pedido.vencimentos_previstos = compute_due_dates(pedido.data, [30, 60, 90])
+        pedido.save(update_fields=['data', 'vencimentos_previstos'])
+
+        _fiscal_snapshot_item(item)
+        _ensure_numeracao_empresa(pedido.empresa_emitente)
+        fat = _faturamento_pronto(pedido, item, qtd='3')
+        nf = NFeSaida.objects.get(pk=gerar_nfe_saida_from_faturamento(pedido, fat.pk)['nfe_saida_id'])
+
+        emissao = date(2026, 6, 24)
+        nf.data = emissao
+        nf.vencimentos_finais = list(pedido.vencimentos_previstos)
+        nf.save(update_fields=['data', 'vencimentos_finais'])
+
+        vencimentos_antigos = [v.isoformat() for v in pedido.vencimentos_previstos]
+        self.assertEqual([t['vencimento'] for t in nf.titulos_receber], vencimentos_antigos)
+
+        resultado = validar_conferencia_nfe(nf, usuario=self.user)
+        nf.refresh_from_db()
+
+        esperados = [d.isoformat() for d in compute_due_dates(emissao, [30, 60, 90])]
+        self.assertEqual([t['vencimento'] for t in nf.titulos_receber], esperados)
+        self.assertEqual(
+            [d['vencimento'] for d in resultado['conferencia']['nfe']['duplicatas_nfe']],
+            esperados,
+        )
