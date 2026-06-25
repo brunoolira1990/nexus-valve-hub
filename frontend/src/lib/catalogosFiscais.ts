@@ -372,6 +372,10 @@ export const CFOP_SAIDA_OPCOES: OpcaoCatalogo[] = [
     value: '6106',
     label: '6106 — Venda de mercadoria adquirida ou recebida de terceiros que não deva transitar pelo estabelecimento depositante',
   },
+  {
+    value: '6108',
+    label: '6108 — Venda de mercadoria adquirida ou recebida de terceiros, destinada a não contribuinte',
+  },
   { value: '6401', label: '6401 — Venda de produção com ST' },
   { value: '6403', label: '6403 — Venda de mercadoria adquirida ou recebida de terceiros com ST' },
   {
