@@ -137,9 +137,6 @@ def _linhas_inf_cpl_de_blocos(blocos: list[str]) -> list[str]:
 _SEPARADOR_INF_CPL_XML = ' '
 _SEPARADOR_INF_CPL_DANFE = '\n'
 
-_RE_DIFAL_INF_CPL = re.compile(r'UF DESTINO|FCP UF', re.I)
-_RE_PEDIDO_INF_CPL = re.compile(r'PEDIDO DE COMPRA', re.I)
-
 
 def _resolver_contexto_inf_cpl(
     nfe_saida: NFeSaida,
@@ -158,25 +155,6 @@ def _resolver_contexto_inf_cpl(
     elif dados is None:
         dados = {'itens': linhas_payload}
     return dados, itens_db, linhas_payload
-
-
-def _compactar_linhas_inf_cpl_danfe(linhas: list[str]) -> list[str]:
-    """Une pedido + DIFAL na mesma linha visual do DANFE para reduzir corte no rodapé."""
-    out: list[str] = []
-    i = 0
-    while i < len(linhas):
-        ln = linhas[i]
-        if (
-            i + 1 < len(linhas)
-            and _RE_PEDIDO_INF_CPL.search(ln)
-            and _RE_DIFAL_INF_CPL.search(linhas[i + 1])
-        ):
-            out.append(f'{ln} {linhas[i + 1]}')
-            i += 2
-            continue
-        out.append(ln)
-        i += 1
-    return out
 
 
 def _juntar_linhas_inf_cpl(linhas: list[str], *, separador: str = _SEPARADOR_INF_CPL_XML) -> str:
@@ -388,7 +366,6 @@ def montar_inf_cpl_para_danfe(
 ) -> str:
     """infCpl apenas para exibição no DANFE — blocos em linhas separadas."""
     linhas = montar_linhas_inf_cpl_nfe(nfe_saida, dados, itens_db=itens_db)
-    linhas = _compactar_linhas_inf_cpl_danfe(linhas)
     return _juntar_linhas_inf_cpl(linhas, separador=_SEPARADOR_INF_CPL_DANFE)
 
 

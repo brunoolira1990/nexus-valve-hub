@@ -235,6 +235,10 @@ class DanfeBfrInfSemanticaTests(TestCase):
         self.assertIn('1981.36', inf_cpl_danfe)
         self.assertIn('VALOR FCP UF DESTINO', inf_cpl_danfe)
         self.assertIn('146.77', inf_cpl_danfe)
+        linhas_danfe = [ln for ln in inf_cpl_danfe.split('\n') if ln.strip()]
+        difal_linha = next(ln for ln in linhas_danfe if 'VALOR ICMS UF DESTINO' in ln)
+        pedido_linha = next(ln for ln in linhas_danfe if 'PEDIDO DE COMPRA' in ln)
+        self.assertNotEqual(difal_linha, pedido_linha)
 
         inf_cpl_xml, _ = montar_inf_cpl_nfe(nf)
         self.assertIn('VALOR ICMS UF DESTINO', inf_cpl_xml)
