@@ -13,12 +13,29 @@ from fpdf.enums import MethodReturnValue
 if TYPE_CHECKING:
     from brazilfiscalreport.danfe.danfe import Danfe
 
-# Fatores sobre FONT_SIZE_CONT padrão da BFR (7pt × default_font_factor).
-# 0.72 ≈ 5pt — mínimo legível conservador em DANFE A4.
-INFCPL_ESCALAS_DANFE: tuple[float, ...] = (1.0, 0.92, 0.85, 0.78, 0.72)
+# Redução base do infCpl (~6pt sobre FONT_SIZE_CONT da BFR com FontSize.SMALL ≈ 7pt).
+INFCPL_FONT_BASE_FACTOR = 0.86
+
+# Fatores adicionais sobre a base Nexus — auto-shrink até ~4.5pt efetivo.
+INFCPL_ESCALAS_DANFE: tuple[float, ...] = (
+    1.0,
+    0.92,
+    0.85,
+    0.78,
+    0.72,
+    0.65,
+    0.58,
+    0.52,
+    0.46,
+)
 INFCPL_ESCALA_MINIMA = INFCPL_ESCALAS_DANFE[-1]
 INFCPL_ALTURA_BLOCO_PRIMEIRA_PAGINA = 20.0
 INFCPL_LARGURA_RESERVADO_FISCO = 70.0
+
+
+def escala_efetiva_infcpl(font_size: float, escala: float) -> float:
+    """Tamanho final do infCpl no PDF (base reduzida × auto-shrink)."""
+    return font_size * escala * INFCPL_FONT_BASE_FACTOR
 
 
 def largura_campo_infcpl(danfe: Danfe) -> float:
@@ -34,6 +51,55 @@ def _desativar_escala_infcpl(danfe: Danfe) -> None:
     danfe._nexus_infcpl_scale_active = False  # type: ignore[attr-defined]
 
 
+def _metricas_bloco_infcpl(
+    danfe: Danfe,
+    escala: float,
+    *,
+    block_height: float = INFCPL_ALTURA_BLOCO_PRIMEIRA_PAGINA,
+) -> tuple[float, float, int, float]:
+    """Retorna (line_h, h_desc, max_lines, font_size_cont)."""
+    from brazilfiscalreport.danfe.danfe_conf import DEFAULT_HEIGHT_FONT_CONTENT
+
+    line_h = DEFAULT_HEIGHT_FONT_CONTENT * escala
+    h_desc = danfe.get_font_size('H_FONT_DESC')
+    max_lines = max(1, int((block_height - h_desc) // line_h))
+    font_size_cont = danfe.get_font_size('FONT_SIZE_CONT', True)
+    return line_h, h_desc, max_lines, font_size_cont
+
+
+def _quebrar_linhas_infcpl(
+    danfe: Danfe,
+    texto: str,
+    escala: float,
+    *,
+    block_height: float = INFCPL_ALTURA_BLOCO_PRIMEIRA_PAGINA,
+) -> tuple[list[str], int]:
+    """Quebra o texto em linhas (dry-run) e retorna (linhas, max_lines no bloco)."""
+    from brazilfiscalreport.danfe.danfe_conf import DEFAULT_HEIGHT_FONT_CONTENT
+
+    _ativar_escala_infcpl(danfe, escala)
+    try:
+        largura = largura_campo_infcpl(danfe)
+        line_h = DEFAULT_HEIGHT_FONT_CONTENT * escala
+        _, _, max_lines, font_size_cont = _metricas_bloco_infcpl(
+            danfe,
+            escala,
+            block_height=block_height,
+        )
+        danfe.set_font(danfe.default_font, '', font_size_cont)
+        linhas = danfe.multi_cell(
+            w=largura,
+            h=line_h,
+            text=texto or '',
+            align='L',
+            dry_run=True,
+            output=MethodReturnValue.LINES,
+        )
+        return linhas, max_lines
+    finally:
+        _desativar_escala_infcpl(danfe)
+
+
 def medir_linhas_infcpl(
     danfe: Danfe,
     texto: str,
@@ -42,26 +108,13 @@ def medir_linhas_infcpl(
     block_height: float = INFCPL_ALTURA_BLOCO_PRIMEIRA_PAGINA,
 ) -> tuple[int, int]:
     """Retorna (total de linhas quebradas, máximo de linhas no bloco)."""
-    from brazilfiscalreport.danfe.danfe_conf import DEFAULT_HEIGHT_FONT_CONTENT
-
-    _ativar_escala_infcpl(danfe, escala)
-    try:
-        largura = largura_campo_infcpl(danfe)
-        line_h = DEFAULT_HEIGHT_FONT_CONTENT * escala
-        h_desc = danfe.get_font_size('H_FONT_DESC')
-        max_lines = max(1, int((block_height - h_desc) // line_h))
-        font_size = danfe.get_font_size('FONT_SIZE_CONT', True)
-        danfe.set_font(danfe.default_font, '', font_size)
-        linhas = danfe.multi_cell(
-            w=largura,
-            h=line_h,
-            text=texto or '',
-            align='L',
-            output=MethodReturnValue.LINES,
-        )
-        return len(linhas), max_lines
-    finally:
-        _desativar_escala_infcpl(danfe)
+    linhas, max_lines = _quebrar_linhas_infcpl(
+        danfe,
+        texto,
+        escala,
+        block_height=block_height,
+    )
+    return len(linhas), max_lines
 
 
 def resolver_escala_infcpl_danfe(
@@ -80,6 +133,46 @@ def resolver_escala_infcpl_danfe(
     return INFCPL_ESCALA_MINIMA
 
 
+def _linhas_visiveis_infcpl(
+    danfe: Danfe,
+    texto: str,
+    escala: float,
+    *,
+    block_height: float = INFCPL_ALTURA_BLOCO_PRIMEIRA_PAGINA,
+) -> tuple[list[str], int]:
+    """Linhas que cabem no rodapé da 1ª página (keep-together)."""
+    linhas, max_lines = _quebrar_linhas_infcpl(
+        danfe,
+        texto,
+        escala,
+        block_height=block_height,
+    )
+    return linhas[:max_lines], max_lines
+
+
+def _desenhar_linhas_infcpl(
+    pdf: Danfe,
+    *,
+    x: float,
+    y: float,
+    w: float,
+    linhas: list[str],
+    line_h: float,
+    font_size_cont: float,
+) -> None:
+    pdf.set_font(pdf.default_font, '', font_size_cont)
+    for i, linha in enumerate(linhas):
+        pdf.set_xy(x, y + i * line_h)
+        pdf.cell(
+            w=w,
+            h=line_h,
+            text=linha,
+            align='L',
+            new_x='LEFT',
+            new_y='NEXT',
+        )
+
+
 def draw_additional_data_primeira_pagina(
     danfe: Danfe,
     additional_data: str,
@@ -87,11 +180,11 @@ def draw_additional_data_primeira_pagina(
 ) -> tuple[list[str], int]:
     """
     Desenha bloco Dados Adicionais da 1ª página com escala Nexus no infCpl.
-    Equivalente ao _draw_additional_data da BFR (sem continuation_height).
-    """
+
+    O texto é limitado à altura do rodapé (keep together) — sem página de continuação.
+  """
     from brazilfiscalreport.danfe.danfe_basic_field import DanfeBasicField
     from brazilfiscalreport.danfe.danfe_block import DanfeBlock
-    from brazilfiscalreport.danfe.danfe_conf import DEFAULT_HEIGHT_FONT_CONTENT, HEIGHT_FONT_BLOCK_DESC
     from brazilfiscalreport.danfe.models import BaseFieldInfo
     from brazilfiscalreport.pdf_element import Element
 
@@ -112,7 +205,18 @@ def draw_additional_data_primeira_pagina(
 
             _ativar_escala_infcpl(pdf, self._nexus_escala_campo)
             try:
-                font_size_cont = pdf.get_font_size('FONT_SIZE_CONT', True)
+                line_h, _, max_lines, font_size_cont = _metricas_bloco_infcpl(
+                    pdf,
+                    self._nexus_escala_campo,
+                    block_height=self.h,
+                )
+                linhas_visiveis, _ = _linhas_visiveis_infcpl(
+                    pdf,
+                    self.content or '',
+                    self._nexus_escala_campo,
+                    block_height=self.h,
+                )
+
                 pdf.set_font(pdf.default_font, '', font_size_desc)
                 pdf.cell(
                     w=self.w,
@@ -122,17 +226,20 @@ def draw_additional_data_primeira_pagina(
                     new_y='NEXT',
                     align='L',
                 )
-                pdf.set_font(pdf.default_font, '', font_size_cont)
-                line_h = DEFAULT_HEIGHT_FONT_CONTENT * self._nexus_escala_campo
-                self._content_lines = pdf.multi_cell(
+
+                y_conteudo = pdf.get_y()
+                _desenhar_linhas_infcpl(
+                    pdf,
+                    x=self.x,
+                    y=y_conteudo,
                     w=self.w,
-                    h=line_h,
-                    text=self.content or '',
-                    align='L',
-                    output=MethodReturnValue.LINES,
+                    linhas=linhas_visiveis,
+                    line_h=line_h,
+                    font_size_cont=font_size_cont,
                 )
-                content_height = self.h - h_font_desc
-                self._max_content_lines = max(1, int(content_height // line_h))
+
+                self._content_lines = linhas_visiveis
+                self._max_content_lines = max_lines
             finally:
                 _desativar_escala_infcpl(pdf)
 

@@ -420,7 +420,8 @@ def inf_cpl_prioriza_pedido_para_danfe(
     """
     Normaliza infCpl para exibição no DANFE.
 
-    Por padrão não trunca: a BFR pagina o bloco Dados Adicionais em páginas de continuação.
+    Por padrão não trunca o XML. No PDF (DANFE), o bloco Dados Adicionais usa auto-shrink
+    e clip visual na 1ª página — sem alterar o infCpl transmitido.
     Use max_len apenas em cenários legados que exijam limite explícito.
     """
     texto = _normalizar_espacos(inf_cpl)

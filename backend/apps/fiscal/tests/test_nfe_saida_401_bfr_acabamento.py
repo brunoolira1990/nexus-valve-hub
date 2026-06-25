@@ -156,7 +156,7 @@ class DanfeBfrAcabamentoTests(TestCase):
         self.assertNotIn('CONTINUACAO', norm)
         self.assertNotIn('CONTINUACAODASINFORMACOES', norm)
 
-    def test_pdf_inf_cpl_longo_nao_truncado_no_rodape(self):
+    def test_pdf_inf_cpl_longo_permanece_uma_pagina(self):
         nf = _nf_pronta()
         bloco = (
             'BASE DE CALCULO REDUZIDA CONFORME REGRA INTERNA. '
@@ -169,9 +169,27 @@ class DanfeBfrAcabamentoTests(TestCase):
         nf.save(update_fields=['informacoes_adicionais'])
         pdf, _ = gerar_danfe_bfr_nfe_preliminar(nf)
         texto = compact_pdf_text(pdf_text(pdf))
+        self.assertEqual(_pdf_paginas(pdf), 1)
         self.assertIn('12345678', texto)
         self.assertNotIn('CONTINUACAODASINFORMACOES', texto)
-        self.assertGreater(_pdf_paginas(pdf), 1)
+
+    def test_pdf_inf_cpl_com_quebras_linha_uma_pagina(self):
+        nf = _nf_pronta()
+        nf.informacoes_adicionais = (
+            'LINHA UM DO CLIENTE\n'
+            'LINHA DOIS DO CLIENTE\n'
+            'LINHA TRES DO CLIENTE\n'
+            'BASE DE CALCULO REDUZIDA CONFORME REGRA INTERNA\n'
+            'DEVOLUCAO APOS 7 DIAS SOMENTE COM AUTORIZACAO\n'
+            'DESTINO DOS PRODUTOS CONFORME PEDIDO DO CLIENTE\n'
+            'ENDERECO DE ENTREGA: AV EXEMPLO 1234 BAIRRO CENTRO SP CEP 12345678'
+        )
+        nf.save(update_fields=['informacoes_adicionais'])
+        pdf, _ = gerar_danfe_bfr_nfe_preliminar(nf)
+        self.assertEqual(_pdf_paginas(pdf), 1)
+        texto = compact_pdf_text(pdf_text(pdf))
+        self.assertIn('LINHAUMDOCLIENTE', texto)
+        self.assertNotIn('CONTINUACAODASINFORMACOES', texto)
 
     def test_pdf_inf_cpl_medio_tenta_uma_pagina(self):
         nf = _nf_pronta()

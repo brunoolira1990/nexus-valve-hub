@@ -85,6 +85,7 @@ class DanfeNexus:
         from apps.fiscal.nfe_integracao.danfe_bfr_emit import draw_header_emit_nexus
         from apps.fiscal.nfe_integracao.danfe_bfr_infcpl import (
             draw_additional_data_primeira_pagina,
+            escala_efetiva_infcpl,
             resolver_escala_infcpl_danfe,
         )
         from apps.fiscal.nfe_integracao.danfe_bfr_taxes import draw_taxes_nexus
@@ -138,12 +139,13 @@ class DanfeNexus:
                     and multiplier
                     and self._nexus_infcpl_scale is not None
                 ):
-                    return base * self._nexus_infcpl_scale
+                    return escala_efetiva_infcpl(base, self._nexus_infcpl_scale)
                 return base
 
             def _draw_additional_data(self, additional_data, continuation_height=None):
                 if continuation_height is not None:
-                    return super()._draw_additional_data(additional_data, continuation_height)
+                    # Nexus: keep together — sem página de continuação de Dados Adicionais.
+                    return [], 1
                 if self._nexus_infcpl_scale is None:
                     self._nexus_infcpl_scale = resolver_escala_infcpl_danfe(self, additional_data)
                 return draw_additional_data_primeira_pagina(
@@ -239,9 +241,9 @@ def _montar_config_danfe(
     logo_path: str | None = None,
 ):
     """
-    Configura BFR: logo emitente, PIS/COFINS e infCpl com paginação no bloco Dados Adicionais.
+    Configura BFR: logo emitente, PIS/COFINS e infCpl compacto no rodapé da 1ª página.
 
-    Overflow de Informações Complementares segue para páginas de continuação (não para produtos).
+    Overflow visual é omitido no PDF (auto-shrink + clip); XML infCpl permanece intacto.
     """
     from brazilfiscalreport.danfe.config import FontSize
 
