@@ -4,34 +4,33 @@ import { useNavigate } from 'react-router-dom';
 import { downloadBlobFile, openBlobInNewTab } from '@/lib/downloadBlobFile';
 import { nfeSaidasService } from '@/services/api/fiscal';
 import { apiErrorMessage } from '@/services/api/config';
-import { isNfeCanceladaOperacional, nfeTemDanfeHomologacao } from '@/lib/pedidoVendaModalUi';
+import { deveUsarDanfeAutorizadoLinha } from '@/lib/nfeSaidaAcoesMatriz';
 
 type Props = {
   nfeSaidaId: number;
   nfeStatusEmissaoSefaz?: string;
   nfeSaidaStatus?: string;
+  temXmlAutorizado?: boolean;
 };
 
 export function PedidoVendaFiscalNfeAcoes({
   nfeSaidaId,
   nfeStatusEmissaoSefaz,
   nfeSaidaStatus,
+  temXmlAutorizado,
 }: Props) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState<string | null>(null);
 
-  const homolog = nfeTemDanfeHomologacao({
-    nfe_status_emissao_sefaz: nfeStatusEmissaoSefaz,
-    nfe_saida_status: nfeSaidaStatus,
+  const usarDanfeAutorizado = deveUsarDanfeAutorizadoLinha({
+    status: nfeSaidaStatus,
+    status_emissao_sefaz: nfeStatusEmissaoSefaz,
+    resumo_emissao_sefaz: {
+      status_emissao_sefaz: nfeStatusEmissaoSefaz,
+      tem_xml_autorizado: temXmlAutorizado,
+    },
   });
-  const cancelada = isNfeCanceladaOperacional({ nfe_saida_status: nfeSaidaStatus });
-  const autorizada =
-    !cancelada &&
-    (nfeStatusEmissaoSefaz === 'AUTORIZADA_PRODUCAO' ||
-      nfeStatusEmissaoSefaz === 'AUTORIZADA_HOMOLOGACAO' ||
-      nfeSaidaStatus === 'AUTORIZADA_PRODUCAO' ||
-      nfeSaidaStatus === 'AUTORIZADA_HOMOLOGACAO' ||
-      homolog);
+  const documentoAutorizadoLocal = usarDanfeAutorizado;
 
   const runBlob = async (key: string, fn: () => Promise<{ blob: Blob; filename: string }>) => {
     setLoading(key);
@@ -48,7 +47,7 @@ export function PedidoVendaFiscalNfeAcoes({
   const visualizarDanfe = async () => {
     setLoading('view');
     try {
-      if (autorizada || cancelada) {
+      if (usarDanfeAutorizado) {
         const { blob } = await nfeSaidasService.danfeAutorizadoBlob(nfeSaidaId);
         openBlobInNewTab(blob);
         return;
@@ -92,7 +91,7 @@ export function PedidoVendaFiscalNfeAcoes({
         disabled={!!loading}
         onClick={() =>
           void runBlob('danfe', () =>
-            autorizada || cancelada
+            usarDanfeAutorizado
               ? nfeSaidasService.danfeAutorizadoBlob(nfeSaidaId)
               : nfeSaidasService.previewDanfeBlob(nfeSaidaId).then(({ blob }) => ({
                   blob,
@@ -104,7 +103,7 @@ export function PedidoVendaFiscalNfeAcoes({
         <Download className="h-3 w-3 shrink-0" aria-hidden />
         <span>Baixar DANFE</span>
       </button>
-      {(autorizada || cancelada) ? (
+      {documentoAutorizadoLocal ? (
         <button
           type="button"
           className={btnOutline}

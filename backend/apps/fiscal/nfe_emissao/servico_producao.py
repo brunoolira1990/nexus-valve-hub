@@ -12,7 +12,6 @@ from apps.fiscal.nfe_emissao.aplicar_resultado import (
     MSG_SEM_EFEITOS_PRODUCAO,
     aplicar_resultado_sefaz_producao,
     mensagem_resposta_resultado_producao,
-    resultado_tem_resolucao_final,
 )
 from apps.fiscal.nfe_emissao.assinatura import NFeAssinaturaError, assinar_xml_nfe
 from apps.fiscal.nfe_emissao.config_producao import (
@@ -323,10 +322,7 @@ def emitir_nfe_producao(
         nf.serie_nfe,
         nf.numero_nfe,
     )
-    ok = resultado.autorizado or (
-        resultado_tem_resolucao_final(resultado)
-        and resultado.status_final not in ('ERRO_RETORNO_SEFAZ', 'LOTE_PROCESSADO_SEM_PROTOCOLO')
-    )
+    ok = resultado.autorizado
     return montar_resposta_emissao_producao(
         nf,
         ok=ok,

@@ -116,7 +116,14 @@ export function isRejeitadaOuErro(
   )
     .trim()
     .toUpperCase();
-  if (st === 'REJEITADA_HOMOLOGACAO' || st === 'REJEITADA' || st === 'ERRO_TRANSMISSAO') return true;
+  if (
+    st === 'REJEITADA_HOMOLOGACAO' ||
+    st === 'REJEITADA_PRODUCAO' ||
+    st === 'REJEITADA' ||
+    st === 'ERRO_TRANSMISSAO'
+  ) {
+    return true;
+  }
   const nfeSt = (entrada.status || '').trim().toUpperCase();
   return nfeSt.includes('REJEIT');
 }
@@ -170,7 +177,10 @@ export function resolverContextoNfeSaida(
   else if (autorizadaProducao) avisoAmbiente = AVISO_PRODUCAO_POS_AUTORIZACAO;
   else if (isAmbienteProducao && cenario === 'rascunho_conferencia') {
     avisoAmbiente =
-      'Documento fiscal real — use o checklist e a emissão Produção SEFAZ abaixo. Homologação não se aplica a esta NF-e.';
+      'Documento fiscal real — use o checklist e a emissão Produção SEFAZ abaixo. Homologação não se aplica a esta NF-e. Use «Ver DANFE» para a prévia de conferência antes da autorização SEFAZ.';
+  } else if (isAmbienteProducao && cenario === 'rejeitada_erro') {
+    avisoAmbiente =
+      'NF-e rejeitada em produção — corrija os dados e reenvie. «Ver DANFE» continua disponível como prévia de conferência.';
   }
 
   return {
@@ -210,6 +220,34 @@ export function podeCancelarNfeSefaz(ctx: NFeSaidaContextoAcao): boolean {
 export function podeEnviarDanfeXml(ctx: NFeSaidaContextoAcao): boolean {
   if (ctx.cenario === 'cancelada') return false;
   return (ctx.autorizadaHomolog || ctx.autorizadaProducao) && ctx.temXmlAutorizado;
+}
+
+/** DANFE final (XML autorizado) — exige protocolo local; rascunho/pronta usa prévia de conferência. */
+export function deveUsarDanfeAutorizado(
+  ctx: Pick<
+    NFeSaidaContextoAcao,
+    'autorizadaHomolog' | 'autorizadaProducao' | 'cancelada' | 'temXmlAutorizado'
+  >,
+): boolean {
+  if (!ctx.temXmlAutorizado) return false;
+  return ctx.autorizadaHomolog || ctx.autorizadaProducao || ctx.cancelada;
+}
+
+export function deveUsarDanfeAutorizadoLinha(row: {
+  status?: string | null;
+  status_emissao_sefaz?: string | null;
+  resumo_emissao_sefaz?: { status_emissao_sefaz?: string | null; tem_xml_autorizado?: boolean } | null;
+}): boolean {
+  const ctx = resolverContextoNfeSaida(
+    {
+      status: row.status,
+      status_emissao_sefaz: row.status_emissao_sefaz,
+      resumo_emissao_sefaz: row.resumo_emissao_sefaz,
+      tem_xml_autorizado: row.resumo_emissao_sefaz?.tem_xml_autorizado,
+    },
+    row.resumo_emissao_sefaz ?? undefined,
+  );
+  return deveUsarDanfeAutorizado(ctx);
 }
 
 const FUTURAS_BASE: Omit<NFeSaidaAcaoConfig, 'visivel' | 'habilitada'>[] = [];

@@ -118,7 +118,7 @@ export function mensagemEmissaoProducaoResposta(res: {
     ? formatNfeErrosLista(errosXsd)
     : formatNfeErrosLista(res.erros);
   const msgBase = res.mensagem || xmotivoNfe || errosTxt || 'Emissão produção não concluída.';
-  if (res.ok || res.autorizado) {
+  if (res.autorizado) {
     const proto = res.protocolo || res.protocolo_autorizacao || res.nfe?.protocolo || '';
     const linha = cstatNfe
       ? `cStat ${cstatNfe}: ${xmotivoNfe || msgBase}${proto ? ` · Protocolo ${proto}` : ''}`

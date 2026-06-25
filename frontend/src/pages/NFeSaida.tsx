@@ -44,7 +44,7 @@ import {
   nfeItensComerciaisEditaveis,
   nfeSalvarFormularioBloqueado,
 } from '@/lib/nfeSaidaUi';
-import { isCanceladaNfe } from '@/lib/nfeSaidaAcoesMatriz';
+import { isCanceladaNfe, deveUsarDanfeAutorizadoLinha } from '@/lib/nfeSaidaAcoesMatriz';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -282,15 +282,7 @@ const NFeSaida = () => {
 
   const previewDanfeLinha = async (row: NFeSaida) => {
     try {
-      const sefaz = row.status_emissao_sefaz || row.resumo_emissao_sefaz?.status_emissao_sefaz;
-      const cancelada = isCanceladaNfe(row.status);
-      const temXmlAutorizado = Boolean(row.resumo_emissao_sefaz?.tem_xml_autorizado);
-      const autorizada =
-        sefaz === 'AUTORIZADA_PRODUCAO' ||
-        sefaz === 'AUTORIZADA_HOMOLOGACAO' ||
-        row.status === 'AUTORIZADA_PRODUCAO' ||
-        row.status === 'AUTORIZADA_HOMOLOGACAO';
-      const usarDanfeAutorizado = (autorizada && !cancelada) || (cancelada && temXmlAutorizado);
+      const usarDanfeAutorizado = deveUsarDanfeAutorizadoLinha(row);
       const blob = usarDanfeAutorizado
         ? (await nfeSaidasService.danfeAutorizadoBlob(row.id)).blob
         : (await nfeSaidasService.previewDanfeBlob(row.id)).blob;

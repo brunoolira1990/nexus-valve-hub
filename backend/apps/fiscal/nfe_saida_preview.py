@@ -847,22 +847,14 @@ def gerar_preview_danfe_nfe_saida(nfe_saida: NFeSaida) -> tuple[bytes, dict[str,
         ]
         return pdf, meta
 
-    if nf_autorizada_producao(nfe_saida):
+    if pode_visualizar_danfe_xml_autorizado(nfe_saida):
+        ambiente = '1' if nf_autorizada_producao(nfe_saida) else '2'
         raise DanfeBfrRenderError(
-            'NF-e autorizada em produção: use GET /api/nf-saidas/{id}/danfe-autorizado/ para o DANFE final.',
+            'NF-e autorizada na SEFAZ: use GET /api/nf-saidas/{id}/danfe-autorizado/ para o DANFE final.',
             nfe_saida_id=nfe_saida.pk,
             numero=nfe_saida.numero,
             status=nfe_saida.status,
-            ambiente='1',
-            erro_tipo='DanfePreviewNaoPermitido',
-        )
-    if nf_autorizada_homologacao(nfe_saida):
-        raise DanfeBfrRenderError(
-            'NF-e autorizada em homologação: use GET /api/nf-saidas/{id}/danfe-autorizado/ para o DANFE final.',
-            nfe_saida_id=nfe_saida.pk,
-            numero=nfe_saida.numero,
-            status=nfe_saida.status,
-            ambiente='2',
+            ambiente=ambiente,
             erro_tipo='DanfePreviewNaoPermitido',
         )
 

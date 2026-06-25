@@ -34,6 +34,7 @@ import { toast } from 'sonner';
 import {
   obterMatrizAcoesNfeSaida,
   resolverContextoNfeSaida,
+  deveUsarDanfeAutorizado,
 } from '@/lib/nfeSaidaAcoesMatriz';
 import { isCanceladaNfe } from '@/lib/nfeSaidaAcoesMatriz';
 import { nfeSaidasService, type NFeChecklistHomologacaoResponse } from '@/services/api/fiscal';
@@ -93,12 +94,7 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
     if (!nfe?.id) return;
     setDanfeLoading(true);
     try {
-      const cancelada = isCanceladaNfe(nfe.status);
-      const temXml = Boolean(
-        contextoAcao.temXmlAutorizado ||
-          nfe.resumo_emissao_sefaz?.tem_xml_autorizado,
-      );
-      if (contextoAcao.autorizadaHomolog || contextoAcao.autorizadaProducao || (cancelada && temXml)) {
+      if (deveUsarDanfeAutorizado(contextoAcao)) {
         const { blob } = await nfeSaidasService.danfeAutorizadoBlob(nfe.id);
         openBlobInNewTab(blob);
         return;

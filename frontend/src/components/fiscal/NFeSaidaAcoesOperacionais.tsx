@@ -2,7 +2,7 @@ import { Loader2, Copy } from 'lucide-react';
 import { AdvancedSupportSection } from '@/components/nexus/AdvancedSupportSection';
 import { OperationalMessage } from '@/components/nexus/OperationalMessage';
 import { ACTION_LABELS, TECHNICAL_DOWNLOAD_LABELS, labelNfeStatusConferenciaOperacional } from '@/lib/operationalUi';
-import { AVISO_HOMOLOG_SEM_VALOR_FISCAL, AVISO_CANCELADA_CONSULTA } from '@/lib/nfeSaidaAcoesMatriz';
+import { AVISO_HOMOLOG_SEM_VALOR_FISCAL, AVISO_CANCELADA_CONSULTA, deveUsarDanfeAutorizado } from '@/lib/nfeSaidaAcoesMatriz';
 import { openBlobInNewTab } from '@/lib/downloadBlobFile';
 import { formatNfeXsdErro } from '@/lib/nfeXsdErros';
 import {
@@ -79,10 +79,12 @@ export function NFeSaidaAcoesOperacionais({
     onPreviewError(null);
     onDanfeLoading(true);
     try {
-      const usarAutorizado =
-        autorizadaHomolog ||
-        autorizadaProducao ||
-        (cancelada && Boolean(emissaoSefaz?.tem_xml_autorizado));
+      const usarAutorizado = deveUsarDanfeAutorizado({
+        autorizadaHomolog,
+        autorizadaProducao,
+        cancelada,
+        temXmlAutorizado: Boolean(emissaoSefaz?.tem_xml_autorizado),
+      });
       if (usarAutorizado) {
         const { blob } = await nfeSaidasService.danfeAutorizadoBlob(nfeId);
         openBlobInNewTab(blob);
@@ -136,9 +138,10 @@ export function NFeSaidaAcoesOperacionais({
         <OperationalMessage
           title={`Status: ${statusLabel}`}
           message={
-            emissaoSefaz?.status_emissao_sefaz === 'REJEITADA_HOMOLOGACAO'
+            emissaoSefaz?.status_emissao_sefaz === 'REJEITADA_HOMOLOGACAO' ||
+            emissaoSefaz?.status_emissao_sefaz === 'REJEITADA_PRODUCAO'
               ? emissaoSefaz?.nfe?.xmotivo || 'NF-e rejeitada. Corrija os dados e reenvie.'
-              : 'Revise os dados da NF-e antes de emitir.'
+              : 'Revise os dados da NF-e antes de emitir. Use «Ver DANFE» para a prévia de conferência.'
           }
           variant="info"
           raw
