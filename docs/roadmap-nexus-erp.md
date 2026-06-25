@@ -836,6 +836,7 @@ Este roadmap é **vivo**. Ao concluir uma fase:
 
 Documentos complementares existentes:
 
+- [`especificacao-nexus-erp.md`](especificacao-nexus-erp.md) — **especificação completa** do app (arquitetura, módulos, APIs, rotas, fluxos)
 - `docs/qualidade-certificados.md` — certificados e rastreabilidade
 - `backend/docs/importacao_ncm.md` — importação NCM
 
