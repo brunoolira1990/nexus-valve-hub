@@ -2,6 +2,9 @@
 
 Documento central de evolução do projeto. Organiza o que já foi entregue, o que falta e a ordem recomendada das próximas fases.
 
+> **Brief consolidado do ERP:** [`brief-nexus-erp-completo.md`](brief-nexus-erp-completo.md)  
+> **Especificação técnica detalhada:** [`especificacao-nexus-erp.md`](especificacao-nexus-erp.md)
+
 > **Roadmap vivo:** atualizar este arquivo ao concluir cada fase (marcar checklists, ajustar status e registrar a próxima decisão).
 
 ---

@@ -2,7 +2,8 @@
 
 Documento de referência técnica e funcional do sistema. Complementa o [roadmap](roadmap-nexus-erp.md) (evolução e fases) com a **fotografia atual** da aplicação.
 
-> **Última atualização:** 24/06/2026 — ERP 4.0.15.2.40  
+> **Brief consolidado (visão executiva e funcional completa):** [`brief-nexus-erp-completo.md`](brief-nexus-erp-completo.md)  
+> **Última atualização:** 24/06/2026 — ERP 4.0.15.2.41  
 > **Repositório:** `nexus-valve-hub`  
 > **Público-alvo:** desenvolvedores, analistas, operação e gestão de produto
 
@@ -292,7 +293,7 @@ A operação Nexus é **venda sob demanda** com atendimento flexível. O ERP con
 | Composição / montagem | BOM, equivalência fornecedor, processos |
 | Fiscal | NCM efetivo, unidade fiscal |
 | Painel operacional | Centro de informações (somente leitura) |
-| Rastreabilidade | Placeholder — fase futura |
+| Rastreabilidade | Corridas, CQ, CF, NF entrada/saída por corrida (ERP 4.0.15.2.41) |
 
 **Modelos principais:** `Produto`, `FamiliaProduto`, `Ncm`, `Polegada`, `RoscaConexao`, `ScheduleEspessura`, `ProdutoComposicao`, `FornecedorProdutoEquivalencia`
 
@@ -558,7 +559,7 @@ Arquivo: `backend/apps/api_urls.py` — ~50 ViewSets registrados + rotas explíc
 | NF-e saída | `nf-saidas/{id}/conferencia/`, `preview-xml/`, `preview-danfe/`, `emitir-homologacao/`, `emitir-producao/` |
 | NF-e entrada | `nf-entradas/importar-entrada-propria-emitida/`, conferência actions |
 | Financeiro | `financeiro/resumo/`, `nf-saidas/{id}/gerar-contas-receber/`, relatórios PDF |
-| Produto | `produtos/{id}/painel/resumo/` |
+| Produto | `produtos/{id}/painel/resumo/`, `produtos/{id}/painel/rastreabilidade/` |
 | Core | `app/contexto/`, `busca-global/`, `minha-conta/` |
 
 ### 7.4 Documentação de contratos
@@ -665,6 +666,13 @@ flowchart LR
 2. `GET /api/produtos/{id}/painel/resumo/` sob demanda
 3. Navegar sub-abas: Resumo, Compras, Vendas, Qualidade, Fiscal
 4. Links para documentos de origem (PV, NF saída, conferência)
+
+### 9.6 Rastreabilidade do produto
+
+1. Abrir produto salvo → aba Rastreabilidade
+2. `GET /api/produtos/{id}/painel/rastreabilidade/` sob demanda
+3. Seções: Corridas, CQs, CFs, NF-e entrada, NF-e saída
+4. Somente leitura — serviço `painel_rastreabilidade.py`
 
 ---
 
