@@ -86,6 +86,7 @@ class DanfeNexus:
         from apps.fiscal.nfe_integracao.danfe_bfr_infcpl import (
             draw_additional_data_primeira_pagina,
             escala_efetiva_infcpl,
+            normalizar_infcpl_para_danfe_pdf,
             resolver_escala_infcpl_danfe,
         )
         from apps.fiscal.nfe_integracao.danfe_bfr_taxes import draw_taxes_nexus
@@ -105,6 +106,7 @@ class DanfeNexus:
                 self._nexus_emit_extras = emit_extras or {}
                 self._nexus_infcpl_scale: float | None = None
                 self._nexus_infcpl_scale_active = False
+                self._nexus_infcpl_texto_fonte: str | None = None
                 super().__init__(xml, config)
                 if marca_dagua_cancelada_bfr:
                     self.watermark_cancelled = True
@@ -115,20 +117,31 @@ class DanfeNexus:
                 products_for_current_page,
                 addit_data_next_pages,
             ):
-                """
-                BFR reparte infCpl longo na tabela de produtos quando não cabe no rodapé.
-                Nexus: não usar área de produtos; preservar overflow para páginas de
-                continuação do bloco Dados Adicionais.
-                """
-                return None, addit_data_next_pages
+                """Nexus: não injetar infCpl na tabela de produtos nem paginar overflow."""
+                return None, ''
 
             def _get_additional_data_content(self):
+                from brazilfiscalreport.danfe.danfe import extract_text
+
                 from apps.fiscal.nfe_integracao.danfe_xml_adicionais import (
                     inf_cpl_prioriza_pedido_para_danfe,
                 )
 
-                texto = super()._get_additional_data_content()
-                return inf_cpl_prioriza_pedido_para_danfe(texto)
+                fisco = extract_text(self.inf_adic, 'infAdFisco')
+                obs_raw = extract_text(self.inf_adic, 'infCpl') or ''
+                obs = normalizar_infcpl_para_danfe_pdf(obs_raw)
+
+                _dest_end, cpl, cpl_truncado = self._get_dest_end_text(self.dest)
+                if cpl_truncado and cpl:
+                    sufixo = f'Complemento do destinatário: {cpl}.'
+                    obs = f'{obs}\n{sufixo}' if obs else sufixo
+                if fisco:
+                    obs = f'{obs}\n{fisco.strip()}' if obs else fisco.strip()
+
+                if self.infcpl_semicolon_newline:
+                    obs = obs.replace(';', '\n')
+
+                return inf_cpl_prioriza_pedido_para_danfe(obs)
 
             def get_font_size(self, element_type: str, multiplier=False):
                 """Escala FONT_SIZE_CONT do infCpl na 1ª página (somente visual)."""
@@ -144,13 +157,17 @@ class DanfeNexus:
 
             def _draw_additional_data(self, additional_data, continuation_height=None):
                 if continuation_height is not None:
-                    # Nexus: keep together — sem página de continuação de Dados Adicionais.
                     return [], 1
+                if self._nexus_infcpl_texto_fonte is None:
+                    self._nexus_infcpl_texto_fonte = self._get_additional_data_content()
                 if self._nexus_infcpl_scale is None:
-                    self._nexus_infcpl_scale = resolver_escala_infcpl_danfe(self, additional_data)
+                    self._nexus_infcpl_scale = resolver_escala_infcpl_danfe(
+                        self,
+                        self._nexus_infcpl_texto_fonte,
+                    )
                 return draw_additional_data_primeira_pagina(
                     self,
-                    additional_data,
+                    self._nexus_infcpl_texto_fonte,
                     self._nexus_infcpl_scale,
                 )
 
@@ -261,7 +278,7 @@ def _montar_config_danfe(
         logo=logo_path,
         display_pis_cofins=True,
         watermark_cancelled=cancelada,
-        infcpl_semicolon_newline=False,
+        infcpl_semicolon_newline=True,
         font_size=FontSize.SMALL,
     )
 

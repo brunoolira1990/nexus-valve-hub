@@ -15,8 +15,8 @@ class DanfeBfrInfcplUnitTests(SimpleTestCase):
         # BFR FONT_SIZE_CONT típico com FontSize.SMALL ≈ 7pt
         base = 7.0
         efetiva = escala_efetiva_infcpl(base, 1.0)
-        self.assertGreaterEqual(efetiva, 6.0)
-        self.assertLessEqual(efetiva, 7.5)
+        self.assertGreaterEqual(efetiva, 5.0)
+        self.assertLessEqual(efetiva, 7.0)
         self.assertAlmostEqual(efetiva, base * INFCPL_FONT_BASE_FACTOR)
 
     def test_auto_shrink_reduz_fonte(self):
