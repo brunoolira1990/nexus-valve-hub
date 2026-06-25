@@ -558,9 +558,11 @@ def _build_imposto_det(imposto: ET.Element, snap: dict, linha: dict) -> None:
     if linha['icms']['aliquota']:
         _sub(icms_grp, 'pICMS', linha['icms']['aliquota'])
 
+    from apps.fiscal.nfe_difal_calculo import difal_emitido_no_item
+
     difal = get_difal_snapshot(snap)
-    v_icms_dest = difal.get('v_icms_uf_dest') or ''
-    if v_icms_dest and dec(v_icms_dest) > 0:
+    if difal_emitido_no_item(difal):
+        v_icms_dest = difal.get('v_icms_uf_dest') or '0.00'
         uf_dest = ET.SubElement(icms, 'ICMSUFDest')
         _sub(uf_dest, 'vBCUFDest', difal.get('v_bc_uf_dest') or linha.get('v_prod'))
         if difal.get('v_bc_fcp_uf_dest'):

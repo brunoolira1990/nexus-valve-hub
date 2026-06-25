@@ -108,17 +108,47 @@ def calcular_difal_item(
     }
 
 
+def difal_emitido_no_item(difal: dict[str, Any] | None) -> bool:
+    """Indica se o item deve ter grupo ICMSUFDest no XML (mesma regra da serialização)."""
+    if not difal:
+        return False
+    if difal.get('aplicavel') in (True, 'True', 'true', '1', 1):
+        return True
+    if _dec(difal.get('v_icms_uf_dest')) > 0:
+        return True
+    if _dec(difal.get('v_fcp_uf_dest')) > 0:
+        return True
+    return False
+
+
+def valores_difal_item_xml(difal: dict[str, Any]) -> dict[str, Decimal] | None:
+    """Valores do ICMSUFDest efetivamente emitidos no XML do item."""
+    if not difal_emitido_no_item(difal):
+        return None
+    p_fcp = _dec(difal.get('p_fcp_uf_dest'))
+    v_fcp_raw = _dec(difal.get('v_fcp_uf_dest'))
+    v_fcp = v_fcp_raw if (p_fcp > 0 or v_fcp_raw > 0) else Decimal('0')
+    return {
+        'v_icms_uf_dest': _dec(difal.get('v_icms_uf_dest')),
+        'v_fcp_uf_dest': v_fcp,
+        'v_icms_uf_remet': _dec(difal.get('v_icms_uf_remet')),
+    }
+
+
 def agregar_totais_difal(snapshots_difal: list[dict[str, Any]]) -> dict[str, str]:
-    aplicaveis = [
-        d
-        for d in snapshots_difal
-        if _dec(d.get('v_icms_uf_dest')) > 0 or _dec(d.get('v_fcp_uf_dest')) > 0
-    ]
-    if not aplicaveis:
+    """Soma DIFAL/FCP alinhada ao que é serializado por item (evita cStat 798)."""
+    v_fcp = Decimal('0')
+    v_dest = Decimal('0')
+    v_remet = Decimal('0')
+    for raw in snapshots_difal:
+        valores = valores_difal_item_xml(raw or {})
+        if not valores:
+            continue
+        v_dest += valores['v_icms_uf_dest']
+        v_fcp += valores['v_fcp_uf_dest']
+        v_remet += valores['v_icms_uf_remet']
+    if v_dest <= 0 and v_fcp <= 0 and v_remet <= 0:
         return {}
-    v_fcp = sum(_dec(d.get('v_fcp_uf_dest')) for d in aplicaveis)
-    v_dest = sum(_dec(d.get('v_icms_uf_dest')) for d in aplicaveis)
-    v_remet = sum(_dec(d.get('v_icms_uf_remet')) for d in aplicaveis)
     return {
         'v_fcp_uf_dest': _q2(v_fcp),
         'v_icms_uf_dest': _q2(v_dest),

@@ -195,8 +195,10 @@ def _build_icms(snap: dict, linha: dict):
             vICMS=v_icms,
         )
 
+    from apps.fiscal.nfe_difal_calculo import difal_emitido_no_item
+
     difal = get_difal_snapshot(snap)
-    if difal.get('aplicavel') in (True, 'True', 'true', '1') or _dec(difal.get('v_icms_uf_dest')) > 0:
+    if difal_emitido_no_item(difal):
         icms_uf_dest_cls = getattr(
             nfe.Tnfe.InfNfe.Det.Imposto.Icms,
             'ICMSUFDest',
