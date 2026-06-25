@@ -134,8 +134,12 @@ def _linhas_inf_cpl_de_blocos(blocos: list[str]) -> list[str]:
     return deduplicar_textos_inf_cpl(linhas)
 
 
-def _juntar_linhas_inf_cpl(linhas: list[str]) -> str:
-    return '\n'.join(linhas)[:_MAX_INF_CPL_XML_CHARS].strip()
+_SEPARADOR_INF_CPL_XML = ' '
+_SEPARADOR_INF_CPL_DANFE = '\n'
+
+
+def _juntar_linhas_inf_cpl(linhas: list[str], *, separador: str = _SEPARADOR_INF_CPL_XML) -> str:
+    return separador.join(linhas)[:_MAX_INF_CPL_XML_CHARS].strip()
 
 
 def _textos_regra_fiscal(regras: list[Any]) -> list[str]:
@@ -266,14 +270,14 @@ def _texto_pedido_compra_item(x_ped: str, n_item: str) -> str:
     return ''
 
 
-def montar_inf_cpl_nfe(
+def montar_linhas_inf_cpl_nfe(
     nfe_saida: NFeSaida,
     dados: dict[str, Any] | None = None,
     *,
     itens_db: dict[int, ItemNFeSaida] | None = None,
-) -> tuple[str, str]:
+) -> list[str]:
     """
-    infCpl — fontes em linhas separadas (\\n), nesta ordem, em maiúsculas:
+    Blocos lógicos do infCpl, nesta ordem, em maiúsculas:
 
     1. Informações complementares (NF) da regra fiscal
     2. Pedido de compra do cliente (cabeçalho)
@@ -281,13 +285,13 @@ def montar_inf_cpl_nfe(
     4. Informações adicionais manuais da NF-e (conferência)
     5. Totais DIFAL/FCP (quando aplicável)
     """
-    linhas = (dados or {}).get('itens') or []
+    linhas_payload = (dados or {}).get('itens') or []
     regras = _coletar_regras_fiscais_nfe(nfe_saida)
 
     partes: list[str] = []
     partes.extend(_textos_regra_fiscal(regras))
 
-    ped = _texto_pedido_cliente_cabecalho(nfe_saida, itens_db, linhas)
+    ped = _texto_pedido_cliente_cabecalho(nfe_saida, itens_db, linhas_payload)
     if ped and not _pedido_ja_citado(partes, _text(nfe_saida.pedido_cliente_numero)):
         partes.append(ped)
 
@@ -310,19 +314,40 @@ def montar_inf_cpl_nfe(
                 if itens_db and linha.get('item_id') in itens_db
                 else linha.get('snapshot_fiscal')
             )
-            for linha in linhas
+            for linha in linhas_payload
         ],
     )
     texto_difal = texto_difal_inf_complementar(difal_totais)
     if texto_difal:
         blocos.append(texto_difal)
     blocos = deduplicar_textos_inf_cpl(blocos)
-    linhas = _linhas_inf_cpl_de_blocos(blocos)
-    inf_cpl = _juntar_linhas_inf_cpl(linhas)
+    return _linhas_inf_cpl_de_blocos(blocos)
+
+
+def montar_inf_cpl_nfe(
+    nfe_saida: NFeSaida,
+    dados: dict[str, Any] | None = None,
+    *,
+    itens_db: dict[int, ItemNFeSaida] | None = None,
+) -> tuple[str, str]:
+    """infCpl para XML/SEFAZ — blocos unidos por espaço (sem quebra de linha)."""
+    linhas = montar_linhas_inf_cpl_nfe(nfe_saida, dados, itens_db=itens_db)
+    inf_cpl = _juntar_linhas_inf_cpl(linhas, separador=_SEPARADOR_INF_CPL_XML)
     inf_fisco = _para_maiusculas(nfe_saida.informacoes_fisco)[:2000]
     if inf_fisco and len(inf_fisco) > 200:
         inf_fisco = inf_fisco[:197] + '...'
     return inf_cpl, inf_fisco
+
+
+def montar_inf_cpl_para_danfe(
+    nfe_saida: NFeSaida,
+    dados: dict[str, Any] | None = None,
+    *,
+    itens_db: dict[int, ItemNFeSaida] | None = None,
+) -> str:
+    """infCpl apenas para exibição no DANFE — blocos em linhas separadas."""
+    linhas = montar_linhas_inf_cpl_nfe(nfe_saida, dados, itens_db=itens_db)
+    return _juntar_linhas_inf_cpl(linhas, separador=_SEPARADOR_INF_CPL_DANFE)
 
 
 def _normalizar_n_item_ped_xml(valor: str) -> str:
@@ -405,7 +430,7 @@ def montar_inf_ad_prod_item(
 
     if not partes:
         return ''
-    return '\n'.join(deduplicar_textos_inf_cpl(partes))[:500]
+    return _SEPARADOR_INF_CPL_XML.join(deduplicar_textos_inf_cpl(partes))[:500]
 
 
 def enriquecer_linhas_xml_nfe(
@@ -482,8 +507,12 @@ def montar_informacoes_complementares_danfe(
     *,
     incluir_cabecalho_conferencia: bool = False,
 ) -> tuple[str, str]:
-    """Monta infCpl para DANFE/XML (status da DANFE só na marca d'água)."""
+    """Monta infCpl para DANFE (com quebras de linha) e infAdFisco."""
     itens_db = None
     if dados and dados.get('itens'):
         itens_db = {it.pk: it for it in nfe_saida.itens.all()}
-    return montar_inf_cpl_nfe(nfe_saida, dados, itens_db=itens_db)
+    inf_cpl = montar_inf_cpl_para_danfe(nfe_saida, dados, itens_db=itens_db)
+    inf_fisco = _para_maiusculas(nfe_saida.informacoes_fisco)[:2000]
+    if inf_fisco and len(inf_fisco) > 200:
+        inf_fisco = inf_fisco[:197] + '...'
+    return inf_cpl, inf_fisco

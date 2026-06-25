@@ -19,6 +19,7 @@ from apps.fiscal.nfe_integracao.danfe_brazil_fiscal_report import (
 from apps.fiscal.nfe_integracao.danfe_xml_adicionais import (
     montar_inf_ad_prod_item,
     montar_inf_cpl_nfe,
+    montar_inf_cpl_para_danfe,
 )
 from apps.fiscal.nfe_integracao.danfe_marca_dagua import resolver_marca_dagua_danfe
 from apps.fiscal.nfe_integracao.nfe_xml_preliminar import gerar_xml_nfe_preliminar
@@ -71,21 +72,23 @@ class DanfeBfrAcabamentoTests(TestCase):
                 'pedido_cliente_numero',
             ],
         )
-        inf_cpl, _ = montar_inf_cpl_nfe(nf)
-        self.assertNotIn('NF-e DE CONFERÊNCIA', inf_cpl)
-        self.assertNotIn('SEM VALOR FISCAL', inf_cpl.upper())
-        self.assertNotIn('SEM PROTOCOLO', inf_cpl.upper())
-        self.assertNotIn('CST/CSOSN', inf_cpl.upper())
-        self.assertIn('PEDIDO DE COMPRA: 5050', inf_cpl)
-        self.assertIn('TEXTO FISCAL PERMITIDO', inf_cpl)
-        self.assertIn('INSTRUÇÃO MANUAL'.replace('Ç', 'C'), inf_cpl.replace('Ç', 'C'))
-        self.assertIn('\n', inf_cpl)
-        self.assertLess(len(inf_cpl), 420)
-        self.assertNotIn('XML preliminar', inf_cpl)
-        self.assertNotIn('não transmitir', inf_cpl.lower())
-        self.assertNotIn('SEGREDO', inf_cpl)
-        self.assertNotIn('Condição de pagamento', inf_cpl)
-        self.assertNotIn('Prazo de pagamento', inf_cpl)
+        inf_cpl_xml, _ = montar_inf_cpl_nfe(nf)
+        inf_cpl_danfe = montar_inf_cpl_para_danfe(nf)
+        self.assertNotIn('NF-e DE CONFERÊNCIA', inf_cpl_xml)
+        self.assertNotIn('SEM VALOR FISCAL', inf_cpl_xml.upper())
+        self.assertNotIn('SEM PROTOCOLO', inf_cpl_xml.upper())
+        self.assertNotIn('CST/CSOSN', inf_cpl_xml.upper())
+        self.assertIn('PEDIDO DE COMPRA: 5050', inf_cpl_xml)
+        self.assertIn('TEXTO FISCAL PERMITIDO', inf_cpl_xml)
+        self.assertIn('INSTRUÇÃO MANUAL'.replace('Ç', 'C'), inf_cpl_xml.replace('Ç', 'C'))
+        self.assertNotIn('\n', inf_cpl_xml)
+        self.assertIn('\n', inf_cpl_danfe)
+        self.assertLess(len(inf_cpl_xml), 420)
+        self.assertNotIn('XML preliminar', inf_cpl_xml)
+        self.assertNotIn('não transmitir', inf_cpl_xml.lower())
+        self.assertNotIn('SEGREDO', inf_cpl_xml)
+        self.assertNotIn('Condição de pagamento', inf_cpl_xml)
+        self.assertNotIn('Prazo de pagamento', inf_cpl_xml)
 
     def test_inf_cpl_sem_condicao_e_prazo_pagamento(self):
         nf = _nf_pronta()

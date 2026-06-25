@@ -158,11 +158,10 @@ def _montar_duplicatas(nf: NFeSaida) -> list[dict[str, str]]:
 
 
 def _montar_informacoes_complementares(nf: NFeSaida, dados: dict[str, Any]) -> str:
-    from apps.fiscal.nfe_integracao.danfe_xml_adicionais import montar_inf_cpl_nfe
+    from apps.fiscal.nfe_integracao.danfe_xml_adicionais import montar_inf_cpl_para_danfe
 
     itens_db = {it.pk: it for it in nf.itens.all()}
-    inf_cpl, _ = montar_inf_cpl_nfe(nf, dados, itens_db=itens_db)
-    return inf_cpl.replace('; ', '\n')
+    return montar_inf_cpl_para_danfe(nf, dados, itens_db=itens_db)
 
 
 def _resumo_reforma_linhas(linhas: list[dict]) -> str:

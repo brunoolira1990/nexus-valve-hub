@@ -100,10 +100,12 @@ class DanfeNexus:
                 marca_dagua_custom: str | None = None,
                 marca_dagua_cancelada_bfr: bool = False,
                 emit_extras: dict | None = None,
+                nfe_saida=None,
             ):
                 self._marca_dagua_custom = (marca_dagua_custom or '').strip() or None
                 self._marca_dagua_cancelada_bfr = marca_dagua_cancelada_bfr
                 self._nexus_emit_extras = emit_extras or {}
+                self._nexus_nfe_saida = nfe_saida
                 self._nexus_infcpl_scale: float | None = None
                 self._nexus_infcpl_scale_active = False
                 self._nexus_infcpl_texto_fonte: str | None = None
@@ -125,11 +127,15 @@ class DanfeNexus:
 
                 from apps.fiscal.nfe_integracao.danfe_xml_adicionais import (
                     inf_cpl_prioriza_pedido_para_danfe,
+                    montar_inf_cpl_para_danfe,
                 )
 
                 fisco = extract_text(self.inf_adic, 'infAdFisco')
-                obs_raw = extract_text(self.inf_adic, 'infCpl') or ''
-                obs = normalizar_infcpl_para_danfe_pdf(obs_raw)
+                if self._nexus_nfe_saida is not None:
+                    obs = montar_inf_cpl_para_danfe(self._nexus_nfe_saida)
+                else:
+                    obs_raw = extract_text(self.inf_adic, 'infCpl') or ''
+                    obs = normalizar_infcpl_para_danfe_pdf(obs_raw)
 
                 _dest_end, cpl, cpl_truncado = self._get_dest_end_text(self.dest)
                 if cpl_truncado and cpl:
@@ -137,9 +143,6 @@ class DanfeNexus:
                     obs = f'{obs}\n{sufixo}' if obs else sufixo
                 if fisco:
                     obs = f'{obs}\n{fisco.strip()}' if obs else fisco.strip()
-
-                if self.infcpl_semicolon_newline:
-                    obs = obs.replace(';', '\n')
 
                 return inf_cpl_prioriza_pedido_para_danfe(obs)
 
@@ -218,6 +221,7 @@ class DanfeNexus:
         marca_dagua: str | None,
         cancelada_bfr: bool,
         emit_extras: dict | None = None,
+        nfe_saida=None,
     ) -> bytes:
         DanfeCls = cls._criar_classe()
         danfe = DanfeCls(
@@ -226,6 +230,7 @@ class DanfeNexus:
             marca_dagua_custom=marca_dagua,
             marca_dagua_cancelada_bfr=cancelada_bfr,
             emit_extras=emit_extras,
+            nfe_saida=nfe_saida,
         )
         buffer = BytesIO()
         danfe.output(buffer)
@@ -278,7 +283,6 @@ def _montar_config_danfe(
         logo=logo_path,
         display_pis_cofins=True,
         watermark_cancelled=cancelada,
-        infcpl_semicolon_newline=True,
         font_size=FontSize.SMALL,
     )
 
@@ -326,6 +330,7 @@ def gerar_danfe_bfr_de_xml_string(
             marca_dagua=marca,
             cancelada_bfr=cancelada_bfr,
             emit_extras=emit_extras,
+            nfe_saida=nfe_saida,
         )
     except DanfeBfrError:
         raise

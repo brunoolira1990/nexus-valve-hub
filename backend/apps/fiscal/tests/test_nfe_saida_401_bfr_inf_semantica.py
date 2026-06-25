@@ -15,6 +15,7 @@ from apps.fiscal.nfe_integracao.danfe_brazil_fiscal_report import (
 from apps.fiscal.nfe_integracao.danfe_xml_adicionais import (
     montar_inf_ad_prod_item,
     montar_inf_cpl_nfe,
+    montar_inf_cpl_para_danfe,
 )
 from apps.fiscal.nfe_integracao.nfe_xml_preliminar import gerar_xml_nfe_preliminar
 from apps.fiscal.nfe_saida_conferencia import montar_conferencia_nfe_saida
@@ -62,14 +63,18 @@ class DanfeBfrInfSemanticaTests(TestCase):
         nf.pedido_cliente_numero = '5050'
         nf.save(update_fields=['informacoes_adicionais', 'pedido_cliente_numero'])
 
-        inf_cpl, _ = montar_inf_cpl_nfe(nf)
-        linhas = [ln for ln in inf_cpl.split('\n') if ln.strip()]
+        inf_cpl_danfe = montar_inf_cpl_para_danfe(nf)
+        linhas = [ln for ln in inf_cpl_danfe.split('\n') if ln.strip()]
         self.assertGreaterEqual(len(linhas), 4)
         self.assertIn('COMUNICACAO PREVIA', linhas[0])
         self.assertIn('MIGUEL LANGONE', linhas[1])
         self.assertIn('INSTRU', linhas[2])
         self.assertEqual(linhas[3], 'PEDIDO DE COMPRA: 5050')
-        self.assertEqual(inf_cpl, inf_cpl.upper())
+        self.assertEqual(inf_cpl_danfe, inf_cpl_danfe.upper())
+
+        inf_cpl_xml, _ = montar_inf_cpl_nfe(nf)
+        self.assertNotIn('\n', inf_cpl_xml)
+        self.assertIn('PEDIDO DE COMPRA: 5050', inf_cpl_xml)
 
     def test_inf_cpl_contem_informacoes_complementares_regra(self):
         regra = self._regra_5102()
@@ -85,6 +90,20 @@ class DanfeBfrInfSemanticaTests(TestCase):
         inf_cpl, _ = montar_inf_cpl_nfe(nf)
         self.assertIn('MIGUEL LANGONE', inf_cpl)
 
+    def test_inf_cpl_xml_sem_quebra_linha(self):
+        regra = self._regra_5102()
+        regra.informacoes_complementares = TEXTO_REGRA_EXEMPLO
+        regra.save(update_fields=['informacoes_complementares'])
+        nf = _nf_pronta()
+        nf.informacoes_adicionais = TEXTO_MANUAL_EXEMPLO
+        nf.pedido_cliente_numero = '42287'
+        nf.save(update_fields=['informacoes_adicionais', 'pedido_cliente_numero'])
+
+        inf_cpl_xml = _inf_cpl_xml(nf)
+        self.assertNotIn('\n', inf_cpl_xml)
+        self.assertIn('PEDIDO DE COMPRA: 42287', inf_cpl_xml)
+        self.assertIn('COMUNICACAO PREVIA', inf_cpl_xml)
+
     def test_inf_cpl_contem_manual_nf(self):
         nf = _nf_pronta()
         nf.informacoes_adicionais = TEXTO_MANUAL_EXEMPLO
@@ -96,9 +115,11 @@ class DanfeBfrInfSemanticaTests(TestCase):
         nf = _nf_pronta()
         nf.pedido_cliente_numero = '5050'
         nf.save(update_fields=['pedido_cliente_numero'])
-        inf_cpl, _ = montar_inf_cpl_nfe(nf)
-        self.assertIn('PEDIDO DE COMPRA: 5050', inf_cpl)
-        self.assertIn('\n', inf_cpl + '\n')  # pode ser linha única se só pedido
+        inf_cpl_xml, _ = montar_inf_cpl_nfe(nf)
+        inf_cpl_danfe = montar_inf_cpl_para_danfe(nf)
+        self.assertIn('PEDIDO DE COMPRA: 5050', inf_cpl_xml)
+        self.assertNotIn('\n', inf_cpl_xml)
+        self.assertIn('\n', inf_cpl_danfe)
 
     def test_inf_cpl_nao_contem_cst_csosn(self):
         regra = self._regra_5102()
