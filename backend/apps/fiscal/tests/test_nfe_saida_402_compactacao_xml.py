@@ -25,21 +25,35 @@ from apps.fiscal.tests.test_nfe_saida_402_emissao_homologacao import _pedido_nf
 
 
 class NFe402CompactacaoXmlTests(TestCase):
-    def setUp(self):
-        self.user = get_user_model().objects.create_user(
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = get_user_model().objects.create_user(
             username=f'compact_{uuid.uuid4().hex[:8]}',
             password='test123',
         )
-        _, _, self.nf = _pedido_nf()
-        self.nf.ind_final = '1'
-        self.nf.ind_pres = '1'
-        self.nf.indicadores_fiscais_confirmados = True
-        self.nf.save(update_fields=['ind_final', 'ind_pres', 'indicadores_fiscais_confirmados'])
-        marcar_nfe_pronta_para_emissao(self.nf, usuario=self.user)
-        reservar_numeracao_nfe(self.nf, ambiente=NFeSaida.AmbienteEmissao.HOMOLOGACAO, usuario=self.user)
-        self.nf.refresh_from_db()
-        self.nf.indicadores_fiscais_confirmados = True
-        self.nf.save(update_fields=['indicadores_fiscais_confirmados'])
+        _, _, nf = _pedido_nf()
+        nf.ind_final = '1'
+        nf.ind_pres = '1'
+        nf.indicadores_fiscais_confirmados = True
+        nf.save(update_fields=['ind_final', 'ind_pres', 'indicadores_fiscais_confirmados'])
+        marcar_nfe_pronta_para_emissao(nf, usuario=cls.user)
+        reservar_numeracao_nfe(nf, ambiente=NFeSaida.AmbienteEmissao.HOMOLOGACAO, usuario=cls.user)
+        nf.refresh_from_db()
+        nf.indicadores_fiscais_confirmados = True
+        nf.save(update_fields=['indicadores_fiscais_confirmados'])
+        cls.nf = nf
+
+    def setUp(self):
+        self.nf = NFeSaida.objects.get(pk=self.__class__.nf.pk)
+        self.user = self.__class__.user
+        self._patch_cep = patch(
+            'apps.cadastros.endereco_fiscal.consultar_cep_viacep',
+            return_value=None,
+        )
+        self._patch_cep.start()
+
+    def tearDown(self):
+        self._patch_cep.stop()
 
     def _xml_oficial(self) -> bytes:
         return gerar_xml_oficial_emissao(self.nf)
