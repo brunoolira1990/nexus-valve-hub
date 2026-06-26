@@ -41,7 +41,7 @@ const MODULO_LABELS: Record<DashboardBIModulo, string> = {
 
 const MODULO_SUBTITLES: Record<DashboardBIModulo, string> = {
   comercial: 'Pedidos, propostas e valor a faturar',
-  fiscal: 'NF-e, homologação, SEFAZ e certificados',
+  fiscal: 'NF-e produção/homologação, DF-e recebidos, SEFAZ e certificados',
   estoque: 'Saldos, alertas e atendimentos',
   compras: 'Pedidos de compra e NF-e de entrada',
   qualidade: 'Certificados e corridas técnicas',
@@ -53,7 +53,7 @@ type DashboardModuloViewProps = {
 };
 
 function splitKpis(modulo: DashboardBIModulo, data: DashboardModuloBI) {
-  const heroId = MODULO_HERO_KPI[modulo];
+  const heroId = data.hero_kpi_id ?? MODULO_HERO_KPI[modulo];
   const hero = heroId ? data.kpis.find((k) => k.id === heroId) : null;
   const secondary = data.kpis.filter((k) => k.id !== heroId);
   return { hero, secondary };

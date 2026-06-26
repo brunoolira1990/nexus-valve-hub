@@ -12,6 +12,7 @@ from django.utils import timezone
 from apps.cadastros.models import Empresa, Fornecedor
 from apps.comercial.models import ItemPedidoVenda, PedidoCompra, PedidoVenda, Proposta
 from apps.corridas.models import Corrida
+from apps.fiscal.central_dfe.service import resumo_central_dfe_dashboard
 from apps.fiscal.models import (
     AtendimentoEstoque,
     EstoqueCorrida,
@@ -291,6 +292,24 @@ def montar_bi_comercial(f: DashboardFilters) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _hero_kpi_id_fiscal(
+    *,
+    auth_prod: int,
+    rej_prod: int,
+    enviada_prod: int,
+    auth_homolog: int,
+    rej_homolog: int,
+) -> str:
+    tem_producao = auth_prod > 0 or rej_prod > 0 or enviada_prod > 0
+    if tem_producao:
+        if rej_prod > 0 and auth_prod == 0:
+            return 'nfe_rej_prod'
+        return 'nfe_auth_prod'
+    if rej_homolog > 0 and auth_homolog == 0:
+        return 'nfe_rej_homolog'
+    return 'nfe_auth_homolog'
+
+
 def montar_bi_fiscal(f: DashboardFilters) -> dict:
     out = _base_bi('fiscal', f)
     nf_qs = _filtro_empresa_nfe(NFeSaida.objects.select_related('cliente'), f)
@@ -298,30 +317,74 @@ def montar_bi_fiscal(f: DashboardFilters) -> dict:
 
     rascunhos = nf_qs.filter(status__icontains='RASCUNHO').count()
     prontas = nf_qs.filter(status_conferencia='PRONTA_PARA_EMISSAO').count()
-    auth = nf_qs.filter(status_emissao_sefaz=NFeSaida.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO).count()
-    rej = nf_qs.filter(status_emissao_sefaz=NFeSaida.StatusEmissaoSefaz.REJEITADA_HOMOLOGACAO).count()
+    auth_homolog = nf_qs.filter(status_emissao_sefaz=NFeSaida.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO).count()
+    rej_homolog = nf_qs.filter(status_emissao_sefaz=NFeSaida.StatusEmissaoSefaz.REJEITADA_HOMOLOGACAO).count()
+    auth_prod = nf_qs.filter(status_emissao_sefaz=NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO).count()
+    rej_prod = nf_qs.filter(status_emissao_sefaz=NFeSaida.StatusEmissaoSefaz.REJEITADA_PRODUCAO).count()
+    enviada_prod = nf_qs.filter(
+        status_emissao_sefaz__in=(
+            NFeSaida.StatusEmissaoSefaz.ENVIADA_PRODUCAO,
+            NFeSaida.StatusEmissaoSefaz.AGUARDANDO_PROCESSAMENTO,
+        ),
+    ).count()
     erro = nf_qs.filter(status_emissao_sefaz=NFeSaida.StatusEmissaoSefaz.ERRO_TRANSMISSAO).count()
     canceladas = nf_qs.filter(status__icontains='CANCEL').count()
 
+    dfe = resumo_central_dfe_dashboard(f.empresa_id)
+
+    out['hero_kpi_id'] = _hero_kpi_id_fiscal(
+        auth_prod=auth_prod,
+        rej_prod=rej_prod,
+        enviada_prod=enviada_prod,
+        auth_homolog=auth_homolog,
+        rej_homolog=rej_homolog,
+    )
     out['kpis'] = [
+        _kpi('nfe_auth_prod', 'Autorizadas produção', auth_prod, link='/nfe-saida?status_emissao=autorizada_producao'),
+        _kpi('nfe_rej_prod', 'Rejeitadas produção', rej_prod, link='/nfe-saida?status_emissao=rejeitada_producao'),
+        _kpi('nfe_enviada_prod', 'Enviadas produção', enviada_prod, link='/nfe-saida?status_emissao=enviada_producao'),
+        _kpi('nfe_auth_homolog', 'Autorizadas homologação', auth_homolog, link='/nfe-saida?status_emissao=autorizada_homologacao'),
+        _kpi('nfe_rej_homolog', 'Rejeitadas homologação', rej_homolog, link='/nfe-saida?status_emissao=rejeitada_homologacao'),
         _kpi('nfe_rascunhos', 'Rascunhos', rascunhos, link='/nfe-saida?status=rascunho'),
         _kpi('nfe_prontas', 'Prontas para emissão', prontas, link='/nfe-saida'),
-        _kpi('nfe_auth_homolog', 'Autorizadas homologação', auth, link='/nfe-saida?status_emissao=autorizada_homologacao'),
-        _kpi('nfe_rej_homolog', 'Rejeitadas homologação', rej, link='/nfe-saida?status_emissao=rejeitada_homologacao'),
         _kpi('nfe_erro_tx', 'Erro transmissão', erro, link='/nfe-saida?status_emissao=erro_transmissao'),
         _kpi('nfe_canceladas', 'Canceladas', canceladas),
+        _kpi('dfe_pendentes_entrada', 'DF-e pendentes de entrada', dfe['pendentes_entrada'], link='/central-dfe'),
+        _kpi(
+            'dfe_aguardando_manifestacao',
+            'NF-e aguardando manifestação',
+            dfe['aguardando_manifestacao'],
+            link='/central-dfe',
+        ),
+        _kpi('dfe_xml_pendente', 'XML DF-e pendente', dfe['xml_pendente'], link='/central-dfe'),
+        _kpi('dfe_cte_pendentes', 'CT-e pendentes', dfe['cte_pendentes'], link='/central-dfe'),
         _kpi('nfe_entrada_total', 'NF-e entrada', entrada_qs.count(), link='/nfe-entrada'),
     ]
 
-    status_chart = [
+    status_chart_homolog = [
         {'label': 'Rascunho', 'valor': rascunhos},
         {'label': 'Pronta emissão', 'valor': prontas},
-        {'label': 'Auth. homolog.', 'valor': auth},
-        {'label': 'Rej. homolog.', 'valor': rej},
+        {'label': 'Auth. homolog.', 'valor': auth_homolog},
+        {'label': 'Rej. homolog.', 'valor': rej_homolog},
         {'label': 'Erro transmissão', 'valor': erro},
         {'label': 'Cancelada', 'valor': canceladas},
     ]
-    out['graficos'].append(_chart('nfe_saida_por_status', 'NF-e saída por status', 'bar', status_chart))
+    out['graficos'].append(_chart('nfe_saida_homologacao', 'NF-e saída — homologação', 'bar', status_chart_homolog))
+
+    status_chart_prod = [
+        {'label': 'Auth. produção', 'valor': auth_prod},
+        {'label': 'Rej. produção', 'valor': rej_prod},
+        {'label': 'Enviada produção', 'valor': enviada_prod},
+    ]
+    out['graficos'].append(_chart('nfe_saida_producao', 'NF-e saída — produção', 'bar', status_chart_prod))
+
+    dfe_chart = [
+        {'label': 'Pend. entrada', 'valor': dfe['pendentes_entrada']},
+        {'label': 'Aguard. manifest.', 'valor': dfe['aguardando_manifestacao']},
+        {'label': 'XML pendente', 'valor': dfe['xml_pendente']},
+        {'label': 'CT-e pendente', 'valor': dfe['cte_pendentes']},
+    ]
+    out['graficos'].append(_chart('dfe_recebidos_alertas', 'DF-e recebidos — fila', 'donut', dfe_chart))
 
     nf_periodo = _filtro_periodo_data(nf_qs, f)
     evolucao = (
@@ -353,6 +416,20 @@ def montar_bi_fiscal(f: DashboardFilters) -> dict:
             [{'label': r['cstat_autorizacao'], 'valor': str(r['total']), 'link': '/nfe-saida?status_emissao=rejeitada_homologacao'} for r in cstat_rows],
         ),
     )
+
+    if dfe['total']:
+        out['links'].append(
+            {
+                'id': 'central_dfe',
+                'titulo': 'DF-e Recebidos',
+                'descricao': (
+                    f"{dfe['total']} documento(s) na fila — "
+                    f"{dfe['pendentes_entrada']} pendente(s) de entrada, "
+                    f"{dfe['aguardando_manifestacao']} aguardando manifestação."
+                ),
+                'link': '/central-dfe',
+            },
+        )
 
     top_clientes = (
         nf_qs.filter(cliente_id__isnull=False)
@@ -421,13 +498,47 @@ def montar_bi_fiscal(f: DashboardFilters) -> dict:
         out['alertas'].append(
             _alerta('fiscal', 'aviso', 'Certificado vencendo', f'{cert_vencendo} certificado(s) vence(m) em 30 dias.', '/empresas'),
         )
-    if rej:
+    if rej_homolog:
         out['alertas'].append(
-            _alerta('fiscal', 'critico', 'NF-e rejeitada', f'{rej} NF-e rejeitada(s) em homologação.', '/nfe-saida?status_emissao=rejeitada_homologacao'),
+            _alerta('fiscal', 'critico', 'NF-e rejeitada (homologação)', f'{rej_homolog} NF-e rejeitada(s) em homologação.', '/nfe-saida?status_emissao=rejeitada_homologacao'),
+        )
+    if rej_prod:
+        out['alertas'].append(
+            _alerta('fiscal', 'critico', 'NF-e rejeitada (produção)', f'{rej_prod} NF-e rejeitada(s) em produção.', '/nfe-saida?status_emissao=rejeitada_producao'),
         )
     if erro:
         out['alertas'].append(
             _alerta('fiscal', 'critico', 'Erro transmissão', f'{erro} NF-e com erro de transmissão.', '/nfe-saida?status_emissao=erro_transmissao'),
+        )
+    if dfe['aguardando_manifestacao']:
+        out['alertas'].append(
+            _alerta(
+                'fiscal',
+                'aviso',
+                'Manifestação pendente',
+                f"{dfe['aguardando_manifestacao']} NF-e destinada(s) aguardando manifestação.",
+                '/central-dfe',
+            ),
+        )
+    if dfe['xml_pendente']:
+        out['alertas'].append(
+            _alerta(
+                'fiscal',
+                'aviso',
+                'XML DF-e pendente',
+                f"{dfe['xml_pendente']} documento(s) com XML ainda não armazenado.",
+                '/central-dfe',
+            ),
+        )
+    if dfe['pendentes_entrada']:
+        out['alertas'].append(
+            _alerta(
+                'fiscal',
+                'info',
+                'DF-e pendentes de entrada',
+                f"{dfe['pendentes_entrada']} documento(s) na fila de entrada.",
+                '/central-dfe',
+            ),
         )
 
     sem_ncm = Produto.objects.filter(Q(ncm='') | Q(ncm__isnull=True)).count()
@@ -887,6 +998,7 @@ def _resumir_modulo_home(bi: dict) -> dict:
         'kpis': kpis,
         'alerta_principal': alerta,
         'link_bi': link_bi,
+        'hero_kpi_id': bi.get('hero_kpi_id'),
     }
 
 

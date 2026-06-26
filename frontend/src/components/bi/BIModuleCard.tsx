@@ -11,7 +11,7 @@ function alertClass(sev: string) {
 
 export function BIModuleCard({ modulo }: { modulo: DashboardModuloHome }) {
   const alerta = modulo.alerta_principal;
-  const heroId = MODULO_HERO_KPI[modulo.modulo as keyof typeof MODULO_HERO_KPI];
+  const heroId = modulo.hero_kpi_id ?? MODULO_HERO_KPI[modulo.modulo as keyof typeof MODULO_HERO_KPI];
   const heroKpi = heroId ? modulo.kpis.find((k) => k.id === heroId) : null;
   const secondaryKpis = modulo.kpis.filter((k) => k.id !== heroId);
 

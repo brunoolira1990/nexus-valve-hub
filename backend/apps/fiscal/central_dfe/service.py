@@ -684,6 +684,51 @@ def calcular_resumo_central(rows: list[DocumentoCentralDfe]) -> dict[str, int]:
     return resumo
 
 
+def resumo_central_dfe_dashboard(empresa_id: int | None = None) -> dict[str, int | None]:
+    """Resumo leve da Central DF-e para alertas do dashboard fiscal."""
+    empresa: Empresa | None = None
+    if empresa_id:
+        empresa = Empresa.objects.filter(pk=empresa_id).first()
+    if empresa is None:
+        empresa = Empresa.objects.order_by('pk').first()
+    if empresa is None:
+        return {
+            'total': 0,
+            'pendentes_entrada': 0,
+            'nfe_fornecedores': 0,
+            'cte_transportadoras': 0,
+            'divergentes': 0,
+            'ignorados': 0,
+            'ja_tratados': 0,
+            'aguardando_manifestacao': 0,
+            'xml_pendente': 0,
+            'cte_pendentes': 0,
+            'empresa_id': None,
+        }
+
+    filtros = FiltrosCentralDfe(empresa_id=empresa.pk)
+    rows = coletar_documentos_central_dfe(filtros, empresa=empresa)
+    resumo = calcular_resumo_central(rows)
+    aguardando_manifestacao = NFeDestinadaManifestacao.objects.filter(
+        empresa_id=empresa.pk,
+        ambiente=NFeDestinadaManifestacao.Ambiente.PRODUCAO,
+        status_manifestacao=NFeDestinadaManifestacao.StatusManifestacao.PENDENTE,
+    ).count()
+    xml_pendente = sum(1 for row in rows if not row.xml_armazenado)
+    cte_pendentes = sum(
+        1
+        for row in rows
+        if row.tipo_documento == TIPO_CTE and row.status_entrada == 'PENDENTE_ENTRADA'
+    )
+    return {
+        **resumo,
+        'aguardando_manifestacao': aguardando_manifestacao,
+        'xml_pendente': xml_pendente,
+        'cte_pendentes': cte_pendentes,
+        'empresa_id': empresa.pk,
+    }
+
+
 def coletar_documentos_central_dfe(
     filtros: FiltrosCentralDfe,
     *,

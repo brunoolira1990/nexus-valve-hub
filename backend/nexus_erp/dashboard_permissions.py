@@ -37,6 +37,12 @@ MODULO_PERMISSOES: dict[str, list[str]] = {
         'corridas.view_corrida',
     ],
     'financeiro': [
+        'financeiro.view_titulofinanceiro',
+        'financeiro.view_contafinanceira',
+        'financeiro.view_creditofinanceiro',
+        'financeiro.add_titulofinanceiro',
+        'financeiro.change_titulofinanceiro',
+        # Compatibilidade com perfis que ainda usam permissões contábeis.
         'contabil.view_contacontabil',
         'contabil.view_lancamentocontabil',
     ],

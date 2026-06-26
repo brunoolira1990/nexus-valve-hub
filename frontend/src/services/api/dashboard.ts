@@ -182,6 +182,7 @@ export type DashboardModuloBI = {
   links: BILink[];
   em_preparacao?: boolean;
   mensagem?: string;
+  hero_kpi_id?: string | null;
 };
 
 export type DashboardModuloHome = {
@@ -190,6 +191,7 @@ export type DashboardModuloHome = {
   kpis: BIKpi[];
   alerta_principal: BIAlert | null;
   link_bi: string;
+  hero_kpi_id?: string | null;
 };
 
 export type DashboardHome = {

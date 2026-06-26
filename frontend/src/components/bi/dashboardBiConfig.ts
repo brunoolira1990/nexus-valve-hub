@@ -34,7 +34,7 @@ export function formatPeriodoLabel(periodo?: DashboardPeriodo | null | undefined
 
 export const MODULO_HERO_KPI: Record<DashboardBIModulo, string | null> = {
   comercial: 'valor_aberto',
-  fiscal: 'nfe_auth_homolog',
+  fiscal: 'nfe_auth_prod',
   estoque: 'produtos_cadastrados',
   compras: 'valor_aberto_compras',
   qualidade: 'cq_emitidos',

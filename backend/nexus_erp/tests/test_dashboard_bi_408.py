@@ -78,7 +78,11 @@ class DashboardBI408Tests(TestCase):
         NFeSaida.objects.create(numero='NF-BI', cliente=self.cliente, data=self.hoje, status='RASCUNHO', valor_total=1)
         self.client.force_authenticate(self.admin)
         data = self.client.get('/api/dashboard/fiscal/').json()
-        self.assertNotIn('xml', str(data).lower())
+        payload = str(data).lower()
+        self.assertNotIn('xml_conteudo', payload)
+        self.assertNotIn('<nfe', payload)
+        for item in data.get('ultimos', []):
+            self.assertNotIn('xml', item.keys())
 
     def test_fiscal_calcula_por_status(self):
         NFeSaida.objects.create(
