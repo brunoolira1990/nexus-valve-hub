@@ -328,6 +328,7 @@ const LABELS_TIPO_EVENTO: Record<string, string> = {
   CONSULTA_SITUACAO_SEFAZ: 'Consulta SEFAZ',
   CARTA_CORRECAO_EMITIDA: 'Carta de Correção emitida',
   CANCELAMENTO_SEFAZ_EMITIDO: 'Cancelamento SEFAZ',
+  INUTILIZACAO_SEFAZ_EMITIDA: 'Inutilização SEFAZ',
 };
 
 export function labelTipoEventoNFe(tipo: string): string {

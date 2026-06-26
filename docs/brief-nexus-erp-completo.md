@@ -1,7 +1,7 @@
 # Brief completo — Nexus ERP
 
 **Documento:** visão consolidada do sistema  
-**Versão de referência:** ERP 4.0.15.2.41  
+**Versão de referência:** ERP 4.0.16.2  
 **Última atualização:** 24/06/2026  
 **Repositório:** `nexus-valve-hub`  
 **Público-alvo:** gestão, produto, analistas, desenvolvedores e operação
@@ -48,7 +48,7 @@ O sistema está em **evolução incremental** por fases numeradas (ERP 4.0.x), c
 | **Diferencial fiscal** | Separação entrada × saída; cenário fiscal de saída com homologação por proposta; emissão NF-e homologação e produção |
 | **Modelo operacional** | Venda sob demanda — estoque **não bloqueia** emissão de NF-e saída |
 | **Financeiro** | CR/CP manual; geração explícita a partir de NF-e (sem automação na autorização) |
-| **Pendências estratégicas** | CRM, remessas, contábil, cancelamento/CC-e produção, kardex completo, deep links entre telas |
+| **Pendências estratégicas** | CRM, remessas, contábil, kardex completo, deep links entre telas |
 
 ---
 
@@ -96,7 +96,7 @@ Essa separação evita misturar “o que entrou” com “o que vamos emitir”.
 | Princípio | Descrição |
 |-----------|-----------|
 | **Evolução incremental** | Fases numeradas com checklist no roadmap; cada entrega documentada |
-| **Homologação antes de produção** | NF-e saída: homologação SEFAZ (tpAmb=2) antes de produção real; flag `NFE_PRODUCAO_HABILITADA` |
+| **Homologação antes de produção** | NF-e saída: homologação SEFAZ (tpAmb=2) validada antes da produção; emissão **produção ativa** no ambiente operacional (`NFE_PRODUCAO_HABILITADA` conforme `.env` do servidor) |
 | **Estoque não bloqueia NF-e** | Venda sob demanda; atendimento flexível (fluxos A, B e C) |
 | **Financeiro manual na origem fiscal** | CR/CP a partir de NF-e exige ação explícita do usuário |
 | **Somente leitura onde aplicável** | Painéis consolidados (BI, centro de informações do produto, rastreabilidade) não alteram regras de negócio |
@@ -202,12 +202,12 @@ A Nexus opera majoritariamente com **venda sob demanda**. O ERP controla **orige
 | Propostas | Em evolução | Alta | CRUD, fiscal, homologação, conversão PV | Versionamento, PDF avançado |
 | Pedido de venda | Parcial | Alta | PV, faturamento parcial, NF rascunho | Reserva refinada, deep links |
 | Fiscal entrada | Em evolução | Alta | Classificação, conferência, estoque, fornecedor CP | Snapshot fiscal persistido |
-| NF-e saída | Parcial | Alta | Conferência, homologação, produção, DIFAL, DANFE/XML | CC-e/cancelamento produção, consumo total do cenário |
+| NF-e saída | Parcial | Alta | Conferência, homologação, produção, DIFAL, DANFE/XML, CC-e, cancelamento e inutilização SEFAZ | Consumo total do cenário fiscal |
 | Estoque | Em evolução | Alta | Saldo corrida, atendimento, painel produto | Kardex, estorno, relatório ponta a ponta |
 | Qualidade | Parcial | Média | CF, CQ, numeração automática, CQ manual | Dashboard pendências |
 | Financeiro | Base operacional | Alta | CR/CP, baixas, créditos, relatórios PDF | Conciliação, automação pós-autorização |
 | Contábil | Futuro | Baixa | Placeholder | Plano de contas, lançamentos |
-| BI | Parcial | Média | Dashboards por área | Unificação, auditoria de alterações |
+| BI | Parcial | Média | Dashboards por módulo (incl. Expedição), menu reorganizado, Contador export XML | SPED, menu por permissão, auditoria |
 | Remessas | Não iniciado | Média | CFOPs auxiliares | Modelo e emissão |
 
 ---
@@ -340,9 +340,10 @@ RASCUNHO → conferência (abas) → prontidão → XML prévia/oficial
 | DIFAL | Venda interestadual a não contribuinte |
 | Numeração | Pool com reutilização de número não transmitido |
 | Pós-autorização | DANFE/XML autorizado, consulta SEFAZ, envio e-mail DANFE/XML |
+| Eventos SEFAZ | Carta de correção (CC-e) e cancelamento — homologação e produção |
 | Modos estoque | IMEDIATO (baixa na emissão) / ANTECIPADO (compromisso sem baixa) |
 
-**Pendências produção:** cancelamento SEFAZ e carta de correção em produção — fase futura documentada.
+**Pendência fiscal:** contingência SEFAZ e consumo pleno do cenário na emissão.
 
 ### 9.3 Regras e cenários fiscais
 
@@ -465,11 +466,42 @@ Modelos básicos: `PlanoConta`, `Lancamento` — integração futura.
 
 ### 13.2 Dashboards BI
 
-**Telas:** `/dashboard` + módulos (`comercial`, `fiscal`, `estoque`, `compras`, `qualidade`, `financeiro`)
+**Telas:** `/dashboard` + módulos (`comercial`, `compras`, `estoque`, `expedicao`, `fiscal`, `qualidade`, `financeiro`)
 
-- KPIs e gráficos (Recharts)
+- KPIs e gráficos (Recharts); hero KPI dinâmico por módulo
 - Permissões por módulo (`dashboard_permissions.py`)
-- Drill-down com filtros de período
+- Drill-down com filtros de período e empresa
+- Financeiro com resumo operacional real (`montar_resumo_financeiro`) — não é mais stub
+
+### 13.3 Navegação (menu lateral)
+
+Configuração central: `frontend/src/config/sidebarMenuConfig.ts`
+
+| Seção | Conteúdo principal |
+|-------|-------------------|
+| Dashboard | Visão geral + painéis BI por permissão |
+| Cadastros | Empresas, clientes, fornecedores, transportadoras, colaboradores |
+| Catálogo | Produtos, corridas/lotes |
+| Compras | Pedidos, NF-e entrada, base NF-e entrada |
+| Comercial | Propostas, pedidos de venda |
+| CRM | Placeholder (`/modulos/crm`) |
+| Estoque & Logística | Saldos, atendimentos operacionais, expedição |
+| Fiscal | Subgrupos Operação / Bases·Histórico / Gestão |
+| Qualidade | CQ, certificados fornecedor |
+| Financeiro | CR, CP, créditos, relatórios, cadastros financeiros |
+| Gestão de Resultado / Folha·RH | Placeholders |
+| Contábil | `/contabil` |
+| Contador | Exportar XMLs (`/contador/exportar-xmls`); SPED em breve |
+
+Seções colapsadas por padrão; apenas a seção da rota ativa expandida.
+
+### 13.4 Módulo Contador
+
+| Endpoint / tela | Função |
+|-----------------|--------|
+| `GET /api/contador/exportar-xmls/?inicio=&fim=&tipo=` | ZIP com XMLs (NF-e saída/entrada, CT-e base) |
+| `/contador/exportar-xmls` | UI de exportação por período |
+| `/contador/sped` | Placeholder — decisão pendente (EFD Fiscal vs Contribuições) |
 
 ---
 
@@ -622,7 +654,7 @@ Documento: [`design-system-nexus.md`](design-system-nexus.md).
 | Financeiro não gera automaticamente na autorização NF-e | Decisão de produto — controle manual e auditoria |
 | Estoque não bloqueia NF-e saída | Modelo operacional venda sob demanda |
 | Deep links parciais entre telas | Listagens abrem sem filtro por ID em vários casos |
-| Cancelamento/CC-e em produção | Fase futura documentada |
+| Inutilização de numeração NF-e | Implementada — homologação e produção (`NFeInutilizacao4`) |
 | CRM e remessas | Não iniciados |
 | Contábil | Placeholder |
 | Inteligência de compras no painel produto | Pode contar PC + NF + conferência do mesmo evento |
@@ -639,14 +671,23 @@ Documento vivo: [`roadmap-nexus-erp.md`](roadmap-nexus-erp.md).
 
 | Fase | Foco |
 |------|------|
-| NF-e Saída | CC-e e cancelamento produção; consumo pleno do cenário fiscal |
+| NF-e Saída | Contingência; consumo pleno do cenário fiscal |
 | Fiscal Entrada 4 | Snapshot fiscal persistido pós-classificação |
 | Financeiro 2 | Conciliação; evolução pós-autorização (sem quebrar manualidade) |
 | Estoque 3.13 | Kardex e relatório ponta a ponta |
 | Propostas 2.0 | Versionamento e aprovação |
 | Deep links | Filtros por ID nas telas de destino (corridas, certificados, NF-e) |
 
-### Últimas entregas relevantes (4.0.15.x)
+### Últimas entregas relevantes (4.0.16.x)
+
+| Fase | Entrega |
+|------|---------|
+| 4.0.16 | Dashboard BI fases 1–3 (Expedição, KPIs fiscal/compras, otimizações) |
+| 4.0.16.1 | Reorganização do menu lateral (`sidebarMenuConfig`) |
+| 4.0.16.2 | Módulo Contador — exportação ZIP de XMLs por período |
+| NF-e produção | Emissões SEFAZ produção ativas no ambiente operacional |
+
+### Entregas anteriores (4.0.15.x)
 
 | Fase | Entrega |
 |------|---------|
@@ -697,4 +738,4 @@ Documento vivo: [`roadmap-nexus-erp.md`](roadmap-nexus-erp.md).
 
 ---
 
-*Este brief consolida o estado do Nexus ERP na versão 4.0.15.2.41. Para detalhes de implementação, consultar a especificação técnica e o roadmap. Atualizar este documento em marcos relevantes de release.*
+*Este brief consolida o estado do Nexus ERP na versão 4.0.16.2. Para detalhes de implementação, consultar a especificação técnica e o roadmap. Atualizar este documento em marcos relevantes de release.*

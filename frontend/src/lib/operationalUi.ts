@@ -18,6 +18,7 @@ export const ACTION_LABELS = {
   cancelarNfe: 'Cancelar NF-e',
   enviarDanfeXml: 'Enviar DANFE/XML',
   cartaCorrecao: 'Carta de Correção',
+  inutilizarNumeracao: 'Inutilizar numeração',
   historicoSefaz: 'Histórico SEFAZ',
   corrigirDados: 'Corrigir dados',
   validarNovamente: 'Validar novamente',

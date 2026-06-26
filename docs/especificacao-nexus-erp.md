@@ -3,7 +3,7 @@
 Documento de referência técnica e funcional do sistema. Complementa o [roadmap](roadmap-nexus-erp.md) (evolução e fases) com a **fotografia atual** da aplicação.
 
 > **Brief consolidado (visão executiva e funcional completa):** [`brief-nexus-erp-completo.md`](brief-nexus-erp-completo.md)  
-> **Última atualização:** 24/06/2026 — ERP 4.0.15.2.41  
+> **Última atualização:** 24/06/2026 — ERP 4.0.16.2  
 > **Repositório:** `nexus-valve-hub`  
 > **Público-alvo:** desenvolvedores, analistas, operação e gestão de produto
 
@@ -403,12 +403,22 @@ RASCUNHO → conferência (abas) → prontidão → XML prévia/oficial
 - Reforma tributária IBS/CBS no snapshot e XML
 - Duplicatas `<cobr>/<dup>` no XML
 - Emissão homologação: assinatura A1, transmissão PyNFe, DANFE BFR
-- Emissão produção: backend pronto, flag `NFE_PRODUCAO_HABILITADA` (controle operacional)
+- Emissão produção: ativa no ambiente operacional (`NFE_PRODUCAO_HABILITADA`)
+- Carta de correção (CC-e): prévia PDF, transmissão SEFAZ, comprovante PDF
+- Cancelamento SEFAZ: contexto, transmissão evento 110111, efeitos comerciais no pedido
 - DIFAL para venda interestadual a não contribuinte
 - Pool de numeração com reutilização de número não transmitido
 - Envio e-mail DANFE/XML (`NFeSaidaEnvioEmail`)
 
 **API:** `nf-saidas`, `nfe-numeracoes`, `nfe-sefaz-status`
+
+**Eventos pós-autorização e numeração (implementados):**
+
+| Ação | Endpoints |
+|------|-----------|
+| Carta de correção | `GET .../carta-correcao/dados/`, `POST .../emitir-carta-correcao/`, etc. |
+| Cancelamento SEFAZ | `GET .../cancelamento/dados/`, `POST .../cancelar/` |
+| Inutilização numeração | `GET /api/nfe-numeracoes/{id}/inutilizacao/dados/`, `POST .../inutilizar/`; atalho `POST /api/nf-saidas/{id}/inutilizar/` |
 
 ---
 
@@ -523,11 +533,17 @@ RASCUNHO → conferência (abas) → prontidão → XML prévia/oficial
 
 ### 6.14 BI e dashboards
 
-**Telas:** `/dashboard` + `/dashboard/{comercial|fiscal|estoque|compras|qualidade|financeiro}`
+**Telas:** `/dashboard` + `/dashboard/{comercial|compras|estoque|expedicao|fiscal|qualidade|financeiro}`
 
-**API:** `GET /api/dashboard/home/`, `.../comercial/`, etc.; `GET /api/dashboard/resumo/` (legado)
+**API:** `GET /api/dashboard/home/`, `.../comercial/`, `.../expedicao/`, etc.; `GET /api/dashboard/resumo/` (legado); `GET /api/dashboard/permissoes/`
 
-**Conteúdo:** KPIs, gráficos Recharts, alertas, drill-down com filtros de período; financeiro em estado de preparação onde aplicável.
+**Conteúdo:** KPIs, gráficos Recharts, alertas, drill-down com filtros de período; financeiro com resumo operacional real (`montar_resumo_financeiro`).
+
+### 6.15 Módulo Contador
+
+**Telas:** `/contador/exportar-xmls` (operacional), `/contador/sped` (placeholder)
+
+**API:** `GET /api/contador/exportar-xmls/?inicio=&fim=&tipo=` — ZIP com XMLs (NF-e saída/entrada, CT-e base) no período informado
 
 ---
 
@@ -580,7 +596,7 @@ Login (/login)
               └── Páginas de domínio
 ```
 
-- **Sidebar:** menu por área (Cadastros, Produtos, Compras, Comercial, Fiscal, Estoque, Qualidade, Financeiro, Contábil)
+- **Sidebar:** menu por jornada operacional (`sidebarMenuConfig.ts`) — Cadastros, Catálogo, Compras, Comercial, CRM (placeholder), Estoque & Logística, Fiscal (subgrupos), Qualidade, Financeiro, Gestão de Resultado / Folha·RH (placeholders), Contábil, Contador
 - **Header:** busca global, empresa atual, menu usuário, selo homologação
 - **Breadcrumbs:** `MainLayout` + `lib/sidebarNav.ts`
 
@@ -588,17 +604,20 @@ Login (/login)
 
 | Área | Rotas |
 |------|-------|
-| Dashboard | `/dashboard`, `/dashboard/comercial`, `.../fiscal`, `.../estoque`, `.../compras`, `.../qualidade`, `.../financeiro` |
+| Dashboard | `/dashboard`, `/dashboard/comercial`, `.../compras`, `.../estoque`, `.../expedicao`, `.../fiscal`, `.../qualidade`, `.../financeiro` |
 | Cadastros | `/empresas`, `/clientes`, `/clientes/novo`, `/clientes/:id/edit`, `/fornecedores/*`, `/transportadoras/*`, `/colaboradores` |
 | Conta | `/minha-conta`, `/minha-conta/alterar-senha` |
-| Produtos | `/produtos` |
+| Catálogo | `/produtos`, `/corridas` |
 | Comercial | `/propostas`, `/pedidos-venda` |
+| CRM (placeholder) | `/modulos/crm` |
 | Compras | `/pedidos-compra`, `/nfe-entrada`, `/nfe-entrada-historica-importada`, `/nfe-entrada/:id/conferencia` |
 | Fiscal | `/nfe-saida`, `/nfe-sefaz`, `/nfe-historica-importada`, `/central-dfe`, `/manifestacao-destinatario`, `/visao-gerencial-nfe-historica`, `/cte-entrada`, `/cte-historico-importado`, `/regras-fiscais`, `/apuracao-fiscal` |
-| Estoque | `/estoque`, `/atendimentos-estoque`, `/expedicao` |
-| Qualidade | `/certificados`, `/certificados-fornecedor`, `/corridas` |
+| Estoque & Logística | `/estoque`, `/atendimentos-estoque`, `/expedicao` |
+| Qualidade | `/certificados`, `/certificados-fornecedor` |
 | Financeiro | `/financeiro`, `/financeiro/contas-receber`, `.../contas-pagar`, `.../creditos`, `.../cadastros`, `.../relatorios` (+ 6 sub-relatórios) |
+| Gestão de Resultado / Folha·RH (placeholder) | `/modulos/gestao-resultado`, `/modulos/folha-rh` |
 | Contábil | `/contabil` |
+| Contador | `/contador/exportar-xmls`, `/contador/sped` (placeholder) |
 
 ### 8.3 Padrões de UI
 
@@ -658,7 +677,8 @@ flowchart LR
 4. Preview XML + DANFE
 5. Checklist homologação (opcional)
 6. Emitir homologação ou produção (conforme ambiente e flag)
-7. Opcional: gerar CR via wizard
+7. Opcional: CC-e ou cancelamento SEFAZ (se necessário)
+8. Opcional: gerar CR via wizard
 
 ### 9.5 Centro de informações do produto
 
@@ -680,7 +700,7 @@ flowchart LR
 
 | Integração | Biblioteca / serviço | Uso |
 |------------|---------------------|-----|
-| SEFAZ NF-e | PyNFe, nfelib | Emissão, consulta status, manifestação, cancelamento |
+| SEFAZ NF-e | PyNFe, nfelib | Emissão, consulta status, manifestação, CC-e, cancelamento |
 | DANFE PDF | BrazilFiscalReport 0.7.4 | Renderer oficial (`DANFE_RENDERER_OFICIAL=BFR`) |
 | Certificado A1 | cryptography, signxml | Assinatura XML |
 | CEP | ViaCEP (API) | Cadastro endereços |
@@ -784,6 +804,7 @@ Pacote `frontend/src/components/nexus/`:
 | Data | Versão ERP | Alteração |
 |------|------------|-----------|
 | 24/06/2026 | 4.0.15.2.40 | Criação da especificação completa |
+| 24/06/2026 | 4.0.16.2 | Menu reorganizado, BI Expedição, módulo Contador, NF-e produção em operação |
 
 ---
 

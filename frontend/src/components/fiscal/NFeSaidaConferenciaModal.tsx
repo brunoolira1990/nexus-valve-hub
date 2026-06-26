@@ -77,6 +77,7 @@ import { GerarContasReceberNfeModal } from '@/components/fiscal/GerarContasReceb
 import { NFeConsultaSefazModal } from '@/components/fiscal/NFeConsultaSefazModal';
 import { NFeCartaCorrecaoModal } from '@/components/fiscal/NFeCartaCorrecaoModal';
 import { NFeCancelamentoModal } from '@/components/fiscal/NFeCancelamentoModal';
+import { NFeInutilizacaoModal } from '@/components/fiscal/NFeInutilizacaoModal';
 import { buildCartaCorrecaoContextoFromConferencia } from '@/lib/nfeCartaCorrecaoPreview';
 import { NFeFinanceiroPanel } from '@/components/fiscal/NFeFinanceiroPanel';
 import { NFeSaidaAcoesOperacionais } from '@/components/fiscal/NFeSaidaAcoesOperacionais';
@@ -178,6 +179,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
   const [consultaSefazOpen, setConsultaSefazOpen] = useState(false);
   const [cartaCorrecaoOpen, setCartaCorrecaoOpen] = useState(false);
   const [cancelamentoOpen, setCancelamentoOpen] = useState(false);
+  const [inutilizacaoOpen, setInutilizacaoOpen] = useState(false);
   const [baselineSnapshot, setBaselineSnapshot] = useState<ConferenciaDirtySnapshot | null>(null);
   const [acaoLoadingMsg, setAcaoLoadingMsg] = useState<string | null>(null);
 
@@ -1607,6 +1609,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                         if (acao.id === 'consulta_sefaz') setConsultaSefazOpen(true);
                         if (acao.id === 'carta_correcao') setCartaCorrecaoOpen(true);
                         if (acao.id === 'cancelamento') setCancelamentoOpen(true);
+                        if (acao.id === 'inutilizacao') setInutilizacaoOpen(true);
                       }}
                     >
                       {acao.label}
@@ -2011,6 +2014,17 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
         nfeId={nfeId}
         onClose={() => setCancelamentoOpen(false)}
         onCancelada={() => {
+          void load();
+          setHistoricoRefreshKey((k) => k + 1);
+        }}
+      />
+
+      <NFeInutilizacaoModal
+        mode="nfe"
+        open={inutilizacaoOpen}
+        nfeId={nfeId}
+        onClose={() => setInutilizacaoOpen(false)}
+        onInutilizada={() => {
           void load();
           setHistoricoRefreshKey((k) => k + 1);
         }}

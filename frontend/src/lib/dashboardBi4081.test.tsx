@@ -53,9 +53,9 @@ describe('ERP 4.0.8.1 — navegação por permissão', () => {
 });
 
 describe('ERP 4.0.8.1 — BIPreparationState', () => {
-  it('BIPreparationState não exibe R$ 0,00', () => {
-    render(<BIPreparationState />);
-    expect(screen.getByText('Financeiro em preparação')).toBeInTheDocument();
+  it('BIPreparationState exibe título e mensagem customizados', () => {
+    render(<BIPreparationState title="Módulo em breve" message="Funcionalidade em desenvolvimento." />);
+    expect(screen.getByText('Módulo em breve')).toBeInTheDocument();
     expect(screen.queryByText(/R\$\s*0,00/)).not.toBeInTheDocument();
   });
 });

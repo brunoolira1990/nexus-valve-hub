@@ -661,6 +661,59 @@ export type NFeCancelamentoResponse = {
   };
 };
 
+export type NFeInutilizacaoDadosResponse = {
+  configuracao_id?: number | null;
+  nfe_saida_id?: number;
+  pode_inutilizar: boolean;
+  motivo_bloqueio?: string;
+  ambiente: string;
+  ambiente_label: string;
+  serie: string;
+  proximo_numero?: number;
+  numero_inicial_sugerido?: number | null;
+  numero_final_sugerido?: number | null;
+  exige_confirmacao_producao: boolean;
+  alerta_producao?: string | null;
+  empresa_id?: number;
+  empresa_razao_social?: string;
+  cnpj?: string;
+  modelo_documento?: string;
+  tipo_operacao?: string;
+  nfe?: {
+    id: number;
+    numero_nfe: string;
+    serie_nfe: string;
+    status: string;
+    status_emissao_sefaz: string;
+    chave_acesso: string;
+  };
+  numeros_bloqueados?: Array<{ numero: number; motivo: string; nfe_saida_id?: number }>;
+  nfs_na_faixa?: Array<{ nfe_saida_id: number; numero: number; status: string; status_emissao_sefaz: string }>;
+};
+
+export type NFeInutilizacaoResponse = {
+  ok: boolean;
+  mensagem?: string;
+  configuracao_id?: number;
+  inutilizacao_id?: number;
+  nfs_afetadas?: number[];
+  ambiente?: string;
+  ambiente_label?: string;
+  serie?: string;
+  numero_inicial?: number;
+  numero_final?: number;
+  justificativa?: string;
+  cstat?: string;
+  cStat?: string;
+  xmotivo?: string;
+  xMotivo?: string;
+  protocolo?: string;
+  protocolo_inutilizacao?: string;
+  emitido_em?: string;
+  etapa?: string;
+  sefaz?: Record<string, string>;
+};
+
 export type NFeEmissaoProducaoResponse = NFeEmissaoHomologacaoResponse & {
   ambiente?: 'producao';
 };
@@ -670,6 +723,7 @@ export type NFeNumeracaoConfig = {
   empresa_id: number;
   modelo_documento: string;
   ambiente: 'homologacao' | 'producao';
+  tipo_operacao?: 'saida' | 'entrada_propria';
   serie: string;
   proximo_numero: number;
   ultimo_numero_reservado?: number | null;
@@ -1035,6 +1089,24 @@ export const nfeSaidasService = {
     });
     return res.data;
   },
+  inutilizacaoDados: async (id: number) =>
+    (await api.get<NFeInutilizacaoDadosResponse>(`${nfSai}${id}/inutilizacao/dados/`)).data,
+  inutilizarNfe: async (
+    id: number,
+    payload: {
+      justificativa: string;
+      numero_inicial?: number;
+      numero_final?: number;
+      confirmar_inutilizacao_producao?: boolean;
+      confirmar_texto?: string;
+    },
+  ) => {
+    const res = await api.post<NFeInutilizacaoResponse>(`${nfSai}${id}/inutilizar/`, payload, {
+      timeout: 120_000,
+      validateStatus: (s) => s >= 200 && s < 500,
+    });
+    return res.data;
+  },
   envioEmailDados: async (id: number) => {
     const { data } = await api.get<unknown>(`${nfSai}${id}/envio-email/dados/`);
     return data as NFeEnvioEmailDadosResponse;
@@ -1174,6 +1246,25 @@ export const nfeNumeracoesService = {
     (await api.patch<NFeNumeracaoConfig>(`nfe-numeracoes/${id}/`, data)).data,
   create: async (data: Omit<NFeNumeracaoConfig, 'id'>) =>
     (await api.post<NFeNumeracaoConfig>('nfe-numeracoes/', data)).data,
+  inutilizacaoDados: async (id: number, params?: { numero_inicial?: number; numero_final?: number }) =>
+    (await api.get<NFeInutilizacaoDadosResponse>(`nfe-numeracoes/${id}/inutilizacao/dados/`, { params })).data,
+  inutilizar: async (
+    id: number,
+    payload: {
+      numero_inicial: number;
+      numero_final: number;
+      justificativa: string;
+      confirmar_inutilizacao_producao?: boolean;
+      confirmar_texto?: string;
+      ano?: number;
+    },
+  ) => {
+    const res = await api.post<NFeInutilizacaoResponse>(`nfe-numeracoes/${id}/inutilizar/`, payload, {
+      timeout: 120_000,
+      validateStatus: (s) => s >= 200 && s < 500,
+    });
+    return res.data;
+  },
 };
 
 export const cteEntradasService = {

@@ -26,6 +26,7 @@ import { GerarContasReceberNfeModal } from '@/components/fiscal/GerarContasReceb
 import { NFeConsultaSefazModal } from '@/components/fiscal/NFeConsultaSefazModal';
 import { NFeCartaCorrecaoModal } from '@/components/fiscal/NFeCartaCorrecaoModal';
 import { NFeCancelamentoModal } from '@/components/fiscal/NFeCancelamentoModal';
+import { NFeInutilizacaoModal } from '@/components/fiscal/NFeInutilizacaoModal';
 import { NFeEnvioDanfeXmlModal } from '@/components/fiscal/NFeEnvioDanfeXmlModal';
 import { buildCartaCorrecaoContextoFromNfe } from '@/lib/nfeCartaCorrecaoPreview';
 import { NFeFinanceiroAcoes } from '@/components/fiscal/NFeFinanceiroAcoes';
@@ -64,6 +65,7 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
   const [consultaSefazOpen, setConsultaSefazOpen] = useState(false);
   const [cartaCorrecaoOpen, setCartaCorrecaoOpen] = useState(false);
   const [cancelamentoOpen, setCancelamentoOpen] = useState(false);
+  const [inutilizacaoOpen, setInutilizacaoOpen] = useState(false);
   const [envioEmailOpen, setEnvioEmailOpen] = useState(false);
 
   useEffect(() => {
@@ -401,6 +403,7 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
               onConsultaSefaz={() => setConsultaSefazOpen(true)}
               onCartaCorrecao={() => setCartaCorrecaoOpen(true)}
               onCancelamento={() => setCancelamentoOpen(true)}
+              onInutilizacao={() => setInutilizacaoOpen(true)}
               onEnvioDanfeXml={() => setEnvioEmailOpen(true)}
               financeiroSlot={
                 <NFeFinanceiroAcoes
@@ -423,7 +426,7 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
           {!descartePerm.pode && nfe && (nfe.status || '').toUpperCase() !== 'DESCARTADA_INTERNA' ? (
             <p className="text-xs text-muted-foreground w-full mt-2">
               {descartePerm.motivo ||
-                'Estorno interno não disponível. NF-e autorizada exige cancelamento SEFAZ (fase futura) ou Carta de Correção.'}
+                'Estorno interno não disponível. NF-e autorizada exige cancelamento ou carta de correção na SEFAZ.'}
             </p>
           ) : null}
         </DrawerFooter>
@@ -503,6 +506,18 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
         nfeId={nfeId}
         onClose={() => setCancelamentoOpen(false)}
         onCancelada={() => {
+          if (nfeId) {
+            void nfeSaidasService.getById(nfeId).then(setNfe).catch(() => undefined);
+          }
+        }}
+      />
+
+      <NFeInutilizacaoModal
+        mode="nfe"
+        open={inutilizacaoOpen}
+        nfeId={nfeId}
+        onClose={() => setInutilizacaoOpen(false)}
+        onInutilizada={() => {
           if (nfeId) {
             void nfeSaidasService.getById(nfeId).then(setNfe).catch(() => undefined);
           }

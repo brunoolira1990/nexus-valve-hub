@@ -498,6 +498,7 @@ class NFeSaidaEvento(models.Model):
         CONSULTA_SITUACAO_SEFAZ = 'CONSULTA_SITUACAO_SEFAZ', 'Consulta situação SEFAZ'
         CARTA_CORRECAO_EMITIDA = 'CARTA_CORRECAO_EMITIDA', 'Carta de Correção emitida'
         CANCELAMENTO_SEFAZ_EMITIDO = 'CANCELAMENTO_SEFAZ_EMITIDO', 'Cancelamento SEFAZ emitido'
+        INUTILIZACAO_SEFAZ_EMITIDA = 'INUTILIZACAO_SEFAZ_EMITIDA', 'Inutilização SEFAZ emitida'
 
     nfe_saida = models.ForeignKey(
         NFeSaida,
@@ -1461,6 +1462,49 @@ class NFeNumeracaoNumeroLiberado(models.Model):
     def __str__(self) -> str:
         estado = 'disponível' if self.consumido_em is None else 'consumido'
         return f'NF-e nº {self.numero} ({estado}) cfg#{self.configuracao_id}'
+
+
+class NFeInutilizacaoSefaz(models.Model):
+    """Registro de inutilização de faixa numérica transmitida à SEFAZ."""
+
+    configuracao = models.ForeignKey(
+        NFeNumeracaoConfiguracao,
+        on_delete=models.PROTECT,
+        related_name='inutilizacoes_sefaz',
+    )
+    serie = models.CharField(max_length=3)
+    ambiente = models.CharField(max_length=16)
+    ano = models.CharField(max_length=2, blank=True)
+    numero_inicial = models.PositiveIntegerField()
+    numero_final = models.PositiveIntegerField()
+    justificativa = models.TextField()
+    protocolo = models.CharField(max_length=32, blank=True)
+    cstat = models.CharField(max_length=8, blank=True)
+    xmotivo = models.TextField(blank=True)
+    xml_retorno = models.TextField(blank=True)
+    sefaz_ok = models.BooleanField(default=False)
+    criado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='nfe_inutilizacoes_criadas',
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-criado_em', '-pk']
+        verbose_name = 'Inutilização NF-e SEFAZ'
+        verbose_name_plural = 'Inutilizações NF-e SEFAZ'
+        indexes = [
+            models.Index(fields=['configuracao', 'serie', 'numero_inicial', 'numero_final']),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f'Inutilização série {self.serie} nº {self.numero_inicial}–{self.numero_final} '
+            f'({self.ambiente})'
+        )
 
 
 class AlocacaoAtendimento(models.Model):

@@ -33,6 +33,7 @@ type Props = {
   onCartaCorrecao?: () => void;
   cartaCorrecaoLoading?: boolean;
   onCancelamento?: () => void;
+  onInutilizacao?: () => void;
   onEnvioDanfeXml?: () => void;
   financeiroSlot?: React.ReactNode;
   compact?: boolean;
@@ -147,6 +148,7 @@ export function NFeSaidaAcoesGruposPanel({
   onCartaCorrecao,
   cartaCorrecaoLoading,
   onCancelamento,
+  onInutilizacao,
   onEnvioDanfeXml,
   onXmlAutorizado,
   financeiroSlot,
@@ -273,6 +275,19 @@ export function NFeSaidaAcoesGruposPanel({
             disabled={!acao.habilitada}
             title={acao.title}
             onClick={onCancelamento}
+          >
+            {acao.label}
+          </button>
+        );
+      case 'inutilizacao':
+        return (
+          <button
+            key={acao.id}
+            type="button"
+            className="erp-btn-destructive erp-btn-sm"
+            disabled={!acao.habilitada}
+            title={acao.title}
+            onClick={onInutilizacao}
           >
             {acao.label}
           </button>

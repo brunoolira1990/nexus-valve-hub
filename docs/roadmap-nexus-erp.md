@@ -47,14 +47,14 @@ Essa separação evita misturar “o que entrou” com “o que vamos emitir” 
 | Pedido de venda | Concluído parcial | Alta | Modelo, API, UI básica, conversão a partir de proposta | Status operacional, reserva, faturamento parcial, vínculos estoque/NF/financeiro | Pedido Venda 2 |
 | Fiscal entrada | Em evolução | Alta | Classificação, validação XML, bloqueio, conferência, estoque; finalização vinculada a PC; data de entrada obrigatória; **identificação de fornecedor para CP** | Snapshot persistido, relatórios de divergência/crédito | Fiscal Entrada 4 |
 | Fiscal saída / Cenário | Em evolução | Alta | Cenário, regras, editor guiado, homologação e histórico 3.10 | NF-e consumindo cenário, DANFE/XML | NF-e Saída 1 |
-| NF-e saída | Concluído parcial | Alta | Módulo operacional, modos atendimento estoque; **DIFAL** venda interestadual não contribuinte; **pool de numeração** e reutilização de número não transmitido | Consumir `RegraFiscalSaida`, XML/DANFE do cenário, CC-e/cancelamento produção | NF-e Saída 1 |
+| NF-e saída | Concluído parcial | Alta | Módulo operacional; **emissão produção SEFAZ ativa**; DIFAL; pool numeração; **CC-e, cancelamento e inutilização SEFAZ** | Consumo `RegraFiscalSaida` na emissão, contingência | NF-e Saída — cenário na emissão |
 | NF-e entrada própria | Em evolução | Alta | Importar XML entrada própria já emitida (4.0.14.x) | Emissão própria, devolução/recusa, retorno remessa, vínculo NF saída | Entrada Própria 1 |
 | Remessas | Não iniciado | Média | CFOPs no catálogo auxiliar de saída | Modelo, emissão, retorno, controle pendente | Remessa 1 |
 | Estoque / rastreabilidade | Em evolução | Alta | AtendimentoEstoque, aplicação física, CQ + rastreio; **painel consolidado por produto** (saldo, histórico compra/venda, fiscal, CQ, corridas — somente leitura) | Kardex, estorno, relatório ponta a ponta | Estoque 3.13 |
 | Qualidade | Concluído parcial | Média | CF, CQ, busca corrida, vínculo conferência; **numeração automática CQ**; **CQ manual sem CF obrigatório** | Relatório CQ, dashboard pendências | Qualidade 4 |
 | Financeiro | **Base operacional (4.0.14)** | Alta | CR/CP manual, baixa, estorno; geração manual CR/CP a partir de NF-e; **fornecedor identificado na entrada** para liberar CP | Conciliação, DRE, automação na autorização NF-e | Financeiro 2 |
 | Contábil | Futuro | Baixa | Tela placeholder | Plano de contas, lançamentos, DRE | Contábil 1 |
-| Relatórios / BI / auditoria | Concluído parcial | Média | Apuração fiscal, painéis gerenciais parciais | Dashboards unificados, auditoria de alterações | BI 1 |
+| Relatórios / BI / auditoria | Concluído parcial | Média | BI modular (8 painéis + Expedição); menu reorganizado; Contador export XML | Menu por permissão, SPED, auditoria alterações | BI 2 |
 
 **Legenda de status:** Concluído parcial · Em evolução · Não iniciado · Futuro · Precisa revisão
 
@@ -373,6 +373,11 @@ Proposta aprovada
 - **ERP 4.0.15.x Homologação fiscal NF-e Saída (CST 20 / cBenef / pedido / DANFE):** ICMS20 + redução BC (`nfe_icms_calculo.py`); cBenef SP com literal `SEM CBENEF` (`nfe_cbenef_sp.py`); validação preventiva SP+CST20+redução; pedido de compra no XML/DANFE (`danfe_xml_adicionais.py`); DANFE BFR oculta `SEM CBENEF` visualmente mantendo tag no XML (`sanitizar_xml_para_bfr`); consulta SEFAZ dev/local corrigida; commit `2ab0009` implantado e **validado no servidor operacional em 13/06/2026** (smoke homologação aprovado); **produção SEFAZ desligada** (`NFE_PRODUCAO_HABILITADA=false`); registro §14 em `docs/go-live-nfe-saida-producao.md`; **gate T0 produção permanece pendente**
 - **ERP 4.0.15 — Manifestação do Destinatário / Monitor NF-e Destinada:** modelos `NFeDestinadaManifestacao` + `NFeDestinadaManifestacaoEvento` (migration `0049`); pacote `manifestacao_destinatario/` (consulta manual DF-e, manifestação por documento, download XML, fechamento mensal); API `/api/fiscal/manifestacao-destinatario/`; UI `/manifestacao-destinatario`; XML baixado → Base DF-e Importada sem financeiro/estoque/apuração; testes `test_manifestacao_destinatario_4015.py` + `manifestacaoDestinatario4015.test.tsx`; **CT-e fase 4.0.15.1**; **sem alterar NF-e saída/DANFE/BFR**
 - **ERP 4.0.15.0.1 (Revisão leve — Manifestação Destinatário):** permissão fiscal em listagem/detalhe; botão Manifestar alinhado a status finais; fechamento mensal com período padrão do mês corrente; **sem testes automatizados nesta revisão**
+- **ERP 4.0.16 (Dashboard BI — fases 1–3):** KPIs fiscal com produção/homologação e Central DF-e; pendências qualidade/estoque operacional; painel Expedição; otimização agregações (`valor_aberto`, estoque mínimo); KPIs entrada própria e CT-e importado; testes `test_dashboard_bi_fase1`, `fase2`, `fase3`, `408`
+- **ERP 4.0.16.1 (Navegação — reorganização do menu):** `sidebarMenuConfig.ts` — Catálogo, Estoque & Logística, Fiscal com subgrupos, placeholders CRM/Gestão de Resultado/Folha-RH/SPED; colapso por seção ativa; breadcrumbs alinhados; testes `sidebarMenu.test.tsx`
+- **ERP 4.0.16.2 (Módulo Contador — exportação XML):** `GET /api/contador/exportar-xmls/` (ZIP por período: NF-e saída/entrada, CT-e base); UI `/contador/exportar-xmls`; SPED permanece placeholder; testes `test_contador_exportacao_xmls`
+- **ERP 4.0.16.3 (NF-e Saída — inutilização SEFAZ):** `NFeInutilizacao4` via PyNFe; `POST /api/nfe-numeracoes/{id}/inutilizar/` (faixa) e `POST /api/nf-saidas/{id}/inutilizar/` (NF rejeitada); modelo `NFeInutilizacaoSefaz`; evento `INUTILIZACAO_SEFAZ_EMITIDA`; UI `NFeInutilizacaoModal` em Empresas e NF-e; confirmação produção `INUTILIZAR`; testes `test_nfe_inutilizacao_sefaz`
+- **NF-e Saída produção SEFAZ — em operação:** emissões em produção (`AUTORIZADA_PRODUCAO`) ativas no ambiente operacional; preservar `NFE_PRODUCAO_HABILITADA` e numeração no deploy; registro histórico pré-T0 em `docs/go-live-nfe-saida-producao.md`
 - **ERP 4.0.14.0.1 (Correção — remoção de Condições de pagamento do Financeiro):** removido o cadastro/rota/modelo financeiro de `Condição de pagamento`; títulos financeiros não exigem condição; parcelamento segue por parcelas diretas no título (receber/pagar/despesa/tributo); testes financeiros atualizados (10); **sem alteração em Proposta/Pedido/Faturamento/NF-e/XML/DANFE/duplicatas/estoque**.
 - **NF-e Saída 4.0.1b (XML preliminar + DANFE BrazilFiscalReport):** `nfe_integracao/nfe_xml_preliminar.py` + `nfe_chave_acesso.py` + `nfe_numero_fiscal_preliminar.py` (série homologação configurável, `nNF` numérico do pk — nunca `RASCUNHO-FAT-*` como `nNF`); `GET .../preview-xml-preliminar/`; `danfe_brazil_fiscal_report.gerar_danfe_bfr_nfe_preliminar`; campos opcionais `xml_preliminar` / `chave_acesso_preliminar` com `sem_autorizacao`; sem transmissão SEFAZ, sem protocolo fake, sem estoque/financeiro; testes `test_nfe_saida_401_bfr_preliminar` + `test_danfe_brazil_fiscal_report`
 - **NF-e Saída 4.0.1c (acabamento DANFE BFR):** `resolver_marca_dagua_danfe()` + `DanfeNexus` (marca d’água por status — conferência sem «CANCELADA» indevida); `montar_informacoes_complementares_danfe()` (infCpl enxuto; `observacoes_internas` nunca no PDF); logo emitente via `DanfeConfig.logo` + `get_empresa_logo_path_or_none`; `infcpl_semicolon_newline`; testes `test_nfe_saida_401_bfr_acabamento`
@@ -381,15 +386,16 @@ Proposta aprovada
 
 ### Falta
 
-- Emissão **produção** SEFAZ 1ª NF real — **T0 abortada 2026-06-02**; correções homologação 4.0.15.x validadas no servidor (13/06/2026, commit `2ab0009`); aguarda gate T0 (§14.6 go-live doc) + declaração «T0 liberada»; flag default false
-- Contingência, cancelamento/CC-e/inutilização produção
+- Emissão **produção** SEFAZ — **em operação** (NF-e autorizadas em produção no ambiente atual)
+- ~~Cancelamento / carta de correção / inutilização SEFAZ~~ — **implementados** (homologação e produção)
+- Contingência
 - ~~Transmissão homologação / XML autorizado / DANFE homologação~~ — **4.0.2 homologação** (ver item acima; produção fora)
 - NF-e saída aplicando `RegraFiscalSaida` na emissão (recálculo na transmissão)
 - ~~Geração de XML oficial NF-e 4.00 (nfelib) em rascunho~~ — **4.0.1 concluída** (sem transmitir)
 - Assinatura XML e transmissão SEFAZ (fase 4)
 - Geração de XML com impostos do cenário (recálculo na emissão)
 - DANFE alinhado às recomendações cadastradas
-- Cancelamento, carta de correção, inutilização
+- ~~Cancelamento, carta de correção, inutilização~~ — **implementados** (SEFAZ homolog/produção)
 - Devolução, remessa, venda para entrega futura, simples faturamento
 
 ### Próximas fases
@@ -410,7 +416,7 @@ Proposta aprovada
 | ~~**NF-e Saída 3.5.3**~~ | ~~Prontidão da conferência (validar / marcar pronta)~~ — **concluída** |
 | ~~**NF-e Saída 3.5.4**~~ | ~~DANFE de conferência em layout real (PDF)~~ — **concluída** |
 | **NF-e Saída 4** | Transmissão SEFAZ / autorização real |
-| **NF-e Saída 5** | Cancelamento / CC-e / inutilização na SEFAZ |
+| **NF-e Saída 5** | ~~Cancelamento / CC-e / inutilização na SEFAZ~~ — **concluídos** |
 | **NF-e Saída 6** | Remessa / devolução / entrega futura |
 
 ### Checklist
@@ -430,9 +436,9 @@ Proposta aprovada
 - [ ] Cenário aplicado na emissão/transmissão
 - [ ] XML com impostos do cenário
 - [ ] DANFE
-- [ ] Cancelamento
-- [ ] Carta de correção
-- [ ] Inutilização
+- [x] Cancelamento SEFAZ (`POST .../cancelar/`, homologação e produção)
+- [x] Carta de correção (`POST .../emitir-carta-correcao/`, prévia PDF, comprovante)
+- [x] Inutilização de numeração na SEFAZ (`POST .../inutilizar/`, faixa por config ou por NF-e rejeitada)
 - [ ] Remessas
 - [ ] Devoluções
 

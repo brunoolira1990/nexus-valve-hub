@@ -1281,6 +1281,77 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         code = status.HTTP_200_OK if payload.get('ok') else status.HTTP_422_UNPROCESSABLE_ENTITY
         return response.Response(payload, status=code)
 
+    @action(detail=True, methods=['get'], url_path='inutilizacao/dados')
+    def inutilizacao_dados(self, request, pk=None):
+        """Contexto read-only da inutilização SEFAZ do número da NF-e."""
+        from apps.fiscal.nfe_emissao.inutilizacao_dados import montar_dados_contexto_inutilizacao_nfe
+
+        nf = self.get_object()
+        return response.Response(montar_dados_contexto_inutilizacao_nfe(nf, usuario=request.user))
+
+    @action(detail=True, methods=['post'], url_path='inutilizar')
+    def inutilizar(self, request, pk=None):
+        """Transmite inutilização do número fiscal da NF-e à SEFAZ."""
+        import logging
+
+        from apps.fiscal.nfe_emissao.inutilizacao_sefaz import NFeInutilizacaoError, emitir_inutilizacao_nfe_saida
+        from apps.fiscal.nfe_emissao.resposta_inutilizacao import montar_resposta_inutilizacao
+        from apps.fiscal.nfe_integracao.adapters.inutilizacao_parser import ResultadoInutilizacaoSefaz
+        from apps.fiscal.nfe_integracao.adapters.exceptions import CertificadoA1Error
+
+        log = logging.getLogger(__name__)
+        nf = self.get_object()
+        justificativa = request.data.get('justificativa', request.data.get('motivo', ''))
+
+        def _payload_erro(msg: str) -> dict:
+            return montar_resposta_inutilizacao(
+                configuracao_id=0,
+                serie=nf.serie_nfe or '',
+                ambiente=nf.ambiente_emissao or 'homologacao',
+                numero_inicial=0,
+                numero_final=0,
+                resultado=ResultadoInutilizacaoSefaz(
+                    ok=False,
+                    c_stat='',
+                    x_motivo=msg,
+                    protocolo='',
+                    serie='',
+                    numero_inicial='',
+                    numero_final='',
+                    ano='',
+                    tp_amb='',
+                    dh_recbto='',
+                    xml_retorno='',
+                ),
+                ok=False,
+                mensagem=msg,
+                justificativa=str(justificativa or '').strip(),
+            )
+
+        try:
+            payload = emitir_inutilizacao_nfe_saida(
+                nf,
+                justificativa=justificativa,
+                usuario=request.user,
+                confirmacao_payload=request.data,
+            )
+        except NFeInutilizacaoError as exc:
+            payload = _payload_erro(str(exc))
+            etapa = getattr(exc, 'etapa', '')
+            if etapa in ('CERTIFICADO', 'EMITENTE', 'VALIDACAO', 'CONFIRMACAO', 'PERMISSAO'):
+                return response.Response(payload, status=status.HTTP_400_BAD_REQUEST)
+            return response.Response(payload, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        except CertificadoA1Error as exc:
+            return response.Response(_payload_erro(str(exc)), status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            log.exception('Erro técnico inutilização nfe_id=%s', pk)
+            return response.Response(
+                _payload_erro('Erro técnico ao transmitir inutilização. Tente novamente ou contate o suporte.'),
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        code = status.HTTP_200_OK if payload.get('ok') else status.HTTP_422_UNPROCESSABLE_ENTITY
+        return response.Response(payload, status=code)
+
     @action(detail=True, methods=['get'], url_path='cancelamento/dados')
     def cancelamento_dados(self, request, pk=None):
         """Contexto read-only do cancelamento SEFAZ — sem transmissão."""
@@ -1349,6 +1420,77 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
             log.exception('Erro técnico cancelamento nfe_id=%s', pk)
             return response.Response(
                 _payload_erro('Erro técnico ao transmitir cancelamento. Tente novamente ou contate o suporte.'),
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        code = status.HTTP_200_OK if payload.get('ok') else status.HTTP_422_UNPROCESSABLE_ENTITY
+        return response.Response(payload, status=code)
+
+    @action(detail=True, methods=['get'], url_path='inutilizacao/dados')
+    def inutilizacao_dados(self, request, pk=None):
+        """Contexto read-only da inutilização SEFAZ do número da NF-e."""
+        from apps.fiscal.nfe_emissao.inutilizacao_dados import montar_dados_contexto_inutilizacao_nfe
+
+        nf = self.get_object()
+        return response.Response(montar_dados_contexto_inutilizacao_nfe(nf, usuario=request.user))
+
+    @action(detail=True, methods=['post'], url_path='inutilizar')
+    def inutilizar(self, request, pk=None):
+        """Transmite inutilização do número fiscal da NF-e à SEFAZ."""
+        import logging
+
+        from apps.fiscal.nfe_emissao.inutilizacao_sefaz import NFeInutilizacaoError, emitir_inutilizacao_nfe_saida
+        from apps.fiscal.nfe_emissao.resposta_inutilizacao import montar_resposta_inutilizacao
+        from apps.fiscal.nfe_integracao.adapters.inutilizacao_parser import ResultadoInutilizacaoSefaz
+        from apps.fiscal.nfe_integracao.adapters.exceptions import CertificadoA1Error
+
+        log = logging.getLogger(__name__)
+        nf = self.get_object()
+        justificativa = request.data.get('justificativa', request.data.get('motivo', ''))
+
+        def _payload_erro(msg: str) -> dict:
+            return montar_resposta_inutilizacao(
+                configuracao_id=0,
+                serie=nf.serie_nfe or '',
+                ambiente=nf.ambiente_emissao or 'homologacao',
+                numero_inicial=0,
+                numero_final=0,
+                resultado=ResultadoInutilizacaoSefaz(
+                    ok=False,
+                    c_stat='',
+                    x_motivo=msg,
+                    protocolo='',
+                    serie='',
+                    numero_inicial='',
+                    numero_final='',
+                    ano='',
+                    tp_amb='',
+                    dh_recbto='',
+                    xml_retorno='',
+                ),
+                ok=False,
+                mensagem=msg,
+                justificativa=str(justificativa or '').strip(),
+            )
+
+        try:
+            payload = emitir_inutilizacao_nfe_saida(
+                nf,
+                justificativa=justificativa,
+                usuario=request.user,
+                confirmacao_payload=request.data,
+            )
+        except NFeInutilizacaoError as exc:
+            payload = _payload_erro(str(exc))
+            etapa = getattr(exc, 'etapa', '')
+            if etapa in ('CERTIFICADO', 'EMITENTE', 'VALIDACAO', 'CONFIRMACAO', 'PERMISSAO'):
+                return response.Response(payload, status=status.HTTP_400_BAD_REQUEST)
+            return response.Response(payload, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        except CertificadoA1Error as exc:
+            return response.Response(_payload_erro(str(exc)), status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            log.exception('Erro técnico inutilização nfe_id=%s', pk)
+            return response.Response(
+                _payload_erro('Erro técnico ao transmitir inutilização. Tente novamente ou contate o suporte.'),
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         code = status.HTTP_200_OK if payload.get('ok') else status.HTTP_422_UNPROCESSABLE_ENTITY
@@ -3756,3 +3898,97 @@ class NFeNumeracaoConfiguracaoViewSet(viewsets.ModelViewSet):
         if empresa_id:
             qs = qs.filter(empresa_id=empresa_id)
         return qs
+
+    @action(detail=True, methods=['get'], url_path='inutilizacao/dados')
+    def inutilizacao_dados(self, request, pk=None):
+        """Contexto read-only para inutilização de faixa numérica."""
+        from apps.fiscal.nfe_emissao.inutilizacao_dados import montar_dados_contexto_inutilizacao_config
+
+        cfg = self.get_object()
+        ini = request.query_params.get('numero_inicial')
+        fim = request.query_params.get('numero_final')
+        payload = montar_dados_contexto_inutilizacao_config(
+            cfg,
+            numero_inicial=int(ini) if ini and str(ini).isdigit() else None,
+            numero_final=int(fim) if fim and str(fim).isdigit() else None,
+            usuario=request.user,
+        )
+        return response.Response(payload)
+
+    @action(detail=True, methods=['post'], url_path='inutilizar')
+    def inutilizar(self, request, pk=None):
+        """Transmite inutilização de faixa numérica à SEFAZ."""
+        import logging
+
+        from apps.fiscal.nfe_emissao.inutilizacao_sefaz import NFeInutilizacaoError, emitir_inutilizacao_numeracao
+        from apps.fiscal.nfe_emissao.resposta_inutilizacao import montar_resposta_inutilizacao
+        from apps.fiscal.nfe_integracao.adapters.inutilizacao_parser import ResultadoInutilizacaoSefaz
+        from apps.fiscal.nfe_integracao.adapters.exceptions import CertificadoA1Error
+
+        log = logging.getLogger(__name__)
+        cfg = self.get_object()
+        data = request.data
+        justificativa = data.get('justificativa', data.get('motivo', ''))
+        try:
+            numero_inicial = int(data.get('numero_inicial'))
+            numero_final = int(data.get('numero_final', numero_inicial))
+        except (TypeError, ValueError):
+            return response.Response(
+                {'detail': 'numero_inicial e numero_final são obrigatórios.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        def _payload_erro(msg: str) -> dict:
+            return montar_resposta_inutilizacao(
+                configuracao_id=cfg.pk,
+                serie=cfg.serie,
+                ambiente=cfg.ambiente,
+                numero_inicial=numero_inicial,
+                numero_final=numero_final,
+                resultado=ResultadoInutilizacaoSefaz(
+                    ok=False,
+                    c_stat='',
+                    x_motivo=msg,
+                    protocolo='',
+                    serie='',
+                    numero_inicial='',
+                    numero_final='',
+                    ano='',
+                    tp_amb='',
+                    dh_recbto='',
+                    xml_retorno='',
+                ),
+                ok=False,
+                mensagem=msg,
+                justificativa=str(justificativa or '').strip(),
+            )
+
+        ano_raw = data.get('ano')
+        ano = int(ano_raw) if ano_raw is not None and str(ano_raw).isdigit() else None
+
+        try:
+            payload = emitir_inutilizacao_numeracao(
+                cfg,
+                numero_inicial=numero_inicial,
+                numero_final=numero_final,
+                justificativa=justificativa,
+                usuario=request.user,
+                confirmacao_payload=data,
+                ano=ano,
+            )
+        except NFeInutilizacaoError as exc:
+            payload = _payload_erro(str(exc))
+            etapa = getattr(exc, 'etapa', '')
+            if etapa in ('CERTIFICADO', 'EMITENTE', 'VALIDACAO', 'CONFIRMACAO', 'PERMISSAO'):
+                return response.Response(payload, status=status.HTTP_400_BAD_REQUEST)
+            return response.Response(payload, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        except CertificadoA1Error as exc:
+            return response.Response(_payload_erro(str(exc)), status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            log.exception('Erro técnico inutilização cfg_id=%s', pk)
+            return response.Response(
+                _payload_erro('Erro técnico ao transmitir inutilização. Tente novamente ou contate o suporte.'),
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        code = status.HTTP_200_OK if payload.get('ok') else status.HTTP_422_UNPROCESSABLE_ENTITY
+        return response.Response(payload, status=code)

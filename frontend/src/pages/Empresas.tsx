@@ -14,6 +14,7 @@ import { PaginationControls } from '@/components/list/PaginationControls';
 import { EmptyState, ErrorState, LoadingState } from '@/components/list/ListStates';
 import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
 import { EmpresaNfeAmbienteSelector } from '@/components/cadastros/EmpresaNfeAmbienteSelector';
+import { NFeInutilizacaoModal } from '@/components/fiscal/NFeInutilizacaoModal';
 import type { NfeAmbienteEmpresa } from '@/lib/empresaNfeAmbiente';
 
 const emptyEmpresa: Omit<Empresa, 'id'> = {
@@ -48,6 +49,7 @@ const Empresas = () => {
   const [formError, setFormError] = useState<string | null>(null);
   const [tab, setTab] = useState<'dados'|'endereco'|'contato'|'certificado'|'numeracao'>('dados');
   const [numeracoes, setNumeracoes] = useState<NFeNumeracaoConfig[]>([]);
+  const [inutilizacaoConfigId, setInutilizacaoConfigId] = useState<number | null>(null);
   const [numeracaoLoading, setNumeracaoLoading] = useState(false);
 
   const loadOptions = async () => {
@@ -360,7 +362,7 @@ const Empresas = () => {
                           <label className="erp-label">Últ. autorizado</label>
                           <p className="text-sm mt-1">{cfg.ultimo_numero_autorizado ?? '—'}</p>
                         </div>
-                        <div className="md:col-span-2 flex items-end">
+                        <div className="md:col-span-2 flex items-end gap-2 flex-wrap">
                           <button
                             type="button"
                             className="erp-btn-outline erp-btn-sm"
@@ -396,6 +398,15 @@ const Empresas = () => {
                           >
                             Salvar numeração
                           </button>
+                          {(cfg.tipo_operacao ?? 'saida') === 'saida' ? (
+                            <button
+                              type="button"
+                              className="erp-btn-destructive erp-btn-sm"
+                              onClick={() => setInutilizacaoConfigId(cfg.id)}
+                            >
+                              Inutilizar numeração
+                            </button>
+                          ) : null}
                         </div>
                       </div>
                     ))}
@@ -411,6 +422,19 @@ const Empresas = () => {
           <button onClick={handleSave} className="erp-btn-primary">Salvar</button>
         </div>
       </Modal>
+
+      <NFeInutilizacaoModal
+        mode="config"
+        open={inutilizacaoConfigId != null}
+        configuracaoId={inutilizacaoConfigId}
+        onClose={() => setInutilizacaoConfigId(null)}
+        onInutilizada={async () => {
+          if (editing?.id) {
+            const list = await nfeNumeracoesService.listByEmpresa(editing.id);
+            setNumeracoes(list);
+          }
+        }}
+      />
     </div>
   );
 };

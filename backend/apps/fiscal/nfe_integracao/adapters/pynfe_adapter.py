@@ -212,6 +212,47 @@ def consulta_situacao_nfe(
         raise PyNFeComunicacaoError(f'Erro na consulta situação NF-e: {exc}') from exc
 
 
+def transmitir_inutilizacao_nfe(
+    comunicacao: Any,
+    *,
+    modelo: str = 'nfe',
+    cnpj: str,
+    numero_inicial: int,
+    numero_final: int,
+    justificativa: str,
+    serie: str,
+    ano: int | None = None,
+) -> Any:
+    """Transmite inutilização de numeração à SEFAZ (NFeInutilizacao4)."""
+    doc = ''.join(ch for ch in str(cnpj or '') if ch.isdigit())
+    if len(doc) not in (11, 14):
+        raise PyNFeComunicacaoError('CNPJ/CPF inválido para inutilização SEFAZ.')
+    if numero_inicial < 1 or numero_final < numero_inicial:
+        raise PyNFeComunicacaoError('Faixa de numeração inválida para inutilização SEFAZ.')
+    try:
+        with requests_sem_proxy_ambiente():
+            return comunicacao.inutilizacao(
+                modelo,
+                doc,
+                int(numero_inicial),
+                int(numero_final),
+                justificativa=justificativa,
+                ano=ano,
+                serie=str(serie),
+            )
+    except PyNFeComunicacaoError:
+        raise
+    except Exception as exc:
+        msg = str(exc).lower()
+        if 'timeout' in msg or 'timed out' in msg:
+            raise PyNFeComunicacaoError(
+                'Tempo esgotado ao transmitir inutilização à SEFAZ. Verifique certificado/rede e tente novamente.',
+            ) from exc
+        if 'connection' in msg or 'conex' in msg or 'network' in msg:
+            raise PyNFeComunicacaoError('Erro ao conectar ao WebService da SEFAZ.') from exc
+        raise PyNFeComunicacaoError(f'Erro na inutilização de numeração NF-e: {exc}') from exc
+
+
 def transmitir_evento_nfe(
     comunicacao: Any,
     evento_assinado: Any,

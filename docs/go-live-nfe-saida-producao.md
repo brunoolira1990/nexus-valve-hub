@@ -3,17 +3,17 @@
 > **⚠️ Estado operacional (ERP 4.0.15.2.1):** no **servidor de produção**, a emissão NF-e Saída em produção SEFAZ **já está ativa** e deve ser preservada. Para deploy de Manifestação do Destinatário / Central DF-e com **produção fiscal completa**, use o checklist atualizado: [`docs/deploy-erp-40152-manifestacao-dfe-producao.md`](deploy-erp-40152-manifestacao-dfe-producao.md).  
 > Este arquivo permanece como **registro histórico** do planejamento pré-T0 (jun/2026). Trechos que mencionam produção «desligada» ou `NFE_PRODUCAO_HABILITADA=false` como estado do servidor estão **desatualizados** para a operação atual.
 
-Documento formal de **planejamento e ativação futura** da emissão de NF-e de venda em **produção SEFAZ** pelo Nexus ERP.
+Documento formal de **planejamento e ativação** da emissão de NF-e de venda em **produção SEFAZ** pelo Nexus ERP.
 
 | Campo | Valor |
 |-------|-------|
-| **Versão ERP** | 4.0.15.x |
+| **Versão ERP** | 4.0.16.x |
 | **Escopo** | NF-e Saída (modelo 55) — emissão própria de venda |
-| **Status** | Homologação madura · **Fases 3B + 3C concluídas** · **Saneamento pré-T0 em andamento** · **Fase 3D T0 ABORTADA** · Produção **desligada** |
-| **Última revisão** | 2026-06-02 (saneamento pré-T0) |
-| **Diagnóstico base** | Suítes 402 (26 OK), 4015 produção, conferência UI; **nenhuma NF-e produção real transmitida** |
+| **Status** | Homologação madura · Produção **ativa em operação** (emissões reais) · Registro histórico pré-T0 abaixo |
+| **Última revisão** | 2026-06-24 (estado operacional confirmado) |
+| **Diagnóstico base** | Suítes 402/4015; **NF-e produção em uso no ambiente operacional** |
 
-> **Regra Nexus:** este documento **não autoriza** ligar produção SEFAZ automaticamente. A **primeira emissão real** exige janela controlada (Fase 3D operacional), checklist assinado, contador/fiscal presente e ação explícita de ligar `NFE_PRODUCAO_HABILITADA=true`.
+> **Regra Nexus (deploy):** em servidor com produção já ativa, **preservar** `NFE_PRODUCAO_HABILITADA` e numeração existentes — não desligar a flag em deploy. O corpo abaixo documenta o planejamento pré-T0 (jun/2026) e permanece como referência histórica.
 
 ---
 
@@ -21,16 +21,17 @@ Documento formal de **planejamento e ativação futura** da emissão de NF-e de 
 
 O Nexus ERP possui pipeline **completo e testado** para emissão de NF-e de saída em **homologação SEFAZ** (ERP 4.0.2+): conferência, validação, reserva de numeração, XML oficial, assinatura A1, transmissão, protocolo, `xml_autorizado` e DANFE via BrazilFiscalReport (BFR).
 
-A emissão em **produção SEFAZ** possui **backend Fase 3B** (flag, endpoints, serviços separados, testes mockados) e **UI Fase 3C** (painel produção na conferência, confirmação dupla, permissões restritas), porém permanece **desligada por padrão** (`NFE_PRODUCAO_HABILITADA=false`). O go-live real depende de flag explícita, Fase 3D, validação fiscal/contábil e plano de rollback.
+A emissão em **produção SEFAZ** está **implementada** (Fase 3B backend + Fase 3C UI) e **ativa no ambiente operacional**. **CC-e** e **cancelamento SEFAZ** já operam no Nexus (homologação e produção). Próximo passo fiscal relevante: **inutilização de numeração**; depois contingência e consumo de `RegraFiscalSaida` na emissão.
 
-**Parecer atualizado (2026-06 — pós Fase 3C, prep 3D):**
+**Parecer atualizado (2026-06-24 — produção em operação):**
 
 | Situação | Resultado |
 |----------|-----------|
-| Emitir NF-e venda em produção SEFAZ **hoje** (flag default) | **BLOQUEADO** |
-| Testar pipeline produção em ambiente controlado (flag + mock) | **APTO** |
-| Software pronto para janela de 1ª emissão real (3B+3C+runbook) | **APTO COM PENDÊNCIAS** |
-| Janela de go-live operacional (1ª NF real) | **APTO COM PENDÊNCIAS** — depende de checklist fiscal/operacional e presença contador/fiscal |
+| Emitir NF-e venda em produção SEFAZ (ambiente operacional) | **ATIVO** — emissões reais autorizadas |
+| Homologação SEFAZ (tpAmb=2) | **ATIVO** — pipeline 402 intacto |
+| Deploy / restart | **Preservar** flag e numeração; ver [`deploy-erp-40152-manifestacao-dfe-producao.md`](deploy-erp-40152-manifestacao-dfe-producao.md) |
+| Inutilização de numeração na SEFAZ | **Implementado** no Nexus (homolog/produção) |
+| Contingência SEFAZ | **Pendente** |
 
 ---
 

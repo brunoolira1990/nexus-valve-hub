@@ -20,7 +20,7 @@ export const AVISO_HOMOLOG_SEM_VALOR_FISCAL =
   'NF-e de homologação não possui valor fiscal e não vira produção. Para produção, gere/emita uma NF-e real.';
 
 export const AVISO_PRODUCAO_POS_AUTORIZACAO =
-  'NF-e autorizada em produção. Cancelamento SEFAZ será disponibilizado em fase futura.';
+  'NF-e autorizada em produção. Use Carta de Correção ou Cancelamento SEFAZ quando necessário.';
 
 export const AVISO_CANCELADA_CONSULTA =
   'NF-e cancelada na SEFAZ. Consulta e visualização de documentos locais apenas — sem validade fiscal para circulação.';
@@ -48,6 +48,7 @@ export type NFeSaidaAcaoId =
   | 'consulta_sefaz'
   | 'carta_correcao'
   | 'cancelamento'
+  | 'inutilizacao'
   | 'enviar_danfe_xml'
   | 'gerar_contas_receber';
 
@@ -215,6 +216,12 @@ export function podeEmitirCartaCorrecao(ctx: NFeSaidaContextoAcao): boolean {
 export function podeCancelarNfeSefaz(ctx: NFeSaidaContextoAcao): boolean {
   if (ctx.cenario === 'cancelada') return false;
   return podeConsultarSituacaoSefaz(ctx);
+}
+
+export function podeInutilizarNfeSefaz(ctx: NFeSaidaContextoAcao): boolean {
+  if (ctx.cenario === 'cancelada') return false;
+  if (ctx.autorizadaHomolog || ctx.autorizadaProducao) return false;
+  return ctx.cenario === 'rejeitada_erro';
 }
 
 export function podeEnviarDanfeXml(ctx: NFeSaidaContextoAcao): boolean {
@@ -390,6 +397,9 @@ export function obterMatrizAcoesNfeSaida(
     );
     if (opts?.podeDescartar) {
       acoes.push(acao({ id: 'descartar_rascunho', grupo: 'fiscal', label: ACTION_LABELS.descartarRascunho }));
+    }
+    if (podeInutilizarNfeSefaz(ctx)) {
+      acoes.push(acao({ id: 'inutilizacao', grupo: 'fiscal', label: ACTION_LABELS.inutilizarNumeracao }));
     }
   } else {
     acoes.push(
