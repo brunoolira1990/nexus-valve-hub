@@ -1,4 +1,5 @@
 from django.urls import include, path
+from nexus_erp.contador_views import contador_exportar_xmls
 from nexus_erp.dashboard_views import (
     dashboard_comercial,
     dashboard_compras,
@@ -286,6 +287,7 @@ urlpatterns = [
     path('dashboard/compras/', dashboard_compras, name='dashboard-compras'),
     path('dashboard/qualidade/', dashboard_qualidade, name='dashboard-qualidade'),
     path('dashboard/financeiro/', dashboard_financeiro, name='dashboard-financeiro'),
+    path('contador/exportar-xmls/', contador_exportar_xmls, name='contador-exportar-xmls'),
     path('financeiro/resumo/', financeiro_resumo_operacional, name='financeiro-resumo'),
     path('financeiro/formas-fixas/', financeiro_formas_fixas, name='financeiro-formas-fixas'),
     path(

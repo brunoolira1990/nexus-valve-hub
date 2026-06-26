@@ -50,10 +50,10 @@ export const DASHBOARD_NAV_ITEMS: {
 }[] = [
   { label: 'Visão geral', path: '/dashboard', modulo: null, permKey: null },
   { label: 'Comercial', path: '/dashboard/comercial', modulo: 'comercial', permKey: 'pode_ver_comercial' },
-  { label: 'Fiscal', path: '/dashboard/fiscal', modulo: 'fiscal', permKey: 'pode_ver_fiscal' },
+  { label: 'Compras', path: '/dashboard/compras', modulo: 'compras', permKey: 'pode_ver_compras' },
   { label: 'Estoque', path: '/dashboard/estoque', modulo: 'estoque', permKey: 'pode_ver_estoque' },
   { label: 'Expedição', path: '/dashboard/expedicao', modulo: 'expedicao', permKey: 'pode_ver_expedicao' },
-  { label: 'Compras', path: '/dashboard/compras', modulo: 'compras', permKey: 'pode_ver_compras' },
+  { label: 'Fiscal', path: '/dashboard/fiscal', modulo: 'fiscal', permKey: 'pode_ver_fiscal' },
   { label: 'Qualidade', path: '/dashboard/qualidade', modulo: 'qualidade', permKey: 'pode_ver_qualidade' },
   { label: 'Financeiro', path: '/dashboard/financeiro', modulo: 'financeiro', permKey: 'pode_ver_financeiro' },
 ];

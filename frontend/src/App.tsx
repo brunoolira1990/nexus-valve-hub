@@ -11,6 +11,8 @@ import DashboardExpedicao from "./pages/dashboard/DashboardExpedicao";
 import DashboardCompras from "./pages/dashboard/DashboardCompras";
 import DashboardQualidade from "./pages/dashboard/DashboardQualidade";
 import DashboardFinanceiro from "./pages/dashboard/DashboardFinanceiro";
+import ModuloEmBreve from "./pages/modulos/ModuloEmBreve";
+import ContadorExportarXmls from "./pages/contador/ContadorExportarXmls";
 import Empresas from "./pages/Empresas";
 import ClienteList from "./pages/Clientes/ClienteList";
 import ClienteFormPage from "./pages/Clientes/ClienteFormPage";
@@ -73,6 +75,9 @@ const App = () => (
         <Route path="dashboard/compras" element={<DashboardCompras />} />
         <Route path="dashboard/qualidade" element={<DashboardQualidade />} />
         <Route path="dashboard/financeiro" element={<DashboardFinanceiro />} />
+        <Route path="modulos/:modulo" element={<ModuloEmBreve />} />
+        <Route path="contador/exportar-xmls" element={<ContadorExportarXmls />} />
+        <Route path="contador/sped" element={<ModuloEmBreve moduloKey="sped" />} />
         <Route path="empresas" element={<Empresas />} />
         <Route path="clientes" element={<ClienteList />} />
         <Route path="clientes/novo" element={<ClienteFormPage />} />
