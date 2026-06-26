@@ -4,6 +4,7 @@ export const EMPTY_DASHBOARD_PERMISSOES: DashboardPermissoes = {
   pode_ver_comercial: false,
   pode_ver_fiscal: false,
   pode_ver_estoque: false,
+  pode_ver_expedicao: false,
   pode_ver_compras: false,
   pode_ver_qualidade: false,
   pode_ver_financeiro: false,

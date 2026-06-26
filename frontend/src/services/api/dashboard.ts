@@ -107,6 +107,7 @@ export type DashboardPermissoes = {
   pode_ver_comercial: boolean;
   pode_ver_fiscal: boolean;
   pode_ver_estoque: boolean;
+  pode_ver_expedicao: boolean;
   pode_ver_compras: boolean;
   pode_ver_qualidade: boolean;
   pode_ver_financeiro: boolean;
@@ -239,6 +240,9 @@ export const dashboardService = {
 
   getEstoque: async (params?: DashboardQueryParams) =>
     (await api.get<DashboardModuloBI>('dashboard/estoque/', { params: buildParams(params) })).data,
+
+  getExpedicao: async (params?: DashboardQueryParams) =>
+    (await api.get<DashboardModuloBI>('dashboard/expedicao/', { params: buildParams(params) })).data,
 
   getCompras: async (params?: DashboardQueryParams) =>
     (await api.get<DashboardModuloBI>('dashboard/compras/', { params: buildParams(params) })).data,

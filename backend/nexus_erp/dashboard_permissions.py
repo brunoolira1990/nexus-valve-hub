@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-MODULOS_BI = ('comercial', 'fiscal', 'estoque', 'compras', 'qualidade', 'financeiro')
+MODULOS_BI = ('comercial', 'fiscal', 'estoque', 'expedicao', 'compras', 'qualidade', 'financeiro')
 
 # Qualquer uma das permissões do módulo concede acesso ao painel correspondente.
 MODULO_PERMISSOES: dict[str, list[str]] = {
@@ -23,6 +23,12 @@ MODULO_PERMISSOES: dict[str, list[str]] = {
         'fiscal.view_atendimentoestoque',
         'produtos.view_produto',
         'produtos.change_produto',
+    ],
+    'expedicao': [
+        'expedicao.view_expedicao',
+        'fiscal.view_atendimentoestoque',
+        'expedicao.add_expedicao',
+        'expedicao.change_expedicao',
     ],
     'compras': [
         'comercial.view_pedidocompra',
@@ -73,6 +79,7 @@ def permissoes_dashboard(user) -> dict[str, bool]:
         'pode_ver_comercial': usuario_pode_ver_dashboard_modulo(user, 'comercial'),
         'pode_ver_fiscal': usuario_pode_ver_dashboard_modulo(user, 'fiscal'),
         'pode_ver_estoque': usuario_pode_ver_dashboard_modulo(user, 'estoque'),
+        'pode_ver_expedicao': usuario_pode_ver_dashboard_modulo(user, 'expedicao'),
         'pode_ver_compras': usuario_pode_ver_dashboard_modulo(user, 'compras'),
         'pode_ver_qualidade': usuario_pode_ver_dashboard_modulo(user, 'qualidade'),
         'pode_ver_financeiro': usuario_pode_ver_dashboard_modulo(user, 'financeiro'),

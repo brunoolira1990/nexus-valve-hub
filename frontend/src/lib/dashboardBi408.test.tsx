@@ -12,6 +12,7 @@ describe('ERP 4.0.8 — dashboard BI service', () => {
     ['getComercial', dashboardService.getComercial],
     ['getFiscal', dashboardService.getFiscal],
     ['getEstoque', dashboardService.getEstoque],
+    ['getExpedicao', dashboardService.getExpedicao],
     ['getCompras', dashboardService.getCompras],
     ['getQualidade', dashboardService.getQualidade],
     ['getFinanceiro', dashboardService.getFinanceiro],

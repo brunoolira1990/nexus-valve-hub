@@ -12,8 +12,11 @@ from django.utils import timezone
 from apps.cadastros.models import Empresa, Fornecedor
 from apps.comercial.models import ItemPedidoVenda, PedidoCompra, PedidoVenda, Proposta
 from apps.fiscal.central_dfe.service import resumo_central_dfe_dashboard
+from apps.expedicao.models import Expedicao, StatusExpedicao, TipoOperacaoExpedicao
+from apps.expedicao.services.expedicao_service import resumo_expedicoes_por_status
 from apps.fiscal.models import (
     AtendimentoEstoque,
+    CTeHistoricoImportado,
     EstoqueCorrida,
     NFeEntrada,
     NFeSaida,
@@ -120,9 +123,8 @@ def montar_bi_comercial(f: DashboardFilters) -> dict:
     faturados = pv_periodo.filter(status__icontains='FATURADO').count()
     valor_faturado = pv_periodo.filter(status__icontains='FATURADO').aggregate(t=Sum('valor_total'))['t'] or Decimal('0')
 
-    valor_aberto = Decimal('0')
-    for p in PedidoVenda.objects.exclude(status__icontains='FATURADO').exclude(status__icontains='CANCEL').only('valor_total'):
-        valor_aberto += _dec(p.valor_total)
+    pv_aberto_qs = pv_qs.exclude(status__icontains='FATURADO').exclude(status__icontains='CANCEL')
+    valor_aberto = _dec(pv_aberto_qs.aggregate(t=Sum('valor_total'))['t'])
 
     propostas_abertas = prop_qs.filter(
         Q(status__icontains='ABERT') | Q(status__icontains='PEND'),
@@ -317,6 +319,13 @@ def montar_bi_fiscal(f: DashboardFilters) -> dict:
     out = _base_bi('fiscal', f)
     nf_qs = _filtro_empresa_nfe(NFeSaida.objects.select_related('cliente'), f)
     entrada_qs = NFeEntrada.objects.select_related('fornecedor')
+    entrada_propria = entrada_qs.filter(
+        tipo_origem__in=(
+            NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_IMPORTADA,
+            NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_EMITIDA,
+        ),
+    ).count()
+    cte_historico = CTeHistoricoImportado.objects.count()
 
     rascunhos = nf_qs.filter(status__icontains='RASCUNHO').count()
     prontas = nf_qs.filter(status_conferencia='PRONTA_PARA_EMISSAO').count()
@@ -362,6 +371,13 @@ def montar_bi_fiscal(f: DashboardFilters) -> dict:
         _kpi('dfe_xml_pendente', 'XML DF-e pendente', dfe['xml_pendente'], link='/central-dfe'),
         _kpi('dfe_cte_pendentes', 'CT-e pendentes', dfe['cte_pendentes'], link='/central-dfe'),
         _kpi('nfe_entrada_total', 'NF-e entrada', entrada_qs.count(), link='/nfe-entrada'),
+        _kpi(
+            'nfe_entrada_propria',
+            'Entrada própria',
+            entrada_propria,
+            link='/nfe-entrada?tipo_origem=entrada_propria',
+        ),
+        _kpi('cte_historico_importado', 'CT-e importados', cte_historico, link='/central-dfe'),
     ]
 
     status_chart_homolog = [
@@ -568,13 +584,11 @@ def montar_bi_estoque(f: DashboardFilters) -> dict:
         for row in EstoqueCorrida.objects.values('produto_id').annotate(total=Sum('saldo'))
     }
     baixo = 0
-    negativo = 0
-    for p in Produto.objects.filter(estoque_minimo__gt=0).only('id', 'estoque_minimo')[:500]:
+    for p in Produto.objects.filter(estoque_minimo__gt=0).only('id', 'estoque_minimo').iterator(chunk_size=500):
         saldo = saldo_map.get(p.pk, Decimal('0'))
         if saldo < _dec(p.estoque_minimo):
             baixo += 1
-        if saldo < Decimal('0'):
-            negativo += 1
+    negativo = sum(1 for saldo in saldo_map.values() if saldo < Decimal('0'))
 
     atend_pendentes = AtendimentoEstoque.objects.filter(status='PENDENTE').count()
     sem_corrida_com_saldo = operacional['sem_corrida_com_saldo']
@@ -716,11 +730,18 @@ def montar_bi_compras(f: DashboardFilters) -> dict:
     parcial = pc_all.filter(Q(status__icontains='PARCIAL') | Q(status__icontains='RECEB_PAR')).count()
     recebidos = pc_all.filter(status__icontains='RECEB').exclude(status__icontains='PARCIAL').count()
 
-    valor_aberto = Decimal('0')
-    for p in PedidoCompra.objects.filter(status__icontains='ABERT').only('valor_total'):
-        valor_aberto += _dec(p.valor_total)
+    pc_abertos_qs = pc_all.filter(status__icontains='ABERT')
+    valor_aberto = _dec(pc_abertos_qs.aggregate(t=Sum('valor_total'))['t'])
 
-    entrada_total = NFeEntrada.objects.count()
+    entrada_qs = NFeEntrada.objects.all()
+    entrada_total = entrada_qs.count()
+    entrada_propria = entrada_qs.filter(
+        tipo_origem__in=(
+            NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_IMPORTADA,
+            NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_EMITIDA,
+        ),
+    ).count()
+    cte_historico = CTeHistoricoImportado.objects.count()
 
     out['kpis'] = [
         _kpi('pc_abertos', 'Pedidos abertos', abertos, link='/pedidos-compra?status=aberto'),
@@ -729,6 +750,13 @@ def montar_bi_compras(f: DashboardFilters) -> dict:
         _kpi('pc_recebidos', 'Recebidos', recebidos, link='/pedidos-compra?status=recebido'),
         _kpi('valor_aberto_compras', 'Valor em aberto', str(valor_aberto), 'moeda', '/pedidos-compra?status=aberto'),
         _kpi('nfe_entrada', 'NF-e entrada', entrada_total, link='/nfe-entrada'),
+        _kpi(
+            'nfe_entrada_propria',
+            'Entrada própria',
+            entrada_propria,
+            link='/nfe-entrada?tipo_origem=entrada_propria',
+        ),
+        _kpi('cte_historico_importado', 'CT-e importados', cte_historico, link='/central-dfe'),
     ]
 
     status_rows = pc_all.values('status').annotate(total=Count('id')).order_by('-total')[:8]
@@ -930,6 +958,203 @@ def montar_bi_qualidade(f: DashboardFilters) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Expedição
+# ---------------------------------------------------------------------------
+
+_STATUS_EXPEDICAO_LABEL = dict(StatusExpedicao.choices)
+_TIPO_OPERACAO_LABEL = dict(TipoOperacaoExpedicao.choices)
+
+
+def _hero_kpi_id_expedicao(*, ocorrencia: int, em_andamento: int) -> str:
+    if ocorrencia > 0:
+        return 'exp_ocorrencia'
+    if em_andamento > 0:
+        return 'exp_em_andamento'
+    return 'exp_total'
+
+
+def montar_bi_expedicao(f: DashboardFilters) -> dict:
+    out = _base_bi('expedicao', f)
+    resumo = resumo_expedicoes_por_status()
+    em_andamento = (
+        resumo['aguardando_separacao']
+        + resumo['aguardando_retirada_fornecedor']
+        + resumo['motorista_enviado']
+        + resumo['em_transito']
+    )
+
+    out['hero_kpi_id'] = _hero_kpi_id_expedicao(
+        ocorrencia=resumo['ocorrencia'],
+        em_andamento=em_andamento,
+    )
+    out['kpis'] = [
+        _kpi('exp_total', 'Total de expedições', resumo['total'], link='/expedicao'),
+        _kpi('exp_em_andamento', 'Em andamento', em_andamento, link='/expedicao'),
+        _kpi(
+            'exp_aguardando_separacao',
+            'Aguardando separação',
+            resumo['aguardando_separacao'],
+            link='/expedicao?status=AGUARDANDO_SEPARACAO',
+        ),
+        _kpi(
+            'exp_aguardando_retirada',
+            'Aguardando retirada',
+            resumo['aguardando_retirada_fornecedor'],
+            link='/expedicao?status=AGUARDANDO_RETIRADA_FORNECEDOR',
+        ),
+        _kpi(
+            'exp_motorista_enviado',
+            'Motorista enviado',
+            resumo['motorista_enviado'],
+            link='/expedicao?status=MOTORISTA_ENVIADO',
+        ),
+        _kpi('exp_em_transito', 'Em trânsito', resumo['em_transito'], link='/expedicao?status=EM_TRANSITO'),
+        _kpi(
+            'exp_entregue',
+            'Entregues ao cliente',
+            resumo['entregue_cliente'],
+            link='/expedicao?status=ENTREGUE_CLIENTE',
+        ),
+        _kpi('exp_ocorrencia', 'Ocorrências', resumo['ocorrencia'], link='/expedicao?status=OCORRENCIA'),
+        _kpi('exp_cancelado', 'Canceladas', resumo['cancelado'], link='/expedicao?status=CANCELADO'),
+    ]
+
+    status_chart = [
+        {'label': _STATUS_EXPEDICAO_LABEL.get(status, status), 'valor': total}
+        for status, total in sorted(resumo['por_status'].items(), key=lambda x: -x[1])
+        if total > 0
+    ][:10]
+    out['graficos'].append(_chart('expedicoes_por_status', 'Expedições por status', 'bar', status_chart))
+
+    tipo_rows = (
+        Expedicao.objects.values('tipo_operacao')
+        .annotate(total=Count('id'))
+        .order_by('-total')[:8]
+    )
+    out['graficos'].append(
+        _chart(
+            'expedicoes_por_tipo',
+            'Expedições por tipo de operação',
+            'donut',
+            [
+                {
+                    'label': _TIPO_OPERACAO_LABEL.get(r['tipo_operacao'], r['tipo_operacao'] or '—'),
+                    'valor': r['total'],
+                }
+                for r in tipo_rows
+            ],
+        ),
+    )
+
+    exp_periodo = Expedicao.objects.filter(
+        criado_em__date__gte=f.data_inicio,
+        criado_em__date__lte=f.data_fim,
+    )
+    evolucao = (
+        exp_periodo.annotate(mes=TruncMonth('criado_em'))
+        .values('mes')
+        .annotate(total=Count('id'))
+        .order_by('mes')
+    )
+    out['graficos'].append(
+        _chart(
+            'expedicoes_periodo',
+            'Expedições no período',
+            'line',
+            [{'label': (r['mes'].strftime('%m/%Y') if r['mes'] else '—'), 'valor': r['total']} for r in evolucao],
+        ),
+    )
+
+    top_clientes = (
+        Expedicao.objects.filter(cliente_id__isnull=False)
+        .values('cliente__razao_social')
+        .annotate(total=Count('id'))
+        .order_by('-total')[:RANKING_LIMIT]
+    )
+    out['rankings'].append(
+        _ranking(
+            'top_clientes_expedicao',
+            'Clientes com mais expedições',
+            [
+                {
+                    'label': r['cliente__razao_social'] or '—',
+                    'valor': str(r['total']),
+                    'link': '/expedicao',
+                }
+                for r in top_clientes
+            ],
+        ),
+    )
+
+    atrasadas = Expedicao.objects.filter(
+        data_prevista_entrega__lt=timezone.localdate(),
+    ).exclude(
+        status__in=(
+            StatusExpedicao.ENTREGUE_CLIENTE,
+            StatusExpedicao.CANCELADO,
+        ),
+    ).count()
+    if atrasadas:
+        out['rankings'].append(
+            _ranking(
+                'expedicoes_atrasadas',
+                'Entregas previstas atrasadas',
+                [{'label': 'Total atrasadas', 'valor': str(atrasadas), 'link': '/expedicao'}],
+            ),
+        )
+
+    for exp in Expedicao.objects.select_related('cliente', 'fornecedor').order_by('-criado_em')[:ULTIMOS_LIMIT]:
+        out['ultimos'].append(
+            {
+                'tipo': 'expedicao',
+                'titulo': exp.codigo,
+                'subtitulo': (
+                    exp.cliente.razao_social
+                    if exp.cliente_id
+                    else (exp.fornecedor.razao_social if exp.fornecedor_id else '')
+                ),
+                'valor': '',
+                'status': _STATUS_EXPEDICAO_LABEL.get(exp.status, exp.status),
+                'data': exp.criado_em.date().isoformat() if exp.criado_em else '',
+                'link': f'/expedicao?expedicao={exp.pk}',
+            },
+        )
+
+    if resumo['ocorrencia']:
+        out['alertas'].append(
+            _alerta(
+                'expedicao',
+                'critico',
+                'Ocorrências em expedição',
+                f"{resumo['ocorrencia']} expedição(ões) com ocorrência.",
+                '/expedicao?status=OCORRENCIA',
+            ),
+        )
+    if resumo['aguardando_separacao']:
+        out['alertas'].append(
+            _alerta(
+                'expedicao',
+                'aviso',
+                'Aguardando separação',
+                f"{resumo['aguardando_separacao']} expedição(ões) aguardando separação.",
+                '/expedicao?status=AGUARDANDO_SEPARACAO',
+            ),
+        )
+    if atrasadas:
+        out['alertas'].append(
+            _alerta(
+                'expedicao',
+                'aviso',
+                'Entregas atrasadas',
+                f'{atrasadas} expedição(ões) com data prevista vencida.',
+                '/expedicao',
+            ),
+        )
+
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Financeiro (resumo operacional — ERP 4.0.14.5)
 # ---------------------------------------------------------------------------
 
@@ -1066,6 +1291,7 @@ MODULO_BUILDERS = {
     'comercial': montar_bi_comercial,
     'fiscal': montar_bi_fiscal,
     'estoque': montar_bi_estoque,
+    'expedicao': montar_bi_expedicao,
     'compras': montar_bi_compras,
     'qualidade': montar_bi_qualidade,
     'financeiro': montar_bi_financeiro,
@@ -1075,6 +1301,7 @@ MODULO_TITULOS = {
     'comercial': 'Comercial',
     'fiscal': 'Fiscal',
     'estoque': 'Estoque',
+    'expedicao': 'Expedição',
     'compras': 'Compras',
     'qualidade': 'Qualidade',
     'financeiro': 'Financeiro',

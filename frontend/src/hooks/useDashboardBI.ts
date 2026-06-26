@@ -12,6 +12,7 @@ export type DashboardBIModulo =
   | 'comercial'
   | 'fiscal'
   | 'estoque'
+  | 'expedicao'
   | 'compras'
   | 'qualidade'
   | 'financeiro';

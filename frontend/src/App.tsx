@@ -7,6 +7,7 @@ import DashboardHome from "./pages/dashboard/DashboardHome";
 import DashboardComercial from "./pages/dashboard/DashboardComercial";
 import DashboardFiscal from "./pages/dashboard/DashboardFiscal";
 import DashboardEstoque from "./pages/dashboard/DashboardEstoque";
+import DashboardExpedicao from "./pages/dashboard/DashboardExpedicao";
 import DashboardCompras from "./pages/dashboard/DashboardCompras";
 import DashboardQualidade from "./pages/dashboard/DashboardQualidade";
 import DashboardFinanceiro from "./pages/dashboard/DashboardFinanceiro";
@@ -68,6 +69,7 @@ const App = () => (
         <Route path="dashboard/comercial" element={<DashboardComercial />} />
         <Route path="dashboard/fiscal" element={<DashboardFiscal />} />
         <Route path="dashboard/estoque" element={<DashboardEstoque />} />
+        <Route path="dashboard/expedicao" element={<DashboardExpedicao />} />
         <Route path="dashboard/compras" element={<DashboardCompras />} />
         <Route path="dashboard/qualidade" element={<DashboardQualidade />} />
         <Route path="dashboard/financeiro" element={<DashboardFinanceiro />} />

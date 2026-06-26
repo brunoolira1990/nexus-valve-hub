@@ -39,6 +39,7 @@ describe('ERP 4.0.8.1 — navegação por permissão', () => {
       pode_ver_comercial: true,
       pode_ver_fiscal: false,
       pode_ver_estoque: false,
+      pode_ver_expedicao: false,
       pode_ver_compras: false,
       pode_ver_qualidade: false,
       pode_ver_financeiro: false,

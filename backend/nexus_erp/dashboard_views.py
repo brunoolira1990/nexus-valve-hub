@@ -81,6 +81,14 @@ def dashboard_qualidade(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+def dashboard_expedicao(request):
+    if not exigir_modulo(request.user, 'expedicao'):
+        return _deny_modulo('expedicao')
+    return Response(MODULO_BUILDERS['expedicao'](_filters_from_request(request)))
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def dashboard_financeiro(request):
     if not exigir_modulo(request.user, 'financeiro'):
         return _deny_modulo('financeiro')

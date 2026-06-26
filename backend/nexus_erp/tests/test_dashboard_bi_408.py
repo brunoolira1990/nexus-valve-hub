@@ -58,7 +58,7 @@ class DashboardBI408Tests(TestCase):
         self.client.force_authenticate(self.admin)
         data = self.client.get('/api/dashboard/home/').json()
         modulos = {m['modulo'] for m in data['modulos']}
-        for m in ('comercial', 'fiscal', 'estoque', 'compras', 'qualidade', 'financeiro'):
+        for m in ('comercial', 'fiscal', 'estoque', 'expedicao', 'compras', 'qualidade', 'financeiro'):
             self.assertIn(m, modulos)
 
     def test_comercial_calcula_pedidos_abertos(self):
