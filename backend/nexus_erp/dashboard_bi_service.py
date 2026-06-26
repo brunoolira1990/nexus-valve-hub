@@ -11,7 +11,6 @@ from django.utils import timezone
 
 from apps.cadastros.models import Empresa, Fornecedor
 from apps.comercial.models import ItemPedidoVenda, PedidoCompra, PedidoVenda, Proposta
-from apps.corridas.models import Corrida
 from apps.fiscal.central_dfe.service import resumo_central_dfe_dashboard
 from apps.fiscal.models import (
     AtendimentoEstoque,
@@ -22,9 +21,13 @@ from apps.fiscal.models import (
 )
 from apps.fiscal.nfe_saida_apresentacao import montar_apresentacao_nfe_saida
 from apps.produtos.models import Produto
-from apps.qualidade.models import CertificadoFornecedorEntrada, CertificadoQualidade
+from apps.qualidade.models import CertificadoQualidade
 
 from nexus_erp.dashboard_filters import DashboardFilters, periodo_dict
+from nexus_erp.dashboard_operacional_resumo import (
+    resumo_pendencias_produto_estoque,
+    resumo_pendencias_qualidade,
+)
 from nexus_erp.dashboard_permissions import modulos_permitidos, permissoes_dashboard, usuario_pode_ver_dashboard_modulo
 
 RANKING_LIMIT = 5
@@ -558,7 +561,8 @@ def montar_bi_fiscal(f: DashboardFilters) -> dict:
 def montar_bi_estoque(f: DashboardFilters) -> dict:
     out = _base_bi('estoque', f)
     total_produtos = Produto.objects.count()
-    sem_ncm = Produto.objects.filter(Q(ncm='') | Q(ncm__isnull=True)).count()
+    operacional = resumo_pendencias_produto_estoque()
+    sem_ncm = operacional['sem_ncm']
     saldo_map = {
         row['produto_id']: _dec(row['total'])
         for row in EstoqueCorrida.objects.values('produto_id').annotate(total=Sum('saldo'))
@@ -573,10 +577,25 @@ def montar_bi_estoque(f: DashboardFilters) -> dict:
             negativo += 1
 
     atend_pendentes = AtendimentoEstoque.objects.filter(status='PENDENTE').count()
+    sem_corrida_com_saldo = operacional['sem_corrida_com_saldo']
+    produtos_sem_corrida = operacional['produtos_sem_corrida']
+    sem_ncm_com_saldo = operacional['sem_ncm_com_saldo']
+
+    out['hero_kpi_id'] = 'produtos_cadastrados'
+    if sem_corrida_com_saldo > 0:
+        out['hero_kpi_id'] = 'sem_corrida_com_saldo'
+    elif produtos_sem_corrida > 0 and total_produtos <= 50:
+        out['hero_kpi_id'] = 'produtos_sem_corrida'
+    elif baixo > 0:
+        out['hero_kpi_id'] = 'estoque_baixo'
 
     out['kpis'] = [
         _kpi('produtos_cadastrados', 'Produtos cadastrados', total_produtos, link='/produtos'),
+        _kpi('produtos_com_saldo', 'Com saldo em estoque', operacional['produtos_com_saldo'], link='/estoque'),
+        _kpi('produtos_sem_corrida', 'Sem corrida cadastrada', produtos_sem_corrida, link='/produtos'),
+        _kpi('sem_corrida_com_saldo', 'Saldo sem corrida do produto', sem_corrida_com_saldo, link='/produtos'),
         _kpi('produtos_sem_ncm', 'Sem NCM', sem_ncm, link='/produtos?sem_ncm=1'),
+        _kpi('sem_ncm_com_saldo', 'Sem NCM com saldo', sem_ncm_com_saldo, link='/produtos?sem_ncm=1'),
         _kpi('estoque_baixo', 'Abaixo do mínimo', baixo, link='/estoque?filtro=baixo_estoque'),
         _kpi('saldo_negativo', 'Saldo negativo', negativo, link='/estoque?filtro=saldo_negativo'),
         _kpi('atendimentos_pendentes', 'Atendimentos pendentes', atend_pendentes, link='/atendimentos-estoque'),
@@ -599,6 +618,7 @@ def montar_bi_estoque(f: DashboardFilters) -> dict:
 
     alertas_tipos = [
         {'label': 'Baixo estoque', 'valor': baixo},
+        {'label': 'Sem corrida', 'valor': produtos_sem_corrida},
         {'label': 'Sem NCM', 'valor': sem_ncm},
         {'label': 'Saldo negativo', 'valor': negativo},
     ]
@@ -639,6 +659,36 @@ def montar_bi_estoque(f: DashboardFilters) -> dict:
             },
         )
 
+    if produtos_sem_corrida:
+        out['alertas'].append(
+            _alerta(
+                'estoque',
+                'info',
+                'Produtos sem corrida',
+                f'{produtos_sem_corrida} produto(s) sem corrida/lote cadastrada.',
+                '/produtos',
+            ),
+        )
+    if sem_corrida_com_saldo:
+        out['alertas'].append(
+            _alerta(
+                'estoque',
+                'aviso',
+                'Saldo sem corrida',
+                f'{sem_corrida_com_saldo} produto(s) com saldo sem corrida/lote cadastrada.',
+                '/produtos',
+            ),
+        )
+    if sem_ncm_com_saldo:
+        out['alertas'].append(
+            _alerta(
+                'estoque',
+                'info',
+                'Sem NCM com saldo',
+                f'{sem_ncm_com_saldo} produto(s) com saldo e sem NCM.',
+                '/produtos?sem_ncm=1',
+            ),
+        )
     if baixo:
         out['alertas'].append(
             _alerta('estoque', 'aviso', 'Baixo estoque', f'{baixo} produto(s) abaixo do mínimo.', '/estoque?filtro=baixo_estoque'),
@@ -758,31 +808,49 @@ def montar_bi_compras(f: DashboardFilters) -> dict:
 
 def montar_bi_qualidade(f: DashboardFilters) -> dict:
     out = _base_bi('qualidade', f)
+    pend = resumo_pendencias_qualidade()
     cq_qs = CertificadoQualidade.objects.all()
-    cf_qs = CertificadoFornecedorEntrada.objects.all()
-    corr_qs = Corrida.objects.all()
 
-    emitidos = cq_qs.filter(status='emitido').count()
-    pendentes = cq_qs.exclude(status__in=('emitido', 'cancelado')).count()
-    cf_total = cf_qs.count()
-    corridas = corr_qs.count()
+    out['hero_kpi_id'] = 'cq_rastreabilidade_pendente' if pend['cq_rastreabilidade_pendente'] else 'cq_rascunho'
 
     out['kpis'] = [
-        _kpi('cq_emitidos', 'Certificados emitidos', emitidos, link='/certificados'),
-        _kpi('cq_pendentes', 'Certificados pendentes', pendentes, link='/certificados?status=pendente'),
-        _kpi('cf_cadastrados', 'Cert. fornecedor', cf_total, link='/certificados-fornecedor'),
-        _kpi('corridas_lotes', 'Corridas / lotes', corridas, link='/corridas'),
+        _kpi('cq_emitidos', 'Certificados emitidos', pend['cq_emitidos'], link='/certificados'),
+        _kpi('cq_rascunho', 'CQ em rascunho', pend['cq_rascunho'], link='/certificados?status=rascunho'),
+        _kpi(
+            'cq_rastreabilidade_pendente',
+            'CQ com rastreabilidade pendente',
+            pend['cq_rastreabilidade_pendente'],
+            link='/certificados?status=rascunho',
+        ),
+        _kpi(
+            'itens_rastreabilidade_pendente',
+            'Itens CQ pendentes',
+            pend['itens_rastreabilidade_pendente'],
+            link='/certificados?status=rascunho',
+        ),
+        _kpi('cf_rascunho', 'CF fornecedor em rascunho', pend['cf_rascunho'], link='/certificados-fornecedor'),
+        _kpi('cf_registrados', 'CF fornecedor registrados', pend['cf_registrados'], link='/certificados-fornecedor'),
+        _kpi('corridas_lotes', 'Corridas / lotes', pend['corridas'], link='/corridas'),
+        _kpi('pendencias_total', 'Pendências totais', pend['pendencias_total']),
     ]
 
     cq_status = cq_qs.values('status').annotate(total=Count('id')).order_by('-total')
     out['graficos'].append(
         _chart(
             'cert_por_status',
-            'Certificados por status',
+            'Certificados CQ por status',
             'donut',
             [{'label': r['status'] or '—', 'valor': r['total']} for r in cq_status],
         ),
     )
+
+    pendencias_chart = [
+        {'label': 'CQ rascunho', 'valor': pend['cq_rascunho']},
+        {'label': 'CQ rastreab. pend.', 'valor': pend['cq_rastreabilidade_pendente']},
+        {'label': 'CF rascunho', 'valor': pend['cf_rascunho']},
+        {'label': 'Itens pendentes', 'valor': pend['itens_rastreabilidade_pendente']},
+    ]
+    out['graficos'].append(_chart('pendencias_qualidade', 'Pendências de qualidade', 'donut', pendencias_chart))
 
     evolucao = (
         _filtro_periodo_data(cq_qs, f, 'data_emissao')
@@ -827,9 +895,35 @@ def montar_bi_qualidade(f: DashboardFilters) -> dict:
             },
         )
 
-    if pendentes:
+    if pend['cq_rascunho']:
         out['alertas'].append(
-            _alerta('qualidade', 'aviso', 'Certificados pendentes', f'{pendentes} certificado(s) pendente(s).', '/certificados?status=pendente'),
+            _alerta(
+                'qualidade',
+                'aviso',
+                'CQ em rascunho',
+                f"{pend['cq_rascunho']} certificado(s) de qualidade em rascunho.",
+                '/certificados?status=rascunho',
+            ),
+        )
+    if pend['cq_rastreabilidade_pendente']:
+        out['alertas'].append(
+            _alerta(
+                'qualidade',
+                'critico',
+                'Rastreabilidade pendente',
+                f"{pend['cq_rastreabilidade_pendente']} CQ com itens de rastreabilidade pendente.",
+                '/certificados?status=rascunho',
+            ),
+        )
+    if pend['cf_rascunho']:
+        out['alertas'].append(
+            _alerta(
+                'qualidade',
+                'aviso',
+                'CF fornecedor em rascunho',
+                f"{pend['cf_rascunho']} certificado(s) de fornecedor em rascunho.",
+                '/certificados-fornecedor',
+            ),
         )
 
     return out

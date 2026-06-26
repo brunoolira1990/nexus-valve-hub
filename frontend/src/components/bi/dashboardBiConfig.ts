@@ -37,7 +37,7 @@ export const MODULO_HERO_KPI: Record<DashboardBIModulo, string | null> = {
   fiscal: 'nfe_auth_prod',
   estoque: 'produtos_cadastrados',
   compras: 'valor_aberto_compras',
-  qualidade: 'cq_emitidos',
+  qualidade: 'cq_rastreabilidade_pendente',
   financeiro: 'saldo_previsto',
 };
 

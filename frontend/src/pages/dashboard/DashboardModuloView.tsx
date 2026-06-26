@@ -42,9 +42,9 @@ const MODULO_LABELS: Record<DashboardBIModulo, string> = {
 const MODULO_SUBTITLES: Record<DashboardBIModulo, string> = {
   comercial: 'Pedidos, propostas e valor a faturar',
   fiscal: 'NF-e produção/homologação, DF-e recebidos, SEFAZ e certificados',
-  estoque: 'Saldos, alertas e atendimentos',
+  estoque: 'Saldos, rastreabilidade, alertas e atendimentos',
   compras: 'Pedidos de compra e NF-e de entrada',
-  qualidade: 'Certificados e corridas técnicas',
+  qualidade: 'Certificados, rastreabilidade, CF fornecedor e corridas',
   financeiro: 'Recebimentos, pagamentos, vencimentos e alertas operacionais',
 };
 
