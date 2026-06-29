@@ -22,6 +22,7 @@ from apps.fiscal.inbox_fiscal.estado_consolidado import (
     derivar_estado_nfe_fornecedor_historica,
     derivar_estado_nfe_fornecedor_resumo,
 )
+from apps.fiscal.nfe_integracao.nfe_chave_acesso import extrair_serie_numero_da_chave_dfe
 from apps.fiscal.models import (
     CTeHistoricoImportado,
     NFeDestinadaManifestacao,
@@ -112,6 +113,7 @@ class DocumentoCentralDfe:
     estado_consolidado_detalhes: dict[str, Any] | None = None
     nf_entrada_historica_id: int | None = None
     manifestacao_id: int | None = None
+    numero_via_chave: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         payload = {
@@ -141,6 +143,7 @@ class DocumentoCentralDfe:
             'estado_consolidado_label': self.estado_consolidado_label,
             'nf_entrada_historica_id': self.nf_entrada_historica_id,
             'manifestacao_id': self.manifestacao_id,
+            'numero_via_chave': self.numero_via_chave,
         }
         if self.estado_consolidado_motivo:
             payload['estado_consolidado_motivo'] = self.estado_consolidado_motivo
@@ -286,6 +289,22 @@ def chave_resumida(chave: str | None) -> str:
     return f'{c[:4]}…{c[-4:]}'
 
 
+def _resolver_numero_serie(
+    chave: str,
+    numero: str | None,
+    serie: str | None,
+) -> tuple[str, str, bool]:
+    """Preenche número/série a partir da chave quando o XML ainda não foi importado."""
+    num = (numero or '').strip()
+    ser = (serie or '').strip()
+    if num and num != '—':
+        return num, ser, False
+    ext = extrair_serie_numero_da_chave_dfe(chave)
+    if ext:
+        return ext.numero, ext.serie, True
+    return '—', '', False
+
+
 def _json_participante(payload: dict | None) -> tuple[str, str]:
     data = payload or {}
     nome = (data.get('xNome') or data.get('xFant') or '').strip()
@@ -396,13 +415,14 @@ def _coletar_nfe_resumo_destinada(
             continue
 
         emit_cnpj = normalizar_cnpj(doc.cnpj_emitente)
+        numero, serie, numero_via_chave = _resolver_numero_serie(chave, '', '')
         row = DocumentoCentralDfe(
             id=doc.pk,
             tipo_documento=TIPO_NFE_ENTRADA,
             chave_resumida=chave_resumida(chave),
             chave_acesso=chave,
-            numero='—',
-            serie='',
+            numero=numero,
+            serie=serie,
             data_emissao=doc.dh_emissao,
             data_importacao=doc.consultado_em,
             emitente_nome=doc.razao_social_emitente,
@@ -419,6 +439,7 @@ def _coletar_nfe_resumo_destinada(
             xml_armazenado=False,
             manifestacao_aplicavel=True,
             manifestacao_id=doc.pk,
+            numero_via_chave=numero_via_chave,
         )
         rows.append(_enriquecer_estado_consolidado(row, derivar_estado_nfe_fornecedor_resumo(doc)))
     return rows
@@ -491,13 +512,14 @@ def documento_central_nfe_historica(
         manifestacao = (
             NFeDestinadaManifestacao.objects.filter(empresa_id=empresa.pk, chave_acesso=chave).first()
         )
+    numero, serie, numero_via_chave = _resolver_numero_serie(chave, doc.numero, doc.serie)
     row = DocumentoCentralDfe(
         id=doc.id,
         tipo_documento=TIPO_NFE_ENTRADA,
         chave_resumida=chave_resumida(chave),
         chave_acesso=chave,
-        numero=doc.numero,
-        serie=doc.serie,
+        numero=numero,
+        serie=serie,
         data_emissao=doc.dh_emissao,
         data_importacao=doc.importado_em,
         data_entrada=data_entrada,
@@ -516,6 +538,7 @@ def documento_central_nfe_historica(
         manifestacao_aplicavel=True,
         nf_entrada_historica_id=doc.id,
         manifestacao_id=manifestacao.pk if manifestacao else None,
+        numero_via_chave=numero_via_chave,
     )
     estado = derivar_estado_nfe_fornecedor_historica(
         doc,
@@ -621,13 +644,14 @@ def _coletar_cte_recebido(filtros: FiltrosCentralDfe, empresa: Empresa) -> list[
         emit_cnpj_norm = normalizar_cnpj(emit_cnpj)
         if empresa_cnpj and emit_cnpj_norm == empresa_cnpj:
             continue
+        numero, serie, numero_via_chave = _resolver_numero_serie(doc.chave_acesso, doc.numero, doc.serie)
         row = DocumentoCentralDfe(
             id=doc.id,
             tipo_documento=TIPO_CTE,
             chave_resumida=chave_resumida(doc.chave_acesso),
             chave_acesso=doc.chave_acesso,
-            numero=doc.numero,
-            serie=doc.serie,
+            numero=numero,
+            serie=serie,
             data_emissao=doc.dh_emissao,
             data_importacao=doc.importado_em,
             emitente_nome=emit_nome,
@@ -643,6 +667,7 @@ def _coletar_cte_recebido(filtros: FiltrosCentralDfe, empresa: Empresa) -> list[
             xml_status_label='XML armazenado',
             xml_armazenado=True,
             manifestacao_aplicavel=False,
+            numero_via_chave=numero_via_chave,
         )
         rows.append(_enriquecer_estado_consolidado(row, derivar_estado_cte(doc)))
     return rows

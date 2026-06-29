@@ -147,9 +147,18 @@ class CentralDfeRecebidosApiTest(TestCase):
         self.assertEqual(resp.data['results'][0]['status_entrada'], 'JA_LANCADO')
 
     def test_lista_resumo_destinado_sem_xml_historico(self) -> None:
-        from django.utils import timezone
+        from apps.fiscal.nfe_integracao.nfe_chave_acesso import montar_chave_acesso_nfe
 
-        chave_resumo = '5' * 44
+        chave_resumo = montar_chave_acesso_nfe(
+            cuf='35',
+            aamm='2606',
+            cnpj_emitente='22222222000122',
+            modelo='55',
+            serie='1',
+            nnf='20891',
+            tp_emis='1',
+            codigo_numerico='12345678',
+        ).chave_44
         NFeDestinadaManifestacao.objects.create(
             empresa=self.emp,
             chave_acesso=chave_resumo,
@@ -169,3 +178,6 @@ class CentralDfeRecebidosApiTest(TestCase):
         row = next(r for r in resp.data['results'] if r['chave_acesso'] == chave_resumo)
         self.assertEqual(row['xml_armazenado'], False)
         self.assertEqual(row['status_entrada'], 'IMPORTADO_BASE')
+        self.assertEqual(row['numero'], '20891')
+        self.assertEqual(row['serie'], '1')
+        self.assertTrue(row['numero_via_chave'])

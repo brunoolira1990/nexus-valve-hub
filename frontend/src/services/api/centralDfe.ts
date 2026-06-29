@@ -42,6 +42,7 @@ export type CentralDfeDocumento = {
   estado_consolidado_detalhes?: Record<string, unknown>;
   nf_entrada_historica_id?: number | null;
   manifestacao_id?: number | null;
+  numero_via_chave?: boolean;
 };
 
 export type ArmazenarXmlCentralResponse = {

@@ -63,6 +63,11 @@ import {
 } from '@/lib/inboxFiscalUi';
 import { nfeHistoricaEntradaImportadaService } from '@/services/api/nfeHistoricaEntradaImportada';
 import { cteHistoricoImportadoService } from '@/services/api/cteHistoricoImportado';
+import {
+  extrairSerieNumeroDaChaveDfe,
+  formatNumeroSerieInbox,
+  resolverNumeroSerieInbox,
+} from '@/lib/chaveDfeDocumento';
 import { chaveNfeResumida } from '@/lib/chaveNfeResumida';
 import {
   centralDfeService,
@@ -409,13 +414,15 @@ function mesclarLinhaCentral(
 function resumoParaLinhaCentral(m: NFeDestinadaDocumento): CentralDfeDocumento {
   const xmlArmazenado = m.status_xml === 'BAIXADO' && Boolean(m.nf_entrada_historica_id);
   const nfHistoricaId = m.nf_entrada_historica_id;
+  const ext = extrairSerieNumeroDaChaveDfe(m.chave_acesso);
   return {
     id: xmlArmazenado && nfHistoricaId ? nfHistoricaId : m.id,
     tipo_documento: 'NFE_ENTRADA',
     chave_resumida: m.chave_resumida,
     chave_acesso: m.chave_acesso,
-    numero: '—',
-    serie: '',
+    numero: ext?.numero ?? '—',
+    serie: ext?.serie ?? '',
+    numero_via_chave: Boolean(ext),
     data_emissao: m.dh_emissao,
     data_importacao: null,
     emitente_nome: m.razao_social_emitente,
@@ -1139,6 +1146,7 @@ const CentralDfe = () => {
                   const alertaExcecao = ['DIVERGENTE', 'BLOQUEADO'].includes(
                     estadoInbox.estado.toUpperCase(),
                   );
+                  const numeroSerie = resolverNumeroSerieInbox(row);
 
                   return (
                   <tr
@@ -1151,9 +1159,18 @@ const CentralDfe = () => {
                     </td>
                     <td>
                       <div className="text-sm font-medium">
-                        {row.numero || '—'}
-                        {row.serie ? ` / ${row.serie}` : ''}
+                        {formatNumeroSerieInbox(row)}
                       </div>
+                      {numeroSerie.viaChave ? (
+                        <div
+                          className="text-[10px] text-muted-foreground leading-tight"
+                          title="Número e série extraídos da chave de acesso — aguardando XML para confirmação"
+                        >
+                          via chave
+                        </div>
+                      ) : numeroSerie.aguardandoXml ? (
+                        <div className="text-[10px] text-muted-foreground leading-tight">resumo SEFAZ</div>
+                      ) : null}
                       <div className="text-xs text-muted-foreground font-mono" title={row.chave_acesso || undefined}>
                         {row.chave_resumida || chaveNfeResumida(row.chave_acesso)}
                       </div>

@@ -70,3 +70,32 @@ def montar_chave_acesso_nfe(
 def aamm_da_emissao(dh_emi: datetime | None = None) -> str:
     dt = dh_emi or datetime.now()
     return f'{dt.year % 100:02d}{dt.month:02d}'
+
+
+@dataclass(frozen=True)
+class SerieNumeroChaveDfe:
+    """Série e número extraídos da chave de acesso NF-e/CT-e (44 dígitos)."""
+
+    serie: str
+    numero: str
+    modelo: str
+
+
+def extrair_serie_numero_da_chave_dfe(chave: str | None) -> SerieNumeroChaveDfe | None:
+    """
+    Extrai série e número da chave de acesso (layout SEFAZ, modelos 55 e 57).
+
+  Posições: … mod(20-21) | série(22-24) | nNF(25-33) | …
+    """
+    digits = ''.join(c for c in str(chave or '') if c.isdigit())
+    if len(digits) != 44:
+        return None
+    modelo = digits[20:22]
+    if modelo not in ('55', '57'):
+        return None
+    try:
+        serie = str(int(digits[22:25]))
+        numero = str(int(digits[25:34]))
+    except ValueError:
+        return None
+    return SerieNumeroChaveDfe(serie=serie, numero=numero, modelo=modelo)
