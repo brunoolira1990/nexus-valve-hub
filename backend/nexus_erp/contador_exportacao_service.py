@@ -22,6 +22,11 @@ class ContadorExportacaoError(Exception):
 
 MAX_DIAS_PERIODO = 366
 TIPOS_VALIDOS = frozenset({'nfe_saida', 'nfe_entrada', 'cte', 'todos'})
+PASTAS_ZIP = {
+    'nfe_saida': 'nfe-saida',
+    'nfe_entrada': 'nfe-entrada',
+    'cte': 'cte',
+}
 
 
 def _parse_data(valor: str, *, campo: str) -> date:
@@ -124,14 +129,24 @@ def _coletar_cte(d_ini: date, d_fim: date) -> list[tuple[str, str]]:
     return arquivos
 
 
+def _caminho_zip(pasta: str, nome_arquivo: str) -> str:
+    return f'{pasta}/{nome_arquivo}'
+
+
 def coletar_xmls_periodo(*, inicio: date, fim: date, tipo: str) -> list[tuple[str, str]]:
     arquivos: list[tuple[str, str]] = []
     if tipo in ('nfe_saida', 'todos'):
-        arquivos.extend(_coletar_nfe_saida(inicio, fim))
+        pasta = PASTAS_ZIP['nfe_saida']
+        for nome, xml in _coletar_nfe_saida(inicio, fim):
+            arquivos.append((_caminho_zip(pasta, nome), xml))
     if tipo in ('nfe_entrada', 'todos'):
-        arquivos.extend(_coletar_nfe_entrada(inicio, fim))
+        pasta = PASTAS_ZIP['nfe_entrada']
+        for nome, xml in _coletar_nfe_entrada(inicio, fim):
+            arquivos.append((_caminho_zip(pasta, nome), xml))
     if tipo in ('cte', 'todos'):
-        arquivos.extend(_coletar_cte(inicio, fim))
+        pasta = PASTAS_ZIP['cte']
+        for nome, xml in _coletar_cte(inicio, fim):
+            arquivos.append((_caminho_zip(pasta, nome), xml))
     return arquivos
 
 

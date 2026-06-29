@@ -50,7 +50,7 @@ class ContadorExportacaoXmlsTests(TestCase):
         self.assertIn('nfe_entrada', nome)
         with zipfile.ZipFile(io.BytesIO(conteudo)) as zf:
             self.assertEqual(len(zf.namelist()), 1)
-            self.assertIn(chave, zf.namelist()[0])
+            self.assertEqual(zf.namelist()[0], f'nfe-entrada/{chave}.xml')
 
     def test_exporta_zip_nfe_saida(self):
         chave = '3' * 44
@@ -67,7 +67,7 @@ class ContadorExportacaoXmlsTests(TestCase):
         self.assertIn('nfe_saida', nome)
         with zipfile.ZipFile(io.BytesIO(conteudo)) as zf:
             self.assertEqual(len(zf.namelist()), 1)
-            self.assertIn(chave, zf.namelist()[0])
+            self.assertEqual(zf.namelist()[0], f'nfe-saida/{chave}.xml')
 
     def test_api_exportar_xmls(self):
         NFeEntrada.objects.create(
@@ -86,7 +86,7 @@ class ContadorExportacaoXmlsTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp['Content-Type'], 'application/zip')
         with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
-            self.assertGreaterEqual(len(zf.namelist()), 1)
+            self.assertEqual(zf.namelist(), [f'nfe-entrada/{"2" * 44}.xml'])
 
     def test_api_sem_xml_retorna_400(self):
         resp = self.client.get(

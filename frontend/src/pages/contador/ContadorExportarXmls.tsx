@@ -54,7 +54,7 @@ export default function ContadorExportarXmls() {
     <div className="space-y-6 max-w-2xl">
       <PageHeader
         title="Exportar XMLs"
-        description="Gere um pacote ZIP com os XMLs fiscais armazenados no período selecionado (NF-e saída, NF-e entrada e CT-e importados)."
+        description="Gere um pacote ZIP com os XMLs fiscais armazenados no período selecionado, organizados em pastas por tipo (NF-e saída, NF-e entrada e CT-e)."
       />
 
       <div className="erp-card p-6 space-y-5">
@@ -91,8 +91,10 @@ export default function ContadorExportarXmls() {
         </label>
 
         <p className="text-xs text-muted-foreground leading-relaxed">
-          São incluídos XMLs de NF-e de saída (autorizados ou importados), NF-e de entrada operacional e bases de
-          entrada importada, além de CT-e da base importada com XML armazenado.
+          O ZIP é organizado em pastas (<span className="font-mono">nfe-saida/</span>,{' '}
+          <span className="font-mono">nfe-entrada/</span>, <span className="font-mono">cte/</span>) — só as que
+          tiverem documentos no período. Inclui NF-e de saída autorizadas, NF-e de entrada operacional e bases
+          importadas, além de CT-e da base importada com XML armazenado.
         </p>
 
         <NexusButton type="button" onClick={() => void handleExport()} disabled={loading || !inicio || !fim}>
