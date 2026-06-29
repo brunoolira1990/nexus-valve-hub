@@ -62,7 +62,7 @@ type ManifestacaoEventoFormProps = {
   onConfirm: (evento: EventoManifestacaoDestinatario, justificativa: string) => void;
 };
 
-function ManifestacaoEventoForm({
+export function ManifestacaoEventoForm({
   documento,
   loadingAcao,
   onCancel,

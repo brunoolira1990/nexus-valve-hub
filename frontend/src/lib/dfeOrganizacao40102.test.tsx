@@ -193,7 +193,7 @@ describe('dfeOrganizacao40102', () => {
       </Routes>,
       '/nfe-entrada-historica-importada',
     );
-    expect(screen.getByText('Base NF-e Entrada Importada')).toBeInTheDocument();
+    expect(screen.getByText('NF-e Entrada (base)')).toBeInTheDocument();
     expect(screen.queryByText(/Histórica\/XML/i)).not.toBeInTheDocument();
   });
 

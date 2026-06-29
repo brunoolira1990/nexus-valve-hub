@@ -174,8 +174,8 @@ const NFeEntrada = () => {
   return (
     <div>
       <PageHeader
-        title="NF-e Entrada"
-        description="Entradas fiscais operacionais e entradas próprias emitidas pela empresa. XMLs de fornecedor devem ser importados pela Base NF-e Entrada Importada."
+        title="Entrada Própria"
+        description="Entradas próprias emitidas ou importadas manualmente pela empresa (ex.: devolução). XMLs de fornecedor devem ser tratados no Inbox Fiscal."
         searchValue={search}
         onSearch={setSearch}
         actions={
@@ -218,8 +218,8 @@ const NFeEntrada = () => {
                 <tr>
                   <td colSpan={9}>
                     <EmptyState
-                      title="Nenhuma NF-e de entrada operacional encontrada."
-                      message="Importe XMLs de fornecedores na Base NF-e Entrada Importada, importe entrada própria já emitida (ex.: devolução) ou emita uma entrada própria manualmente."
+                      title="Nenhuma Entrada Própria encontrada."
+                      message="Use o Inbox Fiscal para receber NF-e de fornecedores. Aqui, importe entrada própria já emitida (ex.: devolução) ou emita uma entrada própria manualmente."
                     />
                   </td>
                 </tr>

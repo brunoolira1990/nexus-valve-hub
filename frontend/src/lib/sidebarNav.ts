@@ -27,6 +27,12 @@ export function isSidebarPathActive(
   }
 
   if (EXACT_ONLY_PATHS.has(path)) return false;
+
+  // Conferência da base importada (/nfe-entrada/:id/conferencia) não pertence a Entrada Própria.
+  if (path === '/nfe-entrada' && /^\/nfe-entrada\/[^/]+\/conferencia$/.test(pathname)) {
+    return false;
+  }
+
   if (path !== '/dashboard' && pathname.startsWith(`${path}/`)) return true;
 
   return false;

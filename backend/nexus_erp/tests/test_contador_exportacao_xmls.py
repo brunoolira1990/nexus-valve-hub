@@ -13,8 +13,8 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from apps.cadastros.models import Fornecedor
-from apps.fiscal.models import NFeEntrada
+from apps.cadastros.models import Cliente, Fornecedor
+from apps.fiscal.models import NFeEntrada, NFeSaida
 from nexus_erp.contador_exportacao_service import montar_zip_xmls, validar_parametros_exportacao
 
 
@@ -48,6 +48,23 @@ class ContadorExportacaoXmlsTests(TestCase):
         )
         conteudo, nome = montar_zip_xmls(inicio=self.hoje, fim=self.hoje, tipo='nfe_entrada')
         self.assertIn('nfe_entrada', nome)
+        with zipfile.ZipFile(io.BytesIO(conteudo)) as zf:
+            self.assertEqual(len(zf.namelist()), 1)
+            self.assertIn(chave, zf.namelist()[0])
+
+    def test_exporta_zip_nfe_saida(self):
+        chave = '3' * 44
+        cliente = Cliente.objects.create(razao_social='Cli XML', cnpj=_cnpj(), uf='SC')
+        NFeSaida.objects.create(
+            numero='200',
+            cliente=cliente,
+            chave_acesso=chave,
+            data=self.hoje,
+            valor_total=Decimal('100'),
+            xml_autorizado='<?xml version="1.0"?><nfeProc><NFe>autorizado</NFe></nfeProc>',
+        )
+        conteudo, nome = montar_zip_xmls(inicio=self.hoje, fim=self.hoje, tipo='nfe_saida')
+        self.assertIn('nfe_saida', nome)
         with zipfile.ZipFile(io.BytesIO(conteudo)) as zf:
             self.assertEqual(len(zf.namelist()), 1)
             self.assertIn(chave, zf.namelist()[0])

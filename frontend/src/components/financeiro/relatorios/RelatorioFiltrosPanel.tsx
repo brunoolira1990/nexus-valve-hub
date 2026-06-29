@@ -81,7 +81,7 @@ export function RelatorioFiltrosPanel({
     modo === 'PAGAR' || modo === 'FORNECEDORES'
       ? [
           { v: 'MANUAL', l: 'Manual' },
-          { v: 'NFE_ENTRADA', l: 'NF-e Entrada' },
+          { v: 'NFE_ENTRADA', l: 'Entrada Própria' },
           { v: 'PEDIDO_COMPRA', l: 'Pedido de Compra' },
           { v: 'SERVICO', l: 'Serviço' },
           { v: 'APURACAO_FISCAL', l: 'Apuração fiscal' },

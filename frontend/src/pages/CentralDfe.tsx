@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { CTeHistoricoDetalheModal } from '@/components/fiscal/CTeHistoricoDetalheModal';
 import { CentralDfeCteDetalheModal } from '@/components/fiscal/CentralDfeCteDetalheModal';
+import { CentralDfeWorkspaceSheet } from '@/components/fiscal/CentralDfeWorkspaceSheet';
 import { ManifestacaoDestinatarioModals } from '@/components/fiscal/ManifestacaoDestinatarioModals';
 import { FilterBar } from '@/components/list/FilterBar';
 import { EmptyState, ErrorState } from '@/components/list/ListStates';
@@ -54,6 +55,12 @@ import {
   TOOLTIP_IMPORTAR_XML_NFE,
   TOOLTIP_VER_CTE,
 } from '@/lib/centralDfeUi';
+import {
+  ESTADOS_INBOX_FILTRO,
+  badgeStatusEstadoConsolidado,
+  resolverEstadoConsolidadoExibicao,
+  textosAlertaEstadoConsolidado,
+} from '@/lib/inboxFiscalUi';
 import { nfeHistoricaEntradaImportadaService } from '@/services/api/nfeHistoricaEntradaImportada';
 import { cteHistoricoImportadoService } from '@/services/api/cteHistoricoImportado';
 import { chaveNfeResumida } from '@/lib/chaveNfeResumida';
@@ -300,19 +307,6 @@ function CentralDfeAcoesLinha({
   );
 }
 
-function statusEntradaBadge(status: string): string {
-  const map: Record<string, string> = {
-    PENDENTE_ENTRADA: 'pendente',
-    IMPORTADO_BASE: 'importado',
-    CONFERIDO: 'conferida',
-    PREPARADO: 'preparada',
-    DIVERGENTE: 'divergente',
-    IGNORADO: 'ignorada',
-    JA_LANCADO: 'processado',
-  };
-  return map[status] || 'pendente';
-}
-
 function KpiCard({ label, value }: { label: string; value: number }) {
   return (
     <NexusCard className="p-4">
@@ -459,6 +453,12 @@ const CentralDfe = () => {
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState<Date | null>(null);
   const [erroAtualizacao, setErroAtualizacao] = useState<string | null>(null);
   const [avisoAtualizacao, setAvisoAtualizacao] = useState<string | null>(null);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [workspaceCtx, setWorkspaceCtx] = useState<{
+    row: CentralDfeDocumento;
+    manifestacao: NFeDestinadaDocumento | null;
+    somenteResumo: boolean;
+  } | null>(null);
   const syncEmAndamento = useRef(false);
   const chavesCentralNfeRef = useRef<Set<string>>(new Set());
   const recarregarTudoRef = useRef<() => Promise<void>>(async () => {});
@@ -493,6 +493,7 @@ const CentralDfe = () => {
     carregarManifestacao,
     abrirDetalheManifestacao,
     abrirDetalheDfeNfe,
+    prepararManifestacaoPorDfe,
     iniciarManifestacaoManual,
     iniciarArmazenarXmlManual,
     sincronizarResumosDestinados,
@@ -629,7 +630,29 @@ const CentralDfe = () => {
         .map((row) => row.chave_acesso),
     );
     await carregarManifestacao(chaves);
-  }, [reload, carregarManifestacao]);
+    setWorkspaceCtx((prev) => {
+      if (!prev?.row.chave_acesso) return prev;
+      const updated = (response?.results ?? []).find((r) => r.chave_acesso === prev.row.chave_acesso);
+      if (!updated) return prev;
+      const reconciliada = documentosCentralPorChave.get(prev.row.chave_acesso);
+      return { ...prev, row: mesclarLinhaCentral(updated, reconciliada) };
+    });
+    return response;
+  }, [reload, carregarManifestacao, documentosCentralPorChave]);
+
+  const abrirWorkspace = (
+    row: CentralDfeDocumento,
+    manifestacao: NFeDestinadaDocumento | null,
+    somenteResumo: boolean,
+  ) => {
+    setWorkspaceCtx({ row, manifestacao, somenteResumo });
+    setWorkspaceOpen(true);
+  };
+
+  const fecharWorkspace = () => {
+    setWorkspaceOpen(false);
+    setWorkspaceCtx(null);
+  };
 
   useEffect(() => {
     chavesCentralNfeRef.current = chavesCentralNfe;
@@ -765,6 +788,12 @@ const CentralDfe = () => {
         ],
       },
       {
+        key: 'estado_consolidado',
+        label: 'Estado (Inbox)',
+        value: filters.estado_consolidado ?? '',
+        options: ESTADOS_INBOX_FILTRO,
+      },
+      {
         key: 'status_entrada',
         label: 'Status entrada',
         value: filters.status_entrada ?? '',
@@ -884,8 +913,8 @@ const CentralDfe = () => {
   return (
     <div className="erp-page">
       <PageHeader
-        title="DF-e Recebidos"
-        subtitle="NF-e e CT-e emitidos contra o CNPJ da empresa. A fila atualiza automaticamente; manifestação (NF-e) e armazenamento de XML são sempre manuais."
+        title="Inbox Fiscal"
+        subtitle="NF-e de fornecedor e CT-e na mesma fila de recebimento. Estados consolidados refletem manifestação, conferência e estoque — sem substituir o detalhe fiscal abaixo de cada badge quando houver alerta."
         icon={Inbox}
       />
 
@@ -1084,7 +1113,7 @@ const CentralDfe = () => {
                   <th className="whitespace-nowrap text-xs min-w-[8.5rem]">CNPJ emitente</th>
                   <th className="whitespace-nowrap w-[5.5rem]">Emissão</th>
                   <th className="text-right whitespace-nowrap w-[5.5rem]">Valor</th>
-                  <th className="min-w-[6.5rem]">Status de entrada</th>
+                  <th className="min-w-[9rem]">Estado (Inbox)</th>
                   <th className="min-w-[5.5rem] max-w-[6rem]" title="Manifestação do Destinatário">
                     Manifest.
                   </th>
@@ -1105,9 +1134,18 @@ const CentralDfe = () => {
                   const xmlArmazenado = xmlJaArmazenado(manifestacao, row);
                   const exibirAbrirBaseImportada = xmlArmazenado || podeAbrirBaseImportada(row);
                   const exibirBaixarXml = exibirAbrirBaseImportada && xmlArmazenado;
+                  const estadoInbox = resolverEstadoConsolidadoExibicao(row, manifestacao);
+                  const alertasEstado = textosAlertaEstadoConsolidado(estadoInbox);
+                  const alertaExcecao = ['DIVERGENTE', 'BLOQUEADO'].includes(
+                    estadoInbox.estado.toUpperCase(),
+                  );
 
                   return (
-                  <tr key={`${somenteResumo ? 'resumo' : row.tipo_documento}-${row.id}-${row.chave_acesso}`} className="group">
+                  <tr
+                    key={`${somenteResumo ? 'resumo' : row.tipo_documento}-${row.id}-${row.chave_acesso}`}
+                    className="group cursor-pointer hover:bg-muted/40"
+                    onClick={() => abrirWorkspace(row, manifestacao, somenteResumo)}
+                  >
                     <td>
                       <span className="text-sm font-medium">{row.tipo_label}</span>
                     </td>
@@ -1128,9 +1166,30 @@ const CentralDfe = () => {
                     <td className="text-sm font-mono">{fmtCnpj(row.emitente_cnpj)}</td>
                     <td className="text-sm whitespace-nowrap">{fmtData(row.data_emissao)}</td>
                     <td className="text-sm text-right tabular-nums">{fmtMoney(row.valor_total)}</td>
-                    <td>
-                      <StatusBadge status={statusEntradaBadge(row.status_entrada)} />
-                      <div className="text-xs text-muted-foreground mt-1">{row.status_entrada_label}</div>
+                    <td className="align-top min-w-[9rem] max-w-[14rem]">
+                      <StatusBadge
+                        status={badgeStatusEstadoConsolidado(estadoInbox.estado)}
+                        label={estadoInbox.label}
+                      />
+                      {alertasEstado.length > 0 ? (
+                        <div className="mt-1.5 space-y-1">
+                          {alertasEstado.map((texto) => (
+                            <p
+                              key={texto}
+                              className={`text-xs rounded border px-2 py-1 leading-snug ${
+                                alertaExcecao
+                                  ? 'text-orange-950 bg-orange-50 border-orange-200 dark:text-orange-100 dark:bg-orange-950/40 dark:border-orange-800'
+                                  : 'text-amber-950 bg-amber-50 border-amber-200 dark:text-amber-100 dark:bg-amber-950/40 dark:border-amber-800'
+                              }`}
+                            >
+                              {texto}
+                            </p>
+                          ))}
+                        </div>
+                      ) : null}
+                      <div className="text-[10px] text-muted-foreground mt-1 leading-tight">
+                        Entrada: {row.status_entrada_label}
+                      </div>
                     </td>
                     <td>
                       <StatusBadge status={manifestacaoStatus.badge}>
@@ -1142,7 +1201,7 @@ const CentralDfe = () => {
                         {xmlStatus.label}
                       </StatusBadge>
                     </td>
-                    <td className={CLASSE_COLUNA_ACOES_TD}>
+                    <td className={CLASSE_COLUNA_ACOES_TD} onClick={(e) => e.stopPropagation()}>
                       <CentralDfeAcoesLinha
                         row={row}
                         manifestacao={manifestacao}
@@ -1263,6 +1322,40 @@ const CentralDfe = () => {
         abaInicial="conferencia"
         onClose={fecharConferenciaCte}
         onConferenciaAtualizada={() => void recarregarTudo()}
+      />
+
+      <CentralDfeWorkspaceSheet
+        open={workspaceOpen}
+        row={workspaceCtx?.row ?? null}
+        manifestacao={
+          workspaceCtx
+            ? manifestacaoMap.get(workspaceCtx.row.chave_acesso) ?? workspaceCtx.manifestacao
+            : null
+        }
+        somenteResumo={workspaceCtx?.somenteResumo ?? false}
+        loadingAcao={loadingAcaoManual}
+        onClose={fecharWorkspace}
+        onUpdated={recarregarTudo}
+        onPrepararManifestacao={() =>
+          workspaceCtx
+            ? prepararManifestacaoPorDfe(workspaceCtx.row)
+            : Promise.resolve(null)
+        }
+        onExecutarManifestacao={(evento, justificativa) =>
+          executarManifestacao(evento, justificativa, () => recarregarTudo(), chavesCentralNfe)
+        }
+        onIniciarArmazenarXmlNfe={() => {
+          if (!workspaceCtx) return;
+          void iniciarArmazenarXmlManual(
+            workspaceCtx.row,
+            manifestacaoMap.get(workspaceCtx.row.chave_acesso) ?? workspaceCtx.manifestacao,
+            workspaceCtx.somenteResumo,
+          );
+        }}
+        onIniciarArmazenarXmlCte={() => {
+          if (!workspaceCtx?.row) return;
+          setConfirmArmazenarCte(workspaceCtx.row);
+        }}
       />
     </div>
   );

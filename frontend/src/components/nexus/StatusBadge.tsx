@@ -3,12 +3,13 @@ import { resolveStatusToken, statusToneClasses, type StatusBadgeVariant } from '
 
 interface StatusBadgeProps {
   status: string;
+  label?: string;
   variant?: StatusBadgeVariant;
   className?: string;
   tooltip?: string;
 }
 
-export function StatusBadge({ status, variant = 'soft', className, tooltip }: StatusBadgeProps) {
+export function StatusBadge({ status, label, variant = 'soft', className, tooltip }: StatusBadgeProps) {
   const token = resolveStatusToken(status);
   const toneClass = statusToneClasses[token.tone][variant];
   return (
@@ -21,7 +22,7 @@ export function StatusBadge({ status, variant = 'soft', className, tooltip }: St
       )}
       title={tooltip ?? (token.homologacao ? 'Ambiente de homologação' : undefined)}
     >
-      {token.label}
+      {label ?? token.label}
     </span>
   );
 }

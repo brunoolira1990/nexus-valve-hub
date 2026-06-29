@@ -16,6 +16,12 @@ from apps.fiscal.dfe_classificacao import (
     q_excluir_homologacao_cte,
     q_excluir_homologacao_historica_entrada,
 )
+from apps.fiscal.inbox_fiscal.estado_consolidado import (
+    EstadoConsolidadoInbox,
+    derivar_estado_cte,
+    derivar_estado_nfe_fornecedor_historica,
+    derivar_estado_nfe_fornecedor_resumo,
+)
 from apps.fiscal.models import (
     CTeHistoricoImportado,
     NFeDestinadaManifestacao,
@@ -60,6 +66,7 @@ class FiltrosCentralDfe:
     empresa_id: int | None = None
     tipo_documento: str = ''
     status_entrada: str = ''
+    estado_consolidado: str = ''
     incluir_tratados: bool = False
     data_emissao_inicio: date | None = None
     data_emissao_fim: date | None = None
@@ -99,9 +106,15 @@ class DocumentoCentralDfe:
     xml_status_label: str = 'XML armazenado'
     xml_armazenado: bool = True
     manifestacao_aplicavel: bool = True
+    estado_consolidado: str = ''
+    estado_consolidado_label: str = ''
+    estado_consolidado_motivo: str = ''
+    estado_consolidado_detalhes: dict[str, Any] | None = None
+    nf_entrada_historica_id: int | None = None
+    manifestacao_id: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             'id': self.id,
             'tipo_documento': self.tipo_documento,
             'chave_resumida': self.chave_resumida,
@@ -124,7 +137,16 @@ class DocumentoCentralDfe:
             'xml_status_label': self.xml_status_label,
             'xml_armazenado': self.xml_armazenado,
             'manifestacao_aplicavel': self.manifestacao_aplicavel,
+            'estado_consolidado': self.estado_consolidado,
+            'estado_consolidado_label': self.estado_consolidado_label,
+            'nf_entrada_historica_id': self.nf_entrada_historica_id,
+            'manifestacao_id': self.manifestacao_id,
         }
+        if self.estado_consolidado_motivo:
+            payload['estado_consolidado_motivo'] = self.estado_consolidado_motivo
+        if self.estado_consolidado_detalhes:
+            payload['estado_consolidado_detalhes'] = self.estado_consolidado_detalhes
+        return payload
 
     @staticmethod
     def _iso(value: datetime | date | None) -> str | None:
@@ -238,6 +260,7 @@ def parse_filtros_central_dfe(params: dict[str, Any]) -> FiltrosCentralDfe:
         empresa_id=empresa_id,
         tipo_documento=(p.get('tipo_documento') or '').upper(),
         status_entrada=(p.get('status_entrada') or '').upper(),
+        estado_consolidado=(p.get('estado_consolidado') or '').upper(),
         incluir_tratados=incluir_tratados,
         data_emissao_inicio=emissao_inicio,
         data_emissao_fim=emissao_fim,
@@ -324,6 +347,18 @@ def _status_xml_manifestacao_label(status_xml: str) -> str:
     return labels.get(st, st or 'Pendente XML')
 
 
+def _enriquecer_estado_consolidado(
+    row: DocumentoCentralDfe,
+    estado: EstadoConsolidadoInbox,
+) -> DocumentoCentralDfe:
+    meta = estado.to_dict()
+    row.estado_consolidado = meta['estado_consolidado']
+    row.estado_consolidado_label = meta['estado_consolidado_label']
+    row.estado_consolidado_motivo = meta.get('estado_consolidado_motivo', '')
+    row.estado_consolidado_detalhes = meta.get('estado_consolidado_detalhes')
+    return row
+
+
 def _coletar_nfe_resumo_destinada(
     filtros: FiltrosCentralDfe,
     empresa: Empresa,
@@ -361,31 +396,31 @@ def _coletar_nfe_resumo_destinada(
             continue
 
         emit_cnpj = normalizar_cnpj(doc.cnpj_emitente)
-        rows.append(
-            DocumentoCentralDfe(
-                id=doc.pk,
-                tipo_documento=TIPO_NFE_ENTRADA,
-                chave_resumida=chave_resumida(chave),
-                chave_acesso=chave,
-                numero='—',
-                serie='',
-                data_emissao=doc.dh_emissao,
-                data_importacao=doc.consultado_em,
-                emitente_nome=doc.razao_social_emitente,
-                emitente_cnpj=emit_cnpj,
-                uf='',
-                valor_total=doc.valor_nf,
-                status_entrada=status_entrada,
-                status_entrada_label=status_label,
-                tipo_label=TIPO_LABELS[TIPO_NFE_ENTRADA],
-                detalhe_rota='',
-                empresa_id=empresa.pk,
-                xml_status=status_xml or 'PENDENTE',
-                xml_status_label=_status_xml_manifestacao_label(status_xml),
-                xml_armazenado=False,
-                manifestacao_aplicavel=True,
-            ),
+        row = DocumentoCentralDfe(
+            id=doc.pk,
+            tipo_documento=TIPO_NFE_ENTRADA,
+            chave_resumida=chave_resumida(chave),
+            chave_acesso=chave,
+            numero='—',
+            serie='',
+            data_emissao=doc.dh_emissao,
+            data_importacao=doc.consultado_em,
+            emitente_nome=doc.razao_social_emitente,
+            emitente_cnpj=emit_cnpj,
+            uf='',
+            valor_total=doc.valor_nf,
+            status_entrada=status_entrada,
+            status_entrada_label=status_label,
+            tipo_label=TIPO_LABELS[TIPO_NFE_ENTRADA],
+            detalhe_rota='',
+            empresa_id=empresa.pk,
+            xml_status=status_xml or 'PENDENTE',
+            xml_status_label=_status_xml_manifestacao_label(status_xml),
+            xml_armazenado=False,
+            manifestacao_aplicavel=True,
+            manifestacao_id=doc.pk,
         )
+        rows.append(_enriquecer_estado_consolidado(row, derivar_estado_nfe_fornecedor_resumo(doc)))
     return rows
 
 
@@ -432,6 +467,7 @@ def documento_central_nfe_historica(
     doc: NFeEntradaHistoricaImportada,
     empresa: Empresa,
     chaves_lancadas: set[str] | None = None,
+    manifestacao: NFeDestinadaManifestacao | None = None,
 ) -> DocumentoCentralDfe | None:
     """Monta linha da Central DF-e para NF-e na Base NF-e Entrada Importada."""
     if eh_documento_homologacao(doc):
@@ -451,7 +487,11 @@ def documento_central_nfe_historica(
         doc.fornecedor_emitente.cnpj if doc.fornecedor_emitente_id else _json_participante(doc.emit_json)[1]
     )
     uf = (doc.dest_json or {}).get('UF') or (doc.emit_json or {}).get('UF') or ''
-    return DocumentoCentralDfe(
+    if manifestacao is None and chave:
+        manifestacao = (
+            NFeDestinadaManifestacao.objects.filter(empresa_id=empresa.pk, chave_acesso=chave).first()
+        )
+    row = DocumentoCentralDfe(
         id=doc.id,
         tipo_documento=TIPO_NFE_ENTRADA,
         chave_resumida=chave_resumida(chave),
@@ -474,7 +514,16 @@ def documento_central_nfe_historica(
         xml_status_label=xml_status_label,
         xml_armazenado=xml_armazenado,
         manifestacao_aplicavel=True,
+        nf_entrada_historica_id=doc.id,
+        manifestacao_id=manifestacao.pk if manifestacao else None,
     )
+    estado = derivar_estado_nfe_fornecedor_historica(
+        doc,
+        conferencia=conf,
+        ja_lancado_operacional=bool(chave and chave in lancadas),
+        manifestacao=manifestacao,
+    )
+    return _enriquecer_estado_consolidado(row, estado)
 
 
 def _status_entrada_cte(status_conf: str | None) -> tuple[str, str]:
@@ -572,31 +621,30 @@ def _coletar_cte_recebido(filtros: FiltrosCentralDfe, empresa: Empresa) -> list[
         emit_cnpj_norm = normalizar_cnpj(emit_cnpj)
         if empresa_cnpj and emit_cnpj_norm == empresa_cnpj:
             continue
-        rows.append(
-            DocumentoCentralDfe(
-                id=doc.id,
-                tipo_documento=TIPO_CTE,
-                chave_resumida=chave_resumida(doc.chave_acesso),
-                chave_acesso=doc.chave_acesso,
-                numero=doc.numero,
-                serie=doc.serie,
-                data_emissao=doc.dh_emissao,
-                data_importacao=doc.importado_em,
-                emitente_nome=emit_nome,
-                emitente_cnpj=normalizar_cnpj(emit_cnpj),
-                uf=(doc.uf_fim or doc.uf_inicio or '')[:2].upper(),
-                valor_total=doc.valor_total_servico,
-                status_entrada=status_entrada,
-                status_entrada_label=status_label,
-                tipo_label=TIPO_LABELS[TIPO_CTE],
-                detalhe_rota=ROTAS_DETALHE[TIPO_CTE],
-                empresa_id=empresa.pk,
-                xml_status='ARMAZENADO',
-                xml_status_label='XML armazenado',
-                xml_armazenado=True,
-                manifestacao_aplicavel=False,
-            ),
+        row = DocumentoCentralDfe(
+            id=doc.id,
+            tipo_documento=TIPO_CTE,
+            chave_resumida=chave_resumida(doc.chave_acesso),
+            chave_acesso=doc.chave_acesso,
+            numero=doc.numero,
+            serie=doc.serie,
+            data_emissao=doc.dh_emissao,
+            data_importacao=doc.importado_em,
+            emitente_nome=emit_nome,
+            emitente_cnpj=normalizar_cnpj(emit_cnpj),
+            uf=(doc.uf_fim or doc.uf_inicio or '')[:2].upper(),
+            valor_total=doc.valor_total_servico,
+            status_entrada=status_entrada,
+            status_entrada_label=status_label,
+            tipo_label=TIPO_LABELS[TIPO_CTE],
+            detalhe_rota=ROTAS_DETALHE[TIPO_CTE],
+            empresa_id=empresa.pk,
+            xml_status='ARMAZENADO',
+            xml_status_label='XML armazenado',
+            xml_armazenado=True,
+            manifestacao_aplicavel=False,
         )
+        rows.append(_enriquecer_estado_consolidado(row, derivar_estado_cte(doc)))
     return rows
 
 
@@ -604,6 +652,8 @@ def _match_filtros_pos_query(row: DocumentoCentralDfe, filtros: FiltrosCentralDf
     if not filtros.incluir_tratados and row.status_entrada not in VISAO_PADRAO_STATUSES:
         return False
     if filtros.status_entrada and row.status_entrada != filtros.status_entrada:
+        return False
+    if filtros.estado_consolidado and row.estado_consolidado != filtros.estado_consolidado:
         return False
     if filtros.uf and row.uf.upper() != filtros.uf:
         return False
@@ -626,6 +676,7 @@ def _match_filtros_pos_query(row: DocumentoCentralDfe, filtros: FiltrosCentralDf
                 row.emitente_nome or '',
                 row.tipo_label or '',
                 row.status_entrada_label or '',
+                row.estado_consolidado_label or '',
             ],
         ).lower()
         if termo not in blob:

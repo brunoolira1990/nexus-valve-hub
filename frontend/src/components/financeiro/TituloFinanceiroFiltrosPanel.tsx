@@ -142,7 +142,7 @@ export function TituloFinanceiroFiltrosPanel({
             </>
           ) : (
             <>
-              <option value="NFE_ENTRADA">NF-e Entrada</option>
+              <option value="NFE_ENTRADA">Entrada Própria</option>
               <option value="PEDIDO_COMPRA">Pedido de Compra</option>
               <option value="SERVICO">Serviço</option>
             </>

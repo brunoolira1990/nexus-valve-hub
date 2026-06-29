@@ -59,6 +59,42 @@ describe('sidebarMenuConfig — estrutura reorganizada', () => {
     const groups = fiscal?.children?.filter((c) => c.type === 'group').map((c) => c.label);
     expect(groups).toEqual(['Operação', 'Bases / Histórico', 'Gestão']);
   });
+
+  it('menu Compras exibe Entrada Própria sem bases importadas', () => {
+    const compras = SIDEBAR_MENU_ITEMS.find((i) => i.label === 'Compras');
+    const labels = compras?.children?.filter((c) => c.type === 'link').map((c) => c.label);
+    expect(labels).toEqual(['Pedidos de Compra', 'Entrada Própria']);
+    expect(labels).not.toContain('NF-e Entrada (base)');
+  });
+
+  it('Inbox Fiscal é o caminho principal em Fiscal > Operação', () => {
+    const fiscal = SIDEBAR_MENU_ITEMS.find((i) => i.label === 'Fiscal');
+    const children = fiscal?.children ?? [];
+    const basesIdx = children.findIndex((c) => c.type === 'group' && c.label === 'Bases / Histórico');
+    const operacaoLinks = children
+      .slice(1, basesIdx)
+      .filter((c) => c.type === 'link')
+      .map((c) => (c.type === 'link' ? c.label : ''));
+    expect(operacaoLinks).toEqual(['Inbox Fiscal', 'NF-e Saída', 'Status SEFAZ']);
+  });
+
+  it('bases de recebimento ficam em Fiscal > Bases / Histórico', () => {
+    const fiscal = SIDEBAR_MENU_ITEMS.find((i) => i.label === 'Fiscal');
+    const children = fiscal?.children ?? [];
+    const basesIdx = children.findIndex((c) => c.type === 'group' && c.label === 'Bases / Histórico');
+    const gestaoIdx = children.findIndex((c) => c.type === 'group' && c.label === 'Gestão');
+    const basePaths = children
+      .slice(basesIdx + 1, gestaoIdx)
+      .filter((c) => c.type === 'link')
+      .map((c) => (c.type === 'link' ? c.path : ''));
+    expect(basePaths).toEqual([
+      '/nfe-entrada-historica-importada',
+      '/cte-historico-importado',
+      '/cte-entrada',
+      '/nfe-historica-importada',
+      '/visao-gerencial-nfe-historica',
+    ]);
+  });
 });
 
 describe('sidebarNav — seção ativa', () => {
@@ -68,6 +104,20 @@ describe('sidebarNav — seção ativa', () => {
 
   it('resolve Estoque & Logística para /expedicao', () => {
     expect(resolveActiveSidebarSection('/expedicao', SIDEBAR_MENU_ITEMS)).toBe('Estoque & Logística');
+  });
+
+  it('resolve Compras para /nfe-entrada', () => {
+    expect(resolveActiveSidebarSection('/nfe-entrada', SIDEBAR_MENU_ITEMS)).toBe('Compras');
+  });
+
+  it('resolve Fiscal para Inbox e bases importadas', () => {
+    expect(resolveActiveSidebarSection('/central-dfe', SIDEBAR_MENU_ITEMS)).toBe('Fiscal');
+    expect(resolveActiveSidebarSection('/nfe-entrada-historica-importada', SIDEBAR_MENU_ITEMS)).toBe('Fiscal');
+    expect(resolveActiveSidebarSection('/cte-entrada', SIDEBAR_MENU_ITEMS)).toBe('Fiscal');
+  });
+
+  it('conferência da base importada não destaca Entrada Própria no menu', () => {
+    expect(isSidebarPathActive('/nfe-entrada/42/conferencia', '/nfe-entrada')).toBe(false);
   });
 
   it('resolve Contador para exportação', () => {

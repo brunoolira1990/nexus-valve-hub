@@ -45,7 +45,7 @@ export function buildPainelCompraLinks(block: PainelCompraLinkSource): PainelDoc
     links.push({ label: `Pedido ${block.pedido_compra_numero || block.pedido_compra_id}`, to: '/pedidos-compra' });
   }
   if (block.nf_entrada_id) {
-    links.push({ label: `NF entrada ${nfNumero || block.nf_entrada_id}`, to: '/nfe-entrada' });
+    links.push({ label: `Entrada Própria ${nfNumero || block.nf_entrada_id}`, to: '/nfe-entrada' });
   }
   if (block.nf_entrada_historica_id) {
     links.push({
@@ -80,7 +80,7 @@ export function buildPainelNfEntradaLinks(block: PainelNfEntradaLinkSource): Pai
     }];
   }
   if (block.nf_entrada_id) {
-    return [{ label: `NF entrada ${block.numero}`, to: '/nfe-entrada' }];
+    return [{ label: `Entrada Própria ${block.numero}`, to: '/nfe-entrada' }];
   }
   return [];
 }
@@ -113,7 +113,7 @@ export function buildRastreabilidadeCfLink(id: number, numero: string): PainelDo
 }
 
 export function buildRastreabilidadeNfEntradaLink(id: number, numero: string): PainelDocumentoLink {
-  return { label: `NF entrada ${numero}`, to: '/nfe-entrada' };
+  return { label: `Entrada Própria ${numero}`, to: '/nfe-entrada' };
 }
 
 export function buildRastreabilidadeNfEntradaConferenciaLink(id: number, numero: string): PainelDocumentoLink {

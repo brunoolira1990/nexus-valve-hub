@@ -64,14 +64,7 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
     icon: ShoppingBag,
     children: [
       { type: 'link', label: 'Pedidos de Compra', path: '/pedidos-compra' },
-      {
-        type: 'link',
-        label: 'NF-e de Entrada',
-        path: '/nfe-entrada',
-        activeMatchPaths: ['/nfe-entrada/:id/conferencia'],
-      },
-      { type: 'group', label: 'Bases importadas' },
-      { type: 'link', label: 'NF-e Entrada (base)', path: '/nfe-entrada-historica-importada' },
+      { type: 'link', label: 'Entrada Própria', path: '/nfe-entrada' },
     ],
   },
   {
@@ -101,13 +94,14 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
     icon: Receipt,
     children: [
       { type: 'group', label: 'Operação' },
-      { type: 'link', label: 'DF-e Recebidos', path: '/central-dfe' },
+      { type: 'link', label: 'Inbox Fiscal', path: '/central-dfe' },
       { type: 'link', label: 'NF-e Saída', path: '/nfe-saida' },
-      { type: 'link', label: 'CT-e Entrada', path: '/cte-entrada' },
       { type: 'link', label: 'Status SEFAZ', path: '/nfe-sefaz' },
       { type: 'group', label: 'Bases / Histórico' },
-      { type: 'link', label: 'NF-e Saída (base)', path: '/nfe-historica-importada' },
+      { type: 'link', label: 'NF-e Entrada (base)', path: '/nfe-entrada-historica-importada' },
       { type: 'link', label: 'CT-e (base)', path: '/cte-historico-importado' },
+      { type: 'link', label: 'CT-e Entrada', path: '/cte-entrada' },
+      { type: 'link', label: 'NF-e Saída (base)', path: '/nfe-historica-importada' },
       { type: 'link', label: 'Painel fiscal gerencial', path: '/visao-gerencial-nfe-historica' },
       { type: 'group', label: 'Gestão' },
       { type: 'link', label: 'Apuração Fiscal', path: '/apuracao-fiscal' },

@@ -26,6 +26,7 @@ type Props = {
   cteId: number | null;
   listRow?: CTeHistoricoList | null;
   abaInicial?: Aba;
+  embedded?: boolean;
   onClose: () => void;
   onConferenciaAtualizada?: () => void;
 };
@@ -35,6 +36,7 @@ export function CTeHistoricoDetalheModal({
   cteId,
   listRow,
   abaInicial = 'resumo',
+  embedded = false,
   onClose,
   onConferenciaAtualizada,
 }: Props) {
@@ -75,14 +77,14 @@ export function CTeHistoricoDetalheModal({
   }, []);
 
   useEffect(() => {
-    if (open && cteId) {
+    if ((open || embedded) && cteId) {
       setAba(abaInicial);
       void carregar(cteId);
-    } else if (!open) {
+    } else if (!open && !embedded) {
       setDetalhe(null);
       setErro('');
     }
-  }, [open, cteId, abaInicial, carregar]);
+  }, [open, embedded, cteId, abaInicial, carregar]);
 
   const participantes = useMemo(() => (detalhe ? participantesCteFromDetalhe(detalhe) : []), [detalhe]);
   const componentes = useMemo(
@@ -112,12 +114,12 @@ export function CTeHistoricoDetalheModal({
     ? `Detalhes do CT-e importado — ${detalhe.numero}/${detalhe.serie}`
     : 'Detalhes do CT-e importado';
 
-  return (
-    <Modal isOpen={open} onClose={onClose} title={tituloModal} size="xl">
+  const conteudo = (
+    <>
       {erro ? <p className="text-sm text-destructive mb-3">{erro}</p> : null}
       {busy && !detalhe ? <p className="text-sm text-muted-foreground">Carregando…</p> : null}
       {detalhe && (
-        <div className="space-y-4 text-sm max-h-[70vh] overflow-y-auto">
+        <div className={`space-y-4 text-sm ${embedded ? '' : 'max-h-[70vh] overflow-y-auto'}`}>
           <div className="flex flex-wrap gap-2 items-center border-b border-border pb-3">
             <StatusBadge status={statusConf.toLowerCase()} />
             <DfeClassificacaoBadges classificacao={detalhe.classificacao_dfe || listRow?.classificacao_dfe} max={5} />
@@ -380,6 +382,16 @@ export function CTeHistoricoDetalheModal({
           )}
         </div>
       )}
+    </>
+  );
+
+  if (embedded) {
+    return conteudo;
+  }
+
+  return (
+    <Modal isOpen={open} onClose={onClose} title={tituloModal} size="xl">
+      {conteudo}
     </Modal>
   );
 }

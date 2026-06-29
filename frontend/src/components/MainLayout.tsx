@@ -30,14 +30,14 @@ const breadcrumbMap: Record<string, { label: string; path?: string }[]> = {
   '/modulos/gestao-resultado': [{ label: 'Gestão de Resultado' }, { label: 'Visão geral' }],
   '/modulos/folha-rh': [{ label: 'Folha / RH' }, { label: 'Visão geral' }],
   '/pedidos-compra': [{ label: 'Compras' }, { label: 'Pedidos de Compra' }],
-  '/nfe-entrada': [{ label: 'Compras' }, { label: 'NF-e de Entrada' }],
-  '/nfe-entrada-historica-importada': [{ label: 'Compras' }, { label: 'NF-e Entrada (base)' }],
+  '/nfe-entrada': [{ label: 'Compras' }, { label: 'Entrada Própria' }],
+  '/nfe-entrada-historica-importada': [{ label: 'Fiscal' }, { label: 'NF-e Entrada (base)' }],
   '/nfe-saida': [{ label: 'Fiscal' }, { label: 'NF-e Saída' }],
   '/nfe-historica-importada': [{ label: 'Fiscal' }, { label: 'NF-e Saída (base)' }],
   '/cte-entrada': [{ label: 'Fiscal' }, { label: 'CT-e Entrada' }],
   '/cte-historico-importado': [{ label: 'Fiscal' }, { label: 'CT-e (base)' }],
   '/visao-gerencial-nfe-historica': [{ label: 'Fiscal' }, { label: 'Painel fiscal gerencial' }],
-  '/central-dfe': [{ label: 'Fiscal' }, { label: 'DF-e Recebidos' }],
+  '/central-dfe': [{ label: 'Fiscal' }, { label: 'Inbox Fiscal' }],
   '/nfe-sefaz': [{ label: 'Fiscal' }, { label: 'Status SEFAZ' }],
   '/certificados': [{ label: 'Qualidade' }, { label: 'Certificados de Qualidade' }],
   '/certificados-fornecedor': [{ label: 'Qualidade' }, { label: 'Certificados de Fornecedor' }],
@@ -93,7 +93,7 @@ export const MainLayout = () => {
   const dashModuloMatch = location.pathname.match(/^\/dashboard\/([^/]+)$/);
   const basePath = '/' + location.pathname.split('/')[1];
   const breadcrumbs = isConferenciaEntrada
-    ? [{ label: 'Compras' }, { label: 'NF-e Entrada (base)' }, { label: 'Conferência de Entrada' }]
+    ? [{ label: 'Fiscal' }, { label: 'NF-e Entrada (base)' }, { label: 'Conferência de Entrada' }]
     : dashModuloMatch
       ? [
           { label: 'Dashboard', path: '/dashboard' },

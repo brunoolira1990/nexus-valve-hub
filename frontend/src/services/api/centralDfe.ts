@@ -36,6 +36,12 @@ export type CentralDfeDocumento = {
   xml_status_label?: string;
   xml_armazenado?: boolean;
   manifestacao_aplicavel?: boolean;
+  estado_consolidado?: string;
+  estado_consolidado_label?: string;
+  estado_consolidado_motivo?: string;
+  estado_consolidado_detalhes?: Record<string, unknown>;
+  nf_entrada_historica_id?: number | null;
+  manifestacao_id?: number | null;
 };
 
 export type ArmazenarXmlCentralResponse = {

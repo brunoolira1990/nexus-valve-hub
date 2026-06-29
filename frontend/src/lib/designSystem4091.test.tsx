@@ -117,9 +117,13 @@ describe('ERP 4.0.9.1 — migração visual Nexus', () => {
     expect(screen.getByText(/acompanhamento de recebimento/i)).toBeInTheDocument();
   });
 
-  it('NF-e Entrada não renderiza XML completo na listagem', () => {
-    render(<NFeEntrada />);
-    expect(screen.getByRole('heading', { name: 'NF-e Entrada' })).toBeInTheDocument();
+  it('Entrada Própria não renderiza XML completo na listagem', () => {
+    render(
+      <MemoryRouter>
+        <NFeEntrada />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('heading', { name: 'Entrada Própria' })).toBeInTheDocument();
     expect(screen.queryByText(/<nfeProc/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/<NFe/i)).not.toBeInTheDocument();
   });

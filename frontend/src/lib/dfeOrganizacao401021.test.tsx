@@ -128,17 +128,17 @@ describe('dfeOrganizacao401021', () => {
     expect(screen.getByText(/Importe XMLs na Base CT-e Importada/i)).toBeInTheDocument();
   });
 
-  it('NF-e Entrada exibe Emitir entrada própria e link para base', () => {
+  it('Entrada Própria exibe Emitir entrada própria e link para base', () => {
     renderWithRouter(<NFeEntrada />);
     expect(screen.getAllByRole('button', { name: /Emitir entrada própria/i }).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByRole('button', { name: /Ir para Base NF-e Entrada Importada/i }).length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByRole('button', { name: /Importar XML de fornecedor/i })).not.toBeInTheDocument();
   });
 
-  it('NF-e Entrada empty state com duas ações', () => {
+  it('Entrada Própria empty state com duas ações', () => {
     renderWithRouter(<NFeEntrada />);
-    expect(screen.getByText(/Nenhuma NF-e de entrada operacional encontrada/i)).toBeInTheDocument();
-    expect(screen.getByText(/Importe XMLs de fornecedores na Base NF-e Entrada Importada/i)).toBeInTheDocument();
+    expect(screen.getByText(/Nenhuma Entrada Própria encontrada/i)).toBeInTheDocument();
+    expect(screen.getByText(/Use o Inbox Fiscal para receber NF-e de fornecedores/i)).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /Ir para Base NF-e Entrada Importada/i }).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByRole('button', { name: /Emitir entrada própria/i }).length).toBeGreaterThanOrEqual(1);
   });
@@ -177,7 +177,7 @@ describe('dfeOrganizacao401021', () => {
       </Routes>,
       '/cte-historico-importado',
     );
-    expect(screen.getByText('Base CT-e Importada')).toBeInTheDocument();
+    expect(screen.getByText('CT-e (base)')).toBeInTheDocument();
   });
 
   it('DfeClassificacaoBadges — base importada produção', () => {

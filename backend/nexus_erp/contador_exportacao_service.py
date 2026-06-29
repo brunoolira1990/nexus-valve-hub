@@ -56,9 +56,7 @@ def _xml_nfe_saida(nf: NFeSaida) -> str:
         xml = resolver_xml_autorizado_danfe(nf, persistir=False)
     except Exception:
         xml = ''
-    if xml:
-        return xml.strip()
-    return (nf.xml_importado or '').strip()
+    return xml.strip() if xml else ''
 
 
 def _nome_arquivo(chave: str, prefixo: str, pk: int) -> str:
@@ -69,7 +67,8 @@ def _nome_arquivo(chave: str, prefixo: str, pk: int) -> str:
 def _coletar_nfe_saida(d_ini: date, d_fim: date) -> list[tuple[str, str]]:
     arquivos: list[tuple[str, str]] = []
     qs = NFeSaida.objects.filter(data__gte=d_ini, data__lte=d_fim).only(
-        'id', 'chave_acesso', 'numero', 'xml_autorizado', 'xml_importado',
+        'id', 'chave_acesso', 'numero', 'xml_autorizado',
+        'xml_assinado', 'xml_nfe_gerado', 'xml_envio', 'xml_retorno', 'xml_protocolo',
     )
     for nf in qs.iterator(chunk_size=200):
         xml = _xml_nfe_saida(nf)
