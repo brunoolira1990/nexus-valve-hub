@@ -28,8 +28,18 @@ services:
     # repetidamente, aparentando "queda" do backend. Por isso usamos --noreload.
     # IMPORTANTE: alterações em rotas (apps/api_urls.py, views) só entram após reiniciar:
     #   docker compose restart backend
-    command: sh -c "python manage.py fix_migration_history && python manage.py migrate && python manage.py criar_usuario_inicial && python manage.py runserver 0.0.0.0:8000 --noreload"
+    command: sh -c "python scripts/wait_for_db.py && python manage.py fix_migration_history && python manage.py migrate && python manage.py criar_usuario_inicial && python manage.py runserver 0.0.0.0:8000 --noreload"
     restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import socket; s=socket.create_connection(('127.0.0.1',8000),3); s.close()\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
     volumes:
       - ./backend:/app
     ports:
