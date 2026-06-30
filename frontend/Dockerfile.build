@@ -1,0 +1,18 @@
+# Build estático do frontend (produção) — gera dist/ e copia para volume compartilhado com o Caddy.
+# Não é servidor de longa duração: o Compose roda uma vez (service_completed_successfully).
+FROM node:20-alpine
+
+WORKDIR /app
+
+RUN apk add --no-cache libc6-compat
+
+COPY package.json package-lock.json* ./
+RUN npm ci
+
+COPY . .
+
+ARG VITE_API_URL=/api
+ENV VITE_API_URL=${VITE_API_URL}
+
+# /srv/frontend é o volume montado pelo docker-compose (frontend_dist).
+CMD ["sh", "-c", "npm run build && mkdir -p /srv/frontend && rm -rf /srv/frontend/* && cp -ra dist/. /srv/frontend/ && echo \"[frontend-build] dist copiado para /srv/frontend ($(ls -1 /srv/frontend | wc -l) itens)\""]

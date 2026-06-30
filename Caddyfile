@@ -18,6 +18,35 @@ erp.nexusvalvulas.com.br {
     }
 
     handle {
-        reverse_proxy frontend:5173
+        root * /srv/frontend
+        try_files {path} /index.html
+        file_server
+    }
+}
+
+# HTTP local (validação pré-deploy / dev) — mesmas rotas; não altera TLS do domínio acima.
+:80 {
+    encode gzip
+
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+
+    handle /admin/* {
+        reverse_proxy backend:8000
+    }
+
+    handle /static/* {
+        reverse_proxy backend:8000
+    }
+
+    handle /media/* {
+        reverse_proxy backend:8000
+    }
+
+    handle {
+        root * /srv/frontend
+        try_files {path} /index.html
+        file_server
     }
 }
