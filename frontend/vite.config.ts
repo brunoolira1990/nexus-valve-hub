@@ -9,6 +9,11 @@ const proxyTarget = process.env.VITE_PROXY_TARGET || "http://127.0.0.1:8000";
 export default defineConfig(({ mode }) => ({
   server: {
     host: "0.0.0.0",
+    allowedHosts: [
+      'erp.nexusvalvulas.com.br',
+      '192.168.5.132',
+      '201.93.248.240'
+    ],
     port: 5173,
     hmr: {
       overlay: false,

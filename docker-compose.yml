@@ -1,6 +1,7 @@
 services:
   db:
     image: postgres:15
+    restart: unless-stopped
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
@@ -48,6 +49,7 @@ services:
   # Para publicar na 5173: no .env use FRONTEND_PORT=5173 e liberte a porta (pare o outro processo/container).
   frontend:
     build: ./frontend
+    restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-5174}:5173"
     volumes:
@@ -64,5 +66,22 @@ services:
     depends_on:
       - backend
 
+  caddy:
+    image: caddy:2
+    container_name: nexus_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - frontend
+
 volumes:
   postgres_data:
+  caddy_data:
+  caddy_config:
