@@ -302,7 +302,8 @@ export function useManifestacaoDestinatario(
   const executarArmazenarXmlNfe = async (onAfter?: () => void | Promise<void>, chavesCentral?: Set<string>) => {
     if (!confirmArmazenar || !empresaId) return;
     const { row, manifestacao, somenteResumo } = confirmArmazenar;
-    const documentoId = somenteResumo && manifestacao ? manifestacao.id : row.id;
+    const documentoId =
+      row.manifestacao_id ?? manifestacao?.id ?? row.nf_entrada_historica_id ?? row.id;
     const chaveAcesso = (row.chave_acesso || manifestacao?.chave_acesso || '').trim();
     if (chaveAcesso.length !== 44) {
       toast.error('Chave de acesso inválida para importar XML.');

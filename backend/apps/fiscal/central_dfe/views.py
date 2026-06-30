@@ -95,6 +95,13 @@ class CentralDfeViewSet(viewsets.ViewSet):
                 confirmacao_explicita=True,
             )
         except ArmazenarXmlCentralError as exc:
+            logger.warning(
+                'armazenar-xml-nfe 400 empresa_id=%s documento_id=%s chave=%s: %s',
+                ser.validated_data.get('empresa_id'),
+                pk,
+                (chave_raw or '')[:8],
+                exc,
+            )
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(resultado)
 

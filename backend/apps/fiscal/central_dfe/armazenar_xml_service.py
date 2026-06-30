@@ -126,7 +126,19 @@ def _resolver_contexto_nfe_central(
             .first()
         )
 
-    if documento_id:
+        if documento_id:
+            ids_validos = {
+                pk
+                for pk in (
+                    nf.pk if nf else None,
+                    manifestacao.pk if manifestacao else None,
+                )
+                if pk
+            }
+            if ids_validos and documento_id not in ids_validos:
+                raise ArmazenarXmlCentralError(MSG_ID_CHAVE_DIVERGENTE)
+
+    elif documento_id:
         nf_por_id = (
             NFeEntradaHistoricaImportada.objects.select_related(
                 'fornecedor_emitente',
@@ -149,16 +161,10 @@ def _resolver_contexto_nfe_central(
             )
 
         if nf_por_id:
-            if chave:
-                _validar_chave_documento(chave, nf_por_id.chave_acesso)
-            else:
-                chave = _normalizar_chave(nf_por_id.chave_acesso)
+            chave = _normalizar_chave(nf_por_id.chave_acesso)
             nf = nf_por_id
         elif manifestacao_por_id:
-            if chave:
-                _validar_chave_documento(chave, manifestacao_por_id.chave_acesso)
-            else:
-                chave = _normalizar_chave(manifestacao_por_id.chave_acesso)
+            chave = _normalizar_chave(manifestacao_por_id.chave_acesso)
             manifestacao = manifestacao_por_id
 
     if len(chave) != 44:
