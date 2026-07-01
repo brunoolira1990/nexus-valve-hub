@@ -68,7 +68,7 @@ function RevisaoSecaoItens({ nfe }: { nfe: NFeEntrada }) {
       {!itensOperacionais && temXml ? (
         <p className="text-xs text-muted-foreground mb-3">
           Nenhum item operacional vinculado. Os itens abaixo vêm do XML importado e são somente leitura — não
-          geram estoque, financeiro ou preparação.
+          geram estoque, financeiro ou finalização da conferência.
         </p>
       ) : null}
       {itensOperacionais ? (
@@ -183,7 +183,7 @@ export function NFeEntradaRevisaoDrawer({ nfeId, open, onClose }: Props) {
           >
             <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" aria-hidden />
             <p>
-              <strong>Revisão somente leitura.</strong> Não altera XML, estoque, financeiro ou preparação. Esta
+              <strong>Revisão somente leitura.</strong> Não altera XML, estoque, financeiro ou finalização da conferência. Esta
               não é a conferência operacional completa da Base NF-e Entrada Importada.
             </p>
           </div>

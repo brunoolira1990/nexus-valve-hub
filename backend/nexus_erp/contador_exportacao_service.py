@@ -14,6 +14,7 @@ from apps.fiscal.models import (
     NFeEntradaHistoricaImportada,
     NFeSaida,
 )
+from apps.fiscal.nfe_entrada_data_entrada import filtrar_entrada_historica_por_competencia
 
 
 class ContadorExportacaoError(Exception):
@@ -96,12 +97,10 @@ def _coletar_nfe_entrada(d_ini: date, d_fim: date) -> list[tuple[str, str]]:
         chave = nf.chave_acesso or f'NFE-ENTRADA-{nf.numero or nf.pk}'
         arquivos.append((_nome_arquivo(chave, 'NFE-ENTRADA', nf.pk), xml))
 
-    tz = timezone.get_current_timezone()
-    ini_dt = timezone.make_aware(datetime.combine(d_ini, time.min), tz)
-    fim_dt = timezone.make_aware(datetime.combine(d_fim, time.max), tz)
-    hist = NFeEntradaHistoricaImportada.objects.filter(
-        dh_emissao__gte=ini_dt,
-        dh_emissao__lte=fim_dt,
+    hist = filtrar_entrada_historica_por_competencia(
+        NFeEntradaHistoricaImportada.objects.all(),
+        d_ini,
+        d_fim,
     ).only('id', 'chave_acesso', 'numero', 'xml_conteudo')
     for doc in hist.iterator(chunk_size=200):
         xml = (doc.xml_conteudo or '').strip()

@@ -69,6 +69,7 @@ import {
   resolverNumeroSerieInbox,
 } from '@/lib/chaveDfeDocumento';
 import { chaveNfeResumida } from '@/lib/chaveNfeResumida';
+import { labelStatusEntradaNfeConferenciaFinalizada } from '@/lib/conferenciaNfeLabels';
 import {
   centralDfeService,
   type CentralDfeDocumento,
@@ -1205,7 +1206,11 @@ const CentralDfe = () => {
                         </div>
                       ) : null}
                       <div className="text-[10px] text-muted-foreground mt-1 leading-tight">
-                        Entrada: {row.status_entrada_label}
+                        Entrada:{' '}
+                        {labelStatusEntradaNfeConferenciaFinalizada(
+                          row.status_entrada,
+                          row.status_entrada_label,
+                        )}
                       </div>
                     </td>
                     <td>

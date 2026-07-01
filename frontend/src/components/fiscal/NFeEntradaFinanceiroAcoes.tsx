@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { Wallet } from 'lucide-react';
+import { formatarAvisoPendenciasOperacionaisNfeEntrada } from '@/lib/conferenciaNfeLabels';
 
 type FinanceiroFlags = {
   financeiro_gerado?: boolean;
@@ -62,13 +63,12 @@ export function NFeEntradaFinanceiroAcoes({
       <div className={`space-y-2 ${className}`}>
         {flags.possui_pendencias_operacionais ? (
           <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-            {flags.aviso_pendencias_operacionais ||
-              'Existem pendências operacionais nesta NF-e. O financeiro pode ser gerado, mas estoque e pedido continuarão pendentes.'}
+            {formatarAvisoPendenciasOperacionaisNfeEntrada(flags.aviso_pendencias_operacionais)}
           </p>
         ) : (
           <p className="text-xs text-muted-foreground">
-            Gere o financeiro a partir das duplicatas da NF-e Entrada. Estoque e conferência operacional não serão
-            alterados.
+            Gere o financeiro a partir das duplicatas da NF-e Entrada. A finalização da conferência e a aplicação de estoque não serão
+            alteradas.
           </p>
         )}
         <button type="button" className="erp-btn-outline erp-btn-sm" onClick={onGerar}>

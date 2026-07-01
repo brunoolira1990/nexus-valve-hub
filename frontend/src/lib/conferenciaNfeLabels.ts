@@ -72,6 +72,62 @@ export function labelStatusConferenciaItem(status: string): string {
   return LABEL_STATUS_CONFERENCIA_ITEM[status] || status;
 }
 
+const LABEL_STATUS_CONFERENCIA_CABECALHO: Record<string, string> = {
+  PENDENTE: 'Em conferência',
+  PREPARADA: 'Conferência finalizada',
+  CONFERIDA: 'Conferida',
+  CANCELADA: 'Cancelada',
+};
+
+/** Rótulo amigável do status do cabeçalho da conferência NF-e entrada (valor técnico permanece na API). */
+export function labelStatusConferenciaCabecalho(status: string | undefined | null): string {
+  const key = (status || '').trim().toUpperCase();
+  return LABEL_STATUS_CONFERENCIA_CABECALHO[key] || status || '—';
+}
+
+/** Central DF-e / inbox: rótulo de entrada quando a conferência foi finalizada (status PREPARADO). */
+export function labelStatusEntradaNfeConferenciaFinalizada(
+  statusEntrada: string | undefined | null,
+  labelApi?: string | null,
+): string {
+  const st = (statusEntrada || '').trim().toUpperCase();
+  if (st === 'PREPARADO' || (labelApi || '').trim() === 'Preparado') {
+    return 'Conferência finalizada';
+  }
+  return (labelApi || '').trim() || statusEntrada || '—';
+}
+
+/** Ajusta textos da API que ainda mencionam “preparar estoque” para exibição na UI. */
+export function humanizarTextoFinalizarConferencia(texto: string): string {
+  return texto
+    .replace(
+      /antes de finalizar \(preparar estoque/gi,
+      'antes de finalizar a conferência',
+    )
+    .replace(/antes de preparar estoque/gi, 'antes de finalizar a conferência')
+    .replace(/impedem preparar estoque/gi, 'impedem finalizar a conferência')
+    .replace(/Não foi possível preparar estoque/gi, 'Não foi possível finalizar a conferência')
+    .replace(/opcional para preparar\b/gi, 'opcional para finalizar a conferência')
+    .replace(/revise antes de preparar\b/gi, 'revise antes de finalizar a conferência')
+    .replace(/antes de preparar\b/gi, 'antes de finalizar a conferência')
+    .replace(/preparar estoque/gi, 'finalizar a conferência')
+    .replace(/marcar conferida ou preparada/gi, 'salvar ou finalizar a conferência')
+    .replace(/grava a conferência como PREPARADA/gi, 'finaliza a conferência fiscalmente');
+}
+
+/** Aviso de pendências operacionais no bloco financeiro da NF-e entrada. */
+export function formatarAvisoPendenciasOperacionaisNfeEntrada(aviso?: string | null): string {
+  const fallback =
+    'Existem pendências operacionais nesta NF-e. O financeiro pode ser gerado, mas a conferência não foi finalizada e a aplicação de estoque permanece pendente.';
+  if (!aviso?.trim()) return fallback;
+  return humanizarTextoFinalizarConferencia(
+    aviso.replace(
+      /estoque, produtos e pedido de compra continuarão pendentes até conferência/gi,
+      'a conferência não foi finalizada; produtos e pedido de compra permanecem pendentes',
+    ),
+  );
+}
+
 export function badgeClassStatusConferencia(status: string): string {
   switch (status) {
     case 'CONFERIDO':

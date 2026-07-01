@@ -233,6 +233,6 @@ describe('dfeOrganizacao40102', () => {
       </>,
     );
     expect(screen.getByText('Conferida')).toBeInTheDocument();
-    expect(screen.getByText('Preparada')).toBeInTheDocument();
+    expect(screen.getByText('Conferência finalizada')).toBeInTheDocument();
   });
 });

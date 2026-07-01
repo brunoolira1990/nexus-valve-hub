@@ -15,6 +15,7 @@ import {
   type NFeGerarContasPagarParcela,
   type NFeGerarContasPagarPreview,
 } from '@/services/api/nfeHistoricaEntradaImportada';
+import { formatarAvisoPendenciasOperacionaisNfeEntrada } from '@/lib/conferenciaNfeLabels';
 
 const TOLERANCIA_PARCELAS = 0.05;
 
@@ -185,9 +186,9 @@ export function GerarContasPagarNfeEntradaModal({ open, nfeEntradaId, onClose, o
 
       {preview?.possui_pendencias_operacionais ? (
         <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-4">
-          {preview.aviso_pendencias_wizard ||
-            preview.aviso_pendencias_operacionais ||
-            'Esta NF-e Entrada possui pendências operacionais. A geração das contas a pagar não movimenta estoque, não resolve equivalências e não altera pedido de compra.'}
+          {formatarAvisoPendenciasOperacionaisNfeEntrada(
+            preview.aviso_pendencias_wizard || preview.aviso_pendencias_operacionais,
+          )}
         </p>
       ) : null}
 

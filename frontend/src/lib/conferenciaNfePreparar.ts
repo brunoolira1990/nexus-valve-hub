@@ -1,4 +1,5 @@
 import axios, { type AxiosError } from 'axios';
+import { humanizarTextoFinalizarConferencia } from '@/lib/conferenciaNfeLabels';
 import { apiErrorMessage } from '@/services/api/config';
 
 type PrepararEstoqueErrorBody = {
@@ -9,21 +10,23 @@ type PrepararEstoqueErrorBody = {
   migrations_pendentes?: boolean;
 };
 
-/** Mensagem de erro ao preparar estoque (inclui pendências e bloqueio fiscal). */
+/** Mensagem de erro ao finalizar conferência (inclui pendências e bloqueio fiscal). */
 export function prepararEstoqueErrorMessage(err: unknown): string {
   const ax = err as AxiosError<PrepararEstoqueErrorBody>;
   const data = ax.response?.data;
-  const pendencias = data?.pendencias;
+  const pendencias = (data?.pendencias || []).map(humanizarTextoFinalizarConferencia);
 
   if (data?.migrations_pendentes && data?.detail) {
     return data.detail;
   }
 
   if (data?.data_entrada_ausente) {
-    return [
-      'Informe e salve a data de entrada da NF-e antes de preparar estoque.',
-      ...(pendencias || []),
-    ].join('\n');
+    return humanizarTextoFinalizarConferencia(
+      [
+        'Informe e salve a data de entrada da NF-e antes de finalizar a conferência.',
+        ...pendencias,
+      ].join('\n'),
+    );
   }
   if (data?.bloqueio_fiscal) {
     const configEntrada = pendencias?.some((p) =>
@@ -35,7 +38,7 @@ export function prepararEstoqueErrorMessage(err: unknown): string {
           'Cadastre uma regra fiscal de entrada com CFOP, natureza e CST/CSOSN.',
         ]
       : [
-          'A conferência possui itens bloqueados por regra fiscal. Revise as regras fiscais de entrada antes de preparar.',
+          'A conferência possui itens bloqueados por regra fiscal. Revise as regras fiscais de entrada antes de finalizar a conferência.',
           'Os itens bloqueados aparecem no painel Resumo fiscal (entrada), contador Bloqueado, e na coluna Fiscal de cada linha.',
         ];
     if (pendencias?.length) {
@@ -45,8 +48,10 @@ export function prepararEstoqueErrorMessage(err: unknown): string {
   }
 
   if (pendencias?.length) {
-    return [data?.detail, ...pendencias].filter(Boolean).join('\n');
+    return humanizarTextoFinalizarConferencia(
+      [data?.detail, ...pendencias].filter(Boolean).join('\n'),
+    );
   }
 
-  return apiErrorMessage(err);
+  return humanizarTextoFinalizarConferencia(apiErrorMessage(err));
 }

@@ -91,7 +91,7 @@ export function textosAlertaEstadoConsolidado(exibicao: EstadoConsolidadoExibica
   if (det.chave_em_nfe_entrada_operacional === true) {
     const msg =
       'Atenção: a mesma chave também existe em Entrada Própria operacional. ' +
-      'Verifique se conferência e estoque da base importada foram concluídos.';
+      'Verifique se a conferência foi finalizada e o estoque físico foi aplicado na base importada.';
     if (!linhas.some((l) => l.includes('Entrada Própria operacional'))) {
       linhas.push(msg);
     }

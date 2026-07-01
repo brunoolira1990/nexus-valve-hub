@@ -18,6 +18,7 @@ import {
   labelItemPedidoCompraOption,
   labelProdutoLinhaConferencia,
   labelStatusConferenciaItem,
+  labelStatusConferenciaCabecalho,
   labelStatusFiscalEntrada,
   labelStatusQuantitativoPedido,
   labelStatusSaldoGlobalPedido,
@@ -211,7 +212,7 @@ export function NFeEntradaConferenciaPanel({
       setAvisoPedido('');
       if (next.financeiro?.possui_pendencias_operacionais) {
         toast.success(
-          'Conferência salva com pendências. Você ainda pode gerar contas a pagar, mas estoque e itens continuam pendentes.',
+          'Conferência salva com pendências. Você ainda pode gerar contas a pagar, mas a conferência não foi finalizada e a aplicação de estoque permanece pendente.',
         );
       } else {
         toast.success('Conferência salva.');
@@ -313,7 +314,7 @@ export function NFeEntradaConferenciaPanel({
   const preparar = async () => {
     if (!dados) return;
     if (!dados.data_entrada) {
-      setErro('Informe a data de entrada da NF-e antes de preparar estoque.');
+      setErro('Informe a data de entrada da NF-e antes de finalizar a conferência.');
       return;
     }
     setBusy(true);
@@ -343,12 +344,12 @@ export function NFeEntradaConferenciaPanel({
       });
       setDados(next);
       setAvisoPedido('');
-      toast.success('Conferência preparada para estoque (status PREPARADA).');
+      toast.success('Conferência finalizada com sucesso.');
       notifyUpdated();
     } catch (e) {
       const msg = prepararEstoqueErrorMessage(e);
       setErro(msg);
-      toast.error(msg.split('\n')[0] || 'Não foi possível preparar estoque.');
+      toast.error(msg.split('\n')[0] || 'Não foi possível finalizar a conferência.');
     } finally {
       setBusy(false);
     }
@@ -359,8 +360,8 @@ export function NFeEntradaConferenciaPanel({
       {!embedded ? <PageHeader title="Conferência NF-e de Entrada" /> : null}
       {!embedded ? (
       <div className="mb-4 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
-        Revisão segura da NF-e importada: marcar conferida ou preparada não gera contas a pagar, não movimenta estoque e não
-        concilia atendimento automaticamente. Efeitos operacionais (estoque, financeiro) exigem ação explícita posterior.
+        Revisão segura da NF-e importada: salvar ou finalizar a conferência não gera contas a pagar, não movimenta estoque e não
+        concilia atendimento automaticamente. A aplicação de estoque físico e o financeiro exigem ação explícita posterior.
       </div>
       ) : null}
       {dados && (
@@ -370,7 +371,7 @@ export function NFeEntradaConferenciaPanel({
           <div><div className="text-muted-foreground text-xs">NF-e</div><div>{dados.numero}/{dados.serie}</div></div>
           <div>
             <div className="text-muted-foreground text-xs">Status</div>
-            <div>{dados.status}</div>
+            <div>{labelStatusConferenciaCabecalho(dados.status)}</div>
             {estoqueJaAplicado ? (
               <span className="erp-badge-success text-[10px] mt-1 inline-block">Estoque aplicado</span>
             ) : null}
@@ -417,7 +418,7 @@ export function NFeEntradaConferenciaPanel({
               </p>
             ) : (
               <p className="text-xs text-muted-foreground mt-2">
-                Vincule itens do pedido linha a linha para comparar Pedido × NF (opcional para preparar).
+                Vincule itens do pedido linha a linha para comparar Pedido × NF (opcional para finalizar a conferência).
               </p>
             )}
           </div>
@@ -809,10 +810,10 @@ export function NFeEntradaConferenciaPanel({
           <div className="px-4 py-3 text-sm space-y-2">
             <p className="text-xs text-muted-foreground">
               Diagnóstico das regras fiscais de entrada por item. Itens com status Bloqueado (regra com severidade
-              BLOQUEIO) impedem preparar estoque até revisão fiscal.
+              BLOQUEIO) impedem finalizar a conferência até revisão fiscal.
               {dados.resumo_fiscal.bloqueado > 0 ? (
                 <span className="block mt-1 text-destructive font-medium">
-                  Esta NF possui {dados.resumo_fiscal.bloqueado} item(ns) bloqueado(s) — revise antes de preparar.
+                  Esta NF possui {dados.resumo_fiscal.bloqueado} item(ns) bloqueado(s) — revise antes de finalizar a conferência.
                 </span>
               ) : null}
             </p>
@@ -1228,7 +1229,7 @@ export function NFeEntradaConferenciaPanel({
             : 'Salvar conferência'}
         </button>
         <button type="button" className="erp-btn-primary" onClick={() => void preparar()} disabled={busy}>
-          Preparar estoque
+          Finalizar conferência
         </button>
         {podeAplicarEstoque ? (
           <button
@@ -1249,7 +1250,7 @@ export function NFeEntradaConferenciaPanel({
         </p>
       ) : (
         <p className="text-xs text-muted-foreground mt-3 max-w-3xl ml-auto text-right">
-          &quot;Preparar estoque&quot; grava a conferência como PREPARADA. &quot;Aplicar estoque físico&quot; incrementa{' '}
+          &quot;Finalizar conferência&quot; valida e encerra a revisão fiscal da NF-e. &quot;Aplicar estoque físico&quot; incrementa{' '}
           <span className="font-mono">EstoqueCorrida</span> uma única vez por linha elegível.
         </p>
       )}

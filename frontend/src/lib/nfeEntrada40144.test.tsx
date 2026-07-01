@@ -167,9 +167,9 @@ describe('wizard confirmação pendências operacionais', () => {
 
   it('texto auxiliar não menciona estoque aplicado', () => {
     const texto =
-      'Gere o financeiro a partir das duplicatas da NF-e Entrada. Estoque e conferência operacional não serão alterados.';
+      'Gere o financeiro a partir das duplicatas da NF-e Entrada. A finalização da conferência e a aplicação de estoque não serão alteradas.';
     expect(texto).not.toMatch(/estoque aplicado/i);
-    expect(texto).toMatch(/não serão alterados/i);
+    expect(texto).toMatch(/não serão alteradas/i);
   });
 });
 

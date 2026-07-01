@@ -45,6 +45,10 @@ import type {
   NFeDestinadaDocumento,
 } from '@/services/api/manifestacaoDestinatario';
 import { nfeEntradaConferenciaService } from '@/services/api/nfeEntradaConferencia';
+import {
+  labelStatusConferenciaCabecalho,
+  labelStatusEntradaNfeConferenciaFinalizada,
+} from '@/lib/conferenciaNfeLabels';
 
 const fmtData = (v: string | null | undefined): string => {
   if (!v) return '—';
@@ -346,7 +350,7 @@ export function CentralDfeWorkspaceSheet({
                 </div>
                 <div>
                   <div className="text-xs text-muted-foreground">Entrada</div>
-                  <div>{row.status_entrada_label}</div>
+                  <div>{labelStatusEntradaNfeConferenciaFinalizada(row.status_entrada, row.status_entrada_label)}</div>
                 </div>
                 <div>
                   <div className="text-xs text-muted-foreground">Emissão</div>
@@ -366,7 +370,7 @@ export function CentralDfeWorkspaceSheet({
               ) : resumoConferencia ? (
                 <div className="erp-card p-4 text-sm space-y-2">
                   <p>
-                    Status conferência: <strong>{resumoConferencia.status}</strong>
+                    Status conferência: <strong>{labelStatusConferenciaCabecalho(resumoConferencia.status)}</strong>
                   </p>
                   {resumoConferencia.estoque_aplicado_em ? (
                     <p className="text-emerald-700">
