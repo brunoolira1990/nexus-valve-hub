@@ -33,6 +33,7 @@ import {
   xmlJaArmazenado,
 } from '@/lib/manifestacaoDestinatarioUi';
 import {
+  documentoCentralMatchBusca,
   isCteTransportadora,
   labelAbrirBaseImportada,
   labelStatusXmlManifestacao,
@@ -546,6 +547,7 @@ const CentralDfe = () => {
     totalPages,
     search,
     setSearch,
+    debouncedSearch,
     setPage,
     setPageSize,
     filters,
@@ -619,12 +621,14 @@ const CentralDfe = () => {
           somenteResumo: !reconciliada?.xml_armazenado,
         };
       });
-    return [...central, ...extrasReconciliados, ...extras].sort((a, b) => {
-      const da = a.row.data_emissao || '';
-      const db = b.row.data_emissao || '';
-      return db.localeCompare(da);
-    });
-  }, [items, manifestacaoMap, manifestacaoSomenteResumo, documentosCentralPorChave]);
+    return [...central, ...extrasReconciliados, ...extras]
+      .sort((a, b) => {
+        const da = a.row.data_emissao || '';
+        const db = b.row.data_emissao || '';
+        return db.localeCompare(da);
+      })
+      .filter(({ row }) => documentoCentralMatchBusca(row, debouncedSearch));
+  }, [items, manifestacaoMap, manifestacaoSomenteResumo, documentosCentralPorChave, debouncedSearch]);
 
   useEffect(() => {
     void carregarManifestacao(chavesCentralNfe);
@@ -1253,7 +1257,11 @@ const CentralDfe = () => {
               page={page}
               pageSize={pageSize}
               totalPages={totalPages}
-              count={count + manifestacaoSomenteResumo.length}
+              count={
+                debouncedSearch
+                  ? linhasExibidas.length
+                  : count + manifestacaoSomenteResumo.length
+              }
               onPageChange={setPage}
               onPageSizeChange={setPageSize}
             />

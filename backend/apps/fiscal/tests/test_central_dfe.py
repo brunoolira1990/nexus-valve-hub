@@ -146,6 +146,41 @@ class CentralDfeRecebidosApiTest(TestCase):
         self.assertEqual(resp.data['count'], 1)
         self.assertEqual(resp.data['results'][0]['status_entrada'], 'JA_LANCADO')
 
+    def test_filtro_busca_textual(self) -> None:
+        resp_all = self.client.get(
+            self.url,
+            {'empresa_id': self.emp.pk, 'incluir_tratados': 'true'},
+        )
+        self.assertEqual(resp_all.data['count'], 2)
+
+        resp_numero = self.client.get(
+            self.url,
+            {'empresa_id': self.emp.pk, 'incluir_tratados': 'true', 'search': '400'},
+        )
+        self.assertEqual(resp_numero.data['count'], 1)
+        self.assertEqual(resp_numero.data['results'][0]['tipo_documento'], 'CTE')
+        self.assertEqual(resp_numero.data['results'][0]['numero'], '400')
+
+        resp_emitente = self.client.get(
+            self.url,
+            {'empresa_id': self.emp.pk, 'incluir_tratados': 'true', 'search': 'Forn Central'},
+        )
+        self.assertEqual(resp_emitente.data['count'], 1)
+        self.assertEqual(resp_emitente.data['results'][0]['tipo_documento'], 'NFE_ENTRADA')
+
+        resp_chave = self.client.get(
+            self.url,
+            {'empresa_id': self.emp.pk, 'incluir_tratados': 'true', 'search': '4444'},
+        )
+        self.assertEqual(resp_chave.data['count'], 1)
+        self.assertTrue(resp_chave.data['results'][0]['chave_acesso'].startswith('4'))
+
+        resp_vazio = self.client.get(
+            self.url,
+            {'empresa_id': self.emp.pk, 'incluir_tratados': 'true', 'search': 'ZZZZNOTFOUND'},
+        )
+        self.assertEqual(resp_vazio.data['count'], 0)
+
     def test_lista_resumo_destinado_sem_xml_historico(self) -> None:
         from apps.fiscal.nfe_integracao.nfe_chave_acesso import montar_chave_acesso_nfe
 

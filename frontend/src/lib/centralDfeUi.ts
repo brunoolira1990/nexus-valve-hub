@@ -107,3 +107,31 @@ export function isCteTransportadora(row: Pick<CentralDfeDocumento, 'tipo_documen
 export function isNfeFornecedor(row: Pick<CentralDfeDocumento, 'tipo_documento'>): boolean {
   return isNfeFornecedorAplicavel(row);
 }
+
+/** Espelha o filtro `search` de `_match_filtros_pos_query` (central_dfe/service.py). */
+export function documentoCentralMatchBusca(
+  row: Pick<
+    CentralDfeDocumento,
+    | 'numero'
+    | 'chave_acesso'
+    | 'emitente_nome'
+    | 'tipo_label'
+    | 'status_entrada_label'
+    | 'estado_consolidado_label'
+  >,
+  termo: string,
+): boolean {
+  const t = termo.trim().toLowerCase();
+  if (!t) return true;
+  const blob = [
+    row.numero ?? '',
+    row.chave_acesso ?? '',
+    row.emitente_nome ?? '',
+    row.tipo_label ?? '',
+    row.status_entrada_label ?? '',
+    row.estado_consolidado_label ?? '',
+  ]
+    .join(' ')
+    .toLowerCase();
+  return blob.includes(t);
+}

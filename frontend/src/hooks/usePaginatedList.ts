@@ -93,6 +93,7 @@ export function usePaginatedList<T>({
     totalPages: data?.total_pages ?? 0,
     search,
     setSearch,
+    debouncedSearch,
     ordering,
     setOrdering,
     filters,
