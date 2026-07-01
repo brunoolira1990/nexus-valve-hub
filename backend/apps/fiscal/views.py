@@ -90,6 +90,13 @@ from .nfe_historica_fiscal import (
     queryset_faturamento_nf_saida_historica,
     separar_totais_e_indicadores,
 )
+from .nfe_entrada_historica_listagem import (
+    aplicar_busca_textual as aplicar_busca_textual_nf_entrada_hist,
+    aplicar_filtro_periodo as aplicar_filtro_periodo_nf_entrada_hist,
+    aplicar_filtro_status_conferencia as aplicar_filtro_status_conferencia_nf_entrada_hist,
+    intervalo_datas_listagem as intervalo_datas_listagem_nf_entrada_hist,
+    normalizar_tipo_data as normalizar_tipo_data_nf_entrada_hist,
+)
 from .nfe_historica_periodo import PeriodoInvalido, aplicar_filtros_vinculo, bounds_para_listagem, resolver_periodo
 from .nfe_import.service_entrada import importar_arquivos_entrada
 from .nfe_import.service import importar_arquivos, reprocessar_eventos_pendentes_saida
@@ -2090,24 +2097,31 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
 
     def get_queryset(self):
         qs = super().get_queryset()
-        search = (self.request.query_params.get('search') or '').strip()
-        if search:
-            qs = qs.filter(
-                Q(chave_acesso__icontains=search)
-                | Q(numero__icontains=search)
-                | Q(fornecedor_emitente__razao_social__icontains=search),
-            )
+        qs = aplicar_busca_textual_nf_entrada_hist(qs, self.request.query_params.get('search') or '')
         if self.action == 'retrieve':
             return qs.prefetch_related('itens')
         if self.action == 'list':
             p = self.request.query_params
             try:
-                bounds = bounds_para_listagem(p)
+                intervalo = intervalo_datas_listagem_nf_entrada_hist(p)
+                tipo_data = normalizar_tipo_data_nf_entrada_hist(p.get('tipo_data'))
             except PeriodoInvalido as exc:
                 raise ValidationError({'detail': str(exc)}) from exc
-            if bounds:
-                di, df = bounds
-                qs = qs.filter(dh_emissao__date__gte=di, dh_emissao__date__lte=df)
+            if intervalo:
+                di, df = intervalo
+                qs = aplicar_filtro_periodo_nf_entrada_hist(
+                    qs,
+                    data_inicio=di,
+                    data_fim=df,
+                    tipo_data=tipo_data,
+                )
+            try:
+                qs = aplicar_filtro_status_conferencia_nf_entrada_hist(
+                    qs,
+                    p.get('status_conferencia'),
+                )
+            except PeriodoInvalido as exc:
+                raise ValidationError({'detail': str(exc)}) from exc
             if p.get('empresa_destinataria_id'):
                 try:
                     eid = int(p.get('empresa_destinataria_id') or '0')

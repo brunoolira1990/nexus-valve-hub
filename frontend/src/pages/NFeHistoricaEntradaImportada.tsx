@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileUp, FileCheck, Copy, AlertCircle, ClipboardList } from 'lucide-react';
+import { FileUp, FileCheck, Copy, ClipboardList } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
 import { apiErrorMessage } from '@/services/api/config';
@@ -29,8 +29,30 @@ import { NexusButton } from '@/components/nexus';
 import { TableSkeleton } from '@/components/nexus/Skeleton';
 import { chaveNfeResumida } from '@/lib/chaveNfeResumida';
 
+const TIPO_DATA_STORAGE_KEY = 'nfe_entrada_hist_tipo_data';
+
+const STATUS_CONFERENCIA_OPCOES = [
+  { value: '', label: 'Status conferência (todos)' },
+  { value: 'sem_conferencia', label: 'Sem conferência' },
+  { value: 'pendente', label: 'Pendente' },
+  { value: 'finalizada', label: 'Conferência finalizada' },
+  { value: 'estoque_aplicado', label: 'Estoque aplicado' },
+] as const;
+
+function lerTipoDataPersistido(): 'emissao' | 'entrada' {
+  try {
+    const stored = localStorage.getItem(TIPO_DATA_STORAGE_KEY);
+    if (stored === 'entrada' || stored === 'emissao') return stored;
+  } catch {
+    /* ignore */
+  }
+  return 'emissao';
+}
+
 const NFeHistoricaEntradaImportada = () => {
   const navigate = useNavigate();
+  const tipoDataInicial = lerTipoDataPersistido();
+  const [tipoData, setTipoDataState] = useState<'emissao' | 'entrada'>(tipoDataInicial);
   const {
     items,
     count,
@@ -48,9 +70,27 @@ const NFeHistoricaEntradaImportada = () => {
     reload,
   } = usePaginatedList<NFeEntradaHistoricaList>({
     fetchPage: nfeHistoricaEntradaImportadaService.listPaginated,
+    initialFilters: tipoDataInicial === 'entrada' ? { tipo_data: 'entrada' } : {},
   });
   const empresaId = filters.empresa_destinataria_id || '';
   const fornecedorId = filters.fornecedor_id || '';
+  const dataInicio = filters.data_inicio || '';
+  const dataFim = filters.data_fim || '';
+  const statusConferencia = filters.status_conferencia || '';
+
+  const setTipoData = useCallback(
+    (value: 'emissao' | 'entrada') => {
+      setTipoDataState(value);
+      try {
+        localStorage.setItem(TIPO_DATA_STORAGE_KEY, value);
+      } catch {
+        /* ignore */
+      }
+      setFilter('tipo_data', value === 'emissao' ? '' : value);
+    },
+    [setFilter],
+  );
+
   const [busy, setBusy] = useState(false);
   const [resultado, setResultado] = useState<NFeEntradaHistoricaImportResultado | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -206,16 +246,52 @@ const NFeHistoricaEntradaImportada = () => {
       )}
 
       <NexusCard className="mb-4">
-        <div className="flex flex-wrap gap-3">
-        <select className="erp-select" value={empresaId} onChange={(e) => setFilter('empresa_destinataria_id', e.target.value)}>
-          <option value="">Empresa destinatária (todas)</option>
-          {empresas.map((e) => <option key={e.id} value={e.id}>{e.razao_social}</option>)}
-        </select>
-        <select className="erp-select" value={fornecedorId} onChange={(e) => setFilter('fornecedor_id', e.target.value)}>
-          <option value="">Fornecedor emitente (todos)</option>
-          {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.razao_social}</option>)}
-        </select>
-        <NexusButton type="button" variant="outline" onClick={() => void reload()}>Atualizar</NexusButton>
+        <div className="flex flex-wrap gap-3 items-end">
+          <select className="erp-select" value={empresaId} onChange={(e) => setFilter('empresa_destinataria_id', e.target.value)}>
+            <option value="">Empresa destinatária (todas)</option>
+            {empresas.map((e) => <option key={e.id} value={e.id}>{e.razao_social}</option>)}
+          </select>
+          <select className="erp-select" value={fornecedorId} onChange={(e) => setFilter('fornecedor_id', e.target.value)}>
+            <option value="">Fornecedor emitente (todos)</option>
+            {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.razao_social}</option>)}
+          </select>
+          <select
+            className="erp-select"
+            value={statusConferencia}
+            onChange={(e) => setFilter('status_conferencia', e.target.value)}
+          >
+            {STATUS_CONFERENCIA_OPCOES.map((opt) => (
+              <option key={opt.value || 'todos'} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          <select
+            className="erp-select"
+            value={tipoData}
+            onChange={(e) => setTipoData(e.target.value === 'entrada' ? 'entrada' : 'emissao')}
+            title="Tipo de data para o filtro de período"
+          >
+            <option value="emissao">Data de emissão</option>
+            <option value="entrada">Data de entrada</option>
+          </select>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Data inicial
+            <input
+              type="date"
+              className="erp-input"
+              value={dataInicio}
+              onChange={(e) => setFilter('data_inicio', e.target.value)}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Data final
+            <input
+              type="date"
+              className="erp-input"
+              value={dataFim}
+              onChange={(e) => setFilter('data_fim', e.target.value)}
+            />
+          </label>
+          <NexusButton type="button" variant="outline" onClick={() => void reload()}>Atualizar</NexusButton>
         </div>
       </NexusCard>
 
