@@ -132,6 +132,52 @@ def resolver_ou_criar_corrida(
     )
 
 
+def numero_corrida_sem_rastreabilidade(produto_id: int, fornecedor_id: int) -> str:
+    """Identificador estável de bucket sem rastreabilidade técnica (produto × fornecedor)."""
+    return f'SEM-RAST-{produto_id}-{fornecedor_id}'
+
+
+def resolver_corrida_entrada_sem_rastreabilidade(
+    item: ItemNFeEntradaConferencia,
+    *,
+    fornecedor_id: int,
+    data_recebimento: date,
+    nf_entrada_ref: str = '',
+) -> Corrida:
+    if not item.produto_id:
+        raise ValueError('Item sem produto vinculado; não é possível resolver corrida placeholder.')
+    return resolver_ou_criar_corrida(
+        produto_id=item.produto_id,
+        fornecedor_id=fornecedor_id,
+        numero_texto=numero_corrida_sem_rastreabilidade(item.produto_id, fornecedor_id),
+        data_recebimento=data_recebimento,
+        nf_entrada_ref=nf_entrada_ref,
+    )
+
+
+def resolver_corrida_aplicacao_item(
+    item: ItemNFeEntradaConferencia,
+    *,
+    fornecedor_id: int,
+    data_recebimento: date,
+    nf_entrada_ref: str = '',
+) -> Corrida:
+    if (item.corrida or '').strip():
+        return resolver_ou_criar_corrida(
+            produto_id=item.produto_id,
+            fornecedor_id=fornecedor_id,
+            numero_texto=item.corrida,
+            data_recebimento=data_recebimento,
+            nf_entrada_ref=nf_entrada_ref,
+        )
+    return resolver_corrida_entrada_sem_rastreabilidade(
+        item,
+        fornecedor_id=fornecedor_id,
+        data_recebimento=data_recebimento,
+        nf_entrada_ref=nf_entrada_ref,
+    )
+
+
 def _data_recebimento_conferencia(conferencia: NFeEntradaConferencia) -> date:
     return resolver_data_entrada_conferencia(conferencia)
 
@@ -194,12 +240,6 @@ def _avaliar_contexto_itens(
         if (rf.get('status') or '').upper() == 'BLOQUEADO':
             planos.append(
                 _ItemPlano(item, rf, eleg, qty, 'bloqueio', 'Item bloqueado por regra fiscal.'),
-            )
-            continue
-
-        if not (item.corrida or '').strip():
-            planos.append(
-                _ItemPlano(item, rf, eleg, qty, 'bloqueio', 'Item sem corrida informada.'),
             )
             continue
 
@@ -423,10 +463,9 @@ def aplicar_estoque_fisico_conferencia(
         if item.estoque_aplicado_em:
             raise ValueError(f'Item {item.id} já aplicado (concorrência).')
 
-        corrida = resolver_ou_criar_corrida(
-            produto_id=item.produto_id,
+        corrida = resolver_corrida_aplicacao_item(
+            item,
             fornecedor_id=fornecedor_id,
-            numero_texto=item.corrida,
             data_recebimento=data_rec,
             nf_entrada_ref=nf_ref,
         )

@@ -1637,8 +1637,6 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {'quantidade_estoque_calculada': 'Quantidade de estoque calculada deve ser maior que zero.'}
                 )
-            if produto and produto.get_tipo_controle_unidade_efetivo() in {'DIMENSIONAL', 'TUBO', 'BARRA', 'PERFIL'} and not corrida:
-                raise serializers.ValidationError({'corrida': 'Corrida é obrigatória para produto com rastreabilidade.'})
         if status == ItemNFeEntradaConferencia.Status.IGNORADO and not motivo_ignorado.strip():
             raise serializers.ValidationError({'motivo_ignorado': 'Informe o motivo para ignorar o item.'})
         if produto:

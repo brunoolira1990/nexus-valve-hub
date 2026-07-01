@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -15,7 +15,10 @@ from rest_framework.test import APIClient
 
 from apps.cadastros.models import Fornecedor
 from apps.corridas.models import Corrida
-from apps.fiscal.aplicacao_estoque_conferencia import aplicar_estoque_fisico_conferencia
+from apps.fiscal.aplicacao_estoque_conferencia import (
+    aplicar_estoque_fisico_conferencia,
+    numero_corrida_sem_rastreabilidade,
+)
 from apps.fiscal.atendimento_estoque import montar_saldo_consolidado_produto, vincular_item_conferencia_a_atendimento
 from apps.fiscal.models import (
     AtendimentoEstoque,
@@ -72,6 +75,7 @@ def _setup_conferencia(suffix: str, *, movimenta=True, corrida='C-APL', qty='10.
         nf_entrada_historica=nf,
         status=NFeEntradaConferencia.Status.PREPARADA,
         preparado_em=timezone.now(),
+        data_entrada=date(2026, 6, 1),
     )
     linha, _ = conf.itens.get_or_create(item_nfe_historico=item_nf)
     linha.produto = prod
@@ -121,12 +125,21 @@ class AplicacaoEstoqueConferenciaTests(TestCase):
         self.assertEqual(corrida.produto_id, ctx['prod'].id)
         self.assertEqual(corrida.fornecedor_id, ctx['forn'].id)
 
-    def test_sem_corrida_bloqueia(self):
+    def test_sem_corrida_usa_placeholder(self):
         ctx = _setup_conferencia('A3', corrida='')
-        res = aplicar_estoque_fisico_conferencia(ctx['conf'])
-        self.assertFalse(res['aplicado'])
-        self.assertTrue(res['pendencias'])
-        self.assertEqual(EstoqueCorrida.objects.filter(produto=ctx['prod']).count(), 0)
+        numero_esperado = numero_corrida_sem_rastreabilidade(ctx['prod'].id, ctx['forn'].id)
+        res = aplicar_estoque_fisico_conferencia(ctx['conf'], confirmar_alertas=True)
+        self.assertTrue(res['aplicado'])
+        self.assertFalse(res['pendencias'])
+        self.assertEqual(len(res['itens_aplicados']), 1)
+        self.assertEqual(res['itens_aplicados'][0]['corrida'], numero_esperado)
+        corrida = Corrida.objects.get(numero=numero_esperado)
+        self.assertEqual(corrida.produto_id, ctx['prod'].id)
+        self.assertEqual(corrida.fornecedor_id, ctx['forn'].id)
+        ec = EstoqueCorrida.objects.get(produto=ctx['prod'], corrida=corrida)
+        self.assertEqual(ec.saldo, Decimal('10.000'))
+        ctx['linha'].refresh_from_db()
+        self.assertEqual(ctx['linha'].corrida_estoque_id, corrida.id)
 
     def test_nao_movimenta_ignora(self):
         ctx = _setup_conferencia('A4', movimenta=False)
@@ -181,11 +194,11 @@ class AplicacaoEstoqueConferenciaTests(TestCase):
             imposto_json={},
         )
         linha2, _ = ctx['conf'].itens.get_or_create(item_nfe_historico=item2)
-        linha2.produto = ctx['prod']
         linha2.quantidade_nf = Decimal('5')
         linha2.quantidade_estoque_calculada = Decimal('5')
-        linha2.corrida = ''
-        linha2.status = ItemNFeEntradaConferencia.Status.CONFERIDO
+        linha2.corrida = 'C-BLOQ'
+        linha2.produto = None
+        linha2.status = ItemNFeEntradaConferencia.Status.PENDENTE_PRODUTO
         linha2.save()
 
         res = aplicar_estoque_fisico_conferencia(ctx['conf'], confirmar_alertas=True)
