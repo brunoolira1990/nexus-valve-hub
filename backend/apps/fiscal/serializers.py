@@ -1474,6 +1474,19 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             'vinculos_atendimento',
         )
 
+    @staticmethod
+    def _produto_esta_sendo_alterado(
+        instance: ItemNFeEntradaConferencia | None,
+        attrs: dict,
+        produto,
+    ) -> bool:
+        if 'produto' not in attrs:
+            return False
+        if instance is None:
+            return bool(produto)
+        novo_id = produto.pk if produto else None
+        return novo_id != instance.produto_id
+
     def get_quantidade_alocada_atendimento(self, obj: ItemNFeEntradaConferencia) -> str:
         return f'{quantidade_alocada_item_conferencia(obj):.3f}'
 
@@ -1633,7 +1646,8 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
                 {'produto_id': 'Produto cadastrado no NEXUS APP é obrigatório para este status.'}
             )
         if status == ItemNFeEntradaConferencia.Status.CONFERIDO:
-            if quantidade_estoque <= 0:
+            produto_alterado = self._produto_esta_sendo_alterado(self.instance, attrs, produto)
+            if quantidade_estoque <= 0 and not produto_alterado:
                 raise serializers.ValidationError(
                     {'quantidade_estoque_calculada': 'Quantidade de estoque calculada deve ser maior que zero.'}
                 )

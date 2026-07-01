@@ -15,13 +15,14 @@ from rest_framework.test import APIClient
 
 from apps.cadastros.models import Fornecedor
 from apps.comercial.models import ItemPedidoCompra, PedidoCompra
-from apps.fiscal.conferencia_pedido import calcular_status_operacional_item_conferencia
+from apps.fiscal.conferencia_pedido import aplicar_pos_save_item_conferencia, calcular_status_operacional_item_conferencia
 from apps.fiscal.models import (
     ItemNFeEntradaConferencia,
     ItemNFeEntradaHistoricaImportada,
     NFeEntradaConferencia,
     NFeEntradaHistoricaImportada,
 )
+from apps.fiscal.serializers import ItemNFeEntradaConferenciaSerializer
 from apps.produtos.models import FamiliaProduto, Produto
 from apps.regras_fiscais.models import RegraFiscalEntrada
 
@@ -49,6 +50,12 @@ def _criar_regra_fiscal_entrada_minima() -> RegraFiscalEntrada:
         regra.ativo = True
         regra.save(update_fields=['ativo'])
     return regra
+
+
+def _permite_conversao_pc(prod: Produto) -> None:
+    fam = prod.familia
+    fam.peso_por_peca_kg = Decimal('1')
+    fam.save(update_fields=['peso_por_peca_kg'])
 
 
 def _setup_conferencia(suffix: str, *, com_pedido: bool = True):
@@ -275,6 +282,87 @@ class ConferenciaPrepararEstoqueTests(TestCase):
         self.assertEqual(r.status_code, status.HTTP_200_OK)
         item = r.json()['itens'][0]
         self.assertEqual(item['status'], 'PRODUTO_VINCULADO')
+
+    def test_vincular_produto_com_status_conferido_recalcula_quantidade(self):
+        ctx = _setup_conferencia('vc', com_pedido=False)
+        _permite_conversao_pc(ctx['prod'])
+        linha = ctx['linha1']
+        linha.produto_id = None
+        linha.quantidade_estoque_calculada = Decimal('0')
+        linha.status = ItemNFeEntradaConferencia.Status.PENDENTE_PRODUTO
+        linha.save(update_fields=['produto_id', 'quantidade_estoque_calculada', 'status'])
+
+        r = ctx['client'].post(
+            ctx['url_conf'],
+            {
+                'pedido_compra_id': None,
+                'itens': [
+                    {
+                        'id': linha.id,
+                        'produto_id': ctx['prod'].id,
+                        'status': 'CONFERIDO',
+                    },
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(r.status_code, status.HTTP_200_OK, r.content)
+        item = r.json()['itens'][0]
+        self.assertEqual(item['produto_id'], ctx['prod'].id)
+
+        linha.refresh_from_db()
+        self.assertEqual(linha.produto_id, ctx['prod'].id)
+        self.assertGreater(linha.quantidade_estoque_calculada, Decimal('0'))
+
+    def test_serializer_permite_vincular_produto_conferido_com_qty_zero_no_banco(self):
+        ctx = _setup_conferencia('sl', com_pedido=False)
+        _permite_conversao_pc(ctx['prod'])
+        linha = ctx['linha1']
+        linha.produto_id = None
+        linha.quantidade_estoque_calculada = Decimal('0')
+        linha.status = ItemNFeEntradaConferencia.Status.PENDENTE_PRODUTO
+        linha.save(update_fields=['produto_id', 'quantidade_estoque_calculada', 'status'])
+
+        ser = ItemNFeEntradaConferenciaSerializer(
+            linha,
+            data={'produto_id': ctx['prod'].id, 'status': 'CONFERIDO'},
+            partial=True,
+            context={'conferencia': ctx['conf'], 'pedido_compra_id': None},
+        )
+        self.assertTrue(ser.is_valid(), ser.errors)
+        saved = ser.save()
+        aplicar_pos_save_item_conferencia(saved, ctx['conf'])
+        saved.refresh_from_db()
+        self.assertEqual(saved.produto_id, ctx['prod'].id)
+        self.assertGreater(saved.quantidade_estoque_calculada, Decimal('0'))
+
+    def test_conferido_sem_quantidade_bloqueia_quando_produto_ja_vinculado(self):
+        ctx = _setup_conferencia('bq', com_pedido=False)
+        linha = ctx['linha1']
+        linha.produto = ctx['prod']
+        linha.quantidade_estoque_calculada = Decimal('0')
+        linha.status = ItemNFeEntradaConferencia.Status.PRODUTO_VINCULADO
+        linha.save(update_fields=['produto_id', 'quantidade_estoque_calculada', 'status'])
+
+        r = ctx['client'].post(
+            ctx['url_conf'],
+            {
+                'pedido_compra_id': None,
+                'itens': [
+                    {
+                        'id': linha.id,
+                        'produto_id': ctx['prod'].id,
+                        'status': 'CONFERIDO',
+                    },
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('quantidade_estoque_calculada', r.json())
+
+        linha.refresh_from_db()
+        self.assertEqual(linha.quantidade_estoque_calculada, Decimal('0'))
 
     def test_linha_ignorada_nao_bloqueia_preparar(self):
         ctx = _setup_conferencia('ig', com_pedido=False)
