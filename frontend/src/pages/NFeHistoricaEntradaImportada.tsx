@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileUp, FileCheck, Copy, ClipboardList } from 'lucide-react';
+import { FileUp, FileCheck, Copy, ClipboardList, Printer } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
 import { apiErrorMessage } from '@/services/api/config';
@@ -28,6 +28,7 @@ import { NexusCard } from '@/components/nexus/NexusCard';
 import { NexusButton } from '@/components/nexus';
 import { TableSkeleton } from '@/components/nexus/Skeleton';
 import { chaveNfeResumida } from '@/lib/chaveNfeResumida';
+import { openBlobInNewTab } from '@/lib/downloadBlobFile';
 import {
   labelBotaoPrincipalConferenciaNfeEntradaHistorica,
   labelStatusOperacionalNfeEntradaHistorica,
@@ -131,6 +132,15 @@ const NFeHistoricaEntradaImportada = () => {
     await copiarTextoParaAreaDeTransferencia(montarTextoDiagnosticoNfeEntradaXml(resultado));
     setDiagCopiado(true);
     window.setTimeout(() => setDiagCopiado(false), 2500);
+  };
+
+  const imprimirDanfe = async (row: NFeEntradaHistoricaList) => {
+    try {
+      const blob = await nfeHistoricaEntradaImportadaService.danfeBlob(row.id);
+      openBlobInNewTab(blob, `DANFE_NFe_Entrada_${row.id}.pdf`);
+    } catch (e) {
+      setErro(apiErrorMessage(e, { fallback: 'Não foi possível gerar o DANFE.' }));
+    }
   };
 
   return (
@@ -335,7 +345,7 @@ const NFeHistoricaEntradaImportada = () => {
                   </div>
                 </td>
                 <td>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <NexusButton
                       type="button"
                       variant="outline"
@@ -346,6 +356,18 @@ const NFeHistoricaEntradaImportada = () => {
                     >
                       Detalhes
                     </NexusButton>
+                    {r.tem_xml_conteudo ? (
+                      <NexusButton
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        title="Imprimir DANFE"
+                        aria-label="Imprimir DANFE"
+                        onClick={() => void imprimirDanfe(r)}
+                      >
+                        <Printer className="h-4 w-4" />
+                      </NexusButton>
+                    ) : null}
                     <NexusButton
                       type="button"
                       variant="outline"

@@ -1,5 +1,6 @@
 import api from './config';
 import { buildListParams, type ListQueryParams, type PaginatedResponse, unwrapListResults } from '@/lib/apiList';
+import { fetchAuthenticatedPdfBlob } from '@/lib/fetchPdfBlob';
 
 import type { NFeXmlImportFalhaApi } from '@/utils/nfeXmlImportDiagnostico';
 
@@ -42,6 +43,7 @@ export type NFeEntradaHistoricaList = {
   conferencia_preparado_em?: string | null;
   conferencia_estoque_aplicado_em?: string | null;
   tp_amb?: string;
+  tem_xml_conteudo?: boolean;
   classificacao_dfe?: {
     categoria?: string;
     homologacao?: boolean;
@@ -136,6 +138,12 @@ export const nfeHistoricaEntradaImportadaService = {
     const response = await api.get<Blob>(`${base}${id}/download-xml/`, { responseType: 'blob' });
     return response.data;
   },
+  danfeBlob: async (id: number) =>
+    fetchAuthenticatedPdfBlob(
+      `${base}${id}/danfe/`,
+      'Não foi possível gerar o DANFE desta NF-e de entrada.',
+      `DANFE_NFe_Entrada_${id}.pdf`,
+    ),
   importarXmls: async (files: File[]) => {
     const fd = new FormData();
     files.forEach((f) => fd.append('arquivos', f));

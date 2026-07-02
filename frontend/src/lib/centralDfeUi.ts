@@ -14,6 +14,8 @@ import {
 export const LABEL_IMPORTAR_XML_NFE = 'Importar XML';
 export const LABEL_IMPORTAR_XML_CTE = 'Importar XML CT-e';
 export const LABEL_BAIXAR_XML = 'Baixar XML';
+export const LABEL_IMPRIMIR_DANFE = 'Imprimir DANFE';
+export const LABEL_IMPRIMIR_DACTE = 'Imprimir DACTE';
 export const LABEL_ABRIR_BASE_NFE = 'Abrir NF-e';
 export const LABEL_ABRIR_BASE_CTE = 'Abrir CT-e';
 export const LABEL_ARMAZENAR_XML_CTE = LABEL_IMPORTAR_XML_CTE;
@@ -28,6 +30,8 @@ export const TOOLTIP_IMPORTAR_XML_NFE =
 export const TOOLTIP_IMPORTAR_XML_CTE =
   'Armazenar XML na Base CT-e Importada';
 export const TOOLTIP_BAIXAR_XML = 'Exportar XML armazenado localmente (sem nova consulta SEFAZ)';
+export const TOOLTIP_IMPRIMIR_DANFE = 'Abrir DANFE em nova aba a partir do XML armazenado';
+export const TOOLTIP_IMPRIMIR_DACTE = 'Abrir DACTE em nova aba a partir do XML armazenado';
 /** @deprecated use TOOLTIP_IMPORTAR_XML_NFE */
 export const TOOLTIP_ARMAZENAR_XML_NFE = TOOLTIP_IMPORTAR_XML_NFE;
 /** @deprecated use TOOLTIP_IMPORTAR_XML_CTE */

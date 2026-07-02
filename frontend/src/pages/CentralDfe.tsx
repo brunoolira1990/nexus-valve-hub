@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Copy, ExternalLink, Eye, FileDown, Inbox, Loader2, MoreVertical, RefreshCw, Stamp } from 'lucide-react';
+import { Copy, ExternalLink, Eye, FileDown, Inbox, Loader2, MoreVertical, Printer, RefreshCw, Stamp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { CTeHistoricoDetalheModal } from '@/components/fiscal/CTeHistoricoDetalheModal';
@@ -42,6 +42,8 @@ import {
   LABEL_CONFERIR_CTE,
   LABEL_IMPORTAR_XML_CTE,
   LABEL_IMPORTAR_XML_NFE,
+  LABEL_IMPRIMIR_DACTE,
+  LABEL_IMPRIMIR_DANFE,
   LABEL_VER_CTE,
   podeAbrirBaseImportada,
   podeArmazenarXmlCte,
@@ -54,6 +56,8 @@ import {
   TOOLTIP_CONFERIR_CTE,
   TOOLTIP_IMPORTAR_XML_CTE,
   TOOLTIP_IMPORTAR_XML_NFE,
+  TOOLTIP_IMPRIMIR_DACTE,
+  TOOLTIP_IMPRIMIR_DANFE,
   TOOLTIP_VER_CTE,
 } from '@/lib/centralDfeUi';
 import {
@@ -70,6 +74,7 @@ import {
   resolverNumeroSerieInbox,
 } from '@/lib/chaveDfeDocumento';
 import { chaveNfeResumida } from '@/lib/chaveNfeResumida';
+import { openBlobInNewTab } from '@/lib/downloadBlobFile';
 import { labelStatusEntradaNfeConferenciaFinalizada } from '@/lib/conferenciaNfeLabels';
 import {
   centralDfeService,
@@ -122,11 +127,13 @@ type CentralDfeAcoesLinhaProps = {
   exibirManifestar: boolean;
   exibirArmazenarXml: boolean;
   exibirBaixarXml: boolean;
+  exibirImprimirPdf: boolean;
   exibirAbrirBaseImportada: boolean;
   onAbrirDetalhe: () => void;
   onManifestar: () => void;
   onArmazenarXmlNfe: () => void;
   onBaixarXml: () => void;
+  onImprimirPdf: () => void;
   onAbrirDetalheCte: () => void;
   onArmazenarXmlCte: () => void;
   onConferirCte: () => void;
@@ -142,11 +149,13 @@ function CentralDfeAcoesLinha({
   exibirManifestar,
   exibirArmazenarXml,
   exibirBaixarXml,
+  exibirImprimirPdf,
   exibirAbrirBaseImportada,
   onAbrirDetalhe,
   onManifestar,
   onArmazenarXmlNfe,
   onBaixarXml,
+  onImprimirPdf,
   onAbrirDetalheCte,
   onArmazenarXmlCte,
   onConferirCte,
@@ -214,6 +223,18 @@ function CentralDfeAcoesLinha({
                 </span>
               </DropdownMenuItem>
             )}
+            {exibirImprimirPdf && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                title={TOOLTIP_IMPRIMIR_DANFE}
+                onSelect={onImprimirPdf}
+              >
+                <span className="flex items-center gap-2">
+                  <Printer className="h-4 w-4 shrink-0" />
+                  {LABEL_IMPRIMIR_DANFE}
+                </span>
+              </DropdownMenuItem>
+            )}
             {exibirAbrirBaseImportada && (
               <DropdownMenuItem
                 className="cursor-pointer"
@@ -277,6 +298,18 @@ function CentralDfeAcoesLinha({
                 <span className="flex items-center gap-2">
                   <FileDown className="h-4 w-4 shrink-0" />
                   {LABEL_BAIXAR_XML}
+                </span>
+              </DropdownMenuItem>
+            )}
+            {exibirImprimirPdf && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                title={TOOLTIP_IMPRIMIR_DACTE}
+                onSelect={onImprimirPdf}
+              >
+                <span className="flex items-center gap-2">
+                  <Printer className="h-4 w-4 shrink-0" />
+                  {LABEL_IMPRIMIR_DACTE}
                 </span>
               </DropdownMenuItem>
             )}
@@ -891,6 +924,29 @@ const CentralDfe = () => {
     }
   };
 
+  const imprimirPdfArmazenado = async (row: CentralDfeDocumento) => {
+    try {
+      const blob =
+        row.tipo_documento === 'CTE'
+          ? await cteHistoricoImportadoService.dacteBlob(row.id)
+          : await nfeHistoricaEntradaImportadaService.danfeBlob(row.id);
+      const filename =
+        row.tipo_documento === 'CTE'
+          ? `DACTE_CTe_${row.id}.pdf`
+          : `DANFE_NFe_Entrada_${row.id}.pdf`;
+      openBlobInNewTab(blob, filename);
+    } catch (e) {
+      toast.error(
+        apiErrorMessage(e, {
+          fallback:
+            row.tipo_documento === 'CTE'
+              ? 'Não foi possível gerar o DACTE.'
+              : 'Não foi possível gerar o DANFE.',
+        }),
+      );
+    }
+  };
+
   const empresaLabel = empresaInfo?.razao_social || contexto?.empresa?.nome_exibicao || 'empresa ativa';
 
   const aplicarPeriodoEmissao = (inicio: string, fim: string) => {
@@ -1149,6 +1205,7 @@ const CentralDfe = () => {
                   const xmlArmazenado = xmlJaArmazenado(manifestacao, row);
                   const exibirAbrirBaseImportada = xmlArmazenado || podeAbrirBaseImportada(row);
                   const exibirBaixarXml = exibirAbrirBaseImportada && xmlArmazenado;
+                  const exibirImprimirPdf = exibirBaixarXml;
                   const estadoInbox = resolverEstadoConsolidadoExibicao(row, manifestacao);
                   const alertasEstado = textosAlertaEstadoConsolidado(estadoInbox);
                   const alertaExcecao = ['DIVERGENTE', 'BLOQUEADO'].includes(
@@ -1244,11 +1301,13 @@ const CentralDfe = () => {
                         exibirManifestar={exibirManifestar}
                         exibirArmazenarXml={exibirArmazenarXml}
                         exibirBaixarXml={exibirBaixarXml}
+                        exibirImprimirPdf={exibirImprimirPdf}
                         exibirAbrirBaseImportada={exibirAbrirBaseImportada}
                         onAbrirDetalhe={() => abrirDetalhe(row, manifestacao)}
                         onManifestar={() => void iniciarManifestacaoManual(row, manifestacao)}
                         onArmazenarXmlNfe={() => void iniciarArmazenarXmlManual(row, manifestacao, somenteResumo)}
                         onBaixarXml={() => void baixarXmlArmazenado(row)}
+                        onImprimirPdf={() => void imprimirPdfArmazenado(row)}
                         onAbrirDetalheCte={() => abrirDetalheCteLocal(row)}
                         onArmazenarXmlCte={() => setConfirmArmazenarCte(row)}
                         onConferirCte={() => abrirConferenciaCte(row)}

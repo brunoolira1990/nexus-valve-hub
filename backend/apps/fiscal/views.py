@@ -2263,6 +2263,30 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
             headers={'Content-Disposition': f'attachment; filename="nfe-entrada-{chave}.xml"'},
         )
 
+    @action(detail=True, methods=['get'], url_path='danfe')
+    def danfe(self, request, pk=None):
+        from django.http import HttpResponse
+
+        from apps.fiscal.documento_recebido_pdf import DocumentoRecebidoPdfError, gerar_danfe_nfe_entrada_historica
+
+        nf = self.get_object()
+        xml = (nf.xml_conteudo or '').strip()
+        if not xml:
+            return response.Response(
+                {'detail': 'XML completo não armazenado para este documento.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            pdf = gerar_danfe_nfe_entrada_historica(xml)
+        except DocumentoRecebidoPdfError as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        chave = (nf.chave_acesso or str(nf.pk)).strip()
+        return HttpResponse(
+            pdf,
+            content_type='application/pdf',
+            headers={'Content-Disposition': f'inline; filename="danfe-nfe-entrada-{chave}.pdf"'},
+        )
+
     def _get_or_build_conferencia(self, nf: NFeEntradaHistoricaImportada) -> NFeEntradaConferencia:
         conferencia, created = NFeEntradaConferencia.objects.get_or_create(nf_entrada_historica=nf)
         if created:
@@ -2986,6 +3010,30 @@ class CTeHistoricoImportadoViewSet(AutocompleteOrPaginationMixin, viewsets.ReadO
             xml,
             content_type='application/xml; charset=utf-8',
             headers={'Content-Disposition': f'attachment; filename="cte-{chave}.xml"'},
+        )
+
+    @action(detail=True, methods=['get'], url_path='dacte')
+    def dacte(self, request, pk=None):
+        from django.http import HttpResponse
+
+        from apps.fiscal.documento_recebido_pdf import DocumentoRecebidoPdfError, gerar_dacte_cte_historico
+
+        cte = self.get_object()
+        xml = (cte.xml_conteudo or '').strip()
+        if not xml:
+            return response.Response(
+                {'detail': 'XML completo não armazenado para este documento.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            pdf = gerar_dacte_cte_historico(xml)
+        except DocumentoRecebidoPdfError as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        chave = (cte.chave_acesso or str(cte.pk)).strip()
+        return HttpResponse(
+            pdf,
+            content_type='application/pdf',
+            headers={'Content-Disposition': f'inline; filename="dacte-cte-{chave}.pdf"'},
         )
 
     def _base_cte_gerencial(self, request):

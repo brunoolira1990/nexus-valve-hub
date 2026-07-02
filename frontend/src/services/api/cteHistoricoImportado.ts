@@ -2,6 +2,7 @@ import type { ClassificacaoDfe } from '@/components/fiscal/DfeClassificacaoBadge
 import type { FornecedorEntradaStatus } from '@/types';
 import api from './config';
 import { buildListParams, type ListQueryParams, type PaginatedResponse, unwrapListResults } from '@/lib/apiList';
+import { fetchAuthenticatedPdfBlob } from '@/lib/fetchPdfBlob';
 
 const base = 'cte-historicos-importados/';
 
@@ -69,6 +70,7 @@ export type CTeHistoricoList = {
   apto_operacional?: boolean;
   conferido_em?: string | null;
   ignorado_operacionalmente?: boolean;
+  tem_xml_conteudo?: boolean;
 };
 
 export type CTeConferenciaResposta = {
@@ -184,6 +186,12 @@ export const cteHistoricoImportadoService = {
     const response = await api.get<Blob>(`${base}${id}/download-xml/`, { responseType: 'blob' });
     return response.data;
   },
+  dacteBlob: async (id: number) =>
+    fetchAuthenticatedPdfBlob(
+      `${base}${id}/dacte/`,
+      'Não foi possível gerar o DACTE deste CT-e.',
+      `DACTE_CTe_${id}.pdf`,
+    ),
   importarXmls: async (files: File[]) => {
     const fd = new FormData();
     files.forEach((f) => fd.append('arquivos', f));

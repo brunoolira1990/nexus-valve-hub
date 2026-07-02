@@ -1216,6 +1216,7 @@ class NFeEntradaHistoricaImportadaListSerializer(serializers.ModelSerializer):
     conferencia_estoque_aplicado_em = serializers.SerializerMethodField(read_only=True)
     conferencia_data_entrada = serializers.SerializerMethodField(read_only=True)
     classificacao_dfe = serializers.SerializerMethodField(read_only=True)
+    tem_xml_conteudo = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = NFeEntradaHistoricaImportada
@@ -1253,6 +1254,7 @@ class NFeEntradaHistoricaImportadaListSerializer(serializers.ModelSerializer):
             'conferencia_estoque_aplicado_em',
             'conferencia_data_entrada',
             'classificacao_dfe',
+            'tem_xml_conteudo',
         )
 
     def get_empresa_id(self, obj):
@@ -1280,6 +1282,9 @@ class NFeEntradaHistoricaImportadaListSerializer(serializers.ModelSerializer):
             return obj.conferencia.status
         except ObjectDoesNotExist:
             return None
+
+    def get_tem_xml_conteudo(self, obj):
+        return bool((getattr(obj, 'xml_conteudo', None) or '').strip())
 
     def get_classificacao_dfe(self, obj):
         from apps.fiscal.dfe_classificacao import metadados_classificacao_dfe
@@ -2345,6 +2350,7 @@ class CTeHistoricoImportadoListSerializer(serializers.ModelSerializer):
     papel_empresa = serializers.SerializerMethodField(read_only=True)
     fornecedor_remetente_nome = serializers.SerializerMethodField(read_only=True)
     classificacao_dfe = serializers.SerializerMethodField(read_only=True)
+    tem_xml_conteudo = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = CTeHistoricoImportado
@@ -2398,10 +2404,14 @@ class CTeHistoricoImportadoListSerializer(serializers.ModelSerializer):
             'apto_operacional',
             'conferido_em',
             'ignorado_operacionalmente',
+            'tem_xml_conteudo',
         )
 
     def get_transportadora_nome(self, obj):
         return obj.transportadora.razao_social if obj.transportadora_id else (obj.emit_json or {}).get('xNome', '')
+
+    def get_tem_xml_conteudo(self, obj):
+        return bool((getattr(obj, 'xml_conteudo', None) or '').strip())
 
     def get_classificacao_dfe(self, obj):
         from apps.fiscal.dfe_classificacao import metadados_classificacao_dfe

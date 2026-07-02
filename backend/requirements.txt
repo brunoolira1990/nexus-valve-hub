@@ -17,3 +17,5 @@ requests>=2.31.0
 suds-py3>=1.4.5.0
 # DANFE oficial ERP 4.0.13.6.13A — BrazilFiscalReport (LGPL-3.0; ver docs/fiscal/brazil-fiscal-report-poc.md)
 BrazilFiscalReport==0.7.4
+# Dependência usada por brazilfiscalreport.dacte (não declarada no pacote BFR)
+qrcode[pil]>=7.4.2

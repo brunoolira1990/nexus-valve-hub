@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, FileCheck, FileUp, Info, RefreshCw } from 'lucide-react';
+import { AlertCircle, FileCheck, FileUp, Info, RefreshCw, Printer } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { DfeClassificacaoBadges } from '@/components/fiscal/DfeClassificacaoBadges';
 import { CTeHistoricoDetalheModal } from '@/components/fiscal/CTeHistoricoDetalheModal';
@@ -24,6 +24,7 @@ import { StatusBadge } from '@/components/nexus/StatusBadge';
 import { NexusCard } from '@/components/nexus/NexusCard';
 import { TableSkeleton } from '@/components/nexus/Skeleton';
 import { chaveNfeResumida } from '@/lib/chaveNfeResumida';
+import { openBlobInNewTab } from '@/lib/downloadBlobFile';
 
 type PeriodoTipo = 'mes' | 'trimestre' | 'intervalo';
 
@@ -265,6 +266,15 @@ const CTeHistoricoImportado = () => {
     setDetalheRow(row);
     setAbaInicialConferencia(irConferencia);
     setModalDetalhe(true);
+  };
+
+  const imprimirDacte = async (row: CTeHistoricoList) => {
+    try {
+      const blob = await cteHistoricoImportadoService.dacteBlob(row.id);
+      openBlobInNewTab(blob, `DACTE_CTe_${row.id}.pdf`);
+    } catch (e) {
+      alert(apiErrorMessage(e, { fallback: 'Não foi possível gerar o DACTE.' }));
+    }
   };
 
   const arquivosProcessados = useMemo(() => {
@@ -605,6 +615,17 @@ const CTeHistoricoImportado = () => {
                     <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => abrirDetalhe(r)}>
                       Detalhes
                     </button>
+                    {r.tem_xml_conteudo ? (
+                      <button
+                        type="button"
+                        className="erp-btn-outline erp-btn-sm inline-flex items-center justify-center"
+                        title="Imprimir DACTE"
+                        aria-label="Imprimir DACTE"
+                        onClick={() => void imprimirDacte(r)}
+                      >
+                        <Printer className="h-4 w-4" />
+                      </button>
+                    ) : null}
                   </div>
                 </td>
               </tr>
