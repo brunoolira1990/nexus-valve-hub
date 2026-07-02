@@ -11,7 +11,11 @@ from django.utils import timezone
 
 from apps.fiscal.dfe_recebidos.distribuicao_dfe_parser import parse_distribuicao_dfe_response
 from apps.fiscal.manifestacao_destinatario.audit import registrar_evento_manifestacao
-from apps.fiscal.models import NFeDestinadaManifestacao, NFeDestinadaManifestacaoEvento
+from apps.fiscal.models import (
+    NFeDestinadaManifestacao,
+    NFeDestinadaManifestacaoEvento,
+    NFeEntradaHistoricaImportada,
+)
 from apps.fiscal.nfe_historica_classificacao import norm_digits
 from apps.fiscal.nfe_import.service_entrada import importar_arquivos_entrada
 from apps.fiscal.xml_armazenamento import ORIGEM_MANIFESTACAO_DOWNLOAD, persistir_xml_nfe_entrada
@@ -80,8 +84,6 @@ def baixar_xml_documento_destinatario(
     )
 
     if documento.status_xml == NFeDestinadaManifestacao.StatusXml.BAIXADO and documento.nf_entrada_historica_id:
-        from apps.fiscal.models import NFeEntradaHistoricaImportada
-
         nf_existente = NFeEntradaHistoricaImportada.objects.filter(
             pk=documento.nf_entrada_historica_id,
         ).first()
@@ -150,8 +152,6 @@ def baixar_xml_documento_destinatario(
     if resultado.get('importadas'):
         nf_hist_id = resultado['importadas'][0].get('id')
     elif resultado.get('duplicadas'):
-        from apps.fiscal.models import NFeEntradaHistoricaImportada
-
         dup = NFeEntradaHistoricaImportada.objects.filter(chave_acesso=chave).first()
         nf_hist_id = dup.pk if dup else None
 
