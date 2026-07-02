@@ -101,14 +101,17 @@ const fmtCnpj = (cnpj: string): string => {
 };
 
 /** XML + Ações fixas à direita — sempre visíveis com scroll horizontal nas demais colunas. */
+const CLASSE_COLUNA_MANIFEST_TH = 'min-w-[7.5rem] w-[7.5rem] whitespace-nowrap';
+const CLASSE_COLUNA_MANIFEST_TD = 'min-w-[7.5rem] w-[7.5rem] whitespace-nowrap align-middle';
 const CLASSE_COLUNA_XML_TH =
-  'sticky right-[5.75rem] z-10 min-w-[7rem] w-[7rem] bg-muted/95 shadow-[-2px_0_4px_-2px_hsl(var(--border))]';
+  'sticky right-[6rem] z-10 min-w-[8rem] w-[8rem] whitespace-nowrap bg-muted/95 shadow-[-2px_0_4px_-2px_hsl(var(--border))]';
 const CLASSE_COLUNA_XML_TD =
-  'sticky right-[5.75rem] z-10 min-w-[7rem] w-[7rem] bg-card shadow-[-2px_0_4px_-2px_hsl(var(--border))] group-hover:bg-muted/50';
+  'sticky right-[6rem] z-10 min-w-[8rem] w-[8rem] whitespace-nowrap bg-card shadow-[-2px_0_4px_-2px_hsl(var(--border))] group-hover:bg-muted/50';
 const CLASSE_COLUNA_ACOES_TH =
-  'sticky right-0 z-20 min-w-[5.75rem] w-[5.75rem] bg-muted/95 text-right shadow-[-4px_0_6px_-2px_hsl(var(--border))]';
+  'sticky right-0 z-20 min-w-[6rem] w-[6rem] whitespace-nowrap bg-muted/95 text-right shadow-[-4px_0_6px_-2px_hsl(var(--border))]';
 const CLASSE_COLUNA_ACOES_TD =
-  'sticky right-0 z-20 min-w-[5.75rem] w-[5.75rem] bg-card text-right align-middle shadow-[-4px_0_6px_-2px_hsl(var(--border))] group-hover:bg-muted/50';
+  'sticky right-0 z-20 min-w-[6rem] w-[6rem] whitespace-nowrap bg-card text-right align-middle shadow-[-4px_0_6px_-2px_hsl(var(--border))] group-hover:bg-muted/50';
+const CLASSE_BADGE_COLUNA_INBOX = 'whitespace-nowrap shrink-0 max-w-none';
 
 type CentralDfeAcoesLinhaProps = {
   row: CentralDfeDocumento;
@@ -1116,7 +1119,7 @@ const CentralDfe = () => {
             <p className="text-xs text-muted-foreground px-4 py-2 border-b border-border bg-muted/30">
               Role horizontalmente para ver todas as colunas. XML e Ações permanecem fixos à direita.
             </p>
-            <DataTable className="min-w-[58rem] [&_th]:px-3 [&_td]:px-3">
+            <DataTable className="min-w-[62rem] w-max [&_th]:px-3 [&_td]:px-3">
               <thead>
                 <tr>
                   <th className="whitespace-nowrap w-[4.5rem]">Tipo</th>
@@ -1126,7 +1129,7 @@ const CentralDfe = () => {
                   <th className="whitespace-nowrap w-[5.5rem]">Emissão</th>
                   <th className="text-right whitespace-nowrap w-[5.5rem]">Valor</th>
                   <th className="min-w-[9rem]">Estado (Inbox)</th>
-                  <th className="min-w-[5.5rem] max-w-[6rem]" title="Manifestação do Destinatário">
+                  <th className={CLASSE_COLUNA_MANIFEST_TH} title="Manifestação do Destinatário">
                     Manifest.
                   </th>
                   <th className={`whitespace-nowrap ${CLASSE_COLUNA_XML_TH}`}>XML</th>
@@ -1217,15 +1220,19 @@ const CentralDfe = () => {
                         )}
                       </div>
                     </td>
-                    <td>
-                      <StatusBadge status={manifestacaoStatus.badge}>
-                        {manifestacaoStatus.label}
-                      </StatusBadge>
+                    <td className={CLASSE_COLUNA_MANIFEST_TD}>
+                      <StatusBadge
+                        status={manifestacaoStatus.badge}
+                        label={manifestacaoStatus.label}
+                        className={CLASSE_BADGE_COLUNA_INBOX}
+                      />
                     </td>
-                    <td className={`whitespace-nowrap ${CLASSE_COLUNA_XML_TD}`}>
-                      <StatusBadge status={xmlStatus.badge}>
-                        {xmlStatus.label}
-                      </StatusBadge>
+                    <td className={CLASSE_COLUNA_XML_TD}>
+                      <StatusBadge
+                        status={xmlStatus.badge}
+                        label={xmlStatus.label}
+                        className={CLASSE_BADGE_COLUNA_INBOX}
+                      />
                     </td>
                     <td className={CLASSE_COLUNA_ACOES_TD} onClick={(e) => e.stopPropagation()}>
                       <CentralDfeAcoesLinha

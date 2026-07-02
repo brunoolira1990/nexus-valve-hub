@@ -51,7 +51,7 @@ export function badgeManifestacao(status: string): string {
 export function badgeXml(status: string): string {
   const map: Record<string, string> = {
     RESUMO: 'pendente',
-    DISPONIVEL: 'processando',
+    DISPONIVEL: 'pronta',
     BAIXADO: 'conferida',
     ARMAZENADO: 'conferida',
     PENDENTE: 'pendente',

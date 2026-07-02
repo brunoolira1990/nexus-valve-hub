@@ -96,7 +96,6 @@ export function tooltipAbrirBaseImportada(row: CentralDfeDocumento): string {
 export function xmlBadgeFromManifestacaoStatus(status: StatusXmlDestinada | string): string {
   if (status === 'BAIXADO' || status === 'ARMAZENADO') return 'conferida';
   if (status === 'ERRO') return 'erro';
-  if (status === 'DISPONIVEL') return 'processando';
   return badgeXml(status);
 }
 

@@ -39,6 +39,7 @@ const { docPendente, paginatedWithData, manifestacaoStub } = vi.hoisted(() => {
     pageSize: 20,
     totalPages: 1,
     search: '',
+    debouncedSearch: '',
     setSearch: vi.fn(),
     setPage: vi.fn(),
     setPageSize: vi.fn(),
@@ -154,6 +155,7 @@ vi.mock('@/services/api/centralDfe', () => ({
 describe('CentralDfe', () => {
   beforeEach(() => {
     vi.mocked(usePaginatedList).mockReturnValue(paginatedWithData);
+    manifestacaoStub.manifestacaoMap = new Map();
   });
 
   afterEach(() => {
@@ -162,13 +164,37 @@ describe('CentralDfe', () => {
   });
 
   it('renderiza Inbox Fiscal com badge de estado consolidado', async () => {
+    vi.mocked(usePaginatedList).mockReturnValue({
+      ...paginatedWithData,
+      items: [
+        {
+          ...docPendente,
+          xml_armazenado: false,
+          xml_status: 'DISPONIVEL',
+          xml_status_label: 'XML disponível',
+        },
+      ],
+    });
+    manifestacaoStub.manifestacaoMap = new Map([
+      [
+        docPendente.chave_acesso,
+        {
+          chave_acesso: docPendente.chave_acesso,
+          status_manifestacao: 'CONFIRMADA',
+          status_manifestacao_label: 'Confirmação da operação',
+          status_xml: 'DISPONIVEL',
+          status_xml_label: 'XML disponível',
+        },
+      ],
+    ]);
     renderWithRouter(<CentralDfe />);
     expect(screen.getByRole('heading', { name: /Inbox Fiscal/i })).toBeInTheDocument();
     await waitFor(() => {
       const tabela = screen.getByRole('table');
       expect(within(tabela).getByText('10 / 1')).toBeInTheDocument();
       expect(within(tabela).getByText('Fornecedor Teste')).toBeInTheDocument();
-      expect(within(tabela).getByText('XML disponível')).toBeInTheDocument();
+      expect(within(tabela).getAllByText('XML disponível').length).toBeGreaterThanOrEqual(2);
+      expect(within(tabela).queryByText('processando')).not.toBeInTheDocument();
       expect(within(tabela).getByText(/Entrada: Pendente de entrada/i)).toBeInTheDocument();
     });
   });
