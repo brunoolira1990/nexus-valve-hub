@@ -345,7 +345,6 @@ def consulta_distribuicao_dfe_nfe_por_chave(
             return comunicacao.consulta_distribuicao(
                 cnpj=doc,
                 chave=ch,
-                consulta_nsu_especifico=True,
             )
     except PyNFeComunicacaoError:
         raise
