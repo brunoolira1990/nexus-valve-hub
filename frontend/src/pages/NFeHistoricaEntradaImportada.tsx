@@ -28,16 +28,15 @@ import { NexusCard } from '@/components/nexus/NexusCard';
 import { NexusButton } from '@/components/nexus';
 import { TableSkeleton } from '@/components/nexus/Skeleton';
 import { chaveNfeResumida } from '@/lib/chaveNfeResumida';
+import {
+  labelBotaoPrincipalConferenciaNfeEntradaHistorica,
+  labelStatusOperacionalNfeEntradaHistorica,
+  rotaConferenciaNfeEntradaHistorica,
+  STATUS_CONFERENCIA_FILTRO_OPCOES,
+  statusBadgeTokenNfeEntradaHistorica,
+} from '@/lib/nfeEntradaHistoricaImportadaUi';
 
 const TIPO_DATA_STORAGE_KEY = 'nfe_entrada_hist_tipo_data';
-
-const STATUS_CONFERENCIA_OPCOES = [
-  { value: '', label: 'Status conferência (todos)' },
-  { value: 'sem_conferencia', label: 'Sem conferência' },
-  { value: 'pendente', label: 'Pendente' },
-  { value: 'finalizada', label: 'Conferência finalizada' },
-  { value: 'estoque_aplicado', label: 'Estoque aplicado' },
-] as const;
 
 function lerTipoDataPersistido(): 'emissao' | 'entrada' {
   try {
@@ -260,7 +259,7 @@ const NFeHistoricaEntradaImportada = () => {
             value={statusConferencia}
             onChange={(e) => setFilter('status_conferencia', e.target.value)}
           >
-            {STATUS_CONFERENCIA_OPCOES.map((opt) => (
+            {STATUS_CONFERENCIA_FILTRO_OPCOES.map((opt) => (
               <option key={opt.value || 'todos'} value={opt.value}>{opt.label}</option>
             ))}
           </select>
@@ -328,7 +327,10 @@ const NFeHistoricaEntradaImportada = () => {
                 <td>{r.importado_em?.slice(0, 16).replace('T', ' ') ?? '—'}</td>
                 <td>
                   <div className="flex flex-col gap-1">
-                    <StatusBadge status={r.conferencia_status || (r.importada ? 'Importada' : 'Pendente')} />
+                    <StatusBadge
+                      status={statusBadgeTokenNfeEntradaHistorica(r)}
+                      label={labelStatusOperacionalNfeEntradaHistorica(r)}
+                    />
                     <DfeClassificacaoBadges classificacao={r.classificacao_dfe} max={3} />
                   </div>
                 </td>
@@ -344,8 +346,13 @@ const NFeHistoricaEntradaImportada = () => {
                     >
                       Detalhes
                     </NexusButton>
-                    <NexusButton type="button" variant="outline" size="sm" onClick={() => navigate(`/nfe-entrada/${r.id}/conferencia`)}>
-                      Conferir entrada
+                    <NexusButton
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => navigate(rotaConferenciaNfeEntradaHistorica(r.id, r))}
+                    >
+                      {labelBotaoPrincipalConferenciaNfeEntradaHistorica(r)}
                     </NexusButton>
                   </div>
                 </td>

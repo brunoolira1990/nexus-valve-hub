@@ -40,6 +40,7 @@ export type NFeEntradaHistoricaList = {
   historica: boolean;
   conferencia_status?: string | null;
   conferencia_preparado_em?: string | null;
+  conferencia_estoque_aplicado_em?: string | null;
   tp_amb?: string;
   classificacao_dfe?: {
     categoria?: string;

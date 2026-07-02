@@ -1213,6 +1213,7 @@ class NFeEntradaHistoricaImportadaListSerializer(serializers.ModelSerializer):
     fornecedor_id = serializers.SerializerMethodField(read_only=True)
     conferencia_status = serializers.SerializerMethodField(read_only=True)
     conferencia_preparado_em = serializers.SerializerMethodField(read_only=True)
+    conferencia_estoque_aplicado_em = serializers.SerializerMethodField(read_only=True)
     conferencia_data_entrada = serializers.SerializerMethodField(read_only=True)
     classificacao_dfe = serializers.SerializerMethodField(read_only=True)
 
@@ -1249,6 +1250,7 @@ class NFeEntradaHistoricaImportadaListSerializer(serializers.ModelSerializer):
             'historica',
             'conferencia_status',
             'conferencia_preparado_em',
+            'conferencia_estoque_aplicado_em',
             'conferencia_data_entrada',
             'classificacao_dfe',
         )
@@ -1291,6 +1293,13 @@ class NFeEntradaHistoricaImportadaListSerializer(serializers.ModelSerializer):
         except ObjectDoesNotExist:
             return None
         return c.preparado_em.isoformat() if c.preparado_em else None
+
+    def get_conferencia_estoque_aplicado_em(self, obj):
+        try:
+            c = obj.conferencia
+        except ObjectDoesNotExist:
+            return None
+        return c.estoque_aplicado_em.isoformat() if c.estoque_aplicado_em else None
 
     def get_conferencia_data_entrada(self, obj):
         try:
