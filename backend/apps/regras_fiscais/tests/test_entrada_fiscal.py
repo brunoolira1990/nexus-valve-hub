@@ -25,6 +25,7 @@ from apps.fiscal.services.imposto_item_xml import extrair_tributos_item
 from apps.regras_fiscais.cst_icms_perspectiva import normalizar_cst_icms_xml_para_entrada
 from apps.regras_fiscais.cst_ipi_perspectiva import normalizar_cst_ipi_xml_para_entrada
 from apps.regras_fiscais.cst_pis_cofins_perspectiva import normalizar_cst_pis_cofins_xml_para_entrada
+from apps.regras_fiscais.tributos_nf_exibicao import tributos_nf_para_exibicao_entrada
 from apps.regras_fiscais.entrada_fiscal import (
     MSG_SEM_REGRA_FISCAL_ENTRADA,
     SCORE_CFOP_ORIGEM,
@@ -135,6 +136,24 @@ class CstPisCofinsPerspectivaTests(SimpleTestCase):
         for entrada, saida, descricao in self.CASOS:
             with self.subTest(entrada=entrada, saida=saida, descricao=descricao):
                 self.assertEqual(normalizar_cst_pis_cofins_xml_para_entrada(entrada), saida)
+
+
+class TributosNfExibicaoEntradaTests(SimpleTestCase):
+    def test_converte_cst_saida_para_perspectiva_entrada(self):
+        trib = extrair_tributos_item(
+            {'CFOP': '1403', 'NCM': '73072200'},
+            {
+                'ICMS': {'ICMS10': {'orig': '2', 'CST': '10', 'pICMS': '18.00', 'vBC': '100'}},
+                'IPI': {'IPINT': {'CST': '53'}},
+                'PIS': {'PISAliq': {'CST': '01', 'pPIS': '0.65'}},
+                'COFINS': {'COFINSAliq': {'CST': '01', 'pCOFINS': '3.00'}},
+            },
+        )
+        exib = tributos_nf_para_exibicao_entrada(trib)
+        self.assertEqual(exib['cst_icms'], '60')
+        self.assertEqual(exib['cst_ipi'], '03')
+        self.assertEqual(exib['cst_pis'], '50')
+        self.assertEqual(exib['cst_cofins'], '50')
 
 
 class EntradaFiscalMotorTests(TestCase):

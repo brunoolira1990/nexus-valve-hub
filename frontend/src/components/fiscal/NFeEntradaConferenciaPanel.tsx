@@ -935,9 +935,14 @@ export function NFeEntradaConferenciaPanel({
                           </div>
                         ) : null}
                         {(() => {
-                          const impResumo = resumoImpostosLinha(rf?.impostos_nf);
+                          const impResumo = resumoImpostosLinha(
+                            trib as Record<string, string | undefined> | undefined,
+                          );
                           return impResumo ? (
-                            <div className="text-muted-foreground line-clamp-2" title={impResumo}>
+                            <div
+                              className="text-muted-foreground line-clamp-2"
+                              title="CST de entrada (convertido do XML do fornecedor)"
+                            >
                               {impResumo}
                             </div>
                           ) : (

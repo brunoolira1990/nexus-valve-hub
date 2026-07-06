@@ -1539,14 +1539,16 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
         imposto_json = obj.item_nfe_historico.imposto_json or {}
         trib = extrair_tributos_item(prod_json, imposto_json)
         from apps.regras_fiscais.entrada_fiscal import _montar_impostos_nf
+        from apps.regras_fiscais.tributos_nf_exibicao import tributos_nf_para_exibicao_entrada
 
         snap = _montar_impostos_nf(trib)
+        exib = tributos_nf_para_exibicao_entrada(trib)
         return {
-            'cst_icms': snap.get('cst_icms') or trib.get('cst_icms') or '',
-            'csosn': snap.get('csosn') or trib.get('cst_icms_detalhe') or '',
-            'cst_pis': snap.get('cst_pis') or trib.get('cst_pis') or '',
-            'cst_cofins': snap.get('cst_cofins') or trib.get('cst_cofins') or '',
-            'cst_ipi': snap.get('cst_ipi') or trib.get('cst_ipi') or '',
+            'cst_icms': exib['cst_icms'],
+            'csosn': exib['csosn'],
+            'cst_pis': exib['cst_pis'],
+            'cst_cofins': exib['cst_cofins'],
+            'cst_ipi': exib['cst_ipi'],
             'aliquota_icms': snap.get('aliquota_icms') or '',
             'aliquota_ipi': snap.get('aliquota_ipi') or '',
             'aliquota_pis': snap.get('aliquota_pis') or '',
