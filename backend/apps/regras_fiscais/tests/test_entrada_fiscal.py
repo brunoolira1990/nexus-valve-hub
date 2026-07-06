@@ -23,6 +23,7 @@ from apps.fiscal.models import (
 from apps.produtos.models import FamiliaProduto, Produto
 from apps.fiscal.services.imposto_item_xml import extrair_tributos_item
 from apps.regras_fiscais.cst_icms_perspectiva import normalizar_cst_icms_xml_para_entrada
+from apps.regras_fiscais.csosn_perspectiva import converter_csosn_para_cst_entrada
 from apps.regras_fiscais.cst_ipi_perspectiva import normalizar_cst_ipi_xml_para_entrada
 from apps.regras_fiscais.cst_pis_cofins_perspectiva import normalizar_cst_pis_cofins_xml_para_entrada
 from apps.regras_fiscais.tributos_nf_exibicao import tributos_nf_para_exibicao_entrada
@@ -73,6 +74,36 @@ class CstIcmsPerspectivaTests(SimpleTestCase):
         for entrada, saida, descricao in self.CASOS:
             with self.subTest(entrada=entrada, saida=saida, descricao=descricao):
                 self.assertEqual(normalizar_cst_icms_xml_para_entrada(entrada), saida)
+
+
+class CsosnPerspectivaTests(SimpleTestCase):
+    CASOS_CONVERSAO = (
+        ('101', '00', 'tributado normal'),
+        ('500', '60', 'ST retida anteriormente'),
+        ('201', '10', 'tributado + ST (antes da perspectiva)'),
+        ('400', '41', 'não tributado'),
+        ('900', '90', 'outros'),
+        ('', '', 'vazio'),
+    )
+
+    CASOS_ENTRADA = (
+        ('101', '00', 'tributado normal'),
+        ('500', '60', 'ST retida anteriormente'),
+        ('201', '60', 'tributado + ST → perspectiva entrada'),
+        ('400', '41', 'não tributado'),
+        ('900', '90', 'outros'),
+    )
+
+    def test_converter_csosn_para_cst_entrada(self):
+        for entrada, saida, descricao in self.CASOS_CONVERSAO:
+            with self.subTest(entrada=entrada, saida=saida, descricao=descricao):
+                self.assertEqual(converter_csosn_para_cst_entrada(entrada), saida)
+
+    def test_csosn_convertido_e_normalizado_para_entrada(self):
+        for csosn, saida, descricao in self.CASOS_ENTRADA:
+            with self.subTest(csosn=csosn, saida=saida, descricao=descricao):
+                bruto = converter_csosn_para_cst_entrada(csosn)
+                self.assertEqual(normalizar_cst_icms_xml_para_entrada(bruto), saida)
 
 
 class CstIpiPerspectivaTests(SimpleTestCase):
@@ -154,6 +185,15 @@ class TributosNfExibicaoEntradaTests(SimpleTestCase):
         self.assertEqual(exib['cst_ipi'], '03')
         self.assertEqual(exib['cst_pis'], '50')
         self.assertEqual(exib['cst_cofins'], '50')
+
+    def test_converte_csosn_simples_para_cst_entrada_na_exibicao(self):
+        trib = extrair_tributos_item(
+            {'CFOP': '1403', 'NCM': '73072200'},
+            {'ICMS': {'ICMSSN500': {'CSOSN': '500', 'vBC': '100'}}},
+        )
+        exib = tributos_nf_para_exibicao_entrada(trib)
+        self.assertEqual(exib['cst_icms'], '60')
+        self.assertEqual(exib['csosn'], '')
 
 
 class EntradaFiscalMotorTests(TestCase):
@@ -480,6 +520,18 @@ class EntradaFiscalMotorTests(TestCase):
         r = avaliar_item_entrada_fiscal(self.linha, self.ctx, [regra])
         self.assertEqual(r['status'], 'OK')
         self.assertFalse(any(d['campo'] == 'cst_icms' for d in r['divergencias']))
+
+    def test_nota_simples_csosn_500_casa_com_regra_cst_060(self):
+        self._set_icms_xml_regime(csosn='500')
+        r = avaliar_item_entrada_fiscal(self.linha, self.ctx, [self._regra_cst_entrada('060')])
+        self.assertEqual(r['status'], 'OK')
+        self.assertEqual(r['divergencias'], [])
+
+    def test_nota_simples_csosn_101_diverge_regra_cst_060(self):
+        self._set_icms_xml_regime(csosn='101')
+        r = avaliar_item_entrada_fiscal(self.linha, self.ctx, [self._regra_cst_entrada('060')])
+        self.assertEqual(r['status'], 'ALERTA')
+        self.assertTrue(any(d['campo'] == 'cst_icms' for d in r['divergencias']))
 
     def test_cst_ausente_na_nota_com_regra_preenchida_alerta(self):
         item_nf = self.linha.item_nfe_historico

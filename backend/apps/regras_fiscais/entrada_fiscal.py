@@ -9,7 +9,10 @@ from typing import Any, TypedDict
 from apps.comercial.pricing import normalize_ncm
 from apps.fiscal.models import ItemNFeEntradaConferencia, NFeEntradaConferencia
 from apps.fiscal.services.imposto_item_xml import extrair_tributos_item
-from apps.regras_fiscais.cst_icms_perspectiva import normalizar_cst_icms_xml_para_entrada
+from apps.regras_fiscais.cst_icms_perspectiva import (
+    normalizar_cst_icms_xml_para_entrada,
+    obter_cst_icms_bruto_nf,
+)
 from apps.regras_fiscais.cst_ipi_perspectiva import normalizar_cst_ipi_xml_para_entrada
 from apps.regras_fiscais.cst_pis_cofins_perspectiva import normalizar_cst_pis_cofins_xml_para_entrada
 from apps.regras_fiscais.models import RegraFiscalEntrada
@@ -528,28 +531,18 @@ def _comparar_cst_icms_e_csosn(
     """
     cst_nf = str(trib.get('cst_icms') or '').strip()
     csosn_nf = str(trib.get('csosn') or '').strip()
+    cst_bruto_nf = obter_cst_icms_bruto_nf(trib)
 
     if _str_preenchido(regra.cst_icms_esperado):
-        if cst_nf:
-            add(
-                _comparar_texto(
-                    campo='cst_icms',
-                    label='CST ICMS',
-                    esperado=regra.cst_icms_esperado,
-                    informado=normalizar_cst_icms_xml_para_entrada(cst_nf),
-                    normalizar_cst=True,
-                ),
-            )
-        elif not csosn_nf:
-            add(
-                _comparar_texto(
-                    campo='cst_icms',
-                    label='CST ICMS',
-                    esperado=regra.cst_icms_esperado,
-                    informado='',
-                    normalizar_cst=True,
-                ),
-            )
+        add(
+            _comparar_texto(
+                campo='cst_icms',
+                label='CST ICMS',
+                esperado=regra.cst_icms_esperado,
+                informado=normalizar_cst_icms_xml_para_entrada(cst_bruto_nf) if cst_bruto_nf else '',
+                normalizar_cst=True,
+            ),
+        )
 
     if _str_preenchido(regra.csosn_esperado):
         if csosn_nf:
@@ -944,9 +937,7 @@ def _extrair_tributos_item_conf(item_conf: ItemNFeEntradaConferencia) -> dict[st
 
 def _dados_legados_cst(trib: dict[str, Any], prod_json: dict[str, Any]) -> dict[str, str]:
     csosn = str(trib.get('csosn') or trib.get('cst_icms_detalhe') or '').strip()
-    cst_icms = str(trib.get('cst_icms') or '').strip()
-    if not cst_icms and csosn:
-        cst_icms = csosn
+    cst_icms = obter_cst_icms_bruto_nf(trib)
     return {
         'cfop_nf': str(prod_json.get('CFOP') or '').strip(),
         'ncm_nf': str(prod_json.get('NCM') or '').strip(),

@@ -11,6 +11,8 @@ Em operações com ST retida, códigos distintos podem ser fiscalmente equivalen
 
 from __future__ import annotations
 
+from typing import Any
+
 # Situação tributária de saída (fornecedor) → equivalente na entrada (destinatário).
 # CSTs não listados permanecem iguais (00, 20, 40, 41, 50, 51, 60, 90).
 _CST_SAIDA_PARA_ENTRADA: dict[str, str] = {
@@ -40,3 +42,16 @@ def normalizar_cst_icms_xml_para_entrada(cst: str) -> str:
     if not situacao:
         return ''
     return _CST_SAIDA_PARA_ENTRADA.get(situacao, situacao)
+
+
+def obter_cst_icms_bruto_nf(trib: dict[str, Any]) -> str:
+    """CST do XML; se ausente, converte CSOSN (Simples Nacional) para CST equivalente."""
+    from apps.regras_fiscais.csosn_perspectiva import converter_csosn_para_cst_entrada
+
+    cst_nf = str(trib.get('cst_icms') or '').strip()
+    if cst_nf:
+        return cst_nf
+    csosn_nf = str(trib.get('csosn') or '').strip()
+    if csosn_nf:
+        return converter_csosn_para_cst_entrada(csosn_nf)
+    return ''
