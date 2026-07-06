@@ -293,6 +293,17 @@ def _divergencia(
     }
 
 
+def _normalizar_cst_comparacao(val: str) -> str:
+    """Remove zeros à esquerda para comparar códigos CST equivalentes (ex.: 060 vs 60)."""
+    s = (val or '').strip()
+    if not s:
+        return ''
+    digits = ''.join(ch for ch in s if ch.isdigit())
+    if not digits:
+        return s
+    return digits.lstrip('0') or '0'
+
+
 def _comparar_texto(
     *,
     campo: str,
@@ -300,13 +311,20 @@ def _comparar_texto(
     esperado: str,
     informado: str,
     informado_alt: str = '',
+    normalizar_cst: bool = False,
 ) -> DivergenciaFiscalDict | None:
     exp = (esperado or '').strip()
     if not exp:
         return None
     at = (informado or '').strip()
     alt = (informado_alt or '').strip()
-    if exp == at or exp == alt:
+    if normalizar_cst:
+        exp_cmp = _normalizar_cst_comparacao(exp)
+        at_cmp = _normalizar_cst_comparacao(at)
+        alt_cmp = _normalizar_cst_comparacao(alt)
+        if exp_cmp == at_cmp or (alt_cmp and exp_cmp == alt_cmp):
+            return None
+    elif exp == at or exp == alt:
         return None
     inf = at or alt or '—'
     return _divergencia(
@@ -518,6 +536,7 @@ def _comparar_impostos_regra(
             esperado=regra.cst_icms_esperado,
             informado=cst_icms_xml,
             informado_alt=str(trib.get('csosn') or trib.get('cst_icms_detalhe') or ''),
+            normalizar_cst=True,
         ),
     )
     add(
@@ -527,6 +546,7 @@ def _comparar_impostos_regra(
             esperado=regra.csosn_esperado,
             informado=str(trib.get('csosn') or trib.get('cst_icms_detalhe') or ''),
             informado_alt=str(trib.get('cst_icms') or ''),
+            normalizar_cst=True,
         ),
     )
     add(
@@ -580,6 +600,7 @@ def _comparar_impostos_regra(
             label='CST ICMS ST',
             esperado=regra.cst_icms_st_esperado,
             informado=str(trib.get('cst_icms_st_nf') or ''),
+            normalizar_cst=True,
         ),
     )
     if _dec_preenchido(regra.aliquota_icms_st):
@@ -664,6 +685,7 @@ def _comparar_impostos_regra(
             label='CST IPI',
             esperado=regra.cst_ipi_esperado,
             informado=str(trib.get('cst_ipi') or ''),
+            normalizar_cst=True,
         ),
     )
     add(
@@ -709,6 +731,7 @@ def _comparar_impostos_regra(
             label='CST PIS',
             esperado=regra.cst_pis_esperado,
             informado=str(trib.get('cst_pis') or ''),
+            normalizar_cst=True,
         ),
     )
     add(
@@ -766,6 +789,7 @@ def _comparar_impostos_regra(
             label='CST COFINS',
             esperado=regra.cst_cofins_esperado,
             informado=str(trib.get('cst_cofins') or ''),
+            normalizar_cst=True,
         ),
     )
     add(

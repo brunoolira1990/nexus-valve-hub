@@ -341,6 +341,30 @@ class EntradaFiscalMotorTests(TestCase):
         self.assertEqual(r['status'], 'ALERTA')
         self.assertTrue(any(d['campo'] == 'cst_icms' for d in r['divergencias']))
 
+    def test_regra_cst_060_vs_xml_210_normalizado_ok(self):
+        self._set_cst_icms_xml('210')
+        r = avaliar_item_entrada_fiscal(self.linha, self.ctx, [self._regra_cst_entrada('060')])
+        self.assertEqual(r['status'], 'OK')
+        self.assertEqual(r['divergencias'], [])
+
+    def test_regra_cst_060_vs_xml_060_ok(self):
+        self._set_cst_icms_xml('060')
+        r = avaliar_item_entrada_fiscal(self.linha, self.ctx, [self._regra_cst_entrada('060')])
+        self.assertEqual(r['status'], 'OK')
+        self.assertEqual(r['divergencias'], [])
+
+    def test_regra_cst_60_vs_xml_060_ok(self):
+        self._set_cst_icms_xml('060')
+        r = avaliar_item_entrada_fiscal(self.linha, self.ctx, [self._regra_cst_entrada('60')])
+        self.assertEqual(r['status'], 'OK')
+        self.assertEqual(r['divergencias'], [])
+
+    def test_regra_cst_00_vs_xml_210_continua_alerta(self):
+        self._set_cst_icms_xml('210')
+        r = avaliar_item_entrada_fiscal(self.linha, self.ctx, [self._regra_cst_entrada('00')])
+        self.assertEqual(r['status'], 'ALERTA')
+        self.assertTrue(any(d['campo'] == 'cst_icms' for d in r['divergencias']))
+
     def test_regra_antiga_sem_campos_novos_ok(self):
         regra = RegraFiscalEntrada.objects.create(
             nome='Antiga',
