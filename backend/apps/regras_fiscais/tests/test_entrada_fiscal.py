@@ -21,6 +21,7 @@ from apps.fiscal.models import (
     NFeEntradaHistoricaImportada,
 )
 from apps.produtos.models import FamiliaProduto, Produto
+from apps.fiscal.services.imposto_item_xml import extrair_tributos_item
 from apps.regras_fiscais.cst_icms_perspectiva import normalizar_cst_icms_xml_para_entrada
 from apps.regras_fiscais.entrada_fiscal import (
     MSG_SEM_REGRA_FISCAL_ENTRADA,
@@ -322,6 +323,99 @@ class EntradaFiscalMotorTests(TestCase):
             'ICMS': {f'ICMS{cst}': {'CST': cst, 'vBC': '100', 'vICMS': '0'}},
         }
         item_nf.save(update_fields=['imposto_json'])
+
+    def _set_icms_xml_regime(
+        self,
+        *,
+        cst: str = '',
+        csosn: str = '',
+        orig: str = '',
+    ) -> None:
+        item_nf = self.linha.item_nfe_historico
+        if csosn:
+            bloco = {f'ICMSSN{csosn}': {'CSOSN': csosn, 'vBC': '100'}}
+        else:
+            tag = f'ICMS{cst}' if len(cst) > 2 else f'ICMS{cst.zfill(2)}'
+            body: dict[str, str] = {'CST': cst, 'vBC': '100', 'vICMS': '0'}
+            if orig:
+                body['orig'] = orig
+            bloco = {tag: body}
+        item_nf.imposto_json = {'ICMS': bloco}
+        item_nf.save(update_fields=['imposto_json'])
+
+    def test_extrair_tributos_separa_cst_e_csosn(self):
+        trib_cst = extrair_tributos_item(
+            {'CFOP': '1403'},
+            {'ICMS': {'ICMS10': {'orig': '2', 'CST': '10', 'vBC': '100'}}},
+        )
+        self.assertEqual(trib_cst['cst_icms'], '10')
+        self.assertEqual(trib_cst['csosn'], '')
+
+        trib_sn = extrair_tributos_item(
+            {'CFOP': '1403'},
+            {'ICMS': {'ICMSSN500': {'CSOSN': '500', 'vBC': '100'}}},
+        )
+        self.assertEqual(trib_sn['cst_icms'], '')
+        self.assertEqual(trib_sn['csosn'], '500')
+
+    def test_nota_regime_normal_nao_diverge_csosn_da_regra(self):
+        self._set_icms_xml_regime(orig='2', cst='10')
+        regra = RegraFiscalEntrada.objects.create(
+            nome='CST+CSOSN na regra',
+            ativo=True,
+            prioridade=10,
+            cfop='6102',
+            cst_icms_esperado='060',
+            csosn_esperado='201',
+            severidade=RegraFiscalEntrada.Severidade.INFORMATIVO,
+        )
+        r = avaliar_item_entrada_fiscal(self.linha, self.ctx, [regra])
+        self.assertEqual(r['status'], 'OK')
+        self.assertFalse(any(d['campo'] == 'csosn' for d in r['divergencias']))
+
+    def test_nota_simples_csosn_500_nao_diverge_cst_da_regra(self):
+        self._set_icms_xml_regime(csosn='500')
+        regra = RegraFiscalEntrada.objects.create(
+            nome='Simples 500',
+            ativo=True,
+            prioridade=10,
+            cfop='6102',
+            cst_icms_esperado='060',
+            csosn_esperado='500',
+            severidade=RegraFiscalEntrada.Severidade.INFORMATIVO,
+        )
+        r = avaliar_item_entrada_fiscal(self.linha, self.ctx, [regra])
+        self.assertEqual(r['status'], 'OK')
+        self.assertFalse(any(d['campo'] == 'cst_icms' for d in r['divergencias']))
+
+    def test_cst_ausente_na_nota_com_regra_preenchida_alerta(self):
+        item_nf = self.linha.item_nfe_historico
+        item_nf.imposto_json = {'PIS': {'PISNT': {'CST': '07'}}}
+        item_nf.save(update_fields=['imposto_json'])
+        r = avaliar_item_entrada_fiscal(self.linha, self.ctx, [self._regra_cst_entrada('060')])
+        self.assertEqual(r['status'], 'ALERTA')
+        self.assertTrue(any(d['campo'] == 'cst_icms' for d in r['divergencias']))
+
+    def test_cst_ausente_na_nota_e_regra_sem_cst_ok(self):
+        item_nf = self.linha.item_nfe_historico
+        item_nf.imposto_json = {'PIS': {'PISNT': {'CST': '07'}}}
+        item_nf.save(update_fields=['imposto_json'])
+        regra = RegraFiscalEntrada.objects.create(
+            nome='Sem CST',
+            ativo=True,
+            prioridade=10,
+            cfop='6102',
+            severidade=RegraFiscalEntrada.Severidade.INFORMATIVO,
+        )
+        r = avaliar_item_entrada_fiscal(self.linha, self.ctx, [regra])
+        self.assertEqual(r['status'], 'OK')
+        self.assertEqual(r['divergencias'], [])
+
+    def test_origem_2_cst_10_casa_com_regra_060(self):
+        self._set_icms_xml_regime(orig='2', cst='10')
+        r = avaliar_item_entrada_fiscal(self.linha, self.ctx, [self._regra_cst_entrada('060')])
+        self.assertEqual(r['status'], 'OK')
+        self.assertEqual(r['divergencias'], [])
 
     def test_cst_xml_70_normalizado_casa_com_regra_entrada_60(self):
         self._set_cst_icms_xml('70')

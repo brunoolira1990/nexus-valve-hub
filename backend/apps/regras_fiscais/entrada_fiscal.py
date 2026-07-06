@@ -319,10 +319,7 @@ def _comparar_texto(
     at = (informado or '').strip()
     alt = (informado_alt or '').strip()
     if normalizar_cst:
-        exp_cmp = _normalizar_cst_comparacao(exp)
-        at_cmp = _normalizar_cst_comparacao(at)
-        alt_cmp = _normalizar_cst_comparacao(alt)
-        if exp_cmp == at_cmp or (alt_cmp and exp_cmp == alt_cmp):
+        if _normalizar_cst_comparacao(exp) == _normalizar_cst_comparacao(at):
             return None
     elif exp == at or exp == alt:
         return None
@@ -518,6 +515,63 @@ def _montar_impostos_esperados(regra: RegraFiscalEntrada) -> ImpostosSnapshotDic
     return snap
 
 
+def _comparar_cst_icms_e_csosn(
+    regra: RegraFiscalEntrada,
+    trib: dict[str, Any],
+    add,
+) -> None:
+    """
+    CST (regime normal) e CSOSN (Simples) são mutuamente exclusivos no XML.
+    Não cruzar valores entre os campos na comparação.
+    """
+    cst_nf = str(trib.get('cst_icms') or '').strip()
+    csosn_nf = str(trib.get('csosn') or '').strip()
+
+    if _str_preenchido(regra.cst_icms_esperado):
+        if cst_nf:
+            add(
+                _comparar_texto(
+                    campo='cst_icms',
+                    label='CST ICMS',
+                    esperado=regra.cst_icms_esperado,
+                    informado=normalizar_cst_icms_xml_para_entrada(cst_nf),
+                    normalizar_cst=True,
+                ),
+            )
+        elif not csosn_nf:
+            add(
+                _comparar_texto(
+                    campo='cst_icms',
+                    label='CST ICMS',
+                    esperado=regra.cst_icms_esperado,
+                    informado='',
+                    normalizar_cst=True,
+                ),
+            )
+
+    if _str_preenchido(regra.csosn_esperado):
+        if csosn_nf:
+            add(
+                _comparar_texto(
+                    campo='csosn',
+                    label='CSOSN',
+                    esperado=regra.csosn_esperado,
+                    informado=csosn_nf,
+                    normalizar_cst=True,
+                ),
+            )
+        elif not cst_nf:
+            add(
+                _comparar_texto(
+                    campo='csosn',
+                    label='CSOSN',
+                    esperado=regra.csosn_esperado,
+                    informado='',
+                    normalizar_cst=True,
+                ),
+            )
+
+
 def _comparar_impostos_regra(
     regra: RegraFiscalEntrada,
     trib: dict[str, Any],
@@ -528,27 +582,7 @@ def _comparar_impostos_regra(
         if div:
             divergencias.append(div)
 
-    cst_icms_xml = normalizar_cst_icms_xml_para_entrada(str(trib.get('cst_icms') or ''))
-    add(
-        _comparar_texto(
-            campo='cst_icms',
-            label='CST/CSOSN ICMS',
-            esperado=regra.cst_icms_esperado,
-            informado=cst_icms_xml,
-            informado_alt=str(trib.get('csosn') or trib.get('cst_icms_detalhe') or ''),
-            normalizar_cst=True,
-        ),
-    )
-    add(
-        _comparar_texto(
-            campo='csosn',
-            label='CSOSN',
-            esperado=regra.csosn_esperado,
-            informado=str(trib.get('csosn') or trib.get('cst_icms_detalhe') or ''),
-            informado_alt=str(trib.get('cst_icms') or ''),
-            normalizar_cst=True,
-        ),
-    )
+    _comparar_cst_icms_e_csosn(regra, trib, add)
     add(
         _comparar_texto(
             campo='modalidade_bc_icms',

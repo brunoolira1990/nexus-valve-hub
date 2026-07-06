@@ -129,11 +129,12 @@ def extrair_tributos_item(
     ipi = _merge_icms_like_blocks(imp, 'IPI')
     pis = _merge_icms_like_blocks(imp, 'PIS')
     cofins = _merge_icms_like_blocks(imp, 'COFINS')
-    cst_icms = str(icms.get('CST') or icms.get('CSOSN') or '').strip()
+    icms_blk = _primeiro_bloco_imposto(imp, 'ICMS')
+    cst_icms = str(icms.get('CST') or icms_blk.get('CST') or '').strip()
+    csosn = str(icms.get('CSOSN') or icms_blk.get('CSOSN') or '').strip()
     cst_pis = str(pis.get('CST') or '').strip()
     cst_cofins = str(cofins.get('CST') or '').strip()
     cst_ipi = str(ipi.get('CST') or '').strip()
-    icms_blk = _primeiro_bloco_imposto(imp, 'ICMS')
     ipi_blk = _primeiro_bloco_imposto(imp, 'IPI')
     pis_blk = _primeiro_bloco_imposto(imp, 'PIS')
     cofins_blk = _primeiro_bloco_imposto(imp, 'COFINS')
@@ -156,8 +157,8 @@ def extrair_tributos_item(
 
     return {
         'cst_icms': cst_icms,
-        'cst_icms_detalhe': str(icms.get('CSOSN') or '').strip() if icms.get('CST') else '',
-        'csosn': str(icms.get('CSOSN') or icms_blk.get('CSOSN') or '').strip(),
+        'cst_icms_detalhe': csosn if cst_icms and csosn else '',
+        'csosn': csosn,
         'base_icms': dec(icms.get('vBC')),
         'aliquota_icms': dec(icms.get('pICMS')) if icms.get('pICMS') is not None else None,
         'valor_icms': dec(icms.get('vICMS')),

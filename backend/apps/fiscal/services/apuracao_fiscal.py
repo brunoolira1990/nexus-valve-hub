@@ -596,7 +596,7 @@ def _process_item_historico(
 
     cfop_k = prod['cfop'] or '(sem CFOP)'
     ncm_k = prod['ncm'] or '(sem NCM)'
-    cst_i = trib['cst_icms'] or '(sem CST ICMS)'
+    cst_i = trib['cst_icms'] or trib.get('csosn') or '(sem CST ICMS)'
     cst_p = trib['cst_pis'] or '(sem CST PIS)'
     cst_c = trib['cst_cofins'] or '(sem CST COFINS)'
     prod_k = prod['c_prod'] or prod['x_prod'] or '(sem código produto XML)'
@@ -661,7 +661,7 @@ def _process_item_historico(
             documento_id=nf.id,
             item_id=it.id,
         )
-    if not trib['cst_icms']:
+    if not trib['cst_icms'] and not trib.get('csosn'):
         _alert(
             ctx,
             codigo='ITEM_SEM_CST_ICMS',
