@@ -67,6 +67,7 @@ from .models import (
     EventoNFeSaidaHistoricaPendente,
     ItemNFeEntrada,
     ItemNFeEntradaConferencia,
+    ItemNFeEntradaConferenciaCorridaSplit,
     ItemNFeEntradaHistoricaImportada,
     ItemNFeSaida,
     ItemNFeSaidaHistoricaImportada,
@@ -85,6 +86,11 @@ from .conferencia_pedido import (
     montar_resumo_elegibilidade_estoque,
     montar_resumo_pedido_conferencia,
     sugerir_itens_pedido_linha,
+)
+from .rastreabilidade_conferencia import (
+    quantidade_alvo_item,
+    sincronizar_corridas_split_item,
+    validar_splits_quantidade,
 )
 from .nfe_historica_fiscal import documento_tem_icmstot, extrair_totais_fiscais_documento
 
@@ -1395,6 +1401,20 @@ class NFeEntradaHistoricaImportadaSerializer(serializers.ModelSerializer):
         return data
 
 
+class ItemNFeEntradaConferenciaCorridaSplitSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ItemNFeEntradaConferenciaCorridaSplit
+        fields = ('id', 'ordem', 'corrida', 'lote', 'quantidade')
+        read_only_fields = ('id',)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        normalize_operational_fields(attrs, {'corrida', 'lote'})
+        if _dec(attrs.get('quantidade', 0)) <= 0:
+            raise serializers.ValidationError({'quantidade': 'Quantidade deve ser maior que zero.'})
+        return attrs
+
+
 class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
     produto_id = serializers.PrimaryKeyRelatedField(
         queryset=Produto.objects.all(),
@@ -1425,6 +1445,7 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
     quantidade_alocada_atendimento = serializers.SerializerMethodField(read_only=True)
     quantidade_disponivel_atendimento = serializers.SerializerMethodField(read_only=True)
     vinculos_atendimento = serializers.SerializerMethodField(read_only=True)
+    corridas_split = ItemNFeEntradaConferenciaCorridaSplitSerializer(many=True, required=False)
 
     class Meta:
         model = ItemNFeEntradaConferencia
@@ -1446,6 +1467,7 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             'observacao',
             'corrida',
             'lote',
+            'corridas_split',
             'rastreabilidade_observacao',
             'unidade_nf',
             'quantidade_nf',
@@ -1694,7 +1716,50 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
                 )
             attrs['snapshot_pedido'] = build_snapshot_pedido(item_pedido)
 
+        splits_payload = self.initial_data.get('corridas_split') if hasattr(self, 'initial_data') else None
+        if splits_payload is not None and isinstance(splits_payload, list) and splits_payload:
+            merged = {**attrs}
+            if self.instance is not None:
+                for field in (
+                    'quantidade_estoque_calculada',
+                    'quantidade_nf',
+                    'status',
+                ):
+                    if field not in merged:
+                        merged[field] = getattr(self.instance, field)
+            temp_item = self.instance if self.instance is not None else ItemNFeEntradaConferencia(**merged)
+            if self.instance is not None:
+                for key, val in merged.items():
+                    if key != 'corridas_split':
+                        setattr(temp_item, key, val)
+            split_erros = validar_splits_quantidade(temp_item, splits_payload=splits_payload)
+            if split_erros:
+                raise serializers.ValidationError({'corridas_split': split_erros})
+
         return attrs
+
+    def update(self, instance, validated_data):
+        splits_raw = validated_data.pop('corridas_split', serializers.empty)
+        if splits_raw is serializers.empty:
+            splits_raw = self.initial_data.get('corridas_split') if 'corridas_split' in self.initial_data else None
+
+        if splits_raw:
+            validated_data['corrida'] = ''
+            validated_data['lote'] = ''
+
+        instance = super().update(instance, validated_data)
+
+        if splits_raw is not None:
+            rows: list[dict] = []
+            if isinstance(splits_raw, list):
+                for idx, row in enumerate(splits_raw, start=1):
+                    if hasattr(row, 'items'):
+                        rows.append(dict(row))
+                    elif isinstance(row, dict):
+                        rows.append(row)
+            sincronizar_corridas_split_item(instance, rows)
+
+        return instance
 
 
 class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):

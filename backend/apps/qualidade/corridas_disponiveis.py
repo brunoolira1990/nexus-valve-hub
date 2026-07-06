@@ -35,6 +35,7 @@ def listar_corridas_disponiveis_produto(produto_id: int) -> list[dict]:
     conf_rows = (
         ItemNFeEntradaConferencia.objects
         .select_related('conferencia__nf_entrada_historica', 'conferencia__nf_entrada_historica__fornecedor_emitente')
+        .prefetch_related('corridas_split')
         .filter(produto_id=produto_id)
         .exclude(status=ItemNFeEntradaConferencia.Status.IGNORADO)
         .order_by('-id')
@@ -81,40 +82,53 @@ def listar_corridas_disponiveis_produto(produto_id: int) -> list[dict]:
         }
 
     for conf in conf_rows:
-        corrida_conf = (conf.corrida or '').strip()
-        if not corrida_conf:
-            continue
-        key = _bucket_key_corrida_lote(corrida_conf, conf.lote or '')
-        if not key:
-            continue
-        item = resultados.get(key) or {
-            'corrida': corrida_conf,
-            'lote': conf.lote or '',
-            'saldo': '0.000',
-            'unidade': conf.unidade_estoque_calculada or conf.unidade_nf or '',
-            'fornecedor': '',
-            'nf_entrada': conf.conferencia.nf_entrada_historica.numero if conf.conferencia_id else '',
-            'certificado_fornecedor': '',
-            'certificado_fornecedor_id': None,
-            'item_certificado_fornecedor_id': None,
-            'status_certificado_fornecedor': '',
-            'status_origem_tecnica': 'somente_conferencia_entrada',
-            'tem_dados_tecnicos': False,
-            'norma': '',
-            'ncm': str((conf.item_nfe_historico.prod_json or {}).get('NCM') or ''),
-            'origem': 'conferencia_entrada',
-            'alertas': [],
-            'composicao_json': {},
-            'ensaio_tracao_json': {},
-            'ensaio_impacto_json': {},
-            'numero_certificado_fornecedor_item': '',
-            'observacoes_origem': conf.rastreabilidade_observacao or '',
-        }
-        if conf.lote and not item.get('lote'):
-            item['lote'] = conf.lote
-        if conf.conferencia_id and not item.get('nf_entrada'):
-            item['nf_entrada'] = conf.conferencia.nf_entrada_historica.numero
-        resultados[key] = item
+        linhas_corrida: list[tuple[str, str]] = []
+        splits = list(conf.corridas_split.all())
+        if splits:
+            for split_row in splits:
+                corrida_split = (split_row.corrida or '').strip()
+                lote_split = (split_row.lote or '').strip()
+                if corrida_split or lote_split:
+                    linhas_corrida.append((corrida_split, lote_split))
+        else:
+            corrida_conf = (conf.corrida or '').strip()
+            if corrida_conf:
+                linhas_corrida.append((corrida_conf, conf.lote or ''))
+
+        for corrida_conf, lote_conf in linhas_corrida:
+            if not corrida_conf:
+                continue
+            key = _bucket_key_corrida_lote(corrida_conf, lote_conf)
+            if not key:
+                continue
+            item = resultados.get(key) or {
+                'corrida': corrida_conf,
+                'lote': lote_conf,
+                'saldo': '0.000',
+                'unidade': conf.unidade_estoque_calculada or conf.unidade_nf or '',
+                'fornecedor': '',
+                'nf_entrada': conf.conferencia.nf_entrada_historica.numero if conf.conferencia_id else '',
+                'certificado_fornecedor': '',
+                'certificado_fornecedor_id': None,
+                'item_certificado_fornecedor_id': None,
+                'status_certificado_fornecedor': '',
+                'status_origem_tecnica': 'somente_conferencia_entrada',
+                'tem_dados_tecnicos': False,
+                'norma': '',
+                'ncm': str((conf.item_nfe_historico.prod_json or {}).get('NCM') or ''),
+                'origem': 'conferencia_entrada',
+                'alertas': [],
+                'composicao_json': {},
+                'ensaio_tracao_json': {},
+                'ensaio_impacto_json': {},
+                'numero_certificado_fornecedor_item': '',
+                'observacoes_origem': conf.rastreabilidade_observacao or '',
+            }
+            if lote_conf and not item.get('lote'):
+                item['lote'] = lote_conf
+            if conf.conferencia_id and not item.get('nf_entrada'):
+                item['nf_entrada'] = conf.conferencia.nf_entrada_historica.numero
+            resultados[key] = item
 
     for cert_item in cert_rows:
         corrida_raw = (cert_item.corrida or '').strip()

@@ -47,6 +47,13 @@ import {
   labelTipoEquivalencia,
 } from '@/lib/conferenciaEquivalencia';
 import { AtenderVendasPendentesBlock } from '@/components/AtenderVendasPendentesBlock';
+import {
+  CorridaSplitEditor,
+  criarSplitsIniciais,
+  itemUsaSplitCorrida,
+  mapItemPayloadCorrida,
+  qtyAlvoItemConferencia,
+} from '@/components/fiscal/CorridaSplitEditor';
 import type {
   ItemConferenciaNFeEntrada,
   NFeEntradaConferencia,
@@ -195,16 +202,7 @@ export function NFeEntradaConferenciaPanel({
         data_entrada: dados.data_entrada || null,
         divergencias_aceitas: dados.divergencias_aceitas,
         observacao_divergencias: dados.observacao_divergencias,
-        itens: dados.itens.map((it) => ({
-          id: it.id,
-          produto_id: it.produto_id ?? null,
-          item_pedido_compra_id: it.item_pedido_compra_id ?? null,
-          corrida: it.corrida ?? '',
-          lote: it.lote ?? '',
-          status: it.status,
-          motivo_ignorado: it.motivo_ignorado ?? '',
-          observacao: it.observacao ?? '',
-        })),
+        itens: dados.itens.map((it) => mapItemPayloadCorrida(it)),
       };
       const next = await nfeEntradaConferenciaService.salvar(nfId, payload);
       setDados(next);
@@ -325,16 +323,7 @@ export function NFeEntradaConferenciaPanel({
         data_entrada: dados.data_entrada || null,
         divergencias_aceitas: dados.divergencias_aceitas,
         observacao_divergencias: dados.observacao_divergencias,
-        itens: dados.itens.map((it) => ({
-          id: it.id,
-          produto_id: it.produto_id ?? null,
-          item_pedido_compra_id: it.item_pedido_compra_id ?? null,
-          corrida: it.corrida ?? '',
-          lote: it.lote ?? '',
-          status: it.status,
-          motivo_ignorado: it.motivo_ignorado ?? '',
-          observacao: it.observacao ?? '',
-        })),
+        itens: dados.itens.map((it) => mapItemPayloadCorrida(it)),
       };
       const saved = await nfeEntradaConferenciaService.salvar(nfId, payload);
       setDados(saved);
@@ -1143,20 +1132,67 @@ export function NFeEntradaConferenciaPanel({
                   </div>
                 </td>
                 <td>
-                  <div className="grid grid-cols-2 gap-1 min-w-[9rem]">
-                    <input
-                      className="erp-input h-8 text-xs"
-                      placeholder="Corrida"
-                      value={it.corrida || ''}
-                      onChange={(e) => updateItem(it.id, { corrida: normalizeOperationalInput(e.target.value) })}
-                    />
-                    <input
-                      className="erp-input h-8 text-xs"
-                      placeholder="Lote"
-                      value={it.lote || ''}
-                      onChange={(e) => updateItem(it.id, { lote: normalizeOperationalInput(e.target.value) })}
-                    />
-                  </div>
+                  {it.status === 'IGNORADO' ? (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  ) : itemUsaSplitCorrida(it) ? (
+                    <div className="space-y-1">
+                      <CorridaSplitEditor
+                        qtyAlvo={qtyAlvoItemConferencia(it)}
+                        unidade={
+                          it.unidade_estoque_calculada
+                          || produtosMap.get(it.produto_id || 0)?.unidade_estoque_efetiva
+                          || it.unidade_nf
+                          || 'UN'
+                        }
+                        splits={it.corridas_split || []}
+                        disabled={estoqueJaAplicado}
+                        onChange={(corridas_split) => updateItem(it.id, { corridas_split, corrida: '', lote: '' })}
+                      />
+                      {!estoqueJaAplicado ? (
+                        <button
+                          type="button"
+                          className="text-[11px] text-primary hover:underline"
+                          onClick={() => updateItem(it.id, { corridas_split: [], corrida: '', lote: '' })}
+                        >
+                          Usar corrida única
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="space-y-1 min-w-[9rem]">
+                      <div className="grid grid-cols-2 gap-1">
+                        <input
+                          className="erp-input h-8 text-xs"
+                          placeholder="Corrida"
+                          value={it.corrida || ''}
+                          disabled={estoqueJaAplicado}
+                          onChange={(e) => updateItem(it.id, { corrida: normalizeOperationalInput(e.target.value) })}
+                        />
+                        <input
+                          className="erp-input h-8 text-xs"
+                          placeholder="Lote"
+                          value={it.lote || ''}
+                          disabled={estoqueJaAplicado}
+                          onChange={(e) => updateItem(it.id, { lote: normalizeOperationalInput(e.target.value) })}
+                        />
+                      </div>
+                      {!estoqueJaAplicado ? (
+                        <button
+                          type="button"
+                          className="text-[11px] text-primary hover:underline"
+                          onClick={() =>
+                            updateItem(it.id, {
+                              corridas_split: criarSplitsIniciais(qtyAlvoItemConferencia(it)),
+                              corrida: '',
+                              lote: '',
+                            })
+                          }
+                        >
+                          Dividir por corrida
+                        </button>
+                      ) : null}
+                    </div>
+                  )}
                 </td>
                 <td>
                   {Number(it.quantidade_estoque_calculada || 0).toFixed(3)}{' '}
@@ -1278,9 +1314,16 @@ export function NFeEntradaConferenciaPanel({
               <div>
                 <h3 className="text-sm font-medium mb-2">Itens que serão aplicados ({previewAplicar.itens_aplicados.length})</h3>
                 <ul className="text-xs space-y-1 max-h-40 overflow-y-auto border rounded p-2">
-                  {previewAplicar.itens_aplicados.map((it) => (
-                    <li key={it.item_conferencia_id}>
-                      Item #{it.item_conferencia_id} — produto {it.produto_id} — corrida {it.corrida} — qtd {it.quantidade}
+                  {previewAplicar.itens_aplicados.map((it, idx) => (
+                    <li key={`${it.item_conferencia_id}-${it.split_ordem ?? 0}-${idx}`}>
+                      Item #{it.item_conferencia_id}
+                      {it.split_ordem != null ? ` · split ${it.split_ordem}` : ''}
+                      {' — produto '}
+                      {it.produto_id}
+                      {' — corrida '}
+                      {it.corrida}
+                      {' — qtd '}
+                      {it.quantidade}
                       {it.lote ? ` — lote ${it.lote}` : ''}
                     </li>
                   ))}

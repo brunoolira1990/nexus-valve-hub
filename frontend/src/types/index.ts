@@ -2315,6 +2315,14 @@ export type StatusItemConferenciaNFeEntrada =
   | 'DIVERGENTE'
   | 'IGNORADO';
 
+export interface CorridaSplitConferencia {
+  id?: number;
+  ordem: number;
+  corrida: string;
+  lote: string;
+  quantidade: string;
+}
+
 export interface ItemConferenciaNFeEntrada {
   id: number;
   item_nfe_historico: number;
@@ -2326,6 +2334,7 @@ export interface ItemConferenciaNFeEntrada {
   observacao?: string;
   corrida?: string;
   lote?: string;
+  corridas_split?: CorridaSplitConferencia[];
   unidade_nf: string;
   quantidade_nf: number;
   valor_unitario_nf: number;
@@ -2556,6 +2565,7 @@ export interface ItemAplicadoEstoqueConferencia {
   estoque_corrida_id: number;
   saldo_anterior: string;
   saldo_novo: string;
+  split_ordem?: number;
 }
 
 export interface ItemIgnoradoAplicacaoEstoque {

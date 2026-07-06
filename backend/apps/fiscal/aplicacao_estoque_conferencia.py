@@ -25,7 +25,14 @@ from apps.fiscal.models import (
     AtendimentoEstoqueLinha,
     EstoqueCorrida,
     ItemNFeEntradaConferencia,
+    ItemNFeEntradaConferenciaCorridaSplit,
     NFeEntradaConferencia,
+)
+from apps.fiscal.rastreabilidade_conferencia import (
+    item_usa_split_corrida,
+    linhas_aplicacao_estoque,
+    quantidade_alvo_item,
+    validar_splits_quantidade,
 )
 from apps.fiscal.pedido_compra_baixa import aplicar_baixa_pedido_compra_conferencia
 from apps.fiscal.nfe_entrada_data_entrada import (
@@ -39,7 +46,7 @@ from apps.regras_fiscais.entrada_fiscal import (
 )
 
 
-class ItemAplicadoEstoqueDict(TypedDict):
+class ItemAplicadoEstoqueDict(TypedDict, total=False):
     item_conferencia_id: int
     produto_id: int
     corrida: str
@@ -48,6 +55,7 @@ class ItemAplicadoEstoqueDict(TypedDict):
     estoque_corrida_id: int
     saldo_anterior: str
     saldo_novo: str
+    split_ordem: int
 
 
 class ItemIgnoradoEstoqueDict(TypedDict):
@@ -93,10 +101,7 @@ def normalizar_numero_corrida(texto: str) -> str:
 
 
 def quantidade_aplicar_item(item_conf: ItemNFeEntradaConferencia) -> Decimal:
-    q = _dec(item_conf.quantidade_estoque_calculada)
-    if q > 0:
-        return q
-    return _dec(item_conf.quantidade_nf)
+    return quantidade_alvo_item(item_conf)
 
 
 def resolver_ou_criar_corrida(
@@ -132,9 +137,12 @@ def resolver_ou_criar_corrida(
     )
 
 
-def numero_corrida_sem_rastreabilidade(produto_id: int, fornecedor_id: int) -> str:
+def numero_corrida_sem_rastreabilidade(produto_id: int, fornecedor_id: int, ordem: int | None = None) -> str:
     """Identificador estável de bucket sem rastreabilidade técnica (produto × fornecedor)."""
-    return f'SEM-RAST-{produto_id}-{fornecedor_id}'
+    base = f'SEM-RAST-{produto_id}-{fornecedor_id}'
+    if ordem is not None:
+        return f'{base}-{ordem}'
+    return base
 
 
 def resolver_corrida_entrada_sem_rastreabilidade(
@@ -143,15 +151,43 @@ def resolver_corrida_entrada_sem_rastreabilidade(
     fornecedor_id: int,
     data_recebimento: date,
     nf_entrada_ref: str = '',
+    ordem_split: int | None = None,
 ) -> Corrida:
     if not item.produto_id:
         raise ValueError('Item sem produto vinculado; não é possível resolver corrida placeholder.')
     return resolver_ou_criar_corrida(
         produto_id=item.produto_id,
         fornecedor_id=fornecedor_id,
-        numero_texto=numero_corrida_sem_rastreabilidade(item.produto_id, fornecedor_id),
+        numero_texto=numero_corrida_sem_rastreabilidade(item.produto_id, fornecedor_id, ordem_split),
         data_recebimento=data_recebimento,
         nf_entrada_ref=nf_entrada_ref,
+    )
+
+
+def resolver_corrida_para_linha(
+    item: ItemNFeEntradaConferencia,
+    linha,
+    *,
+    fornecedor_id: int,
+    data_recebimento: date,
+    nf_entrada_ref: str = '',
+) -> Corrida:
+    corrida_texto = (linha.corrida or '').strip()
+    if corrida_texto:
+        return resolver_ou_criar_corrida(
+            produto_id=item.produto_id,
+            fornecedor_id=fornecedor_id,
+            numero_texto=corrida_texto,
+            data_recebimento=data_recebimento,
+            nf_entrada_ref=nf_entrada_ref,
+        )
+    ordem_split = linha.ordem if linha.split is not None else None
+    return resolver_corrida_entrada_sem_rastreabilidade(
+        item,
+        fornecedor_id=fornecedor_id,
+        data_recebimento=data_recebimento,
+        nf_entrada_ref=nf_entrada_ref,
+        ordem_split=ordem_split if item_usa_split_corrida(item) else None,
     )
 
 
@@ -246,6 +282,13 @@ def _avaliar_contexto_itens(
         if qty <= 0:
             planos.append(
                 _ItemPlano(item, rf, eleg, qty, 'bloqueio', 'Quantidade a aplicar deve ser maior que zero.'),
+            )
+            continue
+
+        split_erros = validar_splits_quantidade(item)
+        if split_erros:
+            planos.append(
+                _ItemPlano(item, rf, eleg, qty, 'bloqueio', split_erros[0]),
             )
             continue
 
@@ -347,7 +390,7 @@ def _montar_resultado_plano(
             'item_nfe_historico',
             'produto',
             'conferencia__nf_entrada_historica__fornecedor_emitente',
-        ).all(),
+        ).prefetch_related('corridas_split').all(),
     )
     for item in itens:
         aplicar_pos_save_item_conferencia(item, conferencia)
@@ -391,19 +434,21 @@ def _montar_resultado_plano(
 
     if not aplicar:
         for p in planos:
-            if p.categoria == 'aplicar':
-                resultado['itens_aplicados'].append(
-                    {
+            if p.categoria == 'aplicar' or (p.categoria == 'alerta' and confirmar_alertas):
+                for linha in linhas_aplicacao_estoque(p.item):
+                    entry: ItemAplicadoEstoqueDict = {
                         'item_conferencia_id': p.item.id,
                         'produto_id': p.item.produto_id or 0,
-                        'corrida': (p.item.corrida or '').strip(),
-                        'lote': (p.item.lote or '').strip(),
-                        'quantidade': _fmt_qty(p.quantidade),
+                        'corrida': linha.corrida,
+                        'lote': linha.lote,
+                        'quantidade': _fmt_qty(linha.quantidade),
                         'estoque_corrida_id': 0,
                         'saldo_anterior': '—',
                         'saldo_novo': '—',
-                    },
-                )
+                    }
+                    if linha.split is not None:
+                        entry['split_ordem'] = linha.ordem
+                    resultado['itens_aplicados'].append(entry)
         return resultado
 
     return resultado
@@ -435,10 +480,13 @@ def aplicar_estoque_fisico_conferencia(
         conferencia.itens.select_related(
             'item_nfe_historico',
             'produto',
-        ).all(),
+        ).prefetch_related('corridas_split').all(),
     )
     planos = _avaliar_contexto_itens(conferencia, itens)
-    aplicaveis = [p for p in planos if p.categoria == 'aplicar']
+    aplicaveis = [
+        p for p in planos
+        if p.categoria == 'aplicar' or (p.categoria == 'alerta' and confirmar_alertas)
+    ]
 
     if not aplicaveis and not preview['itens_ignorados']:
         preview['pendencias'].append(
@@ -459,31 +507,85 @@ def aplicar_estoque_fisico_conferencia(
     resultado['itens_aplicados'] = []
 
     for plano in aplicaveis:
-        item = ItemNFeEntradaConferencia.objects.select_for_update(of=('self',)).get(pk=plano.item.pk)
+        item = (
+            ItemNFeEntradaConferencia.objects.select_for_update(of=('self',))
+            .prefetch_related('corridas_split')
+            .get(pk=plano.item.pk)
+        )
         if item.estoque_aplicado_em:
             raise ValueError(f'Item {item.id} já aplicado (concorrência).')
 
-        corrida = resolver_corrida_aplicacao_item(
-            item,
-            fornecedor_id=fornecedor_id,
-            data_recebimento=data_rec,
-            nf_entrada_ref=nf_ref,
-        )
+        split_erros = validar_splits_quantidade(item)
+        if split_erros:
+            raise ValueError(split_erros[0])
 
-        ec, _ = EstoqueCorrida.objects.select_for_update(of=('self',)).get_or_create(
-            produto_id=item.produto_id,
-            corrida_id=corrida.id,
-            defaults={'saldo': Decimal('0')},
-        )
-        saldo_anterior = _dec(ec.saldo)
-        qtd = plano.quantidade
-        ec.saldo = saldo_anterior + qtd
-        ec.save(update_fields=['saldo'])
+        total_aplicado = Decimal('0')
+        linhas = linhas_aplicacao_estoque(item)
+        usa_split = item_usa_split_corrida(item)
+        primeira_corrida: Corrida | None = None
+        primeiro_ec: EstoqueCorrida | None = None
+
+        for linha in linhas:
+            corrida = resolver_corrida_para_linha(
+                item,
+                linha,
+                fornecedor_id=fornecedor_id,
+                data_recebimento=data_rec,
+                nf_entrada_ref=nf_ref,
+            )
+
+            ec, _ = EstoqueCorrida.objects.select_for_update(of=('self',)).get_or_create(
+                produto_id=item.produto_id,
+                corrida_id=corrida.id,
+                defaults={'saldo': Decimal('0')},
+            )
+            saldo_anterior = _dec(ec.saldo)
+            qtd = linha.quantidade
+            ec.saldo = saldo_anterior + qtd
+            ec.save(update_fields=['saldo'])
+
+            if linha.split is not None:
+                split_obj = ItemNFeEntradaConferenciaCorridaSplit.objects.select_for_update(of=('self',)).get(
+                    pk=linha.split.pk,
+                )
+                split_obj.corrida_estoque = corrida
+                split_obj.estoque_corrida = ec
+                split_obj.quantidade_aplicada = qtd
+                split_obj.save(
+                    update_fields=[
+                        'corrida_estoque',
+                        'estoque_corrida',
+                        'quantidade_aplicada',
+                    ],
+                )
+            else:
+                primeira_corrida = corrida
+                primeiro_ec = ec
+
+            total_aplicado += qtd
+
+            entry: ItemAplicadoEstoqueDict = {
+                'item_conferencia_id': item.id,
+                'produto_id': item.produto_id,
+                'corrida': corrida.numero,
+                'lote': linha.lote,
+                'quantidade': _fmt_qty(qtd),
+                'estoque_corrida_id': ec.id,
+                'saldo_anterior': _fmt_qty(saldo_anterior),
+                'saldo_novo': _fmt_qty(ec.saldo),
+            }
+            if linha.split is not None:
+                entry['split_ordem'] = linha.ordem
+            resultado['itens_aplicados'].append(entry)
 
         item.estoque_aplicado_em = momento_operacional
-        item.quantidade_estoque_aplicada = qtd
-        item.corrida_estoque = corrida
-        item.estoque_corrida = ec
+        item.quantidade_estoque_aplicada = total_aplicado
+        if usa_split:
+            item.corrida_estoque = None
+            item.estoque_corrida = None
+        else:
+            item.corrida_estoque = primeira_corrida
+            item.estoque_corrida = primeiro_ec
         item.save(
             update_fields=[
                 'estoque_aplicado_em',
@@ -492,19 +594,6 @@ def aplicar_estoque_fisico_conferencia(
                 'estoque_corrida',
                 'atualizado_em',
             ],
-        )
-
-        resultado['itens_aplicados'].append(
-            {
-                'item_conferencia_id': item.id,
-                'produto_id': item.produto_id,
-                'corrida': corrida.numero,
-                'lote': (item.lote or '').strip(),
-                'quantidade': _fmt_qty(qtd),
-                'estoque_corrida_id': ec.id,
-                'saldo_anterior': _fmt_qty(saldo_anterior),
-                'saldo_novo': _fmt_qty(ec.saldo),
-            },
         )
 
     conferencia.estoque_aplicado_em = momento_operacional

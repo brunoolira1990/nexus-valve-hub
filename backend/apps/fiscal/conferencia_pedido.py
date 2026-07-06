@@ -8,6 +8,7 @@ from typing import Any, TypedDict
 from apps.comercial.models import ItemPedidoCompra
 from apps.fiscal.models import ItemNFeEntradaConferencia, NFeEntradaConferencia
 from apps.fiscal.nfe_entrada_data_entrada import MSG_DATA_ENTRADA_OBRIGATORIA
+from apps.fiscal.rastreabilidade_conferencia import alertas_splits_parciais, tem_rastreabilidade_item
 from apps.regras_fiscais.entrada_fiscal import MSG_SEM_REGRA_FISCAL_ENTRADA
 
 STATUS_ELEGIBILIDADE_APTO = 'APTO'
@@ -595,9 +596,7 @@ def avaliar_elegibilidade_estoque_item_conferencia(
     tem_cf_rascunho = bool(cert_info.get('rascunho'))
     movimenta = resultado_fiscal.get('movimenta_estoque')
     exige_cf = bool(resultado_fiscal.get('exige_certificado_fornecedor'))
-    corrida = (item_conf.corrida or '').strip()
-    lote = (item_conf.lote or '').strip()
-    tem_rastreabilidade = bool(corrida or lote)
+    tem_rastreabilidade = tem_rastreabilidade_item(item_conf)
 
     if item_conf.status == ItemNFeEntradaConferencia.Status.IGNORADO:
         return _montar_elegibilidade_estoque(
@@ -668,6 +667,12 @@ def avaliar_elegibilidade_estoque_item_conferencia(
             'Item sem corrida/lote informado. A rastreabilidade técnica pode ficar incompleta.',
         )
         motivos.append('sem_corrida_lote')
+
+    for alerta_split in alertas_splits_parciais(item_conf):
+        if alerta_split not in mensagens:
+            mensagens.append(alerta_split)
+        if 'split_sem_corrida_lote' not in motivos:
+            motivos.append('split_sem_corrida_lote')
 
     fiscal_status = (resultado_fiscal.get('status') or '').upper()
     if fiscal_status == 'SEM_REGRA':
