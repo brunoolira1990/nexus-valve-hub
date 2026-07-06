@@ -10,6 +10,8 @@ from apps.comercial.pricing import normalize_ncm
 from apps.fiscal.models import ItemNFeEntradaConferencia, NFeEntradaConferencia
 from apps.fiscal.services.imposto_item_xml import extrair_tributos_item
 from apps.regras_fiscais.cst_icms_perspectiva import normalizar_cst_icms_xml_para_entrada
+from apps.regras_fiscais.cst_ipi_perspectiva import normalizar_cst_ipi_xml_para_entrada
+from apps.regras_fiscais.cst_pis_cofins_perspectiva import normalizar_cst_pis_cofins_xml_para_entrada
 from apps.regras_fiscais.models import RegraFiscalEntrada
 from apps.regras_fiscais.reforma_tributaria_config import (
     reforma_tributaria_para_snapshot,
@@ -718,7 +720,7 @@ def _comparar_impostos_regra(
             campo='cst_ipi',
             label='CST IPI',
             esperado=regra.cst_ipi_esperado,
-            informado=str(trib.get('cst_ipi') or ''),
+            informado=normalizar_cst_ipi_xml_para_entrada(str(trib.get('cst_ipi') or '')),
             normalizar_cst=True,
         ),
     )
@@ -764,7 +766,7 @@ def _comparar_impostos_regra(
             campo='cst_pis',
             label='CST PIS',
             esperado=regra.cst_pis_esperado,
-            informado=str(trib.get('cst_pis') or ''),
+            informado=normalizar_cst_pis_cofins_xml_para_entrada(str(trib.get('cst_pis') or '')),
             normalizar_cst=True,
         ),
     )
@@ -822,7 +824,7 @@ def _comparar_impostos_regra(
             campo='cst_cofins',
             label='CST COFINS',
             esperado=regra.cst_cofins_esperado,
-            informado=str(trib.get('cst_cofins') or ''),
+            informado=normalizar_cst_pis_cofins_xml_para_entrada(str(trib.get('cst_cofins') or '')),
             normalizar_cst=True,
         ),
     )

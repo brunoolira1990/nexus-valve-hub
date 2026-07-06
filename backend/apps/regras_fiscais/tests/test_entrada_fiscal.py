@@ -23,6 +23,8 @@ from apps.fiscal.models import (
 from apps.produtos.models import FamiliaProduto, Produto
 from apps.fiscal.services.imposto_item_xml import extrair_tributos_item
 from apps.regras_fiscais.cst_icms_perspectiva import normalizar_cst_icms_xml_para_entrada
+from apps.regras_fiscais.cst_ipi_perspectiva import normalizar_cst_ipi_xml_para_entrada
+from apps.regras_fiscais.cst_pis_cofins_perspectiva import normalizar_cst_pis_cofins_xml_para_entrada
 from apps.regras_fiscais.entrada_fiscal import (
     MSG_SEM_REGRA_FISCAL_ENTRADA,
     SCORE_CFOP_ORIGEM,
@@ -61,6 +63,35 @@ class CstIcmsPerspectivaTests(SimpleTestCase):
         for entrada, saida, descricao in self.CASOS:
             with self.subTest(entrada=entrada, saida=saida, descricao=descricao):
                 self.assertEqual(normalizar_cst_icms_xml_para_entrada(entrada), saida)
+
+
+class CstIpiPerspectivaTests(SimpleTestCase):
+    CASOS = (
+        ('53', '03', 'não tributado saída'),
+        ('50', '00', 'crédito saída'),
+        ('99', '49', 'outros'),
+        ('03', '03', 'já entrada'),
+        ('', '', 'vazio'),
+    )
+
+    def test_normalizar_cst_ipi_xml_para_entrada(self):
+        for entrada, saida, descricao in self.CASOS:
+            with self.subTest(entrada=entrada, saida=saida, descricao=descricao):
+                self.assertEqual(normalizar_cst_ipi_xml_para_entrada(entrada), saida)
+
+
+class CstPisCofinsPerspectivaTests(SimpleTestCase):
+    CASOS = (
+        ('50', '01', 'tributável básico saída'),
+        ('70', '49', 'outras saídas'),
+        ('01', '01', 'já entrada'),
+        ('', '', 'vazio'),
+    )
+
+    def test_normalizar_cst_pis_cofins_xml_para_entrada(self):
+        for entrada, saida, descricao in self.CASOS:
+            with self.subTest(entrada=entrada, saida=saida, descricao=descricao):
+                self.assertEqual(normalizar_cst_pis_cofins_xml_para_entrada(entrada), saida)
 
 
 class EntradaFiscalMotorTests(TestCase):
@@ -458,6 +489,54 @@ class EntradaFiscalMotorTests(TestCase):
         r = avaliar_item_entrada_fiscal(self.linha, self.ctx, [self._regra_cst_entrada('00')])
         self.assertEqual(r['status'], 'ALERTA')
         self.assertTrue(any(d['campo'] == 'cst_icms' for d in r['divergencias']))
+
+    def _regra_impostos_federais(
+        self,
+        *,
+        cst_ipi: str = '',
+        cst_pis: str = '',
+        cst_cofins: str = '',
+    ) -> RegraFiscalEntrada:
+        return RegraFiscalEntrada.objects.create(
+            nome='Federais',
+            ativo=True,
+            prioridade=10,
+            cfop='6102',
+            cst_ipi_esperado=cst_ipi,
+            cst_pis_esperado=cst_pis,
+            cst_cofins_esperado=cst_cofins,
+            severidade=RegraFiscalEntrada.Severidade.INFORMATIVO,
+        )
+
+    def _set_impostos_federais_xml(self, *, cst_ipi: str = '', cst_pis: str = '') -> None:
+        item_nf = self.linha.item_nfe_historico
+        imposto: dict = {
+            'ICMS': {'ICMS00': {'CST': '00', 'vBC': '100', 'vICMS': '0'}},
+        }
+        if cst_ipi:
+            imposto['IPI'] = {'IPINT': {'CST': cst_ipi}}
+        if cst_pis:
+            imposto['PIS'] = {'PISNT': {'CST': cst_pis}}
+        item_nf.imposto_json = imposto
+        item_nf.save(update_fields=['imposto_json'])
+
+    def test_nota_cst_ipi_53_casa_com_regra_ipi_03(self):
+        self._set_impostos_federais_xml(cst_ipi='53')
+        r = avaliar_item_entrada_fiscal(self.linha, self.ctx, [self._regra_impostos_federais(cst_ipi='03')])
+        self.assertEqual(r['status'], 'OK')
+        self.assertFalse(any(d['campo'] == 'cst_ipi' for d in r['divergencias']))
+
+    def test_nota_cst_pis_50_casa_com_regra_pis_01(self):
+        self._set_impostos_federais_xml(cst_pis='50')
+        r = avaliar_item_entrada_fiscal(self.linha, self.ctx, [self._regra_impostos_federais(cst_pis='01')])
+        self.assertEqual(r['status'], 'OK')
+        self.assertFalse(any(d['campo'] == 'cst_pis' for d in r['divergencias']))
+
+    def test_nota_cst_ipi_53_vs_regra_ipi_00_continua_alerta(self):
+        self._set_impostos_federais_xml(cst_ipi='53')
+        r = avaliar_item_entrada_fiscal(self.linha, self.ctx, [self._regra_impostos_federais(cst_ipi='00')])
+        self.assertEqual(r['status'], 'ALERTA')
+        self.assertTrue(any(d['campo'] == 'cst_ipi' for d in r['divergencias']))
 
     def test_regra_antiga_sem_campos_novos_ok(self):
         regra = RegraFiscalEntrada.objects.create(
