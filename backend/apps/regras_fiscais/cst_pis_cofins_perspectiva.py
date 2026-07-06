@@ -8,18 +8,29 @@ espera o CST do destinatário.
 from __future__ import annotations
 
 # CST de saída (fornecedor) → equivalente na entrada (destinatário).
+# CSTs não listados permanecem iguais.
 _CST_SAIDA_PARA_ENTRADA: dict[str, str] = {
-    '50': '01',
+    '01': '50',  # tributável básica → operação direito crédito alíquota básica
+    '02': '51',  # alíquota diferenciada
+    '03': '52',  # alíquota por unidade
+    '04': '53',  # monofásica
+    '05': '54',  # monofásica com retenção
+    '06': '55',  # ST
+    '07': '56',  # alíquota zero
+    '08': '57',  # sem incidência
+    '09': '58',  # com suspensão
+    '49': '70',  # outras saídas → outras entradas
+    '50': '01',  # operação direito crédito alíquota básica (já entrada)
     '51': '02',
     '52': '03',
     '53': '04',
     '54': '05',
     '55': '06',
     '56': '07',
-    '60': '08',
-    '61': '09',
+    '57': '08',
+    '58': '09',
     '70': '49',
-    '71': '50',
+    '71': '50',  # crédito presumido (já entrada)
     '72': '50',
     '73': '50',
     '74': '50',

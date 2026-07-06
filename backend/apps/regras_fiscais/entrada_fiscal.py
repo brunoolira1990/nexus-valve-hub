@@ -574,6 +574,62 @@ def _comparar_cst_icms_e_csosn(
             )
 
 
+def _comparar_divergencias_cst_regra(
+    regra: RegraFiscalEntrada,
+    trib: dict[str, Any],
+) -> list[DivergenciaFiscalDict]:
+    """Compara somente campos CST/CSOSN para ranqueamento de regras candidatas."""
+    divergencias: list[DivergenciaFiscalDict] = []
+
+    def add(div: DivergenciaFiscalDict | None) -> None:
+        if div:
+            divergencias.append(div)
+
+    _comparar_cst_icms_e_csosn(regra, trib, add)
+    add(
+        _comparar_texto(
+            campo='cst_icms_st',
+            label='CST ICMS ST',
+            esperado=regra.cst_icms_st_esperado,
+            informado=str(trib.get('cst_icms_st_nf') or ''),
+            normalizar_cst=True,
+        ),
+    )
+    add(
+        _comparar_texto(
+            campo='cst_ipi',
+            label='CST IPI',
+            esperado=regra.cst_ipi_esperado,
+            informado=normalizar_cst_ipi_xml_para_entrada(str(trib.get('cst_ipi') or '')),
+            normalizar_cst=True,
+        ),
+    )
+    add(
+        _comparar_texto(
+            campo='cst_pis',
+            label='CST PIS',
+            esperado=regra.cst_pis_esperado,
+            informado=normalizar_cst_pis_cofins_xml_para_entrada(str(trib.get('cst_pis') or '')),
+            normalizar_cst=True,
+        ),
+    )
+    add(
+        _comparar_texto(
+            campo='cst_cofins',
+            label='CST COFINS',
+            esperado=regra.cst_cofins_esperado,
+            informado=normalizar_cst_pis_cofins_xml_para_entrada(str(trib.get('cst_cofins') or '')),
+            normalizar_cst=True,
+        ),
+    )
+    return divergencias
+
+
+def _contar_divergencias_cst(regra: RegraFiscalEntrada, trib: dict[str, Any]) -> int:
+    """Conta divergências de CST entre a regra e os tributos do item."""
+    return len(_comparar_divergencias_cst_regra(regra, trib))
+
+
 def _comparar_impostos_regra(
     regra: RegraFiscalEntrada,
     trib: dict[str, Any],
@@ -1077,6 +1133,19 @@ def _comparar_candidatas_regra_entrada(
     return (regra_c.id or 0) < (regra_a.id or 0)
 
 
+def _comparar_candidatas_por_cst(
+    atual: tuple[RegraFiscalEntrada, EspecificidadeRegraEntrada],
+    candidata: tuple[RegraFiscalEntrada, EspecificidadeRegraEntrada],
+    trib: dict[str, Any],
+) -> bool:
+    """True se candidata deve vencer atual (menos divergências CST; depois prioridade/id)."""
+    div_a = _contar_divergencias_cst(atual[0], trib)
+    div_c = _contar_divergencias_cst(candidata[0], trib)
+    if div_c != div_a:
+        return div_c < div_a
+    return _comparar_candidatas_regra_entrada(atual, candidata)
+
+
 def encontrar_regra_fiscal_entrada(
     regras: list[RegraFiscalEntrada],
     *,
@@ -1084,8 +1153,9 @@ def encontrar_regra_fiscal_entrada(
     ncm_nf: str,
     contexto: ContextoFiscalEntrada,
     produto_id: int | None,
+    trib: dict[str, Any] | None = None,
 ) -> tuple[RegraFiscalEntrada, EspecificidadeRegraEntrada] | None:
-    melhor: tuple[RegraFiscalEntrada, EspecificidadeRegraEntrada] | None = None
+    candidatas: list[tuple[RegraFiscalEntrada, EspecificidadeRegraEntrada]] = []
     for regra in regras:
         esp = calcular_score_especificidade_regra_entrada(
             regra,
@@ -1096,8 +1166,26 @@ def encontrar_regra_fiscal_entrada(
         )
         if esp is None:
             continue
-        par = (regra, esp)
-        if melhor is None or _comparar_candidatas_regra_entrada(melhor, par):
+        candidatas.append((regra, esp))
+    if not candidatas:
+        return None
+    if len(candidatas) == 1:
+        return candidatas[0]
+
+    melhor_score = max(esp.score for _regra, esp in candidatas)
+    top = [par for par in candidatas if par[1].score == melhor_score]
+    if len(top) == 1:
+        return top[0]
+
+    melhor = top[0]
+    if trib is not None:
+        for par in top[1:]:
+            if _comparar_candidatas_por_cst(melhor, par, trib):
+                melhor = par
+        return melhor
+
+    for par in top[1:]:
+        if _comparar_candidatas_regra_entrada(melhor, par):
             melhor = par
     return melhor
 
@@ -1117,6 +1205,7 @@ def avaliar_item_entrada_fiscal(
         ncm_nf=base['ncm_nf'],
         contexto=contexto,
         produto_id=item_conf.produto_id,
+        trib=trib,
     )
     if not match:
         base['mensagens'] = [MSG_SEM_REGRA_FISCAL_ENTRADA]

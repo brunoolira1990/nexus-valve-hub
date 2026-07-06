@@ -6,17 +6,17 @@ espera o CST do destinatário. O valor no XML pode incluir o dígito de origem
 (Tabela A) antes da situação tributária (Tabela B, 2 dígitos).
 
 Em operações com ST retida, códigos distintos podem ser fiscalmente equivalentes
-(ex.: 10/30/70/72 na saída → 60 na entrada).
+(ex.: 10/30/70 na saída → 60 na entrada).
 """
 
 from __future__ import annotations
 
 # Situação tributária de saída (fornecedor) → equivalente na entrada (destinatário).
+# CSTs não listados permanecem iguais (00, 20, 40, 41, 50, 51, 60, 90).
 _CST_SAIDA_PARA_ENTRADA: dict[str, str] = {
-    '10': '60',  # tributado + cobrança ST
-    '30': '60',  # isento + ST
-    '70': '60',  # redução BC + ST
-    '72': '60',  # ST retida (legado/variante)
+    '10': '60',  # tributado + ST → recebido com ST retida
+    '30': '60',  # isento + ST → recebido com ST retida
+    '70': '60',  # redução BC + ST → recebido com ST retida
 }
 
 

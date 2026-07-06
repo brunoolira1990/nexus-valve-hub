@@ -49,14 +49,23 @@ def _cnpj() -> str:
 
 class CstIcmsPerspectivaTests(SimpleTestCase):
     CASOS = (
-        ('210', '60', 'estrangeira mercado interno + ST'),
-        ('110', '60', 'estrangeira importada + ST'),
-        ('000', '00', 'nacional tributado integral (origem + CST 00)'),
-        ('060', '60', 'ST retida já na perspectiva de entrada'),
-        ('10', '60', 'CST sem dígito de origem, ST'),
-        ('230', '60', 'estrangeira + isento + ST'),
-        ('00', '00', 'nacional tributado sem conversão'),
-        ('72', '60', 'legado ST'),
+        ('00', '00', 'tributado integralmente'),
+        ('10', '60', 'tributado + ST → ST retida'),
+        ('20', '20', 'redução de BC'),
+        ('30', '60', 'isento + ST → ST retida'),
+        ('40', '40', 'isento'),
+        ('41', '41', 'não tributado'),
+        ('50', '50', 'suspensão'),
+        ('51', '51', 'diferimento'),
+        ('60', '60', 'cobrado anteriormente por ST'),
+        ('70', '60', 'redução BC + ST → ST retida'),
+        ('90', '90', 'outros'),
+        ('210', '60', 'origem 2 + situação 10 → ST retida'),
+        ('110', '60', 'origem 1 + situação 10 → ST retida'),
+        ('000', '00', 'origem 0 + situação 00'),
+        ('060', '60', 'origem 0 + situação 60'),
+        ('230', '60', 'origem 2 + situação 30 → ST retida'),
+        ('', '', 'vazio'),
     )
 
     def test_normalizar_cst_icms_xml_para_entrada(self):
@@ -67,10 +76,20 @@ class CstIcmsPerspectivaTests(SimpleTestCase):
 
 class CstIpiPerspectivaTests(SimpleTestCase):
     CASOS = (
-        ('53', '03', 'não tributado saída'),
-        ('50', '00', 'crédito saída'),
+        ('00', '00', 'recuperação de crédito (já entrada)'),
+        ('01', '01', 'tributada alíquota zero (já entrada)'),
+        ('02', '02', 'isenta (já entrada)'),
+        ('03', '03', 'não tributada (já entrada)'),
+        ('04', '04', 'imune (já entrada)'),
+        ('05', '05', 'suspensão (já entrada)'),
+        ('49', '49', 'outras entradas'),
+        ('50', '00', 'saída tributada → crédito'),
+        ('51', '01', 'saída alíquota zero → entrada'),
+        ('52', '02', 'saída isenta → entrada'),
+        ('53', '03', 'saída não tributada → entrada'),
+        ('54', '04', 'saída imune → entrada'),
+        ('55', '05', 'saída suspensão → entrada'),
         ('99', '49', 'outros'),
-        ('03', '03', 'já entrada'),
         ('', '', 'vazio'),
     )
 
@@ -82,9 +101,33 @@ class CstIpiPerspectivaTests(SimpleTestCase):
 
 class CstPisCofinsPerspectivaTests(SimpleTestCase):
     CASOS = (
-        ('50', '01', 'tributável básico saída'),
-        ('70', '49', 'outras saídas'),
-        ('01', '01', 'já entrada'),
+        ('01', '50', 'tributável básica → direito crédito básica'),
+        ('02', '51', 'alíquota diferenciada'),
+        ('03', '52', 'por unidade'),
+        ('04', '53', 'monofásica'),
+        ('05', '54', 'monofásica com retenção'),
+        ('06', '55', 'ST'),
+        ('07', '56', 'alíquota zero'),
+        ('08', '57', 'sem incidência'),
+        ('09', '58', 'com suspensão'),
+        ('49', '70', 'outras saídas → outras entradas'),
+        ('50', '01', 'direito crédito básica (já entrada)'),
+        ('51', '02', 'alíquota diferenciada (já entrada)'),
+        ('52', '03', 'por unidade (já entrada)'),
+        ('53', '04', 'monofásica (já entrada)'),
+        ('54', '05', 'com retenção (já entrada)'),
+        ('55', '06', 'ST (já entrada)'),
+        ('56', '07', 'alíquota zero (já entrada)'),
+        ('57', '08', 'sem incidência (já entrada)'),
+        ('58', '09', 'com suspensão (já entrada)'),
+        ('70', '49', 'outras entradas (já entrada)'),
+        ('71', '50', 'crédito presumido (já entrada)'),
+        ('72', '50', 'crédito presumido (já entrada)'),
+        ('73', '50', 'crédito presumido (já entrada)'),
+        ('74', '50', 'crédito presumido (já entrada)'),
+        ('75', '50', 'crédito presumido (já entrada)'),
+        ('98', '98', 'outras operações (já entrada)'),
+        ('99', '99', 'outras operações (já entrada)'),
         ('', '', 'vazio'),
     )
 
@@ -454,8 +497,8 @@ class EntradaFiscalMotorTests(TestCase):
         self.assertEqual(r['status'], 'OK')
         self.assertEqual(r['divergencias'], [])
 
-    def test_cst_xml_72_normalizado_casa_com_regra_entrada_60(self):
-        self._set_cst_icms_xml('72')
+    def test_cst_icms_30_normalizado_casa_com_regra_entrada_60(self):
+        self._set_cst_icms_xml('30')
         r = avaliar_item_entrada_fiscal(self.linha, self.ctx, [self._regra_cst_entrada('60')])
         self.assertEqual(r['status'], 'OK')
         self.assertEqual(r['divergencias'], [])
@@ -537,6 +580,110 @@ class EntradaFiscalMotorTests(TestCase):
         r = avaliar_item_entrada_fiscal(self.linha, self.ctx, [self._regra_impostos_federais(cst_ipi='00')])
         self.assertEqual(r['status'], 'ALERTA')
         self.assertTrue(any(d['campo'] == 'cst_ipi' for d in r['divergencias']))
+
+    def _regra_cfop_ncm_base(self, nome: str, **kwargs) -> RegraFiscalEntrada:
+        dados = dict(
+            nome=nome,
+            ativo=True,
+            prioridade=10,
+            cfop='6102',
+            ncm='84818099',
+            severidade=RegraFiscalEntrada.Severidade.INFORMATIVO,
+        )
+        dados.update(kwargs)
+        return RegraFiscalEntrada.objects.create(**dados)
+
+    def test_selecao_por_menor_divergencia_ipi_escolhe_regra_03(self):
+        regra_ipi_00 = self._regra_cfop_ncm_base(
+            'IPI 00',
+            prioridade=100,
+            cst_icms_esperado='00',
+            cst_ipi_esperado='00',
+        )
+        regra_ipi_03 = self._regra_cfop_ncm_base(
+            'IPI 03',
+            prioridade=1,
+            cst_icms_esperado='00',
+            cst_ipi_esperado='03',
+        )
+        self._set_impostos_federais_xml(cst_ipi='53')
+        r = avaliar_item_entrada_fiscal(self.linha, self.ctx, [regra_ipi_00, regra_ipi_03])
+        self.assertEqual(r['regra_id'], regra_ipi_03.id)
+        self.assertEqual(r['status'], 'OK')
+        self.assertEqual(r['divergencias'], [])
+
+    def test_selecao_prefere_regra_com_ipi_vazio_quando_outra_diverge(self):
+        regra_sem_ipi = self._regra_cfop_ncm_base(
+            'Sem IPI',
+            prioridade=1,
+            cst_icms_esperado='00',
+            cst_ipi_esperado='',
+        )
+        regra_ipi_errado = self._regra_cfop_ncm_base(
+            'IPI errado',
+            prioridade=100,
+            cst_icms_esperado='00',
+            cst_ipi_esperado='00',
+        )
+        self._set_impostos_federais_xml(cst_ipi='53')
+        r = avaliar_item_entrada_fiscal(self.linha, self.ctx, [regra_sem_ipi, regra_ipi_errado])
+        self.assertEqual(r['regra_id'], regra_sem_ipi.id)
+        self.assertEqual(r['status'], 'OK')
+
+    def test_selecao_escolhe_regra_com_mais_cst_corretos(self):
+        regra_parcial = self._regra_cfop_ncm_base(
+            'Parcial',
+            prioridade=100,
+            cst_icms_esperado='060',
+            cst_ipi_esperado='00',
+            cst_pis_esperado='99',
+        )
+        regra_completa = self._regra_cfop_ncm_base(
+            'Completa',
+            prioridade=1,
+            cst_icms_esperado='060',
+            cst_ipi_esperado='03',
+            cst_pis_esperado='01',
+        )
+        item_nf = self.linha.item_nfe_historico
+        item_nf.imposto_json = {
+            'ICMS': {'ICMS70': {'CST': '70', 'vBC': '100', 'vICMS': '0'}},
+            'IPI': {'IPINT': {'CST': '53'}},
+            'PIS': {'PISNT': {'CST': '50'}},
+        }
+        item_nf.save(update_fields=['imposto_json'])
+        r = avaliar_item_entrada_fiscal(self.linha, self.ctx, [regra_parcial, regra_completa])
+        self.assertEqual(r['regra_id'], regra_completa.id)
+        self.assertEqual(r['status'], 'OK')
+
+    def test_selecao_regra_unica_comportamento_inalterado(self):
+        regra = self._regra_cfop_ncm_base('Única', cst_icms_esperado='00')
+        r = avaliar_item_entrada_fiscal(self.linha, self.ctx, [regra])
+        self.assertEqual(r['regra_id'], regra.id)
+        self.assertEqual(r['status'], 'OK')
+
+    def test_score_estrutural_maior_vence_independente_de_cst(self):
+        generica = RegraFiscalEntrada.objects.create(
+            nome='CFOP genérico CST ok',
+            ativo=True,
+            prioridade=1,
+            cfop='6102',
+            cst_icms_esperado='00',
+            severidade=RegraFiscalEntrada.Severidade.INFORMATIVO,
+        )
+        especifica = RegraFiscalEntrada.objects.create(
+            nome='NCM específico CST divergente',
+            ativo=True,
+            prioridade=100,
+            cfop='6102',
+            ncm='84818099',
+            cst_icms_esperado='20',
+            severidade=RegraFiscalEntrada.Severidade.INFORMATIVO,
+        )
+        r = avaliar_item_entrada_fiscal(self.linha, self.ctx, [generica, especifica])
+        self.assertEqual(r['regra_id'], especifica.id)
+        self.assertEqual(r['status'], 'ALERTA')
+        self.assertTrue(any(d['campo'] == 'cst_icms' for d in r['divergencias']))
 
     def test_regra_antiga_sem_campos_novos_ok(self):
         regra = RegraFiscalEntrada.objects.create(
