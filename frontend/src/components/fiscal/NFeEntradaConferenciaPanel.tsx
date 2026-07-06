@@ -1189,6 +1189,16 @@ export function NFeEntradaConferenciaPanel({
                     <option value="DIVERGENTE">{labelStatusConferenciaItem('DIVERGENTE')}</option>
                     <option value="IGNORADO">{labelStatusConferenciaItem('IGNORADO')}</option>
                   </select>
+                  {it.status === 'IGNORADO' ? (
+                    <input
+                      className="erp-input h-8 text-xs mt-1"
+                      placeholder="Motivo para ignorar"
+                      value={it.motivo_ignorado || ''}
+                      onChange={(e) =>
+                        updateItem(it.id, { motivo_ignorado: normalizeOperationalInput(e.target.value) })
+                      }
+                    />
+                  ) : null}
                 </td>
               </tr>
             ))}
