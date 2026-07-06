@@ -7,7 +7,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -21,6 +21,7 @@ from apps.fiscal.models import (
     NFeEntradaHistoricaImportada,
 )
 from apps.produtos.models import FamiliaProduto, Produto
+from apps.regras_fiscais.cst_icms_perspectiva import normalizar_cst_icms_xml_para_entrada
 from apps.regras_fiscais.entrada_fiscal import (
     MSG_SEM_REGRA_FISCAL_ENTRADA,
     SCORE_CFOP_ORIGEM,
@@ -41,6 +42,24 @@ from apps.regras_fiscais.models import RegraFiscalEntrada
 def _cnpj() -> str:
     h = int(uuid.uuid4().hex[:12], 16)
     return f'{h % 90 + 10:02d}.{h // 100 % 900 + 100:03d}.{h // 100000 % 900 + 100:03d}/0001-{h % 97:02d}'
+
+
+class CstIcmsPerspectivaTests(SimpleTestCase):
+    CASOS = (
+        ('210', '60', 'estrangeira mercado interno + ST'),
+        ('110', '60', 'estrangeira importada + ST'),
+        ('000', '00', 'nacional tributado integral (origem + CST 00)'),
+        ('060', '60', 'ST retida já na perspectiva de entrada'),
+        ('10', '60', 'CST sem dígito de origem, ST'),
+        ('230', '60', 'estrangeira + isento + ST'),
+        ('00', '00', 'nacional tributado sem conversão'),
+        ('72', '60', 'legado ST'),
+    )
+
+    def test_normalizar_cst_icms_xml_para_entrada(self):
+        for entrada, saida, descricao in self.CASOS:
+            with self.subTest(entrada=entrada, saida=saida, descricao=descricao):
+                self.assertEqual(normalizar_cst_icms_xml_para_entrada(entrada), saida)
 
 
 class EntradaFiscalMotorTests(TestCase):
