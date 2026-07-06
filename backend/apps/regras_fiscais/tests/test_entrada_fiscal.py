@@ -22,7 +22,10 @@ from apps.fiscal.models import (
 )
 from apps.produtos.models import FamiliaProduto, Produto
 from apps.fiscal.services.imposto_item_xml import extrair_tributos_item
-from apps.regras_fiscais.cst_icms_perspectiva import normalizar_cst_icms_xml_para_entrada
+from apps.regras_fiscais.cst_icms_perspectiva import (
+    normalizar_cst_icms_xml_para_entrada,
+    obter_cst_icms_bruto_nf,
+)
 from apps.regras_fiscais.csosn_perspectiva import converter_csosn_para_cst_entrada
 from apps.regras_fiscais.cst_ipi_perspectiva import normalizar_cst_ipi_xml_para_entrada
 from apps.regras_fiscais.cst_pis_cofins_perspectiva import normalizar_cst_pis_cofins_xml_para_entrada
@@ -74,6 +77,23 @@ class CstIcmsPerspectivaTests(SimpleTestCase):
         for entrada, saida, descricao in self.CASOS:
             with self.subTest(entrada=entrada, saida=saida, descricao=descricao):
                 self.assertEqual(normalizar_cst_icms_xml_para_entrada(entrada), saida)
+
+
+class ObterCstIcmsBrutoNfTests(SimpleTestCase):
+    CASOS = (
+        ({'csosn': '101', 'cst_icms': ''}, '00', 'Simples Normal → CST 00'),
+        ({'csosn': '500', 'cst_icms': ''}, '60', 'Simples ST → CST 60'),
+        ({'csosn': '', 'cst_icms': '101'}, '00', 'CSOSN gravado em cst_icms → converte'),
+        ({'csosn': '', 'cst_icms': '210'}, '210', 'CST normal 3 dígitos → não converte como CSOSN'),
+        ({'csosn': '', 'cst_icms': '060'}, '060', 'CST normal → retorna como está'),
+        ({'csosn': '', 'cst_icms': '10'}, '10', 'CST normal 2 dígitos → retorna como está'),
+        ({'csosn': '', 'cst_icms': ''}, '', 'Vazio → vazio'),
+    )
+
+    def test_obter_cst_icms_bruto_nf(self):
+        for trib, saida, descricao in self.CASOS:
+            with self.subTest(trib=trib, saida=saida, descricao=descricao):
+                self.assertEqual(obter_cst_icms_bruto_nf(trib), saida)
 
 
 class CsosnPerspectivaTests(SimpleTestCase):
@@ -194,6 +214,71 @@ class TributosNfExibicaoEntradaTests(SimpleTestCase):
         exib = tributos_nf_para_exibicao_entrada(trib)
         self.assertEqual(exib['cst_icms'], '60')
         self.assertEqual(exib['csosn'], '')
+
+    def test_csosn_101_exibe_icms_00_e_ipi_49(self):
+        trib = extrair_tributos_item(
+            {'CFOP': '1403', 'NCM': '73072200'},
+            {
+                'ICMS': {'ICMSSN101': {'orig': '0', 'CSOSN': '101', 'pCredSN': '2.56'}},
+                'IPI': {'IPITrib': {'CST': '99', 'vBC': '100', 'pIPI': '0'}},
+                'PIS': {'PISOutr': {'CST': '99', 'vBC': '100', 'pPIS': '0'}},
+                'COFINS': {'COFINSOutr': {'CST': '99', 'vBC': '100', 'pCOFINS': '0'}},
+            },
+        )
+        exib = tributos_nf_para_exibicao_entrada(trib)
+        self.assertEqual(exib['cst_icms'], '00')
+        self.assertEqual(exib['csosn'], '')
+        self.assertEqual(exib['cst_ipi'], '49')
+        self.assertEqual(exib['cst_pis'], '99')
+        self.assertEqual(exib['cst_cofins'], '99')
+
+    def test_cst_campo_com_valor_csosn_101_exibe_icms_00(self):
+        trib = extrair_tributos_item(
+            {'CFOP': '1403'},
+            {'ICMS': {'ICMSSN101': {'CST': '101'}}},
+        )
+        exib = tributos_nf_para_exibicao_entrada(trib)
+        self.assertEqual(exib['cst_icms'], '00')
+        self.assertEqual(exib['csosn'], '')
+
+
+class TributosNfConferenciaSerializerTests(TestCase):
+    def setUp(self):
+        self.forn = Fornecedor.objects.create(razao_social='Forn SN', cnpj=_cnpj(), uf='SP')
+        nf = NFeEntradaHistoricaImportada.objects.create(
+            chave_acesso=('35' + '2' * 42)[:44],
+            numero='9002',
+            serie='1',
+            modelo='55',
+            dh_emissao=timezone.make_aware(datetime(2026, 3, 1, 10, 0)),
+            valor_total_nf=Decimal('100'),
+            fornecedor_emitente=self.forn,
+            emit_json={'enderEmit': {'UF': 'SP'}},
+            dest_json={'enderDest': {'UF': 'RJ'}},
+        )
+        item_nf = ItemNFeEntradaHistoricaImportada.objects.create(
+            nf=nf,
+            n_item=1,
+            prod_json={'CFOP': '6102', 'NCM': '84818099', 'qCom': '1', 'uCom': 'PC'},
+            imposto_json={
+                'ICMS': {'ICMSSN101': {'orig': '0', 'CSOSN': '101', 'pCredSN': '2.56'}},
+                'IPI': {'IPITrib': {'CST': '99', 'vBC': '100', 'pIPI': '0'}},
+                'PIS': {'PISOutr': {'CST': '99', 'vBC': '100', 'pPIS': '0'}},
+                'COFINS': {'COFINSOutr': {'CST': '99', 'vBC': '100', 'pCOFINS': '0'}},
+            },
+        )
+        self.conf = NFeEntradaConferencia.objects.create(nf_entrada_historica=nf)
+        self.linha, _ = self.conf.itens.get_or_create(item_nfe_historico=item_nf)
+
+    def test_get_tributos_nf_csosn_101_para_conferencia(self):
+        from apps.fiscal.serializers import ItemNFeEntradaConferenciaSerializer
+
+        trib_api = ItemNFeEntradaConferenciaSerializer().get_tributos_nf(self.linha)
+        self.assertEqual(trib_api['cst_icms'], '00')
+        self.assertEqual(trib_api['csosn'], '')
+        self.assertEqual(trib_api['cst_ipi'], '49')
+        self.assertEqual(trib_api['cst_pis'], '99')
+        self.assertEqual(trib_api['cst_cofins'], '99')
 
 
 class EntradaFiscalMotorTests(TestCase):

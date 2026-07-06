@@ -44,14 +44,23 @@ def normalizar_cst_icms_xml_para_entrada(cst: str) -> str:
     return _CST_SAIDA_PARA_ENTRADA.get(situacao, situacao)
 
 
+# Códigos CSOSN (Simples Nacional) — usados para detectar valor gravado no campo CST por engano.
+_CSOSN_VALIDOS = frozenset({'101', '102', '103', '201', '202', '203', '300', '400', '500', '900'})
+
+
 def obter_cst_icms_bruto_nf(trib: dict[str, Any]) -> str:
-    """CST do XML; se ausente, converte CSOSN (Simples Nacional) para CST equivalente."""
+    """CST do XML; converte CSOSN quando informado em csosn ou erroneamente em cst_icms."""
     from apps.regras_fiscais.csosn_perspectiva import converter_csosn_para_cst_entrada
 
-    cst_nf = str(trib.get('cst_icms') or '').strip()
-    if cst_nf:
-        return cst_nf
-    csosn_nf = str(trib.get('csosn') or '').strip()
+    csosn_nf = str(trib.get('csosn') or trib.get('cst_icms_detalhe') or '').strip()
     if csosn_nf:
-        return converter_csosn_para_cst_entrada(csosn_nf)
-    return ''
+        return converter_csosn_para_cst_entrada(csosn_nf) or csosn_nf
+
+    cst_nf = str(trib.get('cst_icms') or '').strip()
+    if not cst_nf:
+        return ''
+
+    if cst_nf in _CSOSN_VALIDOS:
+        return converter_csosn_para_cst_entrada(cst_nf) or cst_nf
+
+    return cst_nf
