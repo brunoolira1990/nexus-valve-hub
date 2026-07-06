@@ -9,6 +9,7 @@ from typing import Any, TypedDict
 from apps.comercial.pricing import normalize_ncm
 from apps.fiscal.models import ItemNFeEntradaConferencia, NFeEntradaConferencia
 from apps.fiscal.services.imposto_item_xml import extrair_tributos_item
+from apps.regras_fiscais.cst_icms_perspectiva import normalizar_cst_icms_xml_para_entrada
 from apps.regras_fiscais.models import RegraFiscalEntrada
 from apps.regras_fiscais.reforma_tributaria_config import (
     reforma_tributaria_para_snapshot,
@@ -509,12 +510,13 @@ def _comparar_impostos_regra(
         if div:
             divergencias.append(div)
 
+    cst_icms_xml = normalizar_cst_icms_xml_para_entrada(str(trib.get('cst_icms') or ''))
     add(
         _comparar_texto(
             campo='cst_icms',
             label='CST/CSOSN ICMS',
             esperado=regra.cst_icms_esperado,
-            informado=str(trib.get('cst_icms') or ''),
+            informado=cst_icms_xml,
             informado_alt=str(trib.get('csosn') or trib.get('cst_icms_detalhe') or ''),
         ),
     )
