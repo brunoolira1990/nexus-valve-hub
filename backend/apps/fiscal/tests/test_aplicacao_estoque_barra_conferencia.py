@@ -23,13 +23,20 @@ from apps.fiscal.tests.test_conferencia_equivalencia_entrada import _setup_tubo_
 from apps.fiscal.tests.test_aplicacao_estoque_conferencia import _setup_conferencia
 
 
-def _criar_composicao_tres_barras(linha, metros=('5.800', '6.000', '5.950')) -> None:
-    for ordem, m in enumerate(metros, start=1):
-        ItemNFeEntradaConferenciaEquivalencia.objects.create(
-            item_conferencia=linha,
-            ordem=ordem,
-            metros=Decimal(m),
-        )
+def _criar_grupo_composicao(linha, ordem: int, qtd_barras: int, comprimento_m: str) -> None:
+    comp = Decimal(comprimento_m)
+    ItemNFeEntradaConferenciaEquivalencia.objects.create(
+        item_conferencia=linha,
+        ordem=ordem,
+        qtd_barras=qtd_barras,
+        comprimento_unitario_m=comp,
+        metros=Decimal(qtd_barras) * comp,
+    )
+
+
+def _criar_composicao_tres_barras(linha, comprimentos=('5.800', '6.000', '5.950')) -> None:
+    for ordem, comp in enumerate(comprimentos, start=1):
+        _criar_grupo_composicao(linha, ordem, 1, comp)
 
 
 class AplicacaoEstoqueBarraConferenciaTests(TestCase):
@@ -132,9 +139,9 @@ class AplicacaoEstoqueBarraConferenciaTests(TestCase):
         sincronizar_equivalencias_entrada_item(
             linha,
             [
-                {'ordem': 1, 'metros': '5.800'},
-                {'ordem': 2, 'metros': '6.000'},
-                {'ordem': 3, 'metros': '5.950'},
+                {'ordem': 1, 'qtd_barras': 1, 'comprimento_unitario_m': '5.800'},
+                {'ordem': 2, 'qtd_barras': 1, 'comprimento_unitario_m': '6.000'},
+                {'ordem': 3, 'qtd_barras': 1, 'comprimento_unitario_m': '5.950'},
             ],
         )
         aplicar_pos_save_item_conferencia(linha, ctx['conf'])
@@ -171,9 +178,29 @@ class AplicacaoEstoqueBarraConferenciaTests(TestCase):
         )
         self.assertEqual(saldo_barras_produto_metros(ctx['prod'].id), Decimal('0'))
 
+    def test_grupo_dez_barras_cria_dez_estoque_barra(self):
+        ctx = _setup_tubo_conferencia('EB8', qty='60.000', controla_composicao=True)
+        linha = ctx['linha']
+        _criar_grupo_composicao(linha, 1, 10, '6.000')
+        aplicar_pos_save_item_conferencia(linha, ctx['conf'])
+        aplicar_estoque_fisico_conferencia(ctx['conf'], confirmar_alertas=True)
+        barras = EstoqueBarra.objects.filter(item_conferencia=linha)
+        self.assertEqual(barras.count(), 10)
+        self.assertTrue(all(b.saldo_m == Decimal('6.000') for b in barras))
+
+    def test_uma_barra_de_seis_metros(self):
+        ctx = _setup_tubo_conferencia('EB9', qty='6.000', controla_composicao=True)
+        linha = ctx['linha']
+        _criar_grupo_composicao(linha, 1, 1, '6.000')
+        aplicar_pos_save_item_conferencia(linha, ctx['conf'])
+        res = aplicar_estoque_fisico_conferencia(ctx['conf'], confirmar_alertas=True)
+        self.assertTrue(res['aplicado'])
+        barra = EstoqueBarra.objects.get(item_conferencia=linha)
+        self.assertEqual(barra.saldo_m, Decimal('6.000'))
+        self.assertEqual(barra.comprimento_original_m, Decimal('6.000'))
+
     def test_migration_estoque_barra_existe(self):
         from django.apps import apps
 
         model = apps.get_model('fiscal', 'EstoqueBarra')
-        self.assertIsNotNone(model._meta.get_field('equivalencia_entrada'))
-        self.assertIsNotNone(model._meta.get_field('codigo_interno_barra'))
+        self.assertIsNotNone(model._meta.get_field('sequencia_grupo'))

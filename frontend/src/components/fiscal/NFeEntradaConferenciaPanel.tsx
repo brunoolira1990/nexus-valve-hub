@@ -61,7 +61,7 @@ import {
   fatoresEquivalenciaDoProduto,
   itemUsaEquivalenciaEntrada,
   mapItemPayloadConferencia,
-  produtoControlaComposicaoFisica,
+  itemControlaComposicaoFisica,
 } from '@/components/fiscal/EquivalenciaEntradaEditor';
 import type {
   ItemConferenciaNFeEntrada,
@@ -1248,7 +1248,7 @@ export function NFeEntradaConferenciaPanel({
                             className="text-[11px] text-primary hover:underline text-left"
                             onClick={() => {
                               const produto = it.produto_id ? produtosMap.get(it.produto_id) : null;
-                              const modoComp = produtoControlaComposicaoFisica(produto);
+                              const modoComp = itemControlaComposicaoFisica(it, produto);
                               const fatores = fatoresEquivalenciaDoProduto(produto);
                               const col = colunaAlvoEquivalenciaNf(it.unidade_nf);
                               updateItem(it.id, {
@@ -1265,7 +1265,8 @@ export function NFeEntradaConferenciaPanel({
                               });
                             }}
                           >
-                            {produtoControlaComposicaoFisica(
+                            {itemControlaComposicaoFisica(
+                              it,
                               it.produto_id ? produtosMap.get(it.produto_id) : null,
                             )
                               ? 'Informar composição'
@@ -1289,7 +1290,8 @@ export function NFeEntradaConferenciaPanel({
                         fatores={fatoresEquivalenciaDoProduto(
                           it.produto_id ? produtosMap.get(it.produto_id) : null,
                         )}
-                        modoComposicaoFisica={produtoControlaComposicaoFisica(
+                        modoComposicaoFisica={itemControlaComposicaoFisica(
+                          it,
                           it.produto_id ? produtosMap.get(it.produto_id) : null,
                         )}
                         disabled={estoqueJaAplicado}
@@ -1301,7 +1303,8 @@ export function NFeEntradaConferenciaPanel({
                           className="text-[11px] text-primary hover:underline"
                           onClick={() => updateItem(it.id, { equivalencias: [] })}
                         >
-                          Remover {produtoControlaComposicaoFisica(
+                          Remover {itemControlaComposicaoFisica(
+                            it,
                             it.produto_id ? produtosMap.get(it.produto_id) : null,
                           )
                             ? 'composição'

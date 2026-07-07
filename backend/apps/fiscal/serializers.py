@@ -1422,7 +1422,16 @@ class ItemNFeEntradaConferenciaCorridaSplitSerializer(serializers.ModelSerialize
 class ItemNFeEntradaConferenciaEquivalenciaSerializer(serializers.ModelSerializer):
     class Meta:
         model = ItemNFeEntradaConferenciaEquivalencia
-        fields = ('id', 'ordem', 'metros', 'barras', 'peso_kg', 'peso_por_metro_utilizado')
+        fields = (
+            'id',
+            'ordem',
+            'metros',
+            'barras',
+            'qtd_barras',
+            'comprimento_unitario_m',
+            'peso_kg',
+            'peso_por_metro_utilizado',
+        )
         read_only_fields = ('id',)
 
 
@@ -1485,6 +1494,7 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
     quantidade_alocada_atendimento = serializers.SerializerMethodField(read_only=True)
     quantidade_disponivel_atendimento = serializers.SerializerMethodField(read_only=True)
     vinculos_atendimento = serializers.SerializerMethodField(read_only=True)
+    controla_composicao_fisica_efetivo = serializers.SerializerMethodField(read_only=True)
     corridas_split = ItemNFeEntradaConferenciaCorridaSplitSerializer(many=True, required=False)
     equivalencias = ItemNFeEntradaConferenciaEquivalenciaSerializer(many=True, required=False)
     estoque_barras = EstoqueBarraConferenciaSerializer(many=True, read_only=True)
@@ -1538,6 +1548,7 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             'quantidade_alocada_atendimento',
             'quantidade_disponivel_atendimento',
             'vinculos_atendimento',
+            'controla_composicao_fisica_efetivo',
         )
         read_only_fields = (
             'sugestoes_item_pedido',
@@ -1659,6 +1670,14 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
 
     def get_produto_nome(self, obj):
         return obj.produto.descricao if obj.produto_id else ''
+
+    def get_controla_composicao_fisica_efetivo(self, obj: ItemNFeEntradaConferencia) -> bool:
+        if not obj.produto_id:
+            return False
+        produto = obj.produto
+        if produto is None:
+            return False
+        return bool(produto.get_controla_composicao_fisica_efetivo())
 
     def get_produto_sugerido(self, obj: ItemNFeEntradaConferencia):
         from apps.fiscal.correlacao_produto_fornecedor import buscar_produto_sugerido_correlacao

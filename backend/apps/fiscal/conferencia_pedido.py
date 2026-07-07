@@ -745,6 +745,14 @@ def aplicar_pos_save_item_conferencia(
         ).upper()
         item_conf.unidade_estoque_calculada = unidade_destino
 
+        from apps.fiscal.composicao_fisica_conferencia import (
+            MSG_EQUIV_LEGADO_REMOVIDA,
+            limpar_equivalencias_legado_se_composicao_fisica,
+        )
+
+        if limpar_equivalencias_legado_se_composicao_fisica(item_conf):
+            alertas.append(MSG_EQUIV_LEGADO_REMOVIDA)
+
         from apps.fiscal.rastreabilidade_conferencia import item_usa_equivalencia_entrada
 
         if item_usa_equivalencia_entrada(item_conf):

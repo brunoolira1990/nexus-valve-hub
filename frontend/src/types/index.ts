@@ -2333,6 +2333,8 @@ export interface EquivalenciaEntradaConferencia {
   ordem: number;
   metros?: string;
   barras?: string;
+  qtd_barras?: number | string;
+  comprimento_unitario_m?: string;
   peso_kg?: string;
   peso_por_metro_utilizado?: string;
 }
@@ -2371,6 +2373,7 @@ export interface ItemConferenciaNFeEntrada {
   corridas_split?: CorridaSplitConferencia[];
   equivalencias?: EquivalenciaEntradaConferencia[];
   estoque_barras?: EstoqueBarraConferencia[];
+  controla_composicao_fisica_efetivo?: boolean;
   unidade_nf: string;
   quantidade_nf: number;
   valor_unitario_nf: number;

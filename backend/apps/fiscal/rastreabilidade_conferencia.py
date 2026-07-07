@@ -222,6 +222,12 @@ def sincronizar_equivalencias_entrada_item(
     equivalencias_data: list[dict] | None,
 ) -> None:
     """Upsert de sub-linhas de equivalência por ordem."""
+    from apps.fiscal.composicao_fisica_conferencia import (
+        item_controla_composicao_fisica,
+        normalizar_linha_composicao_payload,
+        total_linha_composicao_m,
+    )
+
     if item.status == ItemNFeEntradaConferencia.Status.IGNORADO:
         if equivalencias_data is not None:
             item.equivalencias.all().delete()
@@ -247,12 +253,32 @@ def sincronizar_equivalencias_entrada_item(
                 return None
             return _dec(raw)
 
+        def _nullable_int(key: str):
+            raw = row.get(key)
+            if raw in (None, ''):
+                return None
+            return int(_dec(raw))
+
         defaults = {
             'metros': _nullable_dec('metros'),
             'barras': _nullable_dec('barras'),
+            'qtd_barras': _nullable_int('qtd_barras'),
+            'comprimento_unitario_m': _nullable_dec('comprimento_unitario_m'),
             'peso_kg': _nullable_dec('peso_kg'),
             'peso_por_metro_utilizado': _nullable_dec('peso_por_metro_utilizado'),
         }
+        if item_controla_composicao_fisica(item):
+            normalized = normalizar_linha_composicao_payload(
+                {**row, **{k: v for k, v in defaults.items() if v is not None}},
+            )
+            qtd = normalized.get('qtd_barras')
+            comp_raw = normalized.get('comprimento_unitario_m')
+            defaults['qtd_barras'] = int(qtd) if qtd else None
+            defaults['comprimento_unitario_m'] = _dec(comp_raw) if comp_raw not in (None, '') else None
+            total = total_linha_composicao_m(normalized)
+            defaults['metros'] = total if total > 0 else None
+            defaults['barras'] = None
+            defaults['peso_kg'] = None
         ItemNFeEntradaConferenciaEquivalencia.objects.update_or_create(
             item_conferencia=item,
             ordem=ordem,

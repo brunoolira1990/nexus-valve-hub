@@ -1036,6 +1036,8 @@ class ItemNFeEntradaConferenciaEquivalencia(models.Model):
     ordem = models.PositiveSmallIntegerField(default=1)
     metros = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
     barras = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
+    qtd_barras = models.PositiveIntegerField(null=True, blank=True)
+    comprimento_unitario_m = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
     peso_kg = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
     peso_por_metro_utilizado = models.DecimalField(max_digits=14, decimal_places=6, null=True, blank=True)
 
@@ -1071,11 +1073,12 @@ class EstoqueBarra(models.Model):
         on_delete=models.CASCADE,
         related_name='estoque_barras',
     )
-    equivalencia_entrada = models.OneToOneField(
+    equivalencia_entrada = models.ForeignKey(
         'ItemNFeEntradaConferenciaEquivalencia',
         on_delete=models.PROTECT,
-        related_name='estoque_barra',
+        related_name='estoque_barras',
     )
+    sequencia_grupo = models.PositiveSmallIntegerField(default=1)
     nfe_entrada_historica = models.ForeignKey(
         'NFeEntradaHistoricaImportada',
         null=True,
@@ -1109,10 +1112,16 @@ class EstoqueBarra(models.Model):
     atualizado_em = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['item_conferencia_id', 'equivalencia_entrada__ordem', 'id']
+        ordering = ['item_conferencia_id', 'equivalencia_entrada__ordem', 'sequencia_grupo', 'id']
         indexes = [
             models.Index(fields=['produto', 'status']),
             models.Index(fields=['item_conferencia']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['equivalencia_entrada', 'sequencia_grupo'],
+                name='uniq_estoque_barra_equiv_seq',
+            ),
         ]
 
     def __str__(self) -> str:

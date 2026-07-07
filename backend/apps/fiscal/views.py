@@ -2321,6 +2321,7 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
                     queryset=ItemNFeEntradaConferencia.objects.select_related(
                         'item_nfe_historico',
                         'produto',
+                        'produto__familia',
                         'item_pedido_compra__produto',
                         'item_pedido_compra__pedido',
                     ).prefetch_related(
@@ -2372,6 +2373,32 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
             return response.Response({'detail': msg, 'migrations_pendentes': True}, status=500)
         return None
 
+    def _normalizar_equivalencias_legado_conferencia(self, conferencia: NFeEntradaConferencia) -> None:
+        from apps.fiscal.composicao_fisica_conferencia import (
+            MSG_EQUIV_LEGADO_REMOVIDA,
+            limpar_equivalencias_legado_se_composicao_fisica,
+        )
+
+        for item_obj in conferencia.itens.select_related('produto', 'produto__familia').all():
+            if not limpar_equivalencias_legado_se_composicao_fisica(item_obj):
+                continue
+            alertas = list(item_obj.alertas or [])
+            if MSG_EQUIV_LEGADO_REMOVIDA not in alertas:
+                alertas.append(MSG_EQUIV_LEGADO_REMOVIDA)
+            item_obj.alertas = alertas
+            item_obj.save(
+                update_fields=[
+                    'alertas',
+                    'quantidade_estoque_calculada',
+                    'metros_total',
+                    'barras_total',
+                    'peso_total_kg',
+                    'toneladas_total',
+                    'conversao_estoque_auditoria',
+                    'atualizado_em',
+                ],
+            )
+
     @action(detail=True, methods=['get', 'post'], url_path='conferencia')
     def conferencia(self, request, pk=None):
         if request.method == 'POST':
@@ -2379,6 +2406,8 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
         try:
             nf = self.get_queryset().prefetch_related('itens').get(pk=pk)
             conferencia = self._get_or_build_conferencia(nf)
+            conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
+            self._normalizar_equivalencias_legado_conferencia(conferencia)
             conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
             return response.Response(NFeEntradaConferenciaSerializer(conferencia).data)
         except Exception as exc:  # noqa: BLE001
@@ -2495,7 +2524,12 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
             aplicar_pos_save_item_conferencia(item_obj, conferencia)
         conferencia.refresh_from_db()
         itens = list(
-            conferencia.itens.select_related('item_nfe_historico', 'produto', 'item_pedido_compra').all(),
+            conferencia.itens.select_related(
+                'item_nfe_historico',
+                'produto',
+                'produto__familia',
+                'item_pedido_compra',
+            ).all(),
         )
         pendencias, bloqueio_fiscal = validar_preparar_estoque_conferencia(conferencia, itens)
         if pendencias:

@@ -118,11 +118,13 @@ class ConferenciaComposicaoFisicaTests(TestCase):
     def test_nf_m_tres_barras_soma_ok_grava_estoque_em_m(self):
         ctx = _setup_tubo_conferencia('CF1', qty='17.750', controla_composicao=True)
         linha = ctx['linha']
-        for ordem, metros in enumerate(['5.800', '6.000', '5.950'], start=1):
+        for ordem, comp in enumerate(['5.800', '6.000', '5.950'], start=1):
             ItemNFeEntradaConferenciaEquivalencia.objects.create(
                 item_conferencia=linha,
                 ordem=ordem,
-                metros=Decimal(metros),
+                qtd_barras=1,
+                comprimento_unitario_m=Decimal(comp),
+                metros=Decimal(comp),
                 barras=None,
                 peso_kg=None,
             )
@@ -140,10 +142,10 @@ class ConferenciaComposicaoFisicaTests(TestCase):
         ctx = _setup_tubo_conferencia('CF2', qty='17.750', controla_composicao=True)
         linha = ctx['linha']
         ItemNFeEntradaConferenciaEquivalencia.objects.create(
-            item_conferencia=linha, ordem=1, metros=Decimal('5.800'),
+            item_conferencia=linha, ordem=1, qtd_barras=1, comprimento_unitario_m=Decimal('5.800'), metros=Decimal('5.800'),
         )
         ItemNFeEntradaConferenciaEquivalencia.objects.create(
-            item_conferencia=linha, ordem=2, metros=Decimal('6.000'),
+            item_conferencia=linha, ordem=2, qtd_barras=1, comprimento_unitario_m=Decimal('6.000'), metros=Decimal('6.000'),
         )
         aplicar_pos_save_item_conferencia(linha, ctx['conf'])
         erros = validar_equivalencias_quantidade(linha)
@@ -151,12 +153,35 @@ class ConferenciaComposicaoFisicaTests(TestCase):
         res = aplicar_estoque_fisico_conferencia(ctx['conf'], confirmar_alertas=True)
         self.assertFalse(res['aplicado'])
 
+    def test_equivalencia_legado_removida_quando_composicao_ativa(self):
+        ctx = _setup_tubo_conferencia('CFL', qty='12.000', controla_composicao=True)
+        linha = ctx['linha']
+        ItemNFeEntradaConferenciaEquivalencia.objects.create(
+            item_conferencia=linha,
+            ordem=1,
+            metros=Decimal('0'),
+            barras=Decimal('2'),
+        )
+        aplicar_pos_save_item_conferencia(linha, ctx['conf'])
+        linha.refresh_from_db()
+        self.assertEqual(linha.equivalencias.count(), 0)
+        self.assertTrue(
+            any('Equivalência antiga' in (a or '') for a in (linha.alertas or [])),
+        )
+
+    def test_serializer_expoe_controla_composicao_fisica_efetivo(self):
+        ctx = _setup_tubo_conferencia('CFS', controla_composicao=True)
+        linha = ctx['linha']
+        aplicar_pos_save_item_conferencia(linha, ctx['conf'])
+        data = ItemNFeEntradaConferenciaSerializer(linha).data
+        self.assertTrue(data['controla_composicao_fisica_efetivo'])
+
     def test_composicao_nao_usa_br_x_comprimento_padrao(self):
         ctx = _setup_tubo_conferencia('CF3', qty='6.000', controla_composicao=True)
         linha = ctx['linha']
-        payload = [{'ordem': 1, 'metros': '', 'barras': '1', 'peso_kg': ''}]
+        payload = [{'ordem': 1, 'qtd_barras': 1, 'comprimento_unitario_m': '', 'metros': ''}]
         erros = validar_composicao_fisica_equivalencias(linha, equivalencias_payload=payload)
-        self.assertTrue(any('comprimento real em metros' in e for e in erros))
+        self.assertTrue(any('comprimento unitário' in e.lower() for e in erros))
 
     def test_nf_kg_converte_e_valida_composicao(self):
         # 5.775 kg / 0.325 = 17.769 M (arredondado 3 casas)
@@ -167,9 +192,9 @@ class ConferenciaComposicaoFisicaTests(TestCase):
         self.assertEqual(meta['regra_conversao'], REGRA_KG_PARA_M_PESO_POR_METRO)
         self.assertEqual(alvo, Decimal('17.769'))
         payload = [
-            {'ordem': 1, 'metros': '5.800', 'barras': '', 'peso_kg': ''},
-            {'ordem': 2, 'metros': '6.000', 'barras': '', 'peso_kg': ''},
-            {'ordem': 3, 'metros': '5.969', 'barras': '', 'peso_kg': ''},
+            {'ordem': 1, 'qtd_barras': 1, 'comprimento_unitario_m': '5.800'},
+            {'ordem': 2, 'qtd_barras': 1, 'comprimento_unitario_m': '6.000'},
+            {'ordem': 3, 'qtd_barras': 1, 'comprimento_unitario_m': '5.969'},
         ]
         erros = validar_equivalencias_quantidade(linha, equivalencias_payload=payload)
         self.assertEqual(erros, [], erros)
@@ -289,9 +314,9 @@ class ConferenciaEquivalenciaEntradaAPITests(TestCase):
                     'id': self.linha.id,
                     'status': self.linha.status,
                     'equivalencias': [
-                        {'ordem': 1, 'metros': '5.800', 'barras': '', 'peso_kg': ''},
-                        {'ordem': 2, 'metros': '6.000', 'barras': '', 'peso_kg': ''},
-                        {'ordem': 3, 'metros': '5.950', 'barras': '', 'peso_kg': ''},
+                        {'ordem': 1, 'qtd_barras': 1, 'comprimento_unitario_m': '5.800'},
+                        {'ordem': 2, 'qtd_barras': 1, 'comprimento_unitario_m': '6.000'},
+                        {'ordem': 3, 'qtd_barras': 1, 'comprimento_unitario_m': '5.950'},
                     ],
                 },
             ],
