@@ -20,7 +20,9 @@ LinhaRastreabilidade = namedtuple(
 
 
 def _dec(v) -> Decimal:
-    return Decimal(str(v)) if v is not None else Decimal('0')
+    if v is None or v == '':
+        return Decimal('0')
+    return Decimal(str(v))
 
 
 def quantidade_alvo_item(item: ItemNFeEntradaConferencia) -> Decimal:
@@ -64,10 +66,101 @@ def _coluna_alvo_equivalencia_nf(unidade_nf: str) -> str:
     return 'metros'
 
 
+def _label_unidade_nf(unidade_nf: str) -> str:
+    u = (unidade_nf or '').strip().upper()
+    if u == 'M':
+        return 'metros'
+    if u == 'BR':
+        return 'barras'
+    if u in ('KG', 'TON'):
+        return 'peso (kg)'
+    return u or 'unidade NF'
+
+
 def _valor_coluna_equivalencia(row: dict | ItemNFeEntradaConferenciaEquivalencia, coluna: str) -> Decimal:
     if isinstance(row, dict):
         return _dec(row.get(coluna))
     return _dec(getattr(row, coluna, None))
+
+
+def _fatores_equivalencia_item(
+    item: ItemNFeEntradaConferencia,
+) -> tuple[Decimal | None, Decimal | None]:
+    produto = item.produto
+    if not produto:
+        return None, None
+    ppm = produto.get_peso_por_metro_kg_efetivo()
+    comp = produto.get_comprimento_padrao_barra_m_efetivo()
+    peso_por_metro = _dec(ppm) if ppm else None
+    comprimento_barra = _dec(comp) if comp else None
+    if peso_por_metro is not None and peso_por_metro <= 0:
+        peso_por_metro = None
+    if comprimento_barra is not None and comprimento_barra <= 0:
+        comprimento_barra = None
+    return peso_por_metro, comprimento_barra
+
+
+def _metros_efetivos_sub_linha(
+    row: dict | ItemNFeEntradaConferenciaEquivalencia,
+    *,
+    peso_por_metro: Decimal | None,
+    comprimento_barra: Decimal | None,
+) -> Decimal | None:
+    """Resolve metros equivalentes a partir do campo preenchido (M, BR ou kg)."""
+    metros = _valor_coluna_equivalencia(row, 'metros')
+    barras = _valor_coluna_equivalencia(row, 'barras')
+    peso = _valor_coluna_equivalencia(row, 'peso_kg')
+    if metros > 0:
+        return metros
+    if barras > 0 and comprimento_barra:
+        return barras * comprimento_barra
+    if peso > 0 and peso_por_metro:
+        return peso / peso_por_metro
+    return None
+
+
+def _valor_sub_linha_na_unidade_nf(
+    row: dict | ItemNFeEntradaConferenciaEquivalencia,
+    unidade_nf: str,
+    *,
+    peso_por_metro: Decimal | None,
+    comprimento_barra: Decimal | None,
+) -> Decimal | None:
+    """Converte a sub-linha para a unidade da NF antes de somar."""
+    metros_efetivos = _metros_efetivos_sub_linha(
+        row,
+        peso_por_metro=peso_por_metro,
+        comprimento_barra=comprimento_barra,
+    )
+    u = (unidade_nf or '').strip().upper()
+    if metros_efetivos is not None:
+        if u == 'M':
+            return metros_efetivos
+        if u == 'BR' and comprimento_barra:
+            return metros_efetivos / comprimento_barra
+        if u in ('KG', 'TON') and peso_por_metro:
+            return metros_efetivos * peso_por_metro
+    coluna = _coluna_alvo_equivalencia_nf(unidade_nf)
+    valor_direto = _valor_coluna_equivalencia(row, coluna)
+    return valor_direto if valor_direto > 0 else None
+
+
+def _soma_equivalencias_na_unidade_nf(
+    item: ItemNFeEntradaConferencia,
+    rows: list[dict | ItemNFeEntradaConferenciaEquivalencia],
+) -> Decimal:
+    peso_por_metro, comprimento_barra = _fatores_equivalencia_item(item)
+    total = Decimal('0')
+    for row in rows:
+        valor = _valor_sub_linha_na_unidade_nf(
+            row,
+            item.unidade_nf,
+            peso_por_metro=peso_por_metro,
+            comprimento_barra=comprimento_barra,
+        )
+        if valor is not None:
+            total += valor
+    return total
 
 
 def validar_equivalencias_quantidade(
@@ -79,17 +172,15 @@ def validar_equivalencias_quantidade(
         if not equivalencias_payload:
             return []
         erros: list[str] = []
-        coluna = _coluna_alvo_equivalencia_nf(item.unidade_nf)
+        rows = [row for row in equivalencias_payload if isinstance(row, dict)]
         alvo = _dec(item.quantidade_nf)
-        soma = sum(_valor_coluna_equivalencia(row, coluna) for row in equivalencias_payload if isinstance(row, dict))
-        label = {'metros': 'metros', 'barras': 'barras', 'peso_kg': 'peso (kg)'}[coluna]
+        soma = _soma_equivalencias_na_unidade_nf(item, rows)
+        label = _label_unidade_nf(item.unidade_nf)
         if abs(soma - alvo) > TOLERANCIA_QUANTIDADE_SPLIT:
             erros.append(
                 f'A soma de {label} das equivalências ({soma:.3f}) deve ser igual à quantidade da NF ({alvo:.3f}).',
             )
-        for idx, row in enumerate(equivalencias_payload, start=1):
-            if not isinstance(row, dict):
-                continue
+        for idx, row in enumerate(rows, start=1):
             ordem = int(row.get('ordem') or idx)
             metros = _valor_coluna_equivalencia(row, 'metros')
             barras = _valor_coluna_equivalencia(row, 'barras')
@@ -102,10 +193,9 @@ def validar_equivalencias_quantidade(
     if not equivs:
         return []
     erros: list[str] = []
-    coluna = _coluna_alvo_equivalencia_nf(item.unidade_nf)
     alvo = _dec(item.quantidade_nf)
-    soma = sum(_valor_coluna_equivalencia(e, coluna) for e in equivs)
-    label = {'metros': 'metros', 'barras': 'barras', 'peso_kg': 'peso (kg)'}[coluna]
+    soma = _soma_equivalencias_na_unidade_nf(item, equivs)
+    label = _label_unidade_nf(item.unidade_nf)
     if abs(soma - alvo) > TOLERANCIA_QUANTIDADE_SPLIT:
         erros.append(
             f'A soma de {label} das equivalências ({soma:.3f}) deve ser igual à quantidade da NF ({alvo:.3f}).',

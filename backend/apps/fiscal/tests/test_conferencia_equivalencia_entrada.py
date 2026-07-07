@@ -159,6 +159,32 @@ class ConferenciaEquivalenciaEntradaTests(TestCase):
         linha.refresh_from_db()
         self.assertEqual(linha.equivalencias.count(), 0)
 
+    def test_validacao_converte_br_para_metros_na_nf_m(self):
+        ctx = _setup_tubo_conferencia('EQ6')
+        linha = ctx['linha']
+        payload = [{'ordem': 1, 'metros': '', 'barras': '1', 'peso_kg': ''}]
+        erros = validar_equivalencias_quantidade(linha, equivalencias_payload=payload)
+        self.assertEqual(erros, [])
+
+    def test_validacao_converte_kg_para_metros_na_nf_m(self):
+        ctx = _setup_tubo_conferencia('EQ7')
+        linha = ctx['linha']
+        # 6 m * 0.325 kg/m = 1.95 kg
+        payload = [{'ordem': 1, 'metros': '', 'barras': '', 'peso_kg': '1.95'}]
+        erros = validar_equivalencias_quantidade(linha, equivalencias_payload=payload)
+        self.assertEqual(erros, [])
+
+    def test_validacao_soma_unidades_mistas_na_nf_m(self):
+        ctx = _setup_tubo_conferencia('EQ8')
+        linha = ctx['linha']
+        payload = [
+            {'ordem': 1, 'metros': '2', 'barras': '', 'peso_kg': ''},
+            {'ordem': 2, 'metros': '', 'barras': '0.5', 'peso_kg': ''},
+            {'ordem': 3, 'metros': '', 'barras': '', 'peso_kg': '0.325'},
+        ]
+        erros = validar_equivalencias_quantidade(linha, equivalencias_payload=payload)
+        self.assertEqual(erros, [])
+
     def test_remover_equivalencias_volta_conversao_fixa(self):
         ctx = _setup_tubo_conferencia('EQ5')
         linha = ctx['linha']

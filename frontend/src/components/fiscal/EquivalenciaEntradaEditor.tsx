@@ -78,11 +78,57 @@ function sugerirCamposVazios(
   return patch;
 }
 
-const LABEL_COLUNA: Record<'metros' | 'barras' | 'peso_kg', string> = {
-  metros: 'metros',
-  barras: 'barras',
-  peso_kg: 'peso (kg)',
-};
+function labelUnidadeNf(unidadeNf: string): string {
+  const u = (unidadeNf || '').trim().toUpperCase();
+  if (u === 'M') return 'metros';
+  if (u === 'BR') return 'barras';
+  if (u === 'KG' || u === 'TON') return 'peso (kg)';
+  return u || 'unidade NF';
+}
+
+/** Metros equivalentes a partir do campo preenchido na sub-linha (M, BR ou kg). */
+function metrosEfetivosSubLinha(
+  row: EquivalenciaEntradaConferencia,
+  fatores: FatoresEquivalenciaEntrada,
+): number | null {
+  const metros = parseQty(row.metros);
+  const barras = parseQty(row.barras);
+  const peso = parseQty(row.peso_kg);
+  const ppm = fatores.pesoPorMetroKg;
+  const comp = fatores.comprimentoPadraoBarraM;
+  if (metros > 0) return metros;
+  if (barras > 0 && comp) return barras * comp;
+  if (peso > 0 && ppm) return peso / ppm;
+  return null;
+}
+
+/** Converte sub-linha para a unidade da NF (mesma regra do backend). */
+export function valorSubLinhaNaUnidadeNf(
+  row: EquivalenciaEntradaConferencia,
+  unidadeNf: string,
+  fatores: FatoresEquivalenciaEntrada,
+): number | null {
+  const metrosEfetivos = metrosEfetivosSubLinha(row, fatores);
+  const u = (unidadeNf || '').trim().toUpperCase();
+  const ppm = fatores.pesoPorMetroKg;
+  const comp = fatores.comprimentoPadraoBarraM;
+  if (metrosEfetivos != null) {
+    if (u === 'M') return metrosEfetivos;
+    if (u === 'BR' && comp) return metrosEfetivos / comp;
+    if ((u === 'KG' || u === 'TON') && ppm) return metrosEfetivos * ppm;
+  }
+  const col = colunaAlvoEquivalenciaNf(unidadeNf);
+  const direto = parseQty(row[col]);
+  return direto > 0 ? direto : null;
+}
+
+export function totalEquivalenciaNaUnidadeNf(
+  equivalencias: EquivalenciaEntradaConferencia[],
+  unidadeNf: string,
+  fatores: FatoresEquivalenciaEntrada,
+): number {
+  return equivalencias.reduce((acc, row) => acc + (valorSubLinhaNaUnidadeNf(row, unidadeNf, fatores) ?? 0), 0);
+}
 
 export function EquivalenciaEntradaEditor({
   qtyAlvo,
@@ -93,7 +139,7 @@ export function EquivalenciaEntradaEditor({
   onChange,
   disabled = false,
 }: EquivalenciaEntradaEditorProps) {
-  const totalAlocado = equivalencias.reduce((acc, row) => acc + parseQty(row[colunaAlvo]), 0);
+  const totalAlocado = totalEquivalenciaNaUnidadeNf(equivalencias, unidadeAlvo, fatores);
   const diff = Math.round((totalAlocado - qtyAlvo) * 1000) / 1000;
   const somaOk = Math.abs(diff) < 0.001;
 
@@ -141,7 +187,7 @@ export function EquivalenciaEntradaEditor({
             : 'text-red-800 bg-red-50 border-red-200'
         }`}
       >
-        Total {LABEL_COLUNA[colunaAlvo]}: {formatQty(totalAlocado)} / {formatQty(qtyAlvo)} {unidadeAlvo}
+        Total {labelUnidadeNf(unidadeAlvo)}: {formatQty(totalAlocado)} / {formatQty(qtyAlvo)} {unidadeAlvo}
         {!somaOk ? ` (diferença ${diff > 0 ? '+' : ''}${formatQty(diff)})` : ''}
       </div>
       <div className="space-y-1">
