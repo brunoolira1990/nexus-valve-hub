@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from datetime import date
 
-from django.db.models import Q, QuerySet
+from django.db.models import Case, CharField, F, IntegerField, Q, QuerySet, Value, When
+from django.db.models.functions import Cast, Coalesce, Lower
 from django.http import QueryDict
 
 from apps.fiscal.models import NFeEntradaHistoricaImportada
@@ -110,3 +111,57 @@ def aplicar_filtro_status_conferencia(
             conferencia__estoque_aplicado_em__isnull=True,
         )
     return qs.filter(conferencia__estoque_aplicado_em__isnull=False)
+
+
+def aplicar_ordering_listagem_entrada_historica(
+    qs: QuerySet[NFeEntradaHistoricaImportada],
+    ordering_param: str | None = None,
+) -> QuerySet[NFeEntradaHistoricaImportada]:
+    """
+    Ordenação operacional da base NF-e Entrada importada.
+
+    Padrão (fechamento mensal):
+    1. Sem data_entrada na conferência (precisam regularização)
+    2. data_entrada crescente (conferência — não importação/emissão)
+    3. Fornecedor A-Z
+    4. Número NF
+    5. id
+    """
+    from nexus_erp.list_mixins import aplicar_ordering
+
+    key = (ordering_param or '').strip()
+    if key:
+        return aplicar_ordering(
+            qs,
+            key,
+            {
+                'dh_emissao': 'dh_emissao',
+                'numero': 'numero',
+                'importado_em': 'importado_em',
+                'data_entrada': 'conferencia__data_entrada',
+            },
+            'conferencia__data_entrada',
+        )
+
+    return (
+        qs.annotate(
+            _sem_data_entrada=Case(
+                When(conferencia__data_entrada__isnull=True, then=Value(0)),
+                default=Value(1),
+                output_field=IntegerField(),
+            ),
+            _fornecedor_nome_ord=Lower(
+                Coalesce(
+                    F('fornecedor_emitente__razao_social'),
+                    Cast(F('emit_json__xNome'), CharField()),
+                    Value('', output_field=CharField()),
+                ),
+            ),
+        ).order_by(
+            '_sem_data_entrada',
+            'conferencia__data_entrada',
+            '_fornecedor_nome_ord',
+            'numero',
+            'id',
+        )
+    )

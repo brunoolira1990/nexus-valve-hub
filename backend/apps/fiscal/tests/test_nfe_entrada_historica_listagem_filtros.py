@@ -169,3 +169,109 @@ class NFeEntradaHistoricaListagemFiltrosTest(TestCase):
         )
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual(self._ids(resp), {self.nf_sem_conf.id, self.nf_finalizada.id})
+
+    def test_ordenacao_padrao_sem_data_entrada_primeiro(self) -> None:
+        """Notas sem data_entrada na conferência aparecem antes das demais."""
+        resp = self.client.get(self.url)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        ids = [row['id'] for row in resp.data['results']]
+        self.assertEqual(ids[0], self.nf_sem_conf.id)
+
+    def test_ordenacao_padrao_por_data_entrada_conferencia_nao_importacao(self) -> None:
+        """
+        NF importada/emissão recente com data_entrada antiga na conferência
+        deve ordenar pela data de entrada, não pela importação.
+        """
+        nf_junho_recente = NFeEntradaHistoricaImportada.objects.create(
+            chave_acesso='5' * 44,
+            numero='500',
+            serie='1',
+            modelo='55',
+            dh_emissao=_dh(date(2026, 7, 7)),
+            tp_amb='1',
+            cstat='100',
+            valor_total_nf=Decimal('500'),
+            fornecedor_emitente=self.forn_b,
+            empresa_destinataria=self.emp,
+        )
+        NFeEntradaConferencia.objects.create(
+            nf_entrada_historica=nf_junho_recente,
+            status=NFeEntradaConferencia.Status.PENDENTE,
+            data_entrada=date(2026, 6, 30),
+        )
+
+        resp = self.client.get(self.url)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        ids = [row['id'] for row in resp.data['results']]
+
+        self.assertEqual(ids[0], self.nf_sem_conf.id)
+        idx_pendente = ids.index(self.nf_pendente.id)
+        idx_finalizada = ids.index(self.nf_finalizada.id)
+        idx_junho = ids.index(nf_junho_recente.id)
+        self.assertLess(idx_pendente, idx_finalizada)
+        self.assertLess(idx_finalizada, idx_junho)
+
+    def test_ordenacao_mesma_data_entrada_fornecedor_e_numero(self) -> None:
+        nf_alpha_10 = NFeEntradaHistoricaImportada.objects.create(
+            chave_acesso='6' * 44,
+            numero='010',
+            serie='1',
+            modelo='55',
+            dh_emissao=_dh(date(2026, 8, 1)),
+            tp_amb='1',
+            cstat='100',
+            valor_total_nf=Decimal('10'),
+            fornecedor_emitente=self.forn_a,
+            empresa_destinataria=self.emp,
+        )
+        NFeEntradaConferencia.objects.create(
+            nf_entrada_historica=nf_alpha_10,
+            status=NFeEntradaConferencia.Status.PENDENTE,
+            data_entrada=date(2026, 6, 15),
+        )
+        nf_alpha_20 = NFeEntradaHistoricaImportada.objects.create(
+            chave_acesso='7' * 44,
+            numero='020',
+            serie='1',
+            modelo='55',
+            dh_emissao=_dh(date(2026, 8, 2)),
+            tp_amb='1',
+            cstat='100',
+            valor_total_nf=Decimal('20'),
+            fornecedor_emitente=self.forn_a,
+            empresa_destinataria=self.emp,
+        )
+        NFeEntradaConferencia.objects.create(
+            nf_entrada_historica=nf_alpha_20,
+            status=NFeEntradaConferencia.Status.PENDENTE,
+            data_entrada=date(2026, 6, 15),
+        )
+        nf_beta_5 = NFeEntradaHistoricaImportada.objects.create(
+            chave_acesso='8' * 44,
+            numero='005',
+            serie='1',
+            modelo='55',
+            dh_emissao=_dh(date(2026, 8, 3)),
+            tp_amb='1',
+            cstat='100',
+            valor_total_nf=Decimal('5'),
+            fornecedor_emitente=self.forn_b,
+            empresa_destinataria=self.emp,
+        )
+        NFeEntradaConferencia.objects.create(
+            nf_entrada_historica=nf_beta_5,
+            status=NFeEntradaConferencia.Status.PENDENTE,
+            data_entrada=date(2026, 6, 15),
+        )
+
+        resp = self.client.get(self.url)
+        ids = [row['id'] for row in resp.data['results']]
+        grupo = [nf_alpha_10.id, nf_alpha_20.id, nf_beta_5.id]
+        posicoes = [ids.index(i) for i in grupo]
+        self.assertEqual(posicoes, sorted(posicoes))
+        self.assertLess(posicoes[0], posicoes[1])
+        self.assertLess(posicoes[1], posicoes[2])
+        self.assertEqual(
+            [ids[i] for i in posicoes],
+            [nf_alpha_10.id, nf_alpha_20.id, nf_beta_5.id],
+        )

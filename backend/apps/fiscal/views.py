@@ -94,6 +94,7 @@ from .nfe_entrada_historica_listagem import (
     aplicar_busca_textual as aplicar_busca_textual_nf_entrada_hist,
     aplicar_filtro_periodo as aplicar_filtro_periodo_nf_entrada_hist,
     aplicar_filtro_status_conferencia as aplicar_filtro_status_conferencia_nf_entrada_hist,
+    aplicar_ordering_listagem_entrada_historica,
     intervalo_datas_listagem as intervalo_datas_listagem_nf_entrada_hist,
     normalizar_tipo_data as normalizar_tipo_data_nf_entrada_hist,
 )
@@ -2091,7 +2092,11 @@ class NFeSaidaHistoricaImportadaViewSet(viewsets.ReadOnlyModelViewSet):
 class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewsets.ReadOnlyModelViewSet):
     """NF-e de entrada importadas por XML (origem externa, base fiscal/gerencial)."""
 
-    queryset = NFeEntradaHistoricaImportada.objects.select_related('empresa_destinataria', 'fornecedor_emitente').all()
+    queryset = NFeEntradaHistoricaImportada.objects.select_related(
+        'empresa_destinataria',
+        'fornecedor_emitente',
+        'conferencia',
+    ).all()
     permission_classes = [IsAuthenticated]
     pagination_class = NexusPageNumberPagination
 
@@ -2136,12 +2141,9 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
                 qs = qs.filter(fornecedor_emitente_id=fid)
             if str(p.get('apenas_compras_destinatario_erp', '')).lower() in {'1', 'true', 'sim'}:
                 qs = queryset_compras_nf_entrada_historica(qs)
-            qs = qs.select_related('conferencia')
-        return aplicar_ordering(
+        return aplicar_ordering_listagem_entrada_historica(
             qs,
             self.request.query_params.get('ordering'),
-            {'dh_emissao': 'dh_emissao', 'numero': 'numero', 'importado_em': 'importado_em'},
-            '-importado_em',
         )
 
     def get_serializer_class(self):
