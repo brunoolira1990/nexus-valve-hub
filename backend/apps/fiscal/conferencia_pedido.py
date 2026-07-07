@@ -784,6 +784,11 @@ def aplicar_pos_save_item_conferencia(
             exceto_linha_id=item_conf.id,
         )
 
+    if item_conf.produto_id:
+        from apps.fiscal.correlacao_produto_fornecedor import persistir_correlacao_produto_fornecedor_conferencia
+
+        persistir_correlacao_produto_fornecedor_conferencia(item_conf, conferencia)
+
     return item_conf
 
 

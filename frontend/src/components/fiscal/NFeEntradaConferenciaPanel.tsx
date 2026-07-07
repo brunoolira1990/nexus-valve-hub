@@ -94,6 +94,9 @@ export function NFeEntradaConferenciaPanel({
   const [obsAplicar, setObsAplicar] = useState('');
   const [modalAplicarErro, setModalAplicarErro] = useState('');
   const [gerarCpOpen, setGerarCpOpen] = useState(false);
+  const [sugestoesCorrelacaoIgnoradas, setSugestoesCorrelacaoIgnoradas] = useState<Set<number>>(
+    () => new Set(),
+  );
 
   const produtosMap = produtoCache;
   const estoqueJaAplicado = Boolean(dados?.estoque_aplicado_em);
@@ -1086,6 +1089,41 @@ export function NFeEntradaConferenciaPanel({
                 </td>
                 <td className="min-w-[260px]">
                   <div className="space-y-1 [&_input]:mt-0 [&_input]:h-8 [&_input]:text-xs [&_.erp-btn-outline]:text-[10px] [&_.erp-btn-outline]:py-0.5 [&_.erp-btn-outline]:mt-1">
+                    {it.produto_sugerido && !it.produto_id && !sugestoesCorrelacaoIgnoradas.has(it.id) ? (
+                      <div className="rounded border border-amber-300/80 bg-amber-50 px-2 py-1.5 text-[10px] text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100">
+                        <div className="font-medium">Sugestão (histórico fornecedor)</div>
+                        <div className="truncate" title={`${it.produto_sugerido.codigo} · ${it.produto_sugerido.descricao}`}>
+                          {it.produto_sugerido.codigo} · {it.produto_sugerido.descricao}
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          <button
+                            type="button"
+                            className="erp-btn-outline erp-btn-sm border-amber-400 text-[10px]"
+                            onClick={() => {
+                              const sug = it.produto_sugerido!;
+                              const stub = {
+                                id: sug.id,
+                                codigo_completo: sug.codigo,
+                                descricao: sug.descricao,
+                              } as Produto;
+                              setProdutoCache((m) => new Map(m).set(sug.id, stub));
+                              updateItem(it.id, { produto_id: sug.id });
+                            }}
+                          >
+                            Usar
+                          </button>
+                          <button
+                            type="button"
+                            className="erp-btn-outline erp-btn-sm text-[10px]"
+                            onClick={() => {
+                              setSugestoesCorrelacaoIgnoradas((prev) => new Set(prev).add(it.id));
+                            }}
+                          >
+                            Ignorar
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                     {(it.sugestoes_produto || []).length > 0 && !it.produto_id ? (
                       <div className="flex flex-wrap gap-1">
                         {(it.sugestoes_produto || []).slice(0, 3).map((s) => (

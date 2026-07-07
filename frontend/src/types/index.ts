@@ -2328,6 +2328,13 @@ export interface ItemConferenciaNFeEntrada {
   item_nfe_historico: number;
   produto_id?: number | null;
   produto_nome?: string;
+  produto_sugerido?: {
+    id: number;
+    codigo: string;
+    descricao: string;
+    codigo_fornecedor?: string;
+    descricao_fornecedor?: string;
+  } | null;
   item_pedido_compra_id?: number | null;
   status: StatusItemConferenciaNFeEntrada;
   motivo_ignorado?: string;

@@ -1429,6 +1429,7 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
         required=False,
     )
     produto_nome = serializers.SerializerMethodField(read_only=True)
+    produto_sugerido = serializers.SerializerMethodField(read_only=True)
     sugestoes_produto = serializers.SerializerMethodField(read_only=True)
     sugestoes_item_pedido = serializers.SerializerMethodField(read_only=True)
     dados_nf = serializers.SerializerMethodField(read_only=True)
@@ -1454,6 +1455,7 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             'item_nfe_historico',
             'produto_id',
             'produto_nome',
+            'produto_sugerido',
             'item_pedido_compra_id',
             'item_pedido_resumo',
             'pedido_numero',
@@ -1613,6 +1615,11 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
 
     def get_produto_nome(self, obj):
         return obj.produto.descricao if obj.produto_id else ''
+
+    def get_produto_sugerido(self, obj: ItemNFeEntradaConferencia):
+        from apps.fiscal.correlacao_produto_fornecedor import buscar_produto_sugerido_correlacao
+
+        return buscar_produto_sugerido_correlacao(obj)
 
     def get_dados_nf(self, obj):
         return _extract_prod_fields(obj.item_nfe_historico.prod_json or {})
