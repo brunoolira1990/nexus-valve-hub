@@ -248,6 +248,23 @@ class FamiliaProdutoSerializer(serializers.ModelSerializer):
         msg = validar_tipo_dimensional_x_regra(tipo_dimensional=td, tipo_regra_codigo=tipo)
         if msg:
             raise serializers.ValidationError({'tipo_dimensional': msg})
+        if attrs.get('controla_composicao_fisica'):
+            unidade_est = (
+                (attrs.get('unidade_estoque_padrao') or getattr(inst, 'unidade_estoque_padrao', '') or '')
+                .strip()
+                .upper()
+            )
+            if unidade_est and unidade_est != 'M':
+                raise serializers.ValidationError(
+                    {
+                        'unidade_estoque_padrao': (
+                            'Produtos com composição física devem ter unidade de estoque M (metros).'
+                        ),
+                    },
+                )
+            if not unidade_est:
+                attrs['unidade_estoque_padrao'] = 'M'
+            attrs['usa_conversao_dimensional'] = True
         return attrs
 
     def get_ncm_padrao_info(self, obj: FamiliaProduto):
@@ -459,6 +476,7 @@ class ProdutoSerializer(serializers.ModelSerializer):
             'peso_por_chapa_kg',
             'densidade',
             'usa_conversao_dimensional',
+            'controla_composicao_fisica',
             'od_mm',
             'espessura_mm',
             'comprimento_mm',
@@ -539,11 +557,13 @@ class ProdutoSerializer(serializers.ModelSerializer):
             attrs['codigo_completo'] = codigo_in
             if attrs.get('descricao'):
                 attrs['descricao'] = normalizar_descricao_produto(attrs['descricao'])
+            self._validar_composicao_fisica_produto(attrs, inst)
             return attrs
 
         if modo == Produto.ModoCodigo.LEGADO:
             if attrs.get('descricao'):
                 attrs['descricao'] = normalizar_descricao_produto(attrs['descricao'])
+            self._validar_composicao_fisica_produto(attrs, inst)
             return attrs
 
         # INTERNO
@@ -737,7 +757,41 @@ class ProdutoSerializer(serializers.ModelSerializer):
         if eff_dim:
             attrs['dimensao_descricao'] = normalizar_descricao_produto(eff_dim)
 
+        self._validar_composicao_fisica_produto(attrs, inst)
         return attrs
+
+    @staticmethod
+    def _validar_composicao_fisica_produto(attrs: dict, inst) -> None:
+        controla = attrs.get('controla_composicao_fisica')
+        if controla is None and inst is not None:
+            controla = inst.controla_composicao_fisica
+        if not controla and inst is not None and inst.familia_id and inst.familia.controla_composicao_fisica:
+            if 'controla_composicao_fisica' not in attrs:
+                controla = True
+        if not controla:
+            return
+        unidade_est = (
+            (attrs.get('unidade_estoque') or getattr(inst, 'unidade_estoque', '') or '')
+            .strip()
+            .upper()
+        )
+        if not unidade_est and inst and inst.familia_id:
+            unidade_est = (
+                (inst.familia.unidade_estoque_padrao or inst.familia.unidade_padrao or '')
+                .strip()
+                .upper()
+            )
+        if unidade_est and unidade_est != 'M':
+            raise serializers.ValidationError(
+                {
+                    'unidade_estoque': (
+                        'Produtos com composição física devem ter unidade de estoque M (metros).'
+                    ),
+                },
+            )
+        if not (attrs.get('unidade_estoque') or getattr(inst, 'unidade_estoque', '')).strip():
+            attrs['unidade_estoque'] = 'M'
+        attrs['usa_conversao_dimensional'] = True
 
     def create(self, validated_data):
         try:
@@ -792,6 +846,7 @@ class ProdutoSerializer(serializers.ModelSerializer):
         data['comprimento_padrao_barra_m_efetivo'] = instance.get_comprimento_padrao_barra_m_efetivo()
         data['unidades_venda_permitidas_efetivas'] = instance.get_unidades_venda_permitidas_efetivas()
         data['usa_conversao_dimensional_efetivo'] = instance.get_usa_conversao_dimensional_efetivo()
+        data['controla_composicao_fisica_efetivo'] = instance.get_controla_composicao_fisica_efetivo()
         data['alertas'] = (
             ['Este produto usa NCM diferente do padrão da família.']
             if (instance.ncm_especifico or '').strip()

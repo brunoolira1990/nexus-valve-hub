@@ -168,6 +168,14 @@ def validar_equivalencias_quantidade(
     equivalencias_payload: list[dict] | None = None,
 ) -> list[str]:
     """Erros se equivalências existem e soma diverge da quantidade NF na unidade correspondente."""
+    from apps.fiscal.composicao_fisica_conferencia import (
+        item_controla_composicao_fisica,
+        validar_composicao_fisica_equivalencias,
+    )
+
+    if item_controla_composicao_fisica(item):
+        return validar_composicao_fisica_equivalencias(item, equivalencias_payload)
+
     if equivalencias_payload is not None:
         if not equivalencias_payload:
             return []

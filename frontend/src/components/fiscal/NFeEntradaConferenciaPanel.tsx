@@ -61,6 +61,7 @@ import {
   fatoresEquivalenciaDoProduto,
   itemUsaEquivalenciaEntrada,
   mapItemPayloadConferencia,
+  produtoControlaComposicaoFisica,
 } from '@/components/fiscal/EquivalenciaEntradaEditor';
 import type {
   ItemConferenciaNFeEntrada,
@@ -1246,13 +1247,29 @@ export function NFeEntradaConferenciaPanel({
                             type="button"
                             className="text-[11px] text-primary hover:underline text-left"
                             onClick={() => {
+                              const produto = it.produto_id ? produtosMap.get(it.produto_id) : null;
+                              const modoComp = produtoControlaComposicaoFisica(produto);
+                              const fatores = fatoresEquivalenciaDoProduto(produto);
                               const col = colunaAlvoEquivalenciaNf(it.unidade_nf);
                               updateItem(it.id, {
-                                equivalencias: criarEquivalenciasIniciais(Number(it.quantidade_nf || 0), col),
+                                equivalencias: criarEquivalenciasIniciais(
+                                  Number(it.quantidade_nf || 0),
+                                  col,
+                                  {
+                                    modoComposicaoFisica: modoComp,
+                                    comprimentoPadraoBarraM: fatores.comprimentoPadraoBarraM,
+                                    unidadeNf: it.unidade_nf,
+                                    fatores,
+                                  },
+                                ),
                               });
                             }}
                           >
-                            Informar equivalência
+                            {produtoControlaComposicaoFisica(
+                              it.produto_id ? produtosMap.get(it.produto_id) : null,
+                            )
+                              ? 'Informar composição'
+                              : 'Informar equivalência'}
                           </button>
                         </div>
                       ) : null}
@@ -1272,6 +1289,9 @@ export function NFeEntradaConferenciaPanel({
                         fatores={fatoresEquivalenciaDoProduto(
                           it.produto_id ? produtosMap.get(it.produto_id) : null,
                         )}
+                        modoComposicaoFisica={produtoControlaComposicaoFisica(
+                          it.produto_id ? produtosMap.get(it.produto_id) : null,
+                        )}
                         disabled={estoqueJaAplicado}
                         onChange={(equivalencias) => updateItem(it.id, { equivalencias })}
                       />
@@ -1281,7 +1301,11 @@ export function NFeEntradaConferenciaPanel({
                           className="text-[11px] text-primary hover:underline"
                           onClick={() => updateItem(it.id, { equivalencias: [] })}
                         >
-                          Remover equivalência
+                          Remover {produtoControlaComposicaoFisica(
+                            it.produto_id ? produtosMap.get(it.produto_id) : null,
+                          )
+                            ? 'composição'
+                            : 'equivalência'}
                         </button>
                       ) : null}
                       {Number(it.quantidade_estoque_calculada || 0) > 0 ? (
@@ -1291,6 +1315,25 @@ export function NFeEntradaConferenciaPanel({
                           {Number(it.peso_total_kg || 0) > 0
                             ? ` · ${Number(it.peso_total_kg).toFixed(3)} kg`
                             : ''}
+                        </div>
+                      ) : null}
+                      {(it.estoque_barras?.length ?? 0) > 0 ? (
+                        <div className="mt-1 space-y-0.5 rounded border border-border/60 bg-muted/30 p-1.5">
+                          <div className="text-[10px] font-medium text-muted-foreground">
+                            Barras geradas ({it.estoque_barras!.length})
+                          </div>
+                          {it.estoque_barras!.map((barra) => (
+                            <div key={barra.id} className="text-[10px] text-muted-foreground">
+                              <span className="font-mono">{barra.codigo_interno_barra}</span>
+                              {' · '}
+                              {Number(barra.comprimento_original_m).toFixed(3)} M orig.
+                              {' · saldo '}
+                              {Number(barra.saldo_m).toFixed(3)} M
+                              {' · '}
+                              {barra.status}
+                              {barra.nf_numero ? ` · NF ${barra.nf_numero}` : ''}
+                            </div>
+                          ))}
                         </div>
                       ) : null}
                     </div>

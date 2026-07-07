@@ -35,7 +35,8 @@ from apps.fiscal.rastreabilidade_conferencia import (
     validar_equivalencias_quantidade,
     validar_splits_quantidade,
 )
-from apps.fiscal.pedido_compra_baixa import aplicar_baixa_pedido_compra_conferencia
+from apps.fiscal.aplicacao_estoque_barra_conferencia import aplicar_estoque_barras_composicao_conferencia
+from apps.fiscal.composicao_fisica_conferencia import item_controla_composicao_fisica
 from apps.fiscal.nfe_entrada_data_entrada import (
     datetime_operacional_data_entrada,
     resolver_data_entrada_conferencia,
@@ -57,6 +58,7 @@ class ItemAplicadoEstoqueDict(TypedDict, total=False):
     saldo_anterior: str
     saldo_novo: str
     split_ordem: int
+    estoque_barras: list[dict[str, Any]]
 
 
 class ItemIgnoradoEstoqueDict(TypedDict):
@@ -398,7 +400,7 @@ def _montar_resultado_plano(
             'item_nfe_historico',
             'produto',
             'conferencia__nf_entrada_historica__fornecedor_emitente',
-        ).prefetch_related('corridas_split', 'equivalencias').all(),
+        ).prefetch_related('corridas_split', 'equivalencias', 'estoque_barras').all(),
     )
     for item in itens:
         aplicar_pos_save_item_conferencia(item, conferencia)
@@ -488,7 +490,7 @@ def aplicar_estoque_fisico_conferencia(
         conferencia.itens.select_related(
             'item_nfe_historico',
             'produto',
-        ).prefetch_related('corridas_split', 'equivalencias').all(),
+        ).prefetch_related('corridas_split', 'equivalencias', 'estoque_barras').all(),
     )
     planos = _avaliar_contexto_itens(conferencia, itens)
     aplicaveis = [
@@ -585,6 +587,20 @@ def aplicar_estoque_fisico_conferencia(
             if linha.split is not None:
                 entry['split_ordem'] = linha.ordem
             resultado['itens_aplicados'].append(entry)
+
+        if item_controla_composicao_fisica(item):
+            barras = aplicar_estoque_barras_composicao_conferencia(
+                item,
+                fornecedor_id=fornecedor_id,
+                nfe_entrada_historica_id=nf.id,
+                nf_numero=nf_ref,
+                conferencia_id=conferencia.id,
+            )
+            if barras and resultado['itens_aplicados']:
+                for entry in reversed(resultado['itens_aplicados']):
+                    if entry.get('item_conferencia_id') == item.id:
+                        entry['estoque_barras'] = barras
+                        break
 
         item.estoque_aplicado_em = momento_operacional
         item.quantidade_estoque_aplicada = total_aplicado

@@ -109,6 +109,7 @@ const emptyForm = (): FormState => ({
   peso_por_chapa_kg: null,
   densidade: null,
   usa_conversao_dimensional: false,
+  controla_composicao_fisica: false,
   preco_custo: 0,
   preco_venda: 0,
   estoque_minimo: 0,
@@ -233,6 +234,7 @@ const emptyFamiliaQuick = () => ({
   separador_base_medidas: '.',
   ativo: true,
   usa_conversao_dimensional: false,
+  controla_composicao_fisica: false,
   tipo_fisico: '' as TipoFisicoProduto | '',
   tipo_controle_unidade: '' as TipoControleUnidade | '',
   unidade_estoque_padrao: '',
@@ -779,6 +781,7 @@ const Produtos = () => {
       separador_base_medidas: familia.separador_base_medidas || '.',
       ativo: familia.ativo,
       usa_conversao_dimensional: !!familia.usa_conversao_dimensional,
+      controla_composicao_fisica: !!familia.controla_composicao_fisica,
       tipo_fisico: (familia.tipo_fisico || '') as TipoFisicoProduto | '',
       tipo_controle_unidade: (familia.tipo_controle_unidade || '') as TipoControleUnidade | '',
       unidade_estoque_padrao: familia.unidade_estoque_padrao ?? '',
@@ -847,6 +850,7 @@ const Produtos = () => {
       peso_por_chapa_kg: e.peso_por_chapa_kg ?? null,
       densidade: e.densidade ?? null,
       usa_conversao_dimensional: !!e.usa_conversao_dimensional,
+      controla_composicao_fisica: !!e.controla_composicao_fisica,
       preco_custo: e.preco_custo,
       preco_venda: e.preco_venda,
       estoque_minimo: e.estoque_minimo,
@@ -957,6 +961,7 @@ const Produtos = () => {
       peso_por_chapa_kg: form.peso_por_chapa_kg,
       densidade: form.densidade,
       usa_conversao_dimensional: !!form.usa_conversao_dimensional,
+      controla_composicao_fisica: !!form.controla_composicao_fisica,
       preco_custo: form.preco_custo,
       preco_venda: form.preco_venda,
       estoque_minimo: form.estoque_minimo,
@@ -1153,6 +1158,7 @@ const Produtos = () => {
         pressao_base: '',
         norma_base: '',
         usa_conversao_dimensional: famQuick.usa_conversao_dimensional,
+        controla_composicao_fisica: famQuick.controla_composicao_fisica,
         tipo_fisico: (famQuick.tipo_fisico || 'PECA') as TipoFisicoProduto,
         tipo_controle_unidade: (famQuick.tipo_controle_unidade || 'PECA') as TipoControleUnidade,
         unidade_estoque_padrao: famQuick.unidade_estoque_padrao || '',
@@ -2021,6 +2027,14 @@ const Produtos = () => {
         <ConversaoMedidasBlock
           usaConversao={!!form.usa_conversao_dimensional}
           onUsaConversaoChange={(v) => f('usa_conversao_dimensional', v)}
+          controlaComposicaoFisica={!!form.controla_composicao_fisica}
+          onControlaComposicaoFisicaChange={(v) => {
+            f('controla_composicao_fisica', v);
+            if (v) {
+              f('usa_conversao_dimensional', true);
+              f('unidade_estoque', 'M');
+            }
+          }}
           tipoFisicoEfetivo={tipoFisicoEfetivo}
           tipoFisicoProduto={form.tipo_fisico || ''}
           onTipoFisicoProdutoChange={(v) => f('tipo_fisico', v)}
@@ -2355,6 +2369,15 @@ const Produtos = () => {
         <ConversaoMedidasBlock
           usaConversao={!!famQuick.usa_conversao_dimensional}
           onUsaConversaoChange={(v) => setFamQuick((q) => ({ ...q, usa_conversao_dimensional: v }))}
+          controlaComposicaoFisica={!!famQuick.controla_composicao_fisica}
+          onControlaComposicaoFisicaChange={(v) =>
+            setFamQuick((q) => ({
+              ...q,
+              controla_composicao_fisica: v,
+              usa_conversao_dimensional: v ? true : q.usa_conversao_dimensional,
+              unidade_estoque_padrao: v ? 'M' : q.unidade_estoque_padrao,
+            }))
+          }
           tipoFisicoEfetivo={(famQuick.tipo_fisico || 'PECA') as string}
           tipoFisicoProduto={famQuick.tipo_fisico || ''}
           onTipoFisicoProdutoChange={(v) => setFamQuick((q) => ({ ...q, tipo_fisico: v as TipoFisicoProduto | '' }))}

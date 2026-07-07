@@ -70,6 +70,7 @@ from .models import (
     ItemNFeEntradaConferenciaCorridaSplit,
     ItemNFeEntradaConferenciaEquivalencia,
     ItemNFeEntradaHistoricaImportada,
+    EstoqueBarra,
     ItemNFeSaida,
     ItemNFeSaidaHistoricaImportada,
     NFeEntradaConferencia,
@@ -1425,6 +1426,34 @@ class ItemNFeEntradaConferenciaEquivalenciaSerializer(serializers.ModelSerialize
         read_only_fields = ('id',)
 
 
+class EstoqueBarraConferenciaSerializer(serializers.ModelSerializer):
+    nf_numero = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = EstoqueBarra
+        fields = (
+            'id',
+            'codigo_interno_barra',
+            'comprimento_original_m',
+            'saldo_m',
+            'unidade_base',
+            'status',
+            'origem',
+            'nf_numero',
+            'metadata',
+            'criado_em',
+        )
+        read_only_fields = fields
+
+    def get_nf_numero(self, obj) -> str:
+        meta = obj.metadata or {}
+        if meta.get('nf_numero'):
+            return str(meta['nf_numero'])
+        if obj.nfe_entrada_historica_id:
+            return obj.nfe_entrada_historica.numero or ''
+        return ''
+
+
 class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
     produto_id = serializers.PrimaryKeyRelatedField(
         queryset=Produto.objects.all(),
@@ -1458,6 +1487,7 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
     vinculos_atendimento = serializers.SerializerMethodField(read_only=True)
     corridas_split = ItemNFeEntradaConferenciaCorridaSplitSerializer(many=True, required=False)
     equivalencias = ItemNFeEntradaConferenciaEquivalenciaSerializer(many=True, required=False)
+    estoque_barras = EstoqueBarraConferenciaSerializer(many=True, read_only=True)
 
     class Meta:
         model = ItemNFeEntradaConferencia
@@ -1482,6 +1512,7 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             'lote',
             'corridas_split',
             'equivalencias',
+            'estoque_barras',
             'rastreabilidade_observacao',
             'unidade_nf',
             'quantidade_nf',
@@ -1493,6 +1524,7 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             'metros_total',
             'barras_total',
             'toneladas_total',
+            'conversao_estoque_auditoria',
             'divergencias',
             'alertas',
             'snapshot_produto',

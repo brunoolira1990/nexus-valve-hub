@@ -14,6 +14,8 @@ export type EquivalenciaEntradaEditorProps = {
   fatores: FatoresEquivalenciaEntrada;
   onChange: (equivalencias: EquivalenciaEntradaConferencia[]) => void;
   disabled?: boolean;
+  /** Modo composição física: 1 linha = 1 barra, soma apenas metros reais. */
+  modoComposicaoFisica?: boolean;
 };
 
 function parseQty(value: string | undefined | null): number {
@@ -30,11 +32,69 @@ function campoVazio(value: string | undefined | null): boolean {
   return value == null || String(value).trim() === '';
 }
 
+function labelUnidadeNf(unidadeNf: string): string {
+  const u = (unidadeNf || '').trim().toUpperCase();
+  if (u === 'M') return 'metros';
+  if (u === 'BR') return 'barras';
+  if (u === 'KG' || u === 'TON') return 'peso (kg)';
+  return u || 'unidade NF';
+}
+
+/** Alvo em metros para validação da composição (NF em M ou KG convertido). */
+export function qtyAlvoComposicaoMetros(
+  quantidadeNf: number,
+  unidadeNf: string,
+  fatores: FatoresEquivalenciaEntrada,
+): { metros: number | null; erro: string | null; hint: string | null } {
+  const u = (unidadeNf || '').trim().toUpperCase();
+  if (u === 'M') {
+    return { metros: quantidadeNf, erro: null, hint: null };
+  }
+  if (u === 'KG' || u === 'TON') {
+    const ppm = fatores.pesoPorMetroKg;
+    if (!ppm) {
+      return {
+        metros: null,
+        erro: 'Informe peso por metro no cadastro do produto/família para converter KG em metros.',
+        hint: null,
+      };
+    }
+    const kg = u === 'TON' ? quantidadeNf * 1000 : quantidadeNf;
+    const metros = Math.round((kg / ppm) * 1000) / 1000;
+    return {
+      metros,
+      erro: null,
+      hint: `${formatQty(quantidadeNf)} ${u} ≈ ${formatQty(metros)} M (÷ ${ppm} kg/m)`,
+    };
+  }
+  return {
+    metros: null,
+    erro: `Composição física ainda não suporta NF em ${u || 'unidade indefinida'}.`,
+    hint: null,
+  };
+}
+
+export function totalMetrosComposicao(equivalencias: EquivalenciaEntradaConferencia[]): number {
+  return equivalencias.reduce((acc, row) => acc + parseQty(row.metros), 0);
+}
+
 function sugerirCamposVazios(
   row: EquivalenciaEntradaConferencia,
   campoEditado: 'metros' | 'barras' | 'peso_kg',
   fatores: FatoresEquivalenciaEntrada,
+  modoComposicaoFisica: boolean,
 ): Partial<EquivalenciaEntradaConferencia> {
+  if (modoComposicaoFisica) {
+    const patch: Partial<EquivalenciaEntradaConferencia> = {};
+    const metros = parseQty(row.metros);
+    const ppm = fatores.pesoPorMetroKg;
+    if (campoEditado === 'metros' && metros > 0 && campoVazio(row.peso_kg) && ppm) {
+      patch.peso_kg = formatQty(metros * ppm);
+      patch.peso_por_metro_utilizado = formatQty(ppm, 6);
+    }
+    return patch;
+  }
+
   const patch: Partial<EquivalenciaEntradaConferencia> = {};
   const metros = parseQty(row.metros);
   const barras = parseQty(row.barras);
@@ -78,20 +138,15 @@ function sugerirCamposVazios(
   return patch;
 }
 
-function labelUnidadeNf(unidadeNf: string): string {
-  const u = (unidadeNf || '').trim().toUpperCase();
-  if (u === 'M') return 'metros';
-  if (u === 'BR') return 'barras';
-  if (u === 'KG' || u === 'TON') return 'peso (kg)';
-  return u || 'unidade NF';
-}
-
-/** Metros equivalentes a partir do campo preenchido na sub-linha (M, BR ou kg). */
 function metrosEfetivosSubLinha(
   row: EquivalenciaEntradaConferencia,
   fatores: FatoresEquivalenciaEntrada,
+  modoComposicaoFisica: boolean,
 ): number | null {
   const metros = parseQty(row.metros);
+  if (modoComposicaoFisica) {
+    return metros > 0 ? metros : null;
+  }
   const barras = parseQty(row.barras);
   const peso = parseQty(row.peso_kg);
   const ppm = fatores.pesoPorMetroKg;
@@ -102,13 +157,17 @@ function metrosEfetivosSubLinha(
   return null;
 }
 
-/** Converte sub-linha para a unidade da NF (mesma regra do backend). */
 export function valorSubLinhaNaUnidadeNf(
   row: EquivalenciaEntradaConferencia,
   unidadeNf: string,
   fatores: FatoresEquivalenciaEntrada,
+  modoComposicaoFisica = false,
 ): number | null {
-  const metrosEfetivos = metrosEfetivosSubLinha(row, fatores);
+  if (modoComposicaoFisica) {
+    const m = parseQty(row.metros);
+    return m > 0 ? m : null;
+  }
+  const metrosEfetivos = metrosEfetivosSubLinha(row, fatores, false);
   const u = (unidadeNf || '').trim().toUpperCase();
   const ppm = fatores.pesoPorMetroKg;
   const comp = fatores.comprimentoPadraoBarraM;
@@ -126,8 +185,15 @@ export function totalEquivalenciaNaUnidadeNf(
   equivalencias: EquivalenciaEntradaConferencia[],
   unidadeNf: string,
   fatores: FatoresEquivalenciaEntrada,
+  modoComposicaoFisica = false,
 ): number {
-  return equivalencias.reduce((acc, row) => acc + (valorSubLinhaNaUnidadeNf(row, unidadeNf, fatores) ?? 0), 0);
+  if (modoComposicaoFisica) {
+    return totalMetrosComposicao(equivalencias);
+  }
+  return equivalencias.reduce(
+    (acc, row) => acc + (valorSubLinhaNaUnidadeNf(row, unidadeNf, fatores, false) ?? 0),
+    0,
+  );
 }
 
 export function EquivalenciaEntradaEditor({
@@ -138,10 +204,18 @@ export function EquivalenciaEntradaEditor({
   fatores,
   onChange,
   disabled = false,
+  modoComposicaoFisica = false,
 }: EquivalenciaEntradaEditorProps) {
-  const totalAlocado = totalEquivalenciaNaUnidadeNf(equivalencias, unidadeAlvo, fatores);
-  const diff = Math.round((totalAlocado - qtyAlvo) * 1000) / 1000;
-  const somaOk = Math.abs(diff) < 0.001;
+  const alvoComp = modoComposicaoFisica
+    ? qtyAlvoComposicaoMetros(qtyAlvo, unidadeAlvo, fatores)
+    : { metros: qtyAlvo, erro: null, hint: null };
+  const qtyAlvoMetros = alvoComp.metros ?? 0;
+  const totalAlocado = modoComposicaoFisica
+    ? totalMetrosComposicao(equivalencias)
+    : totalEquivalenciaNaUnidadeNf(equivalencias, unidadeAlvo, fatores, false);
+  const alvoExibicao = modoComposicaoFisica ? qtyAlvoMetros : qtyAlvo;
+  const diff = Math.round((totalAlocado - alvoExibicao) * 1000) / 1000;
+  const somaOk = !alvoComp.erro && Math.abs(diff) < 0.001;
 
   const updateRow = (index: number, patch: Partial<EquivalenciaEntradaConferencia>) => {
     const next = equivalencias.map((row, i) => (i === index ? { ...row, ...patch } : row));
@@ -155,7 +229,7 @@ export function EquivalenciaEntradaEditor({
   ) => {
     const row = equivalencias[index];
     const atualizado = { ...row, [campo]: value };
-    const sugestoes = sugerirCamposVazios(atualizado, campo, fatores);
+    const sugestoes = sugerirCamposVazios(atualizado, campo, fatores, modoComposicaoFisica);
     updateRow(index, { [campo]: value, ...sugestoes });
   };
 
@@ -167,12 +241,20 @@ export function EquivalenciaEntradaEditor({
   };
 
   const addRow = () => {
-    const restante = Math.max(0, Math.round((qtyAlvo - totalAlocado) * 1000) / 1000);
+    const restante = Math.max(0, Math.round((alvoExibicao - totalAlocado) * 1000) / 1000);
+    const sugestaoMetros =
+      modoComposicaoFisica && fatores.comprimentoPadraoBarraM && restante > 0
+        ? Math.min(restante, fatores.comprimentoPadraoBarraM)
+        : restante;
     const nova: EquivalenciaEntradaConferencia = {
       ordem: equivalencias.length + 1,
-      metros: colunaAlvo === 'metros' ? formatQty(restante > 0 ? restante : 0) : '',
-      barras: colunaAlvo === 'barras' ? formatQty(restante > 0 ? restante : 0) : '',
-      peso_kg: colunaAlvo === 'peso_kg' ? formatQty(restante > 0 ? restante : 0) : '',
+      metros: modoComposicaoFisica
+        ? formatQty(sugestaoMetros > 0 ? sugestaoMetros : 0)
+        : colunaAlvo === 'metros'
+          ? formatQty(restante > 0 ? restante : 0)
+          : '',
+      barras: !modoComposicaoFisica && colunaAlvo === 'barras' ? formatQty(restante > 0 ? restante : 0) : '',
+      peso_kg: !modoComposicaoFisica && colunaAlvo === 'peso_kg' ? formatQty(restante > 0 ? restante : 0) : '',
       peso_por_metro_utilizado: '',
     };
     onChange([...equivalencias, nova]);
@@ -180,55 +262,94 @@ export function EquivalenciaEntradaEditor({
 
   return (
     <div className="space-y-2 min-w-[16rem]">
-      <div
-        className={`text-[11px] rounded px-2 py-1 border ${
-          somaOk
-            ? 'text-green-800 bg-green-50 border-green-200'
-            : 'text-red-800 bg-red-50 border-red-200'
-        }`}
-      >
-        Total {labelUnidadeNf(unidadeAlvo)}: {formatQty(totalAlocado)} / {formatQty(qtyAlvo)} {unidadeAlvo}
-        {!somaOk ? ` (diferença ${diff > 0 ? '+' : ''}${formatQty(diff)})` : ''}
-      </div>
+      {modoComposicaoFisica && alvoComp.hint ? (
+        <div className="text-[11px] text-muted-foreground rounded px-2 py-1 border border-border bg-muted/30">
+          {alvoComp.hint}
+        </div>
+      ) : null}
+      {alvoComp.erro ? (
+        <div className="text-[11px] text-red-800 bg-red-50 border border-red-200 rounded px-2 py-1">
+          {alvoComp.erro}
+        </div>
+      ) : (
+        <div
+          className={`text-[11px] rounded px-2 py-1 border ${
+            somaOk
+              ? 'text-green-800 bg-green-50 border-green-200'
+              : 'text-red-800 bg-red-50 border-red-200'
+          }`}
+        >
+          {modoComposicaoFisica ? (
+            <>
+              Total composição: {formatQty(totalAlocado)} / {formatQty(alvoExibicao)} M
+              {!somaOk ? ` (diferença ${diff > 0 ? '+' : ''}${formatQty(diff)})` : ''}
+            </>
+          ) : (
+            <>
+              Total {labelUnidadeNf(unidadeAlvo)}: {formatQty(totalAlocado)} / {formatQty(qtyAlvo)}{' '}
+              {unidadeAlvo}
+              {!somaOk ? ` (diferença ${diff > 0 ? '+' : ''}${formatQty(diff)})` : ''}
+            </>
+          )}
+        </div>
+      )}
       <div className="space-y-1">
         {equivalencias.map((row, idx) => (
           <div
             key={`equiv-${row.ordem}-${idx}`}
-            className="grid grid-cols-[4rem_4rem_4.5rem_auto] gap-1 items-center"
+            className={
+              modoComposicaoFisica
+                ? 'grid grid-cols-[1fr_auto] gap-1 items-center'
+                : 'grid grid-cols-[4rem_4rem_4.5rem_auto] gap-1 items-center'
+            }
           >
-            <input
-              className="erp-input h-8 text-xs"
-              placeholder="M"
-              title="Metros"
-              value={row.metros ?? ''}
-              disabled={disabled}
-              onChange={(e) => updateRow(idx, { metros: e.target.value })}
-              onBlur={(e) => handleBlurCampo(idx, 'metros', e.target.value)}
-            />
-            <input
-              className="erp-input h-8 text-xs"
-              placeholder="BR"
-              title="Barras"
-              value={row.barras ?? ''}
-              disabled={disabled}
-              onChange={(e) => updateRow(idx, { barras: e.target.value })}
-              onBlur={(e) => handleBlurCampo(idx, 'barras', e.target.value)}
-            />
-            <input
-              className="erp-input h-8 text-xs"
-              placeholder="kg"
-              title="Peso (kg)"
-              value={row.peso_kg ?? ''}
-              disabled={disabled}
-              onChange={(e) => updateRow(idx, { peso_kg: e.target.value })}
-              onBlur={(e) => handleBlurCampo(idx, 'peso_kg', e.target.value)}
-            />
+            {modoComposicaoFisica ? (
+              <input
+                className="erp-input h-8 text-xs"
+                placeholder={`Barra ${idx + 1} — comprimento (M)`}
+                title="Comprimento real da barra em metros"
+                value={row.metros ?? ''}
+                disabled={disabled}
+                onChange={(e) => updateRow(idx, { metros: e.target.value, barras: '' })}
+                onBlur={(e) => handleBlurCampo(idx, 'metros', e.target.value)}
+              />
+            ) : (
+              <>
+                <input
+                  className="erp-input h-8 text-xs"
+                  placeholder="M"
+                  title="Metros"
+                  value={row.metros ?? ''}
+                  disabled={disabled}
+                  onChange={(e) => updateRow(idx, { metros: e.target.value })}
+                  onBlur={(e) => handleBlurCampo(idx, 'metros', e.target.value)}
+                />
+                <input
+                  className="erp-input h-8 text-xs"
+                  placeholder="BR"
+                  title="Barras"
+                  value={row.barras ?? ''}
+                  disabled={disabled}
+                  onChange={(e) => updateRow(idx, { barras: e.target.value })}
+                  onBlur={(e) => handleBlurCampo(idx, 'barras', e.target.value)}
+                />
+                <input
+                  className="erp-input h-8 text-xs"
+                  placeholder="kg"
+                  title="Peso (kg)"
+                  value={row.peso_kg ?? ''}
+                  disabled={disabled}
+                  onChange={(e) => updateRow(idx, { peso_kg: e.target.value })}
+                  onBlur={(e) => handleBlurCampo(idx, 'peso_kg', e.target.value)}
+                />
+              </>
+            )}
             <button
               type="button"
               className="erp-btn-outline h-8 px-2 text-xs"
               disabled={disabled || equivalencias.length <= 1}
               onClick={() => removeRow(idx)}
-              title="Remover sub-linha"
+              title="Remover barra"
             >
               ✕
             </button>
@@ -237,7 +358,7 @@ export function EquivalenciaEntradaEditor({
       </div>
       {!disabled ? (
         <button type="button" className="text-xs text-primary hover:underline" onClick={addRow}>
-          + Adicionar peça/barra
+          {modoComposicaoFisica ? '+ Adicionar barra' : '+ Adicionar peça/barra'}
         </button>
       ) : null}
     </div>
@@ -259,10 +380,38 @@ type ItemConferenciaNFeEntradaLike = {
   equivalencias?: EquivalenciaEntradaConferencia[];
 };
 
+export function produtoControlaComposicaoFisica(produto?: {
+  controla_composicao_fisica_efetivo?: boolean;
+  controla_composicao_fisica?: boolean;
+} | null): boolean {
+  if (!produto) return false;
+  return Boolean(produto.controla_composicao_fisica_efetivo ?? produto.controla_composicao_fisica);
+}
+
 export function criarEquivalenciasIniciais(
   qtyAlvo: number,
   colunaAlvo: 'metros' | 'barras' | 'peso_kg',
+  opts?: { modoComposicaoFisica?: boolean; comprimentoPadraoBarraM?: number | null; unidadeNf?: string; fatores?: FatoresEquivalenciaEntrada },
 ): EquivalenciaEntradaConferencia[] {
+  if (opts?.modoComposicaoFisica) {
+    const fatores = opts.fatores ?? { pesoPorMetroKg: null, comprimentoPadraoBarraM: opts.comprimentoPadraoBarraM ?? null };
+    const alvo = qtyAlvoComposicaoMetros(qtyAlvo, opts.unidadeNf || 'M', fatores);
+    const metrosAlvo = alvo.metros ?? qtyAlvo;
+    const padrao = opts.comprimentoPadraoBarraM ?? null;
+    if (padrao && padrao > 0 && metrosAlvo > padrao) {
+      const linhas: EquivalenciaEntradaConferencia[] = [];
+      let restante = metrosAlvo;
+      let ordem = 1;
+      while (restante > 0.001) {
+        const chunk = Math.min(restante, padrao);
+        linhas.push({ ordem, metros: formatQty(chunk), barras: '', peso_kg: '', peso_por_metro_utilizado: '' });
+        restante = Math.round((restante - chunk) * 1000) / 1000;
+        ordem += 1;
+      }
+      return linhas.length ? linhas : [{ ordem: 1, metros: formatQty(metrosAlvo), barras: '', peso_kg: '', peso_por_metro_utilizado: '' }];
+    }
+    return [{ ordem: 1, metros: formatQty(metrosAlvo), barras: '', peso_kg: '', peso_por_metro_utilizado: '' }];
+  }
   const half = Math.floor((qtyAlvo * 1000) / 2) / 1000;
   const rest = Math.round((qtyAlvo - half) * 1000) / 1000;
   const mk = (q: number, ordem: number): EquivalenciaEntradaConferencia => ({

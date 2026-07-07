@@ -1019,6 +1019,7 @@ class ItemNFeEntradaConferencia(models.Model):
         default=Decimal('0'),
     )
     pedido_baixa_aplicada_em = models.DateTimeField(null=True, blank=True)
+    conversao_estoque_auditoria = models.JSONField(default=dict, blank=True)
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
 
@@ -1046,6 +1047,76 @@ class ItemNFeEntradaConferenciaEquivalencia(models.Model):
                 name='uniq_item_conf_equivalencia_ordem',
             ),
         ]
+
+
+class EstoqueBarra(models.Model):
+    """Estoque físico rastreável por barra (metros), originado da conferência NF-e entrada."""
+
+    class Status(models.TextChoices):
+        DISPONIVEL = 'DISPONIVEL', 'Disponível'
+        PARCIAL = 'PARCIAL', 'Parcial'
+        CONSUMIDA = 'CONSUMIDA', 'Consumida'
+        CANCELADA = 'CANCELADA', 'Cancelada'
+
+    class Origem(models.TextChoices):
+        CONFERENCIA_NFE_ENTRADA = 'CONFERENCIA_NFE_ENTRADA', 'Conferência NF-e entrada'
+
+    produto = models.ForeignKey(
+        'produtos.Produto',
+        on_delete=models.CASCADE,
+        related_name='estoque_barras',
+    )
+    item_conferencia = models.ForeignKey(
+        'ItemNFeEntradaConferencia',
+        on_delete=models.CASCADE,
+        related_name='estoque_barras',
+    )
+    equivalencia_entrada = models.OneToOneField(
+        'ItemNFeEntradaConferenciaEquivalencia',
+        on_delete=models.PROTECT,
+        related_name='estoque_barra',
+    )
+    nfe_entrada_historica = models.ForeignKey(
+        'NFeEntradaHistoricaImportada',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='estoque_barras',
+    )
+    fornecedor = models.ForeignKey(
+        'cadastros.Fornecedor',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='estoque_barras',
+    )
+    codigo_interno_barra = models.CharField(max_length=64, unique=True, db_index=True)
+    comprimento_original_m = models.DecimalField(max_digits=14, decimal_places=3)
+    saldo_m = models.DecimalField(max_digits=14, decimal_places=3)
+    unidade_base = models.CharField(max_length=8, default='M')
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.DISPONIVEL,
+    )
+    origem = models.CharField(
+        max_length=32,
+        choices=Origem.choices,
+        default=Origem.CONFERENCIA_NFE_ENTRADA,
+    )
+    metadata = models.JSONField(default=dict, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['item_conferencia_id', 'equivalencia_entrada__ordem', 'id']
+        indexes = [
+            models.Index(fields=['produto', 'status']),
+            models.Index(fields=['item_conferencia']),
+        ]
+
+    def __str__(self) -> str:
+        return f'{self.codigo_interno_barra} ({self.saldo_m} M)'
 
 
 class ItemNFeEntradaConferenciaCorridaSplit(models.Model):

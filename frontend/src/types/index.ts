@@ -301,6 +301,7 @@ export interface FamiliaProduto {
   peso_por_chapa_kg?: number | null;
   densidade?: number | null;
   usa_conversao_dimensional?: boolean;
+  controla_composicao_fisica?: boolean;
   observacoes_conversao?: string;
   polegadas_permitidas?: Array<{
     permitida_id?: number;
@@ -416,6 +417,8 @@ export interface Produto {
   peso_por_metro_kg_efetivo?: number | null;
   comprimento_padrao_barra_m_efetivo?: number | null;
   unidades_venda_permitidas_efetivas?: string[];
+  controla_composicao_fisica_efetivo?: boolean;
+  controla_composicao_fisica?: boolean;
   usa_conversao_dimensional_efetivo?: boolean;
   origem_ncm?: 'familia' | 'produto';
   origem_unidade?: 'familia' | 'produto';
@@ -2334,6 +2337,19 @@ export interface EquivalenciaEntradaConferencia {
   peso_por_metro_utilizado?: string;
 }
 
+export interface EstoqueBarraConferencia {
+  id: number;
+  codigo_interno_barra: string;
+  comprimento_original_m: string;
+  saldo_m: string;
+  unidade_base: string;
+  status: string;
+  origem: string;
+  nf_numero?: string;
+  metadata?: Record<string, unknown>;
+  criado_em?: string;
+}
+
 export interface ItemConferenciaNFeEntrada {
   id: number;
   item_nfe_historico: number;
@@ -2354,6 +2370,7 @@ export interface ItemConferenciaNFeEntrada {
   lote?: string;
   corridas_split?: CorridaSplitConferencia[];
   equivalencias?: EquivalenciaEntradaConferencia[];
+  estoque_barras?: EstoqueBarraConferencia[];
   unidade_nf: string;
   quantidade_nf: number;
   valor_unitario_nf: number;
@@ -2364,6 +2381,7 @@ export interface ItemConferenciaNFeEntrada {
   metros_total?: number;
   barras_total?: number;
   toneladas_total?: number;
+  conversao_estoque_auditoria?: Record<string, unknown>;
   divergencias?: string[];
   alertas?: string[];
   dados_nf?: {
@@ -2575,6 +2593,15 @@ export interface NFeEntradaConferencia {
   itens: ItemConferenciaNFeEntrada[];
 }
 
+export interface EstoqueBarraAplicadaConferencia {
+  estoque_barra_id: number;
+  codigo_interno_barra: string;
+  ordem: number;
+  comprimento_original_m: string;
+  saldo_m: string;
+  status: string;
+}
+
 export interface ItemAplicadoEstoqueConferencia {
   item_conferencia_id: number;
   produto_id: number;
@@ -2585,6 +2612,7 @@ export interface ItemAplicadoEstoqueConferencia {
   saldo_anterior: string;
   saldo_novo: string;
   split_ordem?: number;
+  estoque_barras?: EstoqueBarraAplicadaConferencia[];
 }
 
 export interface ItemIgnoradoAplicacaoEstoque {

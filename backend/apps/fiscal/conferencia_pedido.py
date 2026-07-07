@@ -749,23 +749,41 @@ def aplicar_pos_save_item_conferencia(
 
         if item_usa_equivalencia_entrada(item_conf):
             equivs = list(item_conf.equivalencias.order_by('ordem', 'id'))
-            peso_total = sum(Decimal(str(e.peso_kg or 0)) for e in equivs)
-            metros_total = sum(Decimal(str(e.metros or 0)) for e in equivs)
-            barras_total = sum(Decimal(str(e.barras or 0)) for e in equivs)
-            item_conf.peso_total_kg = peso_total
-            item_conf.metros_total = metros_total
-            item_conf.barras_total = barras_total
-            item_conf.toneladas_total = (
-                (peso_total / Decimal('1000')).quantize(Decimal('0.001')) if peso_total else Decimal('0')
+            from apps.fiscal.composicao_fisica_conferencia import (
+                aplicar_totais_composicao_fisica_item,
+                item_controla_composicao_fisica,
             )
-            if unidade_destino in ('KG', 'TON'):
-                item_conf.quantidade_estoque_calculada = peso_total
-            elif unidade_destino == 'M':
-                item_conf.quantidade_estoque_calculada = metros_total
-            elif unidade_destino == 'BR':
-                item_conf.quantidade_estoque_calculada = barras_total
+
+            if item_controla_composicao_fisica(item_conf):
+                aplicar_totais_composicao_fisica_item(item_conf, equivs)
             else:
-                item_conf.quantidade_estoque_calculada = barras_total or metros_total or peso_total
+                peso_total = sum(Decimal(str(e.peso_kg or 0)) for e in equivs)
+                metros_total = sum(Decimal(str(e.metros or 0)) for e in equivs)
+                barras_total = sum(Decimal(str(e.barras or 0)) for e in equivs)
+                item_conf.peso_total_kg = peso_total
+                item_conf.metros_total = metros_total
+                item_conf.barras_total = barras_total
+                item_conf.toneladas_total = (
+                    (peso_total / Decimal('1000')).quantize(Decimal('0.001')) if peso_total else Decimal('0')
+                )
+                if unidade_destino in ('KG', 'TON'):
+                    item_conf.quantidade_estoque_calculada = peso_total
+                elif unidade_destino == 'M':
+                    item_conf.quantidade_estoque_calculada = metros_total
+                elif unidade_destino == 'BR':
+                    item_conf.quantidade_estoque_calculada = barras_total
+                else:
+                    item_conf.quantidade_estoque_calculada = barras_total or metros_total or peso_total
+                item_conf.conversao_estoque_auditoria = {}
+        elif item_conf.produto.get_controla_composicao_fisica_efetivo():
+            from apps.fiscal.composicao_fisica_conferencia import quantidade_alvo_composicao_metros
+
+            _alvo, erro_comp, _meta = quantidade_alvo_composicao_metros(item_conf)
+            item_conf.conversao_estoque_auditoria = {}
+            if erro_comp:
+                alertas.append(erro_comp)
+            else:
+                alertas.append('Informe a composição por barra para calcular estoque em metros.')
         else:
             try:
                 from apps.produtos.conversao_medidas import converter_quantidade_produto

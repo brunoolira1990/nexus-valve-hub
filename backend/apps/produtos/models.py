@@ -269,6 +269,10 @@ class FamiliaProduto(models.Model):
     peso_por_chapa_kg = models.DecimalField(max_digits=14, decimal_places=6, null=True, blank=True)
     densidade = models.DecimalField(max_digits=14, decimal_places=6, null=True, blank=True)
     usa_conversao_dimensional = models.BooleanField(default=False)
+    controla_composicao_fisica = models.BooleanField(
+        default=False,
+        help_text='Exige composição por barra na conferência; estoque base em metros.',
+    )
     observacoes_conversao = models.CharField(max_length=512, blank=True)
 
     class Meta:
@@ -374,6 +378,7 @@ class Produto(models.Model):
     peso_por_chapa_kg = models.DecimalField(max_digits=14, decimal_places=6, null=True, blank=True)
     densidade = models.DecimalField(max_digits=14, decimal_places=6, null=True, blank=True)
     usa_conversao_dimensional = models.BooleanField(default=False)
+    controla_composicao_fisica = models.BooleanField(default=False)
     od_mm = models.DecimalField(
         max_digits=10,
         decimal_places=3,
@@ -500,6 +505,13 @@ class Produto(models.Model):
             return True
         if self.familia_id:
             return bool(self.familia.usa_conversao_dimensional)
+        return False
+
+    def get_controla_composicao_fisica_efetivo(self) -> bool:
+        if self.controla_composicao_fisica:
+            return True
+        if self.familia_id:
+            return bool(self.familia.controla_composicao_fisica)
         return False
 
     def get_ncm_efetivo(self):

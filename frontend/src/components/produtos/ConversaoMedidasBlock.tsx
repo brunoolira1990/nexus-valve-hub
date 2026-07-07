@@ -61,6 +61,8 @@ type Props = {
   onDensidadeChange: (v: number | null) => void;
   observacoes: string;
   onObservacoesChange: (v: string) => void;
+  controlaComposicaoFisica?: boolean;
+  onControlaComposicaoFisicaChange?: (v: boolean) => void;
   /** Herança família → produto (opcional) */
   heranca?: {
     isOverride: (campo: CampoHeranca) => boolean;
@@ -196,6 +198,8 @@ export function ConversaoMedidasBlock({
   heranca,
   rotulos,
   ocultarUnidadeFiscal = false,
+  controlaComposicaoFisica = false,
+  onControlaComposicaoFisicaChange,
 }: Props) {
   const limparUnidades = rotulos?.limparUnidades ?? 'Limpar (herdar da família no produto)';
   const vis = visibilidadePorTipoFisico(tipoFisicoEfetivo, usaConversao);
@@ -252,6 +256,22 @@ export function ConversaoMedidasBlock({
           <input type="checkbox" checked={usaConversao} onChange={(e) => onUsaConversaoChange(e.target.checked)} />
           Usa conversão dimensional?
         </label>
+        {onControlaComposicaoFisicaChange ? (
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={controlaComposicaoFisica}
+              onChange={(e) => onControlaComposicaoFisicaChange(e.target.checked)}
+            />
+            Controla composição física por barra (estoque em M)
+          </label>
+        ) : null}
+        {controlaComposicaoFisica ? (
+          <p className="text-[11px] text-muted-foreground">
+            Na conferência de NF-e, o operador informa o comprimento real de cada barra. O comprimento padrão abaixo é
+            apenas sugestão.
+          </p>
+        ) : null}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <LinhaHeranca campo="tipo_fisico" heranca={heranca}>
             <label className="erp-label">Tipo físico</label>

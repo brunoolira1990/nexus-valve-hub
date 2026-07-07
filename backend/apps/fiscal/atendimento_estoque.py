@@ -637,6 +637,12 @@ def montar_saldo_consolidado_produto(produto: Produto) -> dict:
         EstoqueCorrida.objects.filter(produto_id=produto.id).aggregate(total=Sum('saldo'))['total'],
     )
 
+    saldo_barras_m: Decimal | None = None
+    if produto.get_controla_composicao_fisica_efetivo():
+        from apps.fiscal.aplicacao_estoque_barra_conferencia import saldo_barras_produto_metros
+
+        saldo_barras_m = saldo_barras_produto_metros(produto.id)
+
     ativos = AtendimentoEstoque.objects.filter(produto_id=produto.id).exclude(
         status=AtendimentoEstoque.Status.CANCELADO,
     )
@@ -669,6 +675,7 @@ def montar_saldo_consolidado_produto(produto: Produto) -> dict:
         'produto_codigo': produto.codigo_completo or '',
         'produto_descricao': produto.descricao,
         'saldo_fisico': _fmt_qty(saldo_fisico),
+        'saldo_barras_m': _fmt_qty(saldo_barras_m) if saldo_barras_m is not None else None,
         'quantidade_comprometida': _fmt_qty(quantidade_comprometida),
         'quantidade_pendente_atendimento': _fmt_qty(quantidade_pendente),
         'quantidade_atendida_sem_fisico': _fmt_qty(quantidade_atendida_sem_fisico),
@@ -689,6 +696,11 @@ def listar_saldos_consolidados(*, produto_id: int | None = None) -> list[dict]:
             AtendimentoEstoque.objects.exclude(status=AtendimentoEstoque.Status.CANCELADO)
             .values_list('produto_id', flat=True)
             .distinct(),
+        )
+        from apps.fiscal.models import EstoqueBarra
+
+        produto_ids.update(
+            EstoqueBarra.objects.values_list('produto_id', flat=True).distinct(),
         )
 
     if not produto_ids:
