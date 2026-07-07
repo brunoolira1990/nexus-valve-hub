@@ -274,6 +274,71 @@ function codigoProdutoIgual(a: string | null | undefined, b: string | null | und
   return (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();
 }
 
+function familiaEhManualFabricante(familia: FamiliaProduto): boolean {
+  return (
+    normalizarTipoRegra(familia.tipo_regra_codigo) === 'MANUAL_FABRICANTE' ||
+    familia.categoria_produto === 'MANUAL_FABRICANTE'
+  );
+}
+
+function aplicarHerancaFamiliaProduto(
+  prev: FormState,
+  familia: FamiliaProduto,
+  modo: ModoCodigoProduto,
+  opts?: { forcarCamposIniciais?: boolean },
+): FormState {
+  const forcar = opts?.forcarCamposIniciais ?? false;
+  const next = { ...prev };
+
+  const setStrSeVazio = (key: keyof FormState, value: string | undefined | null) => {
+    const v = (value || '').trim();
+    if (!v) return;
+    const atual = String(next[key] ?? '').trim();
+    if (forcar || !atual) next[key] = v as FormState[typeof key];
+  };
+
+  if (modo === 'INTERNO') {
+    if ((forcar || !next.rosca_conexao_id) && familia.rosca_padrao_id) {
+      next.rosca_conexao_id = familia.rosca_padrao_id;
+    }
+    if ((forcar || !next.schedule_ref_id) && familia.schedule_padrao_id) {
+      next.schedule_ref_id = familia.schedule_padrao_id;
+    }
+  }
+
+  if (modo === 'MANUAL') {
+    setStrSeVazio('descricao', familia.descricao_base);
+    setStrSeVazio('ncm', familia.ncm_padrao_info?.codigo);
+  }
+
+  setStrSeVazio('unidade', familia.unidade_padrao || familia.unidade_estoque_padrao);
+  setStrSeVazio('unidade_estoque', familia.unidade_estoque_padrao);
+  setStrSeVazio('unidade_venda_padrao', familia.unidade_venda_padrao);
+  setStrSeVazio('unidade_compra_padrao', familia.unidade_compra_padrao);
+  setStrSeVazio('unidade_fiscal', familia.unidade_fiscal_padrao);
+  setStrSeVazio('material', familia.material_base);
+  setStrSeVazio('pressao_nominal', familia.pressao_base);
+  setStrSeVazio('norma', familia.norma_base);
+  setStrSeVazio('conexao', familia.conexao_base);
+
+  if (forcar || !(next.unidades_venda_permitidas || []).length) {
+    if (familia.unidades_venda_permitidas?.length) {
+      next.unidades_venda_permitidas = [...familia.unidades_venda_permitidas];
+    }
+  }
+  if (forcar || !(next.unidades_compra_permitidas || []).length) {
+    if (familia.unidades_compra_permitidas?.length) {
+      next.unidades_compra_permitidas = [...familia.unidades_compra_permitidas];
+    }
+  }
+  if ((forcar || !next.tipo_fisico) && familia.tipo_fisico) next.tipo_fisico = familia.tipo_fisico;
+  if ((forcar || !next.tipo_controle_unidade) && familia.tipo_controle_unidade) {
+    next.tipo_controle_unidade = familia.tipo_controle_unidade;
+  }
+
+  return next;
+}
+
 const Produtos = () => {
   const [searchParams] = useSearchParams();
   const semNcmUrl = searchParams.get('sem_ncm') || '';
@@ -331,6 +396,7 @@ const Produtos = () => {
   const [editingFamilia, setEditingFamilia] = useState<FamiliaProduto | null>(null);
   const [listNotice, setListNotice] = useState<string | null>(null);
   const [produtoFichaTab, setProdutoFichaTab] = useState('geral');
+  const [codigoManualAutoFocus, setCodigoManualAutoFocus] = useState(false);
 
   useEffect(() => {
     if (modalOpen) setProdutoFichaTab('geral');
@@ -572,18 +638,15 @@ const Produtos = () => {
   ]);
 
   useEffect(() => {
-    if (!modalOpen || form.modo_codigo !== 'INTERNO' || !familiaSel) return;
-    setForm((prev) => {
-      const next = { ...prev };
-      if (familiaSel.rosca_padrao_id && !next.rosca_conexao_id) next.rosca_conexao_id = familiaSel.rosca_padrao_id;
-      if (familiaSel.schedule_padrao_id && !next.schedule_ref_id) next.schedule_ref_id = familiaSel.schedule_padrao_id;
-      if (!next.unidade && familiaSel.unidade_padrao) next.unidade = familiaSel.unidade_padrao;
-      if (!next.material && familiaSel.material_base) next.material = familiaSel.material_base;
-      if (!next.pressao_nominal && familiaSel.pressao_base) next.pressao_nominal = familiaSel.pressao_base;
-      if (!next.norma && familiaSel.norma_base) next.norma = familiaSel.norma_base;
-      if (!next.conexao && familiaSel.conexao_base) next.conexao = familiaSel.conexao_base;
-      return next;
-    });
+    if (!modalOpen || !familiaSel) return;
+    const modo = (form.modo_codigo || 'LEGADO') as ModoCodigoProduto;
+    if (modo === 'INTERNO') {
+      setForm((prev) => aplicarHerancaFamiliaProduto(prev, familiaSel, 'INTERNO'));
+      return;
+    }
+    if (modo === 'MANUAL' && familiaEhManualFabricante(familiaSel)) {
+      setForm((prev) => aplicarHerancaFamiliaProduto(prev, familiaSel, 'MANUAL'));
+    }
   }, [modalOpen, form.modo_codigo, familiaSel]);
 
   useEffect(() => {
@@ -612,6 +675,19 @@ const Produtos = () => {
 
   const f = (k: keyof FormState, v: string | number | null) =>
     setForm((p) => ({ ...p, [k]: v } as FormState));
+  const setModoCodigo = (modo: ModoCodigoProduto) => {
+    if (modo !== 'MANUAL') setCodigoManualAutoFocus(false);
+    setForm((prev) => {
+      const next = { ...prev, modo_codigo: modo };
+      if (modo === 'INTERNO' && prev.familia_id) {
+        const fam = familias.find((x) => x.id === prev.familia_id);
+        if (fam && familiaEhManualFabricante(fam)) {
+          next.familia_id = null;
+        }
+      }
+      return next;
+    });
+  };
   const setDimensao = (key: string, raw: string) => {
     const fieldMap: Record<string, keyof FormState> = {
       espessura_mm: 'dim_espessura_mm',
@@ -640,6 +716,7 @@ const Produtos = () => {
     setNcmProdutoOption(null);
     setFamiliaOption(null);
     setScheduleOption(null);
+    setCodigoManualAutoFocus(false);
     setModalOpen(true);
   };
 
@@ -655,11 +732,38 @@ const Produtos = () => {
     setFamModalOpen(false);
     setFamSaveErr(null);
     setEditing(null);
-    setForm({
-      ...emptyForm(),
-      modo_codigo: 'INTERNO',
-      familia_id: familia.id,
-    });
+    setScheduleOption(null);
+
+    if (familiaEhManualFabricante(familia)) {
+      const next = aplicarHerancaFamiliaProduto(
+        { ...emptyForm(), modo_codigo: 'MANUAL', codigo_completo: '', familia_id: familia.id },
+        familia,
+        'MANUAL',
+        { forcarCamposIniciais: true },
+      );
+      setForm(next);
+      setFamiliaOption(familia);
+      setNcmProdutoOption(
+        familia.ncm_padrao_info
+          ? {
+              id: familia.ncm_padrao_info.id,
+              codigo: familia.ncm_padrao_info.codigo,
+              descricao: familia.ncm_padrao_info.descricao,
+            }
+          : null,
+      );
+      setCodigoManualAutoFocus(true);
+    } else {
+      setForm({
+        ...emptyForm(),
+        modo_codigo: 'INTERNO',
+        familia_id: familia.id,
+      });
+      setFamiliaOption(familia);
+      setNcmProdutoOption(null);
+      setCodigoManualAutoFocus(false);
+    }
+
     setFamSearch(familia.codigo_figura);
     setModalOpen(true);
   };
@@ -1475,7 +1579,7 @@ const Produtos = () => {
                 type="radio"
                 name="modo"
                 checked={modo === 'INTERNO'}
-                onChange={() => f('modo_codigo', 'INTERNO')}
+                onChange={() => setModoCodigo('INTERNO')}
               />
               Código interno por regra (família / figura)
             </label>
@@ -1484,7 +1588,7 @@ const Produtos = () => {
                 type="radio"
                 name="modo"
                 checked={modo === 'MANUAL'}
-                onChange={() => f('modo_codigo', 'MANUAL')}
+                onChange={() => setModoCodigo('MANUAL')}
               />
               Código manual / fabricante
             </label>
@@ -1493,7 +1597,7 @@ const Produtos = () => {
                 type="radio"
                 name="modo"
                 checked={modo === 'LEGADO'}
-                onChange={() => f('modo_codigo', 'LEGADO')}
+                onChange={() => setModoCodigo('LEGADO')}
               />
               Legado (campos texto livres — mantém produtos antigos)
             </label>
@@ -1518,6 +1622,8 @@ const Produtos = () => {
                   value={form.codigo_completo}
                   onChange={(e) => f('codigo_completo', e.target.value)}
                   placeholder="Ex.: AV4000-F04-4DZ"
+                  autoFocus={codigoManualAutoFocus}
+                  onBlur={() => setCodigoManualAutoFocus(false)}
                 />
                 <p className="text-xs text-muted-foreground mt-1">Preencha a descrição manualmente.</p>
               </div>
