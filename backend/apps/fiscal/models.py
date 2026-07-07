@@ -1026,6 +1026,28 @@ class ItemNFeEntradaConferencia(models.Model):
         ordering = ['item_nfe_historico__n_item']
 
 
+class ItemNFeEntradaConferenciaEquivalencia(models.Model):
+    item_conferencia = models.ForeignKey(
+        ItemNFeEntradaConferencia,
+        on_delete=models.CASCADE,
+        related_name='equivalencias',
+    )
+    ordem = models.PositiveSmallIntegerField(default=1)
+    metros = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
+    barras = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
+    peso_kg = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
+    peso_por_metro_utilizado = models.DecimalField(max_digits=14, decimal_places=6, null=True, blank=True)
+
+    class Meta:
+        ordering = ['ordem', 'id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['item_conferencia', 'ordem'],
+                name='uniq_item_conf_equivalencia_ordem',
+            ),
+        ]
+
+
 class ItemNFeEntradaConferenciaCorridaSplit(models.Model):
     item_conferencia = models.ForeignKey(
         ItemNFeEntradaConferencia,

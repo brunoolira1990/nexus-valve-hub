@@ -744,28 +744,51 @@ def aplicar_pos_save_item_conferencia(
             produto.get_unidade_estoque_efetiva() or produto.unidade or item_conf.unidade_nf or 'UN'
         ).upper()
         item_conf.unidade_estoque_calculada = unidade_destino
-        try:
-            from apps.produtos.conversao_medidas import converter_quantidade_produto
 
-            res = converter_quantidade_produto(
-                produto=produto,
-                quantidade=item_conf.quantidade_nf,
-                unidade_origem=item_conf.unidade_nf,
-                unidade_destino=unidade_destino,
-            )
-            item_conf.quantidade_estoque_calculada = res.quantidade_destino
-            item_conf.peso_total_kg = res.peso_kg or Decimal('0')
-            item_conf.metros_total = res.metros or Decimal('0')
-            item_conf.barras_total = res.barras or Decimal('0')
+        from apps.fiscal.rastreabilidade_conferencia import item_usa_equivalencia_entrada
+
+        if item_usa_equivalencia_entrada(item_conf):
+            equivs = list(item_conf.equivalencias.order_by('ordem', 'id'))
+            peso_total = sum(Decimal(str(e.peso_kg or 0)) for e in equivs)
+            metros_total = sum(Decimal(str(e.metros or 0)) for e in equivs)
+            barras_total = sum(Decimal(str(e.barras or 0)) for e in equivs)
+            item_conf.peso_total_kg = peso_total
+            item_conf.metros_total = metros_total
+            item_conf.barras_total = barras_total
             item_conf.toneladas_total = (
-                (item_conf.peso_total_kg / Decimal('1000')).quantize(Decimal('0.001'))
-                if item_conf.peso_total_kg
-                else Decimal('0')
+                (peso_total / Decimal('1000')).quantize(Decimal('0.001')) if peso_total else Decimal('0')
             )
-        except Exception as exc:  # noqa: BLE001
-            alertas.append(str(exc))
-            if not item_conf.unidade_estoque_calculada:
-                item_conf.unidade_estoque_calculada = unidade_destino
+            if unidade_destino in ('KG', 'TON'):
+                item_conf.quantidade_estoque_calculada = peso_total
+            elif unidade_destino == 'M':
+                item_conf.quantidade_estoque_calculada = metros_total
+            elif unidade_destino == 'BR':
+                item_conf.quantidade_estoque_calculada = barras_total
+            else:
+                item_conf.quantidade_estoque_calculada = barras_total or metros_total or peso_total
+        else:
+            try:
+                from apps.produtos.conversao_medidas import converter_quantidade_produto
+
+                res = converter_quantidade_produto(
+                    produto=produto,
+                    quantidade=item_conf.quantidade_nf,
+                    unidade_origem=item_conf.unidade_nf,
+                    unidade_destino=unidade_destino,
+                )
+                item_conf.quantidade_estoque_calculada = res.quantidade_destino
+                item_conf.peso_total_kg = res.peso_kg or Decimal('0')
+                item_conf.metros_total = res.metros or Decimal('0')
+                item_conf.barras_total = res.barras or Decimal('0')
+                item_conf.toneladas_total = (
+                    (item_conf.peso_total_kg / Decimal('1000')).quantize(Decimal('0.001'))
+                    if item_conf.peso_total_kg
+                    else Decimal('0')
+                )
+            except Exception as exc:  # noqa: BLE001
+                alertas.append(str(exc))
+                if not item_conf.unidade_estoque_calculada:
+                    item_conf.unidade_estoque_calculada = unidade_destino
 
     divergencias, div_alertas = calcular_divergencias_item_conferencia(item_conf, conferencia)
     alertas.extend(div_alertas)

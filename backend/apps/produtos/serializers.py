@@ -788,6 +788,8 @@ class ProdutoSerializer(serializers.ModelSerializer):
         data['unidade_venda_efetiva'] = instance.get_unidade_venda_efetiva()
         data['unidade_compra_efetiva'] = instance.get_unidade_compra_efetiva()
         data['unidade_fiscal_efetiva'] = instance.get_unidade_fiscal_efetiva()
+        data['peso_por_metro_kg_efetivo'] = instance.get_peso_por_metro_kg_efetivo()
+        data['comprimento_padrao_barra_m_efetivo'] = instance.get_comprimento_padrao_barra_m_efetivo()
         data['unidades_venda_permitidas_efetivas'] = instance.get_unidades_venda_permitidas_efetivas()
         data['usa_conversao_dimensional_efetivo'] = instance.get_usa_conversao_dimensional_efetivo()
         data['alertas'] = (

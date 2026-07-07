@@ -68,6 +68,7 @@ from .models import (
     ItemNFeEntrada,
     ItemNFeEntradaConferencia,
     ItemNFeEntradaConferenciaCorridaSplit,
+    ItemNFeEntradaConferenciaEquivalencia,
     ItemNFeEntradaHistoricaImportada,
     ItemNFeSaida,
     ItemNFeSaidaHistoricaImportada,
@@ -90,6 +91,8 @@ from .conferencia_pedido import (
 from .rastreabilidade_conferencia import (
     quantidade_alvo_item,
     sincronizar_corridas_split_item,
+    sincronizar_equivalencias_entrada_item,
+    validar_equivalencias_quantidade,
     validar_splits_quantidade,
 )
 from .nfe_historica_fiscal import documento_tem_icmstot, extrair_totais_fiscais_documento
@@ -1415,6 +1418,13 @@ class ItemNFeEntradaConferenciaCorridaSplitSerializer(serializers.ModelSerialize
         return attrs
 
 
+class ItemNFeEntradaConferenciaEquivalenciaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ItemNFeEntradaConferenciaEquivalencia
+        fields = ('id', 'ordem', 'metros', 'barras', 'peso_kg', 'peso_por_metro_utilizado')
+        read_only_fields = ('id',)
+
+
 class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
     produto_id = serializers.PrimaryKeyRelatedField(
         queryset=Produto.objects.all(),
@@ -1447,6 +1457,7 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
     quantidade_disponivel_atendimento = serializers.SerializerMethodField(read_only=True)
     vinculos_atendimento = serializers.SerializerMethodField(read_only=True)
     corridas_split = ItemNFeEntradaConferenciaCorridaSplitSerializer(many=True, required=False)
+    equivalencias = ItemNFeEntradaConferenciaEquivalenciaSerializer(many=True, required=False)
 
     class Meta:
         model = ItemNFeEntradaConferencia
@@ -1470,6 +1481,7 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             'corrida',
             'lote',
             'corridas_split',
+            'equivalencias',
             'rastreabilidade_observacao',
             'unidade_nf',
             'quantidade_nf',
@@ -1692,7 +1704,10 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             )
         if status == ItemNFeEntradaConferencia.Status.CONFERIDO:
             produto_alterado = self._produto_esta_sendo_alterado(self.instance, attrs, produto)
-            if quantidade_estoque <= 0 and not produto_alterado:
+            equivalencias_no_payload = (
+                hasattr(self, 'initial_data') and 'equivalencias' in self.initial_data
+            )
+            if quantidade_estoque <= 0 and not produto_alterado and not equivalencias_no_payload:
                 raise serializers.ValidationError(
                     {'quantidade_estoque_calculada': 'Quantidade de estoque calculada deve ser maior que zero.'}
                 )
@@ -1745,12 +1760,35 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             if split_erros:
                 raise serializers.ValidationError({'corridas_split': split_erros})
 
+        equiv_payload = self.initial_data.get('equivalencias') if hasattr(self, 'initial_data') else None
+        if equiv_payload is not None and isinstance(equiv_payload, list) and equiv_payload:
+            merged = {**attrs}
+            if self.instance is not None:
+                for field in (
+                    'quantidade_nf',
+                    'unidade_nf',
+                    'status',
+                ):
+                    if field not in merged:
+                        merged[field] = getattr(self.instance, field)
+            temp_item = self.instance if self.instance is not None else ItemNFeEntradaConferencia(**merged)
+            if self.instance is not None:
+                for key, val in merged.items():
+                    if key not in ('corridas_split', 'equivalencias'):
+                        setattr(temp_item, key, val)
+            equiv_erros = validar_equivalencias_quantidade(temp_item, equivalencias_payload=equiv_payload)
+            if equiv_erros:
+                raise serializers.ValidationError({'equivalencias': equiv_erros})
+
         return attrs
 
     def update(self, instance, validated_data):
         splits_raw = validated_data.pop('corridas_split', serializers.empty)
+        equiv_raw = validated_data.pop('equivalencias', serializers.empty)
         if splits_raw is serializers.empty:
             splits_raw = self.initial_data.get('corridas_split') if 'corridas_split' in self.initial_data else None
+        if equiv_raw is serializers.empty:
+            equiv_raw = self.initial_data.get('equivalencias') if 'equivalencias' in self.initial_data else None
 
         if splits_raw:
             validated_data['corrida'] = ''
@@ -1767,6 +1805,16 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
                     elif isinstance(row, dict):
                         rows.append(row)
             sincronizar_corridas_split_item(instance, rows)
+
+        if equiv_raw is not None:
+            equiv_rows: list[dict] = []
+            if isinstance(equiv_raw, list):
+                for idx, row in enumerate(equiv_raw, start=1):
+                    if hasattr(row, 'items'):
+                        equiv_rows.append(dict(row))
+                    elif isinstance(row, dict):
+                        equiv_rows.append(row)
+            sincronizar_equivalencias_entrada_item(instance, equiv_rows)
 
         return instance
 

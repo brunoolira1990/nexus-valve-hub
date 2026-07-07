@@ -2323,7 +2323,7 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
                         'produto',
                         'item_pedido_compra__produto',
                         'item_pedido_compra__pedido',
-                    ).prefetch_related('corridas_split').order_by('item_nfe_historico__n_item'),
+                    ).prefetch_related('corridas_split', 'equivalencias').order_by('item_nfe_historico__n_item'),
                 ),
                 Prefetch(
                     'pedido_compra__itens',

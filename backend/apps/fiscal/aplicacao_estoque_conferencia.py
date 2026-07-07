@@ -32,6 +32,7 @@ from apps.fiscal.rastreabilidade_conferencia import (
     item_usa_split_corrida,
     linhas_aplicacao_estoque,
     quantidade_alvo_item,
+    validar_equivalencias_quantidade,
     validar_splits_quantidade,
 )
 from apps.fiscal.pedido_compra_baixa import aplicar_baixa_pedido_compra_conferencia
@@ -292,6 +293,13 @@ def _avaliar_contexto_itens(
             )
             continue
 
+        equiv_erros = validar_equivalencias_quantidade(item)
+        if equiv_erros:
+            planos.append(
+                _ItemPlano(item, rf, eleg, qty, 'bloqueio', equiv_erros[0]),
+            )
+            continue
+
         if rf.get('movimenta_estoque') is False:
             planos.append(
                 _ItemPlano(
@@ -390,7 +398,7 @@ def _montar_resultado_plano(
             'item_nfe_historico',
             'produto',
             'conferencia__nf_entrada_historica__fornecedor_emitente',
-        ).prefetch_related('corridas_split').all(),
+        ).prefetch_related('corridas_split', 'equivalencias').all(),
     )
     for item in itens:
         aplicar_pos_save_item_conferencia(item, conferencia)
@@ -480,7 +488,7 @@ def aplicar_estoque_fisico_conferencia(
         conferencia.itens.select_related(
             'item_nfe_historico',
             'produto',
-        ).prefetch_related('corridas_split').all(),
+        ).prefetch_related('corridas_split', 'equivalencias').all(),
     )
     planos = _avaliar_contexto_itens(conferencia, itens)
     aplicaveis = [
@@ -509,7 +517,7 @@ def aplicar_estoque_fisico_conferencia(
     for plano in aplicaveis:
         item = (
             ItemNFeEntradaConferencia.objects.select_for_update(of=('self',))
-            .prefetch_related('corridas_split')
+            .prefetch_related('corridas_split', 'equivalencias')
             .get(pk=plano.item.pk)
         )
         if item.estoque_aplicado_em:

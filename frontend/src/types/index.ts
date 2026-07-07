@@ -413,6 +413,8 @@ export interface Produto {
   unidade_venda_efetiva?: string;
   unidade_compra_efetiva?: string;
   unidade_fiscal_efetiva?: string;
+  peso_por_metro_kg_efetivo?: number | null;
+  comprimento_padrao_barra_m_efetivo?: number | null;
   unidades_venda_permitidas_efetivas?: string[];
   usa_conversao_dimensional_efetivo?: boolean;
   origem_ncm?: 'familia' | 'produto';
@@ -2323,6 +2325,15 @@ export interface CorridaSplitConferencia {
   quantidade: string;
 }
 
+export interface EquivalenciaEntradaConferencia {
+  id?: number;
+  ordem: number;
+  metros?: string;
+  barras?: string;
+  peso_kg?: string;
+  peso_por_metro_utilizado?: string;
+}
+
 export interface ItemConferenciaNFeEntrada {
   id: number;
   item_nfe_historico: number;
@@ -2342,6 +2353,7 @@ export interface ItemConferenciaNFeEntrada {
   corrida?: string;
   lote?: string;
   corridas_split?: CorridaSplitConferencia[];
+  equivalencias?: EquivalenciaEntradaConferencia[];
   unidade_nf: string;
   quantidade_nf: number;
   valor_unitario_nf: number;

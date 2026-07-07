@@ -54,6 +54,14 @@ import {
   mapItemPayloadCorrida,
   qtyAlvoItemConferencia,
 } from '@/components/fiscal/CorridaSplitEditor';
+import {
+  colunaAlvoEquivalenciaNf,
+  criarEquivalenciasIniciais,
+  EquivalenciaEntradaEditor,
+  fatoresEquivalenciaDoProduto,
+  itemUsaEquivalenciaEntrada,
+  mapItemPayloadConferencia,
+} from '@/components/fiscal/EquivalenciaEntradaEditor';
 import type {
   ItemConferenciaNFeEntrada,
   NFeEntradaConferencia,
@@ -205,7 +213,7 @@ export function NFeEntradaConferenciaPanel({
         data_entrada: dados.data_entrada || null,
         divergencias_aceitas: dados.divergencias_aceitas,
         observacao_divergencias: dados.observacao_divergencias,
-        itens: dados.itens.map((it) => mapItemPayloadCorrida(it)),
+        itens: dados.itens.map((it) => mapItemPayloadConferencia(it)),
       };
       const next = await nfeEntradaConferenciaService.salvar(nfId, payload);
       setDados(next);
@@ -326,7 +334,7 @@ export function NFeEntradaConferenciaPanel({
         data_entrada: dados.data_entrada || null,
         divergencias_aceitas: dados.divergencias_aceitas,
         observacao_divergencias: dados.observacao_divergencias,
-        itens: dados.itens.map((it) => mapItemPayloadCorrida(it)),
+        itens: dados.itens.map((it) => mapItemPayloadConferencia(it)),
       };
       const saved = await nfeEntradaConferenciaService.salvar(nfId, payload);
       setDados(saved);
@@ -1220,26 +1228,78 @@ export function NFeEntradaConferenciaPanel({
                         />
                       </div>
                       {!estoqueJaAplicado ? (
-                        <button
-                          type="button"
-                          className="text-[11px] text-primary hover:underline"
-                          onClick={() =>
-                            updateItem(it.id, {
-                              corridas_split: criarSplitsIniciais(qtyAlvoItemConferencia(it)),
-                              corrida: '',
-                              lote: '',
-                            })
-                          }
-                        >
-                          Dividir por corrida
-                        </button>
+                        <div className="flex flex-col gap-0.5">
+                          <button
+                            type="button"
+                            className="text-[11px] text-primary hover:underline text-left"
+                            onClick={() =>
+                              updateItem(it.id, {
+                                corridas_split: criarSplitsIniciais(qtyAlvoItemConferencia(it)),
+                                corrida: '',
+                                lote: '',
+                              })
+                            }
+                          >
+                            Dividir por corrida
+                          </button>
+                          <button
+                            type="button"
+                            className="text-[11px] text-primary hover:underline text-left"
+                            onClick={() => {
+                              const col = colunaAlvoEquivalenciaNf(it.unidade_nf);
+                              updateItem(it.id, {
+                                equivalencias: criarEquivalenciasIniciais(Number(it.quantidade_nf || 0), col),
+                              });
+                            }}
+                          >
+                            Informar equivalência
+                          </button>
+                        </div>
                       ) : null}
                     </div>
                   )}
                 </td>
                 <td>
-                  {Number(it.quantidade_estoque_calculada || 0).toFixed(3)}{' '}
-                  {it.unidade_estoque_calculada || produtosMap.get(it.produto_id || 0)?.unidade_estoque_efetiva || '—'}
+                  {it.status === 'IGNORADO' ? (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  ) : itemUsaEquivalenciaEntrada(it) ? (
+                    <div className="space-y-1">
+                      <EquivalenciaEntradaEditor
+                        qtyAlvo={Number(it.quantidade_nf || 0)}
+                        unidadeAlvo={it.unidade_nf || 'M'}
+                        colunaAlvo={colunaAlvoEquivalenciaNf(it.unidade_nf)}
+                        equivalencias={it.equivalencias || []}
+                        fatores={fatoresEquivalenciaDoProduto(
+                          it.produto_id ? produtosMap.get(it.produto_id) : null,
+                        )}
+                        disabled={estoqueJaAplicado}
+                        onChange={(equivalencias) => updateItem(it.id, { equivalencias })}
+                      />
+                      {!estoqueJaAplicado ? (
+                        <button
+                          type="button"
+                          className="text-[11px] text-primary hover:underline"
+                          onClick={() => updateItem(it.id, { equivalencias: [] })}
+                        >
+                          Remover equivalência
+                        </button>
+                      ) : null}
+                      {Number(it.quantidade_estoque_calculada || 0) > 0 ? (
+                        <div className="text-[11px] text-muted-foreground">
+                          Estoque calc.: {Number(it.quantidade_estoque_calculada).toFixed(3)}{' '}
+                          {it.unidade_estoque_calculada || '—'}
+                          {Number(it.peso_total_kg || 0) > 0
+                            ? ` · ${Number(it.peso_total_kg).toFixed(3)} kg`
+                            : ''}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <>
+                      {Number(it.quantidade_estoque_calculada || 0).toFixed(3)}{' '}
+                      {it.unidade_estoque_calculada || produtosMap.get(it.produto_id || 0)?.unidade_estoque_efetiva || '—'}
+                    </>
+                  )}
                   {it.divergencias?.length ? (
                     <div className="text-xs text-amber-600 mt-1 space-y-0.5">
                       {it.divergencias.map((d) => (
