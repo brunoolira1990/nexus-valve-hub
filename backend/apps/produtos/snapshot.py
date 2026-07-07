@@ -13,6 +13,8 @@ def build_produto_snapshot(produto):
         'ncm_descricao_snapshot': getattr(ncm, 'descricao', '') if ncm else '',
         'unidade_snapshot': produto.get_unidade_estoque_efetiva(),
         'controla_composicao_fisica_efetivo': produto.get_controla_composicao_fisica_efetivo(),
+        'tipo_composicao_fisica_efetivo': produto.get_tipo_composicao_fisica_efetivo(),
+        'unidade_base_composicao_fisica': produto.get_unidade_base_composicao_fisica(),
         'familia_snapshot': produto.familia.codigo_figura if produto.familia_id else '',
         'material_snapshot': produto.material or '',
         'norma_snapshot': produto.norma or '',

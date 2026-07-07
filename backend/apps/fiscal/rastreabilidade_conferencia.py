@@ -224,7 +224,9 @@ def sincronizar_equivalencias_entrada_item(
     """Upsert de sub-linhas de equivalência por ordem."""
     from apps.fiscal.composicao_fisica_conferencia import (
         item_controla_composicao_fisica,
+        item_e_peca_kg,
         normalizar_linha_composicao_payload,
+        normalizar_linha_peca_kg_payload,
         total_linha_composicao_m,
     )
 
@@ -268,17 +270,26 @@ def sincronizar_equivalencias_entrada_item(
             'peso_por_metro_utilizado': _nullable_dec('peso_por_metro_utilizado'),
         }
         if item_controla_composicao_fisica(item):
-            normalized = normalizar_linha_composicao_payload(
-                {**row, **{k: v for k, v in defaults.items() if v is not None}},
-            )
-            qtd = normalized.get('qtd_barras')
-            comp_raw = normalized.get('comprimento_unitario_m')
-            defaults['qtd_barras'] = int(qtd) if qtd else None
-            defaults['comprimento_unitario_m'] = _dec(comp_raw) if comp_raw not in (None, '') else None
-            total = total_linha_composicao_m(normalized)
-            defaults['metros'] = total if total > 0 else None
-            defaults['barras'] = None
-            defaults['peso_kg'] = None
+            if item_e_peca_kg(item):
+                normalized = normalizar_linha_peca_kg_payload({**row})
+                peso_raw = normalized.get('peso_kg')
+                defaults['peso_kg'] = _dec(peso_raw) if peso_raw not in (None, '') else None
+                defaults['metros'] = None
+                defaults['barras'] = None
+                defaults['qtd_barras'] = None
+                defaults['comprimento_unitario_m'] = None
+            else:
+                normalized = normalizar_linha_composicao_payload(
+                    {**row, **{k: v for k, v in defaults.items() if v is not None}},
+                )
+                qtd = normalized.get('qtd_barras')
+                comp_raw = normalized.get('comprimento_unitario_m')
+                defaults['qtd_barras'] = int(qtd) if qtd else None
+                defaults['comprimento_unitario_m'] = _dec(comp_raw) if comp_raw not in (None, '') else None
+                total = total_linha_composicao_m(normalized)
+                defaults['metros'] = total if total > 0 else None
+                defaults['barras'] = None
+                defaults['peso_kg'] = None
         ItemNFeEntradaConferenciaEquivalencia.objects.update_or_create(
             item_conferencia=item,
             ordem=ordem,

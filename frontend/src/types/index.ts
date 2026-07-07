@@ -302,6 +302,9 @@ export interface FamiliaProduto {
   densidade?: number | null;
   usa_conversao_dimensional?: boolean;
   controla_composicao_fisica?: boolean;
+  tipo_composicao_fisica?: string;
+  tipo_composicao_fisica_efetivo?: string;
+  unidade_base_composicao_fisica?: string;
   observacoes_conversao?: string;
   polegadas_permitidas?: Array<{
     permitida_id?: number;
@@ -419,6 +422,9 @@ export interface Produto {
   unidades_venda_permitidas_efetivas?: string[];
   controla_composicao_fisica_efetivo?: boolean;
   controla_composicao_fisica?: boolean;
+  tipo_composicao_fisica?: string;
+  tipo_composicao_fisica_efetivo?: string;
+  unidade_base_composicao_fisica?: string;
   usa_conversao_dimensional_efetivo?: boolean;
   origem_ncm?: 'familia' | 'produto';
   origem_unidade?: 'familia' | 'produto';
@@ -2336,15 +2342,19 @@ export interface EquivalenciaEntradaConferencia {
   qtd_barras?: number | string;
   comprimento_unitario_m?: string;
   peso_kg?: string;
+  peso_real_kg?: string;
   peso_por_metro_utilizado?: string;
 }
 
 export interface EstoqueBarraConferencia {
   id: number;
   codigo_interno_barra: string;
-  comprimento_original_m: string;
-  saldo_m: string;
+  tipo_composicao?: string;
   unidade_base: string;
+  quantidade_original?: string;
+  saldo: string;
+  comprimento_original_m?: string | null;
+  saldo_m?: string | null;
   status: string;
   origem: string;
   nf_numero?: string;
@@ -2374,6 +2384,7 @@ export interface ItemConferenciaNFeEntrada {
   equivalencias?: EquivalenciaEntradaConferencia[];
   estoque_barras?: EstoqueBarraConferencia[];
   controla_composicao_fisica_efetivo?: boolean;
+  tipo_composicao_fisica_efetivo?: string;
   unidade_nf: string;
   quantidade_nf: number;
   valor_unitario_nf: number;
@@ -2600,8 +2611,13 @@ export interface EstoqueBarraAplicadaConferencia {
   estoque_barra_id: number;
   codigo_interno_barra: string;
   ordem: number;
-  comprimento_original_m: string;
-  saldo_m: string;
+  sequencia_grupo?: number;
+  tipo_composicao?: string;
+  unidade_base?: string;
+  quantidade_original?: string;
+  saldo: string;
+  comprimento_original_m?: string | null;
+  saldo_m?: string | null;
   status: string;
 }
 

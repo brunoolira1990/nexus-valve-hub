@@ -638,10 +638,17 @@ def montar_saldo_consolidado_produto(produto: Produto) -> dict:
     )
 
     saldo_barras_m: Decimal | None = None
+    saldo_pecas_kg: Decimal | None = None
     if produto.get_controla_composicao_fisica_efetivo():
-        from apps.fiscal.aplicacao_estoque_barra_conferencia import saldo_barras_produto_metros
+        from apps.fiscal.aplicacao_estoque_barra_conferencia import (
+            saldo_barras_produto_metros,
+            saldo_pecas_produto_kg,
+        )
 
-        saldo_barras_m = saldo_barras_produto_metros(produto.id)
+        if produto.get_tipo_composicao_fisica_efetivo() == 'PECA_KG':
+            saldo_pecas_kg = saldo_pecas_produto_kg(produto.id)
+        else:
+            saldo_barras_m = saldo_barras_produto_metros(produto.id)
 
     ativos = AtendimentoEstoque.objects.filter(produto_id=produto.id).exclude(
         status=AtendimentoEstoque.Status.CANCELADO,
@@ -676,6 +683,7 @@ def montar_saldo_consolidado_produto(produto: Produto) -> dict:
         'produto_descricao': produto.descricao,
         'saldo_fisico': _fmt_qty(saldo_fisico),
         'saldo_barras_m': _fmt_qty(saldo_barras_m) if saldo_barras_m is not None else None,
+        'saldo_pecas_kg': _fmt_qty(saldo_pecas_kg) if saldo_pecas_kg is not None else None,
         'quantidade_comprometida': _fmt_qty(quantidade_comprometida),
         'quantidade_pendente_atendimento': _fmt_qty(quantidade_pendente),
         'quantidade_atendida_sem_fisico': _fmt_qty(quantidade_atendida_sem_fisico),

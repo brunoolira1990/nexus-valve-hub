@@ -114,6 +114,86 @@ def _setup_tubo_conferencia(
     return {'conf': conf, 'linha': linha, 'prod': prod, 'forn': forn, 'nf': nf}
 
 
+def _setup_chapa_conferencia(
+    suffix: str,
+    *,
+    qty='486.300',
+    unidade_nf='KG',
+) -> dict:
+    """Produto chapa com composição física PECA_KG."""
+    forn = Fornecedor.objects.create(razao_social=f'Forn Chapa {suffix}', cnpj=_cnpj(), uf='SP')
+    fam = FamiliaProduto.objects.create(
+        codigo_figura=f'CH{suffix}'[:16],
+        descricao_base='Chapa',
+        tipo_regra_codigo=FamiliaProduto.TipoRegraCodigo.BASE_POLEGADA,
+        tipo_dimensional=FamiliaProduto.TipoDimensional.SIMPLES,
+        categoria_produto=FamiliaProduto.CategoriaProduto.MATERIAL_DIMENSIONAL,
+        tipo_fisico=FamiliaProduto.TipoFisico.CHAPA,
+        controla_composicao_fisica=True,
+        tipo_composicao_fisica=FamiliaProduto.TipoComposicaoFisica.PECA_KG,
+        unidade_estoque_padrao='KG',
+    )
+    prod = Produto.objects.create(
+        familia=fam,
+        descricao=f'Chapa {suffix}',
+        modo_codigo=Produto.ModoCodigo.MANUAL,
+        codigo_completo=f'CH-{suffix}',
+        unidade='KG',
+        unidade_estoque='KG',
+        controla_composicao_fisica=True,
+        tipo_composicao_fisica=FamiliaProduto.TipoComposicaoFisica.PECA_KG,
+        ncm='73089000',
+    )
+    nf = NFeEntradaHistoricaImportada.objects.create(
+        chave_acesso=('36' + suffix + 'Z' * 40)[:44],
+        numero=f'CH{suffix}'[:8],
+        serie='1',
+        modelo='55',
+        dh_emissao=timezone.make_aware(datetime(2026, 6, 1, 10, 0)),
+        valor_total_nf=Decimal('100'),
+        fornecedor_emitente=forn,
+    )
+    item_nf = ItemNFeEntradaHistoricaImportada.objects.create(
+        nf=nf,
+        n_item=1,
+        prod_json={'CFOP': '5102', 'NCM': '73089000', 'qCom': qty, 'uCom': unidade_nf},
+        imposto_json={},
+    )
+    conf = NFeEntradaConferencia.objects.create(
+        nf_entrada_historica=nf,
+        status=NFeEntradaConferencia.Status.PREPARADA,
+        preparado_em=timezone.now(),
+        data_entrada=date(2026, 6, 1),
+    )
+    linha, _ = conf.itens.get_or_create(item_nfe_historico=item_nf)
+    linha.produto = prod
+    linha.quantidade_nf = Decimal(qty)
+    linha.unidade_nf = unidade_nf
+    linha.corrida = 'C-CH'
+    linha.lote = 'L1'
+    linha.status = ItemNFeEntradaConferencia.Status.CONFERIDO
+    linha.save()
+
+    RegraFiscalEntrada.objects.create(
+        nome=f'R-CH-{suffix}',
+        ativo=True,
+        prioridade=1,
+        cfop='5102',
+        movimenta_estoque=True,
+        severidade=RegraFiscalEntrada.Severidade.INFORMATIVO,
+    )
+    return {'conf': conf, 'linha': linha, 'prod': prod, 'forn': forn, 'nf': nf}
+
+
+def _criar_composicao_quatro_chapas(linha, pesos=('121.800', '119.450', '122.600', '122.450')) -> None:
+    for ordem, peso in enumerate(pesos, start=1):
+        ItemNFeEntradaConferenciaEquivalencia.objects.create(
+            item_conferencia=linha,
+            ordem=ordem,
+            peso_kg=Decimal(peso),
+        )
+
+
 class ConferenciaComposicaoFisicaTests(TestCase):
     def test_nf_m_tres_barras_soma_ok_grava_estoque_em_m(self):
         ctx = _setup_tubo_conferencia('CF1', qty='17.750', controla_composicao=True)
@@ -280,6 +360,36 @@ class ConferenciaEquivalenciaLegadoTests(TestCase):
         ser.save()
         linha.refresh_from_db()
         self.assertEqual(linha.equivalencias.count(), 0)
+
+
+class ConferenciaComposicaoPecaKgTests(TestCase):
+    """Composição física PECA_KG — chapa/peça com peso real individual."""
+
+    def test_quatro_chapas_pesos_diferentes_soma_ok(self):
+        ctx = _setup_chapa_conferencia('PK1', qty='486.300')
+        linha = ctx['linha']
+        _criar_composicao_quatro_chapas(linha)
+        aplicar_pos_save_item_conferencia(linha, ctx['conf'])
+        linha.refresh_from_db()
+        self.assertEqual(linha.unidade_estoque_calculada, 'KG')
+        self.assertEqual(linha.quantidade_estoque_calculada, Decimal('486.300'))
+        self.assertEqual(linha.peso_total_kg, Decimal('486.300'))
+        self.assertEqual(linha.barras_total, Decimal('4'))
+        erros = validar_composicao_fisica_equivalencias(linha)
+        self.assertEqual(erros, [])
+
+    def test_soma_pesos_divergente_bloqueia(self):
+        ctx = _setup_chapa_conferencia('PK2', qty='486.300')
+        linha = ctx['linha']
+        _criar_composicao_quatro_chapas(linha, ('121.800', '119.450', '122.600', '100.000'))
+        erros = validar_composicao_fisica_equivalencias(linha)
+        self.assertTrue(erros)
+
+    def test_serializer_expoe_tipo_composicao_fisica_efetivo(self):
+        ctx = _setup_chapa_conferencia('PK3')
+        data = ItemNFeEntradaConferenciaSerializer(ctx['linha']).data
+        self.assertTrue(data['controla_composicao_fisica_efetivo'])
+        self.assertEqual(data['tipo_composicao_fisica_efetivo'], 'PECA_KG')
 
 
 class ConferenciaEquivalenciaEntradaAPITests(TestCase):

@@ -14,8 +14,9 @@ export type EquivalenciaEntradaEditorProps = {
   fatores: FatoresEquivalenciaEntrada;
   onChange: (equivalencias: EquivalenciaEntradaConferencia[]) => void;
   disabled?: boolean;
-  /** Modo composição física: grupo = qtd_barras × comprimento_unitario_m. */
+  /** Modo composição física: grupo de barras (M) ou peça/chapa (KG). */
   modoComposicaoFisica?: boolean;
+  tipoComposicaoFisica?: 'BARRA_M' | 'PECA_KG';
 };
 
 function parseQtyInt(value: string | number | undefined | null): number {
@@ -39,6 +40,53 @@ export function totalMetrosComposicao(equivalencias: EquivalenciaEntradaConferen
 
 export function totalBarrasComposicao(equivalencias: EquivalenciaEntradaConferencia[]): number {
   return equivalencias.reduce((acc, row) => acc + parseQtyInt(row.qtd_barras), 0);
+}
+
+export function pesoRealKgLinha(row: EquivalenciaEntradaConferencia): number {
+  const raw = row.peso_real_kg ?? row.peso_kg;
+  return parseQty(raw);
+}
+
+export function totalPesoRealKgComposicao(equivalencias: EquivalenciaEntradaConferencia[]): number {
+  return equivalencias.reduce((acc, row) => acc + pesoRealKgLinha(row), 0);
+}
+
+/** Alvo em KG para composição PECA_KG (NF em KG ou TON). */
+export function qtyAlvoComposicaoKg(
+  quantidadeNf: number,
+  unidadeNf: string,
+): { kg: number | null; erro: string | null; hint: string | null } {
+  const u = (unidadeNf || '').trim().toUpperCase();
+  if (u === 'KG') {
+    return { kg: quantidadeNf, erro: null, hint: null };
+  }
+  if (u === 'TON') {
+    const kg = Math.round(quantidadeNf * 1000 * 1000) / 1000;
+    return {
+      kg,
+      erro: null,
+      hint: `${formatQty(quantidadeNf)} TON = ${formatQty(kg)} KG`,
+    };
+  }
+  return {
+    kg: null,
+    erro: `Composição por peça/chapa (KG) não suporta NF em ${u || 'unidade indefinida'}.`,
+    hint: null,
+  };
+}
+
+function syncLinhaPecaKg(row: EquivalenciaEntradaConferencia): EquivalenciaEntradaConferencia {
+  const peso = pesoRealKgLinha(row);
+  return {
+    ...row,
+    peso_kg: peso > 0 ? formatQty(peso) : '',
+    peso_real_kg: peso > 0 ? formatQty(peso) : '',
+    metros: '',
+    barras: '',
+    qtd_barras: '',
+    comprimento_unitario_m: '',
+    peso_por_metro_utilizado: '',
+  };
 }
 
 function parseQty(value: string | undefined | null): number {
@@ -172,6 +220,7 @@ function metrosEfetivosSubLinha(
     const total = totalLinhaComposicaoM(row);
     return total > 0 ? total : null;
   }
+  const metros = parseQty(row.metros);
   const barras = parseQty(row.barras);
   const peso = parseQty(row.peso_kg);
   const ppm = fatores.pesoPorMetroKg;
@@ -230,24 +279,49 @@ export function EquivalenciaEntradaEditor({
   onChange,
   disabled = false,
   modoComposicaoFisica = false,
+  tipoComposicaoFisica = 'BARRA_M',
 }: EquivalenciaEntradaEditorProps) {
-  const alvoComp = modoComposicaoFisica
-    ? qtyAlvoComposicaoMetros(qtyAlvo, unidadeAlvo, fatores)
-    : { metros: qtyAlvo, erro: null, hint: null };
-  const qtyAlvoMetros = alvoComp.metros ?? 0;
-  const totalAlocado = modoComposicaoFisica
-    ? totalMetrosComposicao(equivalencias)
-    : totalEquivalenciaNaUnidadeNf(equivalencias, unidadeAlvo, fatores, false);
-  const totalBarras = modoComposicaoFisica ? totalBarrasComposicao(equivalencias) : 0;
-  const alvoExibicao = modoComposicaoFisica ? qtyAlvoMetros : qtyAlvo;
+  const modoPecaKg = modoComposicaoFisica && tipoComposicaoFisica === 'PECA_KG';
+  const modoBarraM = modoComposicaoFisica && !modoPecaKg;
+
+  const alvoComp = modoPecaKg
+    ? qtyAlvoComposicaoKg(qtyAlvo, unidadeAlvo)
+    : modoBarraM
+      ? qtyAlvoComposicaoMetros(qtyAlvo, unidadeAlvo, fatores)
+      : { metros: qtyAlvo, kg: qtyAlvo, erro: null, hint: null };
+
+  const qtyAlvoMetros = modoBarraM ? (alvoComp as ReturnType<typeof qtyAlvoComposicaoMetros>).metros ?? 0 : 0;
+  const qtyAlvoKg = modoPecaKg ? (alvoComp as ReturnType<typeof qtyAlvoComposicaoKg>).kg ?? 0 : 0;
+
+  const totalAlocado = modoPecaKg
+    ? totalPesoRealKgComposicao(equivalencias)
+    : modoBarraM
+      ? totalMetrosComposicao(equivalencias)
+      : totalEquivalenciaNaUnidadeNf(equivalencias, unidadeAlvo, fatores, false);
+
+  const totalBarras = modoBarraM ? totalBarrasComposicao(equivalencias) : 0;
+  const totalPecas = modoPecaKg ? equivalencias.length : 0;
+  const alvoExibicao = modoPecaKg ? qtyAlvoKg : modoBarraM ? qtyAlvoMetros : qtyAlvo;
   const diff = Math.round((totalAlocado - alvoExibicao) * 1000) / 1000;
-  const somaOk = !alvoComp.erro && Math.abs(diff) < 0.001;
+  const alvoErro = modoPecaKg
+    ? (alvoComp as ReturnType<typeof qtyAlvoComposicaoKg>).erro
+    : modoBarraM
+      ? (alvoComp as ReturnType<typeof qtyAlvoComposicaoMetros>).erro
+      : null;
+  const alvoHint = modoPecaKg
+    ? (alvoComp as ReturnType<typeof qtyAlvoComposicaoKg>).hint
+    : modoBarraM
+      ? (alvoComp as ReturnType<typeof qtyAlvoComposicaoMetros>).hint
+      : null;
+  const somaOk = !alvoErro && Math.abs(diff) < 0.001;
 
   const updateRow = (index: number, patch: Partial<EquivalenciaEntradaConferencia>) => {
     const next = equivalencias.map((row, i) => {
       if (i !== index) return row;
       const merged = { ...row, ...patch };
-      return modoComposicaoFisica ? syncMetrosLinhaComposicao(merged) : merged;
+      if (modoPecaKg) return syncLinhaPecaKg(merged);
+      if (modoBarraM) return syncMetrosLinhaComposicao(merged);
+      return merged;
     });
     onChange(next);
   };
@@ -285,7 +359,21 @@ export function EquivalenciaEntradaEditor({
 
   const addRow = () => {
     const restante = Math.max(0, Math.round((alvoExibicao - totalAlocado) * 1000) / 1000);
-    if (modoComposicaoFisica) {
+    if (modoPecaKg) {
+      const nova = syncLinhaPecaKg({
+        ordem: equivalencias.length + 1,
+        peso_real_kg: restante > 0 ? formatQty(restante) : '',
+        peso_kg: '',
+        metros: '',
+        barras: '',
+        qtd_barras: '',
+        comprimento_unitario_m: '',
+        peso_por_metro_utilizado: '',
+      });
+      onChange([...equivalencias, nova]);
+      return;
+    }
+    if (modoBarraM) {
       const padrao = fatores.comprimentoPadraoBarraM;
       let qtd = 1;
       let comp = restante;
@@ -317,14 +405,14 @@ export function EquivalenciaEntradaEditor({
 
   return (
     <div className="space-y-2 min-w-[16rem]">
-      {modoComposicaoFisica && alvoComp.hint ? (
+      {(modoBarraM || modoPecaKg) && alvoHint ? (
         <div className="text-[11px] text-muted-foreground rounded px-2 py-1 border border-border bg-muted/30">
-          {alvoComp.hint}
+          {alvoHint}
         </div>
       ) : null}
-      {alvoComp.erro ? (
+      {alvoErro ? (
         <div className="text-[11px] text-red-800 bg-red-50 border border-red-200 rounded px-2 py-1">
-          {alvoComp.erro}
+          {alvoErro}
         </div>
       ) : (
         <div
@@ -334,15 +422,20 @@ export function EquivalenciaEntradaEditor({
               : 'text-red-800 bg-red-50 border-red-200'
           }`}
         >
-          {modoComposicaoFisica ? (
-            <>
-              <div>
-                Total barras: <strong>{totalBarras}</strong>
-                {' · '}
-                Total metros: <strong>{formatQty(totalAlocado)}</strong> / {formatQty(alvoExibicao)} M
-                {!somaOk ? ` · diferença ${diff > 0 ? '+' : ''}${formatQty(diff)} M` : ''}
-              </div>
-            </>
+          {modoPecaKg ? (
+            <div>
+              Qtd. peças: <strong>{totalPecas}</strong>
+              {' · '}
+              Total KG informado: <strong>{formatQty(totalAlocado)}</strong> / {formatQty(alvoExibicao)} KG
+              {!somaOk ? ` · diferença ${diff > 0 ? '+' : ''}${formatQty(diff)} KG` : ''}
+            </div>
+          ) : modoBarraM ? (
+            <div>
+              Total barras: <strong>{totalBarras}</strong>
+              {' · '}
+              Total metros: <strong>{formatQty(totalAlocado)}</strong> / {formatQty(alvoExibicao)} M
+              {!somaOk ? ` · diferença ${diff > 0 ? '+' : ''}${formatQty(diff)} M` : ''}
+            </div>
           ) : (
             <>
               Total {labelUnidadeNf(unidadeAlvo)}: {formatQty(totalAlocado)} / {formatQty(qtyAlvo)}{' '}
@@ -352,7 +445,15 @@ export function EquivalenciaEntradaEditor({
           )}
         </div>
       )}
-      {modoComposicaoFisica && equivalencias.length > 0 ? (
+      {modoPecaKg && equivalencias.length > 0 ? (
+        <div className="text-[10px] text-muted-foreground grid grid-cols-[2.5rem_1fr_4rem_auto] gap-1 px-0.5">
+          <span>Peça</span>
+          <span>Peso real (KG)</span>
+          <span className="text-center">Status</span>
+          <span />
+        </div>
+      ) : null}
+      {modoBarraM && equivalencias.length > 0 ? (
         <div className="text-[10px] text-muted-foreground grid grid-cols-[3.5rem_1fr_4.5rem_auto] gap-1 px-0.5">
           <span>Qtd. barras</span>
           <span>Comprimento unit. (M)</span>
@@ -365,12 +466,34 @@ export function EquivalenciaEntradaEditor({
           <div
             key={`equiv-${row.ordem}-${idx}`}
             className={
-              modoComposicaoFisica
-                ? 'grid grid-cols-[3.5rem_1fr_4.5rem_auto] gap-1 items-center'
-                : 'grid grid-cols-[4rem_4rem_4.5rem_auto] gap-1 items-center'
+              modoPecaKg
+                ? 'grid grid-cols-[2.5rem_1fr_4rem_auto] gap-1 items-center'
+                : modoBarraM
+                  ? 'grid grid-cols-[3.5rem_1fr_4.5rem_auto] gap-1 items-center'
+                  : 'grid grid-cols-[4rem_4rem_4.5rem_auto] gap-1 items-center'
             }
           >
-            {modoComposicaoFisica ? (
+            {modoPecaKg ? (
+              <>
+                <span className="text-[10px] text-muted-foreground text-center tabular-nums">{idx + 1}</span>
+                <input
+                  className="erp-input h-8 text-xs"
+                  placeholder="Peso real (KG)"
+                  title="Peso real desta peça/chapa em quilogramas"
+                  value={row.peso_real_kg ?? row.peso_kg ?? ''}
+                  disabled={disabled}
+                  onChange={(e) => updateRow(idx, { peso_real_kg: e.target.value, peso_kg: e.target.value })}
+                  onBlur={(e) => updateRow(idx, { peso_real_kg: e.target.value, peso_kg: e.target.value })}
+                />
+                <span
+                  className={`text-[10px] text-center ${
+                    pesoRealKgLinha(row) > 0 ? 'text-green-700' : 'text-muted-foreground'
+                  }`}
+                >
+                  {pesoRealKgLinha(row) > 0 ? 'OK' : '—'}
+                </span>
+              </>
+            ) : modoBarraM ? (
               <>
                 <input
                   className="erp-input h-8 text-xs"
@@ -439,7 +562,11 @@ export function EquivalenciaEntradaEditor({
       </div>
       {!disabled ? (
         <button type="button" className="text-xs text-primary hover:underline" onClick={addRow}>
-          {modoComposicaoFisica ? '+ Adicionar grupo de barras' : '+ Adicionar peça/barra'}
+          {modoPecaKg
+            ? '+ Adicionar peça/chapa'
+            : modoBarraM
+              ? '+ Adicionar grupo de barras'
+              : '+ Adicionar peça/barra'}
         </button>
       ) : null}
     </div>
@@ -471,8 +598,12 @@ export function produtoControlaComposicaoFisica(produto?: {
 
 type ItemComposicaoFisicaLike = {
   controla_composicao_fisica_efetivo?: boolean;
+  tipo_composicao_fisica_efetivo?: string;
   produto_id?: number | null;
-  snapshot_produto?: { controla_composicao_fisica_efetivo?: boolean } | null;
+  snapshot_produto?: {
+    controla_composicao_fisica_efetivo?: boolean;
+    tipo_composicao_fisica_efetivo?: string;
+  } | null;
 };
 
 /** Preferência: flag do item (API conferência) → snapshot → cache do produto. */
@@ -492,11 +623,47 @@ export function itemControlaComposicaoFisica(
   return produtoControlaComposicaoFisica(produto);
 }
 
+/** BARRA_M (tubo em metros) ou PECA_KG (chapa/peça em kg). */
+export function itemTipoComposicaoFisica(
+  item: ItemComposicaoFisicaLike,
+  produto?: {
+    tipo_composicao_fisica_efetivo?: string;
+    tipo_composicao_fisica?: string;
+  } | null,
+): 'BARRA_M' | 'PECA_KG' {
+  const raw =
+    item.tipo_composicao_fisica_efetivo ??
+    item.snapshot_produto?.tipo_composicao_fisica_efetivo ??
+    produto?.tipo_composicao_fisica_efetivo ??
+    produto?.tipo_composicao_fisica;
+  return raw === 'PECA_KG' ? 'PECA_KG' : 'BARRA_M';
+}
+
 export function criarEquivalenciasIniciais(
   qtyAlvo: number,
   colunaAlvo: 'metros' | 'barras' | 'peso_kg',
-  opts?: { modoComposicaoFisica?: boolean; comprimentoPadraoBarraM?: number | null; unidadeNf?: string; fatores?: FatoresEquivalenciaEntrada },
+  opts?: {
+    modoComposicaoFisica?: boolean;
+    tipoComposicaoFisica?: 'BARRA_M' | 'PECA_KG';
+    comprimentoPadraoBarraM?: number | null;
+    unidadeNf?: string;
+    fatores?: FatoresEquivalenciaEntrada;
+  },
 ): EquivalenciaEntradaConferencia[] {
+  if (opts?.modoComposicaoFisica && opts.tipoComposicaoFisica === 'PECA_KG') {
+    return [
+      syncLinhaPecaKg({
+        ordem: 1,
+        peso_real_kg: '',
+        peso_kg: '',
+        metros: '',
+        barras: '',
+        qtd_barras: '',
+        comprimento_unitario_m: '',
+        peso_por_metro_utilizado: '',
+      }),
+    ];
+  }
   if (opts?.modoComposicaoFisica) {
     const fatores = opts.fatores ?? { pesoPorMetroKg: null, comprimentoPadraoBarraM: opts.comprimentoPadraoBarraM ?? null };
     const alvo = qtyAlvoComposicaoMetros(qtyAlvo, opts.unidadeNf || 'M', fatores);
@@ -591,7 +758,7 @@ export function mapItemPayloadEquivalencia(
         comprimento_unitario_m: row.comprimento_unitario_m ?? '',
         metros: row.metros ?? '',
         barras: row.barras ?? '',
-        peso_kg: row.peso_kg ?? '',
+        peso_kg: row.peso_real_kg ?? row.peso_kg ?? '',
         peso_por_metro_utilizado: row.peso_por_metro_utilizado ?? '',
       })),
     };

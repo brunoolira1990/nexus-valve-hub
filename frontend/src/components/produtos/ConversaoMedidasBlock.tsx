@@ -63,6 +63,8 @@ type Props = {
   onObservacoesChange: (v: string) => void;
   controlaComposicaoFisica?: boolean;
   onControlaComposicaoFisicaChange?: (v: boolean) => void;
+  tipoComposicaoFisica?: string;
+  onTipoComposicaoFisicaChange?: (v: string) => void;
   /** Herança família → produto (opcional) */
   heranca?: {
     isOverride: (campo: CampoHeranca) => boolean;
@@ -200,6 +202,8 @@ export function ConversaoMedidasBlock({
   ocultarUnidadeFiscal = false,
   controlaComposicaoFisica = false,
   onControlaComposicaoFisicaChange,
+  tipoComposicaoFisica = 'BARRA_M',
+  onTipoComposicaoFisicaChange,
 }: Props) {
   const limparUnidades = rotulos?.limparUnidades ?? 'Limpar (herdar da família no produto)';
   const vis = visibilidadePorTipoFisico(tipoFisicoEfetivo, usaConversao);
@@ -263,13 +267,27 @@ export function ConversaoMedidasBlock({
               checked={controlaComposicaoFisica}
               onChange={(e) => onControlaComposicaoFisicaChange(e.target.checked)}
             />
-            Controla composição física por barra (estoque em M)
+            Controla composição física na conferência NF-e
           </label>
+        ) : null}
+        {controlaComposicaoFisica && onTipoComposicaoFisicaChange ? (
+          <div className="space-y-1">
+            <label className="erp-label text-sm">Tipo de composição física</label>
+            <select
+              className="erp-select w-full max-w-md"
+              value={tipoComposicaoFisica || 'BARRA_M'}
+              onChange={(e) => onTipoComposicaoFisicaChange(e.target.value)}
+            >
+              <option value="BARRA_M">Barra — comprimento em metros (tubo)</option>
+              <option value="PECA_KG">Peça/chapa — peso real em kg</option>
+            </select>
+          </div>
         ) : null}
         {controlaComposicaoFisica ? (
           <p className="text-[11px] text-muted-foreground">
-            Na conferência de NF-e, o operador informa o comprimento real de cada barra. O comprimento padrão abaixo é
-            apenas sugestão.
+            {tipoComposicaoFisica === 'PECA_KG'
+              ? 'Na conferência, informe o peso real de cada peça/chapa. O estoque base fica em KG.'
+              : 'Na conferência, informe quantidade de barras e comprimento unitário em metros. O estoque base fica em M.'}
           </p>
         ) : null}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

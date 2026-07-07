@@ -110,6 +110,7 @@ const emptyForm = (): FormState => ({
   densidade: null,
   usa_conversao_dimensional: false,
   controla_composicao_fisica: false,
+  tipo_composicao_fisica: 'BARRA_M' as 'BARRA_M' | 'PECA_KG',
   preco_custo: 0,
   preco_venda: 0,
   estoque_minimo: 0,
@@ -235,6 +236,7 @@ const emptyFamiliaQuick = () => ({
   ativo: true,
   usa_conversao_dimensional: false,
   controla_composicao_fisica: false,
+  tipo_composicao_fisica: 'BARRA_M' as 'BARRA_M' | 'PECA_KG',
   tipo_fisico: '' as TipoFisicoProduto | '',
   tipo_controle_unidade: '' as TipoControleUnidade | '',
   unidade_estoque_padrao: '',
@@ -782,6 +784,7 @@ const Produtos = () => {
       ativo: familia.ativo,
       usa_conversao_dimensional: !!familia.usa_conversao_dimensional,
       controla_composicao_fisica: !!familia.controla_composicao_fisica,
+      tipo_composicao_fisica: (familia.tipo_composicao_fisica || 'BARRA_M') as 'BARRA_M' | 'PECA_KG',
       tipo_fisico: (familia.tipo_fisico || '') as TipoFisicoProduto | '',
       tipo_controle_unidade: (familia.tipo_controle_unidade || '') as TipoControleUnidade | '',
       unidade_estoque_padrao: familia.unidade_estoque_padrao ?? '',
@@ -851,6 +854,9 @@ const Produtos = () => {
       densidade: e.densidade ?? null,
       usa_conversao_dimensional: !!e.usa_conversao_dimensional,
       controla_composicao_fisica: !!e.controla_composicao_fisica,
+      tipo_composicao_fisica: (e.tipo_composicao_fisica || e.tipo_composicao_fisica_efetivo || 'BARRA_M') as
+        | 'BARRA_M'
+        | 'PECA_KG',
       preco_custo: e.preco_custo,
       preco_venda: e.preco_venda,
       estoque_minimo: e.estoque_minimo,
@@ -962,6 +968,7 @@ const Produtos = () => {
       densidade: form.densidade,
       usa_conversao_dimensional: !!form.usa_conversao_dimensional,
       controla_composicao_fisica: !!form.controla_composicao_fisica,
+      tipo_composicao_fisica: form.tipo_composicao_fisica || 'BARRA_M',
       preco_custo: form.preco_custo,
       preco_venda: form.preco_venda,
       estoque_minimo: form.estoque_minimo,
@@ -1159,6 +1166,7 @@ const Produtos = () => {
         norma_base: '',
         usa_conversao_dimensional: famQuick.usa_conversao_dimensional,
         controla_composicao_fisica: famQuick.controla_composicao_fisica,
+        tipo_composicao_fisica: famQuick.tipo_composicao_fisica || 'BARRA_M',
         tipo_fisico: (famQuick.tipo_fisico || 'PECA') as TipoFisicoProduto,
         tipo_controle_unidade: (famQuick.tipo_controle_unidade || 'PECA') as TipoControleUnidade,
         unidade_estoque_padrao: famQuick.unidade_estoque_padrao || '',
@@ -2031,8 +2039,21 @@ const Produtos = () => {
           onControlaComposicaoFisicaChange={(v) => {
             f('controla_composicao_fisica', v);
             if (v) {
-              f('usa_conversao_dimensional', true);
-              f('unidade_estoque', 'M');
+              const tipo = form.tipo_composicao_fisica || 'BARRA_M';
+              if (tipo === 'BARRA_M') {
+                f('usa_conversao_dimensional', true);
+                f('unidade_estoque', 'M');
+              } else {
+                f('unidade_estoque', 'KG');
+              }
+            }
+          }}
+          tipoComposicaoFisica={form.tipo_composicao_fisica || 'BARRA_M'}
+          onTipoComposicaoFisicaChange={(v) => {
+            f('tipo_composicao_fisica', v as 'BARRA_M' | 'PECA_KG');
+            if (form.controla_composicao_fisica) {
+              f('unidade_estoque', v === 'PECA_KG' ? 'KG' : 'M');
+              if (v === 'BARRA_M') f('usa_conversao_dimensional', true);
             }
           }}
           tipoFisicoEfetivo={tipoFisicoEfetivo}
@@ -2374,8 +2395,22 @@ const Produtos = () => {
             setFamQuick((q) => ({
               ...q,
               controla_composicao_fisica: v,
-              usa_conversao_dimensional: v ? true : q.usa_conversao_dimensional,
-              unidade_estoque_padrao: v ? 'M' : q.unidade_estoque_padrao,
+              usa_conversao_dimensional: v && (q.tipo_composicao_fisica || 'BARRA_M') === 'BARRA_M' ? true : q.usa_conversao_dimensional,
+              unidade_estoque_padrao: v
+                ? (q.tipo_composicao_fisica || 'BARRA_M') === 'PECA_KG'
+                  ? 'KG'
+                  : 'M'
+                : q.unidade_estoque_padrao,
+            }))
+          }
+          tipoComposicaoFisica={famQuick.tipo_composicao_fisica || 'BARRA_M'}
+          onTipoComposicaoFisicaChange={(v) =>
+            setFamQuick((q) => ({
+              ...q,
+              tipo_composicao_fisica: v as 'BARRA_M' | 'PECA_KG',
+              unidade_estoque_padrao: q.controla_composicao_fisica ? (v === 'PECA_KG' ? 'KG' : 'M') : q.unidade_estoque_padrao,
+              usa_conversao_dimensional:
+                q.controla_composicao_fisica && v === 'BARRA_M' ? true : q.usa_conversao_dimensional,
             }))
           }
           tipoFisicoEfetivo={(famQuick.tipo_fisico || 'PECA') as string}

@@ -62,6 +62,7 @@ import {
   itemUsaEquivalenciaEntrada,
   mapItemPayloadConferencia,
   itemControlaComposicaoFisica,
+  itemTipoComposicaoFisica,
 } from '@/components/fiscal/EquivalenciaEntradaEditor';
 import type {
   ItemConferenciaNFeEntrada,
@@ -1249,6 +1250,7 @@ export function NFeEntradaConferenciaPanel({
                             onClick={() => {
                               const produto = it.produto_id ? produtosMap.get(it.produto_id) : null;
                               const modoComp = itemControlaComposicaoFisica(it, produto);
+                              const tipoComp = itemTipoComposicaoFisica(it, produto);
                               const fatores = fatoresEquivalenciaDoProduto(produto);
                               const col = colunaAlvoEquivalenciaNf(it.unidade_nf);
                               updateItem(it.id, {
@@ -1257,6 +1259,7 @@ export function NFeEntradaConferenciaPanel({
                                   col,
                                   {
                                     modoComposicaoFisica: modoComp,
+                                    tipoComposicaoFisica: tipoComp,
                                     comprimentoPadraoBarraM: fatores.comprimentoPadraoBarraM,
                                     unidadeNf: it.unidade_nf,
                                     fatores,
@@ -1291,6 +1294,10 @@ export function NFeEntradaConferenciaPanel({
                           it.produto_id ? produtosMap.get(it.produto_id) : null,
                         )}
                         modoComposicaoFisica={itemControlaComposicaoFisica(
+                          it,
+                          it.produto_id ? produtosMap.get(it.produto_id) : null,
+                        )}
+                        tipoComposicaoFisica={itemTipoComposicaoFisica(
                           it,
                           it.produto_id ? produtosMap.get(it.produto_id) : null,
                         )}

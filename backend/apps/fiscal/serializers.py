@@ -1420,6 +1420,8 @@ class ItemNFeEntradaConferenciaCorridaSplitSerializer(serializers.ModelSerialize
 
 
 class ItemNFeEntradaConferenciaEquivalenciaSerializer(serializers.ModelSerializer):
+    peso_real_kg = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = ItemNFeEntradaConferenciaEquivalencia
         fields = (
@@ -1430,9 +1432,13 @@ class ItemNFeEntradaConferenciaEquivalenciaSerializer(serializers.ModelSerialize
             'qtd_barras',
             'comprimento_unitario_m',
             'peso_kg',
+            'peso_real_kg',
             'peso_por_metro_utilizado',
         )
         read_only_fields = ('id',)
+
+    def get_peso_real_kg(self, obj):
+        return str(obj.peso_kg) if obj.peso_kg is not None else None
 
 
 class EstoqueBarraConferenciaSerializer(serializers.ModelSerializer):
@@ -1443,9 +1449,12 @@ class EstoqueBarraConferenciaSerializer(serializers.ModelSerializer):
         fields = (
             'id',
             'codigo_interno_barra',
+            'tipo_composicao',
+            'unidade_base',
+            'quantidade_original',
+            'saldo',
             'comprimento_original_m',
             'saldo_m',
-            'unidade_base',
             'status',
             'origem',
             'nf_numero',
@@ -1495,6 +1504,7 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
     quantidade_disponivel_atendimento = serializers.SerializerMethodField(read_only=True)
     vinculos_atendimento = serializers.SerializerMethodField(read_only=True)
     controla_composicao_fisica_efetivo = serializers.SerializerMethodField(read_only=True)
+    tipo_composicao_fisica_efetivo = serializers.SerializerMethodField(read_only=True)
     corridas_split = ItemNFeEntradaConferenciaCorridaSplitSerializer(many=True, required=False)
     equivalencias = ItemNFeEntradaConferenciaEquivalenciaSerializer(many=True, required=False)
     estoque_barras = EstoqueBarraConferenciaSerializer(many=True, read_only=True)
@@ -1549,6 +1559,7 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             'quantidade_disponivel_atendimento',
             'vinculos_atendimento',
             'controla_composicao_fisica_efetivo',
+            'tipo_composicao_fisica_efetivo',
         )
         read_only_fields = (
             'sugestoes_item_pedido',
@@ -1678,6 +1689,14 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
         if produto is None:
             return False
         return bool(produto.get_controla_composicao_fisica_efetivo())
+
+    def get_tipo_composicao_fisica_efetivo(self, obj: ItemNFeEntradaConferencia) -> str:
+        if not obj.produto_id:
+            return 'BARRA_M'
+        produto = obj.produto
+        if produto is None:
+            return 'BARRA_M'
+        return produto.get_tipo_composicao_fisica_efetivo()
 
     def get_produto_sugerido(self, obj: ItemNFeEntradaConferencia):
         from apps.fiscal.correlacao_produto_fornecedor import buscar_produto_sugerido_correlacao

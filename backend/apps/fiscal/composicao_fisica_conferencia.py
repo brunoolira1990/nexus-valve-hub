@@ -9,7 +9,11 @@ from apps.fiscal.models import ItemNFeEntradaConferencia, ItemNFeEntradaConferen
 TOLERANCIA_COMPOSICAO = Decimal('0.001')
 
 ORIGEM_COMPOSICAO_BARRAS = 'COMPOSICAO_BARRAS'
+ORIGEM_COMPOSICAO_PECAS_KG = 'COMPOSICAO_PECAS_KG'
 REGRA_KG_PARA_M_PESO_POR_METRO = 'KG_PARA_M_PESO_POR_METRO'
+
+TIPO_BARRA_M = 'BARRA_M'
+TIPO_PECA_KG = 'PECA_KG'
 
 
 def _dec(v) -> Decimal:
@@ -24,6 +28,17 @@ def item_controla_composicao_fisica(item: ItemNFeEntradaConferencia) -> bool:
     return bool(item.produto.get_controla_composicao_fisica_efetivo())
 
 
+def item_tipo_composicao_fisica(item: ItemNFeEntradaConferencia) -> str:
+    """Retorna BARRA_M ou PECA_KG conforme cadastro efetivo do produto."""
+    if not item.produto_id:
+        return TIPO_BARRA_M
+    return item.produto.get_tipo_composicao_fisica_efetivo()
+
+
+def item_e_peca_kg(item: ItemNFeEntradaConferencia) -> bool:
+    return item_tipo_composicao_fisica(item) == TIPO_PECA_KG
+
+
 MSG_EQUIV_LEGADO_REMOVIDA = (
     'Equivalência antiga (BR/kg) removida: informe a composição por grupo de barras (qtd × comprimento em M).'
 )
@@ -31,9 +46,20 @@ MSG_EQUIV_LEGADO_REMOVIDA = (
 
 def equivalencias_sao_legado_para_composicao(
     equivs: list[ItemNFeEntradaConferenciaEquivalencia],
+    tipo: str = TIPO_BARRA_M,
 ) -> bool:
-    """True quando sub-linhas usam formato antigo (BR/kg) em vez de composição por grupo."""
+    """True quando sub-linhas usam formato antigo incompatível com o tipo de composição atual."""
     if not equivs:
+        return False
+    if tipo == TIPO_PECA_KG:
+        # Peça/chapa usa peso_real_kg (peso_kg) por linha; metros/barras são legado incompatível.
+        for equiv in equivs:
+            if _dec(equiv.peso_kg) > 0:
+                continue
+            if _dec(equiv.metros) > 0 or _dec(equiv.barras) > 0 or _dec(equiv.comprimento_unitario_m) > 0:
+                return True
+            if not _dec(equiv.peso_kg):
+                return True
         return False
     for equiv in equivs:
         if _dec(equiv.peso_kg) > 0:
@@ -60,7 +86,7 @@ def limpar_equivalencias_legado_se_composicao_fisica(
     if item.estoque_aplicado_em:
         return False
     equivs = list(item.equivalencias.order_by('ordem', 'id'))
-    if not equivalencias_sao_legado_para_composicao(equivs):
+    if not equivalencias_sao_legado_para_composicao(equivs, item_tipo_composicao_fisica(item)):
         return False
     item.equivalencias.all().delete()
     item.quantidade_estoque_calculada = Decimal('0')
@@ -120,6 +146,45 @@ def quantidade_alvo_composicao_metros(
         f'Composição física na conferência ainda não suporta NF em {u or "unidade indefinida"}.',
         meta,
     )
+
+
+def quantidade_alvo_composicao_kg(
+    item: ItemNFeEntradaConferencia,
+) -> tuple[Decimal | None, str | None, dict]:
+    """Alvo em KG para composição PECA_KG. Suporta NF em KG ou TON."""
+    u = (item.unidade_nf or '').strip().upper()
+    qty = _dec(item.quantidade_nf)
+    meta: dict = {
+        'unidade_nf_original': u,
+        'quantidade_nf_original': str(qty),
+        'regra_conversao': None,
+        'fator_conversao_utilizado': None,
+        'kg_convertidos_nf': None,
+    }
+    if u == 'KG':
+        meta['kg_convertidos_nf'] = str(qty)
+        return qty, None, meta
+    if u == 'TON':
+        kg = (qty * Decimal('1000')).quantize(Decimal('0.001'))
+        meta['regra_conversao'] = 'TON_PARA_KG'
+        meta['fator_conversao_utilizado'] = '1000'
+        meta['kg_convertidos_nf'] = str(kg)
+        return kg, None, meta
+    return (
+        None,
+        f'Composição por peça/chapa (KG) não suporta NF em {u or "unidade indefinida"}.',
+        meta,
+    )
+
+
+def _peso_real_row(row: dict | ItemNFeEntradaConferenciaEquivalencia) -> Decimal:
+    """Peso real da peça/chapa (KG). Usa peso_kg como campo principal para PECA_KG."""
+    if isinstance(row, dict):
+        val = row.get('peso_real_kg')
+        if val in (None, ''):
+            val = row.get('peso_kg')
+        return _dec(val)
+    return _dec(row.peso_kg)
 
 
 def _equivalencias_rows(
@@ -189,6 +254,16 @@ def expandir_barras_fisicas_composicao(
     return [comp] * qtd
 
 
+def expandir_pecas_fisicas_composicao(
+    equiv: ItemNFeEntradaConferenciaEquivalencia,
+) -> list[Decimal]:
+    """Cada linha PECA_KG representa exatamente 1 peça física com seu peso real (KG)."""
+    peso = _peso_real_row(equiv)
+    if peso <= 0:
+        return []
+    return [peso.quantize(Decimal('0.001'))]
+
+
 def normalizar_linha_composicao_payload(row: dict) -> dict:
     """Preenche metros (total da linha) a partir de qtd × comprimento."""
     out = dict(row)
@@ -209,11 +284,54 @@ def normalizar_linha_composicao_payload(row: dict) -> dict:
     return out
 
 
+def normalizar_linha_peca_kg_payload(row: dict) -> dict:
+    """Peça/chapa: mantém apenas peso_real_kg (gravado em peso_kg); zera campos de barra."""
+    out = dict(row)
+    peso = _peso_real_row(row)
+    out['peso_kg'] = str(peso.quantize(Decimal('0.001'))) if peso > 0 else None
+    out['metros'] = None
+    out['barras'] = None
+    out['qtd_barras'] = None
+    out['comprimento_unitario_m'] = None
+    return out
+
+
+def validar_composicao_pecas_kg_equivalencias(
+    item: ItemNFeEntradaConferencia,
+    equivalencias_payload: list[dict] | None = None,
+) -> list[str]:
+    """Valida Σ(peso_real_kg das peças) contra a quantidade da NF em KG."""
+    rows = _equivalencias_rows(item, equivalencias_payload)
+    if not rows:
+        return []
+
+    erros: list[str] = []
+    alvo, erro_alvo, _meta = quantidade_alvo_composicao_kg(item)
+    if erro_alvo:
+        return [erro_alvo]
+
+    soma_kg = sum(_peso_real_row(row) for row in rows)
+    if alvo is not None and abs(soma_kg - alvo) > TOLERANCIA_COMPOSICAO:
+        erros.append(
+            f'A soma dos pesos das peças ({soma_kg:.3f} KG) deve ser igual à '
+            f'quantidade da NF em KG ({alvo:.3f} KG).',
+        )
+
+    for idx, row in enumerate(rows, start=1):
+        ordem = int(row.get('ordem') or idx) if isinstance(row, dict) else row.ordem
+        peso = _peso_real_row(row)
+        if peso <= 0:
+            erros.append(f'Peça {ordem}: informe o peso real da peça em KG (maior que zero).')
+    return erros
+
+
 def validar_composicao_fisica_equivalencias(
     item: ItemNFeEntradaConferencia,
     equivalencias_payload: list[dict] | None = None,
 ) -> list[str]:
-    """Valida Σ(qtd_barras × comprimento_unitario_m) contra alvo da NF em metros."""
+    """Valida a composição contra a NF, escolhendo a regra por tipo (barra em M ou peça em KG)."""
+    if item_e_peca_kg(item):
+        return validar_composicao_pecas_kg_equivalencias(item, equivalencias_payload)
     rows = _equivalencias_rows(item, equivalencias_payload)
     if not rows:
         return []
@@ -249,10 +367,64 @@ def validar_composicao_fisica_equivalencias(
     return erros
 
 
+def montar_auditoria_composicao_pecas_kg(
+    item: ItemNFeEntradaConferencia,
+    equivs: list[ItemNFeEntradaConferenciaEquivalencia],
+) -> dict:
+    _alvo, _erro, meta = quantidade_alvo_composicao_kg(item)
+    peso_total = sum(_peso_real_row(e) for e in equivs)
+    composicao = [
+        {
+            'ordem': e.ordem,
+            'peso_real_kg': str(_peso_real_row(e).quantize(Decimal('0.001'))),
+        }
+        for e in equivs
+    ]
+    return {
+        **meta,
+        'unidade_estoque_calculada': 'KG',
+        'quantidade_estoque_calculada': str(peso_total.quantize(Decimal('0.001'))),
+        'origem_conversao': ORIGEM_COMPOSICAO_PECAS_KG,
+        'pecas_informadas': len(equivs),
+        'peso_total_kg_composicao': str(peso_total.quantize(Decimal('0.001'))),
+        'composicao': composicao,
+    }
+
+
+def aplicar_totais_composicao_pecas_kg_item(
+    item_conf: ItemNFeEntradaConferencia,
+    equivs: list[ItemNFeEntradaConferenciaEquivalencia],
+) -> None:
+    """Define estoque calculado em KG a partir das peças informadas (1 linha = 1 peça)."""
+    peso_total = sum(_peso_real_row(e) for e in equivs)
+    for equiv in equivs:
+        equiv.metros = None
+        equiv.barras = None
+        equiv.qtd_barras = None
+        equiv.comprimento_unitario_m = None
+
+    item_conf.unidade_estoque_calculada = 'KG'
+    item_conf.quantidade_estoque_calculada = peso_total
+    item_conf.metros_total = Decimal('0')
+    item_conf.barras_total = Decimal(len(equivs))
+    item_conf.peso_total_kg = peso_total
+    item_conf.toneladas_total = (
+        (peso_total / Decimal('1000')).quantize(Decimal('0.001')) if peso_total else Decimal('0')
+    )
+    item_conf.conversao_estoque_auditoria = montar_auditoria_composicao_pecas_kg(item_conf, equivs)
+    if equivs:
+        ItemNFeEntradaConferenciaEquivalencia.objects.bulk_update(
+            equivs,
+            ['metros', 'barras', 'qtd_barras', 'comprimento_unitario_m'],
+        )
+
+
 def montar_auditoria_composicao_fisica(
     item: ItemNFeEntradaConferencia,
     equivs: list[ItemNFeEntradaConferenciaEquivalencia],
 ) -> dict:
+    if item_e_peca_kg(item):
+        return montar_auditoria_composicao_pecas_kg(item, equivs)
     _alvo, _erro, meta = quantidade_alvo_composicao_metros(item)
     metros_total = sum(total_linha_composicao_m(e) for e in equivs)
     barras_total = total_barras_composicao(equivs)
@@ -294,7 +466,10 @@ def aplicar_totais_composicao_fisica_item(
     item_conf: ItemNFeEntradaConferencia,
     equivs: list[ItemNFeEntradaConferenciaEquivalencia],
 ) -> None:
-    """Define estoque calculado em M a partir da composição informada."""
+    """Define estoque calculado a partir da composição informada (M para barra, KG para peça)."""
+    if item_e_peca_kg(item_conf):
+        aplicar_totais_composicao_pecas_kg_item(item_conf, equivs)
+        return
     metros_total = sum(total_linha_composicao_m(e) for e in equivs)
     barras_total = Decimal(total_barras_composicao(equivs))
     ppm = _peso_por_metro_produto(item_conf)

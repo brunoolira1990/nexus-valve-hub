@@ -210,6 +210,10 @@ class FamiliaProduto(models.Model):
         CANTONEIRA = 'CANTONEIRA', 'Cantoneira'
         OUTRO = 'OUTRO', 'Outro'
 
+    class TipoComposicaoFisica(models.TextChoices):
+        BARRA_M = 'BARRA_M', 'Barra (comprimento em metros)'
+        PECA_KG = 'PECA_KG', 'Peça/chapa (peso em kg)'
+
     codigo_figura = models.CharField(max_length=32, unique=True)
     descricao_base = models.CharField(max_length=512)
     tipo_regra_codigo = models.CharField(
@@ -271,7 +275,13 @@ class FamiliaProduto(models.Model):
     usa_conversao_dimensional = models.BooleanField(default=False)
     controla_composicao_fisica = models.BooleanField(
         default=False,
-        help_text='Exige composição por barra na conferência; estoque base em metros.',
+        help_text='Exige composição física na conferência (barra em metros ou peça/chapa em kg).',
+    )
+    tipo_composicao_fisica = models.CharField(
+        max_length=16,
+        choices=TipoComposicaoFisica.choices,
+        default=TipoComposicaoFisica.BARRA_M,
+        help_text='BARRA_M: estoque base em metros por barra. PECA_KG: estoque base em kg por peça/chapa.',
     )
     observacoes_conversao = models.CharField(max_length=512, blank=True)
 
@@ -379,6 +389,12 @@ class Produto(models.Model):
     densidade = models.DecimalField(max_digits=14, decimal_places=6, null=True, blank=True)
     usa_conversao_dimensional = models.BooleanField(default=False)
     controla_composicao_fisica = models.BooleanField(default=False)
+    tipo_composicao_fisica = models.CharField(
+        max_length=16,
+        choices=FamiliaProduto.TipoComposicaoFisica.choices,
+        blank=True,
+        help_text='Vazio herda da família. BARRA_M: metros por barra. PECA_KG: kg por peça/chapa.',
+    )
     od_mm = models.DecimalField(
         max_digits=10,
         decimal_places=3,
@@ -513,6 +529,19 @@ class Produto(models.Model):
         if self.familia_id:
             return bool(self.familia.controla_composicao_fisica)
         return False
+
+    def get_tipo_composicao_fisica_efetivo(self) -> str:
+        if (self.tipo_composicao_fisica or '').strip():
+            return self.tipo_composicao_fisica
+        if self.familia_id and (self.familia.tipo_composicao_fisica or '').strip():
+            return self.familia.tipo_composicao_fisica
+        return FamiliaProduto.TipoComposicaoFisica.BARRA_M
+
+    def get_unidade_base_composicao_fisica(self) -> str:
+        """Unidade base do estoque físico da composição: M para barra, KG para peça."""
+        if self.get_tipo_composicao_fisica_efetivo() == FamiliaProduto.TipoComposicaoFisica.PECA_KG:
+            return 'KG'
+        return 'M'
 
     def get_ncm_efetivo(self):
         codigo = (self.ncm or '').strip()

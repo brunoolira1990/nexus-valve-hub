@@ -249,22 +249,29 @@ class FamiliaProdutoSerializer(serializers.ModelSerializer):
         if msg:
             raise serializers.ValidationError({'tipo_dimensional': msg})
         if attrs.get('controla_composicao_fisica'):
+            tipo_comp = (
+                (attrs.get('tipo_composicao_fisica') or getattr(inst, 'tipo_composicao_fisica', '') or '')
+                .strip()
+                .upper()
+            ) or FamiliaProduto.TipoComposicaoFisica.BARRA_M
+            unidade_base = 'KG' if tipo_comp == FamiliaProduto.TipoComposicaoFisica.PECA_KG else 'M'
             unidade_est = (
                 (attrs.get('unidade_estoque_padrao') or getattr(inst, 'unidade_estoque_padrao', '') or '')
                 .strip()
                 .upper()
             )
-            if unidade_est and unidade_est != 'M':
+            if unidade_est and unidade_est != unidade_base:
                 raise serializers.ValidationError(
                     {
                         'unidade_estoque_padrao': (
-                            'Produtos com composição física devem ter unidade de estoque M (metros).'
+                            f'Composição física {tipo_comp} exige unidade de estoque {unidade_base}.'
                         ),
                     },
                 )
             if not unidade_est:
-                attrs['unidade_estoque_padrao'] = 'M'
-            attrs['usa_conversao_dimensional'] = True
+                attrs['unidade_estoque_padrao'] = unidade_base
+            if tipo_comp == FamiliaProduto.TipoComposicaoFisica.BARRA_M:
+                attrs['usa_conversao_dimensional'] = True
         return attrs
 
     def get_ncm_padrao_info(self, obj: FamiliaProduto):
@@ -477,6 +484,7 @@ class ProdutoSerializer(serializers.ModelSerializer):
             'densidade',
             'usa_conversao_dimensional',
             'controla_composicao_fisica',
+            'tipo_composicao_fisica',
             'od_mm',
             'espessura_mm',
             'comprimento_mm',
@@ -770,6 +778,15 @@ class ProdutoSerializer(serializers.ModelSerializer):
                 controla = True
         if not controla:
             return
+        tipo_comp = (
+            (attrs.get('tipo_composicao_fisica') or getattr(inst, 'tipo_composicao_fisica', '') or '')
+            .strip()
+            .upper()
+        )
+        if not tipo_comp and inst and inst.familia_id:
+            tipo_comp = (inst.familia.tipo_composicao_fisica or '').strip().upper()
+        tipo_comp = tipo_comp or FamiliaProduto.TipoComposicaoFisica.BARRA_M
+        unidade_base = 'KG' if tipo_comp == FamiliaProduto.TipoComposicaoFisica.PECA_KG else 'M'
         unidade_est = (
             (attrs.get('unidade_estoque') or getattr(inst, 'unidade_estoque', '') or '')
             .strip()
@@ -781,17 +798,18 @@ class ProdutoSerializer(serializers.ModelSerializer):
                 .strip()
                 .upper()
             )
-        if unidade_est and unidade_est != 'M':
+        if unidade_est and unidade_est != unidade_base:
             raise serializers.ValidationError(
                 {
                     'unidade_estoque': (
-                        'Produtos com composição física devem ter unidade de estoque M (metros).'
+                        f'Composição física {tipo_comp} exige unidade de estoque {unidade_base}.'
                     ),
                 },
             )
         if not (attrs.get('unidade_estoque') or getattr(inst, 'unidade_estoque', '')).strip():
-            attrs['unidade_estoque'] = 'M'
-        attrs['usa_conversao_dimensional'] = True
+            attrs['unidade_estoque'] = unidade_base
+        if tipo_comp == FamiliaProduto.TipoComposicaoFisica.BARRA_M:
+            attrs['usa_conversao_dimensional'] = True
 
     def create(self, validated_data):
         try:
@@ -847,6 +865,8 @@ class ProdutoSerializer(serializers.ModelSerializer):
         data['unidades_venda_permitidas_efetivas'] = instance.get_unidades_venda_permitidas_efetivas()
         data['usa_conversao_dimensional_efetivo'] = instance.get_usa_conversao_dimensional_efetivo()
         data['controla_composicao_fisica_efetivo'] = instance.get_controla_composicao_fisica_efetivo()
+        data['tipo_composicao_fisica_efetivo'] = instance.get_tipo_composicao_fisica_efetivo()
+        data['unidade_base_composicao_fisica'] = instance.get_unidade_base_composicao_fisica()
         data['alertas'] = (
             ['Este produto usa NCM diferente do padrão da família.']
             if (instance.ncm_especifico or '').strip()

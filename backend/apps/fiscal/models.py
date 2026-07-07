@@ -1052,13 +1052,23 @@ class ItemNFeEntradaConferenciaEquivalencia(models.Model):
 
 
 class EstoqueBarra(models.Model):
-    """Estoque físico rastreável por barra (metros), originado da conferência NF-e entrada."""
+    """Estoque físico rastreável por peça individual (barra em metros ou chapa/peça em kg).
+
+    Originado da conferência NF-e entrada. A unidade base é definida em `unidade_base`
+    (M para barra, KG para peça/chapa). Os campos `comprimento_original`/`saldo` são a
+    fonte de verdade na unidade base; `comprimento_original_m`/`saldo_m` são mantidos
+    apenas quando `unidade_base == 'M'` por compatibilidade de leitura.
+    """
 
     class Status(models.TextChoices):
         DISPONIVEL = 'DISPONIVEL', 'Disponível'
         PARCIAL = 'PARCIAL', 'Parcial'
         CONSUMIDA = 'CONSUMIDA', 'Consumida'
         CANCELADA = 'CANCELADA', 'Cancelada'
+
+    class TipoComposicao(models.TextChoices):
+        BARRA_M = 'BARRA_M', 'Barra (metros)'
+        PECA_KG = 'PECA_KG', 'Peça/chapa (kg)'
 
     class Origem(models.TextChoices):
         CONFERENCIA_NFE_ENTRADA = 'CONFERENCIA_NFE_ENTRADA', 'Conferência NF-e entrada'
@@ -1094,9 +1104,16 @@ class EstoqueBarra(models.Model):
         related_name='estoque_barras',
     )
     codigo_interno_barra = models.CharField(max_length=64, unique=True, db_index=True)
-    comprimento_original_m = models.DecimalField(max_digits=14, decimal_places=3)
-    saldo_m = models.DecimalField(max_digits=14, decimal_places=3)
+    tipo_composicao = models.CharField(
+        max_length=16,
+        choices=TipoComposicao.choices,
+        default=TipoComposicao.BARRA_M,
+    )
     unidade_base = models.CharField(max_length=8, default='M')
+    quantidade_original = models.DecimalField(max_digits=14, decimal_places=3, default=Decimal('0'))
+    saldo = models.DecimalField(max_digits=14, decimal_places=3, default=Decimal('0'))
+    comprimento_original_m = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
+    saldo_m = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
     status = models.CharField(
         max_length=16,
         choices=Status.choices,
@@ -1125,7 +1142,17 @@ class EstoqueBarra(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f'{self.codigo_interno_barra} ({self.saldo_m} M)'
+        return f'{self.codigo_interno_barra} ({self.saldo} {self.unidade_base})'
+
+    @property
+    def tem_consumo(self) -> bool:
+        if self.status in (self.Status.PARCIAL, self.Status.CONSUMIDA):
+            return True
+        return _dec_saldo(self.saldo) < _dec_saldo(self.quantidade_original)
+
+
+def _dec_saldo(v) -> Decimal:
+    return Decimal(str(v)) if v is not None else Decimal('0')
 
 
 class ItemNFeEntradaConferenciaCorridaSplit(models.Model):

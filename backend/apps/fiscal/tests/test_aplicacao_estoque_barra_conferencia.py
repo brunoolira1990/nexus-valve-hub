@@ -10,6 +10,7 @@ from apps.fiscal.aplicacao_estoque_barra_conferencia import (
     aplicar_estoque_barras_composicao_conferencia,
     estornar_barras_composicao_item,
     saldo_barras_produto_metros,
+    saldo_pecas_produto_kg,
 )
 from apps.fiscal.aplicacao_estoque_conferencia import aplicar_estoque_fisico_conferencia
 from apps.fiscal.composicao_fisica_conferencia import REGRA_KG_PARA_M_PESO_POR_METRO
@@ -19,7 +20,11 @@ from apps.fiscal.models import (
     ItemNFeEntradaConferenciaEquivalencia,
 )
 from apps.fiscal.rastreabilidade_conferencia import sincronizar_equivalencias_entrada_item
-from apps.fiscal.tests.test_conferencia_equivalencia_entrada import _setup_tubo_conferencia
+from apps.fiscal.tests.test_conferencia_equivalencia_entrada import (
+    _criar_composicao_quatro_chapas,
+    _setup_chapa_conferencia,
+    _setup_tubo_conferencia,
+)
 from apps.fiscal.tests.test_aplicacao_estoque_conferencia import _setup_conferencia
 
 
@@ -204,3 +209,43 @@ class AplicacaoEstoqueBarraConferenciaTests(TestCase):
 
         model = apps.get_model('fiscal', 'EstoqueBarra')
         self.assertIsNotNone(model._meta.get_field('sequencia_grupo'))
+        self.assertIsNotNone(model._meta.get_field('saldo'))
+        self.assertIsNotNone(model._meta.get_field('tipo_composicao'))
+
+
+class AplicacaoEstoquePecaKgConferenciaTests(TestCase):
+    """Critério de aceite: 4 chapas com pesos diferentes → 4 EstoqueBarra em KG."""
+
+    def test_quatro_chapas_cria_quatro_estoque_barra_kg(self):
+        ctx = _setup_chapa_conferencia('PKA1', qty='486.300')
+        linha = ctx['linha']
+        pesos = ('121.800', '119.450', '122.600', '122.450')
+        _criar_composicao_quatro_chapas(linha, pesos)
+        aplicar_pos_save_item_conferencia(linha, ctx['conf'])
+        res = aplicar_estoque_fisico_conferencia(ctx['conf'], confirmar_alertas=True)
+        self.assertTrue(res['aplicado'])
+
+        pecas = EstoqueBarra.objects.filter(item_conferencia=linha).order_by('equivalencia_entrada__ordem')
+        self.assertEqual(pecas.count(), 4)
+        self.assertEqual(
+            [p.saldo for p in pecas],
+            [Decimal(p) for p in pesos],
+        )
+        self.assertTrue(all(p.unidade_base == 'KG' for p in pecas))
+        self.assertTrue(all(p.tipo_composicao == EstoqueBarra.TipoComposicao.PECA_KG for p in pecas))
+        self.assertTrue(all(p.saldo == p.quantidade_original for p in pecas))
+        self.assertIsNone(pecas.first().saldo_m)
+        self.assertEqual(saldo_pecas_produto_kg(ctx['prod'].id), Decimal('486.300'))
+
+    def test_aplicacao_idempotente_pecas_kg(self):
+        ctx = _setup_chapa_conferencia('PKA2', qty='486.300')
+        linha = ctx['linha']
+        _criar_composicao_quatro_chapas(linha)
+        aplicar_pos_save_item_conferencia(linha, ctx['conf'])
+        for _ in range(2):
+            aplicar_estoque_barras_composicao_conferencia(
+                linha,
+                fornecedor_id=ctx['forn'].id,
+                nfe_entrada_historica_id=ctx['nf'].id,
+            )
+        self.assertEqual(EstoqueBarra.objects.filter(item_conferencia=linha).count(), 4)
