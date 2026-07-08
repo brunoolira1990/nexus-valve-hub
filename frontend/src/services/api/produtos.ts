@@ -132,6 +132,9 @@ export const familiasProdutoService = {
   create: async (data: Omit<FamiliaProduto, 'id'>) => (await api.post<FamiliaProduto>(famPath, data)).data,
   update: async (id: number, data: Partial<FamiliaProduto>) =>
     (await api.patch<FamiliaProduto>(`${famPath}${id}/`, data)).data,
+  delete: async (id: number) => {
+    await api.delete(`${famPath}${id}/`);
+  },
   search: async (term: string, limit = 20) => {
     const response = await api.get<ListResponse<FamiliaProduto>>(famPath, { params: { search: term, limit, apenas_ativas: '1' } });
     return unwrapList(response.data);

@@ -1,7 +1,8 @@
 from decimal import Decimal
 
+from django.db.models import ProtectedError
 from django.http import JsonResponse
-from rest_framework import viewsets
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -103,6 +104,37 @@ class FamiliaProdutoViewSet(viewsets.ModelViewSet):
             rows.sort(key=lambda o: natural_codigo_figura_key(o.codigo_figura or ''))
         serializer = self.get_serializer(rows, many=True)
         return Response(serializer.data)
+
+    def destroy(self, request, *args, **kwargs):
+        familia = self.get_object()
+        total_produtos = familia.produtos.count()
+        if total_produtos:
+            plural = 's' if total_produtos > 1 else ''
+            return Response(
+                {
+                    'detail': (
+                        f'Não é possível excluir a família {familia.codigo_figura}: '
+                        f'existem {total_produtos} produto{plural} cadastrado{plural} nesta família. '
+                        'Exclua ou mova os produtos antes de excluir a família.'
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            return super().destroy(request, *args, **kwargs)
+        except ProtectedError as exc:
+            # Salvaguarda para FKs PROTECT futuras que não sejam Produto.
+            modelos = sorted({obj._meta.verbose_name for obj in exc.protected_objects})
+            vinculos = ', '.join(str(m) for m in modelos) or 'registros vinculados'
+            return Response(
+                {
+                    'detail': (
+                        f'Não é possível excluir a família {familia.codigo_figura}: '
+                        f'existem vínculos de {vinculos} impedindo a exclusão.'
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
 
 class RoscaConexaoViewSet(viewsets.ModelViewSet):

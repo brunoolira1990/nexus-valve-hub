@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
@@ -397,10 +397,12 @@ const Produtos = () => {
   const [espessuraMmInput, setEspessuraMmInput] = useState('');
   const [comprimentoMmInput, setComprimentoMmInput] = useState('');
   const [famSaveErr, setFamSaveErr] = useState<string | null>(null);
+  const [famDeleteErr, setFamDeleteErr] = useState<string | null>(null);
   const [editingFamilia, setEditingFamilia] = useState<FamiliaProduto | null>(null);
   const [listNotice, setListNotice] = useState<string | null>(null);
   const [produtoFichaTab, setProdutoFichaTab] = useState('geral');
   const [codigoManualAutoFocus, setCodigoManualAutoFocus] = useState(false);
+  const previewRequestSeqRef = useRef(0);
 
   useEffect(() => {
     if (modalOpen) setProdutoFichaTab('geral');
@@ -550,11 +552,15 @@ const Produtos = () => {
   );
   const refreshPreview = useCallback(async () => {
     if (form.modo_codigo !== 'INTERNO' || !form.familia_id) {
+      previewRequestSeqRef.current += 1;
       setPreviewCodigo('');
       setPreviewDesc('');
       setPreviewMsg('');
+      setPreviewNcm('');
+      setPreviewUnidade('');
       return;
     }
+    const seq = ++previewRequestSeqRef.current;
     try {
       const res = await produtosService.previewCodigo({
         familia_id: form.familia_id,
@@ -577,12 +583,14 @@ const Produtos = () => {
         dimensao_descricao: form.dimensao_descricao || '',
         dimensoes_json: form.dimensoes_json ?? {},
       });
+      if (seq !== previewRequestSeqRef.current) return;
       setPreviewCodigo(res.codigo);
       setPreviewDesc(res.descricao_sugerida);
       setPreviewMsg(res.mensagem);
       setPreviewNcm(res.ncm_efetivo || '');
       setPreviewUnidade(res.unidade_efetiva || '');
     } catch {
+      if (seq !== previewRequestSeqRef.current) return;
       setPreviewCodigo('');
       setPreviewDesc('');
       setPreviewMsg('Não foi possível calcular a prévia.');
@@ -1133,6 +1141,22 @@ const Produtos = () => {
     }
   };
 
+  const handleDeleteFamilia = async (familia: FamiliaProduto) => {
+    const ok = confirm(
+      `Excluir permanentemente a família/figura ${familia.codigo_figura} — ${familia.descricao_base}?\n\n` +
+        'Esta ação não pode ser desfeita. Só é permitida se não houver nenhum produto cadastrado nesta família.',
+    );
+    if (!ok) return;
+    setFamDeleteErr(null);
+    try {
+      await familiasProdutoService.delete(familia.id);
+      await loadBases();
+      setListNotice(`Família ${familia.codigo_figura} excluída com sucesso.`);
+    } catch (e) {
+      setFamDeleteErr(apiErrorMessage(e, { fallback: 'Não foi possível excluir a família.' }));
+    }
+  };
+
   const aplicarDescricaoPreview = () => {
     if (previewDesc) f('descricao', previewDesc);
   };
@@ -1532,7 +1556,9 @@ const Produtos = () => {
             ) : null}
           </>
         ) : (
-          <table className="erp-table">
+          <>
+            {famDeleteErr ? <p className="text-sm text-destructive p-3">{famDeleteErr}</p> : null}
+            <table className="erp-table">
             <thead>
               <tr>
                 <th>Código figura/base</th>
@@ -1563,12 +1589,21 @@ const Produtos = () => {
                       <button type="button" onClick={() => usarFamiliaExistente(fml)} className="erp-btn-outline erp-btn-sm">
                         Usar
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteFamilia(fml)}
+                        className="erp-btn-ghost erp-btn-sm text-destructive"
+                        title="Excluir família (permanente; só sem produtos vinculados)"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
                   </td>
                 </tr>
               ))}
             </tbody>
-          </table>
+            </table>
+          </>
         )}
       </div>
 
@@ -1646,6 +1681,7 @@ const Produtos = () => {
               <div className="rounded-md border border-border bg-muted/20 p-3">
                 <label className="erp-label">Código</label>
                 <p className="font-mono font-semibold text-lg mt-1">{previewCodigo || editing?.codigo_completo || '—'}</p>
+                {previewMsg ? <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">{previewMsg}</p> : null}
                 {previewCodigoDuplicado ? (
                   <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">Já existe produto com este código.</p>
                 ) : null}
