@@ -5,12 +5,12 @@ django-cors-headers==4.6.0
 psycopg2-binary==2.9.10
 Pillow==11.0.0
 reportlab==4.2.5
-cryptography==44.0.0
+cryptography>=45.0.0,<46.0.0
 pypdf==5.4.0
 openpyxl==3.1.5
 nfelib>=2.5.0
 PyNFe>=0.6.5
-signxml>=4.0.0
+signxml>=5.0.0,<6.0.0
 lxml>=5.0.0
 # PyNFe 0.6.x não declara dependências no pip — necessárias para ComunicacaoSefaz
 requests>=2.31.0
