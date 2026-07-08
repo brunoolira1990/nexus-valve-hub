@@ -809,6 +809,8 @@ export interface CorridaDisponivelCertificadoQualidade {
   certificado_fornecedor?: string;
   certificado_fornecedor_id?: number | null;
   item_certificado_fornecedor_id?: number | null;
+  certificado_fornecedor_origem_id?: number | null;
+  item_certificado_fornecedor_origem_id?: number | null;
   status_certificado_fornecedor?: string;
   status_origem_tecnica?: string;
   tem_dados_tecnicos?: boolean;
@@ -868,6 +870,15 @@ export interface CertificadoQualidade {
 
 export type CertificadoFornecedorStatus = 'rascunho' | 'registrado' | 'cancelado';
 export type TipoDadosTecnicosItem = 'PADRAO_ITEM' | 'VALVULA_COMPONENTES';
+
+export interface ItemCertificadoFornecedorCorrida {
+  id?: number;
+  ordem: number;
+  corrida: string;
+  lote?: string;
+  quantidade?: number | null;
+  criado_em?: string;
+}
 
 export interface ItemCertificadoFornecedorEntradaComponente {
   id?: number;
@@ -935,6 +946,7 @@ export interface ItemCertificadoFornecedorEntrada {
   valor_unitario_pedido?: string | null;
   origem_rastreabilidade_completa?: boolean;
   componentes?: ItemCertificadoFornecedorEntradaComponente[];
+  corridas_adicionais?: ItemCertificadoFornecedorCorrida[];
 }
 
 export interface CertificadoFornecedorEntrada {

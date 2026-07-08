@@ -12,6 +12,7 @@ from .models import (
     CertificadoFornecedorEntrada,
     CertificadoQualidade,
     ComponenteCertificadoFornecedorEntrada,
+    ItemCertificadoFornecedorCorrida,
     ItemCertificadoFornecedorEntrada,
     ItemCertificadoQualidade,
     ItemCertificadoQualidadeComponente,
@@ -467,6 +468,31 @@ class ComponenteCertificadoFornecedorEntradaSerializer(serializers.ModelSerializ
         return attrs
 
 
+class ItemCertificadoFornecedorCorridaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ItemCertificadoFornecedorCorrida
+        fields = (
+            'id',
+            'ordem',
+            'corrida',
+            'lote',
+            'quantidade',
+            'criado_em',
+        )
+        read_only_fields = ('criado_em',)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        normalize_operational_fields(
+            attrs,
+            {
+                'corrida',
+                'lote',
+            },
+        )
+        return attrs
+
+
 def _origem_pedido_compra_de_item_cf(item_conf: ItemNFeEntradaConferencia | None) -> dict | None:
     if not item_conf or not item_conf.item_pedido_compra_id:
         return None
@@ -507,6 +533,46 @@ def _apply_origem_vinculo_item_cf(attrs: dict, item_conf: ItemNFeEntradaConferen
         attrs.setdefault('origem_nfe_item_numero', item_conf.item_nfe_historico.n_item)
 
 
+def sincronizar_corridas_adicionais_item_cf(
+    item: ItemCertificadoFornecedorEntrada,
+    corridas_data: list[dict] | None,
+) -> None:
+    """Upsert de corridas adicionais por ordem; remove linhas ausentes do payload."""
+    if corridas_data is None:
+        return
+
+    if not corridas_data:
+        item.corridas_adicionais.all().delete()
+        return
+
+    ordens_payload: set[int] = set()
+    for idx, row in enumerate(corridas_data, start=1):
+        if not isinstance(row, dict):
+            continue
+        ordem = int(row.get('ordem') or idx)
+        ordens_payload.add(ordem)
+        defaults = {
+            'corrida': (row.get('corrida') or '').strip(),
+            'lote': (row.get('lote') or '').strip(),
+            'quantidade': row.get('quantidade'),
+        }
+        row_id = row.get('id')
+        if row_id:
+            updated = ItemCertificadoFornecedorCorrida.objects.filter(
+                pk=row_id,
+                item_certificado=item,
+            ).update(ordem=ordem, **defaults)
+            if updated:
+                continue
+        ItemCertificadoFornecedorCorrida.objects.update_or_create(
+            item_certificado=item,
+            ordem=ordem,
+            defaults=defaults,
+        )
+
+    item.corridas_adicionais.exclude(ordem__in=ordens_payload).delete()
+
+
 def _validate_item_conferencia_para_certificado(
     item_conf: ItemNFeEntradaConferencia,
     nf_entrada_historica_id: int | None,
@@ -540,6 +606,7 @@ def _validate_item_conferencia_para_certificado(
 
 class ItemCertificadoFornecedorEntradaSerializer(serializers.ModelSerializer):
     componentes = ComponenteCertificadoFornecedorEntradaSerializer(many=True, required=False)
+    corridas_adicionais = ItemCertificadoFornecedorCorridaSerializer(many=True, required=False)
     item_conferencia_id = serializers.PrimaryKeyRelatedField(
         source='item_conferencia',
         queryset=ItemNFeEntradaConferencia.objects.select_related(
@@ -612,6 +679,7 @@ class ItemCertificadoFornecedorEntradaSerializer(serializers.ModelSerializer):
             'valor_unitario_pedido',
             'origem_rastreabilidade_completa',
             'componentes',
+            'corridas_adicionais',
         )
         read_only_fields = (
             'origem_nfe_numero',
@@ -959,6 +1027,7 @@ class CertificadoFornecedorEntradaSerializer(serializers.ModelSerializer):
         instance.itens.all().delete()
         for i, item in enumerate(itens_data, start=1):
             comps = item.pop('componentes', []) or []
+            corridas_extra = item.pop('corridas_adicionais', None)
             numero_item = (item.get('numero_certificado_fornecedor_item') or '').strip()
             numero_base = numero_item or (instance.numero_certificado_fornecedor or '').strip()
             obj = ItemCertificadoFornecedorEntrada.objects.create(
@@ -975,6 +1044,7 @@ class CertificadoFornecedorEntradaSerializer(serializers.ModelSerializer):
                     ordem=comp.get('ordem') or j,
                     **comp_data,
                 )
+            sincronizar_corridas_adicionais_item_cf(obj, corridas_extra if corridas_extra is not None else [])
 
     def _itens_child_context(self, cert: CertificadoFornecedorEntrada | None, nf_hist_id: int | None) -> dict:
         return {

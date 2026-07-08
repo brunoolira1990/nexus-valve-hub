@@ -126,6 +126,20 @@ const coerceProdutoItemId = (produto: ItemCertificadoQualidade['produto']): numb
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 
+/** Divide quantidade total em n partes (3 casas); última(s) linha(s) absorve(m) resto do arredondamento. */
+const redistribuirQuantidadeIgual = (total: number, n: number): number[] => {
+  if (n <= 0) return [];
+  const totalMilli = Math.round(total * 1000);
+  if (n === 1) return [totalMilli / 1000];
+  const baseMilli = Math.floor(totalMilli / n);
+  const restoMilli = totalMilli - baseMilli * n;
+  const shares = Array.from({ length: n }, () => baseMilli);
+  for (let i = 0; i < restoMilli; i += 1) {
+    shares[n - 1 - i] += 1;
+  }
+  return shares.map((m) => m / 1000);
+};
+
 /** Corrida/lote efetivos do CQ (campo manual + snapshots de rastreio); em válvula, complementa pelos componentes. */
 const resolverCorridaLoteBuscaFornecedor = (item: ItemCertificadoQualidade) => {
   const corridaBruta = String(item.corrida || item.corrida_snapshot || '').trim();
@@ -668,8 +682,8 @@ const Certificados = () => {
       composicao_json: ensureMap(source.composicao_json),
       ensaio_tracao_json: ensureMap(source.ensaio_tracao_json),
       ensaio_impacto_json: ensureMap(source.ensaio_impacto_json),
-      certificado_fornecedor_origem_id: source.certificado_fornecedor_id || null,
-      item_certificado_fornecedor_origem_id: source.item_certificado_fornecedor_id || null,
+      certificado_fornecedor_origem_id: source.certificado_fornecedor_origem_id ?? source.certificado_fornecedor_id ?? null,
+      item_certificado_fornecedor_origem_id: source.item_certificado_fornecedor_origem_id ?? source.item_certificado_fornecedor_id ?? null,
       fornecedor_nome_snapshot: source.fornecedor || '',
       nf_entrada_snapshot: source.nf_entrada || '',
       numero_certificado_fornecedor_item_snapshot:
@@ -683,6 +697,114 @@ const Certificados = () => {
     if (alertas.length) {
       setMensagens((m) => [...m, ...alertas]);
     }
+  };
+
+  const valorSelecaoCorridaDisponivel = (c: CorridaDisponivelCertificadoQualidade) =>
+    c.valor_selecao || `${c.corrida}||${c.lote || ''}`;
+
+  const certificadoOrigemIdDeCorridaDisponivel = (c: CorridaDisponivelCertificadoQualidade) =>
+    c.certificado_fornecedor_origem_id ?? c.certificado_fornecedor_id ?? null;
+
+  const adicionarCorridaIrmaDesteCertificado = (idx: number) => {
+    const item = formRef.current.itens[idx];
+    const cfOrigemId = item.certificado_fornecedor_origem_id;
+    if (!cfOrigemId) {
+      setSaveError('Selecione uma corrida com certificado fornecedor vinculado antes de adicionar corridas irmãs.');
+      return;
+    }
+    const produtoOrigemId = coerceProdutoItemId(item.produto);
+    const pertenceAoGrupoProdutoCf = (it: ItemCertificadoQualidade) =>
+      (it.certificado_fornecedor_origem_id ?? null) === cfOrigemId
+      && coerceProdutoItemId(it.produto) === produtoOrigemId;
+    setSaveError(null);
+    const jaUsadas = new Set(
+      formRef.current.itens
+        .filter(pertenceAoGrupoProdutoCf)
+        .map((it) => `${it.corrida || it.corrida_snapshot || ''}||${it.lote || it.lote_snapshot || ''}`),
+    );
+    const irmas = (corridasDisponiveisPorItem[idx] || []).filter(
+      (c) => certificadoOrigemIdDeCorridaDisponivel(c) === cfOrigemId,
+    );
+    const disponiveis = irmas.filter((c) => !jaUsadas.has(valorSelecaoCorridaDisponivel(c)));
+    if (!disponiveis.length) {
+      setMensagens((m) => [...m, 'Não há outras corridas irmãs deste certificado para adicionar.']);
+      return;
+    }
+
+    let escolhida = disponiveis[0];
+    if (disponiveis.length > 1) {
+      const opcoes = disponiveis
+        .map((c, i) => `${i + 1}) ${c.corrida}${c.lote ? `/${c.lote}` : ''}`)
+        .join('\n');
+      const resp = window.prompt(`Escolha a corrida irmã para adicionar (número):\n${opcoes}`, '1');
+      if (!resp) return;
+      const pick = Number(resp) - 1;
+      if (!Number.isFinite(pick) || pick < 0 || pick >= disponiveis.length) {
+        setSaveError('Seleção inválida de corrida irmã.');
+        return;
+      }
+      escolhida = disponiveis[pick];
+    }
+
+    const grupoIndicesAtuais = formRef.current.itens
+      .map((it, i) => (pertenceAoGrupoProdutoCf(it) ? i : -1))
+      .filter((i) => i >= 0);
+    const somaGrupo = grupoIndicesAtuais.reduce(
+      (acc, i) => acc + (Number(formRef.current.itens[i]?.quantidade) || 0),
+      0,
+    );
+    const quantidadesRedistribuidas = redistribuirQuantidadeIgual(
+      somaGrupo,
+      grupoIndicesAtuais.length + 1,
+    );
+
+    const novoIdx = formRef.current.itens.length;
+    const novoItem: ItemCertificadoQualidade = {
+      ...item,
+      id: undefined,
+      ordem: novoIdx + 1,
+      quantidade: quantidadesRedistribuidas[quantidadesRedistribuidas.length - 1] ?? 0,
+      corrida: escolhida.corrida || '',
+      lote: escolhida.lote || '',
+      corrida_snapshot: escolhida.corrida || '',
+      lote_snapshot: escolhida.lote || '',
+      certificado_fornecedor_origem_id:
+        escolhida.certificado_fornecedor_origem_id ?? escolhida.certificado_fornecedor_id ?? cfOrigemId,
+      item_certificado_fornecedor_origem_id:
+        escolhida.item_certificado_fornecedor_origem_id
+        ?? escolhida.item_certificado_fornecedor_id
+        ?? item.item_certificado_fornecedor_origem_id
+        ?? null,
+      numero_certificado_fornecedor_item_snapshot:
+        escolhida.numero_certificado_fornecedor_item || escolhida.certificado_fornecedor || item.numero_certificado_fornecedor_item_snapshot || '',
+      fornecedor_nome_snapshot: escolhida.fornecedor || item.fornecedor_nome_snapshot || '',
+      nf_entrada_snapshot: escolhida.nf_entrada || item.nf_entrada_snapshot || '',
+      origem_rastreabilidade_tipo: escolhida.origem || item.origem_rastreabilidade_tipo || 'certificado_fornecedor',
+      origem_status_tecnico: escolhida.status_origem_tecnica || item.origem_status_tecnico || '',
+      origem_observacoes: escolhida.observacoes_origem || item.origem_observacoes || '',
+    };
+
+    setForm((p) => {
+      const itensAtualizados = [...p.itens, novoItem].map((it, i) => ({ ...it, ordem: i + 1 }));
+      const grupoIndices = itensAtualizados
+        .map((it, i) => (pertenceAoGrupoProdutoCf(it) ? i : -1))
+        .filter((i) => i >= 0);
+      grupoIndices.forEach((itemIdx, shareIdx) => {
+        itensAtualizados[itemIdx] = {
+          ...itensAtualizados[itemIdx],
+          quantidade: quantidadesRedistribuidas[shareIdx] ?? itensAtualizados[itemIdx].quantidade,
+        };
+      });
+      return { ...p, itens: itensAtualizados };
+    });
+    setCorridasDisponiveisPorItem((prev) => ({
+      ...prev,
+      [novoIdx]: prev[idx] || [],
+    }));
+    setMensagens((m) => [
+      ...m,
+      `Linha adicionada com corrida ${escolhida.corrida}${escolhida.lote ? `/${escolhida.lote}` : ''} do mesmo certificado fornecedor.`,
+    ]);
   };
 
   const updateJsonField = (
@@ -1438,6 +1560,25 @@ const Certificados = () => {
                           );
                         })()}
                       </select>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="erp-btn-outline erp-btn-sm"
+                          disabled={
+                            !coerceProdutoItemId(it.produto)
+                            || !it.certificado_fornecedor_origem_id
+                            || editing?.status === 'cancelado'
+                          }
+                          title={
+                            !it.certificado_fornecedor_origem_id
+                              ? 'Selecione uma corrida vinculada a um certificado fornecedor.'
+                              : 'Adiciona nova linha do item com outra corrida/lote do mesmo certificado fornecedor.'
+                          }
+                          onClick={() => adicionarCorridaIrmaDesteCertificado(idx)}
+                        >
+                          + Adicionar corrida deste certificado
+                        </button>
+                      </div>
                       {!coerceProdutoItemId(it.produto) ? null : (corridasDisponiveisPorItem[idx] || []).length === 0 ? (
                         <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
                           Nenhuma corrida/lote disponível encontrada para este produto cadastrado.

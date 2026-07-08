@@ -17,6 +17,7 @@ import type {
   CertificadoFornecedorEntrada,
   CertificadoFornecedorStatus,
   DadosTecnicosFornecedorResultado,
+  ItemCertificadoFornecedorCorrida,
   ItemCertificadoFornecedorEntrada,
   NFeEntrada,
 } from '@/types';
@@ -222,6 +223,51 @@ const ensureMap = (v: unknown): Record<string, string> => {
   }, {});
 };
 
+const ensureCorridaAdicional = (raw: unknown, ordem = 1): ItemCertificadoFornecedorCorrida => {
+  const obj = (raw && typeof raw === 'object') ? (raw as Record<string, unknown>) : {};
+  return {
+    ...(obj.id != null ? { id: Number(obj.id) } : {}),
+    ordem: Number(obj.ordem || ordem),
+    corrida: String(obj.corrida || ''),
+    lote: String(obj.lote || ''),
+    quantidade: obj.quantidade == null || obj.quantidade === '' ? null : Number(obj.quantidade),
+    ...(obj.criado_em ? { criado_em: String(obj.criado_em) } : {}),
+  };
+};
+
+const mergeCorridasAdicionais = (
+  existentesRaw: ItemCertificadoFornecedorCorrida[] | undefined,
+  novasRaw: ItemCertificadoFornecedorCorrida[] | undefined,
+): ItemCertificadoFornecedorCorrida[] => {
+  const existentes = (existentesRaw || []).map((ca, i) => ensureCorridaAdicional(ca, i + 1));
+  const novas = (novasRaw || []).map((ca, i) => ensureCorridaAdicional(ca, i + 1));
+  if (!existentes.length && !novas.length) return [];
+
+  const chave = (c: ItemCertificadoFornecedorCorrida) => {
+    const corrida = (c.corrida || '').trim().toUpperCase();
+    const lote = (c.lote || '').trim().toUpperCase();
+    return `${corrida}||${lote}`;
+  };
+
+  const usados = new Set(existentes.map(chave));
+  const resultado: ItemCertificadoFornecedorCorrida[] = [...existentes];
+
+  for (const nova of novas) {
+    const k = chave(nova);
+    if (!k || usados.has(k)) continue;
+    usados.add(k);
+    resultado.push({
+      ...nova,
+      id: nova.id,
+    });
+  }
+
+  return resultado.map((c, idx) => ({
+    ...c,
+    ordem: idx + 1,
+  }));
+};
+
 const ensureComp = (raw: unknown, ordem = 1) => {
   const obj = (raw && typeof raw === 'object') ? (raw as Record<string, unknown>) : {};
   return {
@@ -416,6 +462,7 @@ const CertificadosFornecedor = () => {
         ensaio_tracao_json: ensureMap(it.ensaio_tracao_json),
         ensaio_impacto_json: ensureMap(it.ensaio_impacto_json),
         componentes: (it.componentes || []).map((cp, i) => ensureComp(cp, i + 1)),
+        corridas_adicionais: (it.corridas_adicionais || []).map((ca, i) => ensureCorridaAdicional(ca, i + 1)),
       })),
     });
     setSaveErrors([]);
@@ -478,18 +525,33 @@ const CertificadosFornecedor = () => {
       setForm((p) => ({
         ...p,
         ...data,
-        itens: ((data.itens as ItemCertificadoFornecedorEntrada[]) || []).map((it) => ({
-          ...it,
-          tipo_dados_tecnicos: it.tipo_dados_tecnicos || 'PADRAO_ITEM',
-          numero_certificado_fornecedor_item: it.numero_certificado_fornecedor_item || '',
-          data_certificado_fornecedor_item: it.data_certificado_fornecedor_item || '',
-          pagina_certificado_fornecedor: it.pagina_certificado_fornecedor || '',
-          observacao_origem_certificado: it.observacao_origem_certificado || '',
-          composicao_json: ensureMap(it.composicao_json),
-          ensaio_tracao_json: ensureMap(it.ensaio_tracao_json),
-          ensaio_impacto_json: ensureMap(it.ensaio_impacto_json),
-          componentes: (it.componentes || []).map((cp, i) => ensureComp(cp, i + 1)),
-        })),
+        itens: ((data.itens as ItemCertificadoFornecedorEntrada[]) || []).map((it) => {
+          const anterioresPorConferencia = new Map<number, ItemCertificadoFornecedorEntrada>();
+          (p.itens || []).forEach((oldIt) => {
+            if (oldIt.item_conferencia_id != null) {
+              anterioresPorConferencia.set(oldIt.item_conferencia_id, oldIt);
+            }
+          });
+          const existente = it.item_conferencia_id != null
+            ? anterioresPorConferencia.get(it.item_conferencia_id)
+            : undefined;
+          const corridasExistentes = existente?.corridas_adicionais || [];
+          const corridasNovas = (it.corridas_adicionais || []).map((ca, i) => ensureCorridaAdicional(ca, i + 1));
+
+          return {
+            ...it,
+            tipo_dados_tecnicos: it.tipo_dados_tecnicos || 'PADRAO_ITEM',
+            numero_certificado_fornecedor_item: it.numero_certificado_fornecedor_item || '',
+            data_certificado_fornecedor_item: it.data_certificado_fornecedor_item || '',
+            pagina_certificado_fornecedor: it.pagina_certificado_fornecedor || '',
+            observacao_origem_certificado: it.observacao_origem_certificado || '',
+            composicao_json: ensureMap(it.composicao_json),
+            ensaio_tracao_json: ensureMap(it.ensaio_tracao_json),
+            ensaio_impacto_json: ensureMap(it.ensaio_impacto_json),
+            componentes: (it.componentes || []).map((cp, i) => ensureComp(cp, i + 1)),
+            corridas_adicionais: mergeCorridasAdicionais(corridasExistentes, corridasNovas),
+          };
+        }),
       }));
       setNfeSelecionadaResumo((prev) => ({
         numero: String(data.numero_nf_entrada || prev?.numero || form.numero_nf_entrada || ''),
@@ -579,6 +641,43 @@ const CertificadosFornecedor = () => {
       const comps = [...(itemsNext[itemIdx].componentes || [])];
       comps.splice(compIdx, 1);
       itemsNext[itemIdx] = { ...itemsNext[itemIdx], componentes: comps.map((c, i) => ({ ...c, ordem: i + 1 })) };
+      return { ...p, itens: itemsNext };
+    });
+  };
+
+  const updateCorridaAdicional = (
+    itemIdx: number,
+    corridaIdx: number,
+    patch: Partial<ItemCertificadoFornecedorCorrida>,
+  ) => {
+    setForm((p) => {
+      const itemsNext = [...p.itens];
+      const corridas = [...(itemsNext[itemIdx].corridas_adicionais || [])];
+      corridas[corridaIdx] = { ...corridas[corridaIdx], ...patch };
+      itemsNext[itemIdx] = { ...itemsNext[itemIdx], corridas_adicionais: corridas };
+      return { ...p, itens: itemsNext };
+    });
+  };
+
+  const addCorridaAdicional = (itemIdx: number) => {
+    setForm((p) => {
+      const itemsNext = [...p.itens];
+      const corridas = [...(itemsNext[itemIdx].corridas_adicionais || [])];
+      corridas.push(ensureCorridaAdicional({}, corridas.length + 1));
+      itemsNext[itemIdx] = { ...itemsNext[itemIdx], corridas_adicionais: corridas };
+      return { ...p, itens: itemsNext };
+    });
+  };
+
+  const removeCorridaAdicional = (itemIdx: number, corridaIdx: number) => {
+    setForm((p) => {
+      const itemsNext = [...p.itens];
+      const corridas = [...(itemsNext[itemIdx].corridas_adicionais || [])];
+      corridas.splice(corridaIdx, 1);
+      itemsNext[itemIdx] = {
+        ...itemsNext[itemIdx],
+        corridas_adicionais: corridas.map((c, i) => ({ ...c, ordem: i + 1 })),
+      };
       return { ...p, itens: itemsNext };
     });
   };
@@ -1119,6 +1218,59 @@ const CertificadosFornecedor = () => {
                         />
                         Incluir certificados em rascunho
                       </label>
+                    </div>
+                    <div className="md:col-span-6 rounded border border-border p-2 bg-muted/10">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                        <p className="text-xs font-semibold">Corridas adicionais</p>
+                        <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => addCorridaAdicional(idx)}>
+                          + Adicionar corrida
+                        </button>
+                      </div>
+                      {(it.corridas_adicionais || []).length === 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          Corridas extras do mesmo certificado/item (além da corrida principal acima).
+                        </p>
+                      ) : (
+                        <div className="space-y-1">
+                          {(it.corridas_adicionais || []).map((ca, caidx) => (
+                            <div
+                              key={`corrida-adicional-${idx}-${ca.id ?? caidx}`}
+                              className="grid grid-cols-[1fr_1fr_5rem_auto] gap-1 items-center"
+                            >
+                              <input
+                                className="erp-input h-8 text-xs"
+                                placeholder="Corrida"
+                                value={ca.corrida}
+                                onChange={(e) => updateCorridaAdicional(idx, caidx, { corrida: e.target.value })}
+                              />
+                              <input
+                                className="erp-input h-8 text-xs"
+                                placeholder="Lote"
+                                value={ca.lote || ''}
+                                onChange={(e) => updateCorridaAdicional(idx, caidx, { lote: e.target.value })}
+                              />
+                              <input
+                                className="erp-input h-8 text-xs"
+                                placeholder="Qtd"
+                                value={ca.quantidade ?? ''}
+                                onChange={(e) =>
+                                  updateCorridaAdicional(idx, caidx, {
+                                    quantidade: e.target.value === '' ? null : Number(e.target.value.replace(',', '.')),
+                                  })
+                                }
+                              />
+                              <button
+                                type="button"
+                                className="erp-btn-outline h-8 px-2 text-xs"
+                                onClick={() => removeCorridaAdicional(idx, caidx)}
+                                title="Remover corrida adicional"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="md:col-span-6 rounded border border-border p-2">
                       <p className="text-xs font-semibold mb-2">Composicao quimica</p>

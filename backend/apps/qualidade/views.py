@@ -37,6 +37,37 @@ from .serializers import (
 logger = logging.getLogger(__name__)
 
 
+def _corrida_lote_e_corridas_adicionais_de_conferencia(
+    ic: ItemNFeEntradaConferencia | None,
+) -> tuple[str, str, list[dict]]:
+    """Corrida principal + corridas adicionais a partir dos splits da conferência."""
+    if not ic:
+        return '', '', []
+
+    splits = list(ic.corridas_split.order_by('ordem', 'id'))
+    if splits:
+        primeiro = splits[0]
+        corrida = (primeiro.corrida or '').strip()
+        lote = (primeiro.lote or '').strip()
+        adicionais: list[dict] = []
+        for idx, split_row in enumerate(splits[1:], start=1):
+            corrida_split = (split_row.corrida or '').strip()
+            lote_split = (split_row.lote or '').strip()
+            if not corrida_split and not lote_split:
+                continue
+            adicionais.append(
+                {
+                    'ordem': idx,
+                    'corrida': corrida_split,
+                    'lote': lote_split,
+                    'quantidade': split_row.quantidade,
+                },
+            )
+        return corrida, lote, adicionais
+
+    return (ic.corrida or '').strip(), (ic.lote or '').strip(), []
+
+
 # --- Fase E.3: permissões mínimas (Django model permissions + IsAuthenticated) ---
 #
 # Decisões em relação à matriz em docs/qualidade-certificados.md (secção 8):
@@ -557,6 +588,7 @@ class CertificadoFornecedorEntradaViewSet(AutocompleteOrPaginationMixin, viewset
         )
         .prefetch_related(
             'itens__componentes',
+            'itens__corridas_adicionais',
             'itens__item_conferencia__item_nfe_historico',
             'itens__item_conferencia__conferencia__nf_entrada_historica',
             'itens__item_conferencia__item_pedido_compra__pedido',
@@ -662,6 +694,7 @@ class CertificadoFornecedorEntradaViewSet(AutocompleteOrPaginationMixin, viewset
         for idx, it in enumerate(nf_hist.itens.order_by('n_item')):
             prod = it.prod_json or {}
             ic = conf_por_n_item.get(it.n_item)
+            corrida_conf, lote_conf, corridas_adicionais_conf = _corrida_lote_e_corridas_adicionais_de_conferencia(ic)
             row = {
                 'ordem': idx + 1,
                 'produto': ic.produto_id if ic and ic.produto_id else None,
@@ -671,8 +704,9 @@ class CertificadoFornecedorEntradaViewSet(AutocompleteOrPaginationMixin, viewset
                 'unidade': str(prod.get('uCom') or ''),
                 'ncm': str(prod.get('NCM') or ''),
                 'norma': '',
-                'corrida': (ic.corrida if ic and ic.corrida else ''),
-                'lote': (ic.lote if ic and ic.lote else ''),
+                'corrida': corrida_conf,
+                'lote': lote_conf,
+                'corridas_adicionais': corridas_adicionais_conf,
                 'numero_certificado_fornecedor_item': '',
                 'data_certificado_fornecedor_item': None,
                 'pagina_certificado_fornecedor': '',

@@ -51,5 +51,5 @@ def map_itens_conferencia_por_n_item(conferencia: NFeEntradaConferencia) -> dict
             'produto',
             'item_pedido_compra__pedido',
             'item_pedido_compra__produto',
-        ).all()
+        ).prefetch_related('corridas_split').all()
     }
