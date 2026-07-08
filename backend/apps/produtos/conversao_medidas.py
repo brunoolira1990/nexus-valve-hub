@@ -118,7 +118,17 @@ def converter_quantidade_produto(
 
     if uo == ud:
         quantidade_destino = qtd
-        peso_kg = _to_kg(produto, qtd, uo) if uo in {"KG", "TON", "M", "BR", "PC", "CH"} else None
+        if uo == "KG":
+            peso_kg = qtd
+        elif uo == "TON":
+            peso_kg = qtd * Decimal("1000")
+        elif uo in {"M", "BR", "PC", "CH"}:
+            try:
+                peso_kg = _to_kg(produto, qtd, uo)
+            except ConversaoErro:
+                peso_kg = None
+        else:
+            peso_kg = None
     else:
         kg = _to_kg(produto, qtd, uo)
         quantidade_destino = _from_kg(produto, kg, ud)

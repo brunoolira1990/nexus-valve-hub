@@ -136,23 +136,43 @@ def calcular_item_comercial_com_conversao(
             raise serializers.ValidationError(
                 {'unidade_negociada': f"Unidade '{unidade_neg}' não está permitida para {ctx_msg} neste produto."}
             )
-        try:
-            conv_estoque = converter_quantidade_produto(produto, qtd_neg, unidade_neg, unidade_estoque)
-            qtd_estoque = _q(_dec(conv_estoque.quantidade_destino), QTY_Q)
-            peso_total_kg = _q(_dec(conv_estoque.peso_kg or Decimal('0')), QTY_Q)
-            metros_total = _q(_dec(conv_estoque.metros or Decimal('0')), QTY_Q)
-            barras_total = _q(_dec(conv_estoque.barras or Decimal('0')), QTY_Q)
-            if qtd_neg > 0:
-                fator = _q(qtd_estoque / qtd_neg, FACTOR_Q)
-        except ConversaoErro as exc:
-            raise serializers.ValidationError({'unidade_negociada': str(exc)}) from exc
+        if unidade_neg == unidade_estoque:
+            # Mesma unidade negociada e de estoque: não há conversão dimensional real.
+            qtd_estoque = qtd_neg
+            fator = Decimal('1')
+            converted_kg = _safe_convert(produto, qtd_neg, unidade_neg, 'KG', alerts)
+            if converted_kg is not None:
+                peso_total_kg = _q(converted_kg, QTY_Q)
+            converted_m = _safe_convert(produto, qtd_neg, unidade_neg, 'M', alerts)
+            if converted_m is not None:
+                metros_total = _q(converted_m, QTY_Q)
+            converted_br = _safe_convert(produto, qtd_neg, unidade_neg, 'BR', alerts)
+            if converted_br is not None:
+                barras_total = _q(converted_br, QTY_Q)
+            kg_for_one = _safe_convert(produto, Decimal('1'), unidade_neg, 'KG', alerts)
+            m_for_one = _safe_convert(produto, Decimal('1'), unidade_neg, 'M', alerts)
+            if kg_for_one and kg_for_one > 0:
+                preco_kg = _q(preco_un / kg_for_one, PRICE_Q)
+            if m_for_one and m_for_one > 0:
+                preco_m = _q(preco_un / m_for_one, PRICE_Q)
+        else:
+            try:
+                conv_estoque = converter_quantidade_produto(produto, qtd_neg, unidade_neg, unidade_estoque)
+                qtd_estoque = _q(_dec(conv_estoque.quantidade_destino), QTY_Q)
+                peso_total_kg = _q(_dec(conv_estoque.peso_kg or Decimal('0')), QTY_Q)
+                metros_total = _q(_dec(conv_estoque.metros or Decimal('0')), QTY_Q)
+                barras_total = _q(_dec(conv_estoque.barras or Decimal('0')), QTY_Q)
+                if qtd_neg > 0:
+                    fator = _q(qtd_estoque / qtd_neg, FACTOR_Q)
+            except ConversaoErro as exc:
+                raise serializers.ValidationError({'unidade_negociada': str(exc)}) from exc
 
-        kg_for_one = _safe_convert(produto, Decimal('1'), unidade_neg, 'KG', alerts)
-        m_for_one = _safe_convert(produto, Decimal('1'), unidade_neg, 'M', alerts)
-        if kg_for_one and kg_for_one > 0:
-            preco_kg = _q(preco_un / kg_for_one, PRICE_Q)
-        if m_for_one and m_for_one > 0:
-            preco_m = _q(preco_un / m_for_one, PRICE_Q)
+            kg_for_one = _safe_convert(produto, Decimal('1'), unidade_neg, 'KG', alerts)
+            m_for_one = _safe_convert(produto, Decimal('1'), unidade_neg, 'M', alerts)
+            if kg_for_one and kg_for_one > 0:
+                preco_kg = _q(preco_un / kg_for_one, PRICE_Q)
+            if m_for_one and m_for_one > 0:
+                preco_m = _q(preco_un / m_for_one, PRICE_Q)
     else:
         if produto and unidade_neg != unidade_estoque:
             alerts.append('Produto sem conversão dimensional habilitada; usando quantidade negociada como estoque.')
