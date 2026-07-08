@@ -13,6 +13,7 @@ ROSCAS_CONEXAO_CANONICAS: tuple[tuple[str, str, str], ...] = (
     ('ODN', 'OD + NPT', ''),
     ('U', 'UNF', ''),
     ('JN', 'JIC x NPT', ''),
+    ('NS', 'NPT x SW', ''),
     ('FN', 'Fêmea NPT', ''),
     ('FMN', 'Fêmea-macho NPT', ''),
     ('MFU', 'Macho-fêmea UNF x BSP', ''),
