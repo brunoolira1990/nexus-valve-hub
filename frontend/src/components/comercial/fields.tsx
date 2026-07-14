@@ -7,6 +7,7 @@ import {
 } from '@/lib/numberFields';
 import {
   MSG_VALOR_UNITARIO_MAX_3_CASAS,
+  formatPrecoUnitarioBRL,
   formatValorUnitarioDisplay,
   parseValorUnitarioInput,
   valorUnitarioExcedeMaxCasas,
@@ -171,6 +172,11 @@ export function UnitPriceInput({ value, onChange, className, readOnly, min = 0 }
 
 export function MoneyDisplay({ value, className }: { value: number; className?: string }) {
   return <span className={className}>{formatMoneyBRL(value)}</span>;
+}
+
+/** Preço/valor unitário — até 3 casas; não usar para totais. */
+export function UnitPriceDisplay({ value, className }: { value: number; className?: string }) {
+  return <span className={className}>{formatPrecoUnitarioBRL(value)}</span>;
 }
 
 export function PercentInput({ value, onChange, className, readOnly, min = 0 }: BaseInputProps) {

@@ -20,6 +20,7 @@ import {
   QuantityDisplay,
   QuantityInput,
   ReadonlyCalculatedField,
+  UnitPriceDisplay,
   UnitPriceInput,
   UnitSelect,
 } from '@/components/comercial/fields';
@@ -28,6 +29,7 @@ import { ItemComercialMetricasGrid } from '@/components/comercial/ItemComercialM
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatDateBr } from '@/lib/dateBr';
 import { formatCurrencyBRL, formatQuantidadeBR } from '@/lib/formatBr';
+import { formatPrecoUnitarioBRL } from '@/lib/pedidoVendaValorUnitario';
 import {
   classificarNfeResumoPedido,
   getFaturamentoStatusLabel,
@@ -711,7 +713,7 @@ export function PedidoVendaEditModal({
                         <td className="text-right tabular-nums">{formatQuantidadeBR(qFat, un)}</td>
                         <td className="text-right tabular-nums">{formatQuantidadeBR(qPend, un)}</td>
                         <td className="text-right tabular-nums">
-                          {formatCurrencyBRL(item.preco_por_unidade_negociada ?? item.valor_unitario)}
+                          {formatPrecoUnitarioBRL(item.preco_por_unidade_negociada ?? item.valor_unitario)}
                         </td>
                         <td className="text-right tabular-nums">{formatCurrencyBRL(itemDesconto(item))}</td>
                         <td className="text-right tabular-nums font-medium">
@@ -794,7 +796,7 @@ export function PedidoVendaEditModal({
                             <QuantityDisplay value={qPend} unidade={item.unidade_negociada} />
                           </td>
                           <td className="text-right tabular-nums">
-                            <MoneyDisplay value={item.preco_por_unidade_negociada ?? item.valor_unitario} />
+                            <UnitPriceDisplay value={item.preco_por_unidade_negociada ?? item.valor_unitario} />
                           </td>
                           <td className="text-right tabular-nums">
                             <MoneyDisplay value={itemDesconto(item)} />

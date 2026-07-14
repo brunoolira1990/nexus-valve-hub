@@ -54,6 +54,23 @@ export function formatValorUnitarioDisplay(value: number): string {
   });
 }
 
+/**
+ * Exibição monetária de preço/valor unitário (não usar para totais).
+ * Mínimo 2 casas; terceira casa só quando significativa.
+ */
+export function formatPrecoUnitarioBRL(value: unknown): string {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n)) return 'R$\u00a00,00';
+  // Normaliza ruído de float além da 3ª casa (ex.: 1128.1200000001).
+  const normalizado = Math.round((n + Number.EPSILON) * 1000) / 1000;
+  return normalizado.toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: MAX_CASAS_VALOR_UNITARIO,
+  });
+}
+
 /** Arredonda só o espelho legado de 2 casas; o preço comercial permanece intacto. */
 export function espelhoValorUnitarioLegado(preco: number): number {
   if (!Number.isFinite(preco)) return 0;

@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Modal } from '@/components/Modal';
 import { ProdutoComercialField } from '@/components/comercial/ProdutoComercialField';
 import { formatMoneyBr } from '@/lib/numberFormat';
+import { formatPrecoUnitarioBRL } from '@/lib/pedidoVendaValorUnitario';
 import { itemPodeSelecionarParaPedido, labelStatusItemProposta } from '@/lib/propostaStatus';
 import { apiErrorMessage } from '@/services/api/config';
 import { propostasService } from '@/services/api/comercial';
@@ -229,7 +230,7 @@ export function GerarPedidoPropostaModal({
                           ) : null}
                         </td>
                         <td>{it.quantidade_negociada ?? it.quantidade}</td>
-                        <td>{formatMoneyBr(it.preco_por_unidade_negociada ?? it.valor_unitario ?? 0)}</td>
+                        <td>{formatPrecoUnitarioBRL(it.preco_por_unidade_negociada ?? it.valor_unitario ?? 0)}</td>
                         <td>{formatMoneyBr(valorTotalItem(it))}</td>
                         <td>{labelStatusItemProposta(st)}</td>
                         <td>

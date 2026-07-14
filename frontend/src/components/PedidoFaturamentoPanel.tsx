@@ -8,6 +8,7 @@ import { pedidosVendaService } from '@/services/api/comercial';
 import { apiErrorMessage } from '@/services/api/config';
 import type { ItemPedido, ResumoFaturamentoPedido } from '@/types';
 import { formatCurrencyBRL } from '@/lib/formatBr';
+import { formatPrecoUnitarioBRL } from '@/lib/pedidoVendaValorUnitario';
 import {
   classificarNfeResumoPedido,
   getFaturamentoStatusLabel,
@@ -595,39 +596,50 @@ export function PedidoFaturamentoPanel({ pedidoId, itens = [], onAtualizado, emb
                   <th>Pedida</th>
                   <th>Faturada</th>
                   <th>Pendente</th>
+                  <th className="text-right">Preço</th>
                   <th>Status</th>
                   <th>Qtd. a faturar</th>
                 </tr>
               </thead>
               <tbody>
-                {resumo.itens.map((it) => (
-                  <tr key={it.item_pedido_id}>
-                    <td>
-                      <span className="font-medium">{it.produto_codigo}</span>
-                      <span className="block text-xs text-muted-foreground truncate max-w-[200px]">{it.descricao}</span>
-                    </td>
-                    <td>{it.quantidade_pedida}</td>
-                    <td>{it.quantidade_faturada}</td>
-                    <td>{it.quantidade_pendente}</td>
-                    <td>
-                      <span className={statusBadge(it.status_item)}>{it.status_item}</span>
-                    </td>
-                    <td>
-                      <input
-                        type="number"
-                        step="0.001"
-                        min={0}
-                        max={parseFloat(it.quantidade_disponivel) || undefined}
-                        className="erp-input h-8 w-24"
-                        disabled={parseFloat(it.quantidade_disponivel) <= 0}
-                        value={qtyFat[it.item_pedido_id] ?? ''}
-                        onChange={(e) =>
-                          setQtyFat((p) => ({ ...p, [it.item_pedido_id]: e.target.value }))
-                        }
-                      />
-                    </td>
-                  </tr>
-                ))}
+                {resumo.itens.map((it) => {
+                  const doPedido = itens.find((p) => p.id === it.item_pedido_id);
+                  const precoUnitario =
+                    doPedido?.preco_por_unidade_negociada ??
+                    doPedido?.valor_unitario ??
+                    it.valor_unitario;
+                  return (
+                    <tr key={it.item_pedido_id}>
+                      <td>
+                        <span className="font-medium">{it.produto_codigo}</span>
+                        <span className="block text-xs text-muted-foreground truncate max-w-[200px]">
+                          {it.descricao}
+                        </span>
+                      </td>
+                      <td>{it.quantidade_pedida}</td>
+                      <td>{it.quantidade_faturada}</td>
+                      <td>{it.quantidade_pendente}</td>
+                      <td className="text-right tabular-nums">{formatPrecoUnitarioBRL(precoUnitario)}</td>
+                      <td>
+                        <span className={statusBadge(it.status_item)}>{it.status_item}</span>
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          step="0.001"
+                          min={0}
+                          max={parseFloat(it.quantidade_disponivel) || undefined}
+                          className="erp-input h-8 w-24"
+                          disabled={parseFloat(it.quantidade_disponivel) <= 0}
+                          value={qtyFat[it.item_pedido_id] ?? ''}
+                          onChange={(e) =>
+                            setQtyFat((p) => ({ ...p, [it.item_pedido_id]: e.target.value }))
+                          }
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

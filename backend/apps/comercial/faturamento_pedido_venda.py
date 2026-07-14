@@ -283,7 +283,8 @@ def _serializar_item_resumo(item: ItemPedidoVenda) -> dict[str, Any]:
         'quantidade_pendente': str(pendente),
         'quantidade_disponivel': str(disponivel),
         'status_item': item.status_item,
-        'valor_unitario': str(_round_money(preco)),
+        # Exibição: preserva precisão comercial (até 4 casas); totais usam arredondamento 2 casas.
+        'valor_unitario': format(preco, 'f'),
         'valor_pendente': str(_round_money(_valor_pendente_item(item))),
     }
 
