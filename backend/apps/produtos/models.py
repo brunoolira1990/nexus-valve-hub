@@ -661,10 +661,14 @@ class FamiliaProdutoSchedulePermitido(models.Model):
 
 class FamiliaProdutoCodigoSequencia(models.Model):
     """
-    Contador persistente para geração automática de codigo_figura (padrão NNNN).
+    Mutex / marca d'água para geração automática de codigo_figura (padrão NNNN).
 
-    Rollback: reverter migration 0027 remove esta tabela; códigos já gerados permanecem
-    em FamiliaProduto e não devem ser renumerados.
+    Com PREFIXO_GLOBAL_UNICIDADE a busca do menor livre começa em 0001; este
+    registro serializa reservas via SELECT FOR UPDATE e guarda proximo_numero
+    como último reservado+1 (nunca reduz). Não é SEQUENCE nativa do PostgreSQL.
+
+    Rollback: reverter migration 0027 remove esta tabela; códigos já gerados
+    em FamiliaProduto permanecem e não devem ser renumerados.
     """
 
     proximo_numero = models.PositiveIntegerField(

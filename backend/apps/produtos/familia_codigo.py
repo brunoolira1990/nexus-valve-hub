@@ -38,18 +38,20 @@ class PoliticaPrefixoCodigoFigura:
     — Templates OD_MM_ESPESSURA / OD_POLEGADA_ESPESSURA acrescentam OD no produto (ex.: 6119).
     — MANUAL_FABRICANTE não participa da ocupação de prefixo NNNN.
 
-    VALOR_COMPLETO:
-        Unicidade pelo valor completo; 6119 e 6119OD podem coexistir.
-        Não usar em produção neste ERP.
-
     PREFIXO_GLOBAL_UNICIDADE:
-        Sufixos ocupam o número-base (6119OD bloqueia 6119); contador monotônico persistido.
+        Sufixos ocupam o número-base (6119OD bloqueia 6119); geração automática
+        escolhe o menor NNNN livre a partir de 0001 (lacunas). Contador persistido
+        serve de mutex/marca d'água — não define o ponto de partida.
         Política de produção.
 
     PREFIXO_GLOBAL_SEQUENCIAL:
         Maior prefixo numérico define piso da sequência (9000OD => próximo >= 9001).
         Não usar em produção neste ERP (não criar migration 0028).
-    """
+
+    VALOR_COMPLETO:
+        Unicidade pelo valor completo; 6119 e 6119OD podem coexistir.
+        Também preenche lacunas a partir de 0001 (fallback de desenvolvimento).
+        Não usar em produção neste ERP.    """
 
     VALOR_COMPLETO = 'VALOR_COMPLETO'
     PREFIXO_GLOBAL_UNICIDADE = 'PREFIXO_GLOBAL_UNICIDADE'
@@ -191,7 +193,7 @@ def familia_participa_prefixo_figura(tipo_regra_codigo: str | None) -> bool:
 
 
 def prefixos_numericos_ocupados() -> set[int]:
-    """Prefixos de famílias de figura (exclui MANUAL_FABRICANTE)."""
+    """Prefixos de famílias de figura (ativas e inativas; exclui MANUAL_FABRICANTE)."""
     from apps.produtos.models import FamiliaProduto
 
     out: set[int] = set()
@@ -203,6 +205,34 @@ def prefixos_numericos_ocupados() -> set[int]:
         if p is not None:
             out.add(p)
     return out
+
+
+def prefixos_produtos_ocupados() -> set[int]:
+    """
+    Prefixos NNNN presentes no início de Produto.codigo_completo.
+
+    Ex.: ``00750D13`` → 75; ``0202.050025`` → 202.
+    Códigos sem quatro dígitos iniciais são ignorados.
+    """
+    from apps.produtos.models import Produto
+
+    out: set[int] = set()
+    qs = (
+        Produto.objects.exclude(codigo_completo__isnull=True)
+        .exclude(codigo_completo='')
+        .values_list('codigo_completo', flat=True)
+        .iterator(chunk_size=2000)
+    )
+    for cod in qs:
+        p = extrair_prefixo_numerico(cod)
+        if p is not None:
+            out.add(p)
+    return out
+
+
+def prefixos_globalmente_ocupados() -> set[int]:
+    """União família (ativa/inativa) + prefixos de produto — base da busca do menor livre."""
+    return prefixos_numericos_ocupados() | prefixos_produtos_ocupados()
 
 
 def codigos_nnnn_ocupados() -> set[str]:
@@ -278,6 +308,18 @@ def _politica_usa_prefixo_global(politica: str) -> bool:
     )
 
 
+def _politica_preenche_lacunas(politica: str) -> bool:
+    """
+    PREFIXO_GLOBAL_UNICIDADE (produção) e VALOR_COMPLETO (fallback):
+    escolhem o menor NNNN livre a partir de 0001.
+    PREFIXO_GLOBAL_SEQUENCIAL permanece monotônico (maior prefixo + 1).
+    """
+    return politica in (
+        PoliticaPrefixoCodigoFigura.PREFIXO_GLOBAL_UNICIDADE,
+        PoliticaPrefixoCodigoFigura.VALOR_COMPLETO,
+    )
+
+
 def candidato_ocupado(
     n: int,
     *,
@@ -285,20 +327,29 @@ def candidato_ocupado(
     prefixos: set[int],
     nnnn: set[str],
 ) -> bool:
+    """n ocupado por família e/ou prefixo de produto (já unidos em ``prefixos`` quando aplicável)."""
+    if n < 1 or n > MAX_CODIGO_FIGURA_AUTO:
+        return True
     if _politica_usa_prefixo_global(politica):
         return n in prefixos
-    return formatar_codigo_figura(n) in nnnn
+    # VALOR_COMPLETO: NNNN puro da família OU prefixo de produto bloqueia o número.
+    return formatar_codigo_figura(n) in nnnn or n in prefixos
 
 
 def piso_contador_para_politica(politica: str) -> int:
-    """Piso mínimo do contador conforme política (sem ler contador persistido)."""
+    """Piso mínimo da busca (sem ler contador persistido)."""
     if politica == PoliticaPrefixoCodigoFigura.PREFIXO_GLOBAL_SEQUENCIAL:
         return maior_prefixo_numerico_existente() + 1
+    if _politica_preenche_lacunas(politica):
+        return 1
     return maior_codigo_figura_valido_existente() + 1
 
 
 def proximo_candidato_livre_a_partir_de(inicio: int, *, politica: str) -> int | None:
-    prefixos = prefixos_numericos_ocupados()
+    if _politica_usa_prefixo_global(politica) or _politica_preenche_lacunas(politica):
+        prefixos = prefixos_globalmente_ocupados()
+    else:
+        prefixos = prefixos_numericos_ocupados()
     nnnn = codigos_nnnn_ocupados()
     n = max(1, int(inicio))
     while n <= MAX_CODIGO_FIGURA_AUTO:
@@ -328,6 +379,14 @@ def recalibrar_proximo_numero_sequencial(*, contador_atual: int, politica: str) 
 
 
 def _obter_ou_criar_sequencia_locked():
+    """
+    Mutex de geração automática via SELECT FOR UPDATE na linha pk=1.
+
+    Papel da sequência após lacunas:
+    - Serializa reservas concorrentes (não é SEQUENCE do PostgreSQL).
+    - ``proximo_numero`` vira marca d'água / último N+1 reservado (auditoria);
+      em políticas de lacuna a busca sempre recomeça em 0001.
+    """
     from apps.produtos.models import FamiliaProdutoCodigoSequencia
 
     politica = obter_politica_prefixo_codigo_figura()
@@ -357,18 +416,28 @@ def _obter_ou_criar_sequencia_locked():
 
 @transaction.atomic
 def reservar_codigo_figura() -> str:
+    """
+    Reserva o próximo codigo_figura automático (NNNN).
+
+    PREFIXO_GLOBAL_UNICIDADE / VALOR_COMPLETO: menor livre a partir de 0001
+    (família ativa/inativa + prefixo de produto). 0000 nunca é usado.
+
+    PREFIXO_GLOBAL_SEQUENCIAL: monotônico a partir do maior prefixo / contador.
+    """
     exigir_configuracao_producao_familia_codigo()
     seq = _obter_ou_criar_sequencia_locked()
     politica = obter_politica_prefixo_codigo_figura()
-    prefixos = prefixos_numericos_ocupados()
+    prefixos = prefixos_globalmente_ocupados()
     nnnn = codigos_nnnn_ocupados()
 
-    n = int(seq.proximo_numero)
-    if politica == PoliticaPrefixoCodigoFigura.PREFIXO_GLOBAL_SEQUENCIAL:
-        n = max(n, maior_prefixo_numerico_existente() + 1)
-
-    if n > MAX_CODIGO_FIGURA_AUTO:
-        raise FamiliaCodigoEsgotadoError(MSG_FAIXA_ESGOTADA)
+    if _politica_preenche_lacunas(politica):
+        n = 1
+    else:
+        n = int(seq.proximo_numero)
+        if politica == PoliticaPrefixoCodigoFigura.PREFIXO_GLOBAL_SEQUENCIAL:
+            n = max(n, maior_prefixo_numerico_existente() + 1)
+        if n > MAX_CODIGO_FIGURA_AUTO:
+            raise FamiliaCodigoEsgotadoError(MSG_FAIXA_ESGOTADA)
 
     tentativas = 0
     limite_tentativas = MAX_CODIGO_FIGURA_AUTO - n + 2
@@ -376,7 +445,8 @@ def reservar_codigo_figura() -> str:
         tentativas += 1
         if not candidato_ocupado(n, politica=politica, prefixos=prefixos, nnnn=nnnn):
             codigo = formatar_codigo_figura(n)
-            seq.proximo_numero = n + 1
+            # Marca d'água: nunca reduz; documenta último reservado+1.
+            seq.proximo_numero = max(int(seq.proximo_numero), n + 1)
             seq.save(update_fields=['proximo_numero'])
             return codigo
         n += 1

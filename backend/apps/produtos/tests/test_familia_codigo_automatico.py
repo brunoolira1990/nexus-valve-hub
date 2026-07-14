@@ -10,7 +10,7 @@ from io import StringIO
 from unittest.mock import patch
 
 from django.core.management import call_command
-from django.db import IntegrityError, close_old_connections, connection
+from django.db import IntegrityError, close_old_connections, connection, transaction
 from django.test import TransactionTestCase, override_settings
 from django.urls import reverse
 from rest_framework import status
@@ -27,7 +27,9 @@ from apps.produtos.familia_codigo import (
     classificar_codigo_figura_contextual,
     codigo_figura_valido,
     piso_contador_para_politica,
+    prefixos_globalmente_ocupados,
     prefixos_numericos_ocupados,
+    prefixos_produtos_ocupados,
     recalibrar_proximo_numero_sequencial,
     reservar_codigo_figura,
     resolver_config_politica_codigo_figura,
@@ -39,7 +41,7 @@ from apps.produtos.familia_duplicidade import (
     advisory_lock_keys_para_par,
     chave_descricao_duplicidade_familia,
 )
-from apps.produtos.models import FamiliaProduto, FamiliaProdutoCodigoSequencia, Polegada
+from apps.produtos.models import FamiliaProduto, FamiliaProdutoCodigoSequencia, Polegada, Produto
 
 
 def _payload_familia(**overrides):
@@ -106,25 +108,30 @@ class FamiliaCodigoAutomaticoUnitTests(TransactionTestCase):
     def tearDown(self):
         os.environ.pop(ENV_POLITICA, None)
 
-    def test_candidato_livre_simples(self):
+    def test_banco_vazio_recebe_0001(self):
         FamiliaProdutoCodigoSequencia.objects.update_or_create(pk=1, defaults={'proximo_numero': 52})
-        self.assertEqual(reservar_codigo_figura(), '0052')
+        self.assertEqual(reservar_codigo_figura(), '0001')
 
-    def test_candidato_exato_ocupado_pula(self):
-        _familia_min('7000')
-        FamiliaProdutoCodigoSequencia.objects.update_or_create(pk=1, defaults={'proximo_numero': 7000})
-        self.assertEqual(reservar_codigo_figura(), '7001')
+    def test_0001_ocupado_recebe_0002(self):
+        _familia_min('0001')
+        FamiliaProdutoCodigoSequencia.objects.update_or_create(pk=1, defaults={'proximo_numero': 99})
+        self.assertEqual(reservar_codigo_figura(), '0002')
 
-    def test_varios_candidatos_consecutivos_ocupados(self):
-        for n in (8000, 8001, 8002):
-            _familia_min(f'{n:04d}')
+    def test_buraco_escolhe_menor_livre(self):
+        _familia_min('0001')
+        _familia_min('0003')
         FamiliaProdutoCodigoSequencia.objects.update_or_create(pk=1, defaults={'proximo_numero': 8000})
-        self.assertEqual(reservar_codigo_figura(), '8003')
+        self.assertEqual(reservar_codigo_figura(), '0002')
 
-    def test_criacao_manual_seguida_de_automatica(self):
+    def test_varios_ocupados_preenche_lacuna(self):
+        for n in (1, 2, 4):
+            _familia_min(f'{n:04d}')
+        self.assertEqual(reservar_codigo_figura(), '0003')
+
+    def test_criacao_manual_alta_nao_impede_lacuna_baixa(self):
         _familia_min('7500')
         FamiliaProdutoCodigoSequencia.objects.update_or_create(pk=1, defaults={'proximo_numero': 7500})
-        self.assertEqual(reservar_codigo_figura(), '7501')
+        self.assertEqual(reservar_codigo_figura(), '0001')
 
     def test_reserva_concorrente_postgresql(self):
         FamiliaProdutoCodigoSequencia.objects.update_or_create(pk=1, defaults={'proximo_numero': 8100})
@@ -132,50 +139,88 @@ class FamiliaCodigoAutomaticoUnitTests(TransactionTestCase):
         resultados: list[str] = []
         erros: list[Exception] = []
 
-        def worker():
+        def worker(suf: str):
             close_old_connections()
             try:
                 barrier.wait(timeout=5)
-                resultados.append(reservar_codigo_figura())
+                # Mesmo fluxo da API: reserva + INSERT sob a mesma TX (lock até commit).
+                with transaction.atomic():
+                    codigo = reservar_codigo_figura()
+                    FamiliaProduto.objects.create(
+                        codigo_figura=codigo,
+                        descricao_base=f'CONC {suf}',
+                        tipo_regra_codigo=FamiliaProduto.TipoRegraCodigo.BASE_POLEGADA,
+                    )
+                    resultados.append(codigo)
             except Exception as exc:  # pragma: no cover
                 erros.append(exc)
             finally:
                 connection.close()
 
         with ThreadPoolExecutor(max_workers=2) as pool:
-            for fut in [pool.submit(worker), pool.submit(worker)]:
+            for fut in [pool.submit(worker, 'A'), pool.submit(worker, 'B')]:
                 fut.result()
         self.assertEqual(erros, [])
         self.assertEqual(len(set(resultados)), 2)
+        self.assertEqual(sorted(resultados), ['0001', '0002'])
 
-    def test_9999_disponivel(self):
-        FamiliaProdutoCodigoSequencia.objects.update_or_create(pk=1, defaults={'proximo_numero': 9999})
-        self.assertEqual(reservar_codigo_figura(), '9999')
+    def test_nunca_escolhe_0000(self):
+        codigo = reservar_codigo_figura()
+        self.assertEqual(len(codigo), 4)
+        self.assertNotEqual(codigo, '0000')
+        self.assertTrue(codigo.isdigit())
 
-    def test_9999_ocupado_esgota(self):
-        _familia_min('9999')
-        FamiliaProdutoCodigoSequencia.objects.update_or_create(pk=1, defaults={'proximo_numero': 9999})
-        with self.assertRaises(FamiliaCodigoEsgotadoError):
-            reservar_codigo_figura()
+    def test_faixa_esgotada_quando_tudo_ocupado(self):
+        FamiliaProdutoCodigoSequencia.objects.update_or_create(pk=1, defaults={'proximo_numero': 1})
+        ocupados = set(range(1, 10000))
+        with patch(
+            'apps.produtos.familia_codigo.prefixos_globalmente_ocupados',
+            return_value=ocupados,
+        ), patch(
+            'apps.produtos.familia_codigo.codigos_nnnn_ocupados',
+            return_value={f'{n:04d}' for n in ocupados},
+        ):
+            with self.assertRaises(FamiliaCodigoEsgotadoError):
+                reservar_codigo_figura()
 
-    def test_contador_10000_bloqueia(self):
+    def test_marca_dagua_10000_nao_bloqueia_lacuna(self):
+        """proximo_numero alto era bloqueio; com lacunas a busca recomeça em 0001."""
         FamiliaProdutoCodigoSequencia.objects.update_or_create(pk=1, defaults={'proximo_numero': 10000})
-        with self.assertRaises(FamiliaCodigoEsgotadoError):
-            reservar_codigo_figura()
+        self.assertEqual(reservar_codigo_figura(), '0001')
 
     @override_settings(FAMILIA_CODIGO_POLITICA_PREFIXO=PoliticaPrefixoCodigoFigura.VALOR_COMPLETO)
     def test_politica_b_6119od_nao_bloqueia_6119(self):
         os.environ[ENV_POLITICA] = PoliticaPrefixoCodigoFigura.VALOR_COMPLETO
         _familia_min('6119OD', tipo_regra_codigo=FamiliaProduto.TipoRegraCodigo.BASE_OD_MM_ESPESSURA)
-        FamiliaProdutoCodigoSequencia.objects.update_or_create(pk=1, defaults={'proximo_numero': 6119})
-        self.assertEqual(reservar_codigo_figura(), '6119')
+        # Prefixo 6119 de produto/especial: sob VALOR_COMPLETO o NNNN 6119 ainda é livre,
+        # mas a busca preenche lacunas — menor livre é 0001.
+        self.assertEqual(reservar_codigo_figura(), '0001')
+        # Ocupando 0001, o próximo ainda pode ser 6119 (OD especial não bloqueia NNNN).
+        _familia_min('0001', descricao_base='T1')
+        # Após 0001, ainda há buracos; forçar ocupação 2..6118 via patch local no próximo teste.
+
+    @override_settings(FAMILIA_CODIGO_POLITICA_PREFIXO=PoliticaPrefixoCodigoFigura.VALOR_COMPLETO)
+    def test_valor_completo_permite_nnnn_com_especial_od(self):
+        os.environ[ENV_POLITICA] = PoliticaPrefixoCodigoFigura.VALOR_COMPLETO
+        _familia_min('6119OD', tipo_regra_codigo=FamiliaProduto.TipoRegraCodigo.BASE_OD_MM_ESPESSURA)
+        with patch(
+            'apps.produtos.familia_codigo.prefixos_globalmente_ocupados',
+            return_value=set(range(1, 6119)),
+        ), patch(
+            'apps.produtos.familia_codigo.codigos_nnnn_ocupados',
+            return_value={f'{n:04d}' for n in range(1, 6119)},
+        ):
+            self.assertEqual(reservar_codigo_figura(), '6119')
 
     @override_settings(FAMILIA_CODIGO_POLITICA_PREFIXO=PoliticaPrefixoCodigoFigura.PREFIXO_GLOBAL_UNICIDADE)
     def test_politica_unicidade_6119od_bloqueia_6119(self):
         os.environ[ENV_POLITICA] = PoliticaPrefixoCodigoFigura.PREFIXO_GLOBAL_UNICIDADE
         _familia_min('6119OD', tipo_regra_codigo=FamiliaProduto.TipoRegraCodigo.BASE_OD_MM_ESPESSURA)
-        FamiliaProdutoCodigoSequencia.objects.update_or_create(pk=1, defaults={'proximo_numero': 6119})
-        self.assertEqual(reservar_codigo_figura(), '6120')
+        with patch(
+            'apps.produtos.familia_codigo.prefixos_globalmente_ocupados',
+            return_value=set(range(1, 6120)),
+        ):
+            self.assertEqual(reservar_codigo_figura(), '6120')
 
     @override_settings(FAMILIA_CODIGO_POLITICA_PREFIXO=PoliticaPrefixoCodigoFigura.PREFIXO_GLOBAL_SEQUENCIAL)
     def test_politica_sequencial_piso_maior_prefixo(self):
@@ -198,7 +243,11 @@ class FamiliaCodigoAutomaticoUnitTests(TransactionTestCase):
         _familia_min('0199')
         self.assertEqual(
             piso_contador_para_politica(PoliticaPrefixoCodigoFigura.VALOR_COMPLETO),
-            200,
+            1,
+        )
+        self.assertEqual(
+            piso_contador_para_politica(PoliticaPrefixoCodigoFigura.PREFIXO_GLOBAL_UNICIDADE),
+            1,
         )
         self.assertEqual(
             piso_contador_para_politica(PoliticaPrefixoCodigoFigura.PREFIXO_GLOBAL_SEQUENCIAL),
@@ -223,7 +272,7 @@ class FamiliaCodigoAutomaticoApiTests(APITestCase):
         """Fallback legado: sem modo_codigo e sem código → AUTOMATICO."""
         resp = self.client.post(self.url, _payload_familia(), format='json')
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(resp.data['codigo_figura'], '7000')
+        self.assertEqual(resp.data['codigo_figura'], '0001')
 
     def test_post_automatico_explicito_sem_codigo(self):
         resp = self.client.post(
@@ -232,7 +281,7 @@ class FamiliaCodigoAutomaticoApiTests(APITestCase):
             format='json',
         )
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(resp.data['codigo_figura'], '7000')
+        self.assertEqual(resp.data['codigo_figura'], '0001')
         self.assertNotIn('modo_codigo', resp.data)
 
     def test_post_automatico_ignora_codigo_enviado(self):
@@ -242,7 +291,7 @@ class FamiliaCodigoAutomaticoApiTests(APITestCase):
             format='json',
         )
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(resp.data['codigo_figura'], '7000')
+        self.assertEqual(resp.data['codigo_figura'], '0001')
 
     def test_post_manual_nnnn(self):
         resp = self.client.post(
@@ -307,7 +356,8 @@ class FamiliaCodigoAutomaticoApiTests(APITestCase):
             format='json',
         )
         self.assertEqual(resp_a.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(resp_a.data['codigo_figura'], '7001')
+        # Lacuna: menor livre a partir de 0001 (7000 já ocupado manualmente).
+        self.assertEqual(resp_a.data['codigo_figura'], '0001')
 
     def test_especial_manual_nao_incrementa_contador(self):
         antes = FamiliaProdutoCodigoSequencia.objects.get(pk=1).proximo_numero
@@ -374,22 +424,29 @@ class FamiliaCodigoAutomaticoApiTests(APITestCase):
         self.assertEqual(FamiliaProduto.objects.get(pk=fam_id).codigo_figura, '7600')
 
     def test_manual_ocupado_api_pula(self):
-        _familia_min('7000')
+        _familia_min('0001')
         FamiliaProdutoCodigoSequencia.objects.filter(pk=1).update(proximo_numero=7000)
         resp = self.client.post(
             self.url,
             _payload_familia(modo_codigo='AUTOMATICO', descricao_base='AUTO'),
             format='json',
         )
-        self.assertEqual(resp.data['codigo_figura'], '7001')
+        self.assertEqual(resp.data['codigo_figura'], '0002')
 
     def test_faixa_esgotada_retorna_400_amigavel(self):
-        FamiliaProdutoCodigoSequencia.objects.filter(pk=1).update(proximo_numero=10000)
-        resp = self.client.post(
-            self.url,
-            _payload_familia(modo_codigo='AUTOMATICO'),
-            format='json',
-        )
+        ocupados = set(range(1, 10000))
+        with patch(
+            'apps.produtos.familia_codigo.prefixos_globalmente_ocupados',
+            return_value=ocupados,
+        ), patch(
+            'apps.produtos.familia_codigo.codigos_nnnn_ocupados',
+            return_value={f'{n:04d}' for n in ocupados},
+        ):
+            resp = self.client.post(
+                self.url,
+                _payload_familia(modo_codigo='AUTOMATICO'),
+                format='json',
+            )
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('esgotada', str(resp.data).lower())
 
@@ -575,19 +632,17 @@ class FamiliaCodigoManualConcorrenciaTests(TransactionTestCase):
         auto_code, auto_data = auto
         manual_code, manual_data = manual
 
-        # Automático sempre conclui com sucesso (recupera-se de colisão via retry).
+        # Automático preenche lacuna (0001); manual disputa 8200 — códigos distintos.
         self.assertEqual(auto_code, 201, auto_data)
-        self.assertIn(auto_data['codigo_figura'], ('8200', '8201'))
+        self.assertEqual(auto_data['codigo_figura'], '0001')
 
         if manual_code == 201:
             self.assertEqual(manual_data['codigo_figura'], '8200')
-            self.assertEqual(auto_data['codigo_figura'], '8201')
         else:
-            # Automático concluiu primeiro: manual recebe erro amigável (não 500).
             self.assertEqual(manual_code, 400)
             self.assertIn('Já existe', str(manual_data.get('codigo_figura', manual_data)))
-            self.assertEqual(auto_data['codigo_figura'], '8200')
         self.assertEqual(len(fail) + len(ok), 2)
+        self.assertEqual(len(set(codigos_ok)), len(codigos_ok))
 
 
 class FamiliaCodigoCompatibilidadeOrmTests(TransactionTestCase):
@@ -654,7 +709,9 @@ class FamiliaCodigoManualPoliticasTests(TransactionTestCase):
             format='json',
         )
         self.assertEqual(auto.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(auto.data['codigo_figura'], '6119')
+        # Lacunas: menor livre é 0001; 6119 permanece disponível (VALOR_COMPLETO).
+        self.assertEqual(auto.data['codigo_figura'], '0001')
+        self.assertFalse(FamiliaProduto.objects.filter(codigo_figura='6119').exists())
 
     def test_unicidade_especial_impede_nnnn_igual(self):
         os.environ[ENV_POLITICA] = PoliticaPrefixoCodigoFigura.PREFIXO_GLOBAL_UNICIDADE
@@ -677,7 +734,8 @@ class FamiliaCodigoManualPoliticasTests(TransactionTestCase):
         )
         self.assertEqual(auto.status_code, status.HTTP_201_CREATED)
         self.assertNotEqual(auto.data['codigo_figura'], '6119')
-        self.assertEqual(auto.data['codigo_figura'], '6120')
+        # Lacuna: menor livre é 0001 (6119 ocupado pelo especial).
+        self.assertEqual(auto.data['codigo_figura'], '0001')
 
     def test_sequencial_especial_piso_minimo_e_nao_reduz_contador(self):
         os.environ[ENV_POLITICA] = PoliticaPrefixoCodigoFigura.PREFIXO_GLOBAL_SEQUENCIAL
@@ -738,7 +796,7 @@ class AuditarCodigoFiguraReadOnlyTests(TransactionTestCase):
         _familia_min('8010')
         self.assertEqual(
             calcular_proximo_numero_inicial(politica=PoliticaPrefixoCodigoFigura.VALOR_COMPLETO),
-            8011,
+            1,
         )
 
 
@@ -863,7 +921,7 @@ class FamiliaDuplicidadeDescricaoModeloTests(APITestCase):
             format='json',
         )
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(resp.data['codigo_figura'], '9000')
+        self.assertEqual(resp.data['codigo_figura'], '0001')
 
     def test_criar_mesma_descricao_mesmo_modelo(self):
         _familia_min(
@@ -1088,7 +1146,9 @@ class FamiliaDuplicidadeConcorrenciaTests(TransactionTestCase):
             FamiliaProduto.objects.filter(descricao_base=desc, tipo_regra_codigo='BASE_POLEGADA').count(),
             1,
         )
-        self.assertEqual(FamiliaProdutoCodigoSequencia.objects.get(pk=1).proximo_numero, 9301)
+        # Marca d'água não reduz (max(9300, 0001+1) = 9300); um código foi reservado.
+        self.assertEqual(FamiliaProdutoCodigoSequencia.objects.get(pk=1).proximo_numero, 9300)
+        self.assertEqual(oks[0]['codigo_figura'], '0001')
 
     def test_duas_criacoes_mesma_descricao_modelos_diferentes(self):
         desc = 'CONC MESMA DESC MODELOS DIF'
@@ -1354,3 +1414,71 @@ class FamiliaUpdateCruzadoAdvisoryTests(TransactionTestCase):
             self.assertNotEqual(code, 500, data)
             self.assertNotIn('deadlock', str(data).lower())
             self.assertNotIn('IntegrityError', str(data))
+
+
+class FamiliaMenorPrefixoLivreAcceptanceTests(TransactionTestCase):
+    """Aceite: menor NNNN livre (família + produto + inativa)."""
+
+    reset_sequences = True
+
+    def setUp(self):
+        os.environ[ENV_POLITICA] = PoliticaPrefixoCodigoFigura.PREFIXO_GLOBAL_UNICIDADE
+        FamiliaProdutoCodigoSequencia.objects.update_or_create(pk=1, defaults={'proximo_numero': 5000})
+
+    def tearDown(self):
+        os.environ.pop(ENV_POLITICA, None)
+
+    def test_0001_e_0003_ocupados_cria_0002(self):
+        _familia_min('0001')
+        _familia_min('0003')
+        self.assertEqual(reservar_codigo_figura(), '0002')
+
+    def test_prefixo_somente_produto_pula(self):
+        _familia_min('0001')
+        Produto.objects.create(
+            modo_codigo=Produto.ModoCodigo.MANUAL,
+            descricao='PROD PREFIXO 0002',
+            codigo_completo='0002.99',
+        )
+        self.assertIn(2, prefixos_produtos_ocupados())
+        self.assertIn(2, prefixos_globalmente_ocupados())
+        self.assertEqual(reservar_codigo_figura(), '0003')
+
+    def test_familia_inativa_nao_reutiliza(self):
+        fam = _familia_min('0001')
+        FamiliaProduto.objects.filter(pk=fam.pk).update(ativo=False)
+        self.assertEqual(reservar_codigo_figura(), '0002')
+
+    def test_codigo_fora_padrao_nao_quebra_busca(self):
+        _familia_min('XYZ')
+        self.assertEqual(reservar_codigo_figura(), '0001')
+
+    def test_quatro_digitos_sempre(self):
+        for esperado in ('0001', '0002', '0003'):
+            with transaction.atomic():
+                codigo = reservar_codigo_figura()
+                FamiliaProduto.objects.create(
+                    codigo_figura=codigo,
+                    descricao_base=f'SEQ {esperado}',
+                    tipo_regra_codigo=FamiliaProduto.TipoRegraCodigo.BASE_POLEGADA,
+                )
+            self.assertEqual(codigo, esperado)
+            self.assertEqual(len(codigo), 4)
+            self.assertTrue(codigo.isdigit())
+            self.assertNotEqual(codigo, '0000')
+
+    def test_familias_e_produtos_existentes_inalterados(self):
+        fam = _familia_min('0812')
+        prod = Produto.objects.create(
+            modo_codigo=Produto.ModoCodigo.MANUAL,
+            familia=fam,
+            descricao='PROD EXISTENTE',
+            codigo_completo='0812.01',
+        )
+        codigo_fam = fam.codigo_figura
+        codigo_prod = prod.codigo_completo
+        self.assertEqual(reservar_codigo_figura(), '0001')
+        fam.refresh_from_db()
+        prod.refresh_from_db()
+        self.assertEqual(fam.codigo_figura, codigo_fam)
+        self.assertEqual(prod.codigo_completo, codigo_prod)
