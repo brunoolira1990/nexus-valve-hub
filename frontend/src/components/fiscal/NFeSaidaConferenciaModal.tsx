@@ -49,6 +49,7 @@ import {
   fmtNum,
   labelOrigemNfe,
 } from '@/lib/nfeSaidaConferencia';
+import { textoAjudaNumeracaoVolumes } from '@/lib/nfeNumeracaoVolumePv';
 import { linhasReformaItemExibicao, badgeStatusBaseReforma, mensagemBaseReforma } from '@/lib/nfeSaidaReformaExibicao';
 import {
   conferenciaTemAlteracoesNaoSalvas,
@@ -1297,6 +1298,12 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                   value={String(transporte.numeracao_volumes ?? '')}
                   onChange={(e) => patchField('transporte', 'numeracao_volumes', e.target.value)}
                 />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {textoAjudaNumeracaoVolumes(
+                    String(transporte.numeracao_volumes ?? ''),
+                    nfe.pedido_venda_numero,
+                  )}
+                </p>
               </div>
               <div>
                 <label className="erp-label">Peso bruto (kg)</label>

@@ -95,5 +95,18 @@ describe('nfeSaidaConferenciaDirty', () => {
     expect(payload.quantidade_volumes).toBe(2);
     expect(payload.peso_bruto).toBe(100);
     expect(payload.placa_veiculo).toBe('ABC1D23');
+    expect(payload.numeracao_volumes).toBe('1-2');
+  });
+
+  it('salvar preserva numeração manual compacta do PV sem recalcular', () => {
+    const conf = {
+      ...baseConf(),
+      transporte: {
+        ...baseConf().transporte,
+        numeracao_volumes: 'VOL-MANUAL-99',
+      },
+    };
+    const payload = montarPayloadSalvarConferencia(conf, false);
+    expect(payload.numeracao_volumes).toBe('VOL-MANUAL-99');
   });
 });

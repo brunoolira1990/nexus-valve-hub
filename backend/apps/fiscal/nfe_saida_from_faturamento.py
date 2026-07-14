@@ -12,6 +12,7 @@ from django.utils import timezone
 from apps.comercial.faturamento_pedido_venda import STATUS_PEDIDO_CANCELADO
 from apps.comercial.models import FaturamentoPedidoVenda, PedidoVenda
 from apps.fiscal.models import ItemNFeSaida, NFeSaida
+from apps.fiscal.nfe_numeracao_volume_pv import sugerir_numeracao_volumes_pedido
 from apps.fiscal.serializers import NFeSaidaSerializer, recalcular_valor_nf_saida
 from apps.fiscal.snapshot_fiscal_helpers import normalize_snapshot_fiscal_for_nfe
 from apps.produtos.snapshot import build_produto_snapshot
@@ -140,6 +141,9 @@ def gerar_nfe_saida_from_faturamento(
 
         ambiente_emissao = obter_nfe_ambiente_empresa(pedido.empresa_emitente)
 
+    # Sugestão única na criação do rascunho (AAMMDD-NNNN). Não recalcula em retry.
+    numeracao_volumes = sugerir_numeracao_volumes_pedido(getattr(pedido, 'numero', None)) or ''
+
     nf = NFeSaida.objects.create(
         numero=_numero_rascunho_faturamento(fat.pk),
         cliente_id=pedido.cliente_id,
@@ -156,6 +160,7 @@ def gerar_nfe_saida_from_faturamento(
         quantidade_parcelas=pedido.quantidade_parcelas or 0,
         vencimentos_finais=list(pedido.vencimentos_previstos or []),
         titulos_receber=[],
+        numeracao_volumes=numeracao_volumes,
     )
 
     criados = 0
