@@ -111,27 +111,41 @@ class DanfeBrazilFiscalReportPocTests(TestCase):
         pdf = gerar_danfe_bfr_de_xml_string(limpo)
         self.assertTrue(pdf.startswith(b'%PDF'))
 
-    def test_danfe_oculta_sem_cbenef_mantem_pedido_e_codigo_especifico(self):
+    def test_danfe_oculta_qualquer_cbenef_mantem_pedido_e_xprod(self):
+        """cBenef permanece no XML fiscal; BFR não exibe cBenef: no PDF."""
         xml = XML_NFE_EXEMPLO_POC.replace(
             '<xProd>Produto POC BrazilFiscalReport</xProd>',
-            '<xProd>Produto POC BrazilFiscalReport</xProd><cBenef>SEM CBENEF</cBenef>',
+            '<xProd>Produto POC BrazilFiscalReport</xProd><cBenef>SP020120</cBenef>',
             1,
         ).replace(
             '</prod>',
             '</prod><infAdProd>Pedido de compra: 55005050 - Item: 01</infAdProd>',
             1,
         )
-        self.assertIn('<cBenef>SEM CBENEF</cBenef>', xml)
+        original = xml
+        self.assertIn('<cBenef>SP020120</cBenef>', original)
+
+        limpo = sanitizar_xml_para_bfr(xml)
+        self.assertEqual(xml, original)  # original preservado
+        self.assertIn('<cBenef>SP020120</cBenef>', xml)
+        self.assertNotIn('cBenef', limpo)
+        self.assertNotIn('SP020120', limpo)
+        self.assertIn('Produto POC BrazilFiscalReport', limpo)
+        self.assertIn('Pedido de compra: 55005050', limpo)
+
         pdf = gerar_danfe_bfr_de_xml_string(xml)
         texto = compact_pdf_text(pdf_text(pdf))
-        self.assertNotIn('SEM CBENEF', texto)
-        self.assertNotIn('CBENEF:SEM', texto.replace(' ', ''))
+        self.assertNotIn('CBENEF', texto)
+        self.assertNotIn('SP020120', texto)
+        self.assertIn('PRODUTOPOCBRAZILFISCALREPORT', texto)
         self.assertIn('PEDIDODECOMPRA', texto.replace(' ', ''))
 
-        xml_codigo = xml.replace('<cBenef>SEM CBENEF</cBenef>', '<cBenef>SP123456</cBenef>', 1)
-        pdf2 = gerar_danfe_bfr_de_xml_string(xml_codigo)
-        texto2 = compact_pdf_text(pdf_text(pdf2))
-        self.assertIn('SP123456', texto2)
+        # Marcador legado também some do PDF; XML de entrada intacto.
+        xml_sem = xml.replace('<cBenef>SP020120</cBenef>', '<cBenef>SEM CBENEF</cBenef>', 1)
+        pdf_sem = gerar_danfe_bfr_de_xml_string(xml_sem)
+        texto_sem = compact_pdf_text(pdf_text(pdf_sem))
+        self.assertNotIn('SEM CBENEF', texto_sem)
+        self.assertNotIn('CBENEF:SEM', texto_sem.replace(' ', ''))
 
     @mock.patch(
         'apps.fiscal.nfe_integracao.danfe_brazil_fiscal_report.gerar_danfe_bfr_de_nfe_saida_preview',

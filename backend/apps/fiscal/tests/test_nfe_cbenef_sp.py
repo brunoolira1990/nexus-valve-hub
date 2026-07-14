@@ -14,6 +14,7 @@ from apps.fiscal.nfe_cbenef_sp import (
     eh_marcador_cbenef_nao_fiscal,
     item_exige_cbenef_sp_cst20_reducao,
     normalizar_codigo_beneficio_icms,
+    ocultar_cbenef_para_danfe,
     ocultar_sem_cbenef_para_danfe,
     pendencia_cbenef_marcador_item,
     pendencia_cbenef_sp_item,
@@ -66,18 +67,24 @@ class NFeCbenefSpTests(SimpleTestCase):
         snap = {'cst_icms': '20', 'reducao_bc_icms': '51.1100'}
         self.assertFalse(item_exige_cbenef_sp_cst20_reducao(snap, uf_emitente='RJ'))
 
-    def test_ocultar_sem_cbenef_apenas_literal(self):
+    def test_ocultar_cbenef_para_danfe_remove_todos(self):
         xml = (
             '<prod><cBenef>SEM CBENEF</cBenef><xProd>Item</xProd>'
-            '<cBenef>SP123456</cBenef></prod>'
+            '<cBenef>SP020120</cBenef>'
+            '<nfe:cBenef xmlns:nfe="http://www.portalfiscal.inf.br/nfe">SP999999</nfe:cBenef>'
+            '</prod>'
         )
-        out = ocultar_sem_cbenef_para_danfe(xml)
+        original = xml
+        out = ocultar_cbenef_para_danfe(xml)
+        self.assertEqual(xml, original)  # string imutável / cópia
+        self.assertNotIn('cBenef', out)
+        self.assertNotIn('SP020120', out)
         self.assertNotIn('SEM CBENEF', out)
-        self.assertIn('<cBenef>SP123456</cBenef>', out)
+        self.assertIn('<xProd>Item</xProd>', out)
 
-    def test_ocultar_nao_altera_xml_sem_sem_cbenef(self):
+    def test_ocultar_sem_cbenef_alias_remove_codigo_real(self):
         xml = '<prod><cBenef>SP123456</cBenef></prod>'
-        self.assertEqual(ocultar_sem_cbenef_para_danfe(xml), xml)
+        self.assertNotIn('cBenef', ocultar_sem_cbenef_para_danfe(xml))
 
     def test_marcador_bloqueia_emissao_mensagem(self):
         snap = {'codigo_beneficio_icms': 'SEM BENEFICIO'}

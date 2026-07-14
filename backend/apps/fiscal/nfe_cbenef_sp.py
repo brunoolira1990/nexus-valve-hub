@@ -25,9 +25,10 @@ MSG_CBENEF_MARCADOR_INVALIDO = (
     'ou informe o código oficial (ex.: SP020120).'
 )
 
-_CBENEF_SEM_XML_RE = re.compile(
-    r'<(?:[\w]+:)?cBenef>\s*SEM\s+CBENEF\s*</(?:[\w]+:)?cBenef>',
-    re.IGNORECASE,
+# Cópia efêmera para DANFE/BFR: remove qualquer <cBenef> (com ou sem prefixo de namespace).
+_CBENEF_QUALQUER_XML_RE = re.compile(
+    r'<(?:[\w]+:)?cBenef\b[^>]*>.*?</(?:[\w]+:)?cBenef\s*>',
+    re.IGNORECASE | re.DOTALL,
 )
 
 # Marcadores de UI / textos descritivos — sem espaços após compactação.
@@ -112,14 +113,21 @@ def codigo_beneficio_icms_preenchido(val: str | None) -> bool:
     return codigo_beneficio_icms_para_xml(val) is not None
 
 
-def ocultar_sem_cbenef_para_danfe(xml: str) -> str:
+def ocultar_cbenef_para_danfe(xml: str) -> str:
     """
-    Remove ``<cBenef>SEM CBENEF</cBenef>`` de cópia do XML para render DANFE
-    (XMLs históricos). O path de emissão não deve mais gerar esse literal.
+    Remove **todas** as tags ``cBenef`` de uma cópia do XML destinada ao BFR.
+
+    O XML fiscal persistido/autorizado/transmitido **não** deve passar por esta
+    função — apenas a sanitização efêmera de ``sanitizar_xml_para_bfr``.
     """
     if not (xml or '').strip():
         return xml
-    return _CBENEF_SEM_XML_RE.sub('', xml)
+    return _CBENEF_QUALQUER_XML_RE.sub('', xml)
+
+
+def ocultar_sem_cbenef_para_danfe(xml: str) -> str:
+    """Compat: alias de ``ocultar_cbenef_para_danfe`` (oculta qualquer cBenef no DANFE)."""
+    return ocultar_cbenef_para_danfe(xml)
 
 
 def _cst_icms_snapshot(snapshot: dict) -> str:

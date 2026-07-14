@@ -239,8 +239,12 @@ class DanfeNexus:
 
 
 def sanitizar_xml_para_bfr(xml: str) -> str:
-    """Remove comentários/declarações duplicadas e normaliza texto para fontes Times da BFR."""
-    from apps.fiscal.nfe_cbenef_sp import ocultar_sem_cbenef_para_danfe
+    """Cópia efêmera do XML para o BFR: limpa comentários e oculta cBenef só no PDF.
+
+    Não altera o argumento ``xml`` original (strings são imutáveis; retorna nova
+    string). O XML fiscal persistido/autorizado permanece intacto no chamador.
+    """
+    from apps.fiscal.nfe_cbenef_sp import ocultar_cbenef_para_danfe
 
     if not (xml or '').strip():
         raise DanfeBfrError('XML vazio.')
@@ -249,7 +253,8 @@ def sanitizar_xml_para_bfr(xml: str) -> str:
     texto = re.sub(r'<!--.*?-->', '', texto, flags=re.DOTALL)
     texto = re.sub(r'<\?xml[^?]*\?>\s*', '', texto, flags=re.IGNORECASE)
     texto = texto.replace('\u2014', '-').replace('\u2013', '-')
-    texto = ocultar_sem_cbenef_para_danfe(texto)
+    # BFR acrescenta "cBenef: …" sob o item; remove tag só nesta cópia.
+    texto = ocultar_cbenef_para_danfe(texto)
     texto = texto.strip()
     if not texto.startswith('<'):
         raise DanfeBfrError('XML inválido: conteúdo não parece um documento NF-e.')
