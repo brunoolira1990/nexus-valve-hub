@@ -274,6 +274,10 @@ class NfePrecoUnitarioXmlDanfeTests(TestCase):
 
 
     def test_danfe_local_mostra_terceira_casa(self):
+        from apps.fiscal.nfe_integracao.danfe_preco_unitario_format import (
+            format_preco_unitario_danfe,
+        )
+
         xml = (
             '<?xml version="1.0" encoding="UTF-8"?>'
             '<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">'
@@ -313,13 +317,12 @@ class NfePrecoUnitarioXmlDanfeTests(TestCase):
             '<pag><detPag><tPag>01</tPag><vPag>4512.50</vPag></detPag></pag>'
             '</infNFe></NFe></nfeProc>'
         )
-        from brazilfiscalreport.danfe.danfe import format_number
-
-        self.assertEqual(format_number('1128.125', 3), '1.128,125')
-        self.assertEqual(format_number('4512.50', 2), '4.512,50')
+        self.assertEqual(format_preco_unitario_danfe(Decimal('1128.125')), '1.128,125')
+        self.assertEqual(format_preco_unitario_danfe(Decimal('1128')), '1.128,00')
         pdf = gerar_danfe_bfr_de_xml_string(sanitizar_xml_para_bfr(xml))
         self.assertTrue(pdf.startswith(b'%PDF'))
         texto = compact_pdf_text(pdf_text(pdf))
         # compact_pdf_text remove pontos: 1.128,125 → 1128,125
         self.assertIn('1128,125', texto)
+        self.assertNotIn('1128,000', texto)
         self.assertIn('4512,50', texto)

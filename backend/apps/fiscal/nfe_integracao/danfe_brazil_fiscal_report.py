@@ -207,6 +207,30 @@ class DanfeNexus:
                     return
                 super()._draw_void_watermark()
 
+            def _get_products_info(self):
+                """BFR 0.7.4: ``price_precision`` força N casas fixas em vUnCom/vUnTrib.
+
+                Override mínimo: reaproveita o restante de ``Danfe._get_products_info``
+                e só reescreve ``unit_price`` com formatação Nexus (min 2 / max 3).
+                Método privado da biblioteca — acoplamento intencional e documentado.
+                """
+                from brazilfiscalreport.danfe.danfe import URL, extract_text, merge_if_different
+
+                from apps.fiscal.nfe_integracao.danfe_preco_unitario_format import (
+                    format_preco_unitario_danfe,
+                )
+
+                products = super()._get_products_info()
+                reescritos = []
+                for product, det in zip(products, self.det):
+                    el_prod = det.find(f'{URL}prod')
+                    v_un_com = format_preco_unitario_danfe(extract_text(el_prod, 'vUnCom'))
+                    v_un_trib = format_preco_unitario_danfe(extract_text(el_prod, 'vUnTrib'))
+                    reescritos.append(
+                        product._replace(unit_price=merge_if_different(v_un_com, v_un_trib))
+                    )
+                return reescritos
+
             _draw_header = draw_header_emit_nexus
             _draw_billing = draw_billing_nexus
             _draw_taxes = draw_taxes_nexus
@@ -290,8 +314,10 @@ def _montar_config_danfe(
         display_pis_cofins=True,
         watermark_cancelled=cancelada,
         font_size=FontSize.SMALL,
-        # Até 3 casas no preço unitário (vUnCom); totais BFR seguem precision=2 nos campos monetários.
-        decimal_config=DecimalConfig(price_precision=3, quantity_precision=4),
+        # quantity_precision=4: qCom/qTrib. Preço unitário NÃO usa price_precision do BFR
+        # (força N casas fixas); DanfeNexus._get_products_info aplica min2/max3 via helper.
+        # Totais/impostos/vProd no BFR permanecem com precision=2 hardcoded.
+        decimal_config=DecimalConfig(quantity_precision=4),
     )
 
 
