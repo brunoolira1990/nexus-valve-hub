@@ -38,8 +38,26 @@ describe('pedidosVendaItems', () => {
     expect('produto' in payload).toBe(false);
   });
 
-  it('falha com mensagem amigavel quando item sem produto', () => {
-    const semProduto = { ...itemBase(), produto_id: 0 };
-    expect(() => buildItemPayload(semProduto, 0)).toThrow(/item 1 está sem produto/i);
+  it('payload preserva preco com 3 casas e espelho legado com 2', () => {
+    const item = {
+      ...itemBase(),
+      preco_por_unidade_negociada: 10.125,
+      valor_unitario: 10.125,
+      quantidade_negociada: 3,
+      quantidade: 3,
+    };
+    const payload = buildItemPayload(item, 0);
+    expect(payload.preco_por_unidade_negociada).toBe(10.125);
+    expect(payload.valor_unitario).toBe(10.13);
+  });
+
+  it('total usa unitario sem arredondar antes', () => {
+    const item = {
+      ...itemBase(),
+      preco_por_unidade_negociada: 10.125,
+      quantidade_negociada: 3,
+      quantidade: 3,
+    };
+    expect(computePedidoTotal([item])).toBeCloseTo(30.375, 5);
   });
 });

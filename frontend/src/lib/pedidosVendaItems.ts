@@ -1,4 +1,5 @@
 import type { ItemPedido } from '@/types';
+import { espelhoValorUnitarioLegado } from '@/lib/pedidoVendaValorUnitario';
 
 function toNumber(value: unknown, fallback = 0): number {
   const n = Number(value ?? fallback);
@@ -10,13 +11,15 @@ export function normalizeItemPedidoForForm(it: ItemPedido): ItemPedido {
     it.produto_nome ||
     ((it.snapshot_produto as { descricao?: string } | undefined)?.descricao ?? '') ||
     '';
+  const preco = toNumber(it.preco_por_unidade_negociada ?? it.valor_unitario, 0);
   return {
     ...it,
     produto_nome: produtoNomeFallback,
     quantidade_negociada: toNumber(it.quantidade_negociada ?? it.quantidade, 0),
-    preco_por_unidade_negociada: toNumber(it.preco_por_unidade_negociada ?? it.valor_unitario, 0),
+    preco_por_unidade_negociada: preco,
     quantidade: toNumber(it.quantidade, 0),
-    valor_unitario: toNumber(it.valor_unitario, 0),
+    // Fonte comercial = preco; legado só espelho de 2 casas.
+    valor_unitario: toNumber(it.valor_unitario, espelhoValorUnitarioLegado(preco)),
     desconto_valor: toNumber((it as ItemPedido & { desconto?: number }).desconto ?? it.desconto_valor, 0),
     quantidade_faturada: toNumber(it.quantidade_faturada, 0),
   };
@@ -31,6 +34,7 @@ export function computePedidoTotal(itens: ItemPedido[]): number {
     const st = toNumber(i.icms_st_valor, 0);
     const frete = toNumber(i.frete_valor, 0);
     const outras = toNumber(i.outras_despesas_valor, 0);
+    // Sem arredondar o unitário antes do produto; total da UI é informativo.
     return s + Math.max(0, qtd * pu - desconto + ipi + st + frete + outras);
   }, 0);
 }
@@ -50,8 +54,9 @@ export function buildItemPayload(it: ItemPedido, idx: number): Record<string, un
     produto_id: produtoId,
     quantidade,
     quantidade_negociada: quantidade,
-    valor_unitario: precoUnitario,
+    // Precisão comercial em preco_*; legado só com 2 casas (numeric(14,2) / DRF).
     preco_por_unidade_negociada: precoUnitario,
+    valor_unitario: espelhoValorUnitarioLegado(precoUnitario),
     desconto,
     unidade_negociada: (it.unidade_negociada || 'PC').toUpperCase(),
     ipi_valor: toNumber(it.ipi_valor, 0),

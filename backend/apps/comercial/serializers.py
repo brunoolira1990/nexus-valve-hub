@@ -978,6 +978,18 @@ class ItemPedidoVendaSerializer(serializers.ModelSerializer):
     )
     produto_nome = serializers.SerializerMethodField(read_only=True)
     corrida_numero = serializers.SerializerMethodField(read_only=True)
+    # Aceita até 4 na validação do campo; a regra de negócio limita a 3 em validate().
+    # O modelo/DB de valor_unitario continua numeric(14,2) — espelho legado preenchido pela conversão.
+    valor_unitario = serializers.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        required=False,
+    )
+    preco_por_unidade_negociada = serializers.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        required=False,
+    )
 
     class Meta:
         model = ItemPedidoVenda
@@ -1050,6 +1062,17 @@ class ItemPedidoVendaSerializer(serializers.ModelSerializer):
                 attrs.get('valor_unitario', self.instance.valor_unitario if self.instance else Decimal('0')),
             )
         )
+        from apps.comercial.valor_unitario_precisao import MSG_VALOR_UNITARIO_MAX_3_CASAS, validar_max_casas_valor_unitario
+
+        try:
+            preco = validar_max_casas_valor_unitario(preco)
+        except ValueError:
+            raise serializers.ValidationError(
+                {
+                    'preco_por_unidade_negociada': MSG_VALOR_UNITARIO_MAX_3_CASAS,
+                    'valor_unitario': MSG_VALOR_UNITARIO_MAX_3_CASAS,
+                },
+            ) from None
         if preco < 0:
             raise serializers.ValidationError({'preco_por_unidade_negociada': 'Preço unitário não pode ser negativo.'})
         desconto = _dec(attrs.get('desconto', self.instance.desconto if self.instance else Decimal('0')))

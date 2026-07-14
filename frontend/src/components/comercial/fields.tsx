@@ -5,6 +5,13 @@ import {
   parseMoneyInputToDecimal,
   parseQuantityInputToDecimal,
 } from '@/lib/numberFields';
+import {
+  MSG_VALOR_UNITARIO_MAX_3_CASAS,
+  formatValorUnitarioDisplay,
+  parseValorUnitarioInput,
+  valorUnitarioExcedeMaxCasas,
+} from '@/lib/pedidoVendaValorUnitario';
+import { toast } from 'sonner';
 
 type BaseInputProps = {
   value: number;
@@ -110,6 +117,54 @@ export function MoneyInput({ value, onChange, className, readOnly, min = 0 }: Ba
       inputMode="decimal"
       formatDisplay={formatEditableDecimal}
       parseInput={parseMoneyInputToDecimal}
+    />
+  );
+}
+
+/** Valor unitário do Pedido de Venda — até 3 casas; vírgula ou ponto. */
+export function UnitPriceInput({ value, onChange, className, readOnly, min = 0 }: BaseInputProps) {
+  const [text, setText] = useState('');
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) {
+      if (value === 0 || !Number.isFinite(value)) {
+        setText('');
+      } else {
+        setText(formatValorUnitarioDisplay(value));
+      }
+    }
+  }, [value, focused]);
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      readOnly={readOnly}
+      className={className || 'erp-input h-9 text-sm w-full mt-1'}
+      value={text}
+      onFocus={(e) => {
+        setFocused(true);
+        e.target.select();
+      }}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => {
+        setFocused(false);
+        const raw = text.trim();
+        if (!raw) {
+          onChange(0);
+          return;
+        }
+        if (valorUnitarioExcedeMaxCasas(raw)) {
+          toast.error(MSG_VALOR_UNITARIO_MAX_3_CASAS);
+          setText(formatValorUnitarioDisplay(value));
+          return;
+        }
+        const parsed = parseValorUnitarioInput(raw);
+        const safe = Number.isFinite(parsed) ? Math.max(min, parsed) : 0;
+        onChange(safe);
+        setText(formatValorUnitarioDisplay(safe));
+      }}
     />
   );
 }

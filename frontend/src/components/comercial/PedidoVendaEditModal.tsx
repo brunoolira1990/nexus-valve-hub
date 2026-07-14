@@ -17,10 +17,10 @@ import { ProdutoComercialField } from '@/components/comercial/ProdutoComercialFi
 import {
   DiscountInput,
   MoneyDisplay,
-  MoneyInput,
   QuantityDisplay,
   QuantityInput,
   ReadonlyCalculatedField,
+  UnitPriceInput,
   UnitSelect,
 } from '@/components/comercial/fields';
 import { VendedorComercialField } from '@/components/comercial/VendedorComercialField';
@@ -890,9 +890,8 @@ export function PedidoVendaEditModal({
                                     <label className="text-xs text-muted-foreground">
                                       {labelPrecoPorUnidade(item.unidade_negociada)}
                                     </label>
-                                    <MoneyInput
+                                    <UnitPriceInput
                                       value={item.preco_por_unidade_negociada ?? item.valor_unitario}
-                                      step="0.0001"
                                       readOnly={readOnly}
                                       onChange={(value) => updateItem(idx, { preco_por_unidade_negociada: value })}
                                     />

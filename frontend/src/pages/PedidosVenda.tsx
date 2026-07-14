@@ -264,7 +264,10 @@ const PedidosVenda = () => {
         merged.quantidade = Number(merged.quantidade_negociada ?? merged.quantidade ?? 0);
       }
       if (Object.prototype.hasOwnProperty.call(patch, 'preco_por_unidade_negociada')) {
-        merged.valor_unitario = Number(merged.preco_por_unidade_negociada ?? merged.valor_unitario ?? 0);
+        const preco = Number(merged.preco_por_unidade_negociada ?? merged.valor_unitario ?? 0);
+        merged.preco_por_unidade_negociada = preco;
+        // Espelho legado (2 casas) — a precisão comercial fica em preco_por_unidade_negociada.
+        merged.valor_unitario = Math.round((preco + Number.EPSILON) * 100) / 100;
       }
       next[idx] = merged;
       return next;
