@@ -99,6 +99,13 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# ERP 4.0.14.x — política de ocupação do prefixo em codigo_figura automático.
+# Decisão de produção (operador): PREFIXO_GLOBAL_UNICIDADE
+#   — OD/STD/etc. vêm do template dimensional; não cadastrar famílias 6119 e 6119OD distintas.
+# Valores aceitos: VALOR_COMPLETO | PREFIXO_GLOBAL_UNICIDADE | PREFIXO_GLOBAL_SEQUENCIAL
+# Em produção definir explicitamente:
+# FAMILIA_CODIGO_POLITICA_PREFIXO=PREFIXO_GLOBAL_UNICIDADE
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',

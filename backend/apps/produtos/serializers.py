@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from rest_framework import serializers
 
 from apps.produtos.codigo_produto import (
@@ -17,6 +17,13 @@ from apps.produtos.dimensional_regra import (
     validar_tipo_dimensional_x_regra,
 )
 from apps.produtos.familia_regra import aplicar_flags_derivadas_no_dict
+from apps.produtos.familia_codigo import FamiliaCodigoConfigError, FamiliaCodigoEsgotadoError, reservar_codigo_figura
+from apps.produtos.familia_duplicidade import (
+    buscar_familia_duplicada_descricao_modelo,
+    chave_descricao_duplicidade_familia,
+    garantir_unicidade_descricao_modelo_na_tx,
+    payload_erro_duplicidade_descricao_modelo,
+)
 from apps.produtos.conversao_medidas import ConversaoErro, converter_quantidade_produto
 from apps.produtos.polegadas import aliases_for_polegada, normalize_polegada_label, parse_polegada_to_decimal
 from apps.text_normalize import normalize_operational_fields, to_operational_upper
@@ -169,6 +176,24 @@ class ScheduleEspessuraSerializer(serializers.ModelSerializer):
 
 
 class FamiliaProdutoSerializer(serializers.ModelSerializer):
+    """
+    Contrato de criação (modo_codigo não é persistido):
+    - modo_codigo=AUTOMATICO: gera NNNN; código enviado é ignorado.
+    - modo_codigo=MANUAL: exige codigo_figura; não altera o contador.
+    - modo_codigo ausente: fallback AUTOMATICO (compatível com a UI atual).
+      Se codigo_figura vier preenchido sem modo_codigo → erro explícito
+      (não interpreta silenciosamente o código como automático nem como manual).
+    """
+
+    MODO_CODIGO_AUTOMATICO = 'AUTOMATICO'
+    MODO_CODIGO_MANUAL = 'MANUAL'
+    MSG_CODIGO_DUPLICADO = 'Já existe uma Família/Figura com este código.'
+    MSG_CODIGO_MANUAL_OBRIGATORIO = 'Informe o código da Família/Figura.'
+    MSG_MODO_COM_CODIGO = (
+        'Informe modo_codigo=MANUAL para cadastrar com o código informado, '
+        'ou omita codigo_figura para gerar automaticamente (modo_codigo=AUTOMATICO).'
+    )
+
     ncm_padrao_id = serializers.PrimaryKeyRelatedField(
         queryset=Ncm.objects.all(),
         source='ncm_padrao',
@@ -181,6 +206,13 @@ class FamiliaProdutoSerializer(serializers.ModelSerializer):
     schedules_permitidos = serializers.SerializerMethodField(read_only=True)
     rosca_padrao_id = serializers.SerializerMethodField(read_only=True)
     schedule_padrao_id = serializers.SerializerMethodField(read_only=True)
+    # Decisão de cadastro apenas — não é campo do model.
+    modo_codigo = serializers.ChoiceField(
+        choices=[('AUTOMATICO', 'AUTOMATICO'), ('MANUAL', 'MANUAL')],
+        required=False,
+        allow_null=True,
+        write_only=True,
+    )
 
     class Meta:
         model = FamiliaProduto
@@ -195,13 +227,27 @@ class FamiliaProdutoSerializer(serializers.ModelSerializer):
         td = self.fields.get('tipo_dimensional')
         if td is not None and hasattr(td, 'choices'):
             td.choices = FamiliaProduto.TipoDimensional.choices
+        if self.instance is None:
+            codigo = self.fields.get('codigo_figura')
+            if codigo is not None:
+                codigo.required = False
+                codigo.allow_blank = True
+                # Unicidade tratada em validate()/create() com mensagem amigável.
+                codigo.validators = [
+                    v
+                    for v in getattr(codigo, 'validators', [])
+                    if not v.__class__.__name__.endswith('UniqueValidator')
+                ]
 
     def to_internal_value(self, data):
         if hasattr(data, 'copy') and hasattr(data, 'get'):
+            data = data.copy()
             tr = data.get('tipo_regra_codigo')
             if isinstance(tr, str):
-                data = data.copy()
                 data['tipo_regra_codigo'] = tr.strip()
+            modo = data.get('modo_codigo')
+            if isinstance(modo, str):
+                data['modo_codigo'] = modo.strip().upper()
         return super().to_internal_value(data)
 
     def validate(self, attrs):
@@ -229,7 +275,9 @@ class FamiliaProdutoSerializer(serializers.ModelSerializer):
             },
         )
         if attrs.get('descricao_base'):
-            attrs['descricao_base'] = normalizar_descricao_produto(attrs['descricao_base'])
+            # Persistido e comparado com a mesma chave operacional.
+            attrs['descricao_base'] = chave_descricao_duplicidade_familia(attrs['descricao_base'])
+
         tipo = attrs.get('tipo_regra_codigo')
         if tipo is None and inst is not None:
             tipo = inst.tipo_regra_codigo
@@ -272,6 +320,58 @@ class FamiliaProdutoSerializer(serializers.ModelSerializer):
                 attrs['unidade_estoque_padrao'] = unidade_base
             if tipo_comp == FamiliaProduto.TipoComposicaoFisica.BARRA_M:
                 attrs['usa_conversao_dimensional'] = True
+
+        if self.instance is None:
+            modo = attrs.get('modo_codigo')
+            codigo_bruto = attrs.get('codigo_figura')
+            codigo_enviado = (str(codigo_bruto).strip() if codigo_bruto is not None else '')
+            if modo is None:
+                if codigo_enviado:
+                    raise serializers.ValidationError({'modo_codigo': self.MSG_MODO_COM_CODIGO})
+                attrs['modo_codigo'] = self.MODO_CODIGO_AUTOMATICO
+            elif modo == self.MODO_CODIGO_MANUAL:
+                if not codigo_enviado:
+                    raise serializers.ValidationError({'codigo_figura': self.MSG_CODIGO_MANUAL_OBRIGATORIO})
+                if any(ord(ch) < 32 for ch in codigo_enviado):
+                    raise serializers.ValidationError(
+                        {
+                            'codigo_figura': (
+                                'O código da Família/Figura não pode conter '
+                                'caracteres de controle ou quebras de linha.'
+                            ),
+                        },
+                    )
+                if len(codigo_enviado) > 32:
+                    raise serializers.ValidationError(
+                        {'codigo_figura': 'O código da Família/Figura deve ter no máximo 32 caracteres.'},
+                    )
+                # Normalização operacional: strip + upper (não é salvamento byte a byte).
+                # Sem acrescentar/remover OD, STD ou outros complementos.
+                attrs['codigo_figura'] = codigo_enviado
+                if FamiliaProduto.objects.filter(codigo_figura=codigo_enviado).exists():
+                    raise serializers.ValidationError({'codigo_figura': self.MSG_CODIGO_DUPLICADO})
+            else:
+                # AUTOMATICO: valor enviado de codigo_figura será descartado em create().
+                attrs.pop('codigo_figura', None)
+        else:
+            attrs.pop('modo_codigo', None)
+
+        # Duplicidade descrição+modelo: antes de reservar código automático (create).
+        desc_eff = attrs.get('descricao_base')
+        if desc_eff is None and inst is not None:
+            desc_eff = inst.descricao_base
+        tipo_eff = attrs.get('tipo_regra_codigo')
+        if tipo_eff is None and inst is not None:
+            tipo_eff = inst.tipo_regra_codigo
+        if desc_eff:
+            existente = buscar_familia_duplicada_descricao_modelo(
+                descricao_base=desc_eff,
+                tipo_regra_codigo=tipo_eff,
+                excluir_id=inst.pk if inst is not None else None,
+            )
+            if existente is not None:
+                raise serializers.ValidationError(payload_erro_duplicidade_descricao_modelo(existente))
+
         return attrs
 
     def get_ncm_padrao_info(self, obj: FamiliaProduto):
@@ -333,6 +433,61 @@ class FamiliaProdutoSerializer(serializers.ModelSerializer):
 
     def get_requisitos_produto(self, obj: FamiliaProduto):
         return requisitos_efetivos_produto(obj)
+
+    def create(self, validated_data):
+        modo = validated_data.pop('modo_codigo', self.MODO_CODIGO_AUTOMATICO) or self.MODO_CODIGO_AUTOMATICO
+        with transaction.atomic():
+            # Lock + recheck sob a mesma TX do INSERT/reserva (evita corrida).
+            garantir_unicidade_descricao_modelo_na_tx(
+                descricao_base=validated_data.get('descricao_base'),
+                tipo_regra_codigo=validated_data.get('tipo_regra_codigo'),
+                excluir_id=None,
+            )
+            if modo == self.MODO_CODIGO_MANUAL:
+                codigo = (validated_data.get('codigo_figura') or '').strip()
+                if not codigo:
+                    raise serializers.ValidationError({'codigo_figura': self.MSG_CODIGO_MANUAL_OBRIGATORIO})
+                validated_data['codigo_figura'] = codigo
+                try:
+                    # Savepoint: IntegrityError no PG não derruba a TX externa.
+                    with transaction.atomic():
+                        return super().create(validated_data)
+                except IntegrityError as exc:
+                    raise serializers.ValidationError({'codigo_figura': self.MSG_CODIGO_DUPLICADO}) from exc
+
+            # AUTOMATICO — só reserva depois do lock/recheck (perdedor não consome código).
+            validated_data.pop('codigo_figura', None)
+            ultimo_erro: Exception | None = None
+            for _ in range(3):
+                try:
+                    # Cada tentativa em savepoint: retry após colisão de codigo_figura.
+                    with transaction.atomic():
+                        dados = dict(validated_data)
+                        dados['codigo_figura'] = reservar_codigo_figura()
+                        return super().create(dados)
+                except (FamiliaCodigoEsgotadoError, FamiliaCodigoConfigError) as exc:
+                    raise serializers.ValidationError({'codigo_figura': str(exc)}) from exc
+                except IntegrityError as exc:
+                    ultimo_erro = exc
+                    continue
+            raise serializers.ValidationError({'codigo_figura': self.MSG_CODIGO_DUPLICADO}) from ultimo_erro
+
+    def update(self, instance, validated_data):
+        validated_data.pop('codigo_figura', None)
+        validated_data.pop('modo_codigo', None)
+        with transaction.atomic():
+            desc_eff = validated_data.get('descricao_base', instance.descricao_base)
+            tipo_eff = validated_data.get('tipo_regra_codigo', instance.tipo_regra_codigo)
+            if desc_eff:
+                # Bloqueia o par de destino (e a origem se diferente), em ordem determinística.
+                garantir_unicidade_descricao_modelo_na_tx(
+                    descricao_base=desc_eff,
+                    tipo_regra_codigo=tipo_eff,
+                    excluir_id=instance.pk,
+                    descricao_origem=instance.descricao_base,
+                    tipo_regra_origem=instance.tipo_regra_codigo,
+                )
+            return super().update(instance, validated_data)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

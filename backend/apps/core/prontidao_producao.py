@@ -262,6 +262,21 @@ def verificar_fiscal() -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict
     return achados, ok, fiscal
 
 
+def verificar_familia_codigo_politica() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    from apps.produtos.familia_codigo import ENV_POLITICA, resolver_config_politica_codigo_figura
+
+    achados: list[dict[str, Any]] = []
+    ok: list[dict[str, Any]] = []
+    cfg = resolver_config_politica_codigo_figura()
+    if cfg.bloqueio_producao:
+        achados.append(_critico(cfg.bloqueio_producao))
+    elif cfg.alerta_fallback:
+        achados.append(_aviso(cfg.alerta_fallback))
+    else:
+        ok.append(_ok(f'{ENV_POLITICA}={cfg.politica} (explícita).'))
+    return achados, ok
+
+
 def verificar_produtos() -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, int]]:
     achados: list[dict[str, Any]] = []
     ok: list[dict[str, Any]] = []
@@ -312,19 +327,38 @@ def verificar_cadastros_struct(counts_prod: dict[str, int]) -> tuple[list[dict[s
 
 
 def executar_verificacao_prontidao() -> dict[str, Any]:
+    from apps.produtos.familia_codigo import (
+        PoliticaPrefixoCodigoFigura,
+        resolver_config_politica_codigo_figura,
+    )
+
     fin, ok_fin = verificar_financeiro()
     usr, ok_usr = verificar_usuarios_colaboradores()
     fiscal, ok_fiscal, fiscal_detalhe = verificar_fiscal()
     prod, ok_prod, counts_prod = verificar_produtos()
+    fam_cod, ok_fam_cod = verificar_familia_codigo_politica()
+    cfg_fam = resolver_config_politica_codigo_figura()
     cad, preservados = verificar_cadastros_struct(counts_prod)
 
-    todos = fin + usr + fiscal + prod + cad
-    ok_itens = ok_fin + ok_usr + ok_fiscal + ok_prod
+    todos = fin + usr + fiscal + prod + fam_cod + cad
+    ok_itens = ok_fin + ok_usr + ok_fiscal + ok_prod + ok_fam_cod
     criticos = [a for a in todos if a['nivel'] == 'critico']
     avisos = [a for a in todos if a['nivel'] == 'aviso']
 
     checklist = [
         {'item': 'DEBUG=False', 'ok': not settings.DEBUG, 'nota': 'Conferir antes de produção.'},
+        {
+            'item': 'FAMILIA_CODIGO_POLITICA_PREFIXO explícita',
+            'ok': (
+                cfg_fam.origem == 'explicita'
+                and cfg_fam.politica in PoliticaPrefixoCodigoFigura.TODAS
+                and cfg_fam.bloqueio_producao is None
+            ),
+            'nota': (
+                'Produção: PREFIXO_GLOBAL_UNICIDADE (decisão do operador). '
+                'Obrigatória antes da migration 0027.'
+            ),
+        },
         {'item': 'Backup realizado', 'ok': False, 'nota': 'Confirmar manualmente antes da limpeza real.'},
         {'item': 'Dados de teste limpos', 'ok': False, 'nota': 'Executar dry-run e limpeza com confirmação.'},
         {'item': 'Administrador ativo', 'ok': not any('administrador' in c['mensagem'].lower() for c in criticos), 'nota': ''},

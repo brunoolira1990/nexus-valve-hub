@@ -46,6 +46,20 @@ import {
   sugerirTipoRegraPorDimensional,
 } from '@/lib/familiaRegra';
 import { normalizarDescricaoProduto } from '@/lib/descricaoProduto';
+import {
+  MENSAGEM_CODIGO_FIGURA_AUTO,
+  MENSAGEM_CODIGO_FIGURA_MANUAL,
+  alertaCodigoManualRepeteComplementoTemplate,
+  classificarDuplicidadeDescricaoFamilia,
+  campoCodigoFiguraVisivelNaCriacao,
+  deveRecarregarFamiliasAposErroCodigoApi,
+  extrairDuplicidadeDescricaoModeloApi,
+  montarPayloadFamiliaSalvar,
+  podeIniciarSalvarFamilia,
+  validarCodigoFiguraManualLocal,
+  validarDescricaoBaseLocal,
+  type FamiliaDuplicidadeResumo,
+} from '@/lib/familiaCodigo';
 import { ConversaoMedidasBlock, type CampoHeranca } from '@/components/produtos/ConversaoMedidasBlock';
 import { ProdutoComposicaoPanel } from '@/components/produtos/ProdutoComposicaoPanel';
 import { ProdutoPainelOperacionalTab } from '@/components/produtos/ProdutoPainelOperacionalTab';
@@ -228,6 +242,7 @@ const TIPOS_DIMENSIONAIS: { value: TipoDimensional; label: string }[] = [
 
 const emptyFamiliaQuick = () => ({
   codigo_figura: '',
+  modo_codigo_figura: 'AUTOMATICO' as 'AUTOMATICO' | 'MANUAL',
   descricao_base: '',
   categoria_produto: 'PRODUTO_TECNICO' as 'PRODUTO_TECNICO' | 'MATERIAL_DIMENSIONAL' | 'MANUAL_FABRICANTE',
   tipo_regra_codigo: 'BASE_POLEGADA' as TipoRegraCodigo,
@@ -397,12 +412,20 @@ const Produtos = () => {
   const [espessuraMmInput, setEspessuraMmInput] = useState('');
   const [comprimentoMmInput, setComprimentoMmInput] = useState('');
   const [famSaveErr, setFamSaveErr] = useState<string | null>(null);
+  const [famCodigoFiguraErr, setFamCodigoFiguraErr] = useState<string | null>(null);
+  const [famDuplicidadeExistente, setFamDuplicidadeExistente] = useState<FamiliaDuplicidadeResumo | null>(
+    null,
+  );
+  /** true após o usuário aplicar sugestão ou alterar modelo/dimensional/categoria. */
+  const [famModeloConfirmado, setFamModeloConfirmado] = useState(false);
+  const [famSaving, setFamSaving] = useState(false);
   const [famDeleteErr, setFamDeleteErr] = useState<string | null>(null);
   const [editingFamilia, setEditingFamilia] = useState<FamiliaProduto | null>(null);
   const [listNotice, setListNotice] = useState<string | null>(null);
   const [produtoFichaTab, setProdutoFichaTab] = useState('geral');
   const [codigoManualAutoFocus, setCodigoManualAutoFocus] = useState(false);
   const previewRequestSeqRef = useRef(0);
+  const famSavingRef = useRef(false);
 
   useEffect(() => {
     if (modalOpen) setProdutoFichaTab('geral');
@@ -418,6 +441,24 @@ const Produtos = () => {
       ) ?? null,
     [familias, codigoFiguraNorm, editingFamilia],
   );
+  const alertaOdManualCriacao = useMemo(() => {
+    if (editingFamilia) return null;
+    return alertaCodigoManualRepeteComplementoTemplate(
+      famQuick.modo_codigo_figura || 'AUTOMATICO',
+      famQuick.codigo_figura,
+      famQuick.tipo_regra_codigo,
+    );
+  }, [
+    editingFamilia,
+    famQuick.modo_codigo_figura,
+    famQuick.codigo_figura,
+    famQuick.tipo_regra_codigo,
+  ]);
+
+  const limparErroDuplicidadeDescricao = () => {
+    setFamDuplicidadeExistente(null);
+    setFamSaveErr((prev) => (prev && /mesmo modelo de formação|duplicidade|com esta descrição/i.test(prev) ? null : prev));
+  };
 
   const fetchProdutos = useCallback(async (searchOverride?: string) => {
     if (searchOverride !== undefined) setSearch(searchOverride);
@@ -543,6 +584,25 @@ const Produtos = () => {
     [famQuick.tipo_dimensional, famQuick.tipo_regra_codigo],
   );
   const sugestaoFamiliaAuto = useMemo(() => sugerirConfiguracaoFamilia(famQuick.descricao_base), [famQuick.descricao_base]);
+  const classificacaoDupFamilia = useMemo(
+    () =>
+      classificarDuplicidadeDescricaoFamilia({
+        descricaoBase: famQuick.descricao_base,
+        tipoRegraFormulario: famQuick.tipo_regra_codigo,
+        tipoRegraSugerido: sugestaoFamiliaAuto.tipo_regra_codigo,
+        modeloConfirmado: famModeloConfirmado || !!editingFamilia,
+        familias,
+        editingId: editingFamilia?.id ?? null,
+      }),
+    [
+      famQuick.descricao_base,
+      famQuick.tipo_regra_codigo,
+      sugestaoFamiliaAuto.tipo_regra_codigo,
+      famModeloConfirmado,
+      familias,
+      editingFamilia,
+    ],
+  );
   const tdAtual = familiaSel?.tipo_dimensional;
   const usaDimensoesMateriais = useMemo(
     () =>
@@ -736,6 +796,11 @@ const Produtos = () => {
     setEditingFamilia(null);
     setFamQuick(emptyFamiliaQuick());
     setFamSaveErr(null);
+    setFamCodigoFiguraErr(null);
+    setFamDuplicidadeExistente(null);
+    setFamModeloConfirmado(false);
+    famSavingRef.current = false;
+    setFamSaving(false);
     setNcmFamiliaOption(null);
     setFamModalOpen(true);
   };
@@ -743,6 +808,8 @@ const Produtos = () => {
   const usarFamiliaExistente = (familia: FamiliaProduto) => {
     setFamModalOpen(false);
     setFamSaveErr(null);
+    setFamCodigoFiguraErr(null);
+    setFamDuplicidadeExistente(null);
     setEditing(null);
     setScheduleOption(null);
 
@@ -782,8 +849,15 @@ const Produtos = () => {
 
   const openEditFamilia = (familia: FamiliaProduto) => {
     setEditingFamilia(familia);
+    setFamCodigoFiguraErr(null);
+    setFamSaveErr(null);
+    setFamDuplicidadeExistente(null);
+    setFamModeloConfirmado(true);
+    famSavingRef.current = false;
+    setFamSaving(false);
     setFamQuick({
       codigo_figura: familia.codigo_figura,
+      modo_codigo_figura: 'AUTOMATICO',
       descricao_base: familia.descricao_base,
       tipo_regra_codigo: (normalizarTipoRegra(familia.tipo_regra_codigo) ?? 'BASE_POLEGADA') as TipoRegraCodigo,
       categoria_produto: (familia.categoria_produto || 'PRODUTO_TECNICO') as 'PRODUTO_TECNICO' | 'MATERIAL_DIMENSIONAL' | 'MANUAL_FABRICANTE',
@@ -1162,79 +1236,96 @@ const Produtos = () => {
   };
 
   const salvarFamiliaRapida = async () => {
+    if (!podeIniciarSalvarFamilia(famSavingRef.current)) return;
     setFamSaveErr(null);
-    if (familiaDuplicada) {
-      setFamSaveErr(
-        `A família/figura ${familiaDuplicada.codigo_figura} já existe. Use "Novo Produto" para cadastrar uma variação dessa família, ou edite a família existente.`,
+    setFamCodigoFiguraErr(null);
+    setFamDuplicidadeExistente(null);
+    const errDesc = validarDescricaoBaseLocal(famQuick.descricao_base);
+    if (errDesc) {
+      setFamSaveErr(errDesc);
+      return;
+    }
+    if (!editingFamilia && classificacaoDupFamilia.tipo === 'exata') {
+      setFamSaveErr(classificacaoDupFamilia.mensagem);
+      setFamDuplicidadeExistente(classificacaoDupFamilia.existente);
+      return;
+    }
+    if (!editingFamilia) {
+      const errLocal = validarCodigoFiguraManualLocal(
+        famQuick.modo_codigo_figura || 'AUTOMATICO',
+        famQuick.codigo_figura,
+      );
+      if (errLocal) {
+        setFamCodigoFiguraErr(errLocal);
+        return;
+      }
+    }
+    if (
+      !editingFamilia &&
+      famQuick.modo_codigo_figura === 'MANUAL' &&
+      familiaDuplicada
+    ) {
+      setFamCodigoFiguraErr(
+        `Já existe uma Família/Figura com este código (${familiaDuplicada.codigo_figura}).`,
       );
       return;
     }
     const effSave = requisitosMedidasPermitidasModal(famQuick.tipo_dimensional, famQuick.tipo_regra_codigo);
+    famSavingRef.current = true;
+    setFamSaving(true);
     try {
-      const payload = {
-        codigo_figura: famQuick.codigo_figura.trim(),
-        descricao_base: famQuick.descricao_base.trim(),
-        categoria_produto: famQuick.categoria_produto,
-        tipo_regra_codigo: famQuick.tipo_regra_codigo,
-        tipo_dimensional: famQuick.tipo_dimensional || 'SIMPLES',
-        separador_base_medidas: famQuick.separador_base_medidas,
-        ativo: famQuick.ativo,
-        usa_rosca_conexao: effSave.usa_rosca_conexao,
-        usa_schedule: effSave.usa_schedule,
-        usa_polegada_principal: effSave.usa_polegada_principal,
-        usa_polegada_secundaria: effSave.usa_polegada_secundaria,
-        ncm_padrao: famQuick.ncm_padrao,
-        unidade_padrao: '',
-        material_base: '',
-        pressao_base: '',
-        norma_base: '',
-        usa_conversao_dimensional: famQuick.usa_conversao_dimensional,
-        controla_composicao_fisica: famQuick.controla_composicao_fisica,
-        tipo_composicao_fisica: famQuick.tipo_composicao_fisica || 'BARRA_M',
-        tipo_fisico: (famQuick.tipo_fisico || 'PECA') as TipoFisicoProduto,
-        tipo_controle_unidade: (famQuick.tipo_controle_unidade || 'PECA') as TipoControleUnidade,
-        unidade_estoque_padrao: famQuick.unidade_estoque_padrao || '',
-        unidade_venda_padrao: famQuick.unidade_venda_padrao || '',
-        unidade_compra_padrao: famQuick.unidade_compra_padrao || '',
-        unidade_fiscal_padrao: famQuick.unidade_fiscal_padrao || '',
-        unidades_venda_permitidas: famQuick.unidades_venda_permitidas || [],
-        unidades_compra_permitidas: famQuick.unidades_compra_permitidas || [],
-        comprimento_padrao_barra_m: famQuick.comprimento_padrao_barra_m,
-        peso_por_metro_kg: famQuick.peso_por_metro_kg,
-        peso_por_peca_kg: famQuick.peso_por_peca_kg,
-        peso_por_chapa_kg: famQuick.peso_por_chapa_kg,
-        densidade: famQuick.densidade,
-        observacoes_conversao: famQuick.observacoes_conversao || '',
-      } as Omit<FamiliaProduto, 'id'>;
-      if (editingFamilia) await familiasProdutoService.update(editingFamilia.id, payload);
-      else await familiasProdutoService.create(payload);
+      const payload = montarPayloadFamiliaSalvar(famQuick, editingFamilia, effSave) as Omit<
+        FamiliaProduto,
+        'id'
+      >;
+      const saved = editingFamilia
+        ? await familiasProdutoService.update(editingFamilia.id, payload)
+        : await familiasProdutoService.create(payload);
       setFamModalOpen(false);
       setFamQuick(emptyFamiliaQuick());
       setEditingFamilia(null);
+      setFamCodigoFiguraErr(null);
+      setFamDuplicidadeExistente(null);
+      if (!editingFamilia && saved?.codigo_figura) {
+        setListNotice(`Família ${saved.codigo_figura} cadastrada com sucesso.`);
+      }
       await loadBases();
     } catch (e) {
       const err = e as { response?: { status?: number; data?: Record<string, unknown> } };
       const status = err.response?.status;
       const data = err.response?.data;
-      const hasCodigoFiguraError =
-        status === 400 &&
-        !!data &&
-        typeof data === 'object' &&
-        Object.prototype.hasOwnProperty.call(data, 'codigo_figura');
-      if (hasCodigoFiguraError) {
-        const codigo = (famQuick.codigo_figura || '').trim();
-        const jaExistente =
-          familias.find((x) => x.codigo_figura.trim().toLowerCase() === codigo.toLowerCase()) ?? null;
-        setFamSaveErr(
-          `A família/figura ${codigo || 'informada'} já existe. Use "Novo Produto" para cadastrar uma variação dessa família, ou edite a família existente.`,
-        );
-        if (jaExistente) {
-          // Mantém os dados digitados e só orienta; ação rápida fica disponível no modal.
+      if (status === 400 && data && typeof data === 'object') {
+        const dup = extrairDuplicidadeDescricaoModeloApi(data);
+        if (dup) {
+          setFamSaveErr(dup.mensagem);
+          setFamDuplicidadeExistente(dup.existente);
+          return;
+        }
+      }
+      const codigoErro =
+        status === 400 && data && typeof data === 'object'
+          ? (data as Record<string, unknown>).codigo_figura
+          : undefined;
+      if (codigoErro != null) {
+        const msg = Array.isArray(codigoErro) ? String(codigoErro[0]) : String(codigoErro);
+        setFamCodigoFiguraErr(msg);
+        if (deveRecarregarFamiliasAposErroCodigoApi(msg)) {
           void loadBases();
         }
         return;
       }
+      const modoErro =
+        status === 400 && data && typeof data === 'object'
+          ? (data as Record<string, unknown>).modo_codigo
+          : undefined;
+      if (modoErro != null) {
+        setFamSaveErr(Array.isArray(modoErro) ? String(modoErro[0]) : String(modoErro));
+        return;
+      }
       setFamSaveErr(apiErrorMessage(e, { fallback: 'Não foi possível salvar a família.' }));
+    } finally {
+      famSavingRef.current = false;
+      setFamSaving(false);
     }
   };
 
@@ -2226,9 +2317,23 @@ const Produtos = () => {
         </div>
       </Modal>
 
-      <Modal isOpen={famModalOpen} onClose={() => setFamModalOpen(false)} title={editingFamilia ? 'Editar família / figura' : 'Nova família / figura'} size="lg">
-        {famSaveErr && <p className="text-sm text-destructive mb-2">{famSaveErr}</p>}
-        {familiaDuplicada && (
+      <Modal
+        isOpen={famModalOpen}
+        onClose={() => {
+          if (famSavingRef.current) return;
+          setFamModalOpen(false);
+          setFamSaveErr(null);
+          setFamCodigoFiguraErr(null);
+          setFamDuplicidadeExistente(null);
+          setFamModeloConfirmado(false);
+        }}
+        title={editingFamilia ? 'Editar família / figura' : 'Nova família / figura'}
+        size="lg"
+      >
+        {famSaveErr && !famDuplicidadeExistente && classificacaoDupFamilia.tipo !== 'exata' ? (
+          <p className="text-sm text-destructive mb-2">{famSaveErr}</p>
+        ) : null}
+        {familiaDuplicada && famQuick.modo_codigo_figura === 'MANUAL' && !editingFamilia && (
           <div className="mb-3 rounded-md border border-amber-300/60 bg-amber-50 dark:bg-amber-950/20 p-3">
             <p className="text-xs text-amber-900 dark:text-amber-100">
               Família já cadastrada:
@@ -2269,11 +2374,149 @@ const Produtos = () => {
             <p className="text-xs font-semibold text-muted-foreground mb-2">Identificação</p>
             <div>
             <label className="erp-label">Código figura / base</label>
-            <input className="erp-input mt-1 font-mono" value={famQuick.codigo_figura} onChange={(e) => setFamQuick((q) => ({ ...q, codigo_figura: e.target.value }))} />
+            {editingFamilia ? (
+              <input
+                className="erp-input mt-1 font-mono bg-muted/40"
+                value={famQuick.codigo_figura}
+                readOnly
+                aria-readonly="true"
+              />
+            ) : (
+              <div className="mt-1 space-y-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:gap-4">
+                  <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="modo_codigo_figura"
+                      checked={famQuick.modo_codigo_figura === 'AUTOMATICO'}
+                      onChange={() => {
+                        setFamCodigoFiguraErr(null);
+                        setFamSaveErr(null);
+                        setFamQuick((q) => ({
+                          ...q,
+                          modo_codigo_figura: 'AUTOMATICO',
+                          codigo_figura: '',
+                        }));
+                      }}
+                    />
+                    Gerar automaticamente
+                  </label>
+                  <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="modo_codigo_figura"
+                      checked={famQuick.modo_codigo_figura === 'MANUAL'}
+                      onChange={() => {
+                        setFamCodigoFiguraErr(null);
+                        setFamQuick((q) => ({ ...q, modo_codigo_figura: 'MANUAL' }));
+                      }}
+                    />
+                    Informar manualmente
+                  </label>
+                </div>
+                {campoCodigoFiguraVisivelNaCriacao(famQuick.modo_codigo_figura) ? (
+                  <>
+                    <input
+                      className={`erp-input font-mono${famCodigoFiguraErr ? ' border-destructive' : ''}`}
+                      value={famQuick.codigo_figura}
+                      onChange={(e) => {
+                        setFamCodigoFiguraErr(null);
+                        setFamQuick((q) => ({ ...q, codigo_figura: e.target.value }));
+                      }}
+                      placeholder="Ex.: 0023OD ou FLEG01"
+                      maxLength={32}
+                      aria-invalid={famCodigoFiguraErr ? true : undefined}
+                      aria-describedby={famCodigoFiguraErr ? 'fam-codigo-figura-err' : undefined}
+                    />
+                    {famCodigoFiguraErr ? (
+                      <p id="fam-codigo-figura-err" className="text-xs text-destructive" role="alert">
+                        {famCodigoFiguraErr}
+                      </p>
+                    ) : null}
+                    <p className="text-xs text-muted-foreground">{MENSAGEM_CODIGO_FIGURA_MANUAL}</p>
+                    {alertaOdManualCriacao ? (
+                      <p className="text-xs text-amber-800 dark:text-amber-200 mt-1" role="status">
+                        {alertaOdManualCriacao}
+                      </p>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground italic">{MENSAGEM_CODIGO_FIGURA_AUTO}</p>
+                )}
+              </div>
+            )}
             </div>
             <div className="mt-3">
             <label className="erp-label">Descrição base</label>
-            <input className="erp-input mt-1" value={famQuick.descricao_base} onChange={(e) => setFamQuick((q) => ({ ...q, descricao_base: e.target.value }))} />
+            <input
+              className={`erp-input mt-1${
+                classificacaoDupFamilia.tipo === 'exata' || famDuplicidadeExistente
+                  ? ' border-destructive'
+                  : ''
+              }`}
+              value={famQuick.descricao_base}
+              onChange={(e) => {
+                limparErroDuplicidadeDescricao();
+                setFamQuick((q) => ({ ...q, descricao_base: e.target.value }));
+              }}
+            />
+            {(() => {
+              const cls =
+                famDuplicidadeExistente && classificacaoDupFamilia.tipo !== 'exata'
+                  ? {
+                      tipo: 'exata' as const,
+                      mensagem:
+                        famSaveErr ||
+                        `Já existe a Família/Figura ${famDuplicidadeExistente.codigo_figura} com o mesmo modelo de formação.`,
+                      existente: famDuplicidadeExistente,
+                    }
+                  : classificacaoDupFamilia;
+              if (cls.tipo === 'nenhuma') return null;
+              if (cls.tipo === 'exata') {
+                return (
+                  <div className="mt-2 rounded-md border border-destructive/40 bg-destructive/5 p-3">
+                    <p className="text-xs text-destructive" role="alert">
+                      {cls.mensagem}
+                    </p>
+                    {cls.existente.id > 0 ? (
+                      <button
+                        type="button"
+                        className="erp-btn-outline erp-btn-sm mt-2"
+                        onClick={() => {
+                          const found =
+                            familias.find((x) => x.id === cls.existente.id) ??
+                            ({
+                              id: cls.existente.id,
+                              codigo_figura: cls.existente.codigo_figura,
+                              descricao_base: cls.existente.descricao_base,
+                              tipo_regra_codigo:
+                                cls.existente.tipo_regra_codigo || famQuick.tipo_regra_codigo,
+                            } as FamiliaProduto);
+                          usarFamiliaExistente(found);
+                        }}
+                      >
+                        Usar família existente
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              }
+              if (cls.tipo === 'provavel_exata' || cls.tipo === 'descricao_sem_modelo') {
+                return (
+                  <p className="text-xs text-amber-800 dark:text-amber-200 mt-1" role="status">
+                    {cls.mensagem}
+                  </p>
+                );
+              }
+              if (cls.tipo === 'modelo_diferente') {
+                return (
+                  <p className="text-xs text-amber-800 dark:text-amber-200 mt-1" role="status">
+                    {cls.mensagem}
+                  </p>
+                );
+              }
+              return null;
+            })()}
             </div>
             {famQuick.descricao_base.trim().length >= 2 ? (
               <div className="mt-3 rounded-md border border-dashed border-border bg-muted/20 p-3 text-xs space-y-2">
@@ -2295,6 +2538,8 @@ const Produtos = () => {
                   type="button"
                   className="erp-btn-outline erp-btn-sm"
                   onClick={() => {
+                    limparErroDuplicidadeDescricao();
+                    setFamModeloConfirmado(true);
                     setFamQuick((q) => ({
                       ...q,
                       categoria_produto: sugestaoFamiliaAuto.categoria_produto,
@@ -2330,6 +2575,8 @@ const Produtos = () => {
                 className="erp-select mt-1 w-full"
                 value={famQuick.categoria_produto}
                 onChange={(e) => {
+                  limparErroDuplicidadeDescricao();
+                  setFamModeloConfirmado(true);
                   const categoria = e.target.value as 'PRODUTO_TECNICO' | 'MATERIAL_DIMENSIONAL' | 'MANUAL_FABRICANTE';
                   setFamQuick((q) => {
                     const nextTipo = categoria === 'MANUAL_FABRICANTE' ? 'MANUAL' : q.tipo_dimensional;
@@ -2349,6 +2596,8 @@ const Produtos = () => {
                 className="erp-select mt-1 w-full"
                 value={famQuick.tipo_dimensional}
                 onChange={(e) => {
+                  limparErroDuplicidadeDescricao();
+                  setFamModeloConfirmado(true);
                   const td = e.target.value as TipoDimensional;
                   setFamQuick((q) => ({ ...q, tipo_dimensional: td, tipo_regra_codigo: sugerirTipoRegraPorDimensional(td) }));
                 }}
@@ -2369,7 +2618,11 @@ const Produtos = () => {
             <select
               className="erp-select mt-1 w-full"
               value={famQuick.tipo_regra_codigo}
-              onChange={(e) => setFamQuick((q) => ({ ...q, tipo_regra_codigo: e.target.value as TipoRegraCodigo }))}
+              onChange={(e) => {
+                limparErroDuplicidadeDescricao();
+                setFamModeloConfirmado(true);
+                setFamQuick((q) => ({ ...q, tipo_regra_codigo: e.target.value as TipoRegraCodigo }));
+              }}
             >
               {REGRAS.map((r) => (
                 <option key={r.value} value={r.value}>
@@ -2481,11 +2734,22 @@ const Produtos = () => {
           rotulos={{ limparUnidades: 'Limpar seleção' }}
         />
         <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
-          <button type="button" className="erp-btn-outline" onClick={() => setFamModalOpen(false)}>
+          <button
+            type="button"
+            className="erp-btn-outline"
+            disabled={famSaving}
+            onClick={() => setFamModalOpen(false)}
+          >
             Cancelar
           </button>
-          <button type="button" className="erp-btn-primary" onClick={() => void salvarFamiliaRapida()}>
-            {editingFamilia ? 'Salvar alterações' : 'Salvar família'}
+          <button
+            type="button"
+            className="erp-btn-primary"
+            disabled={famSaving}
+            aria-busy={famSaving || undefined}
+            onClick={() => void salvarFamiliaRapida()}
+          >
+            {famSaving ? 'Salvando…' : editingFamilia ? 'Salvar alterações' : 'Salvar família'}
           </button>
         </div>
       </Modal>

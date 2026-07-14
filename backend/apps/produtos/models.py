@@ -659,6 +659,24 @@ class FamiliaProdutoSchedulePermitido(models.Model):
         return f'{self.familia.codigo_figura} - {self.schedule.codigo_schedule}'
 
 
+class FamiliaProdutoCodigoSequencia(models.Model):
+    """
+    Contador persistente para geração automática de codigo_figura (padrão NNNN).
+
+    Rollback: reverter migration 0027 remove esta tabela; códigos já gerados permanecem
+    em FamiliaProduto e não devem ser renumerados.
+    """
+
+    proximo_numero = models.PositiveIntegerField(
+        default=1,
+        help_text='Próximo inteiro a formatar como codigo_figura (4 dígitos). Não reutiliza excluídos.',
+    )
+
+    class Meta:
+        verbose_name = 'Sequência código figura (família)'
+        verbose_name_plural = 'Sequência código figura (família)'
+
+
 from apps.produtos.models_equivalencia import (  # noqa: E402, F401
     FornecedorComposicaoEquivalencia,
     FornecedorComposicaoEquivalenciaItem,
