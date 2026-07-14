@@ -2,7 +2,7 @@ from django.db.models import Count
 from rest_framework import serializers
 
 from apps.cadastros.models import Empresa, Fornecedor
-from apps.fiscal.nfe_cbenef_sp import normalizar_codigo_beneficio_icms
+from apps.fiscal.nfe_cbenef_sp import eh_marcador_cbenef_nao_fiscal, normalizar_codigo_beneficio_icms
 from apps.produtos.models import Produto
 
 from .cenario_fiscal_entrada import gerar_label_configuracao_fiscal, label_escopo
@@ -601,7 +601,13 @@ class RegraFiscalSaidaSerializer(serializers.ModelSerializer):
         return normalizar_recomendacoes_nfe(value)
 
     def validate_codigo_beneficio_icms(self, value):
-        return normalizar_codigo_beneficio_icms(value)
+        from apps.fiscal.nfe_cbenef_sp import eh_marcador_cbenef_nao_fiscal, normalizar_codigo_beneficio_icms
+
+        norm = normalizar_codigo_beneficio_icms(value)
+        # Marcadores de UI não são código fiscal — persistir vazio (omite cBenef no XML).
+        if eh_marcador_cbenef_nao_fiscal(norm):
+            return ''
+        return norm
 
     def validate(self, attrs):
         inst = self.instance

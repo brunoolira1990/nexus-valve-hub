@@ -40,12 +40,33 @@ export const MODALIDADE_BC_ICMS_OPCOES: OpcaoCatalogo[] = [
 
 export const CBENEF_SEM_CODIGO_LITERAL = 'SEM CBENEF';
 
+/** Marcadores de UI legados — nunca devem ir no XML como cBenef. */
+export function ehMarcadorCbenefNaoFiscal(val: string | null | undefined): boolean {
+  const raw = (val ?? '').trim();
+  if (!raw) return false;
+  const compact = raw.toUpperCase().split(/\s+/).filter(Boolean).join(' ');
+  const markers = new Set([
+    'SEM CBENEF',
+    'SEM BENEFICIO',
+    'SEM BENEFÍCIO',
+    'SEM CODIGO',
+    'SEM CÓDIGO',
+    'N/A',
+    'NA',
+    '-',
+    '—',
+  ]);
+  if (markers.has(compact)) return true;
+  const nospace = compact.replace(/\s+/g, '').replace(/[ÍÓ]/g, (c) => (c === 'Í' ? 'I' : 'O'));
+  return ['SEMCBENEF', 'SEMBENEFICIO', 'SEMCODIGO'].includes(nospace) || compact.includes(' ');
+}
+
+/**
+ * Opções do seletor: vazio = omitir tag cBenef no XML.
+ * O literal SEM CBENEF foi removido da lista — era serializado e rejeitado (cStat 946).
+ */
 export const CODIGO_BENEFICIO_ICMS_OPCOES: OpcaoCatalogo[] = [
-  OPCAO_VAZIA,
-  {
-    value: CBENEF_SEM_CODIGO_LITERAL,
-    label: 'Sem código específico — enviar SEM CBENEF',
-  },
+  { value: '', label: '— Não informar (omite cBenef no XML) —' },
 ];
 
 export const MOTIVO_DESONERACAO_ICMS_OPCOES: OpcaoCatalogo[] = [
