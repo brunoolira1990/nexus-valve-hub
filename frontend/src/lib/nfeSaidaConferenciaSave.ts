@@ -1,5 +1,15 @@
 /** Payload de itens complementares na conferência NF-e (origem comercial travada). */
 
+/** Campos comerciais imutáveis em NF-e herdada — nunca devem ir no salvar-conferencia. */
+export const CAMPOS_COMERCIAIS_ITEM_NFE = [
+  'produto',
+  'produto_id',
+  'quantidade',
+  'valor',
+  'corrida',
+  'corrida_id',
+] as const;
+
 export type ItemConferenciaComplementar = {
   item_id?: number | string | null;
   pedido_cliente_numero?: string | null;
@@ -27,6 +37,7 @@ export function montarItensComplementaresConferencia(
     const rawId = it.item_id ?? (it as { id?: number | string }).id;
     const id = typeof rawId === 'number' ? rawId : Number(rawId);
     if (!Number.isFinite(id) || id <= 0) continue;
+    // Somente complementos — produto/quantidade/valor nunca entram no payload.
     mapped.push({
       id,
       pedido_cliente_numero: String(it.pedido_cliente_numero_editavel ?? it.pedido_cliente_numero ?? '').trim(),

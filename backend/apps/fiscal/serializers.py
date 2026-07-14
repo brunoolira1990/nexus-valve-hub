@@ -9,11 +9,13 @@ from rest_framework.exceptions import ValidationError
 
 from apps.cadastros.models import Cliente, Empresa, Fornecedor, Transportadora
 from apps.fiscal.nfe_saida_bloqueio import (
+    CAMPOS_COMERCIAIS_ITEM_BLOQUEADOS,
     CAMPOS_COMPLEMENTARES_ITEM_NFE,
     CAMPOS_COMPLEMENTARES_NFE,
     MSG_DADOS_COMPLEMENTARES_BLOQUEADOS,
     MSG_ITENS_ORIGEM_COMERCIAL,
     dados_complementares_editaveis,
+    item_comercial_semanticamente_igual,
     itens_comerciais_editaveis,
     nf_ja_finalizada_operacionalmente,
     origem_comercial_travada,
@@ -618,10 +620,16 @@ class ItemNFeSaidaSerializer(serializers.ModelSerializer):
             validar_preco_unitario_nfe,
         )
 
-        if 'valor' in attrs or self.instance is None:
-            bruto = attrs.get('valor', self.instance.valor if self.instance else Decimal('0'))
+        # partial + nested (conferência): não inventar valor=0 quando o cliente
+        # omitiu o campo — senão NF-e herdada detecta falsa alteração.
+        if 'valor' in attrs:
             try:
-                attrs['valor'] = validar_preco_unitario_nfe(bruto)
+                attrs['valor'] = validar_preco_unitario_nfe(attrs['valor'])
+            except ValueError:
+                raise serializers.ValidationError({'valor': MSG_PRECO_UNITARIO_NFE_MAX_3_CASAS}) from None
+        elif self.instance is None and not getattr(self, 'partial', False):
+            try:
+                attrs['valor'] = validar_preco_unitario_nfe(attrs.get('valor', Decimal('0')))
             except ValueError:
                 raise serializers.ValidationError({'valor': MSG_PRECO_UNITARIO_NFE_MAX_3_CASAS}) from None
         produto = attrs.get('produto', self.instance.produto if self.instance else None)
@@ -950,13 +958,12 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
         raw_itens = (self.initial_data or {}).get('itens')
         if raw_itens is None:
             return
-        bloqueados = {'produto', 'produto_id', 'quantidade', 'valor', 'corrida', 'corrida_id'}
+        existentes = {it.id: it for it in self.instance.itens.all()}
         for row in raw_itens:
             if not isinstance(row, dict):
                 continue
-            if any(k in row for k in bloqueados):
-                raise serializers.ValidationError({'itens': MSG_ITENS_ORIGEM_COMERCIAL})
-            if row.get('id') in (None, ''):
+            raw_id = row.get('id')
+            if raw_id in (None, ''):
                 raise serializers.ValidationError(
                     {
                         'itens': (
@@ -965,6 +972,18 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
                         ),
                     },
                 )
+            try:
+                pk = int(raw_id)
+            except (TypeError, ValueError):
+                raise serializers.ValidationError({'itens': MSG_ITENS_ORIGEM_COMERCIAL}) from None
+            item = existentes.get(pk)
+            if item is None:
+                raise serializers.ValidationError({'itens': MSG_ITENS_ORIGEM_COMERCIAL})
+            if not any(k in row for k in CAMPOS_COMERCIAIS_ITEM_BLOQUEADOS):
+                continue
+            # Mesmos valores em Decimal (1128.125 == 1128.1250) não são alteração.
+            if not item_comercial_semanticamente_igual(item, row):
+                raise serializers.ValidationError({'itens': MSG_ITENS_ORIGEM_COMERCIAL})
 
     def _item_ids_from_initial(self) -> list[int | None]:
         raw_itens = (self.initial_data or {}).get('itens') or []
@@ -985,13 +1004,22 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
 
     def _sincronizar_itens_complementares(self, nf: NFeSaida, itens_data: list[dict]) -> None:
         """NF-e de faturamento: só campos de pedido do cliente / observação por item."""
-        bloqueados = {'produto', 'produto_id', 'quantidade', 'valor', 'corrida', 'corrida_id'}
         existentes = {it.id: it for it in nf.itens.all()}
+        raw_by_id: dict[int, dict] = {}
+        for raw in (self.initial_data or {}).get('itens') or []:
+            if not isinstance(raw, dict):
+                continue
+            raw_id = raw.get('id')
+            if raw_id in (None, ''):
+                continue
+            try:
+                raw_by_id[int(raw_id)] = raw
+            except (TypeError, ValueError):
+                continue
+
         for row in itens_data:
             if not isinstance(row, dict):
                 continue
-            if any(k in row for k in bloqueados):
-                raise ValidationError({'itens': MSG_ITENS_ORIGEM_COMERCIAL})
             raw_id = row.get('id')
             if raw_id in (None, ''):
                 raise ValidationError(
@@ -1009,10 +1037,15 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
             item = existentes.get(pk)
             if item is None:
                 continue
+            # Compara só o que o cliente enviou (initial_data), não defaults do nested serializer.
+            raw = raw_by_id.get(pk, {})
+            if any(k in raw for k in CAMPOS_COMERCIAIS_ITEM_BLOQUEADOS):
+                if not item_comercial_semanticamente_igual(item, raw):
+                    raise ValidationError({'itens': MSG_ITENS_ORIGEM_COMERCIAL})
             update_fields = []
             for field in CAMPOS_COMPLEMENTARES_ITEM_NFE:
-                if field in row:
-                    setattr(item, field, row.get(field) or '')
+                if field in row or field in raw:
+                    setattr(item, field, (row.get(field) if field in row else raw.get(field)) or '')
                     update_fields.append(field)
             if update_fields:
                 item.save(update_fields=update_fields)

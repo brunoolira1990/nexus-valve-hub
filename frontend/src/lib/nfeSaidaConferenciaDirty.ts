@@ -112,6 +112,7 @@ export function montarPayloadSalvarConferencia(
     ind_pres: (conf.indicadores_fiscais as { ind_pres?: string })?.ind_pres ?? '1',
     indicadores_fiscais_confirmados: true,
   };
+  // NF-e herdada: nunca envia produto/quantidade/valor — só complementos de item (ou omite itens).
   const itensPayload = montarItensComplementaresConferencia(
     conf.itens as Parameters<typeof montarItensComplementaresConferencia>[0],
     origemComercialTravada,

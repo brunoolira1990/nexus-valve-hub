@@ -36,4 +36,30 @@ describe('montarItensComplementaresConferencia', () => {
     expect(out?.[0]).toMatchObject({ id: 12, observacao_item: 'Obs item', pedido_cliente_numero: 'PC-1' });
     expect(out?.[0]).not.toHaveProperty('produto_id');
   });
+
+  it('ignora produto/quantidade/valor mesmo se vierem no objeto do item', () => {
+    const out = montarItensComplementaresConferencia(
+      [
+        {
+          item_id: 9,
+          pedido_cliente_item: '01',
+          produto_id: 99,
+          quantidade: '4',
+          valor: '1128.1250',
+        } as never,
+      ],
+      true,
+    );
+    expect(out).toHaveLength(1);
+    expect(out?.[0]).toEqual({
+      id: 9,
+      pedido_cliente_numero: '',
+      pedido_cliente_item: '01',
+      observacao_item: '',
+      informacao_adicional_item: '',
+    });
+    expect(out?.[0]).not.toHaveProperty('valor');
+    expect(out?.[0]).not.toHaveProperty('quantidade');
+    expect(out?.[0]).not.toHaveProperty('produto_id');
+  });
 });

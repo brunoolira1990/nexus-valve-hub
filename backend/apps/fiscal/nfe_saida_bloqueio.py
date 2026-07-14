@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
+from typing import Any
+
 from apps.fiscal.models import NFeSaida
 
 STATUS_NFE_RASCUNHO = 'RASCUNHO'
+
+# Campos comerciais imutáveis em NF-e herdada de faturamento/pedido.
+CAMPOS_COMERCIAIS_ITEM_BLOQUEADOS = frozenset(
+    {'produto', 'produto_id', 'quantidade', 'valor', 'corrida', 'corrida_id'},
+)
 
 _STATUS_EMITIDA = frozenset({'EMITIDA', 'EMITIDO', 'AUTORIZADA_INTERNA', 'AUTORIZADA'})
 _STATUS_AUTORIZADA_TRAVA = frozenset({'AUTORIZADA_INTERNA', 'AUTORIZADA'})
@@ -152,3 +160,48 @@ def itens_comerciais_editaveis(nf: NFeSaida) -> bool:
     if nf_ja_finalizada_operacionalmente(nf):
         return False
     return _status_normalizado(nf.status) == STATUS_NFE_RASCUNHO
+
+
+def _dec_igual(a: Any, b: Any) -> bool:
+    """Compara valores monetários/quantidades com Decimal (1128.125 == 1128.1250)."""
+    try:
+        return Decimal(str(a)) == Decimal(str(b))
+    except (InvalidOperation, TypeError, ValueError):
+        return False
+
+
+def _id_opcional_igual(payload_id: Any, atual_id: int | None) -> bool:
+    if payload_id in (None, ''):
+        return atual_id in (None, 0)
+    try:
+        return int(payload_id) == int(atual_id or 0)
+    except (TypeError, ValueError):
+        return False
+
+
+def item_comercial_semanticamente_igual(item, row: dict) -> bool:
+    """
+    True se o payload não altera produto/quantidade/valor/corrida do item persistido.
+
+    Chaves ausentes são ignoradas. Valores equivalentes em Decimal não contam
+    como alteração (ex.: \"1128.125\" vs \"1128.1250\").
+    """
+    if not isinstance(row, dict):
+        return False
+    if 'produto_id' in row or 'produto' in row:
+        raw = row['produto_id'] if 'produto_id' in row else row.get('produto')
+        if hasattr(raw, 'pk'):
+            raw = raw.pk
+        if not _id_opcional_igual(raw, item.produto_id):
+            return False
+    if 'quantidade' in row and not _dec_igual(row.get('quantidade'), item.quantidade):
+        return False
+    if 'valor' in row and not _dec_igual(row.get('valor'), item.valor):
+        return False
+    if 'corrida_id' in row or 'corrida' in row:
+        raw = row['corrida_id'] if 'corrida_id' in row else row.get('corrida')
+        if hasattr(raw, 'pk'):
+            raw = raw.pk
+        if not _id_opcional_igual(raw, item.corrida_id):
+            return False
+    return True

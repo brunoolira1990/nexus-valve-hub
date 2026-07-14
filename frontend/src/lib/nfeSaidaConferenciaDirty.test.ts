@@ -96,4 +96,27 @@ describe('nfeSaidaConferenciaDirty', () => {
     expect(payload.peso_bruto).toBe(100);
     expect(payload.placa_veiculo).toBe('ABC1D23');
   });
+
+  it('origem travada: payload de itens sem campos comerciais', () => {
+    const conf = {
+      ...baseConf(),
+      itens: [
+        {
+          item_id: 3,
+          produto_id: 10,
+          quantidade: '4.000',
+          valor_unitario: '1128.125',
+          pedido_cliente_item_editavel: '01',
+          observacao_item: '',
+        },
+      ],
+    } as unknown as NFeSaidaConferenciaPayload;
+    const payload = montarPayloadSalvarConferencia(conf, true);
+    const itens = payload.itens as Array<Record<string, unknown>>;
+    expect(itens).toHaveLength(1);
+    expect(itens[0]).toMatchObject({ id: 3, pedido_cliente_item: '01' });
+    expect(itens[0]).not.toHaveProperty('valor');
+    expect(itens[0]).not.toHaveProperty('quantidade');
+    expect(itens[0]).not.toHaveProperty('produto_id');
+  });
 });
