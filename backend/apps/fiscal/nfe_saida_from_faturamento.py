@@ -178,6 +178,7 @@ def gerar_nfe_saida_from_faturamento(
                 linha.item_pedido.unidade_negociada if linha.item_pedido_id else ''
             ),
         }
+        # Preço unitário: copia Decimal do faturamento sem arredondar para 2 casas.
         ItemNFeSaida.objects.create(
             nf=nf,
             item_faturamento_pedido=linha,

@@ -593,7 +593,9 @@ class ItemNFeSaida(models.Model):
     )
     produto = models.ForeignKey('produtos.Produto', on_delete=models.PROTECT)
     quantidade = models.DecimalField(max_digits=14, decimal_places=3)
-    valor = models.DecimalField(max_digits=14, decimal_places=2)
+    # Preço unitário fiscal (vUnCom): até 3 casas na aplicação; DB com 4 para alinhar
+    # ao faturamento. max_digits=16 preserva 12 inteiros de numeric(14,2) anterior.
+    valor = models.DecimalField(max_digits=16, decimal_places=4)
     corrida = models.ForeignKey(
         'corridas.Corrida',
         on_delete=models.PROTECT,

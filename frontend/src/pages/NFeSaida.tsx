@@ -14,6 +14,7 @@ import {
   Eye,
   MoreHorizontal,
 } from 'lucide-react';
+import { UnitPriceDisplay, UnitPriceInput } from '@/components/comercial/fields';
 import { NFeSaidaConferenciaModal } from '@/components/fiscal/NFeSaidaConferenciaModal';
 import { NFeSaidaDetalheDrawer } from '@/components/fiscal/NFeSaidaDetalheDrawer';
 import { NFeChecklistHomologacaoModal } from '@/components/fiscal/NFeChecklistHomologacaoModal';
@@ -794,18 +795,21 @@ const NFeSaida = () => {
                     </div>
                     <div>
                       <label className="text-xs text-muted-foreground">Valor un.</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        className="erp-input h-8 text-sm"
-                        readOnly={!itensEditaveis}
-                        value={item.valor}
-                        onChange={(e) => {
-                          const n = [...itens];
-                          n[idx] = { ...n[idx], valor: +e.target.value };
-                          setItens(n);
-                        }}
-                      />
+                      {itensEditaveis ? (
+                        <UnitPriceInput
+                          className="erp-input h-8 text-sm w-full mt-0"
+                          value={Number(item.valor) || 0}
+                          onChange={(value) => {
+                            const n = [...itens];
+                            n[idx] = { ...n[idx], valor: value };
+                            setItens(n);
+                          }}
+                        />
+                      ) : (
+                        <p className="erp-input h-8 text-sm flex items-center bg-muted/30 tabular-nums">
+                          <UnitPriceDisplay value={Number(item.valor) || 0} />
+                        </p>
+                      )}
                     </div>
                     <div className="flex items-end gap-1">
                       <div className="flex-1">

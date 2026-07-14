@@ -55,6 +55,12 @@ def _fmt_dec(v: Decimal, places: int = 2) -> str:
     return str(v.quantize(q))
 
 
+def _fmt_preco_unitario(v: Decimal) -> str:
+    from apps.fiscal.nfe_preco_unitario import format_preco_unitario_nfe_api
+
+    return format_preco_unitario_nfe_api(v)
+
+
 def _text(val) -> str:
     return (str(val) if val is not None else '').strip()
 
@@ -92,9 +98,17 @@ def _montar_item_conferencia(nf: NFeSaida, item: ItemNFeSaida, idx: int) -> dict
     snap_c = item.snapshot_comercial or {}
     qtd = _dec(item.quantidade)
     v_unit = _dec(item.valor)
-    v_prod = qtd * v_unit
     desconto = _dec(snap_c.get('desconto'))
-    v_total = v_prod - desconto
+    if snap_c.get('valor_total') not in (None, ''):
+        from decimal import ROUND_HALF_UP
+
+        v_total = _dec(snap_c['valor_total']).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        v_prod = v_total + desconto
+    else:
+        from decimal import ROUND_HALF_UP
+
+        v_prod = (qtd * v_unit).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        v_total = (v_prod - desconto).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
     reforma_raw = get_reforma_tributaria_snapshot(snap_f)
     reforma = montar_reforma_item_exibicao(reforma_raw, valor_produto=v_prod)
     fiscal_icms = get_icms_snapshot(snap_f)
@@ -121,7 +135,7 @@ def _montar_item_conferencia(nf: NFeSaida, item: ItemNFeSaida, idx: int) -> dict
         'cfop': cfop_from_snapshot_fiscal(snap_f),
         'unidade': _unidade_item(item),
         'quantidade': _fmt_dec(qtd, 3),
-        'valor_unitario': _fmt_dec(v_unit),
+        'valor_unitario': _fmt_preco_unitario(v_unit),
         'desconto': _fmt_dec(desconto),
         'valor_total': _fmt_dec(v_total),
         'corrida_numero': item.corrida.numero if item.corrida_id else '',
@@ -138,7 +152,7 @@ def _montar_item_conferencia(nf: NFeSaida, item: ItemNFeSaida, idx: int) -> dict
             'descricao': _descricao_item(item),
             'unidade': _unidade_item(item),
             'quantidade': _fmt_dec(qtd, 3),
-            'valor_unitario': _fmt_dec(v_unit),
+            'valor_unitario': _fmt_preco_unitario(v_unit),
             'desconto': _fmt_dec(desconto),
             'valor_total': _fmt_dec(v_total),
             'corrida': item.corrida.numero if item.corrida_id else '',

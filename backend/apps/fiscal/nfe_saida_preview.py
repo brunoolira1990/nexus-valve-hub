@@ -109,6 +109,13 @@ def _dec_str(v, places: int = 2) -> str:
     return f'{dec(v):.{places}f}'
 
 
+def _v_un_com_str(v) -> str:
+    """Preço unitário para XML (vUnCom/vUnTrib): até 3 casas, sem forçar 2."""
+    from apps.fiscal.nfe_preco_unitario import format_preco_unitario_nfe_xml
+
+    return format_preco_unitario_nfe_xml(v)
+
+
 def _bloqueio_preview(nf: NFeSaida) -> dict[str, Any] | None:
     from apps.fiscal.nfe_saida_bloqueio import (
         nf_autorizada_homologacao,
@@ -207,13 +214,15 @@ def _unidade_item(item: ItemNFeSaida) -> str:
 
 
 def _valor_linha(item: ItemNFeSaida) -> Decimal:
+    from decimal import ROUND_HALF_UP
+
     snap_c = item.snapshot_comercial or {}
     if snap_c.get('valor_total') not in (None, ''):
-        return dec(snap_c['valor_total'])
+        return dec(snap_c['valor_total']).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
     total = dec(item.quantidade) * dec(item.valor)
     if snap_c.get('desconto') not in (None, ''):
         total -= dec(snap_c['desconto'])
-    return total
+    return total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
 
 def _codigo_municipio_preview(uf: str, cidade: str = '') -> str:
@@ -379,7 +388,7 @@ def gerar_dados_preview_nfe_saida(
                 'cfop': _cfop_item(item),
                 'u_com': _unidade_item(item),
                 'q_com': str(item.quantidade),
-                'v_un_com': _dec_str(item.valor),
+                'v_un_com': _v_un_com_str(item.valor),
                 'v_prod': _dec_str(v_prod),
                 'cest': _text(snap_f.get('cest')),
                 'icms': {

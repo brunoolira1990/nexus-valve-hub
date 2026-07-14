@@ -570,6 +570,8 @@ class ItemNFeSaidaSerializer(serializers.ModelSerializer):
         allow_null=True,
         required=False,
     )
+    # Aceita até 4 casas no wire (DB); regra de negócio limita a 3 em validate().
+    valor = serializers.DecimalField(max_digits=16, decimal_places=4)
     produto_nome = serializers.SerializerMethodField(read_only=True)
     corrida_numero = serializers.SerializerMethodField(read_only=True)
 
@@ -611,6 +613,17 @@ class ItemNFeSaidaSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        from apps.fiscal.nfe_preco_unitario import (
+            MSG_PRECO_UNITARIO_NFE_MAX_3_CASAS,
+            validar_preco_unitario_nfe,
+        )
+
+        if 'valor' in attrs or self.instance is None:
+            bruto = attrs.get('valor', self.instance.valor if self.instance else Decimal('0'))
+            try:
+                attrs['valor'] = validar_preco_unitario_nfe(bruto)
+            except ValueError:
+                raise serializers.ValidationError({'valor': MSG_PRECO_UNITARIO_NFE_MAX_3_CASAS}) from None
         produto = attrs.get('produto', self.instance.produto if self.instance else None)
         if produto:
             attrs['snapshot_produto'] = build_produto_snapshot(produto)

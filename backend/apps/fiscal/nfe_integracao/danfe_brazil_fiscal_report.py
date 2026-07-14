@@ -273,7 +273,7 @@ def _montar_config_danfe(
 
     Overflow visual é omitido no PDF (auto-shrink + clip); XML infCpl permanece intacto.
     """
-    from brazilfiscalreport.danfe.config import FontSize
+    from brazilfiscalreport.danfe.config import DecimalConfig, FontSize
 
     if logo_path is None and nfe_saida is not None:
         logo_path = get_emitente_logo_nfe_saida(nfe_saida)
@@ -290,6 +290,8 @@ def _montar_config_danfe(
         display_pis_cofins=True,
         watermark_cancelled=cancelada,
         font_size=FontSize.SMALL,
+        # Até 3 casas no preço unitário (vUnCom); totais BFR seguem precision=2 nos campos monetários.
+        decimal_config=DecimalConfig(price_precision=3, quantity_precision=4),
     )
 
 
