@@ -66,12 +66,12 @@ Códigos como `0023OD` e `0075OD` são válidos quando o template da família **
 
 O código **não** é salvo byte a byte. Aplica-se a normalização operacional existente:
 
-1. `strip()` de espaços externos  
-2. conversão para **maiúsculas** (`to_operational_upper`)  
-3. rejeição se vazio após trim  
-4. rejeição se length > 32  
-5. rejeição de caracteres de controle / quebras de linha (ord < 32)  
-6. unicidade avaliada **após** a normalização  
+1. `strip()` de espaços externos
+2. conversão para **maiúsculas** (`to_operational_upper`)
+3. rejeição se vazio após trim
+4. rejeição se length > 32
+5. rejeição de caracteres de controle / quebras de linha (ord < 32)
+6. unicidade avaliada **após** a normalização
 
 Não há regex restritiva adicional; códigos manuais técnicos legítimos (que não sejam complementos de template) continuam válidos.
 
@@ -106,7 +106,7 @@ Fallback **não** foi removido: UI atual já envia `modo_codigo`; remover o fall
 | **VALOR_COMPLETO** | Só NNNN exato | Não usar em produção |
 | **PREFIXO_GLOBAL_SEQUENCIAL** | Piso = maior prefixo + 1 | Não usar; sem 0028 |
 
-**Dev/homolog:** fallback `VALOR_COMPLETO` com alerta (somente desenvolvimento).  
+**Dev/homolog:** fallback `VALOR_COMPLETO` com alerta (somente desenvolvimento).
 **Produção:** variável ausente/inválida → bloqueio; valor correto = `PREFIXO_GLOBAL_UNICIDADE`.
 
 ### Impacto na migration 0027
