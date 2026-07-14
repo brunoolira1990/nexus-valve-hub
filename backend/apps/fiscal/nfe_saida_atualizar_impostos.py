@@ -29,7 +29,7 @@ from apps.fiscal.snapshot_fiscal_helpers import (
 )
 from apps.regras_fiscais.reforma_tributaria_config import normalizar_percentual_reforma
 from apps.produtos.snapshot import build_produto_snapshot
-from apps.fiscal.nfe_cbenef_sp import normalizar_codigo_beneficio_icms
+from apps.fiscal.nfe_cbenef_sp import codigo_beneficio_icms_para_snapshot
 from apps.fiscal.nfe_icms_calculo import calcular_base_valor_icms_saida
 from apps.regras_fiscais.base_pis_cofins_saida import calcular_base_pis_cofins_saida
 from apps.regras_fiscais.models import RegraFiscalSaida
@@ -402,7 +402,7 @@ def montar_snapshot_fiscal_de_regra_atual(
         'csosn': cst_icms,
         'modalidade_bc_icms': modalidade_bc,
         'reducao_bc_icms': _text(busca.get('reducao_bc_icms')),
-        'codigo_beneficio_icms': normalizar_codigo_beneficio_icms(busca.get('codigo_beneficio_icms')),
+        'codigo_beneficio_icms': codigo_beneficio_icms_para_snapshot(busca.get('codigo_beneficio_icms')),
         'motivo_desoneracao_icms': _text(busca.get('motivo_desoneracao_icms')),
         'icms_saida_percentual': _text(busca.get('aliquota_icms')),
         'aliquota_icms': _text(busca.get('aliquota_icms')),

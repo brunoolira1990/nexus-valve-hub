@@ -158,6 +158,7 @@ class NFeIcmsCst20Tests(SimpleTestCase):
         self.assertEqual(det.prod.cBenef, 'SP123456')
 
     def test_icms20_com_sem_cbenef_literal(self):
+        """Marcador SEM CBENEF NÃO deve serializar (cStat 946)."""
         snap = {
             'origem_mercadoria': '0',
             'cst_icms': '20',
@@ -181,7 +182,7 @@ class NFeIcmsCst20Tests(SimpleTestCase):
             'snapshot_fiscal': snap,
         }
         det = _build_det(linha)
-        self.assertEqual(det.prod.cBenef, CBENEF_SEM_CODIGO_LITERAL)
+        self.assertIsNone(det.prod.cBenef)
         icms20 = det.imposto.ICMS.ICMS20
         self.assertEqual(icms20.CST, '20')
         self.assertEqual(str(icms20.pRedBC), '51.1100')

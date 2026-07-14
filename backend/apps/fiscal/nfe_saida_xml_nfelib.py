@@ -10,10 +10,8 @@ import re
 from decimal import Decimal
 from typing import Any
 
-from apps.fiscal.nfe_cbenef_sp import (
-    codigo_beneficio_icms_preenchido,
-    normalizar_codigo_beneficio_icms,
-)
+from apps.fiscal.nfe_cbenef_sp import codigo_beneficio_icms_para_xml
+
 from apps.fiscal.nfe_integracao.adapters.exceptions import NFeIntegracaoError
 from apps.fiscal.nfe_integracao.adapters.nfelib_adapter import nfelib_disponivel
 from apps.fiscal.nfe_saida_preview import (
@@ -349,8 +347,8 @@ def _build_det(linha: dict) -> Any:
         prod.CEST = cest
 
     icms_snap = get_icms_snapshot(snap)
-    c_benef = normalizar_codigo_beneficio_icms(icms_snap.get('codigo_beneficio'))
-    if codigo_beneficio_icms_preenchido(c_benef):
+    c_benef = codigo_beneficio_icms_para_xml(icms_snap.get('codigo_beneficio'))
+    if c_benef:
         prod.cBenef = c_benef[:16]
 
     x_ped = _text(linha.get('x_ped'))

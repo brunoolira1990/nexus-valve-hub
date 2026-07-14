@@ -14,7 +14,7 @@ from django.utils.dateparse import parse_date
 
 from apps.comercial.models import ItemProposta
 from apps.comercial.pricing import find_regra_fiscal, normalize_ncm
-from apps.fiscal.nfe_cbenef_sp import normalizar_codigo_beneficio_icms
+from apps.fiscal.nfe_cbenef_sp import codigo_beneficio_icms_para_snapshot
 from apps.regras_fiscais.cenario_fiscal_saida import garantir_cenario_saida_padrao
 from apps.regras_fiscais.models import CenarioFiscalSaidaEscopo, RegraFiscal, RegraFiscalSaida
 
@@ -325,7 +325,7 @@ def _resultado_de_regra_saida(regra: RegraFiscalSaida) -> BuscaRegraFiscalSaidaD
         'cst_icms': (regra.cst_icms or regra.csosn or '').strip(),
         'modalidade_bc_icms': (regra.modalidade_bc_icms or '').strip(),
         'reducao_bc_icms': _fmt_reducao_bc(regra.reducao_bc_icms),
-        'codigo_beneficio_icms': normalizar_codigo_beneficio_icms(regra.codigo_beneficio_icms),
+        'codigo_beneficio_icms': codigo_beneficio_icms_para_snapshot(regra.codigo_beneficio_icms),
         'motivo_desoneracao_icms': (regra.motivo_desoneracao_icms or '').strip(),
         'aliquota_icms': _fmt_aliquota(regra.aliquota_icms),
         'cst_ipi': (regra.cst_ipi or '').strip(),
