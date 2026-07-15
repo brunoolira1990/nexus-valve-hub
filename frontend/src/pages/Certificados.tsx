@@ -346,6 +346,7 @@ const Certificados = () => {
     (id: number | string | null, option?: NfeElegivelCqOpcao | null) => {
       const nextId = id == null || id === '' ? null : Number(id);
       const trocando = nextId !== form.nota_fiscal;
+      if (option && !option.elegivel && trocando) return;
       const temItensOuDados =
         form.itens.length > 0 || itensComDadosTecnicos(form.itens);
       if (trocando && temItensOuDados) {

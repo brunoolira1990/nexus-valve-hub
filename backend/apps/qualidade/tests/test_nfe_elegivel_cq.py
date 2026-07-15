@@ -20,6 +20,16 @@ from apps.qualidade.nfe_elegivel_cq import (
     nfe_elegivel_para_certificado_qualidade,
 )
 
+XML_ASSINADO_SEPARADO = (
+    '<NFe xmlns="http://www.portalfiscal.inf.br/nfe">'
+    '<infNFe Id="NFe35260512345678000199550090000000021000000021" versao="4.00">'
+    '<ide><tpAmb>2</tpAmb></ide></infNFe></NFe>'
+)
+XML_PROTOCOLO_SEPARADO = (
+    '<protNFe><infProt><cStat>100</cStat><xMotivo>Autorizado o uso da NF-e</xMotivo>'
+    '<nProt>135260000000001</nProt></infProt></protNFe>'
+)
+
 _cnpj_seq = count(1)
 
 
@@ -115,6 +125,26 @@ class NfeElegivelCqUnitTests(TestCase):
         nf = _nf_autorizada_producao(protocolo_autorizacao='')
         self.assertFalse(nfe_elegivel_para_certificado_qualidade(nf))
 
+    def test_sem_xml_autorizado_persistido_nao_elegivel(self):
+        nf = _nf_autorizada_producao(xml_autorizado='')
+        self.assertFalse(nfe_elegivel_para_certificado_qualidade(nf))
+
+    def test_xml_apenas_montavel_nao_elegivel(self):
+        from apps.fiscal.nfe_saida_bloqueio import (
+            nf_tem_xml_autorizado_local,
+            nf_tem_xml_autorizado_resolvido,
+        )
+
+        nf = _nf_autorizada_producao(
+            xml_autorizado='',
+            xml_assinado=XML_ASSINADO_SEPARADO,
+            xml_protocolo=XML_PROTOCOLO_SEPARADO,
+        )
+        self.assertFalse(nf_tem_xml_autorizado_local(nf))
+        self.assertTrue(nf_tem_xml_autorizado_resolvido(nf))
+        self.assertFalse(nfe_elegivel_para_certificado_qualidade(nf))
+        self.assertEqual(buscar_nfes_elegiveis_cq(search=str(nf.numero_nfe), limit=20), [])
+
     def test_busca_por_numero_fiscal(self):
         _nf_autorizada_producao(numero_nfe='12345')
         _nf(numero='RASCUNHO-FAT-28')
@@ -191,3 +221,71 @@ class NfeElegivelCqApiTests(TestCase):
         self.assertEqual(res.data['nota_fiscal'], nf.pk)
         self.assertNotIn('RASCUNHO-FAT', res.data['nota_fiscal_numero'])
         self.assertIn('8888', res.data['nota_fiscal_numero'])
+
+    def test_incluir_id_retorna_legado_inelegivel_para_exibicao(self):
+        nf = _nf(cliente=self.cli, numero='RASCUNHO-FAT-28')
+        res = self.client_api.get(
+            '/api/certificados-qualidade/nfes-elegiveis/',
+            {'incluir_id': nf.pk},
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res.data), 1)
+        self.assertEqual(res.data[0]['id'], nf.pk)
+        self.assertFalse(res.data[0]['elegivel'])
+
+    def test_incluir_id_nao_contamina_busca_elegivel(self):
+        ok = _nf_autorizada_producao(cliente=self.cli, numero_nfe='555')
+        inelegivel = _nf(cliente=self.cli, numero='RASCUNHO-FAT-28')
+        res = self.client_api.get(
+            '/api/certificados-qualidade/nfes-elegiveis/',
+            {'search': '555', 'incluir_id': inelegivel.pk, 'limit': 20},
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual([r['id'] for r in res.data if r['elegivel']], [ok.pk])
+        legado = next(r for r in res.data if r['id'] == inelegivel.pk)
+        self.assertFalse(legado['elegivel'])
+
+    def test_salvar_preserva_vinculo_legado_inelegivel(self):
+        nf = _nf(cliente=self.cli, numero='RASCUNHO-FAT-28')
+        cert = CertificadoQualidade.objects.create(
+            cliente=self.cli,
+            cliente_nome_snapshot=self.cli.razao_social,
+            nota_fiscal=nf,
+            nota_fiscal_numero='RASCUNHO-FAT-28',
+            status=CertificadoQualidade.Status.RASCUNHO,
+            tipo_certificado=CertificadoQualidade.TipoCertificado.PADRAO_POR_NFE,
+        )
+        res = self.client_api.patch(
+            f'/api/certificados-qualidade/{cert.pk}/',
+            {
+                'observacoes': 'mantido',
+                'nota_fiscal': nf.pk,
+                'itens': [],
+            },
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        cert.refresh_from_db()
+        self.assertEqual(cert.nota_fiscal_id, nf.pk)
+        self.assertEqual(cert.observacoes, 'mantido')
+
+    def test_atualizar_bloqueia_troca_para_inelegivel(self):
+        ok = _nf_autorizada_producao(cliente=self.cli, numero_nfe='111')
+        inelegivel = _nf(cliente=self.cli, numero='RASCUNHO-FAT-28')
+        cert = CertificadoQualidade.objects.create(
+            cliente=self.cli,
+            cliente_nome_snapshot=self.cli.razao_social,
+            nota_fiscal=ok,
+            nota_fiscal_numero='111/1',
+            status=CertificadoQualidade.Status.RASCUNHO,
+            tipo_certificado=CertificadoQualidade.TipoCertificado.PADRAO_POR_NFE,
+        )
+        res = self.client_api.patch(
+            f'/api/certificados-qualidade/{cert.pk}/',
+            {'nota_fiscal': inelegivel.pk, 'itens': []},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('nota_fiscal', res.data)
+        cert.refresh_from_db()
+        self.assertEqual(cert.nota_fiscal_id, ok.pk)

@@ -16,7 +16,7 @@ from apps.fiscal.nfe_saida_bloqueio import (
     nf_autorizada_homologacao,
     nf_autorizada_producao,
     nf_cancelada_operacional,
-    nf_tem_xml_autorizado_resolvido,
+    nf_tem_xml_autorizado_local,
 )
 
 MSG_NFE_INELEGIVEL_CQ = (
@@ -56,7 +56,7 @@ def nfe_elegivel_para_certificado_qualidade(nf: NFeSaida) -> bool:
     - número e série fiscais preenchidos;
     - cStat de autorização 100/150;
     - protocolo de autorização;
-    - XML autorizado disponível (campo ou montável).
+    - XML autorizado persistido em ``xml_autorizado`` (não aceita XML apenas montável).
     """
     if nf_cancelada_operacional(nf):
         return False
@@ -70,7 +70,7 @@ def nfe_elegivel_para_certificado_qualidade(nf: NFeSaida) -> bool:
         return False
     if not (nf.protocolo_autorizacao or '').strip():
         return False
-    if not nf_tem_xml_autorizado_resolvido(nf):
+    if not nf_tem_xml_autorizado_local(nf):
         return False
     return True
 
