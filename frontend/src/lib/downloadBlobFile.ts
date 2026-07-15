@@ -73,23 +73,43 @@ export function downloadBlobFile(blob: Blob, filename: string) {
 
 /**
  * Abre PDF em nova aba sem iniciar download.
- * Abre about:blank no clique (evita bloqueio de pop-up) e só depois carrega o blob.
+ *
+ * Abre a aba no clique (antes do await) para não ser bloqueada como pop-up.
+ * Não usa `noopener`/`noreferrer` em windowFeatures: nesses modos o browser
+ * devolve `null` e a aba fica inacessível — o PDF acabava não abrindo.
+ * O opener é desligado manualmente após obter a referência.
+ * Nunca usa atributo `download`.
  */
 export async function visualizarPdfEmNovaAba(
   fetchBlob: () => Promise<Blob>,
   options?: { revokeMs?: number },
 ): Promise<void> {
-  const newTab = window.open('about:blank', '_blank', 'noopener,noreferrer');
+  const newTab = window.open('about:blank', '_blank');
   if (!newTab) {
     throw new PopupBlockedError();
   }
   try {
+    newTab.opener = null;
+  } catch {
+    /* ignore — alguns browsers restringem a escrita */
+  }
+  try {
+    try {
+      newTab.document.title = 'Carregando DANFE…';
+      newTab.document.body.textContent = 'Carregando PDF…';
+    } catch {
+      /* about:blank cross-origin edge cases */
+    }
     const pdfBlob = ensurePdfBlob(await fetchBlob());
     const url = URL.createObjectURL(pdfBlob);
     newTab.location.replace(url);
     window.setTimeout(() => URL.revokeObjectURL(url), options?.revokeMs ?? 60_000);
   } catch (error) {
-    newTab.close();
+    try {
+      newTab.close();
+    } catch {
+      /* ignore */
+    }
     throw error;
   }
 }
@@ -99,10 +119,15 @@ export function openBlobInNewTab(blob: Blob, filename = 'documento.pdf') {
   void filename;
   const pdfBlob = blob.type.includes('pdf') ? ensurePdfBlob(blob) : blob;
   const url = URL.createObjectURL(pdfBlob);
-  const opened = window.open(url, '_blank', 'noopener,noreferrer');
+  const opened = window.open(url, '_blank');
   if (!opened) {
     URL.revokeObjectURL(url);
     throw new PopupBlockedError();
+  }
+  try {
+    opened.opener = null;
+  } catch {
+    /* ignore */
   }
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
   return true;

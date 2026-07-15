@@ -19,9 +19,15 @@ describe('downloadBlobFile', () => {
     vi.restoreAllMocks();
   });
 
-  it('cria link com atributo download', () => {
+  it('Baixar DANFE: cria link com atributo download', () => {
     const click = vi.fn();
-    const anchor = { href: '', download: '', rel: '', click, remove: vi.fn() } as unknown as HTMLAnchorElement;
+    const anchor = {
+      href: '',
+      download: '',
+      rel: '',
+      click,
+      remove: vi.fn(),
+    } as unknown as HTMLAnchorElement;
     vi.spyOn(document, 'createElement').mockReturnValue(anchor);
     vi.spyOn(document.body, 'appendChild').mockImplementation(() => anchor);
 
@@ -46,21 +52,36 @@ describe('ensurePdfBlob', () => {
 describe('visualizarPdfEmNovaAba', () => {
   const close = vi.fn();
   const replace = vi.fn();
+  let openedTab: {
+    close: typeof close;
+    location: { replace: typeof replace };
+    opener: unknown;
+    document: { title: string; body: { textContent: string } };
+  };
 
   beforeEach(() => {
     close.mockClear();
     replace.mockClear();
+    openedTab = {
+      close,
+      location: { replace },
+      opener: window,
+      document: { title: '', body: { textContent: '' } },
+    };
     vi.stubGlobal('URL', {
       createObjectURL: vi.fn(() => 'blob:pdf-mock'),
       revokeObjectURL: vi.fn(),
     });
-    vi.stubGlobal('window', {
-      open: vi.fn(() => ({ close, location: { replace } })),
-      setTimeout: (fn: () => void) => {
-        fn();
-        return 0;
-      },
-    } as unknown as Window & typeof globalThis);
+    vi.stubGlobal(
+      'window',
+      {
+        open: vi.fn(() => openedTab),
+        setTimeout: (fn: () => void) => {
+          fn();
+          return 0;
+        },
+      } as unknown as Window & typeof globalThis,
+    );
   });
 
   afterEach(() => {
@@ -68,12 +89,21 @@ describe('visualizarPdfEmNovaAba', () => {
     vi.restoreAllMocks();
   });
 
-  it('abre about:blank e carrega blob pdf na aba', async () => {
+  it('Visualizar: abre nova aba sem atributo download e sem noopener em features', async () => {
     await visualizarPdfEmNovaAba(async () => new Blob(['%PDF'], { type: 'application/pdf' }));
 
-    expect(window.open).toHaveBeenCalledWith('about:blank', '_blank', 'noopener,noreferrer');
+    expect(window.open).toHaveBeenCalledWith('about:blank', '_blank');
+    const features = vi.mocked(window.open).mock.calls[0]?.[2];
+    expect(features == null || !String(features).includes('noopener')).toBe(true);
     expect(replace).toHaveBeenCalledWith('blob:pdf-mock');
+    expect(openedTab.opener).toBeNull();
     expect(close).not.toHaveBeenCalled();
+  });
+
+  it('Visualizar: não cria anchor com download', async () => {
+    const createElement = vi.spyOn(document, 'createElement');
+    await visualizarPdfEmNovaAba(async () => new Blob(['%PDF'], { type: 'application/pdf' }));
+    expect(createElement).not.toHaveBeenCalledWith('a');
   });
 
   it('fecha aba e propaga erro quando fetch falha', async () => {
@@ -86,7 +116,7 @@ describe('visualizarPdfEmNovaAba', () => {
   });
 
   it('lança PopupBlockedError quando pop-up é bloqueado', async () => {
-  vi.mocked(window.open).mockReturnValueOnce(null);
+    vi.mocked(window.open).mockReturnValueOnce(null);
     await expect(
       visualizarPdfEmNovaAba(async () => new Blob(['%PDF'], { type: 'application/pdf' })),
     ).rejects.toBeInstanceOf(PopupBlockedError);
