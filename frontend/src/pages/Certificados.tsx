@@ -315,6 +315,25 @@ const Certificados = () => {
     [form.itens],
   );
 
+  const temAvisoRastreabilidadeFisica = useMemo(
+    () => form.itens.some(
+      (it) => it.incluir_no_certificado !== false && (
+        it.rastreabilidade_motivos?.includes('SEM_CORRIDA_LOTE')
+        || it.rastreabilidade_motivos?.includes('ESTOQUE_NAO_APLICADO')
+        || it.rastreabilidade_motivos?.includes('SEM_CONFERENCIA_ORIGEM')
+        || it.rastreabilidade_motivos?.includes('RASTREABILIDADE_FISICA_OPCIONAL')
+        || it.rastreabilidade_avisos?.some((a) => a.includes('não impede a emissão'))
+        || (
+          !it.tem_corrida_lote
+          && !it.corrida
+          && !it.lote
+          && (it.rastreabilidade_status != null || form.itens.length > 0)
+        )
+      ),
+    ),
+    [form.itens],
+  );
+
   const extrairErrosRastreabilidade = (e: unknown): string[] => {
     const data = (e as AxiosError<{ rastreabilidade?: string[] }>).response?.data;
     if (data?.rastreabilidade && Array.isArray(data.rastreabilidade)) return data.rastreabilidade;
@@ -1509,7 +1528,7 @@ const Certificados = () => {
                   <span className="text-emerald-700 dark:text-emerald-400">Pronto para emissão definitiva</span>
                 ) : (
                   <span className="text-amber-800 dark:text-amber-300">
-                    A emissão definitiva exige rastreabilidade completa em todos os itens incluídos.
+                    Pendências de produto/descrição ou dados técnicos ainda impedem a emissão definitiva.
                   </span>
                 )}
               </div>
@@ -1518,6 +1537,11 @@ const Certificados = () => {
                 Salve o certificado para calcular o resumo de rastreabilidade no servidor.
               </p>
             )}
+            {temAvisoRastreabilidadeFisica ? (
+              <p className="text-xs text-sky-800 dark:text-sky-300">
+                Rastreabilidade física não vinculada. Isso não impede a emissão do certificado.
+              </p>
+            ) : null}
           </div>
         ) : null}
 
@@ -2067,7 +2091,7 @@ const Certificados = () => {
           </button>
           {form.status !== 'cancelado' && resumoRastreabilidade && !resumoRastreabilidade.pode_emitir ? (
             <p className="w-full text-xs text-amber-800 dark:text-amber-300 text-right mt-1">
-              Prévia permitida. A emissão definitiva exige rastreabilidade completa.
+              Prévia permitida. A emissão definitiva ainda exige produto/descrição e dados técnicos mínimos.
             </p>
           ) : null}
           {editing?.id ? (

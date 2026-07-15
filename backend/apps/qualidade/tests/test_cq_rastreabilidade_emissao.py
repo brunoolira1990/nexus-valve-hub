@@ -29,6 +29,7 @@ from apps.qualidade.models import (
     ItemCertificadoQualidade,
 )
 from apps.qualidade.rastreabilidade_cq import (
+    AVISO_RASTREABILIDADE_FISICA,
     avaliar_rastreabilidade_item_certificado_qualidade,
     montar_resumo_rastreabilidade_certificado,
 )
@@ -185,6 +186,15 @@ class CQRastreabilidadeAvaliacaoTests(TestCase):
         self.assertIn(AVISO_SEM_CF_MANUAL, av['avisos'])
         self.assertNotIn('SEM_CERTIFICADO_FORNECEDOR', av['motivos'])
 
+    def test_item_aviso_sem_corrida_nao_bloqueia_status(self):
+        av = avaliar_rastreabilidade_item_certificado_qualidade(
+            _item_cq_padrao(corrida='', lote='', corrida_snapshot=''),
+        )
+        self.assertEqual(av['status'], 'COMPLETA')
+        self.assertIn('SEM_CORRIDA_LOTE', av['motivos'])
+        self.assertTrue(any('corrida/lote' in a.lower() for a in av['avisos']))
+        self.assertIn(AVISO_RASTREABILIDADE_FISICA, av['avisos'])
+
     def test_item_parcial_sem_estoque(self):
         ctx = _cadeia_rastreabilidade_completa('PSE')
         ctx['item_conf'].estoque_aplicado_em = None
@@ -202,8 +212,11 @@ class CQRastreabilidadeAvaliacaoTests(TestCase):
             item_certificado_fornecedor_origem_id=ctx['item_cf'].id,
         )
         av = avaliar_rastreabilidade_item_certificado_qualidade(item)
-        self.assertEqual(av['status'], 'PARCIAL')
-        self.assertIn('Estoque físico ainda não aplicado.', av['mensagens'])
+        self.assertEqual(av['status'], 'COMPLETA')
+        self.assertIn('ESTOQUE_NAO_APLICADO', av['motivos'])
+        self.assertIn('Estoque físico ainda não aplicado.', av['avisos'])
+        self.assertIn(AVISO_RASTREABILIDADE_FISICA, av['avisos'])
+        self.assertNotIn('Estoque físico ainda não aplicado.', av['mensagens'])
 
     def test_resumo_conta_status(self):
         ctx = _cadeia_rastreabilidade_completa('RES')
@@ -232,6 +245,26 @@ class CQRastreabilidadeAvaliacaoTests(TestCase):
         self.assertEqual(resumo['completos'], 1)
         self.assertEqual(resumo['pendentes'], 1)
         self.assertFalse(resumo['pode_emitir'])
+
+    def test_resumo_sem_estoque_ainda_pode_emitir(self):
+        ctx = _cadeia_rastreabilidade_completa('RSE')
+        ctx['item_conf'].estoque_aplicado_em = None
+        ctx['item_conf'].save(update_fields=['estoque_aplicado_em'])
+        ctx['conf'].estoque_aplicado_em = None
+        ctx['conf'].save(update_fields=['estoque_aplicado_em'])
+        item = ItemCertificadoQualidade(
+            produto=ctx['prod'],
+            corrida='363',
+            norma='N',
+            composicao_json={'C': '1'},
+            ensaio_tracao_json={'x': '1'},
+            certificado_fornecedor_origem_id=ctx['cf'].id,
+            item_certificado_fornecedor_origem_id=ctx['item_cf'].id,
+            incluir_no_certificado=True,
+        )
+        resumo = montar_resumo_rastreabilidade_certificado([item])
+        self.assertEqual(resumo['completos'], 1)
+        self.assertTrue(resumo['pode_emitir'])
 
 
 class CQRastreabilidadeEmissaoSerializerTests(TestCase):
@@ -276,12 +309,11 @@ class CQRastreabilidadeEmissaoSerializerTests(TestCase):
         )
         self.assertTrue(ser.is_valid(), ser.errors)
 
-    def test_emitido_sem_corrida_bloqueia(self):
+    def test_emitido_sem_corrida_permite(self):
         ser = CertificadoQualidadeSerializer(
             data=self._payload_emitido({'corrida': '', 'lote': '', 'corrida_snapshot': ''}),
         )
-        self.assertFalse(ser.is_valid())
-        self.assertIn('rastreabilidade', ser.errors)
+        self.assertTrue(ser.is_valid(), ser.errors)
 
     def test_emitido_cf_rascunho_bloqueia(self):
         self.ctx['cf'].status = CertificadoFornecedorEntrada.Status.RASCUNHO
@@ -296,21 +328,19 @@ class CQRastreabilidadeEmissaoSerializerTests(TestCase):
         ser = CertificadoQualidadeSerializer(data=self._payload_emitido())
         self.assertFalse(ser.is_valid())
 
-    def test_emitido_sem_item_conferencia_bloqueia(self):
+    def test_emitido_sem_item_conferencia_permite(self):
         self.ctx['item_cf'].item_conferencia = None
         self.ctx['item_cf'].save(update_fields=['item_conferencia'])
         ser = CertificadoQualidadeSerializer(data=self._payload_emitido())
-        self.assertFalse(ser.is_valid())
-        self.assertTrue(any('conferência' in m.lower() for m in ser.errors['rastreabilidade']))
+        self.assertTrue(ser.is_valid(), ser.errors)
 
-    def test_emitido_sem_estoque_aplicado_bloqueia(self):
+    def test_emitido_sem_estoque_aplicado_permite(self):
         self.ctx['item_conf'].estoque_aplicado_em = None
         self.ctx['item_conf'].save(update_fields=['estoque_aplicado_em'])
         self.ctx['conf'].estoque_aplicado_em = None
         self.ctx['conf'].save(update_fields=['estoque_aplicado_em'])
         ser = CertificadoQualidadeSerializer(data=self._payload_emitido())
-        self.assertFalse(ser.is_valid())
-        self.assertTrue(any('estoque físico' in m.lower() for m in ser.errors['rastreabilidade']))
+        self.assertTrue(ser.is_valid(), ser.errors)
 
     def test_emitido_rastreabilidade_completa_passa(self):
         ser = CertificadoQualidadeSerializer(data=self._payload_emitido())
@@ -395,7 +425,7 @@ class CQRastreabilidadeEmissaoAPITests(TestCase):
         )
         self.assertEqual(r.status_code, 201, r.content)
 
-    def test_api_emitido_bloqueado_retorna_rastreabilidade(self):
+    def test_api_emitido_sem_corrida_ok(self):
         r = self.client.post(
             self.url,
             {
@@ -409,6 +439,36 @@ class CQRastreabilidadeEmissaoAPITests(TestCase):
                 'data_emissao': '2026-06-20',
                 'texto_padrao': 'T',
                 'itens': [_item_cq_padrao(produto=self.ctx['prod'].id, corrida='', lote='')],
+            },
+            format='json',
+            HTTP_HOST='localhost',
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        body = r.json()
+        self.assertEqual(body['status'], 'emitido')
+        self.assertTrue(body['resumo_rastreabilidade']['pode_emitir'])
+        self.assertIn('SEM_CORRIDA_LOTE', body['itens'][0]['rastreabilidade_motivos'])
+
+    def test_api_emitido_bloqueado_sem_dados_tecnicos(self):
+        r = self.client.post(
+            self.url,
+            {
+                'status': 'emitido',
+                'tipo_certificado': 'PADRAO_POR_NFE',
+                'numero': 'CQ502',
+                'serie': '',
+                'nota_fiscal_numero': '99',
+                'cliente': self.cliente.id,
+                'cliente_nome_snapshot': self.cliente.razao_social,
+                'data_emissao': '2026-06-20',
+                'texto_padrao': 'T',
+                'itens': [_item_cq_padrao(
+                    produto=self.ctx['prod'].id,
+                    norma='',
+                    composicao_json={},
+                    ensaio_tracao_json={},
+                    ensaio_impacto_json={},
+                )],
             },
             format='json',
             HTTP_HOST='localhost',
@@ -461,6 +521,34 @@ class CQRastreabilidadeEmissaoAPITests(TestCase):
         r = self.client.get(url, {'preview': 'true'}, HTTP_HOST='localhost')
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r['Content-Type'], 'application/pdf')
+
+    def test_pdf_emitido_sem_corrida_lote_ok(self):
+        cert = CertificadoQualidade.objects.create(
+            status=CertificadoQualidade.Status.EMITIDO,
+            tipo_certificado=CertificadoQualidade.TipoCertificado.PADRAO_POR_NFE,
+            numero='CQ601',
+            nota_fiscal_numero='12345/1',
+            cliente=self.cliente,
+            data_emissao='2026-06-20',
+        )
+        ItemCertificadoQualidade.objects.create(
+            certificado=cert,
+            ordem=1,
+            produto=self.ctx['prod'],
+            codigo_produto=self.ctx['prod'].codigo_completo,
+            descricao_material=self.ctx['prod'].descricao,
+            corrida='',
+            lote='',
+            norma='ASTM A105',
+            composicao_json={'C': '0.25'},
+            ensaio_tracao_json={'x': '1'},
+            incluir_no_certificado=True,
+        )
+        url = reverse('certificado-qualidade-pdf', kwargs={'pk': cert.pk})
+        r = self.client.get(url, HTTP_HOST='localhost')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r['Content-Type'], 'application/pdf')
+        self.assertTrue(r.content.startswith(b'%PDF'))
 
     def test_cancelado_mantem_comportamento(self):
         cert = CertificadoQualidade.objects.create(

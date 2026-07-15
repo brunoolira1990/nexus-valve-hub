@@ -70,6 +70,13 @@ São fluxos **paralelos por desenho**: o legado não foi substituído automatica
 
 - **Fonte oficial** para processos comerciais, envio ao cliente e **auditoria** quando o assunto for “certificado de qualidade emitido pela Nexus”.
 
+### Emissão e rastreabilidade física
+
+- A **NF-e de saída autorizada em produção** é a origem comercial/fiscal obrigatória para novo vínculo no CQ.
+- A **rastreabilidade física** (estoque, saldo, corrida/lote de estoque, conferência de entrada, aplicação física) **enriquece** o CQ, mas **não bloqueia** salvar, emitir nem gerar PDF.
+- O CQ pode ser emitido a partir da NF-e de saída autorizada em produção e dos **dados técnicos manuais** já disponíveis no certificado.
+- Certificados legados com vínculos incompletos ou de homologação permanecem visíveis; novo vínculo exige NF-e elegível de produção.
+
 ---
 
 ## 4. Certificado de fornecedor (`CertificadoFornecedorEntrada`)

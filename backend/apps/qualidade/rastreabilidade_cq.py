@@ -1,4 +1,9 @@
-"""Rastreabilidade técnica para emissão definitiva do Certificado de Qualidade (Fase 3.12)."""
+"""Rastreabilidade técnica do Certificado de Qualidade (Fase 3.12).
+
+A rastreabilidade física (estoque, corrida/lote de estoque, conferência de entrada,
+aplicação física) enriquece o CQ, mas não bloqueia emissão definitiva. O CQ pode
+ser emitido a partir de NF-e de saída autorizada em produção e dados técnicos manuais.
+"""
 
 from __future__ import annotations
 
@@ -25,7 +30,33 @@ AVISO_SEM_CF_MANUAL = (
     'Os dados técnicos deste CQ foram informados manualmente.'
 )
 
-MOTIVOS_INFORMATIVOS = frozenset({'CF_NAO_VINCULADO_MANUAL'})
+AVISO_RASTREABILIDADE_FISICA = (
+    'Rastreabilidade física não vinculada. Isso não impede a emissão do certificado.'
+)
+
+# Motivos que nunca bloqueiam emissão — apenas avisos informativos.
+MOTIVOS_INFORMATIVOS = frozenset(
+    {
+        'CF_NAO_VINCULADO_MANUAL',
+        'SEM_CORRIDA_LOTE',
+        'SEM_CONFERENCIA_ORIGEM',
+        'ESTOQUE_NAO_APLICADO',
+        'SEM_ITEM_CF',
+        'RASTREABILIDADE_FISICA_OPCIONAL',
+    }
+)
+
+# Motivos que ainda bloqueiam emissão definitiva (dados do certificado / CF inválido).
+MOTIVOS_BLOQUEANTES_EMISSAO = frozenset(
+    {
+        'SEM_PRODUTO',
+        'SEM_DADOS_TECNICOS',
+        'CF_CANCELADO',
+        'CF_RASCUNHO',
+        'CF_NAO_REGISTRADO',
+        'ITEM_CF_INATIVO',
+    }
+)
 
 
 def _strip(value: Any) -> str:
@@ -208,8 +239,7 @@ def avaliar_rastreabilidade_item_certificado_qualidade(
         motivos.append('SEM_PRODUTO')
 
     if not tem_corrida_lote:
-        pendente = True
-        mensagens.append('Sem corrida/lote.')
+        avisos.append('Sem corrida/lote de estoque vinculado.')
         motivos.append('SEM_CORRIDA_LOTE')
 
     if not tem_dados_tecnicos:
@@ -240,19 +270,29 @@ def avaliar_rastreabilidade_item_certificado_qualidade(
         motivos.append('ITEM_CF_INATIVO')
 
     if tem_certificado_fornecedor and cert_cf and not item_cf:
-        parcial = True
-        mensagens.append('Vínculo com item do certificado fornecedor não informado.')
+        avisos.append('Vínculo com item do certificado fornecedor não informado.')
         motivos.append('SEM_ITEM_CF')
 
     if tem_certificado_fornecedor and item_cf is not None and not item_conf:
-        parcial = True
-        mensagens.append('Origem da conferência não vinculada.')
+        avisos.append('Origem da conferência / NF-e de entrada não vinculada.')
         motivos.append('SEM_CONFERENCIA_ORIGEM')
 
     if tem_certificado_fornecedor and item_conf is not None and not estoque_aplicado:
-        parcial = True
-        mensagens.append('Estoque físico ainda não aplicado.')
+        avisos.append('Estoque físico ainda não aplicado.')
         motivos.append('ESTOQUE_NAO_APLICADO')
+
+    falta_fisica = any(
+        m in motivos
+        for m in (
+            'SEM_CORRIDA_LOTE',
+            'SEM_CONFERENCIA_ORIGEM',
+            'ESTOQUE_NAO_APLICADO',
+            'SEM_ITEM_CF',
+        )
+    )
+    if falta_fisica:
+        avisos.append(AVISO_RASTREABILIDADE_FISICA)
+        motivos.append('RASTREABILIDADE_FISICA_OPCIONAL')
 
     if pendente:
         status: RastreabilidadeStatus = 'PENDENTE'
@@ -278,6 +318,19 @@ def avaliar_rastreabilidade_item_certificado_qualidade(
     }
 
 
+def _motivos_bloqueantes_emissao(motivos: list[str]) -> list[str]:
+    return [m for m in motivos if m in MOTIVOS_BLOQUEANTES_EMISSAO]
+
+
+def item_pode_emitir_certificado_qualidade(
+    item: ItemCertificadoQualidade | Mapping[str, Any],
+    *,
+    avaliacao: dict[str, Any] | None = None,
+) -> bool:
+    av = avaliacao or avaliar_rastreabilidade_item_certificado_qualidade(item)
+    return not _motivos_bloqueantes_emissao(av.get('motivos') or [])
+
+
 def montar_resumo_rastreabilidade_certificado(
     itens: list[ItemCertificadoQualidade | Mapping[str, Any]],
 ) -> dict[str, Any]:
@@ -287,26 +340,34 @@ def montar_resumo_rastreabilidade_certificado(
         if bool(_get_attr(it, 'incluir_no_certificado', True))
     ]
     completos = parciais = pendentes = 0
+    pode_emitir = bool(incluidos)
     for it in incluidos:
-        st = avaliar_rastreabilidade_item_certificado_qualidade(it)['status']
+        av = avaliar_rastreabilidade_item_certificado_qualidade(it)
+        st = av['status']
         if st == 'COMPLETA':
             completos += 1
         elif st == 'PARCIAL':
             parciais += 1
         else:
             pendentes += 1
+        if not item_pode_emitir_certificado_qualidade(it, avaliacao=av):
+            pode_emitir = False
     return {
         'completos': completos,
         'parciais': parciais,
         'pendentes': pendentes,
-        'pode_emitir': bool(incluidos) and parciais == 0 and pendentes == 0,
+        'pode_emitir': pode_emitir,
     }
 
 
 def validar_rastreabilidade_emissao_certificado_qualidade(
     itens: list[ItemCertificadoQualidade | Mapping[str, Any]],
 ) -> list[str]:
-    """Retorna mensagens de erro por item para emissão definitiva (status emitido)."""
+    """Retorna erros bloqueantes para emissão definitiva.
+
+    Estoque, corrida/lote de estoque, conferência de entrada e aplicação física
+    são informativos e não entram nesta lista.
+    """
     erros: list[str] = []
     ordem = 0
     for it in itens:
@@ -314,9 +375,11 @@ def validar_rastreabilidade_emissao_certificado_qualidade(
             continue
         ordem += 1
         av = avaliar_rastreabilidade_item_certificado_qualidade(it)
-        if av['status'] == 'COMPLETA':
+        bloqueantes = set(_motivos_bloqueantes_emissao(av.get('motivos') or []))
+        if not bloqueantes:
             continue
         label = _item_label(it, ordem)
         for msg in av['mensagens']:
+            # Mensagens de motivos físicos já foram movidas para avisos.
             erros.append(f'{label}: {msg}')
     return erros

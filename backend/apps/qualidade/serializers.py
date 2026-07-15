@@ -391,7 +391,10 @@ class CertificadoQualidadeSerializer(serializers.ModelSerializer):
             if erros_rastreio:
                 raise serializers.ValidationError(
                     {
-                        'detail': 'A emissão definitiva exige rastreabilidade completa em todos os itens incluídos.',
+                        'detail': (
+                            'A emissão definitiva exige produto/descrição e dados técnicos '
+                            'mínimos nos itens incluídos. Estoque e rastreabilidade física são opcionais.'
+                        ),
                         'rastreabilidade': erros_rastreio,
                     },
                 )
