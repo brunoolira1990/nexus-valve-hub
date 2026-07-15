@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Download, ExternalLink, Eye, FileCode, Scale } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { downloadBlobFile, openBlobInNewTab } from '@/lib/downloadBlobFile';
+import { downloadBlobFile, PopupBlockedError, visualizarPdfEmNovaAba } from '@/lib/downloadBlobFile';
 import { nfeSaidasService } from '@/services/api/fiscal';
 import { apiErrorMessage } from '@/services/api/config';
 import { deveUsarDanfeAutorizadoLinha } from '@/lib/nfeSaidaAcoesMatriz';
@@ -45,16 +45,19 @@ export function PedidoVendaFiscalNfeAcoes({
   };
 
   const visualizarDanfe = async () => {
+    if (loading) return;
     setLoading('view');
     try {
       if (usarDanfeAutorizado) {
-        const { blob } = await nfeSaidasService.danfeAutorizadoBlob(nfeSaidaId);
-        openBlobInNewTab(blob);
+        await nfeSaidasService.visualizarDanfeAutorizado(nfeSaidaId);
         return;
       }
-      const { blob } = await nfeSaidasService.previewDanfeBlob(nfeSaidaId);
-      openBlobInNewTab(blob);
+      await nfeSaidasService.visualizarDanfePreview(nfeSaidaId);
     } catch (e) {
+      if (e instanceof PopupBlockedError) {
+        alert(e.message);
+        return;
+      }
       alert(apiErrorMessage(e, { fallback: 'Não foi possível visualizar o DANFE.' }));
     } finally {
       setLoading(null);
@@ -92,10 +95,10 @@ export function PedidoVendaFiscalNfeAcoes({
         onClick={() =>
           void runBlob('danfe', () =>
             usarDanfeAutorizado
-              ? nfeSaidasService.danfeAutorizadoBlob(nfeSaidaId)
-              : nfeSaidasService.previewDanfeBlob(nfeSaidaId).then(({ blob }) => ({
+              ? nfeSaidasService.danfeAutorizadoBlob(nfeSaidaId, { download: true })
+              : nfeSaidasService.previewDanfeBlob(nfeSaidaId).then(({ blob, meta }) => ({
                   blob,
-                  filename: `danfe-nfe-${nfeSaidaId}.pdf`,
+                  filename: meta.filename || `danfe-nfe-${nfeSaidaId}.pdf`,
                 })),
           )
         }

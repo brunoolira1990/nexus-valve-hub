@@ -33,3 +33,8 @@ def nome_arquivo_danfe_autorizado(nf: NFeSaida) -> str:
 def content_disposition_attachment(filename: str) -> str:
     safe = filename.replace('"', '').replace('\\', '_')
     return f'attachment; filename="{safe}"'
+
+
+def content_disposition_inline(filename: str) -> str:
+    safe = filename.replace('"', '').replace('\\', '_')
+    return f'inline; filename="{safe}"'
