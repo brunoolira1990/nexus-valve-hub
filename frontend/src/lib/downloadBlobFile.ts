@@ -36,7 +36,9 @@ export async function readBlobErrorMessage(blob: Blob, fallback: string): Promis
 }
 
 export class PopupBlockedError extends Error {
-  constructor(message = 'O navegador bloqueou a abertura do PDF. Permita pop-ups para este site.') {
+  constructor(
+    message = 'O navegador bloqueou a nova aba. Libere pop-ups para visualizar o DANFE.',
+  ) {
     super(message);
     this.name = 'PopupBlockedError';
   }
@@ -74,39 +76,40 @@ export function downloadBlobFile(blob: Blob, filename: string) {
 /**
  * Abre PDF em nova aba sem iniciar download.
  *
- * Abre a aba no clique (antes do await) para não ser bloqueada como pop-up.
- * Não usa `noopener`/`noreferrer` em windowFeatures: nesses modos o browser
- * devolve `null` e a aba fica inacessível — o PDF acabava não abrindo.
- * O opener é desligado manualmente após obter a referência.
- * Nunca usa atributo `download`.
+ * 1. Abre a aba de forma síncrona no clique (`window.open('', '_blank')`).
+ * 2. Busca o Blob com autenticação.
+ * 3. Atribui `location.href` à blob URL (não usa `download`, não usa `location.replace`).
+ * 4. Só revoga a URL após delay longo (padrão 60s), para o Chrome carregar o PDF.
  */
 export async function visualizarPdfEmNovaAba(
   fetchBlob: () => Promise<Blob>,
   options?: { revokeMs?: number },
 ): Promise<void> {
-  const newTab = window.open('about:blank', '_blank');
-  if (!newTab) {
+  const novaAba = window.open('', '_blank');
+  if (!novaAba) {
     throw new PopupBlockedError();
   }
-  try {
-    newTab.opener = null;
-  } catch {
-    /* ignore — alguns browsers restringem a escrita */
-  }
+
   try {
     try {
-      newTab.document.title = 'Carregando DANFE…';
-      newTab.document.body.textContent = 'Carregando PDF…';
+      novaAba.document.title = 'Carregando DANFE…';
+      novaAba.document.body.textContent = 'Carregando PDF…';
     } catch {
-      /* about:blank cross-origin edge cases */
+      /* ignore — about:blank pode restringir escrita em alguns casos */
     }
-    const pdfBlob = ensurePdfBlob(await fetchBlob());
-    const url = URL.createObjectURL(pdfBlob);
-    newTab.location.replace(url);
-    window.setTimeout(() => URL.revokeObjectURL(url), options?.revokeMs ?? 60_000);
+
+    const rawBlob = await fetchBlob();
+    const pdfBlob = ensurePdfBlob(rawBlob);
+    if (!pdfBlob.size) {
+      throw new Error('O PDF retornado está vazio.');
+    }
+
+    const blobUrl = URL.createObjectURL(pdfBlob);
+    novaAba.location.href = blobUrl;
+    window.setTimeout(() => URL.revokeObjectURL(blobUrl), options?.revokeMs ?? 60_000);
   } catch (error) {
     try {
-      newTab.close();
+      novaAba.close();
     } catch {
       /* ignore */
     }
@@ -123,11 +126,6 @@ export function openBlobInNewTab(blob: Blob, filename = 'documento.pdf') {
   if (!opened) {
     URL.revokeObjectURL(url);
     throw new PopupBlockedError();
-  }
-  try {
-    opened.opener = null;
-  } catch {
-    /* ignore */
   }
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
   return true;

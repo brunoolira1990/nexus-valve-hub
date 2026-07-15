@@ -19,7 +19,7 @@ describe('downloadBlobFile', () => {
     vi.restoreAllMocks();
   });
 
-  it('Baixar DANFE: cria link com atributo download', () => {
+  it('Baixar DANFE: continua usando downloadBlobFile com atributo download', () => {
     const click = vi.fn();
     const anchor = {
       href: '',
@@ -51,34 +51,34 @@ describe('ensurePdfBlob', () => {
 
 describe('visualizarPdfEmNovaAba', () => {
   const close = vi.fn();
-  const replace = vi.fn();
+  const revokeObjectURL = vi.fn();
+  let scheduled: Array<{ ms: number; fn: () => void }> = [];
   let openedTab: {
     close: typeof close;
-    location: { replace: typeof replace };
-    opener: unknown;
+    location: { href: string };
     document: { title: string; body: { textContent: string } };
   };
 
   beforeEach(() => {
     close.mockClear();
-    replace.mockClear();
+    revokeObjectURL.mockClear();
+    scheduled = [];
     openedTab = {
       close,
-      location: { replace },
-      opener: window,
+      location: { href: '' },
       document: { title: '', body: { textContent: '' } },
     };
     vi.stubGlobal('URL', {
       createObjectURL: vi.fn(() => 'blob:pdf-mock'),
-      revokeObjectURL: vi.fn(),
+      revokeObjectURL,
     });
     vi.stubGlobal(
       'window',
       {
         open: vi.fn(() => openedTab),
-        setTimeout: (fn: () => void) => {
-          fn();
-          return 0;
+        setTimeout: (fn: () => void, ms?: number) => {
+          scheduled.push({ ms: ms ?? 0, fn });
+          return scheduled.length;
         },
       } as unknown as Window & typeof globalThis,
     );
@@ -89,36 +89,60 @@ describe('visualizarPdfEmNovaAba', () => {
     vi.restoreAllMocks();
   });
 
-  it('Visualizar: abre nova aba sem atributo download e sem noopener em features', async () => {
+  it('Visualizar abre window.open de forma síncrona com string vazia', async () => {
+    const fetchBlob = vi.fn(async () => new Blob(['%PDF'], { type: 'application/pdf' }));
+    const pending = visualizarPdfEmNovaAba(fetchBlob);
+
+    expect(window.open).toHaveBeenCalledWith('', '_blank');
+    expect(window.open).toHaveBeenCalledTimes(1);
+
+    await pending;
+    expect(fetchBlob).toHaveBeenCalled();
+  });
+
+  it('Visualizar atribui blob URL via location.href', async () => {
     await visualizarPdfEmNovaAba(async () => new Blob(['%PDF'], { type: 'application/pdf' }));
 
-    expect(window.open).toHaveBeenCalledWith('about:blank', '_blank');
-    const features = vi.mocked(window.open).mock.calls[0]?.[2];
-    expect(features == null || !String(features).includes('noopener')).toBe(true);
-    expect(replace).toHaveBeenCalledWith('blob:pdf-mock');
-    expect(openedTab.opener).toBeNull();
+    expect(openedTab.location.href).toBe('blob:pdf-mock');
     expect(close).not.toHaveBeenCalled();
   });
 
-  it('Visualizar: não cria anchor com download', async () => {
+  it('Visualizar não cria elemento com download', async () => {
     const createElement = vi.spyOn(document, 'createElement');
     await visualizarPdfEmNovaAba(async () => new Blob(['%PDF'], { type: 'application/pdf' }));
     expect(createElement).not.toHaveBeenCalledWith('a');
   });
 
-  it('fecha aba e propaga erro quando fetch falha', async () => {
+  it('URL.revokeObjectURL não ocorre imediatamente', async () => {
+    await visualizarPdfEmNovaAba(async () => new Blob(['%PDF'], { type: 'application/pdf' }));
+
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+    expect(scheduled).toHaveLength(1);
+    expect(scheduled[0].ms).toBe(60_000);
+
+    scheduled[0].fn();
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:pdf-mock');
+  });
+
+  it('Pop-up bloqueado mostra erro claro', async () => {
+    vi.mocked(window.open).mockReturnValueOnce(null);
+    await expect(
+      visualizarPdfEmNovaAba(async () => new Blob(['%PDF'], { type: 'application/pdf' })),
+    ).rejects.toSatisfy((err: unknown) => {
+      expect(err).toBeInstanceOf(PopupBlockedError);
+      expect((err as Error).message).toContain('bloqueou a nova aba');
+      expect((err as Error).message).toContain('pop-ups');
+      return true;
+    });
+  });
+
+  it('fecha aba vazia quando a API falha', async () => {
     await expect(
       visualizarPdfEmNovaAba(async () => {
         throw new Error('falha backend');
       }),
     ).rejects.toThrow('falha backend');
     expect(close).toHaveBeenCalled();
-  });
-
-  it('lança PopupBlockedError quando pop-up é bloqueado', async () => {
-    vi.mocked(window.open).mockReturnValueOnce(null);
-    await expect(
-      visualizarPdfEmNovaAba(async () => new Blob(['%PDF'], { type: 'application/pdf' })),
-    ).rejects.toBeInstanceOf(PopupBlockedError);
+    expect(revokeObjectURL).not.toHaveBeenCalled();
   });
 });
