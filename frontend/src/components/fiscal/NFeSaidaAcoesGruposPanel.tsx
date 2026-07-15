@@ -1,6 +1,7 @@
 import {
   ClipboardCheck,
   Copy,
+  Download,
   ExternalLink,
   FileCode,
   FileText,
@@ -20,10 +21,12 @@ type Props = {
   contexto: NFeSaidaContextoAcao;
   acoes: NFeSaidaAcaoConfig[];
   danfeLoading?: boolean;
+  baixarDanfeLoading?: boolean;
   onValidar?: () => void;
   onAbrirNfe?: () => void;
   onHistorico?: () => void;
   onDanfe?: () => void;
+  onBaixarDanfe?: () => void;
   onXml?: () => void;
   onXmlAutorizado?: () => void;
   onCopiarChave?: () => void;
@@ -137,10 +140,12 @@ export function NFeSaidaAcoesGruposPanel({
   contexto,
   acoes,
   danfeLoading,
+  baixarDanfeLoading,
   onValidar,
   onAbrirNfe,
   onHistorico,
   onDanfe,
+  onBaixarDanfe,
   onXml,
   onDescartar,
   onConsultaSefaz,
@@ -205,6 +210,23 @@ export function NFeSaidaAcoesGruposPanel({
               <Loader2 className="h-3 w-3 animate-spin inline mr-1" />
             ) : (
               <FileText className="h-3 w-3 mr-1 inline" />
+            )}
+            {acao.label}
+          </button>
+        );
+      case 'baixar_danfe':
+        return (
+          <button
+            key={acao.id}
+            type="button"
+            className="erp-btn-outline erp-btn-sm"
+            disabled={baixarDanfeLoading || danfeLoading || !acao.habilitada}
+            onClick={onBaixarDanfe}
+          >
+            {baixarDanfeLoading ? (
+              <Loader2 className="h-3 w-3 animate-spin inline mr-1" />
+            ) : (
+              <Download className="h-3 w-3 mr-1 inline" />
             )}
             {acao.label}
           </button>

@@ -3,7 +3,7 @@ import { AdvancedSupportSection } from '@/components/nexus/AdvancedSupportSectio
 import { OperationalMessage } from '@/components/nexus/OperationalMessage';
 import { ACTION_LABELS, TECHNICAL_DOWNLOAD_LABELS, labelNfeStatusConferenciaOperacional } from '@/lib/operationalUi';
 import { AVISO_HOMOLOG_SEM_VALOR_FISCAL, AVISO_CANCELADA_CONSULTA, deveUsarDanfeAutorizado } from '@/lib/nfeSaidaAcoesMatriz';
-import { openBlobInNewTab } from '@/lib/downloadBlobFile';
+import { PopupBlockedError, visualizarPdfEmNovaAba } from '@/lib/downloadBlobFile';
 import { formatNfeXsdErro } from '@/lib/nfeXsdErros';
 import {
   nfeSaidasService,
@@ -76,6 +76,7 @@ export function NFeSaidaAcoesOperacionais({
   children,
 }: Props) {
   const abrirDanfe = async () => {
+    if (danfeLoading) return;
     onPreviewError(null);
     onDanfeLoading(true);
     try {
@@ -86,24 +87,47 @@ export function NFeSaidaAcoesOperacionais({
         temXmlAutorizado: Boolean(emissaoSefaz?.tem_xml_autorizado),
       });
       if (usarAutorizado) {
-        const { blob, filename } = await nfeSaidasService.danfeAutorizadoBlob(nfeId);
-        const abriu = openBlobInNewTab(blob, filename);
-        if (!abriu) {
-          toast.info('Download do DANFE iniciado (pop-up bloqueado pelo navegador).');
-        }
+        await nfeSaidasService.visualizarDanfeAutorizado(nfeId);
         return;
       }
-      const { blob, meta } = await nfeSaidasService.previewDanfeBlob(nfeId);
-      onDanfeMeta(meta);
-      const u = URL.createObjectURL(blob);
-      window.open(u, '_blank', 'noopener,noreferrer');
-      setTimeout(() => URL.revokeObjectURL(u), 60_000);
+      await visualizarPdfEmNovaAba(async () => {
+        const { blob, meta } = await nfeSaidasService.previewDanfeBlob(nfeId);
+        onDanfeMeta(meta);
+        return blob;
+      });
     } catch (err) {
+      if (err instanceof PopupBlockedError) {
+        onPreviewError(err.message);
+        return;
+      }
       onPreviewError(
         apiErrorMessage(err, {
           fallback: 'Não foi possível gerar o DANFE. A nota não foi alterada. Tente novamente ou acione o suporte.',
         }),
       );
+    } finally {
+      onDanfeLoading(false);
+    }
+  };
+
+  const baixarDanfe = async () => {
+    if (danfeLoading) return;
+    onPreviewError(null);
+    onDanfeLoading(true);
+    try {
+      const usarAutorizado = deveUsarDanfeAutorizado({
+        autorizadaHomolog,
+        autorizadaProducao,
+        cancelada,
+        temXmlAutorizado: Boolean(emissaoSefaz?.tem_xml_autorizado),
+      });
+      if (usarAutorizado) {
+        await nfeSaidasService.baixarDanfeAutorizado(nfeId);
+        return;
+      }
+      await nfeSaidasService.baixarDanfePreview(nfeId);
+    } catch (err) {
+      onPreviewError(apiErrorMessage(err, { fallback: 'Não foi possível baixar o DANFE.' }));
     } finally {
       onDanfeLoading(false);
     }
@@ -187,12 +211,22 @@ export function NFeSaidaAcoesOperacionais({
         >
           {danfeLoading ? <Loader2 className="h-3 w-3 animate-spin inline mr-1" /> : null}
           {cancelada
-            ? 'DANFE cancelado'
+            ? 'Visualizar DANFE'
             : autorizadaHomolog
-              ? 'DANFE (homologação)'
+              ? 'Visualizar DANFE'
               : autorizadaProducao
-                ? 'DANFE autorizado'
+                ? 'Visualizar DANFE'
                 : ACTION_LABELS.verDanfe}
+        </button>
+
+        <button
+          type="button"
+          className="erp-btn-outline erp-btn-sm"
+          disabled={danfeLoading}
+          onClick={() => void baixarDanfe()}
+        >
+          {danfeLoading ? <Loader2 className="h-3 w-3 animate-spin inline mr-1" /> : null}
+          Baixar DANFE
         </button>
 
         {(autorizada || (cancelada && documentoAutorizadoLocal)) && documentoAutorizadoLocal ? (

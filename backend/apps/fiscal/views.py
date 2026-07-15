@@ -1694,6 +1694,7 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
             )
         from apps.fiscal.nfe_saida_arquivo_autorizado import (
             content_disposition_attachment,
+            content_disposition_inline,
             nome_arquivo_danfe_autorizado,
         )
 
@@ -1730,8 +1731,14 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
         filename = nome_arquivo_danfe_autorizado(nf)
+        download = str(request.query_params.get('download', '')).lower() in ('1', 'true', 'yes')
+        content_disposition = (
+            content_disposition_attachment(filename)
+            if download
+            else content_disposition_inline(filename)
+        )
         headers = {
-            'Content-Disposition': content_disposition_attachment(filename),
+            'Content-Disposition': content_disposition,
             'Cache-Control': 'no-store, no-cache, must-revalidate',
             'Pragma': 'no-cache',
             'X-Danfe-Renderer-Oficial': 'BFR',

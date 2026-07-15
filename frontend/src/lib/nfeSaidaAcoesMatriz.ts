@@ -38,6 +38,7 @@ export type NFeSaidaAcaoId =
   | 'abrir_nfe'
   | 'danfe_previa'
   | 'danfe_autorizado'
+  | 'baixar_danfe'
   | 'xml_previo'
   | 'xml_autorizado'
   | 'historico'
@@ -290,7 +291,8 @@ export function obterMatrizAcoesNfeSaida(
   if (cenario === 'homolog_autorizada') {
     acoes.push(
       acao({ id: 'abrir_nfe', grupo: 'documentos', label: 'Abrir NF-e' }),
-      acao({ id: 'danfe_autorizado', grupo: 'documentos', label: 'DANFE (homologação)' }),
+      acao({ id: 'danfe_autorizado', grupo: 'documentos', label: 'Visualizar DANFE' }),
+      acao({ id: 'baixar_danfe', grupo: 'documentos', label: 'Baixar DANFE' }),
       acao({
         id: 'xml_autorizado',
         grupo: 'documentos',
@@ -319,7 +321,8 @@ export function obterMatrizAcoesNfeSaida(
   } else if (cenario === 'producao_autorizada') {
     acoes.push(
       acao({ id: 'abrir_nfe', grupo: 'documentos', label: 'Abrir NF-e' }),
-      acao({ id: 'danfe_autorizado', grupo: 'documentos', label: 'DANFE autorizado' }),
+      acao({ id: 'danfe_autorizado', grupo: 'documentos', label: 'Visualizar DANFE' }),
+      acao({ id: 'baixar_danfe', grupo: 'documentos', label: 'Baixar DANFE' }),
       acao({
         id: 'xml_autorizado',
         grupo: 'documentos',
@@ -357,11 +360,18 @@ export function obterMatrizAcoesNfeSaida(
       acao({
         id: 'danfe_autorizado',
         grupo: 'documentos',
-        label: 'DANFE cancelado',
+        label: 'Visualizar DANFE',
         habilitada: ctx.temXmlAutorizado,
         title: ctx.temXmlAutorizado
           ? 'Documento cancelado — sem validade fiscal para circulação.'
           : 'XML autorizado local indisponível.',
+      }),
+      acao({
+        id: 'baixar_danfe',
+        grupo: 'documentos',
+        label: 'Baixar DANFE',
+        habilitada: ctx.temXmlAutorizado,
+        title: ctx.temXmlAutorizado ? undefined : 'XML autorizado local indisponível.',
       }),
       acao({
         id: 'xml_autorizado',
@@ -392,7 +402,8 @@ export function obterMatrizAcoesNfeSaida(
     // Emissão produção/homologação: botões dedicados no painel/modal — não duplicar na matriz.
     acoes.push(
       acao({ id: 'abrir_nfe', grupo: 'documentos', label: 'Abrir NF-e' }),
-      acao({ id: 'danfe_previa', grupo: 'documentos', label: 'DANFE prévia' }),
+      acao({ id: 'danfe_previa', grupo: 'documentos', label: 'Visualizar DANFE' }),
+      acao({ id: 'baixar_danfe', grupo: 'documentos', label: 'Baixar DANFE' }),
       acao({ id: 'xml_previo', grupo: 'documentos', label: 'XML prévio' }),
     );
     if (opts?.podeDescartar) {
@@ -404,7 +415,8 @@ export function obterMatrizAcoesNfeSaida(
   } else {
     acoes.push(
       acao({ id: 'abrir_nfe', grupo: 'documentos', label: 'Abrir NF-e' }),
-      acao({ id: 'danfe_previa', grupo: 'documentos', label: 'DANFE' }),
+      acao({ id: 'danfe_previa', grupo: 'documentos', label: 'Visualizar DANFE' }),
+      acao({ id: 'baixar_danfe', grupo: 'documentos', label: 'Baixar DANFE' }),
       acao({ id: 'xml_previo', grupo: 'documentos', label: 'XML' }),
     );
   }

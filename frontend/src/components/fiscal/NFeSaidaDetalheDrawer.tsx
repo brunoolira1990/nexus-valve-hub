@@ -32,6 +32,7 @@ import { buildCartaCorrecaoContextoFromNfe } from '@/lib/nfeCartaCorrecaoPreview
 import { NFeFinanceiroAcoes } from '@/components/fiscal/NFeFinanceiroAcoes';
 import { NFeSaidaAcoesGruposPanel } from '@/components/fiscal/NFeSaidaAcoesGruposPanel';
 import { toast } from 'sonner';
+import { PopupBlockedError } from '@/lib/downloadBlobFile';
 import {
   obterMatrizAcoesNfeSaida,
   resolverContextoNfeSaida,
@@ -55,6 +56,7 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [danfeLoading, setDanfeLoading] = useState(false);
+  const [baixarDanfeLoading, setBaixarDanfeLoading] = useState(false);
   const [checklistOpen, setChecklistOpen] = useState(false);
   const [checklistBadge, setChecklistBadge] = useState<
     'aprovado' | 'aprovado_com_alertas' | 'bloqueado' | null
@@ -93,25 +95,38 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
   }, [open, nfeId]);
 
   const visualizarDanfe = async () => {
-    if (!nfe?.id) return;
+    if (!nfe?.id || danfeLoading || baixarDanfeLoading) return;
     setDanfeLoading(true);
     try {
       if (deveUsarDanfeAutorizado(contextoAcao)) {
-        const { blob, filename } = await nfeSaidasService.danfeAutorizadoBlob(nfe.id);
-        const abriu = openBlobInNewTab(blob, filename);
-        if (!abriu) {
-          toast.info('Download do DANFE iniciado (pop-up bloqueado pelo navegador).');
-        }
+        await nfeSaidasService.visualizarDanfeAutorizado(nfe.id);
         return;
       }
-      const { blob } = await nfeSaidasService.previewDanfeBlob(nfe.id);
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank', 'noopener,noreferrer');
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      await nfeSaidasService.visualizarDanfePreview(nfe.id);
     } catch (e) {
+      if (e instanceof PopupBlockedError) {
+        toast.error(e.message);
+        return;
+      }
       alert(apiErrorMessage(e, { fallback: 'Não foi possível visualizar o DANFE.' }));
     } finally {
       setDanfeLoading(false);
+    }
+  };
+
+  const baixarDanfe = async () => {
+    if (!nfe?.id || danfeLoading || baixarDanfeLoading) return;
+    setBaixarDanfeLoading(true);
+    try {
+      if (deveUsarDanfeAutorizado(contextoAcao)) {
+        await nfeSaidasService.baixarDanfeAutorizado(nfe.id);
+        return;
+      }
+      await nfeSaidasService.baixarDanfePreview(nfe.id);
+    } catch (e) {
+      alert(apiErrorMessage(e, { fallback: 'Não foi possível baixar o DANFE.' }));
+    } finally {
+      setBaixarDanfeLoading(false);
     }
   };
 
@@ -393,10 +408,12 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
               contexto={contextoAcao}
               acoes={matrizAcoes}
               danfeLoading={danfeLoading}
+              baixarDanfeLoading={baixarDanfeLoading}
               onValidar={() => setChecklistOpen(true)}
               onAbrirNfe={abrirConferencia}
               onHistorico={abrirConferencia}
               onDanfe={() => void visualizarDanfe()}
+              onBaixarDanfe={() => void baixarDanfe()}
               onXml={() => void baixarXml()}
               onXmlAutorizado={() => void baixarXml()}
               onDescartar={() => setDescarteOpen(true)}

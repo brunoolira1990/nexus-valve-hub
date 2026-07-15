@@ -19,6 +19,7 @@ import {
   downloadBlobFile,
   parseContentDispositionFilename,
   readBlobErrorMessage,
+  visualizarPdfEmNovaAba,
 } from '@/lib/downloadBlobFile';
 import type { AxiosResponse } from 'axios';
 
@@ -1025,11 +1026,15 @@ export const nfeSaidasService = {
     const res = await api.get<Blob>(`${nfSai}${id}/danfe-homologacao/`, { responseType: 'blob' });
     return res.data;
   },
-  danfeAutorizadoBlob: async (id: number) => {
+  danfeAutorizadoBlob: async (id: number, opts?: { download?: boolean }) => {
     try {
+      const params: Record<string, string | number> = { t: Date.now() };
+      if (opts?.download) {
+        params.download = 1;
+      }
       const res = await api.get<Blob>(`${nfSai}${id}/danfe-autorizado/`, {
         responseType: 'blob',
-        params: { t: Date.now() },
+        params,
         headers: {
           Accept: 'application/pdf, application/json',
           'Cache-Control': 'no-cache',
@@ -1055,8 +1060,34 @@ export const nfeSaidasService = {
       throw err;
     }
   },
+  visualizarDanfeAutorizado: async (id: number) => {
+    await visualizarPdfEmNovaAba(async () => {
+      const { blob } = await nfeSaidasService.danfeAutorizadoBlob(id);
+      return blob;
+    });
+  },
+  visualizarDanfePreview: async (id: number) => {
+    await visualizarPdfEmNovaAba(async () => {
+      const { blob } = await nfeSaidasService.previewDanfeBlob(id);
+      return blob;
+    });
+  },
   baixarDanfeAutorizado: async (id: number) => {
-    const { blob, filename } = await nfeSaidasService.danfeAutorizadoBlob(id);
+    const { blob, filename } = await nfeSaidasService.danfeAutorizadoBlob(id, { download: true });
+    downloadBlobFile(blob, filename);
+  },
+  baixarDanfePreview: async (id: number) => {
+    const res = await api.get<Blob>(`${nfSai}${id}/preview-danfe/`, {
+      responseType: 'blob',
+      params: { t: Date.now() },
+      headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+      validateStatus: (s) => s >= 200 && s < 500,
+    });
+    const { blob, filename } = await resolveBlobDownload(
+      res,
+      `danfe-nfe-${id}.pdf`,
+      'Não foi possível gerar o DANFE de conferência.',
+    );
     downloadBlobFile(blob, filename);
   },
   previewContasReceber: async (id: number) =>

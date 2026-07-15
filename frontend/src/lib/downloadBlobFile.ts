@@ -1,4 +1,4 @@
-/** Download de arquivos binários (XML/PDF) via Blob — com auth axios. */
+/** Download e visualização de arquivos binários (XML/PDF) via Blob — com auth axios. */
 
 export function parseContentDispositionFilename(header: string | undefined | null): string | null {
   if (!header) return null;
@@ -35,11 +35,29 @@ export async function readBlobErrorMessage(blob: Blob, fallback: string): Promis
   }
 }
 
-export function downloadBlobFile(blob: Blob, filename: string) {
+export class PopupBlockedError extends Error {
+  constructor(message = 'O navegador bloqueou a abertura do PDF. Permita pop-ups para este site.') {
+    super(message);
+    this.name = 'PopupBlockedError';
+  }
+}
+
+export function ensurePdfBlob(blob: Blob): Blob {
   if (!blob?.size) {
+    throw new Error('O PDF retornado está vazio.');
+  }
+  if (blob.type === 'application/pdf') {
+    return blob;
+  }
+  return new Blob([blob], { type: 'application/pdf' });
+}
+
+export function downloadBlobFile(blob: Blob, filename: string) {
+  const pdfBlob = blob.type.includes('pdf') ? ensurePdfBlob(blob) : blob;
+  if (!pdfBlob?.size) {
     throw new Error('O arquivo retornado está vazio.');
   }
-  const url = URL.createObjectURL(blob);
+  const url = URL.createObjectURL(pdfBlob);
   try {
     const a = document.createElement('a');
     a.href = url;
@@ -53,15 +71,38 @@ export function downloadBlobFile(blob: Blob, filename: string) {
   }
 }
 
-export function openBlobInNewTab(blob: Blob, filename = 'documento.pdf') {
-  if (!blob?.size) {
-    throw new Error('O arquivo retornado está vazio.');
+/**
+ * Abre PDF em nova aba sem iniciar download.
+ * Abre about:blank no clique (evita bloqueio de pop-up) e só depois carrega o blob.
+ */
+export async function visualizarPdfEmNovaAba(
+  fetchBlob: () => Promise<Blob>,
+  options?: { revokeMs?: number },
+): Promise<void> {
+  const newTab = window.open('about:blank', '_blank', 'noopener,noreferrer');
+  if (!newTab) {
+    throw new PopupBlockedError();
   }
-  const url = URL.createObjectURL(blob);
+  try {
+    const pdfBlob = ensurePdfBlob(await fetchBlob());
+    const url = URL.createObjectURL(pdfBlob);
+    newTab.location.replace(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), options?.revokeMs ?? 60_000);
+  } catch (error) {
+    newTab.close();
+    throw error;
+  }
+}
+
+/** @deprecated Preferir visualizarPdfEmNovaAba para PDFs. */
+export function openBlobInNewTab(blob: Blob, filename = 'documento.pdf') {
+  void filename;
+  const pdfBlob = blob.type.includes('pdf') ? ensurePdfBlob(blob) : blob;
+  const url = URL.createObjectURL(pdfBlob);
   const opened = window.open(url, '_blank', 'noopener,noreferrer');
   if (!opened) {
-    downloadBlobFile(blob, filename);
-    return false;
+    URL.revokeObjectURL(url);
+    throw new PopupBlockedError();
   }
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
   return true;

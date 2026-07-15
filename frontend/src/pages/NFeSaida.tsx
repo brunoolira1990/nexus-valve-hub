@@ -20,7 +20,7 @@ import { NFeChecklistHomologacaoModal } from '@/components/fiscal/NFeChecklistHo
 import { NFeSaidaEfeitosPanel } from '@/components/fiscal/NFeSaidaEfeitosPanel';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
-import { openBlobInNewTab } from '@/lib/downloadBlobFile';
+import { PopupBlockedError } from '@/lib/downloadBlobFile';
 import { apiErrorMessage } from '@/services/api/config';
 import {
   nfeSaidasService,
@@ -281,14 +281,23 @@ const NFeSaida = () => {
   };
 
   const previewDanfeLinha = async (row: NFeSaida) => {
+    if (danfeLoading) return;
+    setDanfeLoading(true);
     try {
       const usarDanfeAutorizado = deveUsarDanfeAutorizadoLinha(row);
-      const blob = usarDanfeAutorizado
-        ? (await nfeSaidasService.danfeAutorizadoBlob(row.id)).blob
-        : (await nfeSaidasService.previewDanfeBlob(row.id)).blob;
-      openBlobInNewTab(blob);
+      if (usarDanfeAutorizado) {
+        await nfeSaidasService.visualizarDanfeAutorizado(row.id);
+        return;
+      }
+      await nfeSaidasService.visualizarDanfePreview(row.id);
     } catch (err) {
+      if (err instanceof PopupBlockedError) {
+        alert(err.message);
+        return;
+      }
       alert(apiErrorMessage(err, { fallback: 'Não foi possível visualizar o DANFE.' }));
+    } finally {
+      setDanfeLoading(false);
     }
   };
 
@@ -346,15 +355,16 @@ const NFeSaida = () => {
   };
 
   const handlePreviewDanfe = async () => {
-    if (!editing?.id) return;
+    if (!editing?.id || danfeLoading) return;
     setDanfeLoading(true);
     setPreviewError(null);
     try {
-      const { blob } = await nfeSaidasService.previewDanfeBlob(editing.id);
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank', 'noopener,noreferrer');
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      await nfeSaidasService.visualizarDanfePreview(editing.id);
     } catch (err) {
+      if (err instanceof PopupBlockedError) {
+        setPreviewError(err.message);
+        return;
+      }
       setPreviewError(apiErrorMessage(err));
     } finally {
       setDanfeLoading(false);
