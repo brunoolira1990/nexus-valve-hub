@@ -79,20 +79,38 @@ def _nf_autorizada_producao(**kwargs) -> NFeSaida:
     return _nf(**base)
 
 
+def _nf_autorizada_homologacao(**kwargs) -> NFeSaida:
+    base = {
+        'numero': 'RASCUNHO-FAT-28',
+        'status': 'AUTORIZADA_HOMOLOGACAO',
+        'status_emissao_sefaz': NFeSaida.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO,
+        'numero_nfe': '99',
+        'serie_nfe': '0',
+        'protocolo_autorizacao': '135260000000002',
+        'cstat_autorizacao': '100',
+        'xml_autorizado': '<?xml version="1.0"?><nfeProc><NFe/></nfeProc>',
+        'ambiente_emissao': 'homologacao',
+    }
+    base.update(kwargs)
+    return _nf(**base)
+
+
 class NfeElegivelCqUnitTests(TestCase):
     def test_autorizada_producao_elegivel(self):
         nf = _nf_autorizada_producao()
         self.assertTrue(nfe_elegivel_para_certificado_qualidade(nf))
 
-    def test_autorizada_homologacao_elegivel(self):
-        nf = _nf_autorizada_producao(
-            status='AUTORIZADA_HOMOLOGACAO',
-            status_emissao_sefaz=NFeSaida.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO,
-            ambiente_emissao='homologacao',
-            numero_nfe='99',
-            serie_nfe='0',
-        )
-        self.assertTrue(nfe_elegivel_para_certificado_qualidade(nf))
+    def test_autorizada_homologacao_nao_elegivel(self):
+        nf = _nf_autorizada_homologacao()
+        self.assertFalse(nfe_elegivel_para_certificado_qualidade(nf))
+
+    def test_busca_exclui_homologacao(self):
+        _nf_autorizada_homologacao(numero_nfe='4242')
+        _nf_autorizada_producao(numero_nfe='4243')
+        res = buscar_nfes_elegiveis_cq(search='424', limit=20)
+        self.assertEqual(len(res), 1)
+        self.assertEqual(res[0]['numero_nfe'], '4243')
+        self.assertEqual(res[0]['ambiente_badge'], 'Produção')
 
     def test_rascunho_nao_elegivel(self):
         nf = _nf(numero='RASCUNHO-FAT-28')
@@ -180,6 +198,71 @@ class NfeElegivelCqApiTests(TestCase):
         self.assertEqual(ids, [ok.pk])
         self.assertTrue(res.data[0]['label_principal'].startswith('NF-e nº'))
         self.assertNotIn('RASCUNHO-FAT', res.data[0]['label_principal'])
+
+    def test_preencher_bloqueia_homologacao(self):
+        nf = _nf_autorizada_homologacao(cliente=self.cli, numero_nfe='3333')
+        res = self.client_api.post(
+            '/api/certificados-qualidade/preencher-por-nfe/',
+            {'nf_saida_id': nf.pk},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(res.data['detail'], MSG_NFE_INELEGIVEL_CQ)
+
+    def test_salvar_bloqueia_homologacao(self):
+        nf = _nf_autorizada_homologacao(cliente=self.cli, numero_nfe='4444')
+        res = self.client_api.post(
+            '/api/certificados-qualidade/',
+            {
+                'status': CertificadoQualidade.Status.RASCUNHO,
+                'tipo_certificado': CertificadoQualidade.TipoCertificado.PADRAO_POR_NFE,
+                'numero': '',
+                'serie': '',
+                'cliente': self.cli.id,
+                'cliente_nome_snapshot': self.cli.razao_social,
+                'nota_fiscal': nf.pk,
+                'itens': [],
+            },
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('nota_fiscal', res.data)
+
+    def test_incluir_id_homologacao_legado_apenas_exibicao(self):
+        nf = _nf_autorizada_homologacao(cliente=self.cli, numero_nfe='5555')
+        res = self.client_api.get(
+            '/api/certificados-qualidade/nfes-elegiveis/',
+            {'incluir_id': nf.pk},
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res.data), 1)
+        self.assertEqual(res.data[0]['id'], nf.pk)
+        self.assertFalse(res.data[0]['elegivel'])
+        self.assertEqual(res.data[0]['ambiente_badge'], 'Homologação')
+
+    def test_salvar_preserva_vinculo_legado_homologacao(self):
+        nf = _nf_autorizada_homologacao(cliente=self.cli, numero_nfe='6666', serie_nfe='1')
+        cert = CertificadoQualidade.objects.create(
+            cliente=self.cli,
+            cliente_nome_snapshot=self.cli.razao_social,
+            nota_fiscal=nf,
+            nota_fiscal_numero='6666/1',
+            status=CertificadoQualidade.Status.RASCUNHO,
+            tipo_certificado=CertificadoQualidade.TipoCertificado.PADRAO_POR_NFE,
+        )
+        res = self.client_api.patch(
+            f'/api/certificados-qualidade/{cert.pk}/',
+            {
+                'observacoes': 'legado homolog mantido',
+                'nota_fiscal': nf.pk,
+                'itens': [],
+            },
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        cert.refresh_from_db()
+        self.assertEqual(cert.nota_fiscal_id, nf.pk)
+        self.assertEqual(cert.observacoes, 'legado homolog mantido')
 
     def test_preencher_bloqueia_rascunho(self):
         nf = _nf(cliente=self.cli, numero='RASCUNHO-FAT-28')

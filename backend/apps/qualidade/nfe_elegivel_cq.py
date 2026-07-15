@@ -1,7 +1,7 @@
 """Elegibilidade de NF-e Saída para Certificado de Qualidade.
 
-Somente NF-e com autorização fiscal SEFAZ válida (produção ou homologação).
-Não inclui rascunho, conferência, descartada, cancelada ou autorização apenas interna.
+Somente NF-e com autorização fiscal SEFAZ em produção (AUTORIZADA_PRODUCAO).
+Não inclui homologação, rascunho, conferência, descartada, cancelada ou autorização apenas interna.
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ def _cstat_autorizacao_ok(nf: NFeSaida) -> bool:
 def nfe_elegivel_para_certificado_qualidade(nf: NFeSaida) -> bool:
     """
     Critérios alinhados aos helpers fiscais existentes:
-    - autorizada em produção OU homologação (status_emissao_sefaz / status legado);
+    - autorizada em produção (status_emissao_sefaz / status legado AUTORIZADA_PRODUCAO);
     - não cancelada;
     - não descartada internamente;
     - número e série fiscais preenchidos;
@@ -62,7 +62,7 @@ def nfe_elegivel_para_certificado_qualidade(nf: NFeSaida) -> bool:
         return False
     if (nf.status or '').strip().upper() == 'DESCARTADA_INTERNA':
         return False
-    if not (nf_autorizada_producao(nf) or nf_autorizada_homologacao(nf)):
+    if not nf_autorizada_producao(nf):
         return False
     if not _tem_identidade_fiscal(nf):
         return False
@@ -81,9 +81,7 @@ def queryset_nfes_elegiveis_cq(qs: QuerySet[NFeSaida] | None = None) -> QuerySet
     return (
         base.filter(
             Q(status_emissao_sefaz=NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO)
-            | Q(status_emissao_sefaz=NFeSaida.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO)
-            | Q(status__iexact='AUTORIZADA_PRODUCAO')
-            | Q(status__iexact='AUTORIZADA_HOMOLOGACAO'),
+            | Q(status__iexact='AUTORIZADA_PRODUCAO'),
         )
         .exclude(
             Q(status__iexact='DESCARTADA_INTERNA')

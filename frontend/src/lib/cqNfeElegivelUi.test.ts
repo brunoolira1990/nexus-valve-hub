@@ -20,6 +20,10 @@ function opcaoExibeIdentidadeFiscal(o: NfeElegivelCqOpcao): boolean {
   );
 }
 
+function opcaoPodeSerVinculadaNovoCq(o: NfeElegivelCqOpcao): boolean {
+  return o.elegivel && o.ambiente_badge === 'Produção';
+}
+
 describe('CQ — apresentação de NF-e elegível', () => {
   it('usa número fiscal e série como identidade principal', () => {
     const o: NfeElegivelCqOpcao = {
@@ -46,5 +50,31 @@ describe('CQ — apresentação de NF-e elegível', () => {
       elegivel: false,
     };
     expect(opcaoExibeIdentidadeFiscal(o)).toBe(false);
+  });
+
+  it('homologação legada não pode ser vinculada em novo CQ', () => {
+    const o: NfeElegivelCqOpcao = {
+      id: 12,
+      label_principal: 'NF-e nº 000000099 — Série 0',
+      label_secundario: 'Cliente XYZ · Emissão 14/07/2026',
+      ambiente_badge: 'Homologação',
+      numero_nfe: '99',
+      serie_nfe: '0',
+      elegivel: false,
+    };
+    expect(opcaoPodeSerVinculadaNovoCq(o)).toBe(false);
+  });
+
+  it('produção elegível pode ser vinculada', () => {
+    const o: NfeElegivelCqOpcao = {
+      id: 13,
+      label_principal: 'NF-e nº 000012345 — Série 1',
+      label_secundario: 'Cliente XYZ · Emissão 14/07/2026',
+      ambiente_badge: 'Produção',
+      numero_nfe: '12345',
+      serie_nfe: '1',
+      elegivel: true,
+    };
+    expect(opcaoPodeSerVinculadaNovoCq(o)).toBe(true);
   });
 });

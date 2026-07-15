@@ -1459,13 +1459,13 @@ const Certificados = () => {
               />
               {nfeOpcaoSelecionada && !nfeOpcaoSelecionada.elegivel ? (
                 <p className="text-xs text-amber-800 dark:text-amber-300 mt-1">
-                  Esta NF-e vinculada não está elegível pelas regras atuais (ex.: rascunho, cancelada ou sem
-                  autorização fiscal). O registro legado é preservado; selecione uma NF-e autorizada para
-                  alterar o vínculo.
+                  {nfeOpcaoSelecionada.ambiente_badge === 'Homologação'
+                    ? 'Esta NF-e vinculada foi autorizada em homologação e não pode ser usada em novo CQ de saída. O registro legado é preservado; selecione uma NF-e autorizada em produção para alterar o vínculo.'
+                    : 'Esta NF-e vinculada não está elegível pelas regras atuais (ex.: rascunho, cancelada ou sem autorização fiscal em produção). O registro legado é preservado; selecione uma NF-e autorizada em produção para alterar o vínculo.'}
                 </p>
               ) : (
                 <p className="text-xs text-muted-foreground mt-1">
-                  Somente NF-e de saída autorizadas (produção ou homologação) com número e série fiscais.
+                  Somente NF-e de saída autorizadas em produção, com número e série fiscais.
                 </p>
               )}
             </div>
