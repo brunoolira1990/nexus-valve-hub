@@ -485,7 +485,7 @@ RASCUNHO → conferência (abas) → prontidão → XML prévia/oficial
 - `Corrida` — lote técnico com ensaios JSON
 - `SequenciaCertificadoQualidade` — numeração automática
 
-**Regras:** emissão definitiva de CQ exige rastreabilidade; CQ manual permitido sem CF em cenários específicos.
+**Regras:** a rastreabilidade física enriquece o CQ, mas não bloqueia sua emissão. O CQ pode ser emitido a partir de NF-e de saída autorizada em produção e dados técnicos manuais; estoque, corrida/lote de estoque, conferência de entrada e aplicação física são opcionais. CQ manual permitido sem CF em cenários específicos.
 
 **API:** `certificados`, `certificados-qualidade`, `certificados-fornecedor`, `corridas`
 

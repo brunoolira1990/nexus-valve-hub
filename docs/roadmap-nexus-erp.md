@@ -517,7 +517,7 @@ Controle do que **sai**, **permanece em terceiros** e **retorna** (industrializa
 - `AtendimentoEstoque` (imediato e antecipado)
 - Vinculação com conferência de NF-e entrada
 - Aplicação física em estoque por corrida
-- CQ definitivo exige rastreabilidade
+- CQ pode ser emitido com NF-e de saída autorizada em produção e dados técnicos manuais; rastreabilidade física (estoque/corrida/conferência) é complementar e não bloqueia emissão
 - Corrida/lote vinculados ao produto e à NF
 
 ### Falta
