@@ -339,6 +339,16 @@ class CertificadoQualidadeSerializer(serializers.ModelSerializer):
             or attrs.get('nota_fiscal_numero')
             or (self.instance and (self.instance.nota_fiscal_id or self.instance.nota_fiscal_historica_id or self.instance.nota_fiscal_numero))
         )
+        if 'nota_fiscal' in attrs and attrs.get('nota_fiscal') is not None:
+            from apps.qualidade.nfe_elegivel_cq import MSG_NFE_INELEGIVEL_CQ, nfe_elegivel_para_certificado_qualidade
+
+            nf_sel = attrs['nota_fiscal']
+            nf_id = getattr(nf_sel, 'pk', nf_sel)
+            vinculo_legado_inalterado = (
+                self.instance is not None and self.instance.nota_fiscal_id == nf_id
+            )
+            if not vinculo_legado_inalterado and not nfe_elegivel_para_certificado_qualidade(nf_sel):
+                raise serializers.ValidationError({'nota_fiscal': MSG_NFE_INELEGIVEL_CQ})
         if status_cert == CertificadoQualidade.Status.RASCUNHO:
             if not (cliente_ok or nf_ok):
                 raise serializers.ValidationError({'detail': 'Para salvar rascunho, informe cliente ou selecione a NF.'})
