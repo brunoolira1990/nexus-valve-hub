@@ -115,6 +115,19 @@ async function getPdfBlob(id: number, preview = false): Promise<Blob> {
   }
 }
 
+export type NfeElegivelCqOpcao = {
+  id: number;
+  label_principal: string;
+  label_secundario: string;
+  ambiente_badge: string | null;
+  numero_nfe: string;
+  serie_nfe: string;
+  cliente_nome: string;
+  data_emissao: string | null;
+  status_emissao_sefaz: string;
+  elegivel: boolean;
+};
+
 export const certificadosQualidadeService = {
   listPaginated: async (params?: ListQueryParams) => {
     const response = await api.get<PaginatedResponse<CertificadoQualidade>>(base, { params: buildListParams(params) });
@@ -131,6 +144,20 @@ export const certificadosQualidadeService = {
     (await api.post<CertificadoQualidade>(base, payload)).data,
   update: async (id: number, payload: Partial<CertificadoQualidade>) =>
     (await api.patch<CertificadoQualidade>(`${base}${id}/`, payload)).data,
+  buscarNfesElegiveis: async (search: string, limit = 20, incluirId?: number | null) => {
+    const response = await api.get<NfeElegivelCqOpcao[]>(`${base}nfes-elegiveis/`, {
+      params: {
+        search,
+        limit,
+        ...(incluirId ? { incluir_id: incluirId } : {}),
+      },
+    });
+    return response.data;
+  },
+  obterNfeOpcao: async (id: number) => {
+    const list = await certificadosQualidadeService.buscarNfesElegiveis('', 1, id);
+    return list.find((o) => o.id === id) ?? null;
+  },
   preencherPorNfe: async (payload: PreencherPorNFePayload) =>
     (await api.post<PreencherPorNFeResponse>(`${base}preencher-por-nfe/`, payload)).data,
   corridasDisponiveisPorProduto: async (produtoId: number) =>

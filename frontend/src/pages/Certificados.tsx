@@ -3,14 +3,17 @@ import { AxiosError } from 'axios';
 import { FileText, Pencil } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
-import { certificadosQualidadeService } from '@/services/api/qualidade';
+import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
+import {
+  certificadosQualidadeService,
+  type NfeElegivelCqOpcao,
+} from '@/services/api/qualidade';
 import {
   certificadosFornecedorService,
   corridaLoteEfetivosResultadoFornecedor,
   mensagemPrincipalBuscaDadosTecnicosFornecedor,
 } from '@/services/api/certificadosFornecedor';
 import { produtosService } from '@/services/api/produtos';
-import { nfeSaidasService } from '@/services/api/fiscal';
 import { nfeHistoricaImportadaService, type NFeSaidaHistoricaList } from '@/services/api/nfeHistoricaImportada';
 import { apiErrorMessage } from '@/services/api/config';
 import {
@@ -23,7 +26,6 @@ import type {
   CorridaDisponivelCertificadoQualidade,
   DadosTecnicosFornecedorResultado,
   ItemCertificadoQualidade,
-  NFeSaida,
   Produto,
   ResumoRastreabilidadeCertificadoQualidade,
 } from '@/types';
@@ -223,8 +225,8 @@ const Certificados = () => {
     error: listError,
     reload: reloadList,
   } = usePaginatedList<CertificadoQualidade>({ fetchPage: fetchCertificadosPage });
-  const [nfSaidas, setNfSaidas] = useState<NFeSaida[]>([]);
   const [nfHistoricas, setNfHistoricas] = useState<NFeSaidaHistoricaList[]>([]);
+  const [nfeOpcaoSelecionada, setNfeOpcaoSelecionada] = useState<NfeElegivelCqOpcao | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<CertificadoQualidade | null>(null);
   const [form, setForm] = useState(emptyForm());
@@ -320,9 +322,67 @@ const Certificados = () => {
   };
 
   useEffect(() => {
-    nfeSaidasService.getAll().then(setNfSaidas).catch(() => setNfSaidas([]));
     nfeHistoricaImportadaService.list().then((r) => setNfHistoricas(r)).catch(() => setNfHistoricas([]));
   }, []);
+
+  const buscaNfesElegiveis = useCallback(
+    (term: string, limit?: number) =>
+      certificadosQualidadeService.buscarNfesElegiveis(term, limit ?? 20),
+    [],
+  );
+
+  const itensComDadosTecnicos = useCallback((itens: ItemCertificadoQualidade[]) => {
+    return itens.some(
+      (it) =>
+        Boolean(it.corrida?.trim()) ||
+        Boolean(it.norma?.trim()) ||
+        Boolean(it.lote?.trim()) ||
+        (it.componentes && it.componentes.length > 0) ||
+        Object.keys(it.composicao_json || {}).length > 0,
+    );
+  }, []);
+
+  const selecionarNfeOperacional = useCallback(
+    (id: number | string | null, option?: NfeElegivelCqOpcao | null) => {
+      const nextId = id == null || id === '' ? null : Number(id);
+      const trocando = nextId !== form.nota_fiscal;
+      const temItensOuDados =
+        form.itens.length > 0 || itensComDadosTecnicos(form.itens);
+      if (trocando && temItensOuDados) {
+        const ok = window.confirm(
+          'Trocar a NF-e limpará os itens e dados técnicos já carregados desta nota. Continuar?',
+        );
+        if (!ok) return;
+      }
+      setNfeOpcaoSelecionada(option ?? null);
+      setForm((p) => ({
+        ...p,
+        nota_fiscal: nextId,
+        nota_fiscal_historica: null,
+        nota_fiscal_numero:
+          option && option.numero_nfe
+            ? `${option.numero_nfe}${option.serie_nfe ? `/${option.serie_nfe}` : ''}`
+            : nextId
+              ? p.nota_fiscal_numero
+              : '',
+        ...(trocando
+          ? {
+              itens: [],
+              cliente: null,
+              cliente_nome_snapshot: '',
+              cliente_cnpj_snapshot: '',
+              pedido_cliente: '',
+              data_emissao: '',
+            }
+          : {}),
+      }));
+      setCorridasDisponiveisPorItem({});
+      setProdutoBusca({});
+      setProdutoResultados({});
+      setMensagens([]);
+    },
+    [form.itens, form.nota_fiscal, itensComDadosTecnicos],
+  );
 
   const isRowPdfLoading = (id: number) => pdfBusy?.kind === 'table-row' && pdfBusy.id === id;
   const isRowPdfBlocked = (id: number) =>
@@ -364,6 +424,7 @@ const Certificados = () => {
   const openNew = () => {
     setEditing(null);
     setForm(emptyForm());
+    setNfeOpcaoSelecionada(null);
     setSaveError(null);
     setRastreabilidadeErros([]);
     setMensagens([]);
@@ -391,6 +452,28 @@ const Certificados = () => {
         componentes: (it.componentes || []).map((cp, i) => ensureComp(cp, i + 1)),
       })),
     });
+    setNfeOpcaoSelecionada(null);
+    if (c.nota_fiscal) {
+      void certificadosQualidadeService.obterNfeOpcao(c.nota_fiscal).then((opt) => {
+        if (opt) setNfeOpcaoSelecionada(opt);
+        else {
+          setNfeOpcaoSelecionada({
+            id: c.nota_fiscal!,
+            label_principal: c.nota_fiscal_numero
+              ? `NF-e ${c.nota_fiscal_numero}`
+              : `NF-e vinculada #${c.nota_fiscal}`,
+            label_secundario: 'Documento legado — verifique elegibilidade',
+            ambiente_badge: null,
+            numero_nfe: '',
+            serie_nfe: '',
+            cliente_nome: c.cliente_nome_snapshot || '',
+            data_emissao: c.data_emissao || null,
+            status_emissao_sefaz: '',
+            elegivel: false,
+          });
+        }
+      });
+    }
     setSaveError(null);
     setRastreabilidadeErros([]);
     setMensagens([]);
@@ -450,6 +533,8 @@ const Certificados = () => {
         cliente_cnpj_snapshot: data.cliente_cnpj_snapshot ?? p.cliente_cnpj_snapshot,
         pedido_cliente: data.pedido_cliente ?? p.pedido_cliente,
         nota_fiscal_numero: data.nota_fiscal_numero ?? p.nota_fiscal_numero,
+        nota_fiscal: data.nota_fiscal ?? p.nota_fiscal,
+        nota_fiscal_historica: data.nota_fiscal_historica ?? p.nota_fiscal_historica,
         data_emissao: data.data_emissao ?? p.data_emissao,
         itens: ((data.itens as ItemCertificadoQualidade[]) ?? []).map((it) => ({
           ...it,
@@ -463,6 +548,11 @@ const Certificados = () => {
           componentes: (it.componentes || []).map((cp, i) => ensureComp(cp, i + 1)),
         })),
       }));
+      if (data.nota_fiscal) {
+        void certificadosQualidadeService.obterNfeOpcao(data.nota_fiscal).then((opt) => {
+          if (opt) setNfeOpcaoSelecionada(opt);
+        });
+      }
       setMensagens(data.mensagens || []);
       setCorridasDisponiveisPorItem({});
       setProdutoBusca({});
@@ -1333,22 +1423,73 @@ const Certificados = () => {
         <div className="mt-4 p-3 rounded border border-border bg-muted/20">
           <p className="text-sm font-medium">Carregar itens da NF-e de saída</p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-2">
-            <div>
-              <label className="erp-label">NF-e saída operacional</label>
-              <select className="erp-select mt-1 w-full" value={form.nota_fiscal || ''} onChange={(e) => { setF('nota_fiscal', e.target.value ? +e.target.value : null); setF('nota_fiscal_historica', null); }}>
-                <option value="">Selecione...</option>
-                {nfSaidas.map((n) => <option key={n.id} value={n.id}>{n.numero} - {n.cliente_nome} - {n.data}</option>)}
-              </select>
+            <div className="md:col-span-2">
+              <label className="erp-label">NF-e de saída</label>
+              <AsyncAutocomplete<NfeElegivelCqOpcao>
+                value={form.nota_fiscal}
+                selectedOption={nfeOpcaoSelecionada}
+                placeholder="Buscar por número da NF-e ou cliente..."
+                emptyMessage="Nenhuma NF-e autorizada encontrada."
+                minChars={2}
+                limit={20}
+                search={buscaNfesElegiveis}
+                getOptionValue={(o) => o.id}
+                getOptionLabel={(o) => o.label_principal}
+                renderOption={(o) => (
+                  <div className="flex flex-col gap-0.5 py-0.5">
+                    <span className="font-medium text-sm">{o.label_principal}</span>
+                    <span className="text-xs text-muted-foreground flex flex-wrap items-center gap-1">
+                      {o.label_secundario}
+                      {o.ambiente_badge ? (
+                        <span
+                          className={
+                            o.ambiente_badge === 'Produção'
+                              ? 'erp-badge-success text-[10px]'
+                              : 'erp-badge-warning text-[10px]'
+                          }
+                        >
+                          {o.ambiente_badge}
+                        </span>
+                      ) : null}
+                    </span>
+                  </div>
+                )}
+                onChange={selecionarNfeOperacional}
+              />
+              {nfeOpcaoSelecionada && !nfeOpcaoSelecionada.elegivel ? (
+                <p className="text-xs text-amber-800 dark:text-amber-300 mt-1">
+                  Esta NF-e vinculada não está elegível pelas regras atuais (ex.: rascunho, cancelada ou sem
+                  autorização fiscal). O registro legado é preservado; selecione uma NF-e autorizada para
+                  alterar o vínculo.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Somente NF-e de saída autorizadas (produção ou homologação) com número e série fiscais.
+                </p>
+              )}
             </div>
             <div>
               <label className="erp-label">NF-e saída histórica</label>
-              <select className="erp-select mt-1 w-full" value={form.nota_fiscal_historica || ''} onChange={(e) => { setF('nota_fiscal_historica', e.target.value ? +e.target.value : null); setF('nota_fiscal', null); }}>
+              <select
+                className="erp-select mt-1 w-full"
+                value={form.nota_fiscal_historica || ''}
+                onChange={(e) => {
+                  const histId = e.target.value ? +e.target.value : null;
+                  setNfeOpcaoSelecionada(null);
+                  setF('nota_fiscal_historica', histId);
+                  setF('nota_fiscal', null);
+                }}
+              >
                 <option value="">Selecione...</option>
-                {nfHistoricas.map((n) => <option key={n.id} value={n.id}>{n.numero}/{n.serie} - {n.cliente_nome} - {n.dh_emissao.slice(0, 10)}</option>)}
+                {nfHistoricas.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.numero}/{n.serie} - {n.cliente_nome} - {n.dh_emissao.slice(0, 10)}
+                  </option>
+                ))}
               </select>
             </div>
-            <div className="flex items-end">
-              <button type="button" className="erp-btn-outline w-full" onClick={() => void carregarPorNFe()}>
+            <div className="flex items-end md:col-span-3">
+              <button type="button" className="erp-btn-outline w-full md:w-auto" onClick={() => void carregarPorNFe()}>
                 Carregar itens da NF-e
               </button>
             </div>

@@ -114,7 +114,7 @@ class CertificadoQualidadePermissions(BasePermission):
             return u.has_perm('qualidade.view_certificadoqualidade') or u.has_perm(
                 'qualidade.change_certificadoqualidade'
             )
-        if action in ('corridas_disponiveis', 'preencher_por_nfe'):
+        if action in ('corridas_disponiveis', 'preencher_por_nfe', 'nfes_elegiveis'):
             return u.has_perm('qualidade.change_certificadoqualidade')
         return False
 
@@ -430,8 +430,48 @@ class CertificadoQualidadeViewSet(AutocompleteOrPaginationMixin, viewsets.ModelV
     def _status_vinculo_item(produto_id: int | None) -> str:
         return 'VINCULADO' if produto_id else 'NAO_VINCULADO'
 
+    @action(detail=False, methods=['get'], url_path='nfes-elegiveis')
+    def nfes_elegiveis(self, request):
+        """Busca paginada de NF-e Saída autorizadas elegíveis para CQ (sem XML)."""
+        from apps.qualidade.nfe_elegivel_cq import (
+            buscar_nfes_elegiveis_cq,
+            nfe_elegivel_para_certificado_qualidade,
+            serializar_nfe_opcao_cq,
+        )
+
+        search = (request.query_params.get('search') or '').strip()
+        try:
+            limit = int(request.query_params.get('limit') or 20)
+        except (TypeError, ValueError):
+            limit = 20
+        resultados = buscar_nfes_elegiveis_cq(search=search, limit=limit)
+
+        incluir_id = (request.query_params.get('incluir_id') or '').strip()
+        if incluir_id.isdigit():
+            pk = int(incluir_id)
+            if not any(r['id'] == pk for r in resultados):
+                try:
+                    nf = NFeSaida.objects.select_related('cliente').get(pk=pk)
+                    resultados.insert(
+                        0,
+                        serializar_nfe_opcao_cq(
+                            nf,
+                            elegivel=nfe_elegivel_para_certificado_qualidade(nf),
+                        ),
+                    )
+                except NFeSaida.DoesNotExist:
+                    pass
+
+        return Response(resultados)
+
     @action(detail=False, methods=['post'], url_path='preencher-por-nfe')
     def preencher_por_nfe(self, request):
+        from apps.qualidade.nfe_elegivel_cq import (
+            MSG_NFE_INELEGIVEL_CQ,
+            nfe_elegivel_para_certificado_qualidade,
+            numero_fiscal_snapshot_cq,
+        )
+
         nf_saida_id = request.data.get('nf_saida_id')
         nf_saida_historica_id = request.data.get('nf_saida_historica_id')
         if not nf_saida_id and not nf_saida_historica_id:
@@ -445,6 +485,8 @@ class CertificadoQualidadeViewSet(AutocompleteOrPaginationMixin, viewsets.ModelV
                 nf = NFeSaida.objects.select_related('cliente', 'pedido_venda').prefetch_related('itens__produto').get(pk=nf_saida_id)
             except NFeSaida.DoesNotExist:
                 return Response({'detail': 'NF-e de saída não encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+            if not nfe_elegivel_para_certificado_qualidade(nf):
+                return Response({'detail': MSG_NFE_INELEGIVEL_CQ}, status=status.HTTP_400_BAD_REQUEST)
             itens = [
                 {
                     'ordem': idx + 1,
@@ -490,7 +532,7 @@ class CertificadoQualidadeViewSet(AutocompleteOrPaginationMixin, viewsets.ModelV
                 'cliente_nome_snapshot': nf.cliente.razao_social,
                 'cliente_cnpj_snapshot': nf.cliente.cnpj,
                 'pedido_cliente': (str(nf.pedido_venda_id) if nf.pedido_venda_id else ''),
-                'nota_fiscal_numero': nf.numero,
+                'nota_fiscal_numero': numero_fiscal_snapshot_cq(nf),
                 'nota_fiscal': nf.id,
                 'data_emissao': nf.data.isoformat(),
                 'itens': itens,
