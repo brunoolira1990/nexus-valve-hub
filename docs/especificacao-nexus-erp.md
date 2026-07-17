@@ -511,7 +511,7 @@ RASCUNHO → conferência (abas) → prontidão → XML prévia/oficial
 | Origem | Geração |
 |--------|---------|
 | Manual | CR/CP, despesa, tributo |
-| NF-e saída autorizada | Wizard manual `gerar-contas-receber` |
+| NF-e saída autorizada | Produção: automático pós-autorização SEFAZ; wizard manual como recuperação |
 | NF-e entrada conferida | Wizard manual `gerar-contas-pagar` |
 | Crédito | Pagamento a maior, devolução, outros |
 
@@ -744,7 +744,7 @@ Pacote `frontend/src/components/nexus/`:
 
 | Comportamento | Situação |
 |---------------|----------|
-| Gerar CR ao autorizar NF-e saída | Manual — wizard 4.0.14.3 |
+| Gerar CR ao autorizar NF-e saída | **Produção:** automático após autorização SEFAZ; homologação não gera; manual como recuperação (4.0.14.3) |
 | Gerar CP ao conferir NF-e entrada | Manual — wizard 4.0.14.4 |
 | Baixar estoque ao emitir NF-e saída | Não — aplicação física na conferência entrada |
 | Bloquear NF-e saída sem entrada | Não — modelo operacional flexível |

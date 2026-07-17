@@ -2,19 +2,22 @@
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import { toast } from 'sonner';
 import { NFeSaidaEmissaoProducaoPanel } from '@/components/fiscal/NFeSaidaEmissaoProducaoPanel';
 import { nfeSaidasService } from '@/services/api/fiscal';
 import {
   avisoProducaoDesabilitada,
   botaoEmitirProducaoHabilitado,
   confirmacaoProducaoValida,
+  feedbackFinanceiroPosAutorizacaoProducao,
   montarPayloadEmitirProducao,
   podeExibirBotaoEmitirProducao,
   TEXTO_CONFIRMACAO_PRODUCAO,
 } from '@/lib/nfeSaidaEmissaoProducao';
 
 vi.mock('sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), message: vi.fn() },
 }));
 
 vi.mock('@/services/api/fiscal', () => ({
@@ -102,6 +105,28 @@ describe('nfeSaidaProducaoUi4015 helpers', () => {
   });
 });
 
+function renderPanel(ui: React.ReactElement) {
+  return render(<MemoryRouter>{ui}</MemoryRouter>);
+}
+
+describe('feedbackFinanceiroPosAutorizacaoProducao', () => {
+  it('sucesso gerado', () => {
+    expect(
+      feedbackFinanceiroPosAutorizacaoProducao({ tentado: true, gerado: true, mensagem: 'Contas a receber gerado.' }),
+    ).toEqual({ tipo: 'gerado', texto: 'Contas a receber gerado.' });
+  });
+
+  it('já existente', () => {
+    expect(feedbackFinanceiroPosAutorizacaoProducao({ tentado: true, ja_existente: true }).tipo).toBe('ja_existente');
+  });
+
+  it('erro com regularização', () => {
+    const r = feedbackFinanceiroPosAutorizacaoProducao({ tentado: true, erro: true });
+    expect(r.tipo).toBe('erro');
+    expect(r.texto).toMatch(/Gerar contas a receber/);
+  });
+});
+
 describe('NFeSaidaEmissaoProducaoPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -114,7 +139,7 @@ describe('NFeSaidaEmissaoProducaoPanel', () => {
   });
 
   it('exibe aviso quando produção desabilitada', () => {
-    render(
+    renderPanel(
       <NFeSaidaEmissaoProducaoPanel
         nfeId={1}
         emissaoProducao={{ habilitada: false }}
@@ -127,7 +152,7 @@ describe('NFeSaidaEmissaoProducaoPanel', () => {
   });
 
   it('não exibe botão ativo sem permissão de usuário', () => {
-    render(
+    renderPanel(
       <NFeSaidaEmissaoProducaoPanel
         nfeId={1}
         emissaoProducao={{ ...emissaoPronta, habilitada: true }}
@@ -140,7 +165,7 @@ describe('NFeSaidaEmissaoProducaoPanel', () => {
   });
 
   it('badge produção distinto e botão vermelho quando permitido', async () => {
-    render(
+    renderPanel(
       <NFeSaidaEmissaoProducaoPanel
         nfeId={7}
         emissaoProducao={emissaoPronta}
@@ -158,7 +183,7 @@ describe('NFeSaidaEmissaoProducaoPanel', () => {
   });
 
   it('modal exige checkbox e texto antes de confirmar', async () => {
-    render(
+    renderPanel(
       <NFeSaidaEmissaoProducaoPanel
         nfeId={7}
         emissaoProducao={emissaoPronta}
@@ -183,7 +208,7 @@ describe('NFeSaidaEmissaoProducaoPanel', () => {
       pendencias: [{ mensagem: 'Certificado inválido' }],
       alertas: [],
     });
-    render(
+    renderPanel(
       <NFeSaidaEmissaoProducaoPanel
         nfeId={8}
         emissaoProducao={emissaoPronta}
@@ -197,7 +222,7 @@ describe('NFeSaidaEmissaoProducaoPanel', () => {
     expect(screen.getByTestId('nfe-producao-btn-emitir')).toBeDisabled();
   });
 
-  it('envia payload correto e exibe autorização', async () => {
+  it('sucesso fiscal + financeiro', async () => {
     const onDone = vi.fn();
     vi.mocked(nfeSaidasService.emitirProducao).mockResolvedValue({
       ok: true,
@@ -206,8 +231,14 @@ describe('NFeSaidaEmissaoProducaoPanel', () => {
       xmotivo: 'Autorizado',
       protocolo: '999',
       nfe: { cstat: '100', xmotivo: 'Autorizado', protocolo: '999' },
+      financeiro: {
+        tentado: true,
+        gerado: true,
+        mensagem: 'Contas a receber gerado.',
+        titulo_id: 55,
+      },
     });
-    render(
+    renderPanel(
       <NFeSaidaEmissaoProducaoPanel
         nfeId={9}
         emissaoProducao={emissaoPronta}
@@ -225,6 +256,79 @@ describe('NFeSaidaEmissaoProducaoPanel', () => {
       expect(nfeSaidasService.emitirProducao).toHaveBeenCalledWith(9, montarPayloadEmitirProducao());
     });
     await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(/Contas a receber gerado/i));
+  });
+
+  it('CR já existente mostra feedback Ver contas a receber', async () => {
+    vi.mocked(nfeSaidasService.emitirProducao).mockResolvedValue({
+      ok: true,
+      autorizado: true,
+      cstat: '100',
+      xmotivo: 'Autorizado',
+      protocolo: '999',
+      nfe: { cstat: '100', xmotivo: 'Autorizado', protocolo: '999' },
+      financeiro: {
+        tentado: true,
+        ja_existente: true,
+        mensagem: 'Contas a receber já gerado.',
+        titulo_id: 77,
+        financeiro_gerado: true,
+      },
+    });
+    renderPanel(
+      <NFeSaidaEmissaoProducaoPanel
+        nfeId={12}
+        emissaoProducao={emissaoPronta}
+        permissoes={permHabilitadaAdmin}
+        onEmissaoConcluida={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('nfe-producao-btn-emitir'));
+    fireEvent.click(await screen.findByTestId('nfe-producao-checkbox'));
+    fireEvent.change(await screen.findByTestId('nfe-producao-texto-confirmacao'), {
+      target: { value: TEXTO_CONFIRMACAO_PRODUCAO },
+    });
+    fireEvent.click(screen.getByTestId('nfe-producao-confirmar'));
+    await waitFor(() => expect(toast.message).toHaveBeenCalled());
+    expect(feedbackFinanceiroPosAutorizacaoProducao({ tentado: true, ja_existente: true }).tipo).toBe(
+      'ja_existente',
+    );
+  });
+
+  it('falha automática mostra aviso e mantém regularização', async () => {
+    const onAbrir = vi.fn();
+    vi.mocked(nfeSaidasService.emitirProducao).mockResolvedValue({
+      ok: true,
+      autorizado: true,
+      cstat: '100',
+      xmotivo: 'Autorizado',
+      protocolo: '999',
+      nfe: { cstat: '100', xmotivo: 'Autorizado', protocolo: '999' },
+      financeiro: {
+        tentado: true,
+        erro: true,
+        mensagem:
+          'NF-e autorizada, mas não foi possível gerar o Contas a Receber. Use a ação Gerar contas a receber para regularizar.',
+      },
+    });
+    renderPanel(
+      <NFeSaidaEmissaoProducaoPanel
+        nfeId={13}
+        emissaoProducao={emissaoPronta}
+        permissoes={permHabilitadaAdmin}
+        onEmissaoConcluida={vi.fn()}
+        onAbrirGerarContasReceber={onAbrir}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('nfe-producao-btn-emitir'));
+    fireEvent.click(await screen.findByTestId('nfe-producao-checkbox'));
+    fireEvent.change(await screen.findByTestId('nfe-producao-texto-confirmacao'), {
+      target: { value: TEXTO_CONFIRMACAO_PRODUCAO },
+    });
+    fireEvent.click(screen.getByTestId('nfe-producao-confirmar'));
+    await waitFor(() => {
+      expect(toast.warning).toHaveBeenCalledWith(expect.stringMatching(/Gerar contas a receber/i));
+    });
   });
 
   it('exibe rejeição com xMotivo sem marcar autorizada', async () => {
@@ -235,7 +339,7 @@ describe('NFeSaidaEmissaoProducaoPanel', () => {
       xmotivo: 'Rejeição teste',
       nfe: { cstat: '539', xmotivo: 'Rejeição teste' },
     });
-    render(
+    renderPanel(
       <NFeSaidaEmissaoProducaoPanel
         nfeId={10}
         emissaoProducao={emissaoPronta}
@@ -259,7 +363,7 @@ describe('NFeSaidaEmissaoProducaoPanel', () => {
     vi.mocked(nfeSaidasService.emitirProducao).mockRejectedValue({
       response: { data: { mensagem: 'Erro técnico na transmissão.' } },
     });
-    render(
+    renderPanel(
       <NFeSaidaEmissaoProducaoPanel
         nfeId={11}
         emissaoProducao={emissaoPronta}

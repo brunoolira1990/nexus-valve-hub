@@ -1584,6 +1584,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                   conf.emissao_producao?.status_conferencia
                 }
                 marcadaProntaEm={prontidao.marcada_pronta_em}
+                onAbrirGerarContasReceber={() => setGerarCrOpen(true)}
                 onEmissaoConcluida={async () => {
                   await load();
                   setHistoricoRefreshKey((k) => k + 1);

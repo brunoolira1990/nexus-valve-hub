@@ -26,6 +26,27 @@ from apps.fiscal.tests.test_nfe_saida_402_emissao_homologacao import _pedido_nf
 
 
 def _autorizar_nf(nf: NFeSaida) -> NFeSaida:
+    """Autoriza em produção — único ambiente elegível a Contas a Receber."""
+    nf.status_emissao_sefaz = NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO
+    nf.status = 'AUTORIZADA_PRODUCAO'
+    nf.ambiente_emissao = NFeSaida.AmbienteEmissao.PRODUCAO
+    nf.serie_nfe = '1'
+    nf.numero_nfe = '000000003'
+    nf.cstat_autorizacao = '100'
+    nf.motivo_autorizacao = 'Autorizado o uso da NF-e'
+    nf.protocolo_autorizacao = '13526005517408'
+    nf.chave_acesso = '35260503999102000150550010000000003123456789'
+    nf.xml_autorizado = '<?xml version="1.0"?><nfeProc><NFe/></nfeProc>'
+    nf.save()
+    if nf.faturamento_pedido_venda_id:
+        fat = FaturamentoPedidoVenda.objects.get(pk=nf.faturamento_pedido_venda_id)
+        if not (fat.numero_faturamento or '').strip():
+            fat.numero_faturamento = 'FAT-20260523-0003'
+            fat.save(update_fields=['numero_faturamento'])
+    return nf
+
+
+def _autorizar_nf_homologacao(nf: NFeSaida) -> NFeSaida:
     nf.status_emissao_sefaz = NFeSaida.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO
     nf.status = 'AUTORIZADA_HOMOLOGACAO'
     nf.ambiente_emissao = NFeSaida.AmbienteEmissao.HOMOLOGACAO
@@ -34,14 +55,9 @@ def _autorizar_nf(nf: NFeSaida) -> NFeSaida:
     nf.cstat_autorizacao = '100'
     nf.motivo_autorizacao = 'Autorizado o uso da NF-e'
     nf.protocolo_autorizacao = '13526005517408'
-    nf.chave_acesso = '3526050399910200015055000000000312345678901'
+    nf.chave_acesso = '35260503999102000150550000000000312345678901'
     nf.xml_autorizado = '<?xml version="1.0"?><nfeProc><NFe/></nfeProc>'
     nf.save()
-    if nf.faturamento_pedido_venda_id:
-        fat = FaturamentoPedidoVenda.objects.get(pk=nf.faturamento_pedido_venda_id)
-        if not (fat.numero_faturamento or '').strip():
-            fat.numero_faturamento = 'FAT-20260523-0003'
-            fat.save(update_fields=['numero_faturamento'])
     return nf
 
 
@@ -191,7 +207,19 @@ class NFe40143GerarContasReceberTests(TestCase):
         self.assertEqual(self.nf.xml_autorizado, xml_antes)
         self.assertEqual(self.nf.titulos_receber, dup_antes)
 
-    def test_autorizacao_nao_gera_financeiro_automatico(self):
+    def test_homologacao_nao_permite_financeiro(self):
+        from apps.fiscal.nfe_saida_financeiro import MSG_HOMOLOG_SEM_FINANCEIRO
+
+        nf = _autorizar_nf_homologacao(self.nf)
+        flags = montar_flags_financeiro_nfe(nf)
+        self.assertFalse(flags['pode_gerar_contas_receber'])
+        self.assertIn(MSG_HOMOLOG_SEM_FINANCEIRO, flags['motivo_bloqueio_financeiro'])
+        with self.assertRaises(ValueError) as ctx:
+            preview_contas_receber_de_nfe(nf)
+        self.assertIn(MSG_HOMOLOG_SEM_FINANCEIRO, str(ctx.exception))
+
+    def test_autorizacao_persistida_sem_disparo_manual_ainda_sem_titulo(self):
+        """Persistir status autorizado sozinho (sem passar pelo emitir_nfe_producao) não cria CR."""
         antes = TituloFinanceiro.objects.filter(
             origem_tipo=TituloFinanceiro.OrigemTipo.NFE_SAIDA,
             origem_id=self.nf.pk,
@@ -199,6 +227,7 @@ class NFe40143GerarContasReceberTests(TestCase):
         self.assertEqual(antes, 0)
         flags = montar_flags_financeiro_nfe(self.nf)
         self.assertFalse(flags['financeiro_gerado'])
+        self.assertTrue(flags['pode_gerar_contas_receber'])
 
     def test_multi_parcelas_duplicatas(self):
         pedido, item = _pedido_multi_parcelas()

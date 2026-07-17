@@ -356,7 +356,6 @@ class NFe4015ProducaoSefazTests(NFe4015GruposMixin, TestCase):
             xml_autorizado=XML_AUTORIZADO_MOCK_PROD,
         )
         antes_estoque = AtendimentoEstoque.objects.count()
-        antes_fin = TituloFinanceiro.objects.count()
         self.assertFalse((self.nf.xml_autorizado or '').strip())
         res = emitir_nfe_producao(
             self.nf,
@@ -370,7 +369,15 @@ class NFe4015ProducaoSefazTests(NFe4015GruposMixin, TestCase):
         self.assertEqual(self.nf.protocolo_autorizacao, '135260000000099')
         self.assertTrue((self.nf.xml_autorizado or '').strip())
         self.assertEqual(AtendimentoEstoque.objects.count(), antes_estoque)
-        self.assertEqual(TituloFinanceiro.objects.count(), antes_fin)
+        self.assertEqual(
+            TituloFinanceiro.objects.filter(
+                origem_tipo=TituloFinanceiro.OrigemTipo.NFE_SAIDA,
+                origem_id=self.nf.pk,
+            ).count(),
+            1,
+        )
+        self.assertIn('financeiro', res)
+        self.assertTrue(res['financeiro'].get('gerado') or res['financeiro'].get('ja_existente'))
         mock_tx.assert_called_once()
         self.assertEqual(mock_tx.call_args[0][0].ambiente_emissao, 'producao')
 
@@ -387,7 +394,7 @@ class NFe4015ProducaoSefazTests(NFe4015GruposMixin, TestCase):
         self.nf.serie_nfe = '1'
         self.nf.numero_nfe = '000000361'
         self.nf.protocolo_autorizacao = '135260000000099'
-        self.nf.chave_acesso = '352605123456780001995500100000000361000000361'
+        self.nf.chave_acesso = '35260512345678000199550010000000036100000036'
         self.nf.xml_autorizado = XML_AUTORIZADO_MOCK_PROD
         self.nf.save()
         with self.assertRaises(DanfeBfrRenderError) as ctx_preview:

@@ -1,7 +1,8 @@
-"""ERP 4.0.14.3 — Geração manual de Contas a Receber a partir de NF-e autorizada."""
+"""ERP 4.0.14.3 — Contas a Receber a partir de NF-e (manual + automático pós-produção)."""
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
@@ -20,7 +21,10 @@ from apps.fiscal.nfe_saida_bloqueio import (
 )
 from apps.fiscal.nfe_saida_duplicatas import gerar_duplicatas_nfe_saida
 
+logger = logging.getLogger(__name__)
+
 CENTAVO = Decimal('0.01')
+CSTAT_AUTORIZADO = frozenset({'100', '150'})
 
 MSG_NAO_AUTORIZADA = 'Esta NF-e ainda não está autorizada.'
 MSG_CANCELADA = 'Esta NF-e está cancelada e não pode gerar contas a receber.'
@@ -34,6 +38,12 @@ MSG_VALOR_ZERO = 'O valor do título deve ser maior que zero.'
 MSG_PARCELA_VENCIMENTO = 'Informe o vencimento de todas as parcelas.'
 MSG_SOMA_PARCELAS = 'A soma das parcelas não confere com o valor total.'
 MSG_ALERTA_NFE_CANCELADA = 'A NF-e de origem foi cancelada. Revise este título financeiro.'
+MSG_CR_GERADO = 'Contas a receber gerado.'
+MSG_CR_JA_EXISTENTE = 'Contas a receber já gerado.'
+MSG_AUTO_FALHA_CR = (
+    'NF-e autorizada, mas não foi possível gerar o Contas a Receber. '
+    'Use a ação Gerar contas a receber para regularizar.'
+)
 
 
 def _round_money(value: Decimal | str | float | int) -> Decimal:
@@ -326,6 +336,163 @@ def montar_origem_nfe_detalhe(titulo: TituloFinanceiro) -> dict[str, Any] | None
     }
 
 
+def nf_comprovadamente_autorizada_producao_para_cr(nf: NFeSaida) -> bool:
+    """Critérios estritos para disparo automático de CR após autorização SEFAZ produção."""
+    if nf_cancelada(nf):
+        return False
+    if nf_autorizada_homologacao(nf):
+        return False
+    if not nf_autorizada_producao(nf):
+        return False
+    if (nf.ambiente_emissao or '').strip() != NFeSaida.AmbienteEmissao.PRODUCAO:
+        return False
+    if (nf.cstat_autorizacao or '').strip() not in CSTAT_AUTORIZADO:
+        return False
+    if not (nf.protocolo_autorizacao or '').strip():
+        return False
+    if not (nf.numero_nfe or nf.numero or '').strip():
+        return False
+    if not (nf.serie_nfe or '').strip():
+        return False
+    if not (nf.xml_autorizado or '').strip():
+        return False
+    return True
+
+
+def _payload_financeiro_auto(
+    *,
+    tentado: bool,
+    gerado: bool = False,
+    ja_existente: bool = False,
+    erro: bool = False,
+    mensagem: str = '',
+    titulo: TituloFinanceiro | None = None,
+    nf: NFeSaida | None = None,
+) -> dict[str, Any]:
+    flags = montar_flags_financeiro_nfe(nf) if nf is not None else {
+        'financeiro_gerado': bool(titulo) or ja_existente,
+        'pode_gerar_contas_receber': False,
+        'motivo_bloqueio_financeiro': '',
+        'contas_receber_vinculadas': [],
+        'nfe_cancelada_com_financeiro': False,
+    }
+    return {
+        'tentado': tentado,
+        'gerado': gerado,
+        'ja_existente': ja_existente,
+        'erro': erro,
+        'mensagem': mensagem,
+        'titulo_id': titulo.pk if titulo else (flags['contas_receber_vinculadas'][0]['id'] if flags.get('contas_receber_vinculadas') else None),
+        'titulo_numero': (
+            titulo.numero
+            if titulo
+            else (flags['contas_receber_vinculadas'][0]['numero'] if flags.get('contas_receber_vinculadas') else '')
+        ),
+        'financeiro_gerado': flags['financeiro_gerado'],
+        'pode_gerar_contas_receber': flags['pode_gerar_contas_receber'],
+        'motivo_bloqueio_financeiro': flags.get('motivo_bloqueio_financeiro') or '',
+        'contas_receber_vinculadas': flags.get('contas_receber_vinculadas') or [],
+    }
+
+
+def gerar_contas_receber_automatico_apos_autorizacao_producao(
+    nf: NFeSaida,
+    *,
+    usuario=None,
+) -> dict[str, Any]:
+    """
+    Gera CR após autorização SEFAZ de produção persistida.
+
+    Soft-fail: nunca propaga exceção que desfaça a autorização fiscal.
+    Idempotente: reprocessamento retorna o título já existente.
+    """
+    try:
+        nf = NFeSaida.objects.select_related('cliente').get(pk=nf.pk)
+    except NFeSaida.DoesNotExist:
+        logger.warning('AUTO_CR_NFE nfe inexistente')
+        return _payload_financeiro_auto(
+            tentado=False,
+            erro=True,
+            mensagem=MSG_AUTO_FALHA_CR,
+        )
+
+    if not nf_comprovadamente_autorizada_producao_para_cr(nf):
+        return _payload_financeiro_auto(
+            tentado=False,
+            mensagem='NF-e não elegível para geração automática de Contas a Receber.',
+            nf=nf,
+        )
+
+    try:
+        with transaction.atomic():
+            nf = NFeSaida.objects.select_for_update().select_related('cliente').get(pk=nf.pk)
+            vinculados = list(titulos_vinculados_nfe(nf).select_for_update())
+            if vinculados:
+                titulo = vinculados[0]
+                return _payload_financeiro_auto(
+                    tentado=True,
+                    ja_existente=True,
+                    mensagem=MSG_CR_JA_EXISTENTE,
+                    titulo=titulo,
+                    nf=nf,
+                )
+
+            parcelas = montar_parcelas_sugeridas_nfe(nf)
+            if not parcelas:
+                logger.warning('AUTO_CR_NFE sem parcelas válidas nfe_id=%s', nf.pk)
+                return _payload_financeiro_auto(
+                    tentado=True,
+                    erro=True,
+                    mensagem=MSG_AUTO_FALHA_CR,
+                    nf=nf,
+                )
+
+            titulo = gerar_contas_receber_de_nfe_autorizada(
+                nf,
+                parcelas=parcelas,
+                categoria_id=sugerir_categoria_receita_id(),
+                usuario=usuario,
+            )
+            return _payload_financeiro_auto(
+                tentado=True,
+                gerado=True,
+                mensagem=MSG_CR_GERADO,
+                titulo=titulo,
+                nf=nf,
+            )
+    except ValueError as exc:
+        msg = str(exc)
+        if MSG_JA_GERADO in msg or MSG_TITULO_CANCELADO in msg:
+            flags = montar_flags_financeiro_nfe(nf)
+            titulo = None
+            if flags['contas_receber_vinculadas']:
+                titulo = TituloFinanceiro.objects.filter(
+                    pk=flags['contas_receber_vinculadas'][0]['id'],
+                ).first()
+            return _payload_financeiro_auto(
+                tentado=True,
+                ja_existente=True,
+                mensagem=MSG_CR_JA_EXISTENTE,
+                titulo=titulo,
+                nf=nf,
+            )
+        logger.warning('AUTO_CR_NFE falha operacional nfe_id=%s detalhe=%s', nf.pk, msg[:200])
+        return _payload_financeiro_auto(
+            tentado=True,
+            erro=True,
+            mensagem=MSG_AUTO_FALHA_CR,
+            nf=nf,
+        )
+    except Exception:
+        logger.exception('AUTO_CR_NFE erro inesperado nfe_id=%s', nf.pk)
+        return _payload_financeiro_auto(
+            tentado=True,
+            erro=True,
+            mensagem=MSG_AUTO_FALHA_CR,
+            nf=nf,
+        )
+
+
 @transaction.atomic
 def gerar_contas_receber_de_nfe_autorizada(
     nf: NFeSaida,
@@ -338,6 +505,9 @@ def gerar_contas_receber_de_nfe_autorizada(
     observacoes: str = '',
     usuario=None,
 ) -> TituloFinanceiro:
+    nf = NFeSaida.objects.select_for_update().select_related('cliente').get(pk=nf.pk)
+    list(titulos_vinculados_nfe(nf).select_for_update())
+
     flags = montar_flags_financeiro_nfe(nf)
     if flags['financeiro_gerado']:
         if any(t['cancelado'] for t in flags['contas_receber_vinculadas']):
