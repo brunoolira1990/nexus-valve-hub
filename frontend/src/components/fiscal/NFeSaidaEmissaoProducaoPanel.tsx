@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Loader2, ShieldAlert } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { AlertTriangle, Loader2, ShieldAlert, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   AlertDialog,
@@ -19,10 +20,12 @@ import {
   botaoEmitirProducaoHabilitado,
   confirmacaoProducaoValida,
   exibirBlocoProducaoSefaz,
+  feedbackFinanceiroPosAutorizacaoProducao,
   mensagemEmissaoProducaoResposta,
   montarPayloadEmitirProducao,
   podeExibirBotaoEmitirProducao,
   TEXTO_CONFIRMACAO_PRODUCAO,
+  type FinanceiroPosAutorizacao,
   type NFeEmissaoProducaoConferencia,
   type NFeEmissaoProducaoPermissoes,
 } from '@/lib/nfeSaidaEmissaoProducao';
@@ -38,6 +41,7 @@ type Props = {
   statusConferencia?: string | null;
   marcadaProntaEm?: string | null;
   onEmissaoConcluida: () => void | Promise<void>;
+  onAbrirGerarContasReceber?: () => void;
 };
 
 export function NFeSaidaEmissaoProducaoPanel({
@@ -47,7 +51,9 @@ export function NFeSaidaEmissaoProducaoPanel({
   statusConferencia,
   marcadaProntaEm,
   onEmissaoConcluida,
+  onAbrirGerarContasReceber,
 }: Props) {
+  const navigate = useNavigate();
   const [modalOpen, setModalOpen] = useState(false);
   const [checkboxOk, setCheckboxOk] = useState(false);
   const [textoConfirmacao, setTextoConfirmacao] = useState('');
@@ -63,6 +69,7 @@ export function NFeSaidaEmissaoProducaoPanel({
   const [resultadoTipo, setResultadoTipo] = useState<'sucesso' | 'rejeicao' | 'tecnico' | 'lote_sem_prot' | null>(
     null,
   );
+  const [financeiroPosAuth, setFinanceiroPosAuth] = useState<FinanceiroPosAutorizacao | null>(null);
 
   const autorizada = Boolean(emissaoProducao?.autorizada_producao);
 
@@ -117,6 +124,8 @@ export function NFeSaidaEmissaoProducaoPanel({
     return { pendencias, alertas, pronta };
   }, [checklistApi, emissaoProducao, statusConferencia]);
 
+  const feedbackFin = feedbackFinanceiroPosAutorizacaoProducao(financeiroPosAuth);
+
   if (!exibirBlocoProducaoSefaz(emissaoProducao, permissoes)) {
     return (
       <div
@@ -143,11 +152,20 @@ export function NFeSaidaEmissaoProducaoPanel({
     resetModal();
   };
 
+  const verContasReceber = (tituloId?: number | null) => {
+    if (tituloId) {
+      navigate(`/financeiro/contas-receber?titulo=${tituloId}`);
+      return;
+    }
+    navigate('/financeiro/contas-receber');
+  };
+
   const executarEmissao = async () => {
     if (!confirmacaoOk || loading) return;
     setLoading(true);
     setResultadoMsg(null);
     setResultadoTipo(null);
+    setFinanceiroPosAuth(null);
     setXsdErros([]);
     try {
       const res: NFeEmissaoProducaoResponse = await nfeSaidasService.emitirProducao(
@@ -158,8 +176,18 @@ export function NFeSaidaEmissaoProducaoPanel({
       const parsed = mensagemEmissaoProducaoResposta(res);
       setResultadoTipo(parsed.tipo);
       setResultadoMsg(parsed.texto);
+      const fin = res.financeiro ?? null;
+      setFinanceiroPosAuth(fin);
+      const finFeedback = feedbackFinanceiroPosAutorizacaoProducao(fin);
       if (parsed.tipo === 'sucesso') {
         toast.success(`NF-e autorizada em produção — ${parsed.texto}`);
+        if (finFeedback.tipo === 'gerado') {
+          toast.success(finFeedback.texto);
+        } else if (finFeedback.tipo === 'ja_existente') {
+          toast.message(finFeedback.texto);
+        } else if (finFeedback.tipo === 'erro') {
+          toast.warning(finFeedback.texto);
+        }
       } else if (parsed.tipo === 'rejeicao') {
         toast.error(`SEFAZ produção — ${parsed.texto}`);
       } else if (parsed.tipo === 'lote_sem_prot') {
@@ -211,6 +239,34 @@ export function NFeSaidaEmissaoProducaoPanel({
           ) : null}
           {emissaoProducao?.chave_acesso ? (
             <p className="font-mono text-xs break-all">Chave: {emissaoProducao.chave_acesso}</p>
+          ) : null}
+          {feedbackFin.tipo === 'gerado' || feedbackFin.tipo === 'ja_existente' ? (
+            <div className="pt-2 space-y-2" data-testid="nfe-producao-financeiro-ok">
+              <p className="text-emerald-700 dark:text-emerald-400">{feedbackFin.texto}</p>
+              <button
+                type="button"
+                className="erp-btn-outline erp-btn-sm inline-flex"
+                onClick={() => verContasReceber(financeiroPosAuth?.titulo_id)}
+              >
+                <Wallet className="h-3 w-3 mr-1" />
+                Ver contas a receber
+              </button>
+            </div>
+          ) : null}
+          {feedbackFin.tipo === 'erro' ? (
+            <div className="pt-2 space-y-2" data-testid="nfe-producao-financeiro-aviso">
+              <p className="text-amber-800 dark:text-amber-200">{feedbackFin.texto}</p>
+              {onAbrirGerarContasReceber ? (
+                <button
+                  type="button"
+                  className="erp-btn-outline erp-btn-sm inline-flex"
+                  onClick={onAbrirGerarContasReceber}
+                >
+                  <Wallet className="h-3 w-3 mr-1" />
+                  Gerar contas a receber
+                </button>
+              ) : null}
+            </div>
           ) : null}
           {emissaoProducao?.tem_xml_autorizado ? (
             <button

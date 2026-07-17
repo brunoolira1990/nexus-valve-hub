@@ -403,15 +403,17 @@ Testes: `financeiroUi401422.test.tsx`.
 
 | Padrão | Regra |
 |--------|-------|
-| Wizard | Título «Gerar contas a receber» — 4 etapas: origem, parcelas, classificação, confirmação |
+| Automático (produção) | Após autorização SEFAZ: toast «Contas a receber gerado»; se já existir → «Ver contas a receber»; se falhar → aviso + «Gerar contas a receber» |
+| Wizard | Título «Gerar contas a receber» — 4 etapas: origem, parcelas, classificação, confirmação (recuperação) |
 | Parcelas | Grade editável (vencimento, valor, observação); soma deve bater com total (tolerância R$ 0,05) |
-| Ação principal | «Gerar contas a receber» na NF-e autorizada; após gerar → «Ver contas a receber» |
+| Ação principal | «Gerar contas a receber» na NF-e autorizada em produção sem título; após gerar → «Ver contas a receber» |
+| Homologação | Sem geração financeira automática nem manual |
 | Bloqueio | NF-e não autorizada: botão desabilitado «Disponível após autorização da NF-e.» |
 | Duplicidade | Mensagem «Contas a receber já foram geradas para esta NF-e.» + link para vinculados |
 | Origem na listagem CR | «NF-e nº …» — sem expor content_type/object_id |
 | Grupo de ações | «Ações financeiras» no rodapé da NF-e (drawer e conferência) |
 
-Testes: `nfeSaida40143.test.tsx`.
+Testes: `nfeSaida40143.test.tsx`, `nfeSaidaProducaoUi4015.test.tsx`.
 
 ### Geração financeira a partir de NF-e Entrada (ERP 4.0.14.4)
 

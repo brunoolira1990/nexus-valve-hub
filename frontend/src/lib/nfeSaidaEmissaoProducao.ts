@@ -136,6 +136,44 @@ export function mensagemEmissaoProducaoResposta(res: {
   return { tipo: 'tecnico', texto: `${etapaTxt}${msgBase}${detalheXsd}`.trim() };
 }
 
+export type FinanceiroPosAutorizacao = {
+  tentado?: boolean;
+  gerado?: boolean;
+  ja_existente?: boolean;
+  erro?: boolean;
+  mensagem?: string;
+  titulo_id?: number | null;
+  titulo_numero?: string;
+  financeiro_gerado?: boolean;
+  pode_gerar_contas_receber?: boolean;
+};
+
+export function feedbackFinanceiroPosAutorizacaoProducao(
+  financeiro?: FinanceiroPosAutorizacao | null,
+): {
+  tipo: 'gerado' | 'ja_existente' | 'erro' | null;
+  texto: string;
+} {
+  if (!financeiro?.tentado && !financeiro?.gerado && !financeiro?.ja_existente && !financeiro?.erro) {
+    return { tipo: null, texto: '' };
+  }
+  if (financeiro.gerado) {
+    return { tipo: 'gerado', texto: financeiro.mensagem || 'Contas a receber gerado.' };
+  }
+  if (financeiro.ja_existente || financeiro.financeiro_gerado) {
+    return { tipo: 'ja_existente', texto: financeiro.mensagem || 'Contas a receber já gerado.' };
+  }
+  if (financeiro.erro) {
+    return {
+      tipo: 'erro',
+      texto:
+        financeiro.mensagem
+        || 'NF-e autorizada, mas não foi possível gerar o Contas a Receber. Use a ação Gerar contas a receber para regularizar.',
+    };
+  }
+  return { tipo: null, texto: '' };
+}
+
 export function avisoProducaoDesabilitada(
   permissoes?: NFeEmissaoProducaoPermissoes | null,
   emissao?: NFeEmissaoProducaoConferencia | null,

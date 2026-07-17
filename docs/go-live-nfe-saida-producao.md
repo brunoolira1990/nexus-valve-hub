@@ -452,7 +452,7 @@ Preencher **na UI de conferência** e com contador:
 
 | Resultado | Conduta | Não fazer |
 |-----------|---------|-----------|
-| **Autorizada** (cStat 100) | Salvar XML; validar DANFE; registrar protocolo/chave; contador valida apuração | Assumir estoque/financeiro automático no ERP (fora do escopo) |
+| **Autorizada** (cStat 100) | Salvar XML; validar DANFE; registrar protocolo/chave; gerar CR automático; contador valida apuração | Assumir baixar estoque/apuração automática no ERP (fora do escopo) |
 | **Rejeitada** (cStat ≠ 100) | Registrar xMotivo; **parar**; analisar com contador; corrigir causa; nova tentativa só após validação | Reenviar em loop sem entender o motivo |
 | **Erro técnico** (sem protocolo claro) | Verificar na SEFAZ/portal se NF foi autorizada **antes** de reenviar | Duplicar emissão sem checagem |
 | **Timeout / lote 104 sem protocolo** | Consultar status do lote/recibo na SEFAZ; aguardar orientação técnica | Nova transmissão imediata |

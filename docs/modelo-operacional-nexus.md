@@ -857,15 +857,19 @@ UI: *Nova despesa*, *Novo tributo a pagar*, *Nova conta a pagar*, *Parcelar*, *V
 - **Registros com movimento ativo** devem ser estornados antes da exclusão.
 - **Cancelamento** preserva histórico quando a exclusão não se aplica.
 
-## ERP 4.0.14.3 — Geração manual de Contas a Receber a partir de NF-e autorizada
+## ERP 4.0.14.3 — Contas a Receber a partir de NF-e autorizada
 
-- O financeiro **não é gerado automaticamente** ao autorizar NF-e ou faturar pedido.
-- O usuário aciona **Gerar contas a receber**, revisa parcelas sugeridas (duplicatas/fatura) e **confirma**.
-- Cada título gerado tem **origem rastreável** (`NFE_SAIDA`, número, chave, pedido/faturamento).
+- **Produção:** após autorização SEFAZ persistida (`AUTORIZADA_PRODUCAO` + protocolo + XML + número/série), o Nexus **gera Contas a Receber automaticamente**, reutilizando o serviço financeiro (parcelas/duplicatas, origem `NFE_SAIDA`, idempotência).
+- **Homologação:** **não** gera financeiro.
+- **Falha financeira** não desfaz a autorização fiscal — aviso operacional e ação manual **Gerar contas a receber** permanece para regularizar.
+- Wizard manual permanece como **recuperação** (preview, edição de parcelas, classificação) quando a geração automática falhar ou para NF-e já autorizadas sem título.
+- Cada título tem **origem rastreável** (`NFE_SAIDA`, número, chave, pedido/faturamento).
 - **Duplicatas fiscais** da NF-e viram **parcelas financeiras** operacionais — sem alterar XML/DANFE/duplicatas fiscais.
-- **Não duplicar**: mesma NF-e não gera segundo título; ação muda para **Ver contas a receber**.
-- Título com origem NF-e **não pode ser excluído** pelo Financeiro (baixa/estorno/cancelamento conforme regras).
+- **Não duplicar**: mesma NF-e não gera segundo título; reprocessamento retorna o existente; UI mostra **Ver contas a receber**.
+- Título com origem NF-e **não pode ser excluído** pelo Financeiro.
 - Se a NF-e for **cancelada depois**, o financeiro **permanece** — alerta operacional nos títulos vinculados.
+- **Não** gera CR ao faturar pedido, antes da autorização SEFAZ, nem em rascunho/rejeição/autorização interna.
+- **Não** cria baixa, boleto, Pix ou movimentação bancária automática.
 
 ## ERP 4.0.14.4 — Geração manual de Contas a Pagar a partir de NF-e Entrada
 

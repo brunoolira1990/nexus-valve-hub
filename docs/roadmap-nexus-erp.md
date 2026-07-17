@@ -1048,14 +1048,15 @@ Escopo operacional do Financeiro para remover cadastro de formas, padronizar lis
 - Drawers: histórico recolhido, ações agrupadas, títulos operacionais.
 - Testes: `financeiroUi401422.test.tsx`, `test_financeiro_exclusao_401422.py`.
 
-## ERP 4.0.14.3 — Gerar Contas a Receber a partir de NF-e autorizada (confirmação manual)
+## ERP 4.0.14.3 — Contas a Receber a partir de NF-e autorizada (auto produção + manual recuperação)
 
-- Ponte **manual** entre NF-e autorizada e Contas a Receber — **sem automação** ao autorizar NF-e ou faturar.
-- Wizard de preview com parcelas editáveis (duplicatas fiscais → parcelas financeiras).
-- Endpoints: `GET .../financeiro/preview-contas-receber/`, `POST .../gerar-contas-receber/`, `GET .../contas-receber/`.
-- Idempotência por `origem_tipo=NFE_SAIDA` + `origem_id`; título com origem **não excluível**.
+- **Produção:** NF-e autorizada SEFAZ gera CR **automaticamente** após persistir autorização (serviço `gerar_contas_receber_automatico_apos_autorizacao_producao`).
+- **Homologação:** sem financeiro.
+- Soft-fail: falha do CR **não** altera autorização fiscal; ação manual permanece.
+- Wizard manual (preview/parcelas) como **recuperação**; endpoints: `GET .../preview-contas-receber/`, `POST .../gerar-contas-receber/`, `GET .../contas-receber/`.
+- Idempotência por `origem_tipo=NFE_SAIDA` + `origem_id` + `select_for_update`; título com origem **não excluível**.
 - Cancelamento posterior da NF-e **não apaga** financeiro — alerta nos títulos vinculados.
-- Testes: `test_nfe_saida_40143_gerar_contas_receber.py`, `nfeSaida40143.test.tsx`.
+- Testes: `test_nfe_saida_40143_gerar_contas_receber.py`, `test_nfe_saida_auto_cr_4014.py`, `nfeSaida40143.test.tsx`, `nfeSaidaProducaoUi4015.test.tsx`.
 
 ## ERP 4.0.14.4 — Gerar Contas a Pagar a partir de NF-e Entrada (confirmação manual)
 

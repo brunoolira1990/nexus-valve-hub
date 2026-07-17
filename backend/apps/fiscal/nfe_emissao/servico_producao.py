@@ -313,21 +313,43 @@ def emitir_nfe_producao(
             xml_envio=nf.xml_envio_lote or nf.xml_assinado or '',
         )
 
+    # Autorização fiscal já commitada — falha financeira não pode desfazê-la.
     nf.refresh_from_db()
+    financeiro_auto = None
+    if resultado.autorizado:
+        from apps.fiscal.nfe_saida_financeiro import (
+            gerar_contas_receber_automatico_apos_autorizacao_producao,
+        )
+
+        financeiro_auto = gerar_contas_receber_automatico_apos_autorizacao_producao(
+            nf,
+            usuario=usuario,
+        )
+
     logger.info(
-        'Emissão produção concluída nfe_id=%s autorizado=%s cStat_nfe=%s serie=%s numero=%s',
+        'Emissão produção concluída nfe_id=%s autorizado=%s cStat_nfe=%s serie=%s numero=%s financeiro=%s',
         nf.pk,
         resultado.autorizado,
         nf.cstat_autorizacao,
         nf.serie_nfe,
         nf.numero_nfe,
+        (financeiro_auto or {}).get('mensagem', '')[:120],
     )
     ok = resultado.autorizado
+    extras: dict = {
+        'status': nf.status,
+        'sem_efeitos_erp': not bool(
+            financeiro_auto and (financeiro_auto.get('gerado') or financeiro_auto.get('ja_existente')),
+        ),
+        'mensagem_efeitos': MSG_SEM_EFEITOS_PRODUCAO,
+    }
+    if financeiro_auto is not None:
+        extras['financeiro'] = financeiro_auto
     return montar_resposta_emissao_producao(
         nf,
         ok=ok,
         autorizado=resultado.autorizado,
         mensagem=mensagem_resposta_resultado_producao(resultado),
         resultado=resultado,
-        extras={'status': nf.status, 'sem_efeitos_erp': True, 'mensagem_efeitos': MSG_SEM_EFEITOS_PRODUCAO},
+        extras=extras,
     )

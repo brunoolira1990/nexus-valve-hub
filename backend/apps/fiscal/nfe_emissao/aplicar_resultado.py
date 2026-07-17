@@ -173,7 +173,8 @@ def aplicar_resultado_sefaz_homologacao(
 
 
 MSG_SEM_EFEITOS_PRODUCAO = (
-    'NF-e autorizada em produção SEFAZ — sem efeitos automáticos de estoque/financeiro/apuração nesta fase.'
+    'NF-e autorizada em produção SEFAZ — Contas a Receber gerado automaticamente quando possível; '
+    'sem efeitos automáticos de estoque/apuração.'
 )
 
 
@@ -185,7 +186,7 @@ def aplicar_resultado_sefaz_producao(
     usuario=None,
     xml_envio: str = '',
 ) -> NFeSaida:
-    """Grava protocolo/cStat/XML autorizado produção — sem estoque/financeiro/apuração."""
+    """Grava protocolo/cStat/XML autorizado produção — sem estoque/apuração (CR é pós-persistência)."""
     nf.xml_envio = xml_envio or nf.xml_envio or nf.xml_assinado or ''
     if xml_envio and '<enviNFe' in xml_envio:
         nf.xml_envio_lote = xml_envio

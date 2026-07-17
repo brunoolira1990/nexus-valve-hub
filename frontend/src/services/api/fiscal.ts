@@ -717,6 +717,24 @@ export type NFeInutilizacaoResponse = {
 
 export type NFeEmissaoProducaoResponse = NFeEmissaoHomologacaoResponse & {
   ambiente?: 'producao';
+  financeiro?: {
+    tentado?: boolean;
+    gerado?: boolean;
+    ja_existente?: boolean;
+    erro?: boolean;
+    mensagem?: string;
+    titulo_id?: number | null;
+    titulo_numero?: string;
+    financeiro_gerado?: boolean;
+    pode_gerar_contas_receber?: boolean;
+    motivo_bloqueio_financeiro?: string;
+    contas_receber_vinculadas?: Array<{
+      id: number;
+      numero: string;
+      status?: string;
+      cancelado?: boolean;
+    }>;
+  };
 };
 
 export type NFeNumeracaoConfig = {

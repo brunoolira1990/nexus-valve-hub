@@ -47,7 +47,7 @@ O sistema está em **evolução incremental** por fases numeradas (ERP 4.0.x), c
 | **Diferencial industrial** | Rastreabilidade por corrida/lote, certificados de fornecedor (CF) e de qualidade (CQ) |
 | **Diferencial fiscal** | Separação entrada × saída; cenário fiscal de saída com homologação por proposta; emissão NF-e homologação e produção |
 | **Modelo operacional** | Venda sob demanda — estoque **não bloqueia** emissão de NF-e saída |
-| **Financeiro** | CR/CP manual; geração explícita a partir de NF-e (sem automação na autorização) |
+| **Financeiro** | CR automático após NF-e saída autorizada em produção; CP manual a partir de NF-e entrada; homologação sem financeiro |
 | **Pendências estratégicas** | CRM, remessas, contábil, kardex completo, deep links entre telas |
 
 ---
@@ -440,7 +440,7 @@ Documento: [`qualidade-certificados.md`](qualidade-certificados.md).
 | Origem | Geração |
 |--------|---------|
 | Manual | CR, CP, despesa, tributo |
-| NF-e saída autorizada | Wizard `gerar-contas-receber` (manual) |
+| NF-e saída autorizada | Produção: automático; wizard `gerar-contas-receber` como recuperação |
 | NF-e entrada conferida | Wizard `gerar-contas-pagar` (manual) |
 | Crédito | Pagamento a maior, devolução |
 

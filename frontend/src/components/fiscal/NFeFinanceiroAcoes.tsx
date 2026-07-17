@@ -58,25 +58,6 @@ export function NFeFinanceiroAcoes({
     navigate('/financeiro/contas-receber');
   };
 
-  if (autorizadaHomolog) {
-    return (
-      <div className={className}>
-        <button
-          type="button"
-          className="erp-btn-outline erp-btn-sm opacity-50 cursor-not-allowed"
-          disabled
-          title="Financeiro indisponível para NF-e de homologação."
-        >
-          <Wallet className="h-3 w-3 mr-1" />
-          Gerar contas a receber
-        </button>
-        <p className="text-xs text-muted-foreground mt-1">
-          {flags.motivo_bloqueio_financeiro || 'Financeiro indisponível para NF-e de homologação.'}
-        </p>
-      </div>
-    );
-  }
-
   if (flags.financeiro_gerado) {
     return (
       <div className={`space-y-2 ${className}`}>
@@ -92,6 +73,25 @@ export function NFeFinanceiroAcoes({
         </button>
         <p className="text-xs text-muted-foreground">
           {flags.motivo_bloqueio_financeiro || 'Contas a receber já foram geradas para esta NF-e.'}
+        </p>
+      </div>
+    );
+  }
+
+  if (autorizadaHomolog) {
+    return (
+      <div className={className}>
+        <button
+          type="button"
+          className="erp-btn-outline erp-btn-sm opacity-50 cursor-not-allowed"
+          disabled
+          title="Financeiro indisponível para NF-e de homologação."
+        >
+          <Wallet className="h-3 w-3 mr-1" />
+          Gerar contas a receber
+        </button>
+        <p className="text-xs text-muted-foreground mt-1">
+          {flags.motivo_bloqueio_financeiro || 'Financeiro indisponível para NF-e de homologação.'}
         </p>
       </div>
     );

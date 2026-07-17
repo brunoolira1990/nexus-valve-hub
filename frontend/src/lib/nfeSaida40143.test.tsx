@@ -10,19 +10,38 @@ export function somaParcelasValida(soma: number, total: number): boolean {
 }
 
 describe('NFeFinanceiroAcoes', () => {
-  it('mostra Gerar contas a receber quando autorizada e pode gerar', () => {
+  it('mostra Gerar contas a receber quando autorizada produção e pode gerar', () => {
     render(
       <MemoryRouter>
         <NFeFinanceiroAcoes
           nfeId={1}
-          status="AUTORIZADA_HOMOLOGACAO"
-          statusEmissaoSefaz="AUTORIZADA_HOMOLOGACAO"
+          status="AUTORIZADA_PRODUCAO"
+          statusEmissaoSefaz="AUTORIZADA_PRODUCAO"
           financeiro={{ pode_gerar_contas_receber: true, financeiro_gerado: false }}
           onGerar={() => undefined}
         />
       </MemoryRouter>,
     );
     expect(screen.getByRole('button', { name: /Gerar contas a receber/i })).toBeEnabled();
+  });
+
+  it('desabilita ação em homologação', () => {
+    render(
+      <MemoryRouter>
+        <NFeFinanceiroAcoes
+          nfeId={1}
+          status="AUTORIZADA_HOMOLOGACAO"
+          statusEmissaoSefaz="AUTORIZADA_HOMOLOGACAO"
+          financeiro={{
+            pode_gerar_contas_receber: false,
+            motivo_bloqueio_financeiro: 'Financeiro indisponível para NF-e de homologação.',
+          }}
+          onGerar={() => undefined}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('button', { name: /Gerar contas a receber/i })).toBeDisabled();
+    expect(screen.getByText(/homologação/i)).toBeInTheDocument();
   });
 
   it('desabilita ação quando NF-e não autorizada', () => {
@@ -45,7 +64,8 @@ describe('NFeFinanceiroAcoes', () => {
       <MemoryRouter>
         <NFeFinanceiroAcoes
           nfeId={1}
-          status="AUTORIZADA_HOMOLOGACAO"
+          status="AUTORIZADA_PRODUCAO"
+          statusEmissaoSefaz="AUTORIZADA_PRODUCAO"
           financeiro={{
             financeiro_gerado: true,
             contas_receber_vinculadas: [{ id: 99, numero: 'CR-001' }],
@@ -62,8 +82,8 @@ describe('NFeFinanceiroAcoes', () => {
       <MemoryRouter>
         <NFeFinanceiroAcoes
           nfeId={1}
-          status="AUTORIZADA_HOMOLOGACAO"
-          statusEmissaoSefaz="AUTORIZADA_HOMOLOGACAO"
+          status="AUTORIZADA_PRODUCAO"
+          statusEmissaoSefaz="AUTORIZADA_PRODUCAO"
           financeiro={{
             financeiro_gerado: true,
             motivo_bloqueio_financeiro: 'Contas a receber já foram geradas para esta NF-e.',
@@ -109,8 +129,8 @@ describe('interação wizard', () => {
       <MemoryRouter>
         <NFeFinanceiroAcoes
           nfeId={5}
-          status="AUTORIZADA_HOMOLOGACAO"
-          statusEmissaoSefaz="AUTORIZADA_HOMOLOGACAO"
+          status="AUTORIZADA_PRODUCAO"
+          statusEmissaoSefaz="AUTORIZADA_PRODUCAO"
           financeiro={{ pode_gerar_contas_receber: true }}
           onGerar={() => {
             clicked = true;
