@@ -132,6 +132,7 @@ const PedidosCompra = () => {
     condicao_pagamento_texto: '30',
     prazo_entrega_texto: '',
     data_prevista_entrega: '' as string,
+    observacoes: '',
   });
   const [dataEntregaTouched, setDataEntregaTouched] = useState(false);
   const prazoEntregaAnterior = useRef('');
@@ -466,6 +467,7 @@ const PedidosCompra = () => {
       condicao_pagamento_texto: '30',
       prazo_entrega_texto: '',
       data_prevista_entrega: '',
+      observacoes: '',
     });
     setItens([]);
     setModalOpen(true);
@@ -477,7 +479,12 @@ const PedidosCompra = () => {
       toast.error('Pedido sem identificador válido. Recarregue a lista ou entre em contato com o suporte.');
       return;
     }
-    const pedidoNormalizado: PedidoCompra = { ...pedido, id: pid };
+    let pedidoNormalizado: PedidoCompra = { ...pedido, id: pid };
+    try {
+      pedidoNormalizado = { ...(await pedidosCompraService.getById(pid)), id: pid };
+    } catch {
+      // Mantém dados da listagem se o detalhe falhar.
+    }
     setEditing(pedidoNormalizado);
     setConversaoPendentePorItemId({});
     setDataEntregaTouched(true);
@@ -490,11 +497,15 @@ const PedidosCompra = () => {
           ? String(prevEntrega).slice(0, 10)
           : '';
     setForm({
-      ...pedidoNormalizado,
+      numero: pedidoNormalizado.numero ?? '',
       fornecedor_id: pedidoNormalizado.fornecedor_id ?? null,
       fornecedor_nome: pedidoNormalizado.fornecedor_nome ?? '',
+      data: typeof pedidoNormalizado.data === 'string' ? pedidoNormalizado.data.slice(0, 10) : String(pedidoNormalizado.data || ''),
+      status: pedidoNormalizado.status || 'Pendente',
+      condicao_pagamento_texto: pedidoNormalizado.condicao_pagamento_texto ?? '',
       prazo_entrega_texto: pedidoNormalizado.prazo_entrega_texto ?? '',
       data_prevista_entrega: prevEntregaStr,
+      observacoes: pedidoNormalizado.observacoes ?? '',
     });
     let fornSel: Fornecedor | null = null;
     const fornecedorId = pedidoNormalizado.fornecedor_id;
@@ -997,6 +1008,19 @@ const PedidosCompra = () => {
               Exibida como {form.data_prevista_entrega ? formatDataIsoParaBr(form.data_prevista_entrega) : '—'} · Ajuste manual
               sempre permitido; sugestão automática ao alterar o prazo combinado.
             </p>
+          </div>
+          <div className="md:col-span-3">
+            <label className="erp-label" htmlFor="pedido-compra-observacoes">
+              Observações
+            </label>
+            <textarea
+              id="pedido-compra-observacoes"
+              className="erp-input mt-1 min-h-[5rem]"
+              rows={4}
+              placeholder="Instruções, referências ou informações adicionais do pedido..."
+              value={form.observacoes}
+              onChange={(e) => setForm((p) => ({ ...p, observacoes: e.target.value }))}
+            />
           </div>
         </div>
         <div className="border border-border rounded-md p-3">

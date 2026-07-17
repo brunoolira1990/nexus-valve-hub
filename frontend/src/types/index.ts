@@ -2264,6 +2264,7 @@ export interface PedidoCompra {
   valor_total: number;
   prazo_entrega_texto?: string;
   data_prevista_entrega?: string | null;
+  observacoes?: string;
   resumo_financeiro_pedido?: {
     subtotal_produtos: number;
     total_ipi: number;
