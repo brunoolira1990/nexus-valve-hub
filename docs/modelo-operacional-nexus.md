@@ -1,6 +1,8 @@
-# Modelo operacional Nexus — ERP 4.0.10
+# Modelo operacional Nexus — ERP 4.0.10 (base) + evoluções posteriores
 
 Documento oficial do modelo operacional da Nexus Válvulas no ERP. Define como venda, compra, NF-e, estoque e expedição se relacionam **sem assumir estoque obrigatório antes da venda**.
+
+> **Leitura:** as seções numeradas a partir de 4.0.10 descrevem a fundação. O estado **atual** de financeiro, expedição, BI e manifestação está nas seções 13–17 (atualizadas) e nas seções ERP 4.0.14.x / Central DF-e mais abaixo. Homologação SEFAZ **nunca** é tratada como produção fiscal.
 
 ---
 
@@ -46,7 +48,7 @@ Indicadores típicos:
 ```
 Pedido de Venda → Faturamento → NF-e Saída (autorizada) → Retirada no fornecedor
 → Entrega ao cliente/transportadora → NF-e Entrada posterior → Conciliação
-→ (Futuro) Contas a pagar da NF-e Entrada
+→ Contas a pagar da NF-e Entrada (**manual**, wizard — não automático)
 ```
 
 Indicadores típicos:
@@ -133,7 +135,7 @@ Definidos em `apps/fiscal/modelo_operacional.py` → `TipoAtendimentoItem`.
 
 **Destino (`destino_fisico`):** `CLIENTE`, `TRANSPORTADORA`, `ESTOQUE_PROPRIO`, `TERCEIRO`, `NAO_DEFINIDO`
 
-Preparam a **Expedição futura** (retirada, entrega direta, coleta, romaneio).
+Preparam a **Expedição**. A **Fase 1A** já existe como controle operacional manual (`apps.expedicao`, `/expedicao`) — retirada, entrega direta, motorista/volumes — **sem** efeitos em estoque, financeiro ou fiscal. Evoluções (romaneio, automações) permanecem futuras.
 
 ---
 
@@ -183,47 +185,57 @@ UI futura: avisos operacionais (entrada pendente, retirada fornecedor, concilia�
 
 ---
 
-## 13. Expedição futura
+## 13. Expedição (Fase 1A entregue; evolução futura)
 
-Expedição **não** será apenas “saída de estoque”.
+Expedição **não** é apenas “saída de estoque”.
 
-Controlará: retirada em fornecedor, entrega direta, motorista, volumes, DANFE, PC, romaneio, comprovantes, status de entrada fiscal.
+### Estado atual — Fase 1A (implementado parcial)
 
-Tipos futuros: `ESTOQUE_PROPRIO`, `RETIRADA_FORNECEDOR`, `ENTREGA_DIRETA_FORNECEDOR_CLIENTE`, `RETIRADA_FORNECEDOR_TRANSPORTADORA`, `MISTO`.
+- Módulo `apps.expedicao` + tela `/expedicao` + API `/api/expedicoes/`
+- Tipos: estoque próprio, retirada fornecedor, entrega direta fornecedor→cliente, retirada fornecedor→transportadora, misto, outros
+- Status operacionais (rascunho → trânsito → entregue / ocorrência / cancelado)
+- Vínculos **referenciais** opcionais com PV, PC, faturamento, NF-e Saída, alocação, etc.
+- Documento: [`docs/expedicao-logistica-fase1a.md`](expedicao-logistica-fase1a.md)
 
-Status futuros: `AGUARDANDO_SEPARACAO`, `AGUARDANDO_RETIRADA_FORNECEDOR`, `MOTORISTA_ENVIADO`, `RETIRADO_FORNECEDOR`, `EM_TRANSITO`, `ENTREGUE_TRANSPORTADORA`, `ENTREGUE_CLIENTE`, `ENTRADA_FISCAL_PENDENTE`, `ENTRADA_FISCAL_CONCILIADA`, `OCORRENCIA`, `CANCELADO`.
+**Não faz (decisão da Fase 1A):** movimentar/reservar estoque; gerar CR/CP; alterar NF-e/XML/DANFE/BFR; transmitir SEFAZ; alterar status comercial automaticamente.
+
+### Evolução futura
+
+Controlará com mais rigor: coleta, romaneio, comprovantes, conciliação com entrada fiscal, e eventual integração controlada com estoque — **sem** misturar com homologação fiscal.
 
 ---
 
-## 14. Regras financeiras futuras
+## 14. Regras financeiras (estado atual)
 
-| Origem | Gera título? |
-|--------|----------------|
-| Pedido de Venda | Não — origem comercial |
-| Pedido de Compra | Não — intenção operacional |
-| NF-e Saída autorizada **produção** | Sim → Contas a Receber |
-| NF-e Saída homologação | Não |
-| NF-e Entrada fornecedor | Sim → Contas a Pagar |
+| Origem | Gera título? | Como |
+|--------|----------------|------|
+| Pedido de Venda | Não — origem comercial | — |
+| Pedido de Compra | Não — intenção operacional | — |
+| NF-e Saída autorizada **produção** | Sim → Contas a Receber | **Automático** após autorização persistida; soft-fail (falha do CR **não** desfaz a NF-e); wizard manual como recuperação |
+| NF-e Saída homologação | Não | Homologação sem financeiro |
+| NF-e Entrada fornecedor | Sim → Contas a Pagar | **Somente manual** (wizard com confirmação humana) — **não** automatizado na importação/conferência |
 
 Uma NF-e Entrada pode estar relacionada a **várias vendas** atendidas pela mesma compra.
 
-**4.0.10:** nenhum título financeiro é gerado.
+**Histórico 4.0.10:** na fundação do modelo operacional nenhum título era gerado. **Estado atual:** ver ERP 4.0.14.3 (CR auto produção) e 4.0.14.4 (CP manual). Conciliação **bancária** permanece **ausente**.
 
 ---
 
-## 15. Impactos em BI (futuro)
+## 15. Impactos em BI
 
-Indicadores planejados:
+### Estado atual (implementado parcial)
 
-- **Comercial:** vendas com entrada pendente, retirada fornecedor, entrega direta.
-- **Compras:** compras vinculadas, saldo a alocar, entrada pendente.
-- **Fiscal:** NF-e saída com entrada pendente, conciliação pendente, divergências.
-- **Expedição:** aguardando retirada, em trânsito, entregue.
-- **Financeiro:** recebíveis por NF-e saída produção; pagamentos por NF-e entrada.
+Painéis `/dashboard/*` com **agregações reais** (comercial, fiscal, estoque, compras, qualidade, expedição, financeiro via `montar_resumo_financeiro`). Homologação excluída do BI fiscal oficial. Financeiro do BI **não** é mais stub de preparação.
+
+### Ainda planejado / incompleto
+
+- Indicadores finos de conciliação entrada×saída e divergências operacionais
+- Auditoria de alterações
+- SPED / exportações contábeis amplas
 
 ---
 
-## 16. Implementação técnica (4.0.10)
+## 16. Implementação técnica (4.0.10 — fundação)
 
 | Artefato | Caminho |
 |----------|---------|
@@ -233,15 +245,14 @@ Indicadores planejados:
 | Testes | `backend/apps/fiscal/tests/test_modelo_operacional_4010.py` |
 | Tokens UI | `frontend/src/design-system/tokens.ts` |
 
-**Não implementado nesta fase:**
+**Não implementado na fundação 4.0.10** (vários já evoluíram depois — ver seções seguintes):
 
-- Expedição completa
-- Conciliação NF-e Entrada
-- Contas a pagar / receber
-- Movimentação de estoque
-- Bloqueio NF-e por entrada
-- Telas obrigatórias preenchendo alocação
-- API pública de alocação (somente model + helpers)
+- Expedição completa → **parcial:** Fase 1A manual entregue
+- Conciliação NF-e Entrada completa → **ainda pendente** (alocações CRUD existem; conciliação ponta a ponta não)
+- Contas a pagar / receber → **entregues** na base financeira 4.0.14+ (CR auto produção; CP manual)
+- Movimentação de estoque / Kardex → **parcial:** aplicação física existe; **Kardex ausente**
+- Bloqueio NF-e por entrada → **continua não bloqueando** (regra operacional)
+- API pública de alocação → **entregue** nas fases 4.0.12+
 
 ---
 
@@ -266,13 +277,13 @@ Fase de **leitura apenas**: exibir resumo de `AlocacaoAtendimento` em Pedido de 
 | **Fiscal** | Autorizada homologação · cStat 100 |
 | **Comercial** | Status do pedido (Aberto, Faturado…) |
 | **Operacional** | Retirada fornecedor · Entrada pendente |
-| **Financeiro** | Em preparação (futuro) |
+| **Financeiro** | CR automático após NF-e saída **produção**; CP/baixas manuais; homologação sem financeiro |
 
 A modal do **Pedido de Venda** (ERP 4.0.13.2) separa status comercial, fiscal e operacional em abas distintas. Referências internas como `RASCUNHO-FAT-*` podem aparecer em área técnica secundária, mas **não** substituem a identidade fiscal amigável da NF-e (ex.: «NF-e Homologação nº … — Série …») após autorização em homologação ou produção.
 
 O **PDF comercial do Pedido de Venda** (ERP 4.0.13.2.1) contém pedido, condições, itens e resumo de faturamento comercial — **sem** seção NF-e vinculada, DANFE, XML, cStat ou dados de homologação. A identidade fiscal amigável permanece na modal do ERP (aba NF-e / Fiscal). Referências internas como `RASCUNHO-FAT` não aparecem no PDF enviado ao cliente.
 
-**Duplicatas da NF-e** (ERP 4.0.13.3) representam dados de cobrança informados no XML/DANFE (fatura, vencimento, valor por parcela) a partir da condição de pagamento do pedido/faturamento. **Não** significam geração de financeiro automático (contas a receber, boleto ou baixa) nesta fase. O PDF comercial do pedido continua sem duplicatas fiscais; o DANFE e a aba NF-e / Fiscal exibem essas informações quando aplicável.
+**Duplicatas da NF-e** (ERP 4.0.13.3) representam dados de cobrança informados no XML/DANFE (fatura, vencimento, valor por parcela) a partir da condição de pagamento do pedido/faturamento. **Não** são, por si sós, o título financeiro. O **CR** só é gerado automaticamente após autorização SEFAZ em **produção** (4.0.14.3); em homologação não há financeiro. O PDF comercial do pedido continua sem duplicatas fiscais; o DANFE e a aba NF-e / Fiscal exibem essas informações quando aplicável.
 
 ### Ciclo de vida pré-autorização NF-e (ERP 4.0.13.6.8)
 
@@ -504,9 +515,11 @@ Renderizadores legados removidos (4.0.13.6.13A): templates HTML `modelo55_confer
 
 ## 17. Próximas fases recomendadas
 
-1. **4.1.x** — Conciliação parcial NF-e Entrada ligada a alocações.
-2. **4.2.x** — Módulo Expedição (tipos/status documentados acima).
-3. **4.3.x** — Financeiro: CR da NF-e Saída produção; CP da NF-e Entrada.
+1. Conciliação parcial/completa NF-e Entrada ligada a alocações (PC/PV/FAT).
+2. Evolução Expedição além da Fase 1A (ainda sem automação fiscal/financeira).
+3. ~~Financeiro: CR da NF-e Saída produção; CP da NF-e Entrada~~ — **entregue** (CR auto; CP manual).
+4. Kardex / MovimentoEstoque; reserva de estoque de negócio.
+5. Multiempresa operacional, CRM, SPED, versionamento de propostas — **futuros**.
 
 ---
 
@@ -561,9 +574,11 @@ Detalhamento: `docs/base-dfe-importada.md`.
 - **CT-e Entrada** lista apenas conferidos (produção, autorizado, não cancelado/divergente/ignorado).
 - Conferência **não** gera financeiro, expedição, rateio, estoque nem altera apuração.
 
-### Futuro Monitor DF-e
+### Futuro Monitor DF-e (parcialmente iniciado)
 
-Consulta automática à distribuição DF-e (NSU, manifestação, download XML) — apenas documentado; implementação em fase posterior.
+- **Manifestação do Destinatário** e consulta/download manual de DF-e destinados estão **integrados ao Inbox Fiscal** (`/central-dfe`). A rota `/manifestacao-destinatario` apenas redireciona para o Inbox — **não** há tela nem item de menu separado.
+- Manifestação é **manual** (ciência, confirmação, etc.); XML baixado vai para Base DF-e Importada **sem** financeiro/estoque/apuração automáticos.
+- Evolução futura: sync NSU mais avançado, CT-e destinado (fase complementar), filtros deep-link — sem inventar automação financeira.
 
 ---
 
@@ -707,9 +722,15 @@ Aviso operacional: *“Equivalência confirmada para conferência. Movimentaçã
 - Snapshot fiscal do item só é gerado quando existe regra compatível com origem/destino/NCM.
 - `Atualizar fiscal` informa diagnóstico: endereço inconsistente **ou** falta de regra (`NCM · origem · destino`).
 
-## 33. Financeiro base operacional (ERP 4.0.14)
+## 33. Financeiro base operacional (ERP 4.0.14+)
 
-Módulo financeiro manual e controlado — **sem geração automática** de títulos a partir de NF-e, pedido ou faturamento nesta fase.
+Módulo financeiro operacional com lançamentos manuais e integrações fiscais **controladas**:
+
+- **CR automático** somente após NF-e Saída autorizada em **produção** (soft-fail: falha do CR não desfaz a autorização).
+- **CP a partir de NF-e Entrada** somente por **ação humana** (wizard).
+- Homologação: **sem** financeiro.
+- Pedido/faturamento **não** geram título sozinhos.
+- Conciliação bancária: **ausente**.
 
 ### Cadastros mínimos
 
@@ -741,11 +762,12 @@ Módulo financeiro manual e controlado — **sem geração automática** de tít
 Campos operacionais: `origem_tipo`, `origem_id`, `origem_descricao`, `origem_numero`, `origem_data`.  
 UI exibe, por exemplo: «Origem: Faturamento FAT-xxxx» ou «Origem: NF-e nº 000000003» — **sem** `content_type`, `object_id` ou payload na tela principal.
 
-### Integração futura com NF-e / faturamento
+### Integração com NF-e / faturamento (estado atual)
 
-- Ação futura controlada: «Gerar contas a receber» a partir de NF-e autorizada ou faturamento, com confirmação do usuário.
+- **Produção:** CR gerado automaticamente após autorização SEFAZ persistida; wizard manual permanece como **recuperação** se o soft-fail ocorrer.
+- **Entrada:** «Gerar contas a pagar» exige confirmação explícita do usuário (não automática).
 - Cancelamento de NF-e **não** apaga financeiro automaticamente; alerta operacional para revisão dos títulos vinculados.
-- Automação financeira (geração/baixa/conciliação) fica para fase posterior, após validação da base.
+- Conciliação bancária e baixas automáticas bancárias ficam para fase posterior.
 
 API: `apps.financeiro` — rotas `/api/financeiro/*` (contas, formas, categorias, centros-custo, contas-receber, contas-pagar, baixas, resumo).
 
@@ -1045,3 +1067,21 @@ Produtos na lista de limpeza; documentos possivelmente reais; prontidão com cr�
 - **Pendências operacionais** (produto, equivalência, estoque, pedido) **não bloqueiam** geração manual de Contas a Pagar.
 - Bloqueios financeiros reais: fornecedor ausente, valor inválido, cancelamento, duplicidade, XML inválido.
 - Geração com pendências exige **confirmação explícita** no wizard — estoque e conferência continuam pendentes.
+
+---
+
+## Nota de sincronização documental (19/07/2026)
+
+Atualização alinhada ao código em `producao-local`, **sem** criar versão ERP nova:
+
+| Tema | Estado documentado |
+|------|-------------------|
+| CR pós NF-e produção | Automático; soft-fail; homologação sem financeiro |
+| CP pós NF-e entrada | Manual (decisão operacional) |
+| Estoque × NF-e / CQ | Estoque **não** bloqueia emissão de NF-e nem CQ; física opcional no CQ |
+| CQ × NF-e | Novos vínculos: NF-e saída `AUTORIZADA_PRODUCAO` |
+| Expedição | Fase 1A manual |
+| Manifestação | Inbox Fiscal `/central-dfe` (rota legada só redireciona) |
+| DANFE | BFR operacional; visualizar e baixar |
+| Pendentes / futuros | Kardex, conciliação bancária, multiempresa operacional, CRM, SPED, versionamento de propostas, conciliação completa Entrada↔Saída |
+| Pedido de Compra | Campo `observacoes` disponível na UI/API |

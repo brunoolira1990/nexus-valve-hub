@@ -41,20 +41,21 @@ Essa separação evita misturar “o que entrou” com “o que vamos emitir” 
 
 | Módulo | Status | Prioridade | O que já existe | O que falta | Próxima fase recomendada |
 |--------|--------|------------|-----------------|-------------|-------------------------|
-| Cadastros mestres | Concluído parcial | Média | Clientes, fornecedores, empresas, produtos, famílias; **cadastro visual por abas**; **Centro de Informações do Produto** (painel operacional + rastreabilidade) | Contatos, endereços múltiplos, IE, regime, dados bancários refinados | Cadastros 1 — Diagnóstico |
-| CRM | Não iniciado | Baixa | — | Leads, pipeline, atividades | CRM 1 |
-| Propostas | Em evolução | Alta | CRUD, itens, precificação, fiscal legado/cenário, comparativo, homologação | Versionamento, aprovação, PDF, condições avançadas | Propostas 2.0 |
-| Pedido de venda | Concluído parcial | Alta | Modelo, API, UI básica, conversão a partir de proposta | Status operacional, reserva, faturamento parcial, vínculos estoque/NF/financeiro | Pedido Venda 2 |
-| Fiscal entrada | Em evolução | Alta | Classificação, validação XML, bloqueio, conferência, estoque; finalização vinculada a PC; data de entrada obrigatória; **identificação de fornecedor para CP** | Snapshot persistido, relatórios de divergência/crédito | Fiscal Entrada 4 |
-| Fiscal saída / Cenário | Em evolução | Alta | Cenário, regras, editor guiado, homologação e histórico 3.10 | NF-e consumindo cenário, DANFE/XML | NF-e Saída 1 |
-| NF-e saída | Concluído parcial | Alta | Módulo operacional; **emissão produção SEFAZ ativa**; DIFAL; pool numeração; **CC-e, cancelamento e inutilização SEFAZ** | Consumo `RegraFiscalSaida` na emissão, contingência | NF-e Saída — cenário na emissão |
-| NF-e entrada própria | Em evolução | Alta | Importar XML entrada própria já emitida (4.0.14.x) | Emissão própria, devolução/recusa, retorno remessa, vínculo NF saída | Entrada Própria 1 |
+| Cadastros mestres | Concluído parcial | Média | Clientes, fornecedores, empresas, produtos, famílias; **cadastro visual por abas**; **Centro de Informações do Produto** (painel operacional + rastreabilidade); colaboradores + acesso | Contatos, endereços múltiplos, IE, regime, dados bancários refinados; multiempresa operacional | Cadastros 1 — Diagnóstico |
+| CRM | Não iniciado | Baixa | Menu placeholder (`/modulos/crm`) | Leads, pipeline, atividades | CRM 1 |
+| Propostas | Em evolução | Alta | CRUD, itens, precificação, fiscal legado/cenário, comparativo, homologação, PDF externo, conversão → PV | Versionamento, aprovação interna, PDF interno, condições avançadas | Propostas 2.0 / 2.2 |
+| Pedido de venda | Concluído parcial | Alta | Modelo, API, conversão proposta, **faturamento parcial**, PDF, vínculo NF-e saída; **observações** também no Pedido de Compra | Status operacional completo, reserva de estoque, vínculo formal estoque/financeiro além do CR da NF-e | Pedido Venda 4 — integração estoque |
+| Fiscal entrada | Em evolução | Alta | Classificação, validação XML, bloqueio, conferência, estoque; PC; data entrada; fornecedor para CP; equivalência/composição física; **Manifestação do Destinatário integrada ao Inbox Fiscal** (`/central-dfe`; rota `/manifestacao-destinatario` apenas redireciona) | Snapshot persistido, relatórios de divergência/crédito, conciliação completa Entrada↔PV/FAT | Fiscal Entrada 4 |
+| Fiscal saída / Cenário | Em evolução | Alta | Cenário, regras, editor guiado, homologação e histórico 3.10 | NF-e **consumindo** cenário na transmissão | NF-e Saída — cenário na emissão |
+| NF-e saída | Concluído parcial | Alta | Emissão produção SEFAZ; DIFAL; numeração; CC-e/cancelamento/inutilização; **DANFE BFR** (visualizar e baixar); XML oficial | Consumo `RegraFiscalSaida` na emissão; contingência; remessa/devolução | NF-e Saída — cenário na emissão |
+| NF-e entrada própria | Em evolução | Alta | Importar XML entrada própria já emitida; fundação emissão (numeração/XML preview `tpNF=0`) | Transmissão SEFAZ completa de entrada própria; devolução/recusa/retorno remessa; vínculo NF saída | Entrada Própria — emissão SEFAZ |
 | Remessas | Não iniciado | Média | CFOPs no catálogo auxiliar de saída | Modelo, emissão, retorno, controle pendente | Remessa 1 |
-| Estoque / rastreabilidade | Em evolução | Alta | AtendimentoEstoque, aplicação física, CQ + rastreio; **painel consolidado por produto** (saldo, histórico compra/venda, fiscal, CQ, corridas — somente leitura) | Kardex, estorno, relatório ponta a ponta | Estoque 3.13 |
-| Qualidade | Concluído parcial | Média | CF, CQ, busca corrida, vínculo conferência; **numeração automática CQ**; **CQ manual sem CF obrigatório** | Relatório CQ, dashboard pendências | Qualidade 4 |
-| Financeiro | **Base operacional (4.0.14)** | Alta | CR/CP manual, baixa, estorno; geração manual CR/CP a partir de NF-e; **fornecedor identificado na entrada** para liberar CP | Conciliação, DRE, automação na autorização NF-e | Financeiro 2 |
-| Contábil | Futuro | Baixa | Tela placeholder | Plano de contas, lançamentos, DRE | Contábil 1 |
-| Relatórios / BI / auditoria | Concluído parcial | Média | BI modular (8 painéis + Expedição); menu reorganizado; Contador export XML | Menu por permissão, SPED, auditoria alterações | BI 2 |
+| Expedição | Concluído parcial | Média | **Fase 1A** manual (`/expedicao`): status, motorista, vínculos referenciais — **sem** estoque/financeiro/fiscal automático | Automações, romaneio avançado, efeitos colaterais controlados | Expedição 1B |
+| Estoque / rastreabilidade | Em evolução | Alta | AtendimentoEstoque, aplicação física, painel produto; estoque **não bloqueia** NF-e nem CQ | **Kardex** / MovimentoEstoque, estorno, relatório ponta a ponta, reserva de negócio | Estoque 3.14 — Kardex |
+| Qualidade | Concluído parcial | Média | CF, CQ, numeração automática; CQ manual sem CF obrigatório; **novos vínculos CQ só com NF-e saída `AUTORIZADA_PRODUCAO`**; rastreabilidade física **opcional** (não bloqueia emissão) | Relatório CQ, dashboard pendências | Qualidade 4 |
+| Financeiro | **Base operacional (4.0.14+)** | Alta | CR/CP, parcelas, baixa/estorno, créditos, relatórios; **CR automático** após NF-e saída autorizada em **produção** (soft-fail: falha do CR **não** desfaz autorização); **CP manual** a partir de NF-e entrada (ação humana); homologação **sem** financeiro | Conciliação **bancária**, DRE, comissões; CP automático (se desejado — hoje é decisão operacional manual) | Financeiro 4 — Conciliação |
+| Contábil | Futuro / esqueleto | Baixa | Plano de contas + lançamentos + balancete básicos (sem integração fiscal/financeira) | Integração automática, DRE oficial, SPED | Contábil 1 |
+| Relatórios / BI / auditoria | Concluído parcial | Média | BI modular com **dados reais** (home + comercial/fiscal/estoque/compras/qualidade/expedição/financeiro); Contador export XML | SPED (placeholder), auditoria de alterações, exportações amplas | BI 2 — Auditoria |
 
 **Legenda de status:** Concluído parcial · Em evolução · Não iniciado · Futuro · Precisa revisão
 
@@ -183,10 +184,10 @@ Essa separação evita misturar “o que entrou” com “o que vamos emitir” 
 - Aprovação interna comercial/fiscal
 - Margem mínima e alertas
 - Condições comerciais avançadas
-- Frete e prazo de entrega estruturados
-- ~~Conversão robusta para pedido de venda~~ — **Propostas 2.1** concluída (serviço central, snapshot fiscal, vínculo item_proposta; ver seção 6)
-- Histórico de alterações
-- PDF comercial revisado
+- Frete e prazo de entrega estruturados (há `prazo_entrega_texto`)
+- ~~Conversão robusta para pedido de venda~~ — **Propostas 2.1** concluída
+- Histórico de alterações (há histórico de homologação fiscal; não versionamento documental)
+- PDF interno com rentabilidade
 
 ### Próximas fases
 
@@ -272,11 +273,10 @@ Proposta aprovada
 
 - Máquina de estados operacional completa (aprovação comercial formal)
 - Aprovação e bloqueios comerciais adicionais
-- Estorno de faturamento confirmado
-- Reserva/compromisso de estoque
-- Vínculo formal com `AtendimentoEstoque`
-- Vínculo com NF-e saída
-- Vínculo com financeiro (parcelas a receber)
+- Estorno de faturamento confirmado (existe estorno pré-autorização NF-e; pós-autorização segue regras fiscais)
+- Reserva/compromisso de estoque de negócio
+- Vínculo formal com `AtendimentoEstoque` (alocação operacional existe; estoque físico não é reserva automática)
+- Integração financeira **direta** no pedido (hoje o CR nasce da **NF-e produção**, não do PV sozinho)
 
 ### Próximas fases
 
@@ -284,19 +284,20 @@ Proposta aprovada
 |------|----------|
 | **Pedido Venda 1** | Consolidar modelo e API (revisão) |
 | **Pedido Venda 2** | Conversão de proposta e status |
-| ~~**Pedido Venda 3**~~ | ~~Atendimento e faturamento parcial~~ — **concluída** (solicitação de faturamento; sem NF-e) |
-| **Pedido Venda 4** | Integração financeiro |
+| ~~**Pedido Venda 3**~~ | ~~Atendimento e faturamento parcial~~ — **concluída** |
+| ~~**NF-e a partir do faturamento**~~ | **concluída** (módulo NF-e Saída) |
+| **Pedido Venda 4** | Reserva estoque / fechamento operacional |
 
 ### Checklist
 
 - [x] Modelo PedidoVenda
 - [x] Itens do pedido
 - [ ] Status operacional completo
-- [x] Conversão de proposta (Propostas 2.1 — robusta, sem NF-e/estoque/financeiro)
-- [x] Faturamento parcial (Pedido Venda 3 — solicitação + confirmação, sem NF-e)
-- [ ] Integração estoque / atendimento
-- [ ] Integração NF-e saída
-- [ ] Integração financeiro
+- [x] Conversão de proposta (Propostas 2.1 — robusta)
+- [x] Faturamento parcial (Pedido Venda 3)
+- [ ] Integração estoque / atendimento físico
+- [x] Integração NF-e saída (via faturamento)
+- [x] Integração financeiro via NF-e produção (CR automático; não via PV direto)
 
 ---
 
@@ -433,9 +434,9 @@ Proposta aprovada
 - [x] Atualizar impostos do rascunho a partir da regra fiscal atual, com preview e evento de auditoria (3.5.2)
 - [x] Fluxo de prontidão da conferência: validar, marcar pronta, eventos e invalidação ao editar (3.5.3)
 - [x] DANFE de conferência em layout real com marca d’água sem valor fiscal (3.5.4)
-- [ ] Cenário aplicado na emissão/transmissão
-- [ ] XML com impostos do cenário
-- [ ] DANFE
+- [ ] Cenário aplicado na emissão/transmissão (motor existe em proposta; emissão ainda não consome na transmissão)
+- [ ] XML com impostos do cenário (recálculo na transmissão)
+- [x] DANFE operacional via BFR (conferência, homologação e produção; ações **Visualizar** e **Baixar** separadas)
 - [x] Cancelamento SEFAZ (`POST .../cancelar/`, homologação e produção)
 - [x] Carta de correção (`POST .../emitir-carta-correcao/`, prévia PDF, comprovante)
 - [x] Inutilização de numeração na SEFAZ (`POST .../inutilizar/`, faixa por config ou por NF-e rejeitada)
@@ -446,7 +447,7 @@ Proposta aprovada
 
 ## 8. NF-e entrada própria
 
-Além de **importar XML de fornecedor**, o ERP precisará **emitir NF-e própria de entrada** em cenários como:
+Além de **importar XML de fornecedor**, o ERP precisa **emitir NF-e própria de entrada** em cenários como:
 
 - Recusa ou devolução de cliente
 - Retorno de remessa
@@ -454,30 +455,35 @@ Além de **importar XML de fornecedor**, o ERP precisará **emitir NF-e própria
 - Entrada por industrialização
 - Devolução de venda
 
+### Já feito (parcial)
+
+- Importar XML de **entrada própria já emitida** (emitente = empresa, `tpNF=0`) no fluxo operacional de NF-e Entrada
+- Fundação de emissão: `tipo_origem=ENTRADA_PROPRIA_EMITIDA`, numeração `entrada_propria`, preview/validação de XML oficial `tpNF=0` (`nfe_entrada_emissao/`)
+- **Sem** transmissão SEFAZ completa de entrada própria nesta base documental (campos e preview existem; ciclo homologação/produção de entrada própria ainda parcial)
+
 ### Falta
 
-- Modelo e fluxo de emissão própria de entrada
-- CFOPs e regras específicas de entrada própria
-- Vínculo com NF de saída original
-- Vínculo com estoque e financeiro
+- Transmissão SEFAZ (homologação/produção) de entrada própria emitida no ERP
+- CFOPs e regras específicas de entrada própria em todos os cenários de negócio
+- Vínculo com NF de saída original (devolução/retorno)
+- Vínculo automático com estoque e financeiro (hoje: sem efeito automático na importação)
 
 ### Próximas fases
 
 | Fase | Objetivo |
 |------|----------|
-| **Entrada Própria 1** | Diagnóstico e modelagem |
+| **Entrada Própria 1** | Diagnóstico e modelagem — **parcialmente entregue** (import + fundação XML) |
 | **Entrada Própria 2** | Emissão por devolução/recusa |
 | **Entrada Própria 3** | Retorno de remessa |
 
 ### Checklist
 
-- [ ] Modelo de emissão própria
+- [x] Modelo / origem de emissão própria (fundação + importação)
 - [ ] Vínculo com NF saída
-- [ ] XML
+- [x] XML preview / oficial de entrada própria (sem ciclo SEFAZ completo)
 - [ ] Estoque
-- [ ] Fiscal
-- [ ] Financeiro
-
+- [ ] Fiscal completo (transmissão)
+- [ ] Financeiro automático (não desejado sem decisão operacional)
 ---
 
 ## 9. Remessas
@@ -517,16 +523,18 @@ Controle do que **sai**, **permanece em terceiros** e **retorna** (industrializa
 - `AtendimentoEstoque` (imediato e antecipado)
 - Vinculação com conferência de NF-e entrada
 - Aplicação física em estoque por corrida
-- CQ pode ser emitido com NF-e de saída autorizada em produção e dados técnicos manuais; rastreabilidade física (estoque/corrida/conferência) é complementar e não bloqueia emissão
+- CQ pode ser emitido com NF-e de saída autorizada em produção e dados técnicos manuais; rastreabilidade física (estoque/corrida/conferência) é complementar e **não bloqueia** emissão
 - Corrida/lote vinculados ao produto e à NF
+- Estoque **não bloqueia** automaticamente a emissão de NF-e de saída
 
 ### Falta
 
 - Relatório **ponta a ponta** (NF entrada → conferência → estoque → saída → CQ)
 - **Kardex** / `MovimentoEstoque`
 - Estorno controlado
+- Reserva de estoque de negócio (além do hold de quantidade em rascunho de faturamento)
 - Tela Corridas/Lotes técnicos aprimorada
-- Histórico consolidado por produto/corrida
+- Histórico consolidado por produto/corrida (painel existe em leitura; deep links e Kardex faltam)
 
 ### Próximas fases
 
@@ -555,9 +563,11 @@ Controle do que **sai**, **permanece em terceiros** e **retorna** (industrializa
 
 - Certificado de fornecedor (entrada)
 - Certificado de qualidade (CQ)
-- Busca por corrida
-- Vínculo com conferência e itens de NF
-- Rastreabilidade obrigatória para emissão definitiva de CQ
+- Busca por corrida / busca assistida de NF-e
+- Vínculo com conferência e itens de NF (quando disponível)
+- **Numeração automática** de CQ; CQ manual **sem** CF obrigatório (quando a regra permitir)
+- **Novos vínculos de CQ de saída** exigem NF-e com autorização SEFAZ em **produção** (`AUTORIZADA_PRODUCAO`)
+- **Rastreabilidade física opcional:** estoque, corrida de estoque, conferência e aplicação física **enriquecem** o CQ, mas **não bloqueiam** salvar, emitir nem gerar PDF
 
 ### Falta
 
@@ -577,7 +587,7 @@ Controle do que **sai**, **permanece em terceiros** e **retorna** (industrializa
 
 - [x] Certificado fornecedor (CF)
 - [x] Certificado qualidade (CQ)
-- [x] Rastreabilidade
+- [x] Rastreabilidade (física opcional; vínculo fiscal produção obrigatório para novos CQ de saída)
 - [ ] Relatório CQ
 - [ ] Dashboard pendências
 - [ ] Exceção controlada
@@ -624,34 +634,42 @@ Base para fiscal, comercial e estoque. Refinar progressivamente.
 
 ## 13. Financeiro
 
+### Já feito (base operacional)
+
+- Contas a receber e a pagar (manual), parcelas, baixa e estorno
+- Créditos, abatimentos, visão geral, relatórios e PDF
+- **CR automático** após NF-e Saída **autorizada em produção** (`gerar_contas_receber_automatico_apos_autorizacao_producao`)
+  - Homologação: **não** gera financeiro
+  - Soft-fail: falha ao gerar CR **não** desfaz a autorização fiscal; wizard manual permanece como recuperação
+- **CP a partir de NF-e Entrada:** geração **manual** (wizard com confirmação humana) — **não** automatizado na importação, vínculo de PC ou conferência (decisão operacional)
+- Cancelamento posterior da NF-e **não apaga** títulos; alerta de origem fiscal cancelada
+
 ### Falta (macro)
 
-- Contas a receber e a pagar
-- Parcelas, boletos, Pix
-- Baixa manual e automática
-- Fluxo de caixa
-- Centro de custo e plano financeiro
+- Conciliação **bancária** (fluxo previsto ≠ conciliação)
+- Baixa automática / boletos / Pix integrados
+- DRE / plano financeiro avançado
 - Comissões
-- Conciliação bancária
+- CP automático a partir de NF-e entrada (**não fazer** sem decisão explícita — hoje é manual de propósito)
 
 ### Próximas fases
 
 | Fase | Objetivo |
 |------|----------|
-| **Financeiro 1** | Contas a receber |
-| **Financeiro 2** | Contas a pagar |
-| **Financeiro 3** | Fluxo de caixa |
-| **Financeiro 4** | Conciliação |
+| ~~**Financeiro 1**~~ | ~~Contas a receber~~ — **base + CR produção** |
+| ~~**Financeiro 2**~~ | ~~Contas a pagar~~ — **base + CP manual NF entrada** |
+| **Financeiro 3** | Fluxo de caixa avançado |
+| **Financeiro 4** | Conciliação bancária |
 | **Financeiro 5** | Comissões |
 
 ### Checklist
 
-- [ ] Contas a receber
-- [ ] Contas a pagar
-- [ ] Parcelas
-- [ ] Baixa
-- [ ] Fluxo de caixa
-- [ ] Conciliação
+- [x] Contas a receber (manual + auto pós NF-e produção)
+- [x] Contas a pagar (manual; CP de NF-e entrada por ação humana)
+- [x] Parcelas
+- [x] Baixa / estorno
+- [ ] Fluxo de caixa avançado
+- [ ] Conciliação bancária
 - [ ] Comissões
 
 ---
@@ -689,34 +707,37 @@ Base para fiscal, comercial e estoque. Refinar progressivamente.
 
 ## 15. Contábil
 
-**Futuro** — após financeiro e fiscal operacionais estarem sólidos.
+**Futuro / esqueleto** — após financeiro e fiscal operacionais estarem sólidos.
+
+### Já feito (mínimo)
+
+- Modelos e API básicos de plano de contas, lançamentos e balancete (`apps.contabil`)
+- Tela `/contabil` — **sem** integração automática com NF-e ou títulos financeiros
 
 ### Falta
 
-- Plano de contas
-- Lançamentos contábeis (manuais e automáticos)
-- Integração fiscal e financeira
-- Centros de custo
-- DRE e balancete
-- SPED (horizonte longo)
+- Integração fiscal e financeira (lançamentos automáticos)
+- Centros de custo contábeis oficiais
+- DRE e balancete gerenciais oficiais
+- SPED (horizonte longo; Contador hoje exporta ZIP de XMLs, SPED permanece placeholder)
 
 ### Próximas fases
 
 | Fase | Objetivo |
 |------|----------|
-| **Contábil 1** | Plano de contas |
+| **Contábil 1** | Plano de contas (refino + uso real) |
 | **Contábil 2** | Lançamentos automáticos |
 | **Contábil 3** | DRE e balancete |
 | **Contábil 4** | SPED |
 
 ### Checklist
 
-- [ ] Plano de contas
-- [ ] Lançamentos
+- [x] Plano de contas (esqueleto)
+- [x] Lançamentos (esqueleto manual)
 - [ ] Integração fiscal
 - [ ] Integração financeiro
 - [ ] DRE
-- [ ] Balancete
+- [ ] Balancete oficial
 - [ ] SPED
 
 ---
@@ -725,61 +746,61 @@ Base para fiscal, comercial e estoque. Refinar progressivamente.
 
 ### Já feito (parcial)
 
-- Apuração fiscal (entrada/saída)
+- Apuração fiscal (entrada/saída; homologação excluída da apuração oficial)
 - Painéis gerenciais históricos (fiscal/comercial)
+- **BI modular com dados reais:** `/dashboard` + painéis comercial, fiscal, estoque, compras, qualidade, expedição e financeiro (`dashboard_bi_service` / `montar_resumo_financeiro`)
+- Contador: exportação ZIP de XMLs por período
 - Métricas de apoio em propostas e pedidos
 
 ### Falta
 
-- Dashboards operacionais unificados (comercial, fiscal, estoque, qualidade)
 - Auditoria de alterações em cadastros e documentos
 - Logs operacionais estruturados
-- Exportações padronizadas
+- Exportações padronizadas amplas
+- SPED (placeholder no menu Contador)
 
 ### Próximas fases
 
 | Fase | Objetivo |
 |------|----------|
-| **BI 1** | Dashboard operacional |
+| ~~**BI 1**~~ | ~~Dashboard operacional~~ — **parcialmente entregue** (painéis com dados reais) |
 | **BI 2** | Auditoria de alterações |
-| **BI 3** | Relatórios fiscais e comerciais |
+| **BI 3** | Relatórios fiscais e comerciais ampliados |
 | **BI 4** | Exportações |
 
 ### Checklist
 
-- [ ] Dashboard comercial
-- [ ] Dashboard fiscal
-- [ ] Dashboard estoque
-- [ ] Dashboard qualidade
+- [x] Dashboard comercial
+- [x] Dashboard fiscal
+- [x] Dashboard estoque
+- [x] Dashboard qualidade
+- [x] Dashboard financeiro / expedição (dados reais; sem conciliação bancária)
 - [ ] Auditoria de alterações
-- [ ] Exportação
+- [ ] Exportação ampla / SPED
 
 ---
 
 ## 17. Ordem recomendada das próximas fases
 
-Prioridade sugerida para maximizar valor com menor risco (homologar antes de emitir):
+Prioridade sugerida para maximizar valor com menor risco (estado atual em `producao-local`):
 
 | Ordem | Fase | Motivo |
 |-------|------|--------|
-| 1 | **Saída 3.10** — Histórico/auditoria da homologação fiscal | Fechar ciclo da homologação 3.9 antes da NF-e |
-| 2 | Homologar propostas reais com cenário fiscal | Validar regras em produção controlada |
-| 3 | **Pedido Venda 1** — Modelo e API (revisão/consolidação) | Base já parcial no código |
-| ~~4~~ | ~~**Propostas 2.1**~~ — Converter proposta em pedido | **Concluída** |
-| ~~4b~~ | ~~**Pedido Venda 3**~~ — Faturamento parcial do pedido | **Concluída** |
-| ~~4c~~ | ~~**NF-e Saída 1**~~ — Rascunho a partir do faturamento | **Concluída** |
-| ~~4d~~ | ~~**Comercial 2.2**~~ — Numeração/datas/UX proposta e pedido | **Concluída** |
-| ~~4d1~~ | ~~**Comercial 2.2.1**~~ — Numeração padrão CQ (PROP{n}/PV{n}) | **Concluída** |
-| 5 | **NF-e Saída 1** — Consumir cenário fiscal | Objetivo principal do cenário de saída |
-| ~~6~~ | ~~**NF-e Saída 2** — Validações pré-emissão~~ | **Concluída** |
-| 7 | **Cadastros 1** — Diagnóstico/refino | Base para emissão e financeiro |
-| 8 | **Estoque 3.13** — Relatório ponta a ponta | Visibilidade operacional |
-| 9 | **Estoque 3.14** — Kardex | Controle de movimentação |
-| 10 | **Financeiro 1** — Contas a receber | Fechar ciclo venda → recebimento |
-| 11 | **Remessa 1** — Modelo de controle | Pré-requisito para NF remessa |
-| 12 | **Entrada Própria 1** — Diagnóstico/modelagem | Devoluções e retornos |
-| 13 | **CRM 1** — Leads/oportunidades | Funil comercial |
-| 14 | **Contábil 1** — Plano de contas | Após financeiro maduro |
+| 1 | Conciliação operacional NF-e Entrada ↔ alocações (PC/PV/FAT) | Fecha o modelo operacional sem mexer em SEFAZ |
+| 2 | **NF-e Saída — cenário na emissão** | Motor homologável em proposta; falta consumo na transmissão |
+| 3 | Reserva / compromisso de estoque (sem bloquear NF-e por padrão) | Alinha venda sob demanda com saldo |
+| 4 | **Estoque 3.14** — Kardex | Rastreabilidade contábil de movimentos |
+| 5 | **Financeiro 4** — Conciliação bancária | Após CR/CP estáveis |
+| 6 | Expedição 1B (após Fase 1A manual) | Vínculos operacionais mais ricos, ainda sem automação fiscal |
+| 7 | Entrada própria — transmissão SEFAZ / devoluções | Ciclo fiscal pós-venda |
+| 8 | **Remessa 1** | Pré-requisito para NF remessa |
+| 9 | **CRM 1** | Funil comercial (ainda não iniciado) |
+| 10 | **Contábil 1** / SPED | Após financeiro maduro; SPED permanece futuro |
+| — | ~~Financeiro 1–2 (CR/CP)~~ | **Entregues** (CR auto produção + CP manual entrada) |
+| — | ~~Expedição Fase 1A~~ | **Entregue** (manual) |
+| — | ~~BI 1 (painéis)~~ | **Parcialmente entregue** (dados reais) |
+
+Itens que **permanecem pendentes / futuros** (não marcar como feitos): Kardex, conciliação bancária, multiempresa operacional (ERP 4.1), CRM, SPED, versionamento de propostas, conciliação completa Entrada↔Saída.
 
 ---
 
@@ -851,7 +872,7 @@ Documentos complementares existentes:
 
 ---
 
-*Última atualização: 24/06/2026 — ERP 4.0.15.2.40 (validação painel operacional); ver seções 4.0.15.2.2–4.0.15.2.40 abaixo.*
+*Última atualização documental: 19/07/2026 — sincronização com o estado real em `producao-local` (sem criar versão ERP nova). Inclui: CR automático pós NF-e produção; CP manual de entrada; CQ com rastreabilidade física opcional; BI com dados reais; DANFE BFR (visualizar/baixar); Expedição Fase 1A; Manifestação no Inbox Fiscal; entrada própria parcial; observações em Pedido de Compra. Histórico de fases numeradas abaixo permanece como registro.*
 
 ## ERP 4.0.13.6.2 — Padronização segura dos campos comerciais
 
