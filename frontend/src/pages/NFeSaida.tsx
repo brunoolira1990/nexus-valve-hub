@@ -59,6 +59,7 @@ import { usePaginatedList } from '@/hooks/usePaginatedList';
 import { PaginationControls } from '@/components/list/PaginationControls';
 import { FilterBar } from '@/components/list/FilterBar';
 import { EmptyState, ErrorState, LoadingState } from '@/components/list/ListStates';
+import { NFE_SAIDA_FILTRO_A_PRAZO_SEM_CR } from '@/lib/nfeSaidaListFilters';
 
 type NFeSaidaFormState = {
   numero: string;
@@ -501,6 +502,17 @@ const NFeSaida = () => {
             label: 'Duplicatas',
             value: filters.tem_duplicatas || '',
             options: [{ value: 'true', label: 'Com duplicatas' }],
+          },
+          {
+            key: NFE_SAIDA_FILTRO_A_PRAZO_SEM_CR.key,
+            label: NFE_SAIDA_FILTRO_A_PRAZO_SEM_CR.label,
+            value: filters.a_prazo_sem_contas_receber || '',
+            options: [
+              {
+                value: NFE_SAIDA_FILTRO_A_PRAZO_SEM_CR.optionValue,
+                label: NFE_SAIDA_FILTRO_A_PRAZO_SEM_CR.optionLabel,
+              },
+            ],
           },
           {
             key: 'reforma_tributaria_status',

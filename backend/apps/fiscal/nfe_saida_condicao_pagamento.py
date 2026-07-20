@@ -17,6 +17,8 @@ tarefa não altera.
 
 from __future__ import annotations
 
+from django.db.models import Q, QuerySet
+
 from apps.comercial.payment_terms import pagamento_integralmente_a_vista, parse_payment_condition
 from apps.fiscal.models import NFeSaida
 
@@ -53,3 +55,19 @@ def nfe_deve_gerar_cobranca_a_prazo(nf: NFeSaida) -> bool:
     Não define ``tPag`` nem forma/meio de pagamento.
     """
     return not nfe_venda_integralmente_a_vista(nf)
+
+
+def q_nfe_venda_integralmente_a_vista() -> Q:
+    """
+    Expressão ORM alinhada a ``nfe_venda_integralmente_a_vista`` para filtros em lote.
+
+    Usa o array persistido na NF-e e, se vazio, o do pedido vinculado.
+    Não reparseia texto livre (evita N+1 e inferência textual na listagem).
+    """
+    dias_nf_vazios = Q(dias_parcelas=[]) | Q(dias_parcelas__isnull=True)
+    return Q(dias_parcelas=[0]) | (dias_nf_vazios & Q(pedido_venda__dias_parcelas=[0]))
+
+
+def filtrar_queryset_deve_gerar_cobranca_a_prazo(qs: QuerySet[NFeSaida]) -> QuerySet[NFeSaida]:
+    """Exclui vendas integralmente à vista — equivalente em lote de ``nfe_deve_gerar_cobranca_a_prazo``."""
+    return qs.exclude(q_nfe_venda_integralmente_a_vista())

@@ -383,6 +383,17 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         ):
             qs = qs.filter(quantidade_parcelas__gt=0)
 
+        if (self.request.query_params.get('a_prazo_sem_contas_receber') or '').strip().lower() in (
+            '1',
+            'true',
+            'yes',
+        ):
+            from apps.fiscal.nfe_saida_financeiro import (
+                filtrar_queryset_autorizadas_a_prazo_sem_contas_receber,
+            )
+
+            qs = filtrar_queryset_autorizadas_a_prazo_sem_contas_receber(qs)
+
         reforma_st = (self.request.query_params.get('reforma_tributaria_status') or '').strip()
         if reforma_st:
             from apps.fiscal.reforma_tributaria.config import status_reforma_nfe_documento

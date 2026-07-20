@@ -8,6 +8,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
 from django.db import transaction
+from django.db.models import Exists, OuterRef, Q, QuerySet
 
 from apps.financeiro.constants import FormaPagamentoCodigo
 from apps.financeiro.models import CategoriaFinanceira, CentroCusto, ContaFinanceira, TituloFinanceiro
@@ -19,13 +20,23 @@ from apps.fiscal.nfe_saida_bloqueio import (
     nf_autorizada_producao,
     nf_cancelada_operacional,
 )
-from apps.fiscal.nfe_saida_condicao_pagamento import nfe_venda_integralmente_a_vista
+from apps.fiscal.nfe_saida_condicao_pagamento import (
+    filtrar_queryset_deve_gerar_cobranca_a_prazo,
+    nfe_venda_integralmente_a_vista,
+)
 from apps.fiscal.nfe_saida_duplicatas import gerar_duplicatas_nfe_saida
 
 logger = logging.getLogger(__name__)
 
 CENTAVO = Decimal('0.01')
 CSTAT_AUTORIZADO = frozenset({'100', '150'})
+_STATUS_CANCELADA_LISTAGEM = frozenset({
+    'CANCELADA',
+    'CANCELADO',
+    'CANCELADA_INTERNA',
+    'CANCELADA_HOMOLOGACAO',
+    'CANCELADA_PRODUCAO',
+})
 
 MSG_NAO_AUTORIZADA = 'Esta NF-e ainda não está autorizada.'
 MSG_CANCELADA = 'Esta NF-e está cancelada e não pode gerar contas a receber.'
@@ -47,6 +58,36 @@ MSG_AUTO_FALHA_CR = (
     'Use a ação Gerar contas a receber para regularizar.'
 )
 MSG_AUTO_NAO_APLICAVEL_A_VISTA = MSG_VENDA_A_VISTA
+
+
+def filtrar_queryset_autorizadas_a_prazo_sem_contas_receber(
+    qs: QuerySet[NFeSaida],
+) -> QuerySet[NFeSaida]:
+    """
+    NF-e autorizadas em produção, elegíveis a CR a prazo, sem título RECEBER vinculado.
+
+    Critérios alinhados às flags financeiras e a ``nfe_deve_gerar_cobranca_a_prazo``:
+    - ``status_emissao_sefaz`` / ``status`` de autorização em produção;
+    - não cancelada;
+    - cliente e valor_total > 0;
+    - não integralmente à vista (``[0]``);
+    - sem ``TituloFinanceiro`` RECEBER com ``origem_tipo=NFE_SAIDA`` e ``origem_id``.
+    """
+    qs = qs.filter(
+        Q(status_emissao_sefaz__iexact=NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO)
+        | Q(status__iexact='AUTORIZADA_PRODUCAO'),
+    )
+    qs = qs.exclude(status__in=_STATUS_CANCELADA_LISTAGEM)
+    qs = qs.exclude(status_emissao_sefaz__icontains='CANCEL')
+    qs = qs.filter(cliente_id__isnull=False).exclude(valor_total__lte=0)
+    qs = filtrar_queryset_deve_gerar_cobranca_a_prazo(qs)
+
+    titulo_cr = TituloFinanceiro.objects.filter(
+        tipo=TituloFinanceiro.Tipo.RECEBER,
+        origem_tipo=TituloFinanceiro.OrigemTipo.NFE_SAIDA,
+        origem_id=OuterRef('pk'),
+    )
+    return qs.filter(~Exists(titulo_cr))
 
 
 def _round_money(value: Decimal | str | float | int) -> Decimal:
