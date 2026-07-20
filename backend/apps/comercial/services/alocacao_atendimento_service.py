@@ -128,6 +128,25 @@ def criar_alocacao_atendimento(dados: dict[str, Any]) -> AlocacaoAtendimento:
         if dados.get('status_entrada_fiscal') in (None, '', StatusEntradaFiscal.NAO_APLICAVEL):
             dados.setdefault('status_entrada_fiscal', status)
 
+    nf_hist = dados.get('nf_entrada_historica_item')
+    nf_hist_id = nf_hist.pk if hasattr(nf_hist, 'pk') else (int(nf_hist) if nf_hist else None)
+
+    # Entrada histórica × PV: único caminho = serviço de domínio (mesmas invariantes).
+    if nf_hist_id and pvi_id:
+        from apps.comercial.services.alocacao_entrada_venda_service import alocar_entrada_para_venda
+
+        fat = dados.get('faturamento_item')
+        nf_sai = dados.get('item_nf_saida')
+        aloc, _acao = alocar_entrada_para_venda(
+            nf_entrada_historica_item_id=int(nf_hist_id),
+            pedido_venda_item_id=int(pvi_id),
+            quantidade=q_nec,
+            observacao_operacional=dados.get('observacao_operacional') or '',
+            faturamento_item_id=fat.pk if hasattr(fat, 'pk') else fat,
+            item_nf_saida_id=nf_sai.pk if hasattr(nf_sai, 'pk') else nf_sai,
+        )
+        return aloc
+
     validar_quantidades_alocacao(
         pedido_venda_item_id=pvi_id,
         quantidade_necessaria=q_nec,
@@ -138,19 +157,67 @@ def criar_alocacao_atendimento(dados: dict[str, Any]) -> AlocacaoAtendimento:
 
     validar_vinculos_alocacao(dados)
 
+    # Origem histórica sem destino PV: ainda exige limites de origem se houver quantidade.
+    if nf_hist_id:
+        from apps.comercial.services.alocacao_entrada_venda_service import (
+            obter_item_conferencia_por_historico,
+            quantidade_disponivel_entrada,
+            total_alocado_entrada,
+        )
+
+        item_conf = obter_item_conferencia_por_historico(int(nf_hist_id))
+        disponivel = quantidade_disponivel_entrada(item_conf)
+        ja = total_alocado_entrada(int(nf_hist_id))
+        if ja + q_nec > disponivel + Decimal('0.0005'):
+            raise AlocacaoAtendimentoErro(
+                f'A soma das alocações da entrada ({ja + q_nec}) '
+                f'ultrapassa a quantidade disponível ({disponivel}).',
+            )
+
     return AlocacaoAtendimento.objects.create(**dados)
 
 
 @transaction.atomic
 def atualizar_alocacao_atendimento(alocacao: AlocacaoAtendimento, dados: dict[str, Any]) -> AlocacaoAtendimento:
     payload = _normalizar_payload(dados, parcial=True)
+
+    def _id_de(campo: str, atual):
+        if campo in payload:
+            v = payload[campo]
+            if v is None:
+                return None
+            return v.pk if hasattr(v, 'pk') else int(v)
+        return atual
+
+    hist_id = _id_de('nf_entrada_historica_item', alocacao.nf_entrada_historica_item_id)
+    pvi_id = _id_de('pedido_venda_item', alocacao.pedido_venda_item_id)
+    q_nec = _dec(payload['quantidade_necessaria']) if 'quantidade_necessaria' in payload else _dec(alocacao.quantidade_necessaria)
+    q_at = _dec(payload['quantidade_atendida']) if 'quantidade_atendida' in payload else _dec(alocacao.quantidade_atendida)
+    q_pen = _dec(payload['quantidade_pendente']) if 'quantidade_pendente' in payload else _dec(alocacao.quantidade_pendente)
+    obs = payload['observacao_operacional'] if 'observacao_operacional' in payload else (alocacao.observacao_operacional or '')
+
+    if hist_id and pvi_id:
+        from apps.comercial.services.alocacao_entrada_venda_service import alocar_entrada_para_venda
+
+        fat_id = _id_de('faturamento_item', alocacao.faturamento_item_id)
+        nf_id = _id_de('item_nf_saida', alocacao.item_nf_saida_id)
+        old_pk = alocacao.pk
+        aloc, _acao = alocar_entrada_para_venda(
+            nf_entrada_historica_item_id=int(hist_id),
+            pedido_venda_item_id=int(pvi_id),
+            quantidade=q_nec,
+            observacao_operacional=obs or '',
+            faturamento_item_id=fat_id,
+            item_nf_saida_id=nf_id,
+        )
+        if aloc.pk != old_pk:
+            AlocacaoAtendimento.objects.filter(pk=old_pk).delete()
+        return aloc
+
     for k, v in payload.items():
         if hasattr(alocacao, k):
             setattr(alocacao, k, v)
 
-    q_nec = _dec(alocacao.quantidade_necessaria)
-    q_at = _dec(alocacao.quantidade_atendida)
-    q_pen = _dec(alocacao.quantidade_pendente)
     validar_quantidades_alocacao(
         pedido_venda_item_id=alocacao.pedido_venda_item_id,
         quantidade_necessaria=q_nec,
@@ -161,6 +228,23 @@ def atualizar_alocacao_atendimento(alocacao: AlocacaoAtendimento, dados: dict[st
     from apps.comercial.services.alocacao_atendimento_vinculos import validar_vinculos_alocacao
 
     validar_vinculos_alocacao(payload, alocacao=alocacao)
+
+    if alocacao.nf_entrada_historica_item_id:
+        from apps.comercial.services.alocacao_entrada_venda_service import (
+            obter_item_conferencia_por_historico,
+            quantidade_disponivel_entrada,
+            total_alocado_entrada,
+        )
+
+        item_conf = obter_item_conferencia_por_historico(alocacao.nf_entrada_historica_item_id)
+        disponivel = quantidade_disponivel_entrada(item_conf)
+        ja = total_alocado_entrada(alocacao.nf_entrada_historica_item_id, excluir_id=alocacao.pk)
+        if ja + q_nec > disponivel + Decimal('0.0005'):
+            raise AlocacaoAtendimentoErro(
+                f'A soma das alocações da entrada ({ja + q_nec}) '
+                f'ultrapassa a quantidade disponível ({disponivel}).',
+            )
+
     alocacao.save()
     return alocacao
 
@@ -250,6 +334,10 @@ def filtrar_alocacoes(params: dict[str, Any]) -> QuerySet:
         qs = qs.filter(origem_fisica=params['origem_fisica'])
     if params.get('destino_fisico'):
         qs = qs.filter(destino_fisico=params['destino_fisico'])
+    if params.get('nf_entrada_historica_item'):
+        qs = qs.filter(nf_entrada_historica_item_id=params['nf_entrada_historica_item'])
+    if params.get('item_conferencia'):
+        qs = qs.filter(nf_entrada_historica_item__item_conferencia__id=params['item_conferencia'])
     return qs
 
 

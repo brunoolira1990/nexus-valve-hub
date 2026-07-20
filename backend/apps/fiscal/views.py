@@ -3819,6 +3819,8 @@ class AlocacaoAtendimentoViewSet(AutocompleteOrPaginationMixin, viewsets.ModelVi
             'nfe_saida',
             'produto',
             'fornecedor',
+            'nf_entrada_historica_item',
+            'item_conferencia',
         }
         for key in (*int_keys, 'tipo_atendimento', 'status_entrada_fiscal', 'origem_fisica', 'destino_fisico'):
             val = (p.get(key) or '').strip()
@@ -3897,6 +3899,129 @@ class AlocacaoAtendimentoViewSet(AutocompleteOrPaginationMixin, viewsets.ModelVi
         from apps.comercial.services.alocacao_atendimento_busca import buscar_cte_conferido_opcoes
 
         return response.Response(buscar_cte_conferido_opcoes(self._opcoes_params(request)))
+
+    @action(detail=False, methods=['get'], url_path='opcoes/pedidos-venda-itens')
+    def opcoes_pedidos_venda_itens(self, request):
+        from apps.comercial.services.alocacao_entrada_venda_service import buscar_pedidos_venda_itens_opcoes
+
+        return response.Response(buscar_pedidos_venda_itens_opcoes(self._opcoes_params(request)))
+
+    @action(detail=False, methods=['get'], url_path='resumo-entrada-venda')
+    def resumo_entrada_venda(self, request):
+        from apps.comercial.services.alocacao_atendimento_service import AlocacaoAtendimentoErro
+        from apps.comercial.services.alocacao_entrada_venda_service import (
+            montar_resumo_entrada_venda,
+            obter_item_conferencia,
+            obter_item_conferencia_por_historico,
+        )
+
+        item_conf_id = (request.query_params.get('item_conferencia_id') or '').strip()
+        hist_id = (request.query_params.get('nf_entrada_historica_item_id') or '').strip()
+        try:
+            if item_conf_id:
+                item_conf = obter_item_conferencia(int(item_conf_id))
+            elif hist_id:
+                item_conf = obter_item_conferencia_por_historico(int(hist_id))
+            else:
+                return response.Response(
+                    {'detail': 'Informe item_conferencia_id ou nf_entrada_historica_item_id.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            return response.Response(montar_resumo_entrada_venda(item_conf))
+        except (TypeError, ValueError):
+            return response.Response({'detail': 'Parâmetro inválido.'}, status=status.HTTP_400_BAD_REQUEST)
+        except AlocacaoAtendimentoErro as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['post'], url_path='alocar-entrada-venda')
+    def alocar_entrada_venda(self, request):
+        from apps.comercial.services.alocacao_atendimento_service import AlocacaoAtendimentoErro
+        from apps.comercial.services.alocacao_entrada_venda_service import (
+            alocar_entrada_para_venda,
+            montar_resumo_entrada_venda,
+            obter_item_conferencia_por_historico,
+        )
+        from apps.fiscal.serializers import AlocacaoAtendimentoSerializer
+
+        data = request.data or {}
+        try:
+            pvi_raw = data.get('pedido_venda_item_id')
+            if pvi_raw is None or pvi_raw == '':
+                raise AlocacaoAtendimentoErro('Informe pedido_venda_item_id.')
+            aloc, acao = alocar_entrada_para_venda(
+                item_conferencia_id=data.get('item_conferencia_id') or None,
+                nf_entrada_historica_item_id=data.get('nf_entrada_historica_item_id') or None,
+                pedido_venda_item_id=int(pvi_raw),
+                quantidade=data.get('quantidade'),
+                observacao_operacional=data.get('observacao_operacional') or '',
+                faturamento_item_id=data.get('faturamento_item_id') or None,
+                item_nf_saida_id=data.get('item_nf_saida_id') or None,
+            )
+        except (TypeError, ValueError) as exc:
+            return response.Response({'detail': str(exc) or 'Payload inválido.'}, status=status.HTTP_400_BAD_REQUEST)
+        except AlocacaoAtendimentoErro as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        item_conf = obter_item_conferencia_por_historico(aloc.nf_entrada_historica_item_id)
+        http_status = status.HTTP_201_CREATED if acao == 'criado' else status.HTTP_200_OK
+        return response.Response(
+            {
+                'alocacao': AlocacaoAtendimentoSerializer(aloc).data,
+                'resumo': montar_resumo_entrada_venda(item_conf),
+                'acao': acao,
+            },
+            status=http_status,
+        )
+
+    @action(detail=True, methods=['patch'], url_path='quantidade-entrada-venda')
+    def quantidade_entrada_venda(self, request, pk=None):
+        from apps.comercial.services.alocacao_atendimento_service import AlocacaoAtendimentoErro
+        from apps.comercial.services.alocacao_entrada_venda_service import (
+            atualizar_quantidade_alocacao_entrada_venda,
+            montar_resumo_entrada_venda,
+            obter_item_conferencia_por_historico,
+        )
+        from apps.fiscal.serializers import AlocacaoAtendimentoSerializer
+
+        instance = self.get_object()
+        try:
+            aloc = atualizar_quantidade_alocacao_entrada_venda(
+                instance,
+                quantidade=request.data.get('quantidade'),
+            )
+        except AlocacaoAtendimentoErro as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        item_conf = obter_item_conferencia_por_historico(aloc.nf_entrada_historica_item_id)
+        return response.Response(
+            {
+                'alocacao': AlocacaoAtendimentoSerializer(aloc).data,
+                'resumo': montar_resumo_entrada_venda(item_conf),
+            },
+        )
+
+    @action(detail=True, methods=['post'], url_path='desvincular-entrada-venda')
+    def desvincular_entrada_venda(self, request, pk=None):
+        from apps.comercial.services.alocacao_atendimento_service import AlocacaoAtendimentoErro
+        from apps.comercial.services.alocacao_entrada_venda_service import (
+            desvincular_alocacao_entrada_venda,
+            montar_resumo_entrada_venda,
+            obter_item_conferencia_por_historico,
+        )
+
+        instance = self.get_object()
+        hist_id = instance.nf_entrada_historica_item_id
+        try:
+            desvincular_alocacao_entrada_venda(instance)
+        except AlocacaoAtendimentoErro as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        resumo = None
+        if hist_id:
+            try:
+                item_conf = obter_item_conferencia_por_historico(hist_id)
+                resumo = montar_resumo_entrada_venda(item_conf)
+            except AlocacaoAtendimentoErro:
+                resumo = None
+        return response.Response({'detail': 'Alocação desvinculada.', 'resumo': resumo})
 
 
 class AtendimentosOperacionaisViewSet(AutocompleteOrPaginationMixin, viewsets.GenericViewSet):

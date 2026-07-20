@@ -47,6 +47,7 @@ import {
   labelTipoEquivalencia,
 } from '@/lib/conferenciaEquivalencia';
 import { AtenderVendasPendentesBlock } from '@/components/AtenderVendasPendentesBlock';
+import { AlocarEntradaParaVendaBlock } from '@/components/fiscal/AlocarEntradaParaVendaBlock';
 import {
   CorridaSplitEditor,
   criarSplitsIniciais,
@@ -1028,6 +1029,13 @@ export function NFeEntradaConferenciaPanel({
                               />
                             ) : null}
                           </div>
+                        ) : null}
+                        {it.produto_id && it.status !== 'IGNORADO' ? (
+                          <AlocarEntradaParaVendaBlock
+                            itemConferenciaId={it.id}
+                            produtoId={it.produto_id}
+                            onAtualizado={() => void load()}
+                          />
                         ) : null}
                         {(it.vinculos_atendimento ?? []).map((v) => (
                           <span key={v.linha_id} className="erp-badge-info text-[9px] inline-block mt-1">

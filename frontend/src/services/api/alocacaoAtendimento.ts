@@ -13,6 +13,10 @@ import type {
   OpcaoPedidoCompra,
   OpcaoPedidoCompraItem,
 } from '@/types/alocacaoAtendimentoOpcoes';
+import type {
+  OpcaoPedidoVendaItemAlocacao,
+  ResumoEntradaVenda,
+} from '@/types/alocacaoEntradaVenda';
 
 const base = 'alocacoes-atendimento/';
 
@@ -86,5 +90,46 @@ export const alocacaoAtendimentoService = {
       await api.get<OpcaoCteConferido[]>(`${base}opcoes/cte-importado-conferido/`, {
         params: opcoesParams({ search, ...extra }),
       })
+    ).data,
+
+  opcoesPedidosVendaItens: async (search: string, extra?: OpcoesParams) =>
+    (
+      await api.get<OpcaoPedidoVendaItemAlocacao[]>(`${base}opcoes/pedidos-venda-itens/`, {
+        params: opcoesParams({ search, ...extra }),
+      })
+    ).data,
+
+  resumoEntradaVenda: async (params: {
+    item_conferencia_id?: number;
+    nf_entrada_historica_item_id?: number;
+  }) => (await api.get<ResumoEntradaVenda>(`${base}resumo-entrada-venda/`, { params })).data,
+
+  alocarEntradaVenda: async (payload: {
+    item_conferencia_id?: number;
+    nf_entrada_historica_item_id?: number;
+    pedido_venda_item_id: number;
+    quantidade: string;
+    observacao_operacional?: string;
+  }) =>
+    (
+      await api.post<{ alocacao: AlocacaoAtendimento; resumo: ResumoEntradaVenda; acao: 'criado' | 'atualizado' }>(
+        `${base}alocar-entrada-venda/`,
+        payload,
+      )
+    ).data,
+
+  atualizarQuantidadeEntradaVenda: async (id: number, quantidade: string) =>
+    (
+      await api.patch<{ alocacao: AlocacaoAtendimento; resumo: ResumoEntradaVenda }>(
+        `${base}${id}/quantidade-entrada-venda/`,
+        { quantidade },
+      )
+    ).data,
+
+  desvincularEntradaVenda: async (id: number) =>
+    (
+      await api.post<{ detail: string; resumo: ResumoEntradaVenda | null }>(
+        `${base}${id}/desvincular-entrada-venda/`,
+      )
     ).data,
 };

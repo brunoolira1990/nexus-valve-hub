@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.core.exceptions import ObjectDoesNotExist
+
 from apps.fiscal.dfe_classificacao import (
     eh_documento_autorizado,
     eh_documento_homologacao,
@@ -90,8 +92,12 @@ def validar_vinculos_alocacao(
                 'A NF-e de entrada selecionada não está autorizada (cStat) e não pode ser vinculada.',
             )
         conf_prod = None
-        if hasattr(item_nf, 'item_conferencia') and item_nf.item_conferencia_id:
-            conf_prod = item_nf.item_conferencia.produto_id
+        try:
+            conf = item_nf.item_conferencia
+        except ObjectDoesNotExist:
+            conf = None
+        if conf is not None:
+            conf_prod = conf.produto_id
         _checar_produto_compativel(produto_aloc, conf_prod, contexto='item da NF-e entrada')
 
     nf_entrada_item = dados.get('nf_entrada_item')
