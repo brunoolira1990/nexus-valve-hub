@@ -185,6 +185,8 @@ export function NFeSaidaEmissaoProducaoPanel({
           toast.success(finFeedback.texto);
         } else if (finFeedback.tipo === 'ja_existente') {
           toast.message(finFeedback.texto);
+        } else if (finFeedback.tipo === 'a_vista') {
+          toast.message(finFeedback.texto);
         } else if (finFeedback.tipo === 'erro') {
           toast.warning(finFeedback.texto);
         }
@@ -252,6 +254,11 @@ export function NFeSaidaEmissaoProducaoPanel({
                 Ver contas a receber
               </button>
             </div>
+          ) : null}
+          {feedbackFin.tipo === 'a_vista' ? (
+            <p className="pt-2 text-sm text-muted-foreground" data-testid="nfe-producao-financeiro-a-vista">
+              {feedbackFin.texto}
+            </p>
           ) : null}
           {feedbackFin.tipo === 'erro' ? (
             <div className="pt-2 space-y-2" data-testid="nfe-producao-financeiro-aviso">

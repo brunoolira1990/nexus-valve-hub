@@ -95,6 +95,26 @@ describe('NFeFinanceiroAcoes', () => {
     );
     expect(screen.getByRole('button', { name: /Ver contas a receber/i })).toBeInTheDocument();
   });
+
+  it('venda à vista — sem botão Gerar e com informação neutra', () => {
+    render(
+      <MemoryRouter>
+        <NFeFinanceiroAcoes
+          nfeId={1}
+          status="AUTORIZADA_PRODUCAO"
+          statusEmissaoSefaz="AUTORIZADA_PRODUCAO"
+          financeiro={{
+            pode_gerar_contas_receber: false,
+            venda_integralmente_a_vista: true,
+            motivo_bloqueio_financeiro: 'Venda à vista — não gera Contas a Receber.',
+          }}
+          onGerar={() => undefined}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole('button', { name: /Gerar contas a receber/i })).toBeNull();
+    expect(screen.getByText(/Venda à vista — não gera Contas a Receber/i)).toBeInTheDocument();
+  });
 });
 
 describe('validação de parcelas wizard', () => {

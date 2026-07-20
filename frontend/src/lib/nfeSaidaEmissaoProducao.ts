@@ -146,14 +146,22 @@ export type FinanceiroPosAutorizacao = {
   titulo_numero?: string;
   financeiro_gerado?: boolean;
   pode_gerar_contas_receber?: boolean;
+  motivo_bloqueio_financeiro?: string;
+  venda_integralmente_a_vista?: boolean;
 };
 
 export function feedbackFinanceiroPosAutorizacaoProducao(
   financeiro?: FinanceiroPosAutorizacao | null,
 ): {
-  tipo: 'gerado' | 'ja_existente' | 'erro' | null;
+  tipo: 'gerado' | 'ja_existente' | 'erro' | 'a_vista' | null;
   texto: string;
 } {
+  if (financeiro?.venda_integralmente_a_vista && !financeiro?.erro && !financeiro?.gerado) {
+    return {
+      tipo: 'a_vista',
+      texto: financeiro.mensagem || financeiro.motivo_bloqueio_financeiro || 'Venda à vista — não gera Contas a Receber.',
+    };
+  }
   if (!financeiro?.tentado && !financeiro?.gerado && !financeiro?.ja_existente && !financeiro?.erro) {
     return { tipo: null, texto: '' };
   }

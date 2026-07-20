@@ -34,6 +34,24 @@ def _is_indeterminate_payment(normalized: str) -> bool:
     return any(m in normalized for m in markers)
 
 
+def pagamento_integralmente_a_vista(dias_parcelas: list[int] | None) -> bool:
+    """
+    Plano canônico de pagamento integralmente à vista.
+
+    Fonte: ArrayField `dias_parcelas` (inteiros), nunca texto livre.
+    True somente quando há exatamente uma parcela com 0 dias: ``[0]``.
+
+    Não classifica como à vista:
+    - lista vazia / condição ausente (``[]``);
+    - a prazo (ex.: ``[30]``, ``[30, 60]``);
+    - misto entrada + prazo (ex.: ``[0, 30]``).
+
+    Não define meio de pagamento fiscal (``tPag``) — apenas o prazo/plano.
+    """
+    days = list(dias_parcelas or [])
+    return len(days) == 1 and int(days[0]) == 0
+
+
 def parse_payment_condition(text: str) -> list[int]:
     raw = (text or "").strip()
     if raw == "":

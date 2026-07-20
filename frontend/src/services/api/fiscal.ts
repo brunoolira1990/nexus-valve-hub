@@ -440,6 +440,7 @@ export type NFeSaidaConferenciaPayload = {
     financeiro_gerado?: boolean;
     pode_gerar_contas_receber?: boolean;
     motivo_bloqueio_financeiro?: string;
+    venda_integralmente_a_vista?: boolean;
     contas_receber_vinculadas?: Array<{ id: number; numero: string; status: string; cancelado: boolean }>;
     nfe_cancelada_com_financeiro?: boolean;
   };
@@ -728,6 +729,7 @@ export type NFeEmissaoProducaoResponse = NFeEmissaoHomologacaoResponse & {
     financeiro_gerado?: boolean;
     pode_gerar_contas_receber?: boolean;
     motivo_bloqueio_financeiro?: string;
+    venda_integralmente_a_vista?: boolean;
     contas_receber_vinculadas?: Array<{
       id: number;
       numero: string;
@@ -1241,6 +1243,7 @@ export type NFeGerarContasReceberPreview = {
   financeiro_gerado: boolean;
   pode_gerar_contas_receber: boolean;
   motivo_bloqueio_financeiro: string;
+  venda_integralmente_a_vista?: boolean;
   contas_receber_vinculadas: Array<{ id: number; numero: string; status: string; cancelado: boolean }>;
   nfe_cancelada_com_financeiro?: boolean;
   cliente: { id: number; nome: string };
@@ -1277,6 +1280,7 @@ export type NFeGerarContasReceberResponse = {
   financeiro_gerado: boolean;
   pode_gerar_contas_receber: boolean;
   motivo_bloqueio_financeiro: string;
+  venda_integralmente_a_vista?: boolean;
   contas_receber_vinculadas: Array<{ id: number; numero: string; status: string; cancelado: boolean }>;
 };
 
@@ -1284,6 +1288,7 @@ export type NFeContasReceberVinculadasResponse = {
   financeiro_gerado: boolean;
   pode_gerar_contas_receber: boolean;
   motivo_bloqueio_financeiro: string;
+  venda_integralmente_a_vista?: boolean;
   contas_receber_vinculadas: Array<{ id: number; numero: string; status: string; cancelado: boolean }>;
   contas_receber: import('@/services/api/financeiro').TituloFinanceiro[];
 };

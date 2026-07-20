@@ -6,9 +6,13 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from apps.comercial.payment_terms import compute_due_dates, parse_payment_condition
+from apps.comercial.payment_terms import compute_due_dates, pagamento_integralmente_a_vista
 from apps.core.pdf.formatters import dec, format_currency_br, format_date_br
 from apps.fiscal.models import NFeSaida
+from apps.fiscal.nfe_saida_condicao_pagamento import (
+    nfe_venda_integralmente_a_vista,
+    resolver_dias_parcelas_nfe,
+)
 
 
 def _round_money(v: Decimal) -> Decimal:
@@ -27,25 +31,11 @@ def _parse_iso_date(value: str | date | None) -> date | None:
 
 
 def _resolve_dias_parcelas(nf: NFeSaida) -> list[int]:
-    days = list(nf.dias_parcelas or [])
-    if days:
-        return days
-    pedido = nf.pedido_venda if nf.pedido_venda_id else None
-    if pedido and pedido.dias_parcelas:
-        return list(pedido.dias_parcelas)
-    texto = (nf.condicao_pagamento_texto or '').strip()
-    if not texto and pedido:
-        texto = (pedido.condicao_pagamento_texto or '').strip()
-    if not texto:
-        return []
-    try:
-        return parse_payment_condition(texto)
-    except Exception:
-        return []
+    return resolver_dias_parcelas_nfe(nf)
 
 
 def _pagamento_a_vista(days: list[int]) -> bool:
-    return days == [0] or (len(days) == 1 and days[0] == 0)
+    return pagamento_integralmente_a_vista(days)
 
 
 def _resolve_vencimentos(nf: NFeSaida, days: list[int]) -> list[date]:
@@ -59,7 +49,7 @@ def _resolve_vencimentos(nf: NFeSaida, days: list[int]) -> list[date]:
         if prev:
             return prev
 
-    if not days or _pagamento_a_vista(days):
+    if not days or pagamento_integralmente_a_vista(days):
         return []
 
     base = nf.data or date.today()
@@ -87,7 +77,14 @@ def gerar_duplicatas_nfe_saida(nf: NFeSaida) -> list[dict[str, Any]]:
     """
     Gera duplicatas a partir do pedido/faturamento/NF-e.
     Retorno: [{numero, vencimento (YYYY-MM-DD), valor (Decimal)}]
+
+    Venda integralmente à vista (``dias_parcelas == [0]``) não gera cobrança
+    a prazo (``cobr``/``dup``). Não define ``tPag`` — isso permanece em
+    ``build_pag_bindings``.
     """
+    if nfe_venda_integralmente_a_vista(nf):
+        return []
+
     if _titulos_ja_preenchidos(nf):
         out: list[dict[str, Any]] = []
         for idx, t in enumerate(nf.titulos_receber or [], start=1):
@@ -108,9 +105,6 @@ def gerar_duplicatas_nfe_saida(nf: NFeSaida) -> list[dict[str, Any]]:
         return out
 
     days = _resolve_dias_parcelas(nf)
-    if _pagamento_a_vista(days):
-        return []
-
     vencs = _resolve_vencimentos(nf, days)
     if not vencs:
         return []
@@ -178,7 +172,7 @@ def recalcular_duplicatas_por_data_emissao(nf: NFeSaida, *, save: bool = True) -
     base = nf.data or date.today()
     days = _resolve_dias_parcelas(nf)
 
-    if _pagamento_a_vista(days):
+    if nfe_venda_integralmente_a_vista(nf):
         nf.titulos_receber = []
         nf.vencimentos_finais = []
         nf.quantidade_parcelas = 0

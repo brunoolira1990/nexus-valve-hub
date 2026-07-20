@@ -125,6 +125,17 @@ describe('feedbackFinanceiroPosAutorizacaoProducao', () => {
     expect(r.tipo).toBe('erro');
     expect(r.texto).toMatch(/Gerar contas a receber/);
   });
+
+  it('venda à vista — neutro sem erro de CR', () => {
+    const r = feedbackFinanceiroPosAutorizacaoProducao({
+      tentado: false,
+      venda_integralmente_a_vista: true,
+      mensagem: 'Venda à vista — não gera Contas a Receber.',
+    });
+    expect(r.tipo).toBe('a_vista');
+    expect(r.texto).toMatch(/à vista/i);
+    expect(r.texto).not.toMatch(/não foi possível gerar/i);
+  });
 });
 
 describe('NFeSaidaEmissaoProducaoPanel', () => {

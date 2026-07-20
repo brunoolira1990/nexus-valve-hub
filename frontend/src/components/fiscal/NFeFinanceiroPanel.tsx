@@ -8,6 +8,7 @@ type FinanceiroFlags = {
   financeiro_gerado?: boolean;
   pode_gerar_contas_receber?: boolean;
   motivo_bloqueio_financeiro?: string;
+  venda_integralmente_a_vista?: boolean;
   contas_receber_vinculadas?: Array<{ id: number; numero: string; status?: string }>;
   nfe_cancelada_com_financeiro?: boolean;
 };
@@ -31,6 +32,12 @@ function statusFinanceiroLabel(flags: FinanceiroFlags): { texto: string; tone: '
     return {
       texto: flags.motivo_bloqueio_financeiro || 'Contas a receber já foram geradas para esta NF-e.',
       tone: 'success',
+    };
+  }
+  if (flags.venda_integralmente_a_vista) {
+    return {
+      texto: flags.motivo_bloqueio_financeiro || 'Venda à vista — não gera Contas a Receber.',
+      tone: 'muted',
     };
   }
   if (flags.pode_gerar_contas_receber) {

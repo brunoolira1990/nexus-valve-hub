@@ -19,6 +19,7 @@ from apps.fiscal.nfe_saida_bloqueio import (
     nf_autorizada_producao,
     nf_cancelada_operacional,
 )
+from apps.fiscal.nfe_saida_condicao_pagamento import nfe_venda_integralmente_a_vista
 from apps.fiscal.nfe_saida_duplicatas import gerar_duplicatas_nfe_saida
 
 logger = logging.getLogger(__name__)
@@ -40,10 +41,12 @@ MSG_SOMA_PARCELAS = 'A soma das parcelas não confere com o valor total.'
 MSG_ALERTA_NFE_CANCELADA = 'A NF-e de origem foi cancelada. Revise este título financeiro.'
 MSG_CR_GERADO = 'Contas a receber gerado.'
 MSG_CR_JA_EXISTENTE = 'Contas a receber já gerado.'
+MSG_VENDA_A_VISTA = 'Venda à vista — não gera Contas a Receber.'
 MSG_AUTO_FALHA_CR = (
     'NF-e autorizada, mas não foi possível gerar o Contas a Receber. '
     'Use a ação Gerar contas a receber para regularizar.'
 )
+MSG_AUTO_NAO_APLICAVEL_A_VISTA = MSG_VENDA_A_VISTA
 
 
 def _round_money(value: Decimal | str | float | int) -> Decimal:
@@ -96,6 +99,7 @@ def montar_flags_financeiro_nfe(nf: NFeSaida) -> dict[str, Any]:
     vinculados = list(titulos_vinculados_nfe(nf))
     financeiro_gerado = bool(vinculados)
     tem_cancelado = any(t.cancelado for t in vinculados)
+    venda_a_vista = nfe_venda_integralmente_a_vista(nf)
 
     pode_gerar = False
     motivo = ''
@@ -106,6 +110,8 @@ def montar_flags_financeiro_nfe(nf: NFeSaida) -> dict[str, Any]:
         motivo = MSG_CANCELADA
     elif nf_autorizada_homologacao(nf):
         motivo = MSG_HOMOLOG_SEM_FINANCEIRO
+    elif venda_a_vista:
+        motivo = MSG_VENDA_A_VISTA
     elif not nf_autorizada_para_financeiro(nf):
         motivo = 'Disponível após autorização da NF-e.'
     elif not nf.cliente_id:
@@ -119,6 +125,7 @@ def montar_flags_financeiro_nfe(nf: NFeSaida) -> dict[str, Any]:
         'financeiro_gerado': financeiro_gerado,
         'pode_gerar_contas_receber': pode_gerar,
         'motivo_bloqueio_financeiro': motivo,
+        'venda_integralmente_a_vista': venda_a_vista,
         'contas_receber_vinculadas': [
             {
                 'id': t.id,
@@ -144,6 +151,9 @@ def _parse_iso_date(value: str | date | None) -> date | None:
 
 
 def montar_parcelas_sugeridas_nfe(nf: NFeSaida) -> list[dict[str, Any]]:
+    if nfe_venda_integralmente_a_vista(nf):
+        return []
+
     dups = gerar_duplicatas_nfe_saida(nf)
     if not dups:
         venc = nf.data or date.today()
@@ -193,6 +203,8 @@ def preview_contas_receber_de_nfe(nf: NFeSaida) -> dict[str, Any]:
         raise ValueError(MSG_CANCELADA)
     if nf_autorizada_homologacao(nf):
         raise ValueError(MSG_HOMOLOG_SEM_FINANCEIRO)
+    if nfe_venda_integralmente_a_vista(nf):
+        raise ValueError(MSG_VENDA_A_VISTA)
     if not nf_autorizada_para_financeiro(nf):
         raise ValueError(MSG_NAO_AUTORIZADA)
     if not nf.cliente_id:
@@ -373,6 +385,7 @@ def _payload_financeiro_auto(
         'financeiro_gerado': bool(titulo) or ja_existente,
         'pode_gerar_contas_receber': False,
         'motivo_bloqueio_financeiro': '',
+        'venda_integralmente_a_vista': False,
         'contas_receber_vinculadas': [],
         'nfe_cancelada_com_financeiro': False,
     }
@@ -391,6 +404,7 @@ def _payload_financeiro_auto(
         'financeiro_gerado': flags['financeiro_gerado'],
         'pode_gerar_contas_receber': flags['pode_gerar_contas_receber'],
         'motivo_bloqueio_financeiro': flags.get('motivo_bloqueio_financeiro') or '',
+        'venda_integralmente_a_vista': bool(flags.get('venda_integralmente_a_vista')),
         'contas_receber_vinculadas': flags.get('contas_receber_vinculadas') or [],
     }
 
@@ -423,6 +437,13 @@ def gerar_contas_receber_automatico_apos_autorizacao_producao(
             nf=nf,
         )
 
+    if nfe_venda_integralmente_a_vista(nf):
+        return _payload_financeiro_auto(
+            tentado=False,
+            mensagem=MSG_AUTO_NAO_APLICAVEL_A_VISTA,
+            nf=nf,
+        )
+
     try:
         with transaction.atomic():
             nf = NFeSaida.objects.select_for_update().select_related('cliente').get(pk=nf.pk)
@@ -434,6 +455,13 @@ def gerar_contas_receber_automatico_apos_autorizacao_producao(
                     ja_existente=True,
                     mensagem=MSG_CR_JA_EXISTENTE,
                     titulo=titulo,
+                    nf=nf,
+                )
+
+            if nfe_venda_integralmente_a_vista(nf):
+                return _payload_financeiro_auto(
+                    tentado=False,
+                    mensagem=MSG_AUTO_NAO_APLICAVEL_A_VISTA,
                     nf=nf,
                 )
 
@@ -517,6 +545,8 @@ def gerar_contas_receber_de_nfe_autorizada(
         raise ValueError(MSG_CANCELADA)
     if nf_autorizada_homologacao(nf):
         raise ValueError(MSG_HOMOLOG_SEM_FINANCEIRO)
+    if nfe_venda_integralmente_a_vista(nf):
+        raise ValueError(MSG_VENDA_A_VISTA)
     if not nf_autorizada_para_financeiro(nf):
         raise ValueError(MSG_NAO_AUTORIZADA)
     if not nf.cliente_id:
