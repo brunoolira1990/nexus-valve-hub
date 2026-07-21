@@ -18,8 +18,14 @@ import { nfeHistoricaImportadaService, type NFeSaidaHistoricaList } from '@/serv
 import { apiErrorMessage } from '@/services/api/config';
 import {
   certificadoFornecedorStatusBadge,
+  itemCqTemOrigemDocumental,
+  origemFisicaCqBadge,
+  origemFisicaCqDescricao,
+  origemFisicaCqItem,
+  origemFisicaCqResumo,
   rastreabilidadeCqBadge,
 } from '@/lib/certificadoStatusUi';
+import { MSG_SEM_CORRIDAS_IRMAS, mesclarMensagensUnicas, removerMensagens } from '@/lib/cqMensagensUi';
 import type {
   CertificadoQualidade,
   CertificadoQualidadeStatus,
@@ -266,6 +272,10 @@ const Certificados = () => {
   const formRef = useRef(form);
   formRef.current = form;
 
+  /** Acrescenta mensagens sem duplicar as já exibidas (dedupe por conteúdo). */
+  const adicionarMensagensUnicas = (novas: string | string[]) =>
+    setMensagens((m) => mesclarMensagensUnicas(m, novas));
+
   const componentePreenchido = (comp: ReturnType<typeof ensureComp>) =>
     Boolean(
       (comp.nome_componente || '').trim()
@@ -299,21 +309,35 @@ const Certificados = () => {
     };
   }, [form.resumo_rastreabilidade, form.itens]);
 
+  /**
+   * Banner «Origem manual» somente quando a origem é realmente manual:
+   * sem vínculo documental (CF/IDs de origem) ou marcado pelo backend como
+   * CF_NAO_VINCULADO_MANUAL. Avisos de rastreabilidade sozinhos não bastam.
+   */
   const itensComAvisoCfManual = useMemo(
     () => form.itens.filter(
       (it) => it.incluir_no_certificado !== false
         && (
-          (it.rastreabilidade_avisos?.length ?? 0) > 0
-          || it.rastreabilidade_motivos?.includes('CF_NAO_VINCULADO_MANUAL')
-          || (
-            !it.tem_certificado_fornecedor
-            && !it.certificado_fornecedor_origem_id
-            && !it.item_certificado_fornecedor_origem_id
-          )
+          it.rastreabilidade_motivos?.includes('CF_NAO_VINCULADO_MANUAL')
+          || !itemCqTemOrigemDocumental(it)
         ),
     ),
     [form.itens],
   );
+
+  /** CF vinculado, porém sem corrida/lote identificado na origem — rastreabilidade incompleta, não «origem manual». */
+  const itensComOrigemVinculadaIncompleta = useMemo(
+    () => form.itens.filter(
+      (it) => it.incluir_no_certificado !== false
+        && itemCqTemOrigemDocumental(it)
+        && !it.rastreabilidade_motivos?.includes('CF_NAO_VINCULADO_MANUAL')
+        && !(it.corrida_snapshot || '').trim()
+        && !(it.lote_snapshot || '').trim(),
+    ),
+    [form.itens],
+  );
+
+  const origemFisicaResumo = useMemo(() => origemFisicaCqResumo(form.itens), [form.itens]);
 
   const temAvisoRastreabilidadeFisica = useMemo(
     () => form.itens.some(
@@ -746,10 +770,9 @@ const Certificados = () => {
       const corridas = await certificadosQualidadeService.corridasDisponiveisPorProduto(produto.id);
       setCorridasDisponiveisPorItem((p) => ({ ...p, [idx]: corridas }));
       if (!corridas.length) {
-        setMensagens((m) => [
-          ...m,
+        adicionarMensagensUnicas(
           'Nenhuma corrida/lote disponível encontrada para este produto cadastrado. Verifique entrada de estoque, conferência da NF-e de entrada ou certificado fornecedor.',
-        ]);
+        );
       }
     } catch (e) {
       setSaveError(apiErrorMessage(e, { fallback: 'Falha ao carregar corridas disponíveis para o produto cadastrado.' }));
@@ -805,7 +828,7 @@ const Certificados = () => {
       origem_observacoes: source.observacoes_origem || alertas.join(' | '),
     });
     if (alertas.length) {
-      setMensagens((m) => [...m, ...alertas]);
+      adicionarMensagensUnicas(alertas);
     }
   };
 
@@ -837,7 +860,7 @@ const Certificados = () => {
     );
     const disponiveis = irmas.filter((c) => !jaUsadas.has(valorSelecaoCorridaDisponivel(c)));
     if (!disponiveis.length) {
-      setMensagens((m) => [...m, 'Não há outras corridas irmãs deste certificado para adicionar.']);
+      adicionarMensagensUnicas(MSG_SEM_CORRIDAS_IRMAS);
       return;
     }
 
@@ -911,10 +934,10 @@ const Certificados = () => {
       ...prev,
       [novoIdx]: prev[idx] || [],
     }));
-    setMensagens((m) => [
-      ...m,
+    setMensagens((m) => mesclarMensagensUnicas(
+      removerMensagens(m, MSG_SEM_CORRIDAS_IRMAS),
       `Linha adicionada com corrida ${escolhida.corrida}${escolhida.lote ? `/${escolhida.lote}` : ''} do mesmo certificado fornecedor.`,
-    ]);
+    ));
   };
 
   const updateJsonField = (
@@ -1389,6 +1412,14 @@ const Certificados = () => {
             <p className="text-xs">{AVISO_SEM_CF_MANUAL}</p>
           </div>
         ) : null}
+        {form.status !== 'cancelado' && itensComOrigemVinculadaIncompleta.length > 0 ? (
+          <div className="mb-3 rounded border border-amber-300/70 bg-amber-50/90 dark:border-amber-800 dark:bg-amber-950/25 px-3 py-2 text-sm text-amber-950 dark:text-amber-100">
+            <p className="font-medium mb-1">Rastreabilidade incompleta na origem vinculada</p>
+            <p className="text-xs">
+              O item possui origem vinculada, mas a corrida/lote não foi identificado. Selecione a corrida correta na origem para completar a rastreabilidade.
+            </p>
+          </div>
+        ) : null}
         {mensagens.length ? (
           <div className="mb-2 text-xs text-amber-700 dark:text-amber-300">
             {mensagens.map((m) => <p key={m}>{m}</p>)}
@@ -1518,7 +1549,7 @@ const Certificados = () => {
 
         {form.status !== 'cancelado' ? (
           <div className="mt-4 rounded border border-border p-3 bg-muted/10">
-            <p className="text-sm font-medium mb-2">Rastreabilidade técnica</p>
+            <p className="text-sm font-medium mb-2">Prontidão técnica</p>
             {resumoRastreabilidade ? (
               <div className="flex flex-wrap gap-2 text-xs mb-2">
                 <span className="erp-badge-success">Completa: {resumoRastreabilidade.completos}</span>
@@ -1537,6 +1568,19 @@ const Certificados = () => {
                 Salve o certificado para calcular o resumo de rastreabilidade no servidor.
               </p>
             )}
+            <p className="text-[11px] text-muted-foreground mb-3">
+              A prontidão técnica indica apenas os dados exigidos para emissão do CQ; ela não comprova a origem física do material.
+            </p>
+            <p className="text-sm font-medium mb-2">Origem documental</p>
+            <div className="flex flex-wrap items-center gap-2 text-xs mb-1">
+              <span className={origemFisicaCqBadge(origemFisicaResumo).className}>
+                {origemFisicaCqBadge(origemFisicaResumo).label}
+              </span>
+              <span className="text-muted-foreground">{origemFisicaCqDescricao(origemFisicaResumo)}</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground mb-1">
+              Este indicador confirma o vínculo documental com o Certificado de Fornecedor e os dados de corrida/lote registrados. Ele não comprova, nesta fase, a origem física da quantidade consumida no estoque ou na alocação da venda.
+            </p>
             {temAvisoRastreabilidadeFisica ? (
               <p className="text-xs text-sky-800 dark:text-sky-300">
                 Rastreabilidade física não vinculada. Isso não impede a emissão do certificado.
@@ -1574,8 +1618,19 @@ const Certificados = () => {
                       <span className="erp-badge-success">Incluído</span>
                     )}
                     {it.incluir_no_certificado !== false && it.rastreabilidade_status ? (
-                      <span className={`${rastreabilidadeCqBadge(it.rastreabilidade_status).className} text-[10px]`}>
+                      <span
+                        className={`${rastreabilidadeCqBadge(it.rastreabilidade_status).className} text-[10px]`}
+                        title="Prontidão técnica: dados exigidos para emissão do CQ. Não comprova a origem física do material."
+                      >
                         {it.rastreabilidade_label || rastreabilidadeCqBadge(it.rastreabilidade_status).label}
+                      </span>
+                    ) : null}
+                    {it.incluir_no_certificado !== false ? (
+                      <span
+                        className={`${origemFisicaCqBadge(origemFisicaCqItem(it)).className} text-[10px]`}
+                        title="Origem documental: vínculo com Certificado de Fornecedor e corrida/lote registrados. Não comprova a origem física consumida no estoque/alocação."
+                      >
+                        {origemFisicaCqBadge(origemFisicaCqItem(it)).label}
                       </span>
                     ) : null}
                   </span>
