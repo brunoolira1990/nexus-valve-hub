@@ -180,16 +180,18 @@ describe('dfeOrganizacao40101', () => {
     expect(screen.queryByText(/Erro ao carregar/i)).not.toBeInTheDocument();
   });
 
-  it('CT-e entrada — botão importar XML', () => {
-    render(<CTeEntrada />);
-    expect(screen.getAllByRole('button', { name: /Importar XML CT-e/i }).length).toBeGreaterThanOrEqual(1);
+  it('CT-e entrada — orienta Base CT-e Importada (sem importar XML na tela operacional)', () => {
+    renderWithRouter(<CTeEntrada />);
+    expect(screen.queryByRole('button', { name: /Importar XML CT-e/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Novo CT-e$/i })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Ir para Base CT-e Importada/i }).length).toBeGreaterThanOrEqual(1);
   });
 
-  it('NF-e entrada — emitir entrada própria e importar XML', () => {
+  it('NF-e entrada — emitir entrada própria e link para base (XML fornecedor no Inbox)', () => {
     renderWithRouter(<NFeEntrada />);
     expect(screen.getByRole('button', { name: /Emitir entrada própria/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Importar XML de fornecedor/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Ir para Base NF-e Entrada Importada/i }).length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByRole('button', { name: /Importar XML de fornecedor/i })).not.toBeInTheDocument();
   });
 
   it('StatusBadge — base importada e fora da apuração', () => {

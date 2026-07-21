@@ -293,6 +293,6 @@ describe('NFeEntrada 4014', () => {
         <NFeEntrada />
       </MemoryRouter>,
     );
-    expect(screen.getByText(/Nenhuma NF-e de entrada operacional encontrada/i)).toBeInTheDocument();
+    expect(screen.getByText(/Nenhuma Entrada Própria encontrada/i)).toBeInTheDocument();
   });
 });

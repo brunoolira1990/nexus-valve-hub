@@ -55,7 +55,9 @@ describe('NFeEntradaRevisaoDrawer', () => {
   it('exibe aviso explícito de somente leitura e sem efeitos', async () => {
     render(<NFeEntradaRevisaoDrawer nfeId={42} open onClose={vi.fn()} />);
     expect(screen.getByRole('alert')).toHaveTextContent(/Revisão somente leitura/i);
-    expect(screen.getByRole('alert')).toHaveTextContent(/Não altera XML, estoque, financeiro ou preparação/i);
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      /Não altera XML, estoque, financeiro ou finalização da conferência/i,
+    );
     await waitFor(() => {
       expect(screen.getByText('Revisão da NF-e de entrada')).toBeInTheDocument();
     });
