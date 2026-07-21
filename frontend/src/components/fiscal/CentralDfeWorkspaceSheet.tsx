@@ -326,12 +326,30 @@ export function CentralDfeWorkspaceSheet({
               ) : null}
             </div>
           ) : conteudo === 'conferencia_nfe' && nfHistoricaId ? (
-            <NFeEntradaConferenciaPanel
-              nfeHistoricaId={nfHistoricaId}
-              embedded
-              onClose={onClose}
-              onUpdated={() => void handleUpdated()}
-            />
+            <div className="space-y-3">
+              {forcarConferencia &&
+              estadoInbox &&
+              ['ESTOQUE_APLICADO', 'CONCLUIDO'].includes(estadoInbox.estado.toUpperCase()) ? (
+                <div className="flex flex-wrap items-center gap-2 px-1">
+                  <button
+                    type="button"
+                    className="erp-btn-outline erp-btn-sm"
+                    onClick={() => setForcarConferencia(false)}
+                  >
+                    Voltar ao resumo
+                  </button>
+                  <span className="text-xs text-muted-foreground">
+                    Conferência aberta para alocação operacional (sem reaplicar estoque).
+                  </span>
+                </div>
+              ) : null}
+              <NFeEntradaConferenciaPanel
+                nfeHistoricaId={nfHistoricaId}
+                embedded
+                onClose={onClose}
+                onUpdated={() => void handleUpdated()}
+              />
+            </div>
           ) : conteudo === 'conferencia_cte' && cteHistoricoId ? (
             <CTeHistoricoDetalheModal
               open
@@ -397,6 +415,31 @@ export function CentralDfeWorkspaceSheet({
                       Abrir contas a pagar
                     </Link>
                   ) : null}
+                </div>
+              ) : null}
+
+              {nfHistoricaId && row.tipo_documento === 'NFE_ENTRADA' ? (
+                <div className="erp-card p-3 space-y-2 border border-primary/25 bg-primary/5">
+                  <p className="text-sm font-medium text-foreground">Alocar entrada para Pedido de Venda</p>
+                  <p className="text-xs text-muted-foreground">
+                    Notas com estoque já aplicado continuam disponíveis para a alocação operacional
+                    (sem movimentar estoque nem financeiro). Abra a conferência para vincular itens.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="erp-btn-primary erp-btn-sm"
+                      onClick={() => setForcarConferencia(true)}
+                    >
+                      Abrir conferência / Alocar para venda
+                    </button>
+                    <Link
+                      to={`/nfe-entrada/${nfHistoricaId}/conferencia`}
+                      className="erp-btn-outline erp-btn-sm inline-flex items-center"
+                    >
+                      Abrir página de conferência
+                    </Link>
+                  </div>
                 </div>
               ) : null}
 

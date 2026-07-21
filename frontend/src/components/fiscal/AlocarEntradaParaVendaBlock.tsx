@@ -25,11 +25,14 @@ export function AlocarEntradaParaVendaBlock({ itemConferenciaId, produtoId, onAt
   const [resumo, setResumo] = useState<ResumoEntradaVenda | null>(null);
   const [erro, setErro] = useState('');
   const [busy, setBusy] = useState(false);
+  // Fechado por padrão: evita formulário alto em cada linha e montagem desnecessária do autocomplete.
+  // Opções de PV só são buscadas ao digitar (AsyncAutocomplete + debounce).
   const [aberto, setAberto] = useState(false);
   const [opcaoPv, setOpcaoPv] = useState<OpcaoPedidoVendaItemAlocacao | null>(null);
   const [quantidade, setQuantidade] = useState('');
   const [editId, setEditId] = useState<number | null>(null);
   const [editQty, setEditQty] = useState('');
+  const [resumoCarregado, setResumoCarregado] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -39,14 +42,28 @@ export function AlocarEntradaParaVendaBlock({ itemConferenciaId, produtoId, onAt
       setResumo(data);
       setErro('');
       setQuantidade((prev) => prev || data.saldo_entrada || '');
+      setResumoCarregado(true);
     } catch (e) {
       setErro(apiErrorMessage(e));
+      setResumoCarregado(true);
+      // Mantém o bloco visível; não limpa o título/ação.
     }
   }, [itemConferenciaId]);
 
+  // Resumo sob demanda: ao montar só se o operador abrir, ou após mutação.
+  // Não dispara busca de PV no mount.
   useEffect(() => {
+    setResumo(null);
+    setResumoCarregado(false);
+    setErro('');
+    setAberto(false);
+    setOpcaoPv(null);
+  }, [itemConferenciaId]);
+
+  useEffect(() => {
+    if (!aberto || resumoCarregado) return;
     void load();
-  }, [load]);
+  }, [aberto, resumoCarregado, load]);
 
   const buscarPvItens = useCallback(
     (term: string, limit?: number) =>
@@ -115,17 +132,17 @@ export function AlocarEntradaParaVendaBlock({ itemConferenciaId, produtoId, onAt
   };
 
   return (
-    <div className="mt-2 pt-2 border-t border-border/60 space-y-1.5">
+    <div className="mt-2 rounded-md border border-primary/30 bg-primary/5 p-2 space-y-1.5">
       <div className="flex flex-wrap items-center gap-1">
-        <p className="text-[9px] font-medium text-foreground">Alocar para venda</p>
+        <p className="text-xs font-semibold text-foreground">Alocar para venda</p>
         {resumo ? (
-          <span className={`${badgeEstado(resumo.estado_operacional)} text-[9px]`}>
+          <span className={`${badgeEstado(resumo.estado_operacional)} text-[10px]`}>
             {LABEL_ESTADO_OPERACIONAL[resumo.estado_operacional]}
           </span>
         ) : null}
         <button
           type="button"
-          className="erp-btn-outline erp-btn-sm text-[9px] py-0 ml-auto"
+          className="erp-btn-outline erp-btn-sm text-[10px] py-0 ml-auto"
           onClick={() => setAberto((v) => !v)}
         >
           {aberto ? 'Fechar' : 'Abrir'}
@@ -133,17 +150,17 @@ export function AlocarEntradaParaVendaBlock({ itemConferenciaId, produtoId, onAt
       </div>
 
       {resumo ? (
-        <p className="text-[9px] text-muted-foreground">
+        <p className="text-[10px] text-muted-foreground">
           Disponível: {resumo.quantidade_disponivel} {resumo.unidade_estoque_calculada} · Alocado:{' '}
           {resumo.total_alocado} · Saldo: {resumo.saldo_entrada}
         </p>
       ) : null}
 
-      <p className="text-[9px] text-amber-700 dark:text-amber-400">
+      <p className="text-[10px] text-amber-700 dark:text-amber-400">
         Alocação operacional: não movimenta estoque, não baixa Pedido de Compra e não gera financeiro.
       </p>
       {resumo?.aviso_estoque ? (
-        <p className="text-[9px] text-amber-700 dark:text-amber-400">{resumo.aviso_estoque}</p>
+        <p className="text-[10px] text-amber-700 dark:text-amber-400">{resumo.aviso_estoque}</p>
       ) : null}
 
       {(resumo?.alocacoes ?? []).map((a) => (
@@ -214,7 +231,7 @@ export function AlocarEntradaParaVendaBlock({ itemConferenciaId, produtoId, onAt
             value={opcaoPv?.id ?? null}
             selectedOption={opcaoPv}
             placeholder="Buscar item de Pedido de Venda…"
-            minChars={1}
+            minChars={2}
             search={buscarPvItens}
             getOptionValue={(o) => o.id}
             getOptionLabel={(o) => o.label}

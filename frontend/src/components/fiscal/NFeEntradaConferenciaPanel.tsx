@@ -49,6 +49,10 @@ import {
 import { AtenderVendasPendentesBlock } from '@/components/AtenderVendasPendentesBlock';
 import { AlocarEntradaParaVendaBlock } from '@/components/fiscal/AlocarEntradaParaVendaBlock';
 import {
+  deveExibirBlocoAlocarEntradaVenda,
+  deveOrientarVincularProdutoParaAlocacao,
+} from '@/lib/alocarEntradaVendaVisibilidade';
+import {
   CorridaSplitEditor,
   criarSplitsIniciais,
   itemUsaSplitCorrida,
@@ -1030,13 +1034,6 @@ export function NFeEntradaConferenciaPanel({
                             ) : null}
                           </div>
                         ) : null}
-                        {it.produto_id && it.status !== 'IGNORADO' ? (
-                          <AlocarEntradaParaVendaBlock
-                            itemConferenciaId={it.id}
-                            produtoId={it.produto_id}
-                            onAtualizado={() => void load()}
-                          />
-                        ) : null}
                         {(it.vinculos_atendimento ?? []).map((v) => (
                           <span key={v.linha_id} className="erp-badge-info text-[9px] inline-block mt-1">
                             Atende NF saída {v.numero_nf_saida}
@@ -1190,6 +1187,17 @@ export function NFeEntradaConferenciaPanel({
                         updateItem(it.id, { produto_id: val != null ? Number(val) : null });
                       }}
                     />
+                    {deveExibirBlocoAlocarEntradaVenda(it) ? (
+                      <AlocarEntradaParaVendaBlock
+                        itemConferenciaId={it.id}
+                        produtoId={it.produto_id}
+                        onAtualizado={() => void load()}
+                      />
+                    ) : deveOrientarVincularProdutoParaAlocacao(it) ? (
+                      <p className="text-[9px] text-muted-foreground pt-1">
+                        Vincule o produto interno para alocar esta entrada a um Pedido de Venda.
+                      </p>
+                    ) : null}
                   </div>
                 </td>
                 <td>

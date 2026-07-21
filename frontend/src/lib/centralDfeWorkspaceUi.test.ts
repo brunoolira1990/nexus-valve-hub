@@ -44,11 +44,15 @@ describe('centralDfeWorkspaceUi', () => {
     expect(resolverConteudoWorkspace(baseNfe, 'PRECISA_MANIFESTAR')).toBe('manifestacao');
     expect(resolverConteudoWorkspace(baseNfe, 'XML_DISPONIVEL')).toBe('xml_disponivel');
     expect(resolverConteudoWorkspace(baseNfe, 'EM_CONFERENCIA')).toBe('conferencia_nfe');
+    expect(resolverConteudoWorkspace(baseNfe, 'CONFERIDO')).toBe('conferencia_nfe');
+    expect(resolverConteudoWorkspace(baseNfe, 'ESTOQUE_APLICADO')).toBe('resumo_final');
     expect(resolverConteudoWorkspace(baseNfe, 'CONCLUIDO')).toBe('resumo_final');
   });
 
-  it('força conferência NF-e quando solicitado', () => {
+  it('força conferência NF-e quando solicitado (inclui notas finalizadas)', () => {
     expect(resolverConteudoWorkspace(baseNfe, 'XML_DISPONIVEL', true)).toBe('conferencia_nfe');
+    expect(resolverConteudoWorkspace(baseNfe, 'ESTOQUE_APLICADO', true)).toBe('conferencia_nfe');
+    expect(resolverConteudoWorkspace(baseNfe, 'CONCLUIDO', true)).toBe('conferencia_nfe');
   });
 
   it('mapeia CT-e para conferência ou xml', () => {
