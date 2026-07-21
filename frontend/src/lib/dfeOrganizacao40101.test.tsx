@@ -151,6 +151,9 @@ vi.mock('@/services/api/fiscal', () => ({
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  paginatedEmpty.items.splice(0);
+  paginatedEmpty.count = 0;
+  paginatedEmpty.totalPages = 0;
 });
 
 describe('dfeOrganizacao40101', () => {
@@ -180,6 +183,27 @@ describe('dfeOrganizacao40101', () => {
     expect(screen.queryByText(/Erro ao carregar/i)).not.toBeInTheDocument();
   });
 
+  it('base NF-e entrada importada — oferece reabertura operacional', async () => {
+    paginatedEmpty.items.push({
+      id: 10,
+      chave_acesso: '1'.repeat(44),
+      numero: '123',
+      serie: '1',
+      fornecedor_nome: 'Fornecedor teste',
+      dh_emissao: '2026-07-01T10:00:00',
+      importado_em: '2026-07-01T11:00:00',
+      status_conferencia: 'PREPARADA',
+      tem_xml_conteudo: true,
+      classificacao_dfe: [],
+    });
+    paginatedEmpty.count = 1;
+    paginatedEmpty.totalPages = 1;
+    renderWithRouter(<NFeHistoricaEntradaImportada />);
+    expect(
+      await screen.findByRole('button', { name: /Reabrir entrada para correção/i }),
+    ).toBeInTheDocument();
+  });
+
   it('CT-e entrada — orienta Base CT-e Importada (sem importar XML na tela operacional)', () => {
     renderWithRouter(<CTeEntrada />);
     expect(screen.queryByRole('button', { name: /Importar XML CT-e/i })).not.toBeInTheDocument();
@@ -192,6 +216,7 @@ describe('dfeOrganizacao40101', () => {
     expect(screen.getByRole('button', { name: /Emitir entrada própria/i })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /Ir para Base NF-e Entrada Importada/i }).length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByRole('button', { name: /Importar XML de fornecedor/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Reabrir entrada para correção/i })).not.toBeInTheDocument();
   });
 
   it('StatusBadge — base importada e fora da apuração', () => {

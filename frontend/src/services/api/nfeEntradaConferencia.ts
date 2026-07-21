@@ -1,5 +1,10 @@
 import api from './config';
-import type { NFeEntradaConferencia, ResultadoAplicacaoEstoque } from '@/types';
+import type {
+  NFeEntradaConferencia,
+  PreviewReaberturaEntradaFornecedor,
+  ResultadoAplicacaoEstoque,
+  ResultadoReaberturaEntradaFornecedor,
+} from '@/types';
 
 const base = 'nf-entradas-historicas-importadas/';
 
@@ -10,6 +15,19 @@ export const nfeEntradaConferenciaService = {
     (await api.post<NFeEntradaConferencia>(`${base}${nfeHistoricaId}/conferencia/`, payload)).data,
   prepararEstoque: async (nfeHistoricaId: number, payload?: { data_entrada?: string | null }) =>
     (await api.post<NFeEntradaConferencia>(`${base}${nfeHistoricaId}/preparar-estoque/`, payload ?? {})).data,
+  previewReabertura: async (nfeHistoricaId: number) =>
+    (
+      await api.get<PreviewReaberturaEntradaFornecedor>(
+        `${base}${nfeHistoricaId}/conferencia/reabrir/`,
+      )
+    ).data,
+  reabrir: async (nfeHistoricaId: number, motivo: string) =>
+    (
+      await api.post<ResultadoReaberturaEntradaFornecedor>(
+        `${base}${nfeHistoricaId}/conferencia/reabrir/`,
+        { motivo },
+      )
+    ).data,
   previewAplicarEstoque: async (nfeHistoricaId: number, confirmarAlertas = false) =>
     (
       await api.get<ResultadoAplicacaoEstoque>(

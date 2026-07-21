@@ -83,6 +83,11 @@ from .nfe_historica_entrada_fiscal import (
     separar_totais_e_indicadores_entrada,
 )
 from .nfe_entrada_data_entrada import filtrar_entrada_historica_por_competencia, mensagem_erro_schema_nfe_entrada, parse_data_entrada
+from .nfe_entrada_reabertura import (
+    ReaberturaEntradaFornecedorErro,
+    montar_preview_reabertura_entrada_fornecedor,
+    reabrir_entrada_fornecedor,
+)
 from .nfe_historica_fiscal import (
     agrupar_por_mes,
     agrupar_por_trimestre,
@@ -2518,6 +2523,30 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
 
         conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
         return response.Response(NFeEntradaConferenciaSerializer(conferencia).data)
+
+    @action(detail=True, methods=['get', 'post'], url_path='conferencia/reabrir')
+    def reabrir_conferencia(self, request, pk=None):
+        """Preview e confirmação da reabertura operacional da entrada de fornecedor."""
+        if request.method == 'GET':
+            nf = self.get_queryset().select_related('conferencia').get(pk=pk)
+            return response.Response(montar_preview_reabertura_entrada_fornecedor(nf))
+
+        try:
+            resultado = reabrir_entrada_fornecedor(
+                int(pk),
+                motivo=(request.data or {}).get('motivo', ''),
+                usuario=request.user,
+            )
+        except ReaberturaEntradaFornecedorErro as exc:
+            payload = {'detail': str(exc)}
+            if exc.preview:
+                payload.update(exc.preview)
+            return response.Response(payload, status=status.HTTP_400_BAD_REQUEST)
+
+        conferencia = resultado.pop('conferencia')
+        conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
+        resultado['conferencia'] = NFeEntradaConferenciaSerializer(conferencia).data
+        return response.Response(resultado)
 
     @action(detail=True, methods=['post'], url_path='preparar-estoque')
     @transaction.atomic

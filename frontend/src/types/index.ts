@@ -2620,6 +2620,50 @@ export interface NFeEntradaConferencia {
   itens: ItemConferenciaNFeEntrada[];
 }
 
+export interface ImpedimentoReaberturaEntradaFornecedor {
+  codigo: string;
+  mensagem: string;
+}
+
+export interface PreviewReaberturaEntradaFornecedor {
+  pode_reabrir: boolean;
+  estado_atual: NFeEntradaConferencia['status'] | null;
+  entrada_ja_aberta: boolean;
+  impedimentos: ImpedimentoReaberturaEntradaFornecedor[];
+  resumo_vinculos: {
+    pedido_compra_id?: number | null;
+    pedido_compra_selecionado?: boolean;
+    estoque_aplicado?: boolean;
+    baixa_pedido_compra_aplicada?: boolean;
+    contas_pagar_vinculadas?: number;
+    alocacoes_entrada_venda?: number;
+    atendimentos_estoque?: number;
+    barras_estoque_nao_canceladas?: number;
+    itens_conferencia?: number;
+    itens_com_produto?: number;
+    equivalencias?: number;
+    splits_corrida?: number;
+    certificados_fornecedor?: number;
+  };
+  orientacao: string;
+  numero_nfe: string;
+  serie_nfe: string;
+  fornecedor: string;
+  nfe_entrada_historica_id: number;
+  conferencia_id: number | null;
+}
+
+export interface ResultadoReaberturaEntradaFornecedor {
+  acao_realizada: boolean;
+  entrada_ja_aberta: boolean;
+  estado_anterior: NFeEntradaConferencia['status'];
+  estado_atual: NFeEntradaConferencia['status'];
+  evento_id: number | null;
+  mensagem: string;
+  preview: PreviewReaberturaEntradaFornecedor;
+  conferencia: NFeEntradaConferencia;
+}
+
 export interface EstoqueBarraAplicadaConferencia {
   estoque_barra_id: number;
   codigo_interno_barra: string;

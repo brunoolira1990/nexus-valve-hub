@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FileUp, FileCheck, Copy, ClipboardList, Printer } from 'lucide-react';
+import { toast } from 'sonner';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
 import { apiErrorMessage } from '@/services/api/config';
@@ -24,6 +25,7 @@ import { EmptyState, ErrorState } from '@/components/list/ListStates';
 import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
 import { StatusBadge } from '@/components/nexus/StatusBadge';
 import { DfeClassificacaoBadges } from '@/components/fiscal/DfeClassificacaoBadges';
+import { NFeEntradaReabrirModal } from '@/components/fiscal/NFeEntradaReabrirModal';
 import { NexusCard } from '@/components/nexus/NexusCard';
 import { NexusButton } from '@/components/nexus';
 import { TableSkeleton } from '@/components/nexus/Skeleton';
@@ -99,6 +101,7 @@ const NFeHistoricaEntradaImportada = () => {
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [diagCopiado, setDiagCopiado] = useState(false);
+  const [reabrirId, setReabrirId] = useState<number | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -376,6 +379,14 @@ const NFeHistoricaEntradaImportada = () => {
                     >
                       {labelBotaoPrincipalConferenciaNfeEntradaHistorica(r)}
                     </NexusButton>
+                    <NexusButton
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setReabrirId(r.id)}
+                    >
+                      Reabrir entrada para correção
+                    </NexusButton>
                   </div>
                 </td>
               </tr>
@@ -403,9 +414,25 @@ const NFeHistoricaEntradaImportada = () => {
             <p><strong>Empresa (ERP):</strong> {detalhe.empresa_nome || '—'} {detalhe.papel_empresa ? `(${detalhe.papel_empresa})` : ''}</p>
             <p><strong>Fornecedor:</strong> {detalhe.fornecedor_nome || '—'}</p>
             <p><strong>Status XML:</strong> {detalhe.cstat || '—'} {detalhe.xmotivo ? `- ${detalhe.xmotivo}` : ''}</p>
+            <NexusButton type="button" variant="outline" size="sm" onClick={() => setReabrirId(detalhe.id)}>
+              Reabrir entrada para correção
+            </NexusButton>
           </div>
         )}
       </Modal>
+      <NFeEntradaReabrirModal
+        open={reabrirId !== null}
+        nfeHistoricaId={reabrirId}
+        onOpenChange={(open) => {
+          if (!open) setReabrirId(null);
+        }}
+        onSuccess={(resultado) => {
+          toast.success(resultado.mensagem);
+          setModal(false);
+          void reload();
+          navigate(`/nfe-entrada/${resultado.conferencia.nf_entrada_historica}/conferencia`);
+        }}
+      />
     </div>
   );
 };

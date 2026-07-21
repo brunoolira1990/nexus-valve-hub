@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { GerarContasPagarNfeEntradaModal } from '@/components/fiscal/GerarContasPagarNfeEntradaModal';
 import { FornecedorEntradaAcoes } from '@/components/fiscal/FornecedorEntradaAcoes';
 import { NFeEntradaFinanceiroAcoes } from '@/components/fiscal/NFeEntradaFinanceiroAcoes';
+import { NFeEntradaReabrirModal } from '@/components/fiscal/NFeEntradaReabrirModal';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import {
   badgeClassStatusConferencia,
@@ -109,6 +110,7 @@ export function NFeEntradaConferenciaPanel({
   const [obsAplicar, setObsAplicar] = useState('');
   const [modalAplicarErro, setModalAplicarErro] = useState('');
   const [gerarCpOpen, setGerarCpOpen] = useState(false);
+  const [reabrirOpen, setReabrirOpen] = useState(false);
   const [sugestoesCorrelacaoIgnoradas, setSugestoesCorrelacaoIgnoradas] = useState<Set<number>>(
     () => new Set(),
   );
@@ -1441,6 +1443,9 @@ export function NFeEntradaConferenciaPanel({
             Fechar
           </button>
         ) : null}
+        <button type="button" className="erp-btn-outline" onClick={() => setReabrirOpen(true)} disabled={busy}>
+          Reabrir entrada para correção
+        </button>
         <button type="button" className="erp-btn-outline" onClick={() => void salvar()} disabled={busy}>
           {dados?.financeiro?.possui_pendencias_operacionais
             ? 'Salvar conferência com pendências'
@@ -1592,6 +1597,20 @@ export function NFeEntradaConferenciaPanel({
           notifyUpdated();
           if (titulo?.id && !embedded) {
             navigate(`/financeiro/contas-pagar?titulo=${titulo.id}`);
+          }
+        }}
+      />
+      <NFeEntradaReabrirModal
+        open={reabrirOpen}
+        nfeHistoricaId={nfId}
+        onOpenChange={setReabrirOpen}
+        onSuccess={(resultado) => {
+          setDados(resultado.conferencia);
+          void hydrateProdutoCache(resultado.conferencia);
+          toast.success(resultado.mensagem);
+          notifyUpdated();
+          if (!embedded) {
+            navigate(`/nfe-entrada/${nfId}/conferencia`);
           }
         }}
       />

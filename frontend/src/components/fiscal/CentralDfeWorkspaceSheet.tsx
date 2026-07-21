@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   Sheet,
   SheetContent,
@@ -15,6 +16,7 @@ import { NFeEntradaConferenciaPanel } from '@/components/fiscal/NFeEntradaConfer
 import { CTeHistoricoDetalheModal } from '@/components/fiscal/CTeHistoricoDetalheModal';
 import { NFeEntradaFinanceiroAcoes } from '@/components/fiscal/NFeEntradaFinanceiroAcoes';
 import { GerarContasPagarNfeEntradaModal } from '@/components/fiscal/GerarContasPagarNfeEntradaModal';
+import { NFeEntradaReabrirModal } from '@/components/fiscal/NFeEntradaReabrirModal';
 import { chaveNfeResumida } from '@/lib/chaveNfeResumida';
 import {
   abaInicialCteWorkspace,
@@ -113,6 +115,7 @@ export function CentralDfeWorkspaceSheet({
   } | null>(null);
   const [carregandoResumo, setCarregandoResumo] = useState(false);
   const [gerarCpOpen, setGerarCpOpen] = useState(false);
+  const [reabrirOpen, setReabrirOpen] = useState(false);
 
   const estadoInbox = useMemo(
     () => (row ? resolverEstadoConsolidadoExibicao(row, manifestacao) : null),
@@ -137,6 +140,7 @@ export function CentralDfeWorkspaceSheet({
       setManifestDoc(null);
       setForcarConferencia(false);
       setResumoConferencia(null);
+      setReabrirOpen(false);
       return;
     }
     setForcarConferencia(false);
@@ -401,6 +405,13 @@ export function CentralDfeWorkspaceSheet({
 
               {nfHistoricaId && isNfeFornecedor(row) ? (
                 <div className="flex flex-wrap gap-2 items-center">
+                  <button
+                    type="button"
+                    className="erp-btn-outline erp-btn-sm"
+                    onClick={() => setReabrirOpen(true)}
+                  >
+                    Reabrir entrada para correção
+                  </button>
                   <NFeEntradaFinanceiroAcoes
                     nfeEntradaId={nfHistoricaId}
                     conferenciaStatus={resumoConferencia?.status}
@@ -462,15 +473,32 @@ export function CentralDfeWorkspaceSheet({
         </div>
 
         {nfHistoricaId ? (
-          <GerarContasPagarNfeEntradaModal
-            open={gerarCpOpen}
-            nfeEntradaId={nfHistoricaId}
-            onClose={() => setGerarCpOpen(false)}
-            onGenerated={() => {
-              setGerarCpOpen(false);
-              void handleUpdated();
-            }}
-          />
+          <>
+            <GerarContasPagarNfeEntradaModal
+              open={gerarCpOpen}
+              nfeEntradaId={nfHistoricaId}
+              onClose={() => setGerarCpOpen(false)}
+              onGenerated={() => {
+                setGerarCpOpen(false);
+                void handleUpdated();
+              }}
+            />
+            <NFeEntradaReabrirModal
+              open={reabrirOpen}
+              nfeHistoricaId={nfHistoricaId}
+              onOpenChange={setReabrirOpen}
+              onSuccess={async (resultado) => {
+                setResumoConferencia({
+                  status: resultado.conferencia.status,
+                  estoque_aplicado_em: resultado.conferencia.estoque_aplicado_em ?? null,
+                  financeiro: resultado.conferencia.financeiro,
+                });
+                toast.success(resultado.mensagem);
+                await onUpdated();
+                setForcarConferencia(true);
+              }}
+            />
+          </>
         ) : null}
       </SheetContent>
     </Sheet>

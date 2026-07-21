@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from .modelo_operacional import DestinoFisico, OrigemFisica, StatusEntradaFiscal, TipoAtendimentoItem
@@ -941,6 +942,48 @@ class NFeEntradaConferencia(models.Model):
 
     class Meta:
         ordering = ['-atualizado_em', '-id']
+
+
+class NFeEntradaConferenciaReaberturaEvento(models.Model):
+    """Trilha imutável da reabertura operacional de entrada de fornecedor."""
+
+    TIPO_OPERACAO = 'REABERTURA_ENTRADA_FORNECEDOR'
+
+    conferencia = models.ForeignKey(
+        NFeEntradaConferencia,
+        on_delete=models.CASCADE,
+        related_name='eventos_reabertura',
+    )
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reaberturas_conferencia_nfe_entrada',
+    )
+    tipo_operacao = models.CharField(max_length=48, default=TIPO_OPERACAO, editable=False)
+    motivo = models.TextField()
+    estado_anterior = models.CharField(max_length=16)
+    estado_posterior = models.CharField(max_length=16)
+    resumo_tecnico = models.JSONField(default=dict, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-criado_em', '-id']
+        indexes = [
+            models.Index(
+                fields=['conferencia', 'criado_em'],
+                name='fiscal_reab_conf_criado_idx',
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError('Eventos de reabertura são imutáveis.')
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError('Eventos de reabertura são imutáveis.')
 
 
 class ItemNFeEntradaConferencia(models.Model):
