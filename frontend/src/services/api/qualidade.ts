@@ -7,6 +7,7 @@ import {
   unwrapListResults,
 } from '@/lib/apiList';
 import type { CertificadoQualidade, CorridaDisponivelCertificadoQualidade } from '@/types';
+import type { CorridasCfParaCqResponse } from '@/lib/cqCorridasCfUi';
 
 const base = 'certificados-qualidade/';
 
@@ -162,6 +163,14 @@ export const certificadosQualidadeService = {
     (await api.post<PreencherPorNFeResponse>(`${base}preencher-por-nfe/`, payload)).data,
   corridasDisponiveisPorProduto: async (produtoId: number) =>
     (await api.get<CorridaDisponivelCertificadoQualidade[]>(`${base}corridas-disponiveis/`, { params: { produto_id: produtoId } })).data,
+  /** Corridas do CF/item EXATOS vinculados ao item do CQ (nunca busca por produto). */
+  corridasCertificadoFornecedor: async (certificadoFornecedorId: number, itemCertificadoFornecedorId: number) =>
+    (await api.get<CorridasCfParaCqResponse>(`${base}corridas-certificado-fornecedor/`, {
+      params: {
+        certificado_fornecedor_id: certificadoFornecedorId,
+        item_certificado_fornecedor_id: itemCertificadoFornecedorId,
+      },
+    })).data,
   obterPdfBlob: async (id: number, preview = false) => getPdfBlob(id, preview),
   buildPdfFilename,
   visualizarPdf: async (id: number, preview = false, input?: PdfFilenameInput) => {

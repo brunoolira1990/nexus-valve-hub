@@ -114,7 +114,12 @@ class CertificadoQualidadePermissions(BasePermission):
             return u.has_perm('qualidade.view_certificadoqualidade') or u.has_perm(
                 'qualidade.change_certificadoqualidade'
             )
-        if action in ('corridas_disponiveis', 'preencher_por_nfe', 'nfes_elegiveis'):
+        if action in (
+            'corridas_disponiveis',
+            'corridas_certificado_fornecedor',
+            'preencher_por_nfe',
+            'nfes_elegiveis',
+        ):
             return u.has_perm('qualidade.change_certificadoqualidade')
         return False
 
@@ -269,6 +274,31 @@ def _passes_corrida_lote_cf_item(item: ItemCertificadoFornecedorEntrada, corrida
         elif corrida_norm and il:
             return False
     return True
+
+
+def _match_corrida_adicional_cf_item(item: ItemCertificadoFornecedorEntrada, corrida_norm: str, lote_norm: str):
+    """Corrida adicional do item que casa com a busca (dados técnicos herdados do item principal).
+
+    Só considera adicionais quando há corrida/lote na busca — nunca por produto apenas.
+    """
+    if not corrida_norm and not lote_norm:
+        return None
+    for extra in item.corridas_adicionais.all():
+        extra_corrida_norm = _normalize_search_token(extra.corrida or '')
+        extra_lote_norm = _normalize_search_token(extra.lote or '')
+        if not extra_corrida_norm and not extra_lote_norm:
+            continue
+        if corrida_norm:
+            if not (
+                _contains_normalized(extra_corrida_norm, corrida_norm)
+                or _contains_normalized(extra_lote_norm, corrida_norm)
+            ):
+                continue
+        if lote_norm and extra_lote_norm:
+            if not _contains_normalized(extra_lote_norm, lote_norm):
+                continue
+        return extra
+    return None
 
 
 def _qs_items_cf_diag_base(*, fornecedor, nf_entrada, certificado_numero):
@@ -608,6 +638,31 @@ class CertificadoQualidadeViewSet(AutocompleteOrPaginationMixin, viewsets.ModelV
         payload = listar_corridas_disponiveis_produto(produto_id_int)
         return Response(payload, status=status.HTTP_200_OK)
 
+    @action(detail=False, methods=['get'], url_path='corridas-certificado-fornecedor')
+    def corridas_certificado_fornecedor(self, request):
+        """Corridas do CF/item EXATOS vinculados ao item do CQ (nunca por produto)."""
+        from apps.qualidade.corridas_cf_para_cq import (
+            ItemCfNaoEncontradoError,
+            listar_corridas_cf_para_item_cq,
+        )
+
+        try:
+            cf_id = int(str(request.query_params.get('certificado_fornecedor_id') or '').strip())
+            item_cf_id = int(str(request.query_params.get('item_certificado_fornecedor_id') or '').strip())
+        except (TypeError, ValueError):
+            return Response(
+                {'detail': 'Informe certificado_fornecedor_id e item_certificado_fornecedor_id.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            payload = listar_corridas_cf_para_item_cq(
+                certificado_fornecedor_id=cf_id,
+                item_certificado_fornecedor_id=item_cf_id,
+            )
+        except ItemCfNaoEncontradoError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        return Response(payload, status=status.HTTP_200_OK)
+
     @action(detail=True, methods=['get'], url_path='pdf')
     def pdf(self, request, pk=None):
         cert = self.get_object()
@@ -825,7 +880,7 @@ class CertificadoFornecedorEntradaViewSet(AutocompleteOrPaginationMixin, viewset
         )
         status_param = (request.query_params.get('status') or '').strip().lower()
         include_rascunho = str(request.query_params.get('include_rascunho', '')).lower() in {'1', 'true', 'sim'}
-        qs = ItemCertificadoFornecedorEntrada.objects.select_related('certificado_fornecedor', 'produto', 'certificado_fornecedor__fornecedor').prefetch_related('componentes').filter(
+        qs = ItemCertificadoFornecedorEntrada.objects.select_related('certificado_fornecedor', 'produto', 'certificado_fornecedor__fornecedor').prefetch_related('componentes', 'corridas_adicionais').filter(
             ativo=True,
         )
         qs = _filter_cf_items_por_status_certificado(qs, status_param=status_param, include_rascunho=include_rascunho)
@@ -861,23 +916,37 @@ class CertificadoFornecedorEntradaViewSet(AutocompleteOrPaginationMixin, viewset
         norma_ref = (request.query_params.get('norma') or '').strip().upper()
         tipo_tecnico_ref = (request.query_params.get('tipo_dados_tecnicos') or '').strip()
         filtered_items = []
+        corrida_adicional_por_item_id: dict[int, object] = {}
         for item in qs.order_by('-id')[:300]:
             score = 0
+            corrida_adicional_match = None
             if not _passes_corrida_lote_cf_item(item, corrida_norm, lote_norm):
-                continue
+                corrida_adicional_match = _match_corrida_adicional_cf_item(item, corrida_norm, lote_norm)
+                if corrida_adicional_match is None:
+                    continue
+                corrida_adicional_por_item_id[item.id] = corrida_adicional_match
             item_corrida_norm, item_lote_norm = _effective_corrida_lote_norms_cf_item(item)
-            if corrida_norm:
-                if _contains_normalized(item_corrida_norm, corrida_norm):
+            if corrida_adicional_match is not None:
+                # Match por corrida adicional: pontua como corrida principal encontrada.
+                if corrida_norm:
                     score += 100
-                elif _contains_normalized(item_lote_norm, corrida_norm):
-                    score += 70
-                else:
-                    score += 95
-            if lote_norm:
-                if _contains_normalized(item_lote_norm, lote_norm):
+                if lote_norm and _contains_normalized(
+                    _normalize_search_token(corrida_adicional_match.lote or ''), lote_norm
+                ):
                     score += 80
-                elif _contains_normalized(item_corrida_norm, lote_norm):
-                    score += 50
+            else:
+                if corrida_norm:
+                    if _contains_normalized(item_corrida_norm, corrida_norm):
+                        score += 100
+                    elif _contains_normalized(item_lote_norm, corrida_norm):
+                        score += 70
+                    else:
+                        score += 95
+                if lote_norm:
+                    if _contains_normalized(item_lote_norm, lote_norm):
+                        score += 80
+                    elif _contains_normalized(item_corrida_norm, lote_norm):
+                        score += 50
             if produto_cq_id is not None and item.produto_id == produto_cq_id:
                 score += 25
             if codigo_norm and _contains_normalized(_normalize_search_token(item.codigo_produto), codigo_norm):
@@ -929,8 +998,16 @@ class CertificadoFornecedorEntradaViewSet(AutocompleteOrPaginationMixin, viewset
         filtered_items.sort(key=lambda x: (x[0], x[1].id), reverse=True)
         resultados = []
         corrida_bucket: dict[tuple[str, str], list[ItemCertificadoFornecedorEntrada]] = {}
+
+        def _bucket_corrida_lote_item(item: ItemCertificadoFornecedorEntrada) -> tuple[str, str]:
+            """Corrida/lote usados no agrupamento: a adicional encontrada, quando o match veio dela."""
+            extra = corrida_adicional_por_item_id.get(item.id)
+            if extra is not None:
+                return (extra.corrida or '').strip(), (extra.lote or '').strip()
+            return _display_corrida_lote_cf_item(item)
+
         for _, item in filtered_items:
-            dc, dl = _display_corrida_lote_cf_item(item)
+            dc, dl = _bucket_corrida_lote_item(item)
             key = (
                 str(item.certificado_fornecedor.fornecedor_id or ''),
                 _normalize_search_token(dc or dl or ''),
@@ -952,6 +1029,7 @@ class CertificadoFornecedorEntradaViewSet(AutocompleteOrPaginationMixin, viewset
         for score, item in filtered_items[:100]:
             cert = item.certificado_fornecedor
             disp_corrida, disp_lote = _display_corrida_lote_cf_item(item)
+            corrida_adicional_match = corrida_adicional_por_item_id.get(item.id)
             codigo_divergente = bool(codigo_norm and _normalize_search_token(item.codigo_produto) != codigo_norm)
             desc_divergente = bool(descricao_norm and descricao_norm not in (item.descricao_material or '').lower())
             produto_relacionado = _descricao_relacionada(item.descricao_material or '', descricao or '')
@@ -994,9 +1072,10 @@ class CertificadoFornecedorEntradaViewSet(AutocompleteOrPaginationMixin, viewset
                     'Corrida encontrada, mas a norma/material é diferente. '
                     'Reutilize somente se tiver certeza.'
                 )
+            bucket_corrida, bucket_lote = _bucket_corrida_lote_item(item)
             key = (
                 str(cert.fornecedor_id or ''),
-                _normalize_search_token(disp_corrida or disp_lote or ''),
+                _normalize_search_token(bucket_corrida or bucket_lote or ''),
             )
             siblings = corrida_bucket.get(key, [])
             siblings_fp = {_fingerprint(s) for s in siblings}
@@ -1044,6 +1123,25 @@ class CertificadoFornecedorEntradaViewSet(AutocompleteOrPaginationMixin, viewset
                     'norma': item.norma,
                     'corrida': disp_corrida,
                     'lote': disp_lote,
+                    'dados_tecnicos_herdados': corrida_adicional_match is not None,
+                    'origem_dados_tecnicos': (
+                        'item_principal_corrida_adicional' if corrida_adicional_match is not None else 'item_principal'
+                    ),
+                    'corrida_encontrada': (
+                        (corrida_adicional_match.corrida or '').strip() if corrida_adicional_match is not None else disp_corrida
+                    ),
+                    'lote_encontrado': (
+                        (corrida_adicional_match.lote or '').strip() if corrida_adicional_match is not None else disp_lote
+                    ),
+                    'quantidade_corrida_encontrada': (
+                        float(corrida_adicional_match.quantidade)
+                        if corrida_adicional_match is not None and corrida_adicional_match.quantidade is not None
+                        else None
+                    ),
+                    'mensagem_corrida_adicional': (
+                        'Esta corrida compartilha os dados técnicos do item principal.'
+                        if corrida_adicional_match is not None else ''
+                    ),
                     'tipo_dados_tecnicos': item.tipo_dados_tecnicos,
                     'confianca_correspondencia': confianca,
                     'tipo_correspondencia': tipo_correspondencia,

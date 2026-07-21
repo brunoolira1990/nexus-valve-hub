@@ -989,6 +989,13 @@ export interface DadosTecnicosFornecedorResultado {
   norma?: string;
   corrida?: string;
   lote?: string;
+  /** A1: true quando o match veio de uma corrida adicional (dados herdados do item principal). */
+  dados_tecnicos_herdados?: boolean;
+  origem_dados_tecnicos?: 'item_principal' | 'item_principal_corrida_adicional';
+  corrida_encontrada?: string;
+  lote_encontrado?: string;
+  quantidade_corrida_encontrada?: number | null;
+  mensagem_corrida_adicional?: string;
   tipo_dados_tecnicos: TipoDadosTecnicosItem;
   confianca_correspondencia?: 'ALTA' | 'MEDIA_ALTA' | 'MEDIA' | 'BAIXA';
   tipo_correspondencia?: string;

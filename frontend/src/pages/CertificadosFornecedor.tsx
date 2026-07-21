@@ -6,6 +6,15 @@ import { Modal } from '@/components/Modal';
 import { formatApiErrors } from '@/lib/apiErrors';
 import { certificadoFornecedorStatusBadge } from '@/lib/certificadoStatusUi';
 import {
+  AVISO_DADOS_HERDADOS_CORRIDA_CF,
+  MSG_MULTIPLOS_CERTIFICADOS_COMPATIVEIS_CF,
+  TEXTO_EXPLICATIVO_CORRIDAS_ADICIONAIS_CF,
+  TITULO_CORRIDAS_ADICIONAIS_CF,
+  avisosCorridasAdicionaisItemCf,
+  errosCorridasAdicionaisItemCf,
+  resumoQuantidadesCorridasItemCf,
+} from '@/lib/cfCorridasAdicionaisUi';
+import {
   certificadosFornecedorService,
   corridaLoteEfetivosResultadoFornecedor,
   mensagemPrincipalBuscaDadosTecnicosFornecedor,
@@ -580,6 +589,16 @@ const CertificadosFornecedor = () => {
         const ok = window.confirm(CONFIRMAR_CANCELAMENTO_CERTIFICADO_FORNECEDOR);
         if (!ok) return;
       }
+    }
+    const errosCorridasAdicionais: string[] = [];
+    form.itens.forEach((it, idx) => {
+      errosCorridasAdicionaisItemCf(it).forEach((msg) => {
+        errosCorridasAdicionais.push(`Item ${idx + 1}: ${msg}`);
+      });
+    });
+    if (errosCorridasAdicionais.length) {
+      setSaveErrors(errosCorridasAdicionais);
+      return;
     }
     if (registrar) {
       const errosFrontend: string[] = [];
@@ -1220,56 +1239,82 @@ const CertificadosFornecedor = () => {
                       </label>
                     </div>
                     <div className="md:col-span-6 rounded border border-border p-2 bg-muted/10">
-                      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                        <p className="text-xs font-semibold">Corridas adicionais</p>
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                        <p className="text-xs font-semibold">{TITULO_CORRIDAS_ADICIONAIS_CF}</p>
                         <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => addCorridaAdicional(idx)}>
                           + Adicionar corrida
                         </button>
                       </div>
-                      {(it.corridas_adicionais || []).length === 0 ? (
-                        <p className="text-xs text-muted-foreground">
-                          Corridas extras do mesmo certificado/item (além da corrida principal acima).
-                        </p>
-                      ) : (
-                        <div className="space-y-1">
-                          {(it.corridas_adicionais || []).map((ca, caidx) => (
-                            <div
-                              key={`corrida-adicional-${idx}-${ca.id ?? caidx}`}
-                              className="grid grid-cols-[1fr_1fr_5rem_auto] gap-1 items-center"
-                            >
-                              <input
-                                className="erp-input h-8 text-xs"
-                                placeholder="Corrida"
-                                value={ca.corrida}
-                                onChange={(e) => updateCorridaAdicional(idx, caidx, { corrida: e.target.value })}
-                              />
-                              <input
-                                className="erp-input h-8 text-xs"
-                                placeholder="Lote"
-                                value={ca.lote || ''}
-                                onChange={(e) => updateCorridaAdicional(idx, caidx, { lote: e.target.value })}
-                              />
-                              <input
-                                className="erp-input h-8 text-xs"
-                                placeholder="Qtd"
-                                value={ca.quantidade ?? ''}
-                                onChange={(e) =>
-                                  updateCorridaAdicional(idx, caidx, {
-                                    quantidade: e.target.value === '' ? null : Number(e.target.value.replace(',', '.')),
-                                  })
-                                }
-                              />
-                              <button
-                                type="button"
-                                className="erp-btn-outline h-8 px-2 text-xs"
-                                onClick={() => removeCorridaAdicional(idx, caidx)}
-                                title="Remover corrida adicional"
+                      <p className="text-xs text-muted-foreground mb-2">{TEXTO_EXPLICATIVO_CORRIDAS_ADICIONAIS_CF}</p>
+                      {(it.corridas_adicionais || []).length === 0 ? null : (
+                        <>
+                          <div className="space-y-1">
+                            {(it.corridas_adicionais || []).map((ca, caidx) => (
+                              <div
+                                key={`corrida-adicional-${idx}-${ca.id ?? caidx}`}
+                                className="grid grid-cols-[1fr_1fr_5rem_auto_auto] gap-1 items-center"
                               >
-                                ✕
-                              </button>
-                            </div>
-                          ))}
-                        </div>
+                                <input
+                                  className="erp-input h-8 text-xs"
+                                  placeholder="Corrida"
+                                  value={ca.corrida}
+                                  onChange={(e) => updateCorridaAdicional(idx, caidx, { corrida: e.target.value })}
+                                />
+                                <input
+                                  className="erp-input h-8 text-xs"
+                                  placeholder="Lote"
+                                  value={ca.lote || ''}
+                                  onChange={(e) => updateCorridaAdicional(idx, caidx, { lote: e.target.value })}
+                                />
+                                <input
+                                  className="erp-input h-8 text-xs"
+                                  placeholder="Qtd"
+                                  value={ca.quantidade ?? ''}
+                                  onChange={(e) =>
+                                    updateCorridaAdicional(idx, caidx, {
+                                      quantidade: e.target.value === '' ? null : Number(e.target.value.replace(',', '.')),
+                                    })
+                                  }
+                                />
+                                <span
+                                  className="erp-badge-info text-[10px] whitespace-nowrap"
+                                  title={TEXTO_EXPLICATIVO_CORRIDAS_ADICIONAIS_CF}
+                                >
+                                  {AVISO_DADOS_HERDADOS_CORRIDA_CF}
+                                </span>
+                                <button
+                                  type="button"
+                                  className="erp-btn-outline h-8 px-2 text-xs"
+                                  onClick={() => removeCorridaAdicional(idx, caidx)}
+                                  title="Remover corrida adicional"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                          {(() => {
+                            const resumo = resumoQuantidadesCorridasItemCf(it);
+                            const erros = errosCorridasAdicionaisItemCf(it);
+                            const avisos = avisosCorridasAdicionaisItemCf(it);
+                            return (
+                              <div className="mt-2 space-y-1">
+                                <p className="text-xs text-muted-foreground">
+                                  Quantidade do item: {resumo.quantidadeItem ?? '—'}
+                                  {' · '}Soma das corridas adicionais: {resumo.somaAdicionais}
+                                  {' · '}Corrida principal (calculada):{' '}
+                                  {resumo.principalDerivada != null ? resumo.principalDerivada : '—'}
+                                </p>
+                                {erros.map((msg) => (
+                                  <p key={msg} className="text-xs text-destructive">{msg}</p>
+                                ))}
+                                {avisos.map((msg) => (
+                                  <p key={msg} className="text-xs text-amber-700 dark:text-amber-300">{msg}</p>
+                                ))}
+                              </div>
+                            );
+                          })()}
+                        </>
                       )}
                     </div>
                     <div className="md:col-span-6 rounded border border-border p-2">
@@ -1456,6 +1501,11 @@ const CertificadosFornecedor = () => {
         size="xl"
       >
         <div className="space-y-2 max-h-[55vh] overflow-auto pr-1">
+          {fornecedorMatches.length > 1 ? (
+            <p className="text-xs text-amber-700 dark:text-amber-300">
+              {MSG_MULTIPLOS_CERTIFICADOS_COMPATIVEIS_CF}
+            </p>
+          ) : null}
           {fornecedorMatches.map((r) => (
             <div key={`${r.certificado_fornecedor_id}-${r.id}`} className="rounded border border-border p-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-1 text-sm">
@@ -1477,6 +1527,19 @@ const CertificadosFornecedor = () => {
                 <p><span className="font-medium">Confiança:</span> {r.confianca_correspondencia || '—'}</p>
                 <p><span className="font-medium">Classificação:</span> {r.tipo_correspondencia || '—'}</p>
               </div>
+              {r.dados_tecnicos_herdados ? (
+                <div className="mt-2 rounded border border-sky-500/35 bg-sky-500/5 px-2 py-1 text-xs">
+                  <p className="font-medium text-sky-800 dark:text-sky-300">
+                    {r.mensagem_corrida_adicional || 'Esta corrida compartilha os dados técnicos do item principal.'}
+                  </p>
+                  <p className="text-muted-foreground">
+                    Corrida encontrada: {r.corrida_encontrada || '—'}
+                    {' · '}Lote: {r.lote_encontrado || '—'}
+                    {' · '}Qtd: {r.quantidade_corrida_encontrada ?? '—'}
+                    {' · '}Origem dos dados técnicos: item principal (corrida {r.corrida || '—'})
+                  </p>
+                </div>
+              ) : null}
               {r.mensagem_contexto ? <p className="text-xs text-muted-foreground mt-2">{r.mensagem_contexto}</p> : null}
               {[r.aviso_divergencia_item, r.aviso_divergencia_dados_tecnicos, r.aviso_certificado_rascunho]
                 .filter(Boolean)

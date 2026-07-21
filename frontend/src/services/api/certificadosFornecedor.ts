@@ -52,6 +52,14 @@ const MENSAGEM_DICA_BUSCA_FORNECEDOR: Record<(typeof ORDEM_DICAS_BUSCA_FORNECEDO
 
 /** Corrida/lote exibidos no item: campos do resultado ou, se faltar, valores nos componentes (válvula / CF parcial). */
 export function corridaLoteEfetivosResultadoFornecedor(src: DadosTecnicosFornecedorResultado): { corrida: string; lote: string } {
+  if (src.dados_tecnicos_herdados) {
+    // A1: match veio de corrida adicional — aplicar a corrida realmente encontrada,
+    // nunca a corrida principal do outro item do CF.
+    return {
+      corrida: (src.corrida_encontrada || '').trim(),
+      lote: (src.lote_encontrado || '').trim(),
+    };
+  }
   let corrida = (src.corrida || '').trim();
   let lote = (src.lote || '').trim();
   if (corrida && lote) return { corrida, lote };

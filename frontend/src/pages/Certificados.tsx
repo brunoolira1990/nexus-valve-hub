@@ -25,7 +25,17 @@ import {
   origemFisicaCqResumo,
   rastreabilidadeCqBadge,
 } from '@/lib/certificadoStatusUi';
-import { MSG_SEM_CORRIDAS_IRMAS, mesclarMensagensUnicas, removerMensagens } from '@/lib/cqMensagensUi';
+import { mesclarMensagensUnicas } from '@/lib/cqMensagensUi';
+import {
+  TITULO_MODAL_CORRIDAS_CF_CQ,
+  aplicacaoSubstituiTecnicosDoItemAtual,
+  aplicarDistribuicaoCorridasCfCq,
+  quantidadeTotalDistribuicaoCorridasCfCq,
+  selecoesExistentesCorridasCfCq,
+  type CorridasCfParaCqResponse,
+  type SelecaoCorridaCfCq,
+} from '@/lib/cqCorridasCfUi';
+import { ModalCorridasCertificadoFornecedor } from '@/components/qualidade/ModalCorridasCertificadoFornecedor';
 import type {
   CertificadoQualidade,
   CertificadoQualidadeStatus,
@@ -134,20 +144,6 @@ const coerceProdutoItemId = (produto: ItemCertificadoQualidade['produto']): numb
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 
-/** Divide quantidade total em n partes (3 casas); última(s) linha(s) absorve(m) resto do arredondamento. */
-const redistribuirQuantidadeIgual = (total: number, n: number): number[] => {
-  if (n <= 0) return [];
-  const totalMilli = Math.round(total * 1000);
-  if (n === 1) return [totalMilli / 1000];
-  const baseMilli = Math.floor(totalMilli / n);
-  const restoMilli = totalMilli - baseMilli * n;
-  const shares = Array.from({ length: n }, () => baseMilli);
-  for (let i = 0; i < restoMilli; i += 1) {
-    shares[n - 1 - i] += 1;
-  }
-  return shares.map((m) => m / 1000);
-};
-
 /** Corrida/lote efetivos do CQ (campo manual + snapshots de rastreio); em válvula, complementa pelos componentes. */
 const resolverCorridaLoteBuscaFornecedor = (item: ItemCertificadoQualidade) => {
   const corridaBruta = String(item.corrida || item.corrida_snapshot || '').trim();
@@ -254,6 +250,18 @@ const Certificados = () => {
   const [produtoBusca, setProdutoBusca] = useState<Record<number, string>>({});
   const [produtoResultados, setProdutoResultados] = useState<Record<number, Produto[]>>({});
   const [corridasDisponiveisPorItem, setCorridasDisponiveisPorItem] = useState<Record<number, CorridaDisponivelCertificadoQualidade[]>>({});
+  /** Modal de corridas do CF exato vinculado ao item do CQ (hotfix múltiplas corridas). */
+  const [corridasCfModal, setCorridasCfModal] = useState<
+    | {
+        itemIdx: number;
+        dados: CorridasCfParaCqResponse | null;
+        carregando: boolean;
+        erro: string | null;
+        quantidadeTotal: number;
+        selecoesIniciais: SelecaoCorridaCfCq[];
+      }
+    | null
+  >(null);
   type PdfBusy = null | { kind: 'modal' } | { kind: 'table-row'; id: number };
   const [pdfBusy, setPdfBusy] = useState<PdfBusy>(null);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
@@ -832,112 +840,74 @@ const Certificados = () => {
     }
   };
 
-  const valorSelecaoCorridaDisponivel = (c: CorridaDisponivelCertificadoQualidade) =>
-    c.valor_selecao || `${c.corrida}||${c.lote || ''}`;
-
-  const certificadoOrigemIdDeCorridaDisponivel = (c: CorridaDisponivelCertificadoQualidade) =>
-    c.certificado_fornecedor_origem_id ?? c.certificado_fornecedor_id ?? null;
-
-  const adicionarCorridaIrmaDesteCertificado = (idx: number) => {
+  const abrirModalCorridasCf = async (idx: number) => {
     const item = formRef.current.itens[idx];
-    const cfOrigemId = item.certificado_fornecedor_origem_id;
-    if (!cfOrigemId) {
-      setSaveError('Selecione uma corrida com certificado fornecedor vinculado antes de adicionar corridas irmãs.');
+    const cfId = item.certificado_fornecedor_origem_id;
+    const itemCfId = item.item_certificado_fornecedor_origem_id;
+    if (!cfId || !itemCfId) {
+      setSaveError(
+        'Vincule este item a um Certificado de Fornecedor e ao item exato do CF (via corrida disponível ou busca de dados do fornecedor) antes de adicionar corridas.',
+      );
       return;
     }
-    const produtoOrigemId = coerceProdutoItemId(item.produto);
-    const pertenceAoGrupoProdutoCf = (it: ItemCertificadoQualidade) =>
-      (it.certificado_fornecedor_origem_id ?? null) === cfOrigemId
-      && coerceProdutoItemId(it.produto) === produtoOrigemId;
     setSaveError(null);
-    const jaUsadas = new Set(
-      formRef.current.itens
-        .filter(pertenceAoGrupoProdutoCf)
-        .map((it) => `${it.corrida || it.corrida_snapshot || ''}||${it.lote || it.lote_snapshot || ''}`),
-    );
-    const irmas = (corridasDisponiveisPorItem[idx] || []).filter(
-      (c) => certificadoOrigemIdDeCorridaDisponivel(c) === cfOrigemId,
-    );
-    const disponiveis = irmas.filter((c) => !jaUsadas.has(valorSelecaoCorridaDisponivel(c)));
-    if (!disponiveis.length) {
-      adicionarMensagensUnicas(MSG_SEM_CORRIDAS_IRMAS);
-      return;
-    }
-
-    let escolhida = disponiveis[0];
-    if (disponiveis.length > 1) {
-      const opcoes = disponiveis
-        .map((c, i) => `${i + 1}) ${c.corrida}${c.lote ? `/${c.lote}` : ''}`)
-        .join('\n');
-      const resp = window.prompt(`Escolha a corrida irmã para adicionar (número):\n${opcoes}`, '1');
-      if (!resp) return;
-      const pick = Number(resp) - 1;
-      if (!Number.isFinite(pick) || pick < 0 || pick >= disponiveis.length) {
-        setSaveError('Seleção inválida de corrida irmã.');
-        return;
-      }
-      escolhida = disponiveis[pick];
-    }
-
-    const grupoIndicesAtuais = formRef.current.itens
-      .map((it, i) => (pertenceAoGrupoProdutoCf(it) ? i : -1))
-      .filter((i) => i >= 0);
-    const somaGrupo = grupoIndicesAtuais.reduce(
-      (acc, i) => acc + (Number(formRef.current.itens[i]?.quantidade) || 0),
-      0,
-    );
-    const quantidadesRedistribuidas = redistribuirQuantidadeIgual(
-      somaGrupo,
-      grupoIndicesAtuais.length + 1,
-    );
-
-    const novoIdx = formRef.current.itens.length;
-    const novoItem: ItemCertificadoQualidade = {
-      ...item,
-      id: undefined,
-      ordem: novoIdx + 1,
-      quantidade: quantidadesRedistribuidas[quantidadesRedistribuidas.length - 1] ?? 0,
-      corrida: escolhida.corrida || '',
-      lote: escolhida.lote || '',
-      corrida_snapshot: escolhida.corrida || '',
-      lote_snapshot: escolhida.lote || '',
-      certificado_fornecedor_origem_id:
-        escolhida.certificado_fornecedor_origem_id ?? escolhida.certificado_fornecedor_id ?? cfOrigemId,
-      item_certificado_fornecedor_origem_id:
-        escolhida.item_certificado_fornecedor_origem_id
-        ?? escolhida.item_certificado_fornecedor_id
-        ?? item.item_certificado_fornecedor_origem_id
-        ?? null,
-      numero_certificado_fornecedor_item_snapshot:
-        escolhida.numero_certificado_fornecedor_item || escolhida.certificado_fornecedor || item.numero_certificado_fornecedor_item_snapshot || '',
-      fornecedor_nome_snapshot: escolhida.fornecedor || item.fornecedor_nome_snapshot || '',
-      nf_entrada_snapshot: escolhida.nf_entrada || item.nf_entrada_snapshot || '',
-      origem_rastreabilidade_tipo: escolhida.origem || item.origem_rastreabilidade_tipo || 'certificado_fornecedor',
-      origem_status_tecnico: escolhida.status_origem_tecnica || item.origem_status_tecnico || '',
-      origem_observacoes: escolhida.observacoes_origem || item.origem_observacoes || '',
-    };
-
-    setForm((p) => {
-      const itensAtualizados = [...p.itens, novoItem].map((it, i) => ({ ...it, ordem: i + 1 }));
-      const grupoIndices = itensAtualizados
-        .map((it, i) => (pertenceAoGrupoProdutoCf(it) ? i : -1))
-        .filter((i) => i >= 0);
-      grupoIndices.forEach((itemIdx, shareIdx) => {
-        itensAtualizados[itemIdx] = {
-          ...itensAtualizados[itemIdx],
-          quantidade: quantidadesRedistribuidas[shareIdx] ?? itensAtualizados[itemIdx].quantidade,
-        };
-      });
-      return { ...p, itens: itensAtualizados };
+    setCorridasCfModal({
+      itemIdx: idx,
+      dados: null,
+      carregando: true,
+      erro: null,
+      quantidadeTotal: Number(item.quantidade) || 0,
+      selecoesIniciais: [],
     });
-    setCorridasDisponiveisPorItem((prev) => ({
-      ...prev,
-      [novoIdx]: prev[idx] || [],
-    }));
-    setMensagens((m) => mesclarMensagensUnicas(
-      removerMensagens(m, MSG_SEM_CORRIDAS_IRMAS),
-      `Linha adicionada com corrida ${escolhida.corrida}${escolhida.lote ? `/${escolhida.lote}` : ''} do mesmo certificado fornecedor.`,
-    ));
+    try {
+      const dados = await certificadosQualidadeService.corridasCertificadoFornecedor(cfId, itemCfId);
+      const itensAtuais = formRef.current.itens;
+      setCorridasCfModal({
+        itemIdx: idx,
+        dados,
+        carregando: false,
+        erro: null,
+        quantidadeTotal: quantidadeTotalDistribuicaoCorridasCfCq(dados.linhas, itensAtuais, itensAtuais[idx]),
+        selecoesIniciais: selecoesExistentesCorridasCfCq(dados.linhas, itensAtuais),
+      });
+    } catch (e) {
+      setCorridasCfModal({
+        itemIdx: idx,
+        dados: null,
+        carregando: false,
+        erro: apiErrorMessage(e, { fallback: 'Não foi possível carregar as corridas do Certificado de Fornecedor.' }),
+        quantidadeTotal: Number(item.quantidade) || 0,
+        selecoesIniciais: [],
+      });
+    }
+  };
+
+  const aplicarCorridasCfSelecionadas = (selecoes: SelecaoCorridaCfCq[]) => {
+    const idx = corridasCfModal?.itemIdx;
+    const dados = corridasCfModal?.dados;
+    if (idx == null || !dados) return false;
+    const itemOriginal = formRef.current.itens[idx];
+    if (
+      aplicacaoSubstituiTecnicosDoItemAtual(itemOriginal, selecoes)
+      && !window.confirm(
+        'O item atual já possui dados técnicos preenchidos. Aplicar esta distribuição substituirá '
+        + 'os dados técnicos da primeira origem selecionada. Deseja continuar?',
+      )
+    ) {
+      return false;
+    }
+    setForm((p) => {
+      const itens = aplicarDistribuicaoCorridasCfCq(p.itens, idx, dados.linhas, selecoes);
+      return { ...p, itens };
+    });
+    setCorridasCfModal(null);
+    adicionarMensagensUnicas([
+      `Corridas aplicadas do Certificado de Fornecedor: ${selecoes
+        .map((s) => `${s.linha.corrida}${s.linha.lote ? `/${s.linha.lote}` : ''} (${s.quantidade})`)
+        .join(', ')}.`,
+      corridasCfModal?.dados?.mensagem_origem_fisica || '',
+    ].filter(Boolean));
+    return true;
   };
 
   const updateJsonField = (
@@ -1786,18 +1756,18 @@ const Certificados = () => {
                           type="button"
                           className="erp-btn-outline erp-btn-sm"
                           disabled={
-                            !coerceProdutoItemId(it.produto)
-                            || !it.certificado_fornecedor_origem_id
+                            !it.certificado_fornecedor_origem_id
+                            || !it.item_certificado_fornecedor_origem_id
                             || editing?.status === 'cancelado'
                           }
                           title={
-                            !it.certificado_fornecedor_origem_id
-                              ? 'Selecione uma corrida vinculada a um certificado fornecedor.'
-                              : 'Adiciona nova linha do item com outra corrida/lote do mesmo certificado fornecedor.'
+                            !it.certificado_fornecedor_origem_id || !it.item_certificado_fornecedor_origem_id
+                              ? 'Vincule este item ao Certificado de Fornecedor e ao item exato do CF antes de adicionar corridas.'
+                              : 'Distribui este item em uma linha por corrida do CF vinculado, com quantidade e dados técnicos por corrida.'
                           }
-                          onClick={() => adicionarCorridaIrmaDesteCertificado(idx)}
+                          onClick={() => void abrirModalCorridasCf(idx)}
                         >
-                          + Adicionar corrida deste certificado
+                          {TITULO_MODAL_CORRIDAS_CF_CQ}
                         </button>
                       </div>
                       {!coerceProdutoItemId(it.produto) ? null : (corridasDisponiveisPorItem[idx] || []).length === 0 ? (
@@ -2286,6 +2256,17 @@ const Certificados = () => {
           {!fornecedorMatches.length ? <p className="text-sm text-muted-foreground">Nenhum resultado.</p> : null}
         </div>
       </Modal>
+
+      <ModalCorridasCertificadoFornecedor
+        isOpen={corridasCfModal != null}
+        onClose={() => setCorridasCfModal(null)}
+        dados={corridasCfModal?.dados ?? null}
+        carregando={corridasCfModal?.carregando ?? false}
+        erroCarregamento={corridasCfModal?.erro ?? null}
+        quantidadeTotalItem={corridasCfModal?.quantidadeTotal ?? 0}
+        selecoesIniciais={corridasCfModal?.selecoesIniciais ?? []}
+        onAplicar={aplicarCorridasCfSelecionadas}
+      />
     </div>
   );
 };

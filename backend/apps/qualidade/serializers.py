@@ -1,3 +1,6 @@
+import re
+from decimal import Decimal
+
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.fields import empty
@@ -482,6 +485,10 @@ class ComponenteCertificadoFornecedorEntradaSerializer(serializers.ModelSerializ
 
 
 class ItemCertificadoFornecedorCorridaSerializer(serializers.ModelSerializer):
+    # `id` gravável apenas para identificar linhas históricas reais na validação
+    # (`_linha_adicional_legada_sem_quantidade`); nunca é usado sem conferir o banco.
+    id = serializers.IntegerField(required=False, allow_null=True)
+
     class Meta:
         model = ItemCertificadoFornecedorCorrida
         fields = (
@@ -544,6 +551,108 @@ def _apply_origem_vinculo_item_cf(attrs: dict, item_conf: ItemNFeEntradaConferen
         attrs.setdefault('origem_vinculada_em', timezone.now())
     if item_conf.item_nfe_historico_id:
         attrs.setdefault('origem_nfe_item_numero', item_conf.item_nfe_historico.n_item)
+
+
+MSG_CORRIDA_LOTE_DUPLICADA_ITEM_CF = 'Esta corrida/lote já está vinculada a este item do certificado.'
+MSG_SOMA_CORRIDAS_EXCEDE_ITEM_CF = 'A soma das quantidades das corridas excede a quantidade do item.'
+MSG_QUANTIDADE_CORRIDA_ADICIONAL_INVALIDA = 'Informe quantidade maior que zero para a corrida adicional.'
+MSG_PRINCIPAL_SEM_QUANTIDADE_ITEM_CF = (
+    'A distribuição deixa a corrida principal sem quantidade. '
+    'Ajuste as quantidades ou represente a origem em outro item do certificado.'
+)
+
+
+def _chave_corrida_lote_normalizada(corrida: str | None, lote: str | None) -> str:
+    """Chave de duplicidade: caixa alta e sem espaços (diferenças triviais não contam)."""
+    c = re.sub(r'\s+', '', (corrida or '').upper())
+    l = re.sub(r'\s+', '', (lote or '').upper())
+    if not c and not l:
+        return ''
+    return f'{c}\x1f{l}'
+
+
+def _linha_adicional_legada_sem_quantidade(
+    row: dict,
+    certificado: CertificadoFornecedorEntrada | None,
+) -> bool:
+    """Linha histórica real sem quantidade — validada contra o estado PERSISTIDO, antes do
+    delete/recreate do `_upsert_itens`. Não confia no `id` enviado pelo cliente: exige que o
+    registro exista no CF em edição, já esteja sem quantidade e tenha a mesma corrida/lote.
+    """
+    row_id = row.get('id')
+    if certificado is None or certificado.pk is None or not row_id:
+        return False
+    persistida = ItemCertificadoFornecedorCorrida.objects.filter(
+        pk=row_id,
+        item_certificado__certificado_fornecedor=certificado,
+        quantidade__isnull=True,
+    ).first()
+    if persistida is None:
+        return False
+    return _chave_corrida_lote_normalizada(persistida.corrida, persistida.lote) == _chave_corrida_lote_normalizada(
+        row.get('corrida'), row.get('lote'),
+    )
+
+
+def validar_corridas_adicionais_item_cf(
+    *,
+    quantidade_item,
+    corrida_principal: str | None,
+    lote_principal: str | None,
+    corridas_adicionais: list[dict],
+    certificado: CertificadoFornecedorEntrada | None = None,
+) -> list[str]:
+    """Valida corridas adicionais de um item do CF (mesmos dados técnicos do principal).
+
+    Regras A1 (quantidade da principal é derivada: total − soma das adicionais):
+    - quantidade obrigatória e > 0, exceto para linha histórica real já persistida sem
+      quantidade neste certificado (compatibilidade, sem backfill);
+    - a mesma combinação corrida+lote (normalizada) não pode repetir no item, incluindo a principal;
+    - a soma das adicionais não pode exceder a quantidade do item;
+    - com a corrida principal preenchida, a soma não pode igualar o total (principal ficaria sem quantidade).
+    """
+    erros: list[str] = []
+    chaves_vistas: set[str] = set()
+    chave_principal = _chave_corrida_lote_normalizada(corrida_principal, lote_principal)
+    if chave_principal:
+        chaves_vistas.add(chave_principal)
+
+    soma_adicionais = Decimal('0')
+    duplicada_reportada = False
+    quantidade_invalida_reportada = False
+    for row in corridas_adicionais:
+        if not isinstance(row, dict):
+            continue
+        corrida = (row.get('corrida') or '').strip()
+        lote = (row.get('lote') or '').strip()
+        quantidade = row.get('quantidade')
+        chave = _chave_corrida_lote_normalizada(corrida, lote)
+        if chave:
+            if chave in chaves_vistas and not duplicada_reportada:
+                erros.append(MSG_CORRIDA_LOTE_DUPLICADA_ITEM_CF)
+                duplicada_reportada = True
+            chaves_vistas.add(chave)
+        if quantidade is None:
+            if not _linha_adicional_legada_sem_quantidade(row, certificado) and not quantidade_invalida_reportada:
+                erros.append(MSG_QUANTIDADE_CORRIDA_ADICIONAL_INVALIDA)
+                quantidade_invalida_reportada = True
+            continue
+        quantidade_dec = Decimal(str(quantidade))
+        if quantidade_dec <= 0:
+            if not quantidade_invalida_reportada:
+                erros.append(MSG_QUANTIDADE_CORRIDA_ADICIONAL_INVALIDA)
+                quantidade_invalida_reportada = True
+        else:
+            soma_adicionais += quantidade_dec
+
+    if quantidade_item is not None:
+        quantidade_item_dec = Decimal(str(quantidade_item))
+        if quantidade_item_dec > 0 and soma_adicionais > 0:
+            if soma_adicionais > quantidade_item_dec:
+                erros.append(MSG_SOMA_CORRIDAS_EXCEDE_ITEM_CF)
+            elif soma_adicionais == quantidade_item_dec and chave_principal:
+                erros.append(MSG_PRINCIPAL_SEM_QUANTIDADE_ITEM_CF)
+    return erros
 
 
 def sincronizar_corridas_adicionais_item_cf(
@@ -818,6 +927,20 @@ class ItemCertificadoFornecedorEntradaSerializer(serializers.ModelSerializer):
                 'observacoes_item',
             },
         )
+        corridas_adicionais = attrs.get('corridas_adicionais')
+        if corridas_adicionais:
+            erros_corridas = validar_corridas_adicionais_item_cf(
+                quantidade_item=attrs.get(
+                    'quantidade',
+                    self.instance.quantidade if self.instance else None,
+                ),
+                corrida_principal=attrs.get('corrida', self.instance.corrida if self.instance else ''),
+                lote_principal=attrs.get('lote', self.instance.lote if self.instance else ''),
+                corridas_adicionais=corridas_adicionais,
+                certificado=self.context.get('certificado_fornecedor'),
+            )
+            if erros_corridas:
+                raise serializers.ValidationError({'corridas_adicionais': erros_corridas})
         if 'item_conferencia' in attrs:
             item_conf = attrs.get('item_conferencia')
             cert = self.context.get('certificado_fornecedor')
