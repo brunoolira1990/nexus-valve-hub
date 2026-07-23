@@ -51,11 +51,16 @@ export const PageHeader = ({
           value={searchValue}
           onChange={onSearch}
           placeholder={searchPlaceholder}
-          className={searchPlaceholder ? 'sm:min-w-[18rem] sm:w-80' : undefined}
+          className={cn(
+            // Largura controlada pelo container: mobile 100%, desktop ≥320px sem comprimir.
+            'w-full min-w-0 max-w-full',
+            'sm:min-w-[20rem] sm:w-[22rem] md:w-96 md:max-w-md',
+            'grow basis-full sm:basis-auto sm:grow-0',
+          )}
         />
       ) : null}
       {onAdd ? (
-        <NexusButton type="button" onClick={onAdd}>
+        <NexusButton type="button" onClick={onAdd} className="shrink-0">
           <Plus className="h-4 w-4" />
           {addLabel}
         </NexusButton>
@@ -90,7 +95,15 @@ export const PageHeader = ({
           {description ? <p className="text-sm text-muted-foreground max-w-3xl">{description}</p> : null}
           {meta ? <div className="text-xs text-muted-foreground">{meta}</div> : null}
         </div>
-        <div className="flex flex-wrap items-center gap-2 shrink-0">{actions ?? defaultActions}</div>
+        <div
+          className={cn(
+            'flex flex-wrap items-center gap-2',
+            'w-full lg:w-auto lg:max-w-[min(100%,28rem)] xl:max-w-none',
+            'lg:justify-end lg:shrink-0',
+          )}
+        >
+          {actions ?? defaultActions}
+        </div>
       </div>
       {children}
     </header>

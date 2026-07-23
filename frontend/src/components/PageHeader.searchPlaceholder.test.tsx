@@ -13,11 +13,21 @@ describe('PageHeader searchPlaceholder', () => {
           searchValue=""
           onSearch={vi.fn()}
           searchPlaceholder="Digite parte do número do pedido, como 0006 ou 20260714."
+          onAdd={vi.fn()}
+          addLabel="Novo Pedido"
         />
       </MemoryRouter>,
     );
-    expect(
-      screen.getByPlaceholderText('Digite parte do número do pedido, como 0006 ou 20260714.'),
-    ).toBeInTheDocument();
+    const input = screen.getByPlaceholderText(
+      'Digite parte do número do pedido, como 0006 ou 20260714.',
+    );
+    expect(input).toBeInTheDocument();
+    expect(input).toHaveClass('w-full');
+    // Container responsivo: min ~320px no sm+, sem sm:w-56 fixo no input.
+    const wrap = input.parentElement;
+    expect(wrap).toHaveClass('sm:min-w-[20rem]');
+    expect(wrap).toHaveClass('w-full');
+    expect(wrap?.className).not.toMatch(/\bsm:w-56\b/);
+    expect(screen.getByRole('button', { name: /Novo Pedido/i })).toBeInTheDocument();
   });
 });
