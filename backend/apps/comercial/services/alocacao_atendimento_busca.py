@@ -79,10 +79,16 @@ def buscar_pedidos_compra_opcoes(params: dict[str, Any]) -> list[dict[str, Any]]
     qs = PedidoCompra.objects.select_related('fornecedor').order_by('-data', '-id')
     term = _search(params)
     if term:
-        qs = qs.filter(
-            Q(numero__icontains=term)
-            | Q(fornecedor__razao_social__icontains=term)
-            | Q(fornecedor__nome_fantasia__icontains=term),
+        from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+        qs = filtrar_queryset_por_numeros_documento(
+            qs,
+            term,
+            'numero',
+            q_extra=(
+                Q(fornecedor__razao_social__icontains=term)
+                | Q(fornecedor__nome_fantasia__icontains=term)
+            ),
         )
     if params.get('fornecedor_id'):
         try:
@@ -132,10 +138,16 @@ def buscar_pedidos_compra_itens_opcoes(params: dict[str, Any]) -> list[dict[str,
             pass
     term = _search(params)
     if term:
-        qs = qs.filter(
-            Q(produto__descricao__icontains=term)
-            | Q(produto__codigo_completo__icontains=term)
-            | Q(pedido__numero__icontains=term),
+        from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+        qs = filtrar_queryset_por_numeros_documento(
+            qs,
+            term,
+            'pedido__numero',
+            q_extra=(
+                Q(produto__descricao__icontains=term)
+                | Q(produto__codigo_completo__icontains=term)
+            ),
         )
     lim = _limite(params)
     out: list[dict[str, Any]] = []
@@ -198,11 +210,17 @@ def buscar_nfe_entrada_importada_opcoes(params: dict[str, Any]) -> list[dict[str
     qs = _queryset_nfe_entrada_operacional(params)
     term = _search(params)
     if term:
-        qs = qs.filter(
-            Q(chave_acesso__icontains=term)
-            | Q(numero__icontains=term)
-            | Q(fornecedor_emitente__razao_social__icontains=term)
-            | Q(fornecedor_emitente__nome_fantasia__icontains=term),
+        from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+        qs = filtrar_queryset_por_numeros_documento(
+            qs,
+            term,
+            'numero',
+            q_extra=(
+                Q(chave_acesso__icontains=term)
+                | Q(fornecedor_emitente__razao_social__icontains=term)
+                | Q(fornecedor_emitente__nome_fantasia__icontains=term)
+            ),
         )
     if params.get('fornecedor_id'):
         try:
@@ -212,7 +230,9 @@ def buscar_nfe_entrada_importada_opcoes(params: dict[str, Any]) -> list[dict[str
     if params.get('chave'):
         qs = qs.filter(chave_acesso__icontains=str(params['chave']).strip())
     if params.get('numero'):
-        qs = qs.filter(numero__icontains=str(params['numero']).strip())
+        from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+        qs = filtrar_queryset_por_numeros_documento(qs, str(params['numero']).strip(), 'numero')
     incluir_div = str(params.get('incluir_divergentes', '')).lower() in {'1', 'true', 'sim'}
     lim = _limite(params)
     out: list[dict[str, Any]] = []
@@ -333,11 +353,17 @@ def buscar_cte_conferido_opcoes(params: dict[str, Any]) -> list[dict[str, Any]]:
     qs = queryset_cte_entrada_operacional()
     term = _search(params)
     if term:
-        qs = qs.filter(
-            Q(chave_acesso__icontains=term)
-            | Q(numero__icontains=term)
-            | Q(transportadora__razao_social__icontains=term)
-            | Q(transportadora__nome_fantasia__icontains=term),
+        from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+        qs = filtrar_queryset_por_numeros_documento(
+            qs,
+            term,
+            'numero',
+            q_extra=(
+                Q(chave_acesso__icontains=term)
+                | Q(transportadora__razao_social__icontains=term)
+                | Q(transportadora__nome_fantasia__icontains=term)
+            ),
         )
     if params.get('transportadora_id'):
         try:

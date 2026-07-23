@@ -52,18 +52,24 @@ def aplicar_search(qs: QuerySet, search: str) -> QuerySet:
     term = (search or '').strip()
     if not term:
         return qs
-    return qs.filter(
-        Q(pedido_venda_item__pedido__numero__icontains=term)
-        | Q(pedido_venda_item__pedido__cliente__razao_social__icontains=term)
-        | Q(pedido_venda_item__pedido__cliente__nome_fantasia__icontains=term)
-        | Q(produto__codigo_completo__icontains=term)
-        | Q(produto__descricao__icontains=term)
-        | Q(fornecedor__razao_social__icontains=term)
-        | Q(fornecedor__nome_fantasia__icontains=term)
-        | Q(faturamento_item__faturamento__numero_faturamento__icontains=term)
-        | Q(item_nf_saida__nf__numero__icontains=term)
-        | Q(pedido_compra_item__pedido__numero__icontains=term)
-        | Q(observacao_operacional__icontains=term),
+    from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+    return filtrar_queryset_por_numeros_documento(
+        qs,
+        term,
+        'pedido_venda_item__pedido__numero',
+        'faturamento_item__faturamento__numero_faturamento',
+        'item_nf_saida__nf__numero',
+        'pedido_compra_item__pedido__numero',
+        q_extra=(
+            Q(pedido_venda_item__pedido__cliente__razao_social__icontains=term)
+            | Q(pedido_venda_item__pedido__cliente__nome_fantasia__icontains=term)
+            | Q(produto__codigo_completo__icontains=term)
+            | Q(produto__descricao__icontains=term)
+            | Q(fornecedor__razao_social__icontains=term)
+            | Q(fornecedor__nome_fantasia__icontains=term)
+            | Q(observacao_operacional__icontains=term)
+        ),
     ).distinct()
 
 

@@ -444,6 +444,7 @@ const NFeSaida = () => {
           addLabel="Nova NF-e"
           searchValue={search}
           onSearch={setSearch}
+          searchPlaceholder="Digite parte do número da NF-e ou do pedido."
         />
         <NFeSaidaConferenciaModal
           nfeId={editing.id}
@@ -473,6 +474,7 @@ const NFeSaida = () => {
         addLabel="Nova NF-e"
         searchValue={search}
         onSearch={setSearch}
+        searchPlaceholder="Digite parte do número da NF-e ou do pedido."
       />
       <FilterBar
         filters={[

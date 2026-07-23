@@ -157,13 +157,19 @@ def buscar_nfes_elegiveis_cq(*, search: str = '', limit: int = 20) -> list[dict[
     qs = queryset_nfes_elegiveis_cq()
     term = (search or '').strip()
     if term:
-        qs = qs.filter(
-            Q(numero_nfe__icontains=term)
-            | Q(serie_nfe__icontains=term)
-            | Q(cliente__razao_social__icontains=term)
-            | Q(cliente__nome_fantasia__icontains=term)
-            | Q(chave_acesso__icontains=term)
-            | Q(numero__icontains=term),
+        from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+        qs = filtrar_queryset_por_numeros_documento(
+            qs,
+            term,
+            'numero_nfe',
+            'numero',
+            q_extra=(
+                Q(serie_nfe__icontains=term)
+                | Q(cliente__razao_social__icontains=term)
+                | Q(cliente__nome_fantasia__icontains=term)
+                | Q(chave_acesso__icontains=term)
+            ),
         )
     qs = qs.order_by('-autorizada_em', '-id')[: max(1, min(limit, 100))]
     resultados: list[dict[str, Any]] = []

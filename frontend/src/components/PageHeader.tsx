@@ -26,6 +26,7 @@ interface PageHeaderProps {
   addLabel?: string;
   searchValue?: string;
   onSearch?: (val: string) => void;
+  searchPlaceholder?: string;
 }
 
 export const PageHeader = ({
@@ -41,10 +42,18 @@ export const PageHeader = ({
   addLabel = 'Novo',
   searchValue,
   onSearch,
+  searchPlaceholder,
 }: PageHeaderProps) => {
   const defaultActions = (
     <>
-      {onSearch ? <SearchInput value={searchValue} onChange={onSearch} /> : null}
+      {onSearch ? (
+        <SearchInput
+          value={searchValue}
+          onChange={onSearch}
+          placeholder={searchPlaceholder}
+          className={searchPlaceholder ? 'sm:min-w-[18rem] sm:w-80' : undefined}
+        />
+      ) : null}
       {onAdd ? (
         <NexusButton type="button" onClick={onAdd}>
           <Plus className="h-4 w-4" />

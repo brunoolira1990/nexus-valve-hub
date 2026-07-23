@@ -55,11 +55,17 @@ def aplicar_busca_textual(
     termo = (search or '').strip()
     if not termo:
         return qs
-    return qs.filter(
-        Q(chave_acesso__icontains=termo)
-        | Q(numero__icontains=termo)
-        | Q(fornecedor_emitente__razao_social__icontains=termo)
-        | Q(emit_json__xNome__icontains=termo),
+    from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+    return filtrar_queryset_por_numeros_documento(
+        qs,
+        termo,
+        'numero',
+        q_extra=(
+            Q(chave_acesso__icontains=termo)
+            | Q(fornecedor_emitente__razao_social__icontains=termo)
+            | Q(emit_json__xNome__icontains=termo)
+        ),
     )
 
 

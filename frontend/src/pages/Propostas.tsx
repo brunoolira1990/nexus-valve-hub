@@ -1357,6 +1357,7 @@ const Propostas = () => {
         addLabel="Nova Proposta"
         searchValue={search}
         onSearch={setSearch}
+        searchPlaceholder="Digite parte do número da proposta."
       />
       <FilterBar
         filters={[

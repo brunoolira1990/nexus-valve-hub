@@ -410,9 +410,13 @@ class CertificadoViewSet(AutocompleteOrPaginationMixin, viewsets.ReadOnlyModelVi
         qs = super().get_queryset()
         search = (self.request.query_params.get('search') or '').strip()
         if search:
-            qs = qs.filter(
-                Q(nf_saida__numero__icontains=search)
-                | Q(nf_saida__cliente__razao_social__icontains=search),
+            from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+            qs = filtrar_queryset_por_numeros_documento(
+                qs,
+                search,
+                'nf_saida__numero',
+                q_extra=Q(nf_saida__cliente__razao_social__icontains=search),
             )
         return aplicar_ordering(qs, self.request.query_params.get('ordering'), {'gerado_em': 'gerado_em'}, '-gerado_em')
 
@@ -431,12 +435,18 @@ class CertificadoQualidadeViewSet(AutocompleteOrPaginationMixin, viewsets.ModelV
         qs = super().get_queryset()
         search = (self.request.query_params.get('search') or '').strip()
         if search:
-            qs = qs.filter(
-                Q(numero__icontains=search)
-                | Q(cliente__razao_social__icontains=search)
-                | Q(cliente_nome_snapshot__icontains=search)
-                | Q(nota_fiscal_numero__icontains=search)
-                | Q(pedido_cliente__icontains=search),
+            from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+            qs = filtrar_queryset_por_numeros_documento(
+                qs,
+                search,
+                'numero',
+                'nota_fiscal_numero',
+                q_extra=(
+                    Q(cliente__razao_social__icontains=search)
+                    | Q(cliente_nome_snapshot__icontains=search)
+                    | Q(pedido_cliente__icontains=search)
+                ),
             )
         status_f = (self.request.query_params.get('status') or '').strip()
         if status_f:
@@ -701,11 +711,17 @@ class CertificadoFornecedorEntradaViewSet(AutocompleteOrPaginationMixin, viewset
         qs = super().get_queryset()
         search = (self.request.query_params.get('search') or '').strip()
         if search:
-            qs = qs.filter(
-                Q(numero_certificado_fornecedor__icontains=search)
-                | Q(fornecedor__razao_social__icontains=search)
-                | Q(fornecedor_nome_snapshot__icontains=search)
-                | Q(numero_nf_entrada__icontains=search),
+            from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+            qs = filtrar_queryset_por_numeros_documento(
+                qs,
+                search,
+                'numero_certificado_fornecedor',
+                'numero_nf_entrada',
+                q_extra=(
+                    Q(fornecedor__razao_social__icontains=search)
+                    | Q(fornecedor_nome_snapshot__icontains=search)
+                ),
             )
         status_f = (self.request.query_params.get('status') or '').strip()
         if status_f:

@@ -178,6 +178,7 @@ const NFeEntrada = () => {
         description="Entradas próprias emitidas ou importadas manualmente pela empresa (ex.: devolução). XMLs de fornecedor devem ser tratados no Inbox Fiscal."
         searchValue={search}
         onSearch={setSearch}
+        searchPlaceholder="Digite parte do número da NF-e de entrada."
         actions={
           <>
             <NexusButton type="button" variant="outline" onClick={() => navigate(BASE_NFE_ENTRADA_IMPORTADA_PATH)}>

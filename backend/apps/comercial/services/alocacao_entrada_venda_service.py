@@ -549,12 +549,18 @@ def buscar_pedidos_venda_itens_opcoes(params: dict[str, Any]) -> list[dict[str, 
     if term:
         from django.db.models import Q
 
-        qs = qs.filter(
-            Q(pedido__numero__icontains=term)
-            | Q(pedido__cliente__razao_social__icontains=term)
-            | Q(pedido__cliente__nome_fantasia__icontains=term)
-            | Q(produto__codigo_completo__icontains=term)
-            | Q(produto__descricao__icontains=term),
+        from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+        qs = filtrar_queryset_por_numeros_documento(
+            qs,
+            term,
+            'pedido__numero',
+            q_extra=(
+                Q(pedido__cliente__razao_social__icontains=term)
+                | Q(pedido__cliente__nome_fantasia__icontains=term)
+                | Q(produto__codigo_completo__icontains=term)
+                | Q(produto__descricao__icontains=term)
+            ),
         )
     if params.get('produto_id'):
         try:

@@ -726,6 +726,7 @@ const PedidosCompra = () => {
         addLabel="Novo Pedido"
         searchValue={search}
         onSearch={setSearch}
+        searchPlaceholder="Digite parte do número do pedido de compra."
       />
       {loadError ? <ErrorState onRetry={() => void reloadList()} /> : null}
       {loadingList ? <TableSkeleton rows={6} cols={6} /> : null}

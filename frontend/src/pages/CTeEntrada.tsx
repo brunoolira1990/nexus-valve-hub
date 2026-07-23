@@ -39,6 +39,7 @@ const CTeEntrada = () => {
         description="Conhecimentos de transporte conferidos para uso operacional. A conferência não gera financeiro, expedição ou rateio automaticamente."
         searchValue={search}
         onSearch={setSearch}
+        searchPlaceholder="Digite parte do número do CT-e."
         actions={
           <NexusButton type="button" variant="outline" onClick={() => navigate(BASE_CTE_IMPORTADA_PATH)}>
             <ExternalLink className="h-4 w-4" />

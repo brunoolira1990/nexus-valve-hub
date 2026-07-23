@@ -75,11 +75,17 @@ class PropostaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         qs = super().get_queryset()
         search = (self.request.query_params.get('search') or '').strip()
         if search:
-            qs = qs.filter(
-                Q(numero__icontains=search)
-                | Q(cliente__razao_social__icontains=search)
-                | Q(cliente__nome_fantasia__icontains=search)
-                | Q(cliente_avulso_nome__icontains=search),
+            from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+            qs = filtrar_queryset_por_numeros_documento(
+                qs,
+                search,
+                'numero',
+                q_extra=(
+                    Q(cliente__razao_social__icontains=search)
+                    | Q(cliente__nome_fantasia__icontains=search)
+                    | Q(cliente_avulso_nome__icontains=search)
+                ),
             )
         status_f = (self.request.query_params.get('status') or '').strip()
         if status_f:
@@ -337,10 +343,16 @@ class PedidoVendaViewSet(FriendlyDestroyMixin, AutocompleteOrPaginationMixin, vi
             )
         search = (self.request.query_params.get('search') or '').strip()
         if search:
-            qs = qs.filter(
-                Q(numero__icontains=search)
-                | Q(cliente__razao_social__icontains=search)
-                | Q(cliente__nome_fantasia__icontains=search)
+            from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+            qs = filtrar_queryset_por_numeros_documento(
+                qs,
+                search,
+                'numero',
+                q_extra=(
+                    Q(cliente__razao_social__icontains=search)
+                    | Q(cliente__nome_fantasia__icontains=search)
+                ),
             )
         cliente_id = self.request.query_params.get('cliente_id')
         if cliente_id:
@@ -594,11 +606,17 @@ class PedidoCompraViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         qs = super().get_queryset()
         search = (self.request.query_params.get('search') or '').strip()
         if search:
-            qs = qs.filter(
-                Q(numero__icontains=search)
-                | Q(fornecedor__razao_social__icontains=search)
-                | Q(fornecedor__nome_fantasia__icontains=search)
-                | Q(fornecedor__cnpj__icontains=search),
+            from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+            qs = filtrar_queryset_por_numeros_documento(
+                qs,
+                search,
+                'numero',
+                q_extra=(
+                    Q(fornecedor__razao_social__icontains=search)
+                    | Q(fornecedor__nome_fantasia__icontains=search)
+                    | Q(fornecedor__cnpj__icontains=search)
+                ),
             )
         status_f = (self.request.query_params.get('status') or '').strip()
         if status_f:

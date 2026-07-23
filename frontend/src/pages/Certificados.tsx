@@ -1241,6 +1241,7 @@ const Certificados = () => {
         addLabel="Novo certificado"
         searchValue={search}
         onSearch={setSearch}
+        searchPlaceholder="Digite parte do número do certificado."
       />
       {listError ? <ErrorState onRetry={() => void reloadList()} /> : null}
       {listLoading ? <TableSkeleton rows={6} cols={6} /> : null}

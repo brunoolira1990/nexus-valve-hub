@@ -167,13 +167,19 @@ class NFeEntradaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         qs = super().get_queryset()
         search = (self.request.query_params.get('search') or '').strip()
         if search:
-            qs = qs.filter(
-                Q(numero__icontains=search)
-                | Q(chave_acesso__icontains=search)
-                | Q(fornecedor__razao_social__icontains=search)
-                | Q(fornecedor__cnpj__icontains=search)
-                | Q(empresa_emitente__razao_social__icontains=search)
-                | Q(cliente_destinatario__razao_social__icontains=search),
+            from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+            qs = filtrar_queryset_por_numeros_documento(
+                qs,
+                search,
+                'numero',
+                q_extra=(
+                    Q(chave_acesso__icontains=search)
+                    | Q(fornecedor__razao_social__icontains=search)
+                    | Q(fornecedor__cnpj__icontains=search)
+                    | Q(empresa_emitente__razao_social__icontains=search)
+                    | Q(cliente_destinatario__razao_social__icontains=search)
+                ),
             )
         fornecedor_id = self.request.query_params.get('fornecedor_id')
         if fornecedor_id:
@@ -344,13 +350,19 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         qs = super().get_queryset()
         search = (self.request.query_params.get('search') or '').strip()
         if search:
-            qs = qs.filter(
-                Q(numero__icontains=search)
-                | Q(numero_nfe__icontains=search)
-                | Q(chave_acesso__icontains=search)
-                | Q(cliente__razao_social__icontains=search)
-                | Q(pedido_venda__numero__icontains=search)
-                | Q(faturamento_pedido_venda__numero_faturamento__icontains=search),
+            from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+            qs = filtrar_queryset_por_numeros_documento(
+                qs,
+                search,
+                'numero',
+                'numero_nfe',
+                'pedido_venda__numero',
+                'faturamento_pedido_venda__numero_faturamento',
+                q_extra=(
+                    Q(chave_acesso__icontains=search)
+                    | Q(cliente__razao_social__icontains=search)
+                ),
             )
         status_f = (self.request.query_params.get('status') or '').strip()
         if status_f:
@@ -2882,11 +2894,17 @@ class CTeEntradaViewSet(AutocompleteOrPaginationMixin, viewsets.ReadOnlyModelVie
         qs = queryset_cte_entrada_operacional()
         search = (self.request.query_params.get('search') or '').strip()
         if search:
-            qs = qs.filter(
-                Q(numero__icontains=search)
-                | Q(chave_acesso__icontains=search)
-                | Q(transportadora__razao_social__icontains=search)
-                | Q(empresa_tomadora__razao_social__icontains=search),
+            from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+            qs = filtrar_queryset_por_numeros_documento(
+                qs,
+                search,
+                'numero',
+                q_extra=(
+                    Q(chave_acesso__icontains=search)
+                    | Q(transportadora__razao_social__icontains=search)
+                    | Q(empresa_tomadora__razao_social__icontains=search)
+                ),
             )
         return aplicar_ordering(
             qs,
@@ -2917,10 +2935,16 @@ class CTeHistoricoImportadoViewSet(AutocompleteOrPaginationMixin, viewsets.ReadO
             return qs.prefetch_related('eventos')
         search = (self.request.query_params.get('search') or '').strip()
         if search:
-            qs = qs.filter(
-                Q(chave_acesso__icontains=search)
-                | Q(numero__icontains=search)
-                | Q(transportadora__razao_social__icontains=search),
+            from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+            qs = filtrar_queryset_por_numeros_documento(
+                qs,
+                search,
+                'numero',
+                q_extra=(
+                    Q(chave_acesso__icontains=search)
+                    | Q(transportadora__razao_social__icontains=search)
+                ),
             )
         if self.action == 'list':
             p = self.request.query_params
@@ -3746,12 +3770,18 @@ class AtendimentoEstoqueViewSet(AutocompleteOrPaginationMixin, viewsets.ReadOnly
             raise ValidationError({'detail': 'Parâmetro de filtro inválido.'}) from exc
         search = (self.request.query_params.get('search') or '').strip()
         if search:
-            qs = qs.filter(
-                Q(produto__codigo_completo__icontains=search)
-                | Q(produto__descricao__icontains=search)
-                | Q(nf_saida__numero__icontains=search)
-                | Q(nf_saida__cliente__razao_social__icontains=search)
-                | Q(nf_saida__pedido_venda__numero__icontains=search),
+            from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+            qs = filtrar_queryset_por_numeros_documento(
+                qs,
+                search,
+                'nf_saida__numero',
+                'nf_saida__pedido_venda__numero',
+                q_extra=(
+                    Q(produto__codigo_completo__icontains=search)
+                    | Q(produto__descricao__icontains=search)
+                    | Q(nf_saida__cliente__razao_social__icontains=search)
+                ),
             )
         return aplicar_ordering(
             qs,

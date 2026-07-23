@@ -224,18 +224,24 @@ def aplicar_filtros_titulo(qs: QuerySet, params) -> QuerySet:
 
     search = (params.get('search') or '').strip()
     if search:
-        qs = qs.filter(
-            Q(numero__icontains=search)
-            | Q(descricao__icontains=search)
-            | Q(origem_descricao__icontains=search)
-            | Q(origem_numero__icontains=search)
-            | Q(documento_origem__icontains=search)
-            | Q(cliente__razao_social__icontains=search)
-            | Q(cliente__nome_fantasia__icontains=search)
-            | Q(cliente__cnpj__icontains=search)
-            | Q(fornecedor__razao_social__icontains=search)
-            | Q(fornecedor__nome_fantasia__icontains=search)
-            | Q(fornecedor__cnpj__icontains=search),
+        from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+        qs = filtrar_queryset_por_numeros_documento(
+            qs,
+            search,
+            'numero',
+            'origem_numero',
+            'documento_origem',
+            q_extra=(
+                Q(descricao__icontains=search)
+                | Q(origem_descricao__icontains=search)
+                | Q(cliente__razao_social__icontains=search)
+                | Q(cliente__nome_fantasia__icontains=search)
+                | Q(cliente__cnpj__icontains=search)
+                | Q(fornecedor__razao_social__icontains=search)
+                | Q(fornecedor__nome_fantasia__icontains=search)
+                | Q(fornecedor__cnpj__icontains=search)
+            ),
         )
 
     return qs

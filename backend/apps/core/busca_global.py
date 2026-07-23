@@ -149,9 +149,14 @@ def _buscar_empresas(q: str, q_digits: str) -> list[dict[str, str]]:
 
 
 def _buscar_propostas(q: str) -> list[dict[str, str]]:
-    filtro = Q(numero__icontains=q)
+    from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
     out = []
-    qs = Proposta.objects.select_related('cliente').filter(filtro).order_by('-data')[:MAX_POR_TIPO]
+    qs = filtrar_queryset_por_numeros_documento(
+        Proposta.objects.select_related('cliente'),
+        q,
+        'numero',
+    ).order_by('-data')[:MAX_POR_TIPO]
     for p in qs:
         cliente = p.cliente.razao_social if p.cliente_id else (p.cliente_avulso_nome or '—')
         out.append(
@@ -167,9 +172,15 @@ def _buscar_propostas(q: str) -> list[dict[str, str]]:
 
 
 def _buscar_pedidos_venda(q: str) -> list[dict[str, str]]:
-    filtro = Q(numero__icontains=q)
+    from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
     out = []
-    for pv in PedidoVenda.objects.select_related('cliente').filter(filtro).order_by('-data')[:MAX_POR_TIPO]:
+    qs = filtrar_queryset_por_numeros_documento(
+        PedidoVenda.objects.select_related('cliente'),
+        q,
+        'numero',
+    ).order_by('-data')[:MAX_POR_TIPO]
+    for pv in qs:
         out.append(
             _item(
                 tipo='pedido_venda',
@@ -183,9 +194,15 @@ def _buscar_pedidos_venda(q: str) -> list[dict[str, str]]:
 
 
 def _buscar_pedidos_compra(q: str) -> list[dict[str, str]]:
-    filtro = Q(numero__icontains=q)
+    from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
     out = []
-    for pc in PedidoCompra.objects.select_related('fornecedor').filter(filtro).order_by('-data')[:MAX_POR_TIPO]:
+    qs = filtrar_queryset_por_numeros_documento(
+        PedidoCompra.objects.select_related('fornecedor'),
+        q,
+        'numero',
+    ).order_by('-data')[:MAX_POR_TIPO]
+    for pc in qs:
         out.append(
             _item(
                 tipo='pedido_compra',
@@ -199,11 +216,19 @@ def _buscar_pedidos_compra(q: str) -> list[dict[str, str]]:
 
 
 def _buscar_nfe_saida(q: str, q_digits: str) -> list[dict[str, str]]:
-    filtro = Q(numero__icontains=q) | Q(status__icontains=q)
+    from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+    q_extra = Q(status__icontains=q)
     if len(q_digits) >= 4:
-        filtro |= Q(chave_acesso__icontains=q_digits)
+        q_extra |= Q(chave_acesso__icontains=q_digits)
+    qs = filtrar_queryset_por_numeros_documento(
+        NFeSaida.objects.select_related('cliente'),
+        q,
+        'numero',
+        q_extra=q_extra,
+    )
     out = []
-    for nf in NFeSaida.objects.select_related('cliente').filter(filtro).order_by('-data')[:MAX_POR_TIPO]:
+    for nf in qs.order_by('-data')[:MAX_POR_TIPO]:
         status = (nf.status_emissao_sefaz or nf.status or '').replace('_', ' ').title() or '—'
         out.append(
             _item(
@@ -218,9 +243,15 @@ def _buscar_nfe_saida(q: str, q_digits: str) -> list[dict[str, str]]:
 
 
 def _buscar_nfe_entrada(q: str, q_digits: str) -> list[dict[str, str]]:
+    from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
     out: list[dict[str, str]] = []
-    filtro_op = Q(numero__icontains=q)
-    for nf in NFeEntrada.objects.select_related('fornecedor').filter(filtro_op).order_by('-data')[:MAX_POR_TIPO]:
+    qs_op = filtrar_queryset_por_numeros_documento(
+        NFeEntrada.objects.select_related('fornecedor'),
+        q,
+        'numero',
+    ).order_by('-data')[:MAX_POR_TIPO]
+    for nf in qs_op:
         out.append(
             _item(
                 tipo='nfe_entrada',
@@ -232,15 +263,16 @@ def _buscar_nfe_entrada(q: str, q_digits: str) -> list[dict[str, str]]:
         )
     if len(out) >= MAX_POR_TIPO:
         return out[:MAX_POR_TIPO]
-    filtro_hist = Q(numero__icontains=q)
+    q_extra = Q()
     if len(q_digits) >= 4:
-        filtro_hist |= Q(chave_acesso__icontains=q_digits)
+        q_extra |= Q(chave_acesso__icontains=q_digits)
     restante = MAX_POR_TIPO - len(out)
-    hist_qs = (
-        NFeEntradaHistoricaImportada.objects.filter(filtro_hist)
-        .select_related('conferencia')
-        .order_by('-dh_emissao')[:restante]
-    )
+    hist_qs = filtrar_queryset_por_numeros_documento(
+        NFeEntradaHistoricaImportada.objects.select_related('conferencia'),
+        q,
+        'numero',
+        q_extra=q_extra if q_extra else None,
+    ).order_by('-dh_emissao')[:restante]
     for h in hist_qs:
         emit = (h.emit_json or {}).get('xNome') or (h.emit_json or {}).get('xFant') or 'Fornecedor'
         url = '/nfe-entrada-historica-importada'
@@ -278,16 +310,20 @@ def _subtitulo_titulo(t: TituloFinanceiro) -> str:
 
 
 def _buscar_titulos(q: str, q_digits: str) -> list[dict[str, str]]:
+    from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
     out: list[dict[str, str]] = []
-    filtro = Q(numero__icontains=q) | Q(descricao__icontains=q)
-    if q_digits:
-        filtro |= Q(numero__icontains=q_digits)
-    for t in (
-        TituloFinanceiro.objects.select_related('cliente', 'fornecedor')
-        .filter(filtro, tipo=TituloFinanceiro.Tipo.RECEBER)
-        .exclude(status=TituloFinanceiro.Status.CANCELADO)
-        .order_by('-data_emissao')[:MAX_POR_TIPO]
-    ):
+    base = TituloFinanceiro.objects.select_related('cliente', 'fornecedor').exclude(
+        status=TituloFinanceiro.Status.CANCELADO,
+    )
+    qs_num = filtrar_queryset_por_numeros_documento(
+        base,
+        q,
+        'numero',
+        'origem_numero',
+        q_extra=Q(descricao__icontains=q),
+    )
+    for t in qs_num.filter(tipo=TituloFinanceiro.Tipo.RECEBER).order_by('-data_emissao')[:MAX_POR_TIPO]:
         out.append(
             _item(
                 tipo='conta_receber',
@@ -297,12 +333,7 @@ def _buscar_titulos(q: str, q_digits: str) -> list[dict[str, str]]:
                 url=f'/financeiro/contas-receber?titulo={t.pk}',
             ),
         )
-    for t in (
-        TituloFinanceiro.objects.select_related('cliente', 'fornecedor')
-        .filter(filtro, tipo=TituloFinanceiro.Tipo.PAGAR)
-        .exclude(status=TituloFinanceiro.Status.CANCELADO)
-        .order_by('-data_emissao')[:MAX_POR_TIPO]
-    ):
+    for t in qs_num.filter(tipo=TituloFinanceiro.Tipo.PAGAR).order_by('-data_emissao')[:MAX_POR_TIPO]:
         out.append(
             _item(
                 tipo='conta_pagar',
@@ -316,13 +347,16 @@ def _buscar_titulos(q: str, q_digits: str) -> list[dict[str, str]]:
 
 
 def _buscar_creditos(q: str) -> list[dict[str, str]]:
-    filtro = Q(motivo__icontains=q) | Q(origem_numero__icontains=q) | Q(origem_descricao__icontains=q)
+    from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
     out = []
-    for cr in (
-        CreditoFinanceiro.objects.select_related('cliente', 'fornecedor')
-        .filter(filtro, cancelado=False)
-        .order_by('-data_credito')[:MAX_POR_TIPO]
-    ):
+    qs = filtrar_queryset_por_numeros_documento(
+        CreditoFinanceiro.objects.select_related('cliente', 'fornecedor').filter(cancelado=False),
+        q,
+        'origem_numero',
+        q_extra=Q(motivo__icontains=q) | Q(origem_descricao__icontains=q),
+    ).order_by('-data_credito')[:MAX_POR_TIPO]
+    for cr in qs:
         titulo = f'Crédito #{cr.pk}'
         if cr.cliente_id:
             sub = f'{cr.cliente.razao_social} · Saldo {format_currency_br(cr.saldo)}'

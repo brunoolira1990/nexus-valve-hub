@@ -524,6 +524,7 @@ const PedidosVenda = () => {
         addLabel="Novo Pedido"
         searchValue={search}
         onSearch={setSearch}
+        searchPlaceholder="Digite parte do número do pedido, como 0006 ou 20260714."
       />
       <FilterBar
         filters={[

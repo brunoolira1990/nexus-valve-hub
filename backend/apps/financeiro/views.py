@@ -326,10 +326,16 @@ class CreditoFinanceiroViewSet(AutocompleteOrPaginationMixin, viewsets.ModelView
             qs = qs.filter(cancelado=False, saldo__gt=Decimal('0.01'))
         search = (self.request.query_params.get('search') or '').strip()
         if search:
-            qs = qs.filter(
-                Q(motivo__icontains=search)
-                | Q(origem_numero__icontains=search)
-                | Q(origem_descricao__icontains=search)
+            from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+            qs = filtrar_queryset_por_numeros_documento(
+                qs,
+                search,
+                'origem_numero',
+                q_extra=(
+                    Q(motivo__icontains=search)
+                    | Q(origem_descricao__icontains=search)
+                ),
             )
         return qs.order_by('-data_credito', '-pk')
 

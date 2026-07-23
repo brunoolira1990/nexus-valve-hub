@@ -17,13 +17,19 @@ class CorridaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         qs = super().get_queryset()
         search = (self.request.query_params.get('search') or '').strip()
         if search:
-            qs = qs.filter(
-                Q(numero__icontains=search)
-                | Q(produto__descricao__icontains=search)
-                | Q(produto__codigo_completo__icontains=search)
-                | Q(fornecedor__razao_social__icontains=search)
-                | Q(nf_entrada__icontains=search)
-                | Q(material__icontains=search),
+            from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+            qs = filtrar_queryset_por_numeros_documento(
+                qs,
+                search,
+                'numero',
+                'nf_entrada',
+                q_extra=(
+                    Q(produto__descricao__icontains=search)
+                    | Q(produto__codigo_completo__icontains=search)
+                    | Q(fornecedor__razao_social__icontains=search)
+                    | Q(material__icontains=search)
+                ),
             )
         material = (self.request.query_params.get('material') or '').strip()
         if material:
