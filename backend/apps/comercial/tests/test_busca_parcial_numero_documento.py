@@ -17,6 +17,7 @@ from apps.comercial.models import ItemPedidoVenda, PedidoVenda
 from apps.core.document_numbering import (
     filtrar_queryset_por_numeros_documento,
     termo_busca_numero_documento_normalizado,
+    tokenizar_busca_numero_documento,
 )
 from apps.produtos.models import FamiliaProduto, Produto
 
@@ -90,6 +91,82 @@ class BuscaParcialNumeroDocumentoUnitTests(TestCase):
         self.assertEqual(miss, [])
         miss2 = list(filtrar_queryset_por_numeros_documento(qs, '20260799', 'numero'))
         self.assertEqual(miss2, [])
+
+    def test_multiplos_tokens_preserva_ordem_sem_fuzzy(self):
+        """Aceite: sequência contínua vs tokens ordenados; sem fuzzy."""
+        emp = Empresa.objects.create(razao_social='Emit Tok', cnpj=_cnpj(), uf='SP')
+        cli = Cliente.objects.create(razao_social='Cli Tok', cnpj=_cnpj(), uf='RJ')
+        a = PedidoVenda.objects.create(
+            numero='PV-20260714-0010',
+            empresa_emitente=emp,
+            cliente=cli,
+            data=date.today(),
+            status='ABERTO',
+            valor_total=Decimal('10'),
+        )
+        b = PedidoVenda.objects.create(
+            numero='PV-20260715-0010',
+            empresa_emitente=emp,
+            cliente=cli,
+            data=date.today(),
+            status='ABERTO',
+            valor_total=Decimal('20'),
+        )
+        qs = PedidoVenda.objects.filter(pk__in=[a.pk, b.pk])
+
+        self.assertEqual(tokenizar_busca_numero_documento('0714-0010'), ['0714', '0010'])
+        self.assertEqual(tokenizar_busca_numero_documento('0714/0010'), ['0714', '0010'])
+        self.assertEqual(tokenizar_busca_numero_documento('PV 0714 0010'), ['PV', '0714', '0010'])
+        self.assertEqual(tokenizar_busca_numero_documento('07140010'), ['07140010'])
+
+        # 1–3 / 11: número completo e sequências contínuas sem separadores.
+        for termo in (
+            'PV-20260714-0010',
+            'PV202607140010',
+            '202607140010',
+            '07140010',
+            '7140010',
+        ):
+            hit = list(filtrar_queryset_por_numeros_documento(qs, termo, 'numero'))
+            self.assertEqual([p.numero for p in hit], ['PV-20260714-0010'], msg=termo)
+
+        # 4–6: trecho final simples → ambos.
+        so_final = list(filtrar_queryset_por_numeros_documento(qs, '0010', 'numero'))
+        self.assertEqual({p.pk for p in so_final}, {a.pk, b.pk})
+
+        # 7–8: tokens com data + sequencial.
+        so_a = list(filtrar_queryset_por_numeros_documento(qs, '0714-0010', 'numero'))
+        self.assertEqual([p.pk for p in so_a], [a.pk])
+        so_b = list(filtrar_queryset_por_numeros_documento(qs, '0715-0010', 'numero'))
+        self.assertEqual([p.pk for p in so_b], [b.pk])
+
+        # 9–10: espaço e barra.
+        for termo in ('0714 0010', '0714/0010', '714-0010', 'PV 0714 0010', '2026 0714 0010'):
+            hit = list(filtrar_queryset_por_numeros_documento(qs, termo, 'numero'))
+            self.assertEqual([p.numero for p in hit], ['PV-20260714-0010'], msg=termo)
+
+        # 2026-0010: ambos têm 2026 e 0010 nessa ordem.
+        ambos_2026 = list(filtrar_queryset_por_numeros_documento(qs, '2026-0010', 'numero'))
+        self.assertEqual({p.pk for p in ambos_2026}, {a.pk, b.pk})
+
+        # 12: ordem invertida.
+        self.assertEqual(
+            list(filtrar_queryset_por_numeros_documento(qs, '0010-0714', 'numero')),
+            [],
+        )
+        # 13: trecho inexistente / não fuzzy.
+        self.assertEqual(
+            list(filtrar_queryset_por_numeros_documento(qs, '074-0010', 'numero')),
+            [],
+        )
+        self.assertEqual(
+            list(filtrar_queryset_por_numeros_documento(qs, '9999-0010', 'numero')),
+            [],
+        )
+        self.assertEqual(
+            list(filtrar_queryset_por_numeros_documento(qs, '0740010', 'numero')),
+            [],
+        )
 
 
 class BuscaParcialPedidoVendaApiTests(TestCase):
@@ -170,3 +247,23 @@ class BuscaParcialPedidoVendaApiTests(TestCase):
         self.assertEqual(r.data['results'][0]['status'], 'CANCEL')
         resumo = montar_resumo_faturamento(cancelado)
         self.assertFalse(resumo.get('pode_faturar'))
+
+    def test_autocomplete_contrato_preservado(self):
+        """limit sem page → lista; shape de opção PC/PV inalterado no service."""
+        from apps.comercial.services.alocacao_atendimento_busca import buscar_pedidos_compra_opcoes
+
+        r = self.client_api.get('/api/pedidos-venda/', {'search': '0006', 'limit': 5})
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(r.data, list)
+        self.assertTrue(r.data)
+        row = r.data[0]
+        self.assertIn('id', row)
+        self.assertIn('numero', row)
+        self.assertEqual(row['numero'], 'PV-20260714-0006')
+
+        opts = buscar_pedidos_compra_opcoes({'search': 'inexistente-xyz', 'limit': 3})
+        self.assertIsInstance(opts, list)
+        if opts:
+            self.assertTrue(
+                {'id', 'numero', 'label', 'status'}.issubset(opts[0].keys()),
+            )
