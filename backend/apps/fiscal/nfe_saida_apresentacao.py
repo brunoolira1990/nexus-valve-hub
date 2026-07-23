@@ -100,7 +100,11 @@ def montar_apresentacao_nfe_saida(nf: NFeSaida) -> dict[str, Any]:
 
     subtitulo_exibicao = ' · '.join(linhas_subtitulo)
 
-    listagem_subtitulo = ' · '.join(p for p in [numero_faturamento, numero_pedido_venda] if p)
+    listagem_subtitulo = ' · '.join(
+        p
+        for p in [numero_faturamento, numero_pedido_venda, numero_pedido_cliente]
+        if p
+    )
 
     if autorizada_homolog:
         badge_principal = {'label': 'Autorizada homologação', 'tipo': 'success'}

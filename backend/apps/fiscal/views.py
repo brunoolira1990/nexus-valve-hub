@@ -357,6 +357,7 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
                 search,
                 'numero',
                 'numero_nfe',
+                'pedido_cliente_numero',
                 'pedido_venda__numero',
                 'faturamento_pedido_venda__numero_faturamento',
                 q_extra=(
@@ -364,6 +365,8 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
                     | Q(cliente__razao_social__icontains=search)
                 ),
             )
+            # Joins em PV/FAT são FK 1:1; distinct evita qualquer duplicidade residual.
+            qs = qs.distinct()
         status_f = (self.request.query_params.get('status') or '').strip()
         if status_f:
             qs = qs.filter(status__icontains=status_f)
