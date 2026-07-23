@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import re
-import unicodedata
 from typing import Any
 
 from apps.fiscal.models import ItemNFeSaida, NFeSaida
+from apps.fiscal.nfe_informacoes_adicionais import (
+    chave_deduplicacao_texto,
+    deduplicar_blocos_texto,
+    dividir_blocos_texto,
+    normalizar_espacos_linha,
+)
 
 _MAX_INF_CPL_XML_CHARS = 5000
 _MAX_INF_CPL_DANFE_CHARS = 420
@@ -48,7 +53,7 @@ def _text(val: Any) -> str:
 
 
 def _normalizar_espacos(texto: str) -> str:
-    return re.sub(r'\s+', ' ', _text(texto))
+    return normalizar_espacos_linha(texto)
 
 
 def _preservar_linhas_inf_cpl(texto: str) -> str:
@@ -66,10 +71,7 @@ def _para_maiusculas(texto: str) -> str:
 
 
 def _normalizar_chave_dedup(texto: str) -> str:
-    t = unicodedata.normalize('NFKD', texto)
-    t = ''.join(c for c in t if not unicodedata.combining(c))
-    t = re.sub(r'\s+', ' ', t.lower().strip())
-    return t
+    return chave_deduplicacao_texto(texto)
 
 
 def _contem_termo_bloqueado(texto: str) -> bool:
@@ -85,19 +87,19 @@ def _texto_permitido_inf_cpl(texto: str, *, max_len: int = 2000) -> bool:
 
 
 def deduplicar_textos_inf_cpl(partes: list[str]) -> list[str]:
-    """Remove duplicados exatos e por normalização (case/acentos)."""
-    vistos: set[str] = set()
-    out: list[str] = []
+    """Remove duplicados exatos e por normalização de espaços/quebras (sem fuzzy)."""
+    # Expande cada parte em blocos/linhas e deduplica preservando ordem global.
+    expandido: list[str] = []
     for raw in partes:
         t = _text(raw)
         if not t:
             continue
-        chave = _normalizar_chave_dedup(t)
-        if not chave or chave in vistos:
-            continue
-        vistos.add(chave)
-        out.append(t)
-    return out
+        blocos = dividir_blocos_texto(t)
+        if blocos:
+            expandido.extend(blocos)
+        else:
+            expandido.append(t)
+    return deduplicar_blocos_texto(expandido)
 
 
 def _coletar_regras_fiscais_nfe(nfe_saida: NFeSaida) -> list[Any]:

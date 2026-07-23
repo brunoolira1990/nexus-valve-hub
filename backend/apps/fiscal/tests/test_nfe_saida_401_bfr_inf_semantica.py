@@ -67,10 +67,12 @@ class DanfeBfrInfSemanticaTests(TestCase):
         inf_cpl_danfe = montar_inf_cpl_para_danfe(nf)
         linhas = [ln for ln in inf_cpl_danfe.split('\n') if ln.strip()]
         self.assertGreaterEqual(len(linhas), 4)
+        # Ordem documentada em montar_linhas_inf_cpl_nfe:
+        # regra → pedido → cliente → manual
         self.assertIn('COMUNICACAO PREVIA', linhas[0])
-        self.assertIn('MIGUEL LANGONE', linhas[1])
-        self.assertIn('INSTRU', linhas[2])
-        self.assertEqual(linhas[3], 'PEDIDO DE COMPRA: 5050')
+        self.assertEqual(linhas[1], 'PEDIDO DE COMPRA: 5050')
+        self.assertIn('MIGUEL LANGONE', linhas[2])
+        self.assertIn('INSTRU', linhas[3])
         self.assertEqual(inf_cpl_danfe, inf_cpl_danfe.upper())
 
         inf_cpl_xml, _ = montar_inf_cpl_nfe(nf)

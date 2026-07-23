@@ -1174,7 +1174,17 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
         if reverter_estoque:
             reverter_todos_itens_saida(instance)
 
+        from apps.fiscal.nfe_informacoes_adicionais import deduplicar_texto_informacoes_adicionais
+        from apps.fiscal.nfe_saida_textos_fiscais import CAMPOS_TEXTO_DEDUPLICADOS
+
         for attr, value in validated_data.items():
+            if (
+                attr in CAMPOS_TEXTO_DEDUPLICADOS
+                and isinstance(value, str)
+                and dados_complementares_editaveis(instance)
+            ):
+                value = deduplicar_texto_informacoes_adicionais(value)
+                validated_data[attr] = value
             setattr(instance, attr, value)
         instance.save()
 

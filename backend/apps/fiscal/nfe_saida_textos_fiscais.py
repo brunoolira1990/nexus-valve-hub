@@ -5,11 +5,16 @@ from __future__ import annotations
 from typing import Any
 
 from apps.fiscal.models import NFeSaida
+from apps.fiscal.nfe_informacoes_adicionais import (
+    SEPARADOR_OBS_REGRA,
+    chave_deduplicacao_texto,
+    deduplicar_texto_informacoes_adicionais,
+    dividir_blocos_texto,
+    mesclar_textos_informacoes_adicionais,
+)
 from apps.fiscal.nfe_saida_preview import LABEL_RECOMENDACAO
 from apps.regras_fiscais.models import RegraFiscalSaida
 from apps.regras_fiscais.recomendacoes_nfe_config import normalizar_recomendacoes_nfe
-
-SEPARADOR_OBS_REGRA = '\n\n--- Observações fiscais da regra ---\n'
 
 CAMPOS_TEXTO_NF_LABEL: dict[str, str] = {
     'informacoes_adicionais': 'Informações adicionais da NF-e',
@@ -23,6 +28,9 @@ MAPEAMENTO_TEXTO_REGRA_NF: tuple[tuple[str, str], ...] = (
     ('observacoes', 'observacoes_nfe'),
 )
 
+# Campos cujo conteúdo textual é deduplicado em ações explícitas (Atualizar fiscal / salvar).
+CAMPOS_TEXTO_DEDUPLICADOS = frozenset({'informacoes_adicionais', 'observacoes_nfe'})
+
 
 def _text(val) -> str:
     return (str(val) if val is not None else '').strip()
@@ -33,27 +41,28 @@ def _nome_regra(regra: RegraFiscalSaida) -> str:
 
 
 def mesclar_texto_campo(atual: str, novo: str) -> tuple[str, bool]:
-    """Não apaga texto do usuário; faz append seguro quando necessário."""
-    atual_n = (atual or '').strip()
-    novo_n = (novo or '').strip()
-    if not novo_n:
-        return atual_n, False
-    if not atual_n:
-        return novo_n, True
-    if novo_n in atual_n:
-        return atual_n, False
-    return atual_n + SEPARADOR_OBS_REGRA + novo_n, True
+    """Não apaga texto do usuário; faz append seguro e idempotente por bloco."""
+    return mesclar_textos_informacoes_adicionais(
+        atual,
+        novo,
+        separador=SEPARADOR_OBS_REGRA,
+    )
 
 
 def _combinar_textos_de_regras(regras: list[RegraFiscalSaida], campo_regra: str) -> str:
+    """Une textos das regras sem repetir blocos idênticos (independente da qtd. de NCMs)."""
     vistos: set[str] = set()
     partes: list[str] = []
     for regra in regras:
         raw = _text(getattr(regra, campo_regra, ''))
-        if not raw or raw in vistos:
+        if not raw:
             continue
-        vistos.add(raw)
-        partes.append(raw)
+        for bloco in dividir_blocos_texto(raw):
+            chave = chave_deduplicacao_texto(bloco)
+            if not chave or chave in vistos:
+                continue
+            vistos.add(chave)
+            partes.append(bloco)
     return '\n\n'.join(partes)
 
 
@@ -112,11 +121,10 @@ def calcular_textos_fiscais_preview(
     alteracoes: list[dict[str, str]] = []
     recomendacoes: list[dict[str, str]] = []
     origens_texto: list[str] = []
+    campos_ja_listados: set[str] = set()
 
     for campo_regra, campo_nf in MAPEAMENTO_TEXTO_REGRA_NF:
         sugestao = _combinar_textos_de_regras(regras_unicas, campo_regra)
-        if not sugestao:
-            continue
         atual = _text(getattr(nf, campo_nf, ''))
         depois, mudou = mesclar_texto_campo(atual, sugestao)
         if mudou:
@@ -126,14 +134,39 @@ def calcular_textos_fiscais_preview(
                     'label': CAMPOS_TEXTO_NF_LABEL[campo_nf],
                     'antes': atual or '—',
                     'depois': depois,
-                    'origem': ', '.join(_nome_regra(r) for r in regras_unicas if _text(getattr(r, campo_regra, ''))),
+                    'origem': (
+                        ', '.join(
+                            _nome_regra(r)
+                            for r in regras_unicas
+                            if _text(getattr(r, campo_regra, ''))
+                        )
+                        or 'Normalização de textos duplicados'
+                    ),
                 },
             )
+            campos_ja_listados.add(campo_nf)
             for r in regras_unicas:
                 if _text(getattr(r, campo_regra, '')):
                     o = _nome_regra(r)
                     if o not in origens_texto:
                         origens_texto.append(o)
+
+    # Limpa duplicatas já persistidas mesmo sem nova sugestão da regra.
+    for campo_nf in CAMPOS_TEXTO_DEDUPLICADOS:
+        if campo_nf in campos_ja_listados:
+            continue
+        atual = _text(getattr(nf, campo_nf, ''))
+        limpo = deduplicar_texto_informacoes_adicionais(atual)
+        if limpo != atual:
+            alteracoes.append(
+                {
+                    'campo': campo_nf,
+                    'label': CAMPOS_TEXTO_NF_LABEL[campo_nf],
+                    'antes': atual or '—',
+                    'depois': limpo,
+                    'origem': 'Normalização de textos duplicados',
+                },
+            )
 
     for regra in regras_unicas:
         recomendacoes.extend(extrair_recomendacoes_regra(regra))
