@@ -152,6 +152,95 @@ class DeduplicacaoInformacoesAdicionaisUnitTests(TestCase):
         combinado = _combinar_textos_de_regras([r1, r2], 'informacoes_complementares')
         self.assertEqual(combinado.count('NÃO ACEITAREMOS'), 1)
 
+    def test_clausula_tres_frases_varios_pontos_permanece_um_bloco(self):
+        """Pontos finais internos da cláusula comercial NÃO abrem bloco novo."""
+        clausula = (
+            'NÃO ACEITAREMOS DEVOLUÇÃO APÓS 7 DIAS DA ENTREGA. A DEVOLUÇÃO SÓ PODERÁ '
+            'OCORRER MEDIANTE COMUNICAÇÃO PRÉVIA E AUTORIZAÇÃO DO DEPARTAMENTO '
+            'COMERCIAL. NOSSOS PRODUTOS NÃO SE DESTINAM A MATERIAIS DE CONSTRUÇÃO E '
+            'CONGÊNERES DO ARTIGO 313-Y DO RICMS/SP.'
+        )
+        # Soft wrap entre frases (após ponto) também deve permanecer um bloco.
+        clausula_quebrada_entre_frases = (
+            'NÃO ACEITAREMOS DEVOLUÇÃO APÓS 7 DIAS DA ENTREGA.\n'
+            'A DEVOLUÇÃO SÓ PODERÁ OCORRER MEDIANTE COMUNICAÇÃO PRÉVIA E AUTORIZAÇÃO '
+            'DO DEPARTAMENTO COMERCIAL.\n'
+            'NOSSOS PRODUTOS NÃO SE DESTINAM A MATERIAIS DE CONSTRUÇÃO E CONGÊNERES '
+            'DO ARTIGO 313-Y DO RICMS/SP.'
+        )
+        for entrada in (clausula, clausula_quebrada_entre_frases):
+            blocos = dividir_blocos_texto(entrada)
+            self.assertEqual(len(blocos), 1, msg=repr(blocos))
+            self.assertEqual(blocos[0], clausula)
+            resultado = deduplicar_texto_informacoes_adicionais(entrada)
+            self.assertEqual(resultado, clausula)
+            self.assertNotIn('\n\n', resultado)
+
+    def test_regra_colada_quebra_antes_de_base_de_calculo_separa_dois_blocos(self):
+        """``\\nBASE DE CÁLCULO...`` após a cláusula separa em dois blocos."""
+        clausula = (
+            'NÃO ACEITAREMOS DEVOLUÇÃO APÓS 7 DIAS DA ENTREGA. A DEVOLUÇÃO SÓ PODERÁ '
+            'OCORRER MEDIANTE COMUNICAÇÃO PRÉVIA E AUTORIZAÇÃO DO DEPARTAMENTO '
+            'COMERCIAL. NOSSOS PRODUTOS NÃO SE DESTINAM A MATERIAIS DE CONSTRUÇÃO E '
+            'CONGÊNERES DO ARTIGO 313-Y DO RICMS/SP.'
+        )
+        base = (
+            'BASE DE CÁLCULO REDUZIDA CONFORME ARTIGO 12 DO ANEXO II DO RICMS/SP '
+            'E CONVÊNIO ICMS 52/91.'
+        )
+        entrada = f'{clausula}\n{base}'
+        blocos = dividir_blocos_texto(entrada)
+        self.assertEqual(len(blocos), 2)
+        self.assertEqual(blocos[0], clausula)
+        self.assertEqual(blocos[1], base)
+        resultado = deduplicar_texto_informacoes_adicionais(entrada)
+        self.assertEqual(resultado, f'{clausula}\n\n{base}')
+        self.assertEqual(resultado.count('\n\n'), 1)
+
+    def test_mediante_soft_wrap_vira_espaco(self):
+        entrada = (
+            'NÃO ACEITAREMOS DEVOLUÇÃO APÓS 7 DIAS DA ENTREGA. A DEVOLUÇÃO SÓ PODERÁ '
+            'OCORRER MEDIANTE\nCOMUNICAÇÃO PRÉVIA E AUTORIZAÇÃO DO DEPARTAMENTO '
+            'COMERCIAL.'
+        )
+        resultado = deduplicar_texto_informacoes_adicionais(entrada)
+        self.assertIn('MEDIANTE COMUNICAÇÃO', resultado)
+        self.assertNotIn('MEDIANTE\n', resultado)
+        self.assertNotIn('MEDIANTE\n\n', resultado)
+
+    def test_ricms_e_r_icms_equivalentes_na_chave_sem_duplicar(self):
+        a = 'Base de cálculo reduzida conforme Artigo 12 do Anexo II do R.ICMS/SP.'
+        b = 'Base de cálculo reduzida conforme Artigo 12 do Anexo II do RICMS/SP.'
+        resultado = deduplicar_texto_informacoes_adicionais(f'{a}\n\n{b}')
+        self.assertEqual(resultado, a)
+        self.assertEqual(resultado.count('Base de cálculo reduzida'), 1)
+        # Grafia da primeira ocorrência preservada.
+        self.assertIn('R.ICMS/SP', resultado)
+        self.assertNotIn('RICMS/SP', resultado.replace('R.ICMS/SP', ''))
+
+    def test_composicao_repetida_produz_resultado_identico(self):
+        clausula = (
+            'NÃO ACEITAREMOS DEVOLUÇÃO APÓS 7 DIAS DA ENTREGA. A DEVOLUÇÃO SÓ PODERÁ '
+            'OCORRER MEDIANTE COMUNICAÇÃO PRÉVIA E AUTORIZAÇÃO DO DEPARTAMENTO '
+            'COMERCIAL. NOSSOS PRODUTOS NÃO SE DESTINAM A MATERIAIS DE CONSTRUÇÃO E '
+            'CONGÊNERES DO ARTIGO 313-Y DO RICMS/SP.'
+        )
+        base = 'Base de cálculo reduzida conforme Artigo 12 do Anexo II do RICMS/SP.'
+        pedido = 'PEDIDO DE COMPRA: 5050'
+        horario = 'Horário de entrega da 7:00 as 15:00 horas'
+        entrada = f'{clausula}\n{base}\n\n{clausula}\n\n{pedido}\n\n{horario}\n\n{base}'
+        uma = deduplicar_texto_informacoes_adicionais(entrada)
+        duas = deduplicar_texto_informacoes_adicionais(uma)
+        tres = deduplicar_texto_informacoes_adicionais(duas)
+        self.assertEqual(uma, duas)
+        self.assertEqual(duas, tres)
+        partes = [p for p in uma.split('\n\n') if p.strip()]
+        self.assertEqual(len(partes), 4)
+        self.assertEqual(partes[0], clausula)
+        self.assertEqual(partes[1], base)
+        self.assertEqual(partes[2], pedido)
+        self.assertEqual(partes[3], horario)
+
 
 @override_settings(USE_CENARIO_FISCAL_SAIDA_FOR_PROPOSTAS=True)
 class DeduplicacaoInformacoesAdicionaisIntegracaoTests(TestCase):

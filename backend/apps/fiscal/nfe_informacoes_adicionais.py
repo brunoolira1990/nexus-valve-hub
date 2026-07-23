@@ -3,11 +3,17 @@
 Regra: textos idênticos (após normalização) aparecem uma vez, preservando a
 primeira ocorrência e a estrutura de unidades do texto original.
 
-- Linha em branco separa informações complementares distintas.
-- Quebra simples (soft wrap) permanece no mesmo parágrafo (colapsada em espaço),
-  desde que a linha anterior não termine frase (`.!?`).
-- Frases distintas coladas na mesma linha (ex.: fundamento + cláusula) são
-  separadas por início de unidade informativa — sem fuzzy matching.
+Uma informação de negócio = um bloco/parágrafo. Uma cláusula comercial com
+várias frases permanece em um único parágrafo (pontos finais internos não
+separam blocos).
+
+Separação permitida:
+- linha em branco explícita;
+- início confirmado de outra unidade conhecida (BASE DE CÁLCULO, PEDIDO…);
+- unidades coladas na mesma linha após `.!?` + início conhecido.
+
+Soft wrap simples → espaço. Entre blocos distintos → ``\\n\\n``.
+Sem fuzzy matching.
 """
 
 from __future__ import annotations
@@ -18,7 +24,7 @@ import unicodedata
 MARCADOR_OBS_FISCAIS_REGRA = '--- Observações fiscais da regra ---'
 SEPARADOR_OBS_REGRA = f'\n\n{MARCADOR_OBS_FISCAIS_REGRA}\n'
 
-# Inícios de unidade informativa independente (após fim de frase).
+# Inícios de unidade informativa independente (não frases internas da cláusula).
 _INICIOS_UNIDADE_INFO = (
     r'n[ãa]o\s+aceitaremos',
     r'base\s+de\s+c[aá]lculo',
@@ -27,8 +33,12 @@ _INICIOS_UNIDADE_INFO = (
     r'endere[cç]o\s+de\s+entrega',
     r'hor[aá]rio\s+de\s+entrega',
 )
+_RE_INICIO_UNIDADE = re.compile(
+    r'^(?:' + '|'.join(_INICIOS_UNIDADE_INFO) + r')\b',
+    re.IGNORECASE,
+)
 _RE_SEPARAR_UNIDADES = re.compile(
-    r'(?<=[.!?])\s+(?=(?:' + '|'.join(_INICIOS_UNIDADE_INFO) + r'))',
+    r'(?<=[.!?])\s+(?=(?:' + '|'.join(_INICIOS_UNIDADE_INFO) + r')\b)',
     re.IGNORECASE,
 )
 
@@ -66,9 +76,9 @@ def _eh_marcador_separador(texto: str) -> bool:
     return 'observacoes fiscais da regra' in chave
 
 
-def _linha_termina_frase(linha: str) -> bool:
-    t = normalizar_espacos_linha(linha)
-    return bool(t) and t[-1] in '.!?'
+def _linha_inicia_unidade_conhecida(linha: str) -> bool:
+    """True se a linha começa com unidade informativa independente."""
+    return bool(_RE_INICIO_UNIDADE.match(normalizar_espacos_linha(linha)))
 
 
 def dividir_paragrafos_em_linhas(texto: str) -> list[list[str]]:
@@ -77,9 +87,11 @@ def dividir_paragrafos_em_linhas(texto: str) -> list[list[str]]:
 
     Fronteiras:
     - linha em branco;
-    - linha anterior terminada em `.` `!` ou `?` (nova unidade na linha seguinte).
+    - linha que inicia outra unidade conhecida (ex.: ``\\nBASE DE CÁLCULO...``).
 
-    Soft wraps (quebra no meio da frase) permanecem no mesmo parágrafo.
+    Soft wraps no meio da mesma unidade (ex.: após MEDIANTE, ou entre frases
+    da cláusula comercial) permanecem no mesmo parágrafo.
+    Pontos finais internos NÃO abrem bloco novo por si só.
     """
     if not texto:
         return []
@@ -93,7 +105,7 @@ def dividir_paragrafos_em_linhas(texto: str) -> list[list[str]]:
                 paragrafos.append(atual)
                 atual = []
             continue
-        if atual and _linha_termina_frase(atual[-1]):
+        if atual and _linha_inicia_unidade_conhecida(linha):
             paragrafos.append(atual)
             atual = [linha]
             continue
@@ -110,10 +122,11 @@ def _juntar_linhas_paragrafo(linhas: list[str]) -> str:
 
 def _separar_unidades_coladas(texto: str) -> list[str]:
     """
-    Separa unidades informativas distintas coladas após fim de frase.
+    Separa unidades informativas distintas coladas na mesma linha.
 
     Ex.: "... ICMS 52/91. NÃO ACEITAREMOS DEVOLUÇÃO..." → dois blocos.
-    Não parte a cláusula comercial em "COMERCIAL. NOSSOS PRODUTOS...".
+    Não parte a cláusula em "COMERCIAL. NOSSOS PRODUTOS..." (NOSSOS não é
+    início de unidade conhecida).
     """
     t = normalizar_espacos_linha(texto)
     if not t:
@@ -169,7 +182,7 @@ def dividir_blocos_texto(texto: str) -> list[str]:
     """
     Divide em unidades informativas independentes.
 
-    1) Parágrafos por linha em branco / fim de frase na linha;
+    1) Parágrafos por linha em branco / início de unidade conhecida;
     2) Soft wraps colapsados em espaço;
     3) Unidades coladas na mesma linha (fundamento + cláusula) separadas;
     4) Marcador de regra descartado.
@@ -208,8 +221,8 @@ def deduplicar_texto_informacoes_adicionais(texto: str) -> str:
     """
     Recompõe o texto sem duplicatas, preservando unidades/parágrafos.
 
-    Soft wraps viram espaço; linha em branco (ou unidade distinta) separa
-    informações. Deduplicação por unidade contínua (sem fuzzy).
+    Soft wraps viram espaço; ``\\n\\n`` separa blocos distintos.
+    Deduplicação por unidade contínua (sem fuzzy).
     """
     return '\n\n'.join(deduplicar_blocos_texto(dividir_blocos_texto(texto)))
 
