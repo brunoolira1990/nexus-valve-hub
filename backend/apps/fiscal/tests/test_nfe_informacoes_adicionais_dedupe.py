@@ -448,21 +448,19 @@ class DeduplicacaoInformacoesAdicionaisIntegracaoTests(TestCase):
 
     def test_dois_blocos_distintos_compartilhando_linha_identica_comportamento_atual(self):
         """
-        Granularidade atual = por linha.
+        Informações distintas usam linha em branco; linha idêntica repetida é removida.
 
-        Comportamento documentado (não é fuzzy): a segunda ocorrência da linha
-        idêntica é removida, preservando a primeira e as linhas exclusivas.
-        Blocos fiscais distintos NÃO são fundidos num único parágrafo — apenas
-        a linha duplicada deixa de repetir.
+        Blocos fiscais distintos NÃO são fundidos num único fundamento — apenas a
+        linha duplicada deixa de repetir.
         """
         bloco_a = (
-            'Fundamento fiscal do NCM A\n'
-            'Linha comum legítima\n'
+            'Fundamento fiscal do NCM A\n\n'
+            'Linha comum legítima\n\n'
             'Complemento exclusivo A'
         )
         bloco_b = (
-            'Fundamento fiscal do NCM B\n'
-            'Linha comum legítima\n'
+            'Fundamento fiscal do NCM B\n\n'
+            'Linha comum legítima\n\n'
             'Complemento exclusivo B'
         )
         resultado = deduplicar_texto_informacoes_adicionais(f'{bloco_a}\n\n{bloco_b}')
@@ -471,13 +469,61 @@ class DeduplicacaoInformacoesAdicionaisIntegracaoTests(TestCase):
         self.assertIn('Complemento exclusivo A', resultado)
         self.assertIn('Complemento exclusivo B', resultado)
         self.assertEqual(resultado.count('Linha comum legítima'), 1)
-        # Ordem: primeira ocorrência da linha comum permanece na posição do bloco A.
         partes = [p for p in resultado.split('\n\n') if p.strip()]
         self.assertEqual(partes[0], 'Fundamento fiscal do NCM A')
         self.assertEqual(partes[1], 'Linha comum legítima')
         self.assertEqual(partes[2], 'Complemento exclusivo A')
         self.assertEqual(partes[3], 'Fundamento fiscal do NCM B')
         self.assertEqual(partes[4], 'Complemento exclusivo B')
+
+    def test_clausula_comercial_soft_wrap_mediante_preserva_paragrafo(self):
+        """Soft wrap após MEDIANTE não vira linha vazia; cláusula fica contínua."""
+        clausula_quebrada = (
+            'NÃO ACEITAREMOS DEVOLUÇÃO APÓS 7 DIAS DA ENTREGA. A DEVOLUÇÃO SÓ PODERÁ '
+            'OCORRER MEDIANTE\n'
+            'COMUNICAÇÃO PRÉVIA E AUTORIZAÇÃO DO DEPARTAMENTO COMERCIAL. '
+            'NOSSOS PRODUTOS NÃO SE DESTINAM A MATERIAIS DE CONSTRUÇÃO E CONGÊNERES DO '
+            'ARTIGO 313-Y DO RICMS/SP.'
+        )
+        clausula_ja_partida = (
+            'NÃO ACEITAREMOS DEVOLUÇÃO APÓS 7 DIAS DA ENTREGA. A DEVOLUÇÃO SÓ PODERÁ '
+            'OCORRER MEDIANTE\n\n'
+            'COMUNICAÇÃO PRÉVIA E AUTORIZAÇÃO DO DEPARTAMENTO COMERCIAL. '
+            'NOSSOS PRODUTOS NÃO SE DESTINAM A MATERIAIS DE CONSTRUÇÃO E CONGÊNERES DO '
+            'ARTIGO 313-Y DO RICMS/SP.'
+        )
+        fundamento = (
+            'Base de cálculo reduzida conforme Artigo 12 do Anexo II do RICMS/SP '
+            'e Convênio ICMS 52/91.'
+        )
+        clausula_continua = (
+            'NÃO ACEITAREMOS DEVOLUÇÃO APÓS 7 DIAS DA ENTREGA. A DEVOLUÇÃO SÓ PODERÁ '
+            'OCORRER MEDIANTE COMUNICAÇÃO PRÉVIA E AUTORIZAÇÃO DO DEPARTAMENTO '
+            'COMERCIAL. NOSSOS PRODUTOS NÃO SE DESTINAM A MATERIAIS DE CONSTRUÇÃO E '
+            'CONGÊNERES DO ARTIGO 313-Y DO RICMS/SP.'
+        )
+        for entrada_base in (clausula_quebrada, clausula_ja_partida):
+            entrada = f'{entrada_base}\n\n{fundamento}\n\n{clausula_quebrada}'
+            resultado = deduplicar_texto_informacoes_adicionais(entrada)
+
+            self.assertEqual(resultado.count('NÃO ACEITAREMOS DEVOLUÇÃO'), 1)
+            self.assertEqual(resultado.count('313-Y DO RICMS/SP.'), 1)
+            self.assertIn(clausula_continua, resultado)
+            self.assertIn(fundamento, resultado)
+            self.assertNotIn('MEDIANTE\n\nCOMUNICAÇÃO', resultado)
+            self.assertNotIn('MEDIANTE\nCOMUNICAÇÃO', resultado)
+            partes = [p for p in resultado.split('\n\n') if p.strip()]
+            self.assertEqual(len(partes), 2)
+            self.assertEqual(partes[0], clausula_continua)
+            self.assertEqual(partes[1], fundamento)
+            self.assertEqual(deduplicar_texto_informacoes_adicionais(resultado), resultado)
+
+            # Mesma estrutura deve chegar ao compositor do DANFE/infCpl.
+            from apps.fiscal.nfe_integracao.danfe_xml_adicionais import deduplicar_textos_inf_cpl
+            blocos_danfe = deduplicar_textos_inf_cpl([entrada_base, fundamento, clausula_quebrada])
+            self.assertEqual(len(blocos_danfe), 2)
+            self.assertEqual(blocos_danfe[0], clausula_continua)
+            self.assertEqual(blocos_danfe[1], fundamento)
 
     def test_igualdade_caixa_acentos_espacos_pontuacao(self):
         """Decisão funcional registrada: o que conta como duplicata na chave."""

@@ -7,9 +7,7 @@ from typing import Any
 from apps.fiscal.models import NFeSaida
 from apps.fiscal.nfe_informacoes_adicionais import (
     SEPARADOR_OBS_REGRA,
-    chave_deduplicacao_texto,
     deduplicar_texto_informacoes_adicionais,
-    dividir_blocos_texto,
     mesclar_textos_informacoes_adicionais,
 )
 from apps.fiscal.nfe_saida_preview import LABEL_RECOMENDACAO
@@ -51,19 +49,12 @@ def mesclar_texto_campo(atual: str, novo: str) -> tuple[str, bool]:
 
 def _combinar_textos_de_regras(regras: list[RegraFiscalSaida], campo_regra: str) -> str:
     """Une textos das regras sem repetir blocos idênticos (independente da qtd. de NCMs)."""
-    vistos: set[str] = set()
     partes: list[str] = []
     for regra in regras:
         raw = _text(getattr(regra, campo_regra, ''))
-        if not raw:
-            continue
-        for bloco in dividir_blocos_texto(raw):
-            chave = chave_deduplicacao_texto(bloco)
-            if not chave or chave in vistos:
-                continue
-            vistos.add(chave)
-            partes.append(bloco)
-    return '\n\n'.join(partes)
+        if raw:
+            partes.append(raw)
+    return deduplicar_texto_informacoes_adicionais('\n\n'.join(partes))
 
 
 def extrair_recomendacoes_regra(regra: RegraFiscalSaida) -> list[dict[str, str]]:
