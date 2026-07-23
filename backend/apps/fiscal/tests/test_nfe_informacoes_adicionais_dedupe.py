@@ -19,11 +19,13 @@ from apps.comercial.models import ItemPedidoVenda
 from apps.fiscal.models import ItemNFeSaida, NFeSaida
 from apps.fiscal.nfe_informacoes_adicionais import (
     deduplicar_texto_informacoes_adicionais,
+    dividir_blocos_texto,
     mesclar_textos_informacoes_adicionais,
 )
 from apps.fiscal.nfe_integracao.danfe_xml_adicionais import (
     montar_inf_cpl_nfe,
     montar_inf_cpl_para_danfe,
+    montar_linhas_inf_cpl_nfe,
 )
 from apps.fiscal.nfe_integracao.nfe_xml_preliminar import gerar_xml_nfe_preliminar
 from apps.fiscal.nfe_saida_atualizar_impostos import aplicar_atualizacao_impostos_nfe
@@ -544,3 +546,85 @@ class DeduplicacaoInformacoesAdicionaisIntegracaoTests(TestCase):
         )
         self.assertIn('Não aceitaremos devolução', r)
         self.assertIn('Não aceitaremos devolução.', r)
+
+    def test_fontes_regra_manual_cliente_pedido_sem_duplicar_unidades(self):
+        """
+        Reprodução do DANFE pós-3d8d731: regra cola fundamento+cláusula;
+        manual já tem a cláusula; cliente tem horário; pedido no cabeçalho;
+        variação R.ICMS × RICMS não deve duplicar a base.
+        """
+        clausula = (
+            'NÃO ACEITAREMOS DEVOLUÇÃO APÓS 7 DIAS DA ENTREGA. A DEVOLUÇÃO SÓ PODERÁ '
+            'OCORRER MEDIANTE COMUNICAÇÃO PRÉVIA E AUTORIZAÇÃO DO DEPARTAMENTO '
+            'COMERCIAL. NOSSOS PRODUTOS NÃO SE DESTINAM A MATERIAIS DE CONSTRUÇÃO E '
+            'CONGÊNERES DO ARTIGO 313-Y DO RICMS/SP.'
+        )
+        base_ricms = (
+            'Base de cálculo reduzida conforme Artigo 12 do Anexo II do RICMS/SP '
+            'e Convênio ICMS 52/91.'
+        )
+        base_r_icms = (
+            'Base de cálculo reduzida conforme Artigo 12 do Anexo II do R.ICMS/SP '
+            'e Convênio ICMS 52/91.'
+        )
+        # Regra: fundamento + cláusula colados com quebra simples após o ponto.
+        texto_regra = f'{base_r_icms}\n{clausula}'
+        horario = (
+            'Endereço de entrega Rua Miguel Langone 341 - '
+            'Horário de entrega da 7:00 as 15:00 horas'
+        )
+        # Persistido: cláusula (já deduplicada) + base com RICMS sem ponto.
+        persistido = f'{clausula}\n\n{base_ricms}'
+
+        # 1) Separação estrutural da regra colada.
+        unidades_regra = dividir_blocos_texto(texto_regra)
+        self.assertEqual(len(unidades_regra), 2)
+        self.assertEqual(unidades_regra[0], base_r_icms)
+        self.assertEqual(unidades_regra[1], clausula)
+        # Cláusula comercial permanece uma unidade (não parte após COMERCIAL.).
+        self.assertEqual(clausula.count('NOSSOS PRODUTOS'), 1)
+
+        # 2) Composição multi-fonte como no DANFE/XML.
+        _regra()
+        nf = _nf_pronta()
+        regra = RegraFiscalSaida.objects.filter(cfop_venda='5102').first()
+        self.assertIsNotNone(regra)
+        regra.informacoes_complementares = texto_regra
+        regra.save(update_fields=['informacoes_complementares'])
+        nf.cliente.informacoes_complementares_nfe = horario
+        nf.cliente.save(update_fields=['informacoes_complementares_nfe'])
+        nf.informacoes_adicionais = persistido
+        nf.pedido_cliente_numero = '5050'
+        nf.save(update_fields=['informacoes_adicionais', 'pedido_cliente_numero'])
+
+        # Garante item apontando à regra 5102 (NCM da fixture).
+        item = nf.itens.first()
+        snap = dict(item.snapshot_fiscal or {})
+        snap['ncm'] = snap.get('ncm') or '84818000'
+        item.snapshot_fiscal = snap
+        item.save(update_fields=['snapshot_fiscal'])
+
+        linhas = montar_linhas_inf_cpl_nfe(nf)
+        danfe = montar_inf_cpl_para_danfe(nf)
+        texto_danfe = '\n'.join(linhas)
+
+        self.assertEqual(texto_danfe.upper().count('NÃO ACEITAREMOS DEVOLUÇÃO'), 1)
+        self.assertEqual(texto_danfe.upper().count('BASE DE CÁLCULO REDUZIDA'), 1)
+        self.assertEqual(sum(1 for ln in linhas if 'PEDIDO DE COMPRA: 5050' in ln), 1)
+        self.assertEqual(sum(1 for ln in linhas if 'HORÁRIO DE ENTREGA' in ln or 'HORARIO DE ENTREGA' in ln), 1)
+        self.assertNotIn('MEDIANTE\n\nCOMUNICAÇÃO', danfe)
+        self.assertNotIn('MEDIANTE\nCOMUNICAÇÃO', danfe)
+        # Preserva a primeira ocorrência da base (R.ICMS da regra), sem duplicar RICMS.
+        self.assertTrue(
+            any('R.ICMS/SP' in ln or 'RICMS/SP' in ln for ln in linhas),
+        )
+        self.assertEqual(
+            sum(1 for ln in linhas if 'BASE DE CÁLCULO REDUZIDA' in ln.upper()),
+            1,
+        )
+        # Fundamentos fiscais distintos (outros) não são removidos por engano.
+        distinto = 'Fundamento fiscal exclusivo NCM Z — art. 99.'
+        r = deduplicar_texto_informacoes_adicionais(f'{base_ricms}\n\n{distinto}\n\n{base_r_icms}')
+        self.assertEqual(r.count('Base de cálculo reduzida'), 1)
+        self.assertIn(distinto, r)
+        self.assertEqual(deduplicar_texto_informacoes_adicionais(r), r)

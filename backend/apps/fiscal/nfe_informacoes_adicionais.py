@@ -1,11 +1,13 @@
 """Composição idempotente de informações adicionais / infCpl da NF-e Saída.
 
 Regra: textos idênticos (após normalização) aparecem uma vez, preservando a
-primeira ocorrência e a estrutura de parágrafos do texto original.
+primeira ocorrência e a estrutura de unidades do texto original.
 
 - Linha em branco separa informações complementares distintas.
-- Quebra simples (soft wrap) permanece no mesmo parágrafo (colapsada em espaço).
-- Sem fuzzy matching / substring.
+- Quebra simples (soft wrap) permanece no mesmo parágrafo (colapsada em espaço),
+  desde que a linha anterior não termine frase (`.!?`).
+- Frases distintas coladas na mesma linha (ex.: fundamento + cláusula) são
+  separadas por início de unidade informativa — sem fuzzy matching.
 """
 
 from __future__ import annotations
@@ -15,6 +17,20 @@ import unicodedata
 
 MARCADOR_OBS_FISCAIS_REGRA = '--- Observações fiscais da regra ---'
 SEPARADOR_OBS_REGRA = f'\n\n{MARCADOR_OBS_FISCAIS_REGRA}\n'
+
+# Inícios de unidade informativa independente (após fim de frase).
+_INICIOS_UNIDADE_INFO = (
+    r'n[ãa]o\s+aceitaremos',
+    r'base\s+de\s+c[aá]lculo',
+    r'pedido\s+de\s+compra',
+    r'fundamento\s+fiscal',
+    r'endere[cç]o\s+de\s+entrega',
+    r'hor[aá]rio\s+de\s+entrega',
+)
+_RE_SEPARAR_UNIDADES = re.compile(
+    r'(?<=[.!?])\s+(?=(?:' + '|'.join(_INICIOS_UNIDADE_INFO) + r'))',
+    re.IGNORECASE,
+)
 
 
 def _text(val) -> str:
@@ -30,17 +46,18 @@ def chave_deduplicacao_texto(texto: str) -> str:
     """
     Chave de comparação para duplicidade.
 
-    Normaliza:
-    - espaços no início/fim;
-    - quebras de linha equivalentes (colapsadas);
-    - espaços consecutivos;
-    - casefold + remoção de acentos (somente na chave).
+    Normaliza (somente na chave):
+    - espaços / quebras;
+    - casefold + remoção de acentos;
+    - pontos de abreviação no meio do token (R.ICMS ↔ RICMS).
 
     Sem aproximação semântica nem substring matching.
     """
     t = unicodedata.normalize('NFKD', texto or '')
     t = ''.join(c for c in t if not unicodedata.combining(c))
     t = re.sub(r'\s+', ' ', t.casefold().strip())
+    # R.ICMS/SP ≡ RICMS/SP (não altera o texto exibido).
+    t = re.sub(r'(?<=[a-z0-9])\.(?=[a-z0-9])', '', t)
     return t
 
 
@@ -49,11 +66,20 @@ def _eh_marcador_separador(texto: str) -> bool:
     return 'observacoes fiscais da regra' in chave
 
 
+def _linha_termina_frase(linha: str) -> bool:
+    t = normalizar_espacos_linha(linha)
+    return bool(t) and t[-1] in '.!?'
+
+
 def dividir_paragrafos_em_linhas(texto: str) -> list[list[str]]:
     """
-    Separa o texto em parágrafos pela linha em branco.
+    Separa o texto em parágrafos.
 
-    Cada parágrafo é a lista de linhas não vazias (soft wraps) na ordem original.
+    Fronteiras:
+    - linha em branco;
+    - linha anterior terminada em `.` `!` ou `?` (nova unidade na linha seguinte).
+
+    Soft wraps (quebra no meio da frase) permanecem no mesmo parágrafo.
     """
     if not texto:
         return []
@@ -67,6 +93,10 @@ def dividir_paragrafos_em_linhas(texto: str) -> list[list[str]]:
                 paragrafos.append(atual)
                 atual = []
             continue
+        if atual and _linha_termina_frase(atual[-1]):
+            paragrafos.append(atual)
+            atual = [linha]
+            continue
         atual.append(linha)
     if atual:
         paragrafos.append(atual)
@@ -78,8 +108,21 @@ def _juntar_linhas_paragrafo(linhas: list[str]) -> str:
     return normalizar_espacos_linha(' '.join(linhas))
 
 
+def _separar_unidades_coladas(texto: str) -> list[str]:
+    """
+    Separa unidades informativas distintas coladas após fim de frase.
+
+    Ex.: "... ICMS 52/91. NÃO ACEITAREMOS DEVOLUÇÃO..." → dois blocos.
+    Não parte a cláusula comercial em "COMERCIAL. NOSSOS PRODUTOS...".
+    """
+    t = normalizar_espacos_linha(texto)
+    if not t:
+        return []
+    partes = [normalizar_espacos_linha(p) for p in _RE_SEPARAR_UNIDADES.split(t)]
+    return [p for p in partes if p]
+
+
 # Palavras finais que indicam soft wrap / continuação (não fim de cláusula).
-# Evitar artigos soltos (a/o) — quebrariam títulos como "NCM A".
 _CONTINUACOES_SOFT_WRAP = frozenset({
     'mediante', 'conforme', 'segundo', 'perante', 'durante',
     'de', 'do', 'da', 'dos', 'das', 'com', 'sem', 'por', 'para',
@@ -124,11 +167,12 @@ def _fundir_soft_wraps_com_linha_vazia_indevida(paragrafos: list[list[str]]) -> 
 
 def dividir_blocos_texto(texto: str) -> list[str]:
     """
-    Divide em blocos por parágrafo (linha em branco).
+    Divide em unidades informativas independentes.
 
-    Soft wraps dentro do parágrafo são colapsados em um único bloco contínuo.
-    Também reata continuações que chegaram com linha vazia indevida após palavras
-    como MEDIANTE/DE/COM/conforme.
+    1) Parágrafos por linha em branco / fim de frase na linha;
+    2) Soft wraps colapsados em espaço;
+    3) Unidades coladas na mesma linha (fundamento + cláusula) separadas;
+    4) Marcador de regra descartado.
     """
     brutos = dividir_paragrafos_em_linhas(texto)
     fundidos = _fundir_soft_wraps_com_linha_vazia_indevida(brutos)
@@ -137,7 +181,10 @@ def dividir_blocos_texto(texto: str) -> list[str]:
         filtradas = [ln for ln in linhas if not _eh_marcador_separador(ln)]
         if not filtradas:
             continue
-        out.append(_juntar_linhas_paragrafo(filtradas))
+        paragrafo = _juntar_linhas_paragrafo(filtradas)
+        for unidade in _separar_unidades_coladas(paragrafo):
+            if unidade and not _eh_marcador_separador(unidade):
+                out.append(unidade)
     return out
 
 
@@ -159,11 +206,10 @@ def deduplicar_blocos_texto(blocos: list[str]) -> list[str]:
 
 def deduplicar_texto_informacoes_adicionais(texto: str) -> str:
     """
-    Recompõe o texto sem duplicatas, preservando parágrafos.
+    Recompõe o texto sem duplicatas, preservando unidades/parágrafos.
 
-    Soft wraps (quebra simples) são colapsados em espaço dentro do parágrafo.
-    Linha em branco separa informações distintas. Deduplicação é por parágrafo
-    contínuo resultante (sem fuzzy).
+    Soft wraps viram espaço; linha em branco (ou unidade distinta) separa
+    informações. Deduplicação por unidade contínua (sem fuzzy).
     """
     return '\n\n'.join(deduplicar_blocos_texto(dividir_blocos_texto(texto)))
 
@@ -175,11 +221,11 @@ def mesclar_textos_informacoes_adicionais(
     separador: str = SEPARADOR_OBS_REGRA,
 ) -> tuple[str, bool]:
     """
-    Mescla `novo` em `atual` sem reintroduzir linhas/parágrafos já presentes.
+    Mescla `novo` em `atual` sem reintroduzir unidades já presentes.
 
     - Deduplica o conteúdo atual (limpa rascunhos já duplicados).
     - Concatena e deduplica com o novo texto, preservando a ordem do atual.
-    - Se houver parágrafos realmente novos, insere o separador da regra.
+    - Se houver unidades realmente novas, insere o separador da regra.
     """
     atual_bruto = (atual or '').strip()
     novo_bruto = (novo or '').strip()
