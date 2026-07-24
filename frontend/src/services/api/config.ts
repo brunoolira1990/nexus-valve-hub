@@ -71,6 +71,14 @@ function statusMessage(status?: number): string | null {
   return null;
 }
 
+function isAxiosStatusNoise(message: string): boolean {
+  const m = String(message || '').trim();
+  if (/^Request failed with status code \d+$/i.test(m)) return true;
+  // Axios sem response (offline / CORS / DNS) — preferir fallback amigável.
+  if (/^Network Error$/i.test(m)) return true;
+  return false;
+}
+
 /** Extrai mensagem legível de erro da API (DRF). */
 export function apiErrorMessage(err: unknown, options: ApiErrorMessageOptions = {}): string {
   const { fallback = 'Não foi possível concluir a operação.', preferGeneric = false } = options;
@@ -97,37 +105,56 @@ export function apiErrorMessage(err: unknown, options: ApiErrorMessageOptions = 
     return fallback;
   }
 
+  // Corpo DRF primeiro — a mensagem genérica do Axios ("Request failed with status code 400")
+  // não pode mascarar validações de campo (ex.: CNPJ duplicado).
+  if (d != null) {
+    if (typeof d === 'string') {
+      if (hasHtmlPayload) return fallback;
+      return sanitize(d, fallback);
+    }
+    if (typeof d === 'object') {
+      if (typeof d.code === 'string' && d.code === 'token_not_valid') {
+        return SESSION_EXPIRED_MESSAGE;
+      }
+      if (typeof d.mensagem === 'string') return sanitize(d.mensagem, fallback);
+      const errosXsd = formatNfeErrosLista(extrairErrosXsd(d as Record<string, unknown>));
+      if (errosXsd) return sanitize(errosXsd, fallback);
+      if (Array.isArray(d.erros) && d.erros.length) {
+        const formatted = formatNfeErrosLista(d.erros);
+        if (formatted) return sanitize(formatted, fallback);
+      }
+      if (typeof d.detail === 'string') return sanitize(d.detail, fallback);
+      if (Array.isArray(d.detail)) return sanitize(d.detail.map(String).join(', '), fallback);
+      if (Array.isArray(d.non_field_errors) && d.non_field_errors.length) {
+        return sanitize(d.non_field_errors.map(String).join(', '), fallback);
+      }
+      const first = Object.entries(d).find(([, v]) => v != null);
+      if (first) {
+        const v = first[1];
+        if (Array.isArray(v)) {
+          const joined = v.map(String).join(', ');
+          // Mensagens de campo já costumam ser autoexplicativas; evita "cnpj: …" ruidoso.
+          if (first[0] === 'non_field_errors' || first[0] === 'detail') {
+            return sanitize(joined, fallback);
+          }
+          return sanitize(joined, fallback);
+        }
+        if (typeof v === 'string') return sanitize(v, fallback);
+      }
+    }
+  }
+
   const plainMessage = err instanceof Error ? err.message?.trim() : '';
-  if (plainMessage && plainMessage !== 'Request failed with status code 503') {
+  if (plainMessage && !isAxiosStatusNoise(plainMessage)) {
     return sanitize(plainMessage, fallback);
   }
 
   if (!d) {
-    return sanitize(ax.message || '', fallback || 'Erro de conexão com o servidor.');
-  }
-  if (typeof d === 'string') {
-    if (hasHtmlPayload) return fallback;
-    return sanitize(d, fallback);
-  }
-  if (typeof d.code === 'string' && d.code === 'token_not_valid') {
-    return SESSION_EXPIRED_MESSAGE;
-  }
-  if (typeof d.mensagem === 'string') return sanitize(d.mensagem, fallback);
-  if (d && typeof d === 'object') {
-    const errosXsd = formatNfeErrosLista(extrairErrosXsd(d as Record<string, unknown>));
-    if (errosXsd) return sanitize(errosXsd, fallback);
-  }
-  if (Array.isArray(d.erros) && d.erros.length) {
-    const formatted = formatNfeErrosLista(d.erros);
-    if (formatted) return sanitize(formatted, fallback);
-  }
-  if (typeof d.detail === 'string') return sanitize(d.detail, fallback);
-  if (Array.isArray(d.detail)) return sanitize(d.detail.map(String).join(', '), fallback);
-  const first = Object.entries(d).find(([, v]) => v != null);
-  if (first) {
-    const v = first[1];
-    if (Array.isArray(v)) return sanitize(`${first[0]}: ${v.join(', ')}`, fallback);
-    if (typeof v === 'string') return sanitize(v, fallback);
+    const axMsg = String(ax.message || '').trim();
+    if (axMsg && !isAxiosStatusNoise(axMsg)) {
+      return sanitize(axMsg, fallback || 'Erro de conexão com o servidor.');
+    }
+    return fallback || 'Erro de conexão com o servidor.';
   }
   return fallback;
 }

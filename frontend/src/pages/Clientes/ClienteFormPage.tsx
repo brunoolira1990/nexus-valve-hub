@@ -1,12 +1,17 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
 import { clientesService } from '@/services/api/clientes';
-import { transportadorasService } from '@/services/api/transportadoras';
 import { apiErrorMessage } from '@/services/api/config';
+import {
+  MSG_CNPJ_DUPLICADO_ORIENTACAO_LISTAGEM,
+  encontrarClienteIdPorCnpjExato,
+  parseClienteSaveError,
+} from '@/lib/clienteCadastroErros';
 import type { Cliente, ContatoCliente, EnderecoEntregaCliente, Transportadora } from '@/types';
 import type { EnderecoFiscalResumo } from '@/lib/enderecoFiscal';
 import { ClienteForm, clientToFormValues, type ClienteFormInput } from './ClienteForm';
+import { transportadorasService } from '@/services/api/transportadoras';
 
 const ClienteFormPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -16,6 +21,9 @@ const ClienteFormPage = () => {
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorHint, setErrorHint] = useState<string | null>(null);
+  const [serverCnpjError, setServerCnpjError] = useState<string | null>(null);
+  const [existingClientId, setExistingClientId] = useState<number | null>(null);
   const [formKey, setFormKey] = useState(0);
   const [defaults, setDefaults] = useState<ClienteFormInput>(() => clientToFormValues({}));
   const [transportadoras, setTransportadoras] = useState<Transportadora[]>([]);
@@ -40,6 +48,9 @@ const ClienteFormPage = () => {
     (async () => {
       setLoading(true);
       setError(null);
+      setErrorHint(null);
+      setServerCnpjError(null);
+      setExistingClientId(null);
       try {
         const c = await clientesService.getById(Number(id));
         if (!cancelled) {
@@ -63,12 +74,31 @@ const ClienteFormPage = () => {
   const handleSubmit = async (payload: Omit<Cliente, 'id'>) => {
     setSaving(true);
     setError(null);
+    setErrorHint(null);
+    setServerCnpjError(null);
+    setExistingClientId(null);
     try {
       if (isEdit) await clientesService.update(Number(id), payload);
       else await clientesService.create(payload);
       navigate('/clientes');
     } catch (e) {
-      setError(apiErrorMessage(e));
+      const parsed = parseClienteSaveError(e);
+      // Mensagem principal do save (ex.: CNPJ duplicado) — a busca auxiliar nunca a substitui.
+      setError(parsed.message);
+      setServerCnpjError(parsed.cnpjError);
+      if (parsed.isCnpjDuplicate && payload.cnpj) {
+        try {
+          const existingId = await encontrarClienteIdPorCnpjExato(payload.cnpj);
+          setExistingClientId(existingId);
+          if (existingId == null) {
+            setErrorHint(MSG_CNPJ_DUPLICADO_ORIENTACAO_LISTAGEM);
+          }
+        } catch {
+          // Rede/401/403/erro inesperado na busca: mantém o banner de duplicidade, sem link.
+          setExistingClientId(null);
+          setErrorHint(null);
+        }
+      }
     } finally {
       setSaving(false);
     }
@@ -78,8 +108,28 @@ const ClienteFormPage = () => {
     <div>
       <PageHeader title={isEdit ? 'Editar cliente' : 'Novo cliente'} />
       {error && !loading && (
-        <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
+        <div
+          className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          role="alert"
+          data-testid="cliente-form-save-error"
+        >
+          <p data-testid="cliente-form-save-error-main">{error}</p>
+          {errorHint ? (
+            <p className="mt-1 opacity-90" data-testid="cliente-form-save-error-hint">
+              {errorHint}
+            </p>
+          ) : null}
+          {existingClientId != null ? (
+            <p className="mt-2">
+              <Link
+                to={`/clientes/${existingClientId}/edit`}
+                className="underline font-medium text-destructive hover:opacity-90"
+                data-testid="cliente-form-abrir-existente"
+              >
+                Abrir cliente existente
+              </Link>
+            </p>
+          ) : null}
         </div>
       )}
       {loading ? (
@@ -95,6 +145,7 @@ const ClienteFormPage = () => {
           onCancel={() => navigate('/clientes')}
           saving={saving}
           enderecoFiscalInicial={enderecoFiscalInicial}
+          serverCnpjError={serverCnpjError}
         />
       )}
     </div>

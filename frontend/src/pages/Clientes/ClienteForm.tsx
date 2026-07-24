@@ -207,6 +207,8 @@ type Props = {
   onCancel: () => void;
   saving?: boolean;
   enderecoFiscalInicial?: EnderecoFiscalResumo | null;
+  /** Erro de validação do servidor no campo CNPJ (ex.: duplicidade). */
+  serverCnpjError?: string | null;
 };
 
 function AlertaEnderecoFiscal({ mensagem }: { mensagem: string }) {
@@ -233,6 +235,7 @@ export function ClienteForm({
   onCancel,
   saving,
   enderecoFiscalInicial,
+  serverCnpjError = null,
 }: Props) {
   const [tab, setTab] = useState<string>(TAB_ITEMS[0].id);
   const [enderecosEntrega, setEnderecosEntrega] = useState<EnderecoEntregaCliente[]>(
@@ -276,6 +279,14 @@ export function ClienteForm({
       setValue('ie', '', { shouldDirty: true, shouldValidate: true });
     }
   }, [ieIsento, setValue]);
+
+  useEffect(() => {
+    if (serverCnpjError) {
+      setError('cnpj', { type: 'server', message: serverCnpjError });
+      setTab('dados-gerais');
+    }
+  }, [serverCnpjError, setError]);
+
   const cnpjField = register('cnpj');
   const cepField = register('cep');
   const dddField = register('ddd');
