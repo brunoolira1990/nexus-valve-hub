@@ -39,6 +39,10 @@ import {
   contatosClienteParaApi,
   enderecosEntregaParaApi,
 } from '@/components/clientes/ClienteContatosAdicionaisEditor';
+import {
+  contatosClienteTemErro,
+  validarContatosCliente,
+} from '@/lib/clienteContatosFiscais';
 import { ClienteEnderecosEntregaEditor } from '@/components/clientes/ClienteEnderecosEntregaEditor';
 import type { Cliente, ContatoCliente, EnderecoEntregaCliente, Transportadora } from '@/types';
 import { REGIMES_CADASTRO, TIPOS_CONTA, UFS } from '@/types';
@@ -242,6 +246,9 @@ export function ClienteForm({
     () => enderecosEntregaInicial,
   );
   const [contatos, setContatos] = useState<ContatoCliente[]>(() => contatosIniciais);
+  const [contatosErros, setContatosErros] = useState<
+    ReturnType<typeof validarContatosCliente>
+  >([]);
   const [cnpjLookupLoading, setCnpjLookupLoading] = useState(false);
   const consultaIe = useConsultaIeSefaz();
   const [cnpjLookupMessage, setCnpjLookupMessage] = useState<string | null>(null);
@@ -629,7 +636,14 @@ export function ClienteForm({
             {...register('email_nf')}
             error={errors.email_nf?.message}
           />
-          <ClienteContatosAdicionaisEditor value={contatos} onChange={setContatos} />
+          <ClienteContatosAdicionaisEditor
+            value={contatos}
+            erros={contatosErros}
+            onChange={(next) => {
+              setContatos(next);
+              setContatosErros((prev) => (prev.length ? validarContatosCliente(next) : prev));
+            }}
+          />
         </>
       )}
 
@@ -728,6 +742,16 @@ export function ClienteForm({
     <CadastroFormShell title="Cliente">
       <form
         onSubmit={handleSubmit(async (values) => {
+          const errosContato = validarContatosCliente(contatos);
+          if (contatosClienteTemErro(errosContato)) {
+            setContatosErros(errosContato);
+            setTab('contatos');
+            setError('root', {
+              message: 'Corrija os contatos adicionais antes de salvar.',
+            });
+            return;
+          }
+          setContatosErros([]);
           await onSubmit(toApiPayload(values, enderecosEntrega, contatos));
         })}
         className="space-y-4"

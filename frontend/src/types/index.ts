@@ -53,6 +53,10 @@ export interface ContatoCliente {
   celular: string;
   email: string;
   principal: boolean;
+  /** Default true quando omitido pela API antiga. */
+  ativo?: boolean;
+  /** Default false quando omitido pela API antiga. */
+  recebe_documentos_fiscais?: boolean;
 }
 
 export interface Cliente {

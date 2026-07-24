@@ -11,6 +11,15 @@ from .colaborador_senha import email_operacional_valido, usuario_eh_admin
 from .colaborador_sync import sincronizar_vendedor_colaborador, vendedor_id_colaborador
 from .colaborador_usuario import validar_usuario_colaborador_unico
 from .cliente_nested_sync import sincronizar_contatos_cliente, sincronizar_enderecos_entrega
+from .contato_cliente_email import (
+    MSG_EMAIL_DUPLICADO,
+    MSG_EMAIL_FISCAL_OBRIGATORIO,
+    MSG_EMAIL_INVALIDO,
+    chave_email_contato,
+    normalizar_email_contato,
+    tem_erros_por_contato,
+    validar_unicidade_emails_contatos_payload,
+)
 from .models import (
     Cliente,
     Colaborador,
@@ -141,10 +150,27 @@ class EnderecoEntregaClienteSerializer(serializers.ModelSerializer):
 
 class ContatoClienteSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(required=False)
+    email = serializers.EmailField(
+        required=False,
+        allow_blank=True,
+        error_messages={'invalid': MSG_EMAIL_INVALIDO},
+    )
+    ativo = serializers.BooleanField(required=False, default=True)
+    recebe_documentos_fiscais = serializers.BooleanField(required=False, default=False)
 
     class Meta:
         model = ContatoCliente
-        fields = ('id', 'tipo', 'nome', 'telefone', 'celular', 'email', 'principal')
+        fields = (
+            'id',
+            'tipo',
+            'nome',
+            'telefone',
+            'celular',
+            'email',
+            'principal',
+            'ativo',
+            'recebe_documentos_fiscais',
+        )
 
     def validate_tipo(self, value):
         valor = (value or '').strip().upper()
@@ -153,9 +179,26 @@ class ContatoClienteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Tipo de contato inválido.')
         return valor
 
+    def validate_email(self, value):
+        return normalizar_email_contato(value)
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
         normalize_operational_fields(attrs, {'nome'})
+        email = normalizar_email_contato(
+            attrs.get(
+                'email',
+                getattr(self.instance, 'email', '') if self.instance else '',
+            )
+        )
+        if 'email' in attrs:
+            attrs['email'] = email
+        recebe = attrs.get(
+            'recebe_documentos_fiscais',
+            getattr(self.instance, 'recebe_documentos_fiscais', False) if self.instance else False,
+        )
+        if recebe and not email:
+            raise serializers.ValidationError({'email': MSG_EMAIL_FISCAL_OBRIGATORIO})
         return attrs
 
 
@@ -240,8 +283,67 @@ class ClienteSerializer(serializers.ModelSerializer):
             attrs['enderecos_entrega'] = self._normalizar_principais_enderecos(enderecos)
         contatos = attrs.get('contatos')
         if contatos is not None:
-            attrs['contatos'] = self._normalizar_principais_contatos(contatos)
+            contatos = self._normalizar_principais_contatos(contatos)
+            self._validar_emails_contatos(contatos)
+            attrs['contatos'] = contatos
         return attrs
+
+    def _validar_emails_contatos(self, contatos: list[dict]) -> None:
+        """Unicidade case-insensitive no payload e contra contatos que permanecerão no cliente."""
+        erros = validar_unicidade_emails_contatos_payload(contatos)
+        cliente = self.instance
+        if cliente is not None and cliente.pk:
+            ids_no_payload: set[int] = set()
+            for item in contatos:
+                pk = item.get('id')
+                if pk is None:
+                    continue
+                try:
+                    ids_no_payload.add(int(pk))
+                except (TypeError, ValueError):
+                    continue
+
+            emails_payload_por_id: dict[int, str] = {}
+            for item in contatos:
+                pk = item.get('id')
+                if pk is None:
+                    continue
+                try:
+                    emails_payload_por_id[int(pk)] = chave_email_contato(item.get('email'))
+                except (TypeError, ValueError):
+                    continue
+
+            persistidos = {
+                c.pk: chave_email_contato(c.email)
+                for c in cliente.contatos.all()
+            }
+
+            for i, item in enumerate(contatos):
+                chave = chave_email_contato(item.get('email'))
+                if not chave or 'email' in erros[i]:
+                    continue
+                own_id = item.get('id')
+                try:
+                    own_id_int = int(own_id) if own_id is not None else None
+                except (TypeError, ValueError):
+                    own_id_int = None
+
+                for pk, chave_db in persistidos.items():
+                    if chave_db != chave:
+                        continue
+                    if own_id_int is not None and pk == own_id_int:
+                        continue
+                    # Contato persistido fora do payload será removido no sync — não conflita.
+                    if pk not in ids_no_payload:
+                        continue
+                    # Fonte de verdade do e-mail do persistido que permanece: o próprio payload.
+                    chave_no_payload = emails_payload_por_id.get(pk, '')
+                    if chave_no_payload == chave:
+                        erros[i]['email'] = [MSG_EMAIL_DUPLICADO]
+                        break
+
+        if tem_erros_por_contato(erros):
+            raise serializers.ValidationError({'contatos': erros})
 
     def create(self, validated_data):
         enderecos = validated_data.pop('enderecos_entrega', [])

@@ -229,6 +229,14 @@ class ContatoCliente(models.Model):
         default=False,
         help_text='Contato principal dentro do mesmo tipo.',
     )
+    ativo = models.BooleanField(
+        default=True,
+        help_text='Contato inativo permanece cadastrado, mas não é elegível para envio fiscal.',
+    )
+    recebe_documentos_fiscais = models.BooleanField(
+        default=False,
+        help_text='Indica que o e-mail deste contato pode receber documentos fiscais (DANFE/XML).',
+    )
 
     class Meta:
         ordering = ['tipo', '-principal', 'id']
