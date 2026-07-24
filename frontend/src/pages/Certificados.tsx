@@ -15,7 +15,7 @@ import {
 } from '@/services/api/certificadosFornecedor';
 import { produtosService } from '@/services/api/produtos';
 import { nfeHistoricaImportadaService, type NFeSaidaHistoricaList } from '@/services/api/nfeHistoricaImportada';
-import { apiErrorMessage } from '@/services/api/config';
+import { apiErrorMessage, getApiErrorStatus } from '@/services/api/config';
 import {
   certificadoFornecedorStatusBadge,
   itemCqTemOrigemDocumental,
@@ -871,11 +871,21 @@ const Certificados = () => {
         selecoesIniciais: selecoesExistentesCorridasCfCq(dados.linhas, itensAtuais),
       });
     } catch (e) {
+      // 401/403 permanecem nas mensagens padrão; 404 real (CF inexistente) usa o detail da API.
+      const status = getApiErrorStatus(e);
+      const detail = (e as AxiosError<{ detail?: string }>)?.response?.data?.detail;
+      const erro = (
+        (status === 401 || status === 403)
+          ? apiErrorMessage(e, { fallback: 'Não foi possível carregar as corridas do Certificado de Fornecedor.' })
+          : (typeof detail === 'string' && detail.trim()
+            ? detail.trim()
+            : apiErrorMessage(e, { fallback: 'Não foi possível carregar as corridas do Certificado de Fornecedor.' }))
+      );
       setCorridasCfModal({
         itemIdx: idx,
         dados: null,
         carregando: false,
-        erro: apiErrorMessage(e, { fallback: 'Não foi possível carregar as corridas do Certificado de Fornecedor.' }),
+        erro,
         quantidadeTotal: Number(item.quantidade) || 0,
         selecoesIniciais: [],
       });
@@ -2266,6 +2276,16 @@ const Certificados = () => {
         erroCarregamento={corridasCfModal?.erro ?? null}
         quantidadeTotalItem={corridasCfModal?.quantidadeTotal ?? 0}
         selecoesIniciais={corridasCfModal?.selecoesIniciais ?? []}
+        contextoChave={
+          corridasCfModal
+            ? [
+                corridasCfModal.itemIdx,
+                form.itens[corridasCfModal.itemIdx]?.certificado_fornecedor_origem_id ?? '',
+                form.itens[corridasCfModal.itemIdx]?.item_certificado_fornecedor_origem_id ?? '',
+                form.itens[corridasCfModal.itemIdx]?.produto ?? '',
+              ].join(':')
+            : ''
+        }
         onAplicar={aplicarCorridasCfSelecionadas}
       />
     </div>

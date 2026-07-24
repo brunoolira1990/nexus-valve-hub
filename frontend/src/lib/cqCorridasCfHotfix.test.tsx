@@ -12,6 +12,7 @@ import { ModalCorridasCertificadoFornecedor } from '@/components/qualidade/Modal
 import {
   MSG_ORIGEM_DOCUMENTAL_NAO_FISICA_CQ,
   MSG_ORIGEM_DUPLICADA_CQ,
+  MSG_ESTADO_VAZIO_CORRIDAS_CF_CQ,
   MSG_QUANTIDADE_CORRIDA_OBRIGATORIA_CQ,
   MSG_SOMA_DIFERENTE_TOTAL_CQ,
   MSG_SOMA_EXCEDE_TOTAL_CQ,
@@ -420,6 +421,32 @@ describe('ModalCorridasCertificadoFornecedor', () => {
     expect(screen.getByText(MSG_ORIGEM_DOCUMENTAL_NAO_FISICA_CQ)).toBeInTheDocument();
   });
 
+  it('estado vazio amigável sem erro genérico e botão desabilitado', () => {
+    const { onAplicar } = renderModal({
+      dados: {
+        linhas: [],
+        avisos: ['Reaplique os dados do fornecedor neste item do CQ.'],
+        mensagem_origem_fisica: MSG_ORIGEM_DOCUMENTAL_NAO_FISICA_CQ,
+        limitacao_itens_independentes: '',
+      },
+    });
+    expect(screen.getByText(MSG_ESTADO_VAZIO_CORRIDAS_CF_CQ)).toBeInTheDocument();
+    expect(screen.getByText('Reaplique os dados do fornecedor neste item do CQ.')).toBeInTheDocument();
+    expect(screen.queryByText('Recurso não encontrado.')).not.toBeInTheDocument();
+    const aplicar = screen.getByRole('button', { name: 'Aplicar corridas selecionadas' });
+    expect(aplicar).toBeDisabled();
+    fireEvent.click(aplicar);
+    expect(onAplicar).not.toHaveBeenCalled();
+  });
+
+  it('botão permanece desabilitado sem seleção válida', () => {
+    const { onAplicar } = renderModal();
+    const aplicar = screen.getByRole('button', { name: 'Aplicar corridas selecionadas' });
+    expect(aplicar).toBeDisabled();
+    fireEvent.click(aplicar);
+    expect(onAplicar).not.toHaveBeenCalled();
+  });
+
   it('selecionar 3242 (8) + AB337 (6) libera aplicar com as seleções corretas', () => {
     const { onAplicar } = renderModal();
     fireEvent.click(screen.getByLabelText('Selecionar corrida 3242'));
@@ -435,6 +462,43 @@ describe('ModalCorridasCertificadoFornecedor', () => {
       ['3242', '8', 'herdados'],
       ['AB337', '6', 'herdados'],
     ]);
+  });
+
+  it('aplica uma única vez mesmo com cliques repetidos', () => {
+    const onAplicarSync = vi.fn().mockReturnValue(true);
+    render(
+      <ModalCorridasCertificadoFornecedor
+        isOpen
+        onClose={vi.fn()}
+        dados={respostaCf()}
+        carregando={false}
+        erroCarregamento={null}
+        quantidadeTotalItem={14}
+        selecoesIniciais={[]}
+        onAplicar={onAplicarSync}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText('Selecionar corrida 3242'));
+    fireEvent.click(screen.getByLabelText('Selecionar corrida AB337'));
+    fireEvent.change(screen.getByLabelText('Quantidade da corrida 3242'), { target: { value: '8' } });
+    fireEvent.change(screen.getByLabelText('Quantidade da corrida AB337'), { target: { value: '6' } });
+    const aplicar = screen.getByRole('button', { name: 'Aplicar corridas selecionadas' });
+    fireEvent.click(aplicar);
+    fireEvent.click(aplicar);
+    expect(onAplicarSync).toHaveBeenCalledTimes(1);
+  });
+
+  it('recurso realmente inexistente exibe erro e desabilita aplicar', () => {
+    const { onAplicar } = renderModal({
+      dados: null,
+      erroCarregamento: 'Certificado de Fornecedor não encontrado.',
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent('Certificado de Fornecedor não encontrado.');
+    expect(screen.queryByText(MSG_ESTADO_VAZIO_CORRIDAS_CF_CQ)).not.toBeInTheDocument();
+    const aplicar = screen.getByRole('button', { name: 'Aplicar corridas selecionadas' });
+    expect(aplicar).toBeDisabled();
+    fireEvent.click(aplicar);
+    expect(onAplicar).not.toHaveBeenCalled();
   });
 
   it('soma diferente do total desabilita aplicar e mostra o motivo uma única vez', () => {
@@ -539,6 +603,29 @@ describe('Certificados (página) — adicionar corridas do CF', () => {
     expect(
       await screen.findByText('Não foi possível carregar as corridas do Certificado de Fornecedor.'),
     ).toBeInTheDocument();
+  });
+
+  it('404 real do certificado exibe detail da API e não mascara como lista vazia', async () => {
+    corridasCfMock.mockRejectedValue({
+      response: { status: 404, data: { detail: 'Certificado de Fornecedor não encontrado.' } },
+    });
+    await abrirEdicaoEClicarBotao();
+    expect(await screen.findByText('Certificado de Fornecedor não encontrado.')).toBeInTheDocument();
+    expect(screen.queryByText(MSG_ESTADO_VAZIO_CORRIDAS_CF_CQ)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Aplicar corridas selecionadas' })).toBeDisabled();
+  });
+
+  it('coleção vazia da API mostra estado vazio sem Recurso não encontrado', async () => {
+    corridasCfMock.mockResolvedValue({
+      linhas: [],
+      avisos: ['O item do Certificado de Fornecedor vinculado a este CQ não foi encontrado ou está inativo.'],
+      mensagem_origem_fisica: MSG_ORIGEM_DOCUMENTAL_NAO_FISICA_CQ,
+      limitacao_itens_independentes: '',
+    });
+    await abrirEdicaoEClicarBotao();
+    expect(await screen.findByText(MSG_ESTADO_VAZIO_CORRIDAS_CF_CQ)).toBeInTheDocument();
+    expect(screen.queryByText('Recurso não encontrado.')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Aplicar corridas selecionadas' })).toBeDisabled();
   });
 
   it('cancelar confirmação de substituição preserva o editor e mantém o modal aberto', async () => {

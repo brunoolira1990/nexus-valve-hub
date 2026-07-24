@@ -17,6 +17,8 @@ import type { ItemCertificadoQualidade } from '@/types';
 export const TITULO_MODAL_CORRIDAS_CF_CQ = 'Adicionar corridas do Certificado de Fornecedor';
 export const MSG_ORIGEM_DOCUMENTAL_NAO_FISICA_CQ =
   'A origem documental foi identificada. A origem física no estoque/alocação não é comprovada nesta etapa.';
+export const MSG_ESTADO_VAZIO_CORRIDAS_CF_CQ =
+  'Nenhuma corrida encontrada no item vinculado do Certificado de Fornecedor.';
 export const MSG_SELECIONE_CORRIDAS_CF_CQ = 'Selecione ao menos uma corrida para aplicar.';
 export const MSG_QUANTIDADE_CORRIDA_OBRIGATORIA_CQ =
   'Informe quantidade maior que zero para cada corrida selecionada.';

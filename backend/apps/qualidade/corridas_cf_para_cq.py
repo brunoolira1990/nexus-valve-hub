@@ -27,6 +27,14 @@ MSG_ADICIONAL_SEM_QUANTIDADE_CF = (
     'Há corrida adicional sem quantidade registrada no Certificado de Fornecedor '
     '(registro histórico). Informe a quantidade manualmente ao distribuir.'
 )
+MSG_ITEM_CF_SEM_CORRIDAS_ELEGIVEIS = (
+    'Nenhuma corrida elegível encontrada para o item vinculado do Certificado de Fornecedor.'
+)
+MSG_ITEM_CF_VINCULO_INVALIDO = (
+    'O item do Certificado de Fornecedor vinculado a este CQ não foi encontrado '
+    'ou está inativo (pode ocorrer após regravação do CF). Reaplique os dados do '
+    'fornecedor neste item do CQ antes de distribuir corridas.'
+)
 
 ORIGEM_TECNICA_ITEM_CF = 'dados_do_item_cf'
 ORIGEM_TECNICA_HERDADA = 'herdados_item_principal'
@@ -43,8 +51,7 @@ LIMITACAO_ITENS_INDEPENDENTES_A2 = (
 
 
 class ItemCfNaoEncontradoError(LookupError):
-    """Item do CF inexistente, inativo ou não pertencente ao certificado informado."""
-
+    """Certificado inexistente, ou item existente pertencente a outro certificado."""
 
 def _fmt_decimal(value: Decimal | None) -> str | None:
     if value is None:
@@ -134,12 +141,34 @@ def _linha_base(
     }
 
 
+def _payload_colecao(
+    *,
+    linhas: list[dict] | None = None,
+    avisos: list[str] | None = None,
+) -> dict:
+    return {
+        'linhas': list(linhas or []),
+        'avisos': list(dict.fromkeys(avisos or [])),
+        'mensagem_origem_fisica': MSG_ORIGEM_DOCUMENTAL_NAO_FISICA_CQ,
+        'limitacao_itens_independentes': LIMITACAO_ITENS_INDEPENDENTES_A2,
+    }
+
+
 def listar_corridas_cf_para_item_cq(
     *,
     certificado_fornecedor_id: int,
     item_certificado_fornecedor_id: int,
 ) -> dict:
-    """Linhas de corrida do CF/item exatos, para seleção pelo operador no CQ."""
+    """Linhas de corrida do CF/item exatos, para seleção pelo operador no CQ.
+
+    Contrato:
+    - CF inexistente → ItemCfNaoEncontradoError (HTTP 404).
+    - Item existente ligado a outro CF → ItemCfNaoEncontradoError (HTTP 404).
+    - CF válido com item ausente/inativo ou sem corridas → coleção vazia (HTTP 200).
+    - Permissão continua a cargo da view (401/403 não são mascarados aqui).
+    """
+    from apps.qualidade.models import CertificadoFornecedorEntrada
+
     item = (
         ItemCertificadoFornecedorEntrada.objects
         .select_related('certificado_fornecedor')
@@ -152,9 +181,23 @@ def listar_corridas_cf_para_item_cq(
         .first()
     )
     if item is None:
-        raise ItemCfNaoEncontradoError(
-            'Item do Certificado de Fornecedor não encontrado para este certificado.'
+        if not CertificadoFornecedorEntrada.objects.filter(pk=certificado_fornecedor_id).exists():
+            raise ItemCfNaoEncontradoError('Certificado de Fornecedor não encontrado.')
+        item_qualquer = (
+            ItemCertificadoFornecedorEntrada.objects
+            .filter(pk=item_certificado_fornecedor_id)
+            .only('id', 'certificado_fornecedor_id', 'ativo')
+            .first()
         )
+        if (
+            item_qualquer is not None
+            and item_qualquer.certificado_fornecedor_id != certificado_fornecedor_id
+        ):
+            raise ItemCfNaoEncontradoError(
+                'Item do Certificado de Fornecedor não encontrado para este certificado.'
+            )
+        # CF válido: item órfão (ex.: regravação do CF), inativo ou inexistente → coleção vazia.
+        return _payload_colecao(avisos=[MSG_ITEM_CF_VINCULO_INVALIDO])
 
     linhas: list[dict] = []
     avisos: list[str] = []
@@ -194,9 +237,7 @@ def listar_corridas_cf_para_item_cq(
             )
         )
 
-    return {
-        'linhas': linhas,
-        'avisos': list(dict.fromkeys(avisos)),
-        'mensagem_origem_fisica': MSG_ORIGEM_DOCUMENTAL_NAO_FISICA_CQ,
-        'limitacao_itens_independentes': LIMITACAO_ITENS_INDEPENDENTES_A2,
-    }
+    if not linhas and MSG_ITEM_CF_SEM_CORRIDAS_ELEGIVEIS not in avisos:
+        avisos.append(MSG_ITEM_CF_SEM_CORRIDAS_ELEGIVEIS)
+
+    return _payload_colecao(linhas=linhas, avisos=avisos)

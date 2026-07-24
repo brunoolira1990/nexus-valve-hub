@@ -25,6 +25,8 @@ from apps.produtos.models import FamiliaProduto, Produto
 from apps.qualidade.certificado_pdf import gerar_certificado_qualidade_pdf
 from apps.qualidade.corridas_cf_para_cq import (
     MSG_ADICIONAL_SEM_QUANTIDADE_CF,
+    MSG_ITEM_CF_SEM_CORRIDAS_ELEGIVEIS,
+    MSG_ITEM_CF_VINCULO_INVALIDO,
     MSG_ORIGEM_DOCUMENTAL_NAO_FISICA_CQ,
     ItemCfNaoEncontradoError,
     listar_corridas_cf_para_item_cq,
@@ -149,6 +151,44 @@ class ListarCorridasCfParaItemCqTests(CorridasCfParaCqBase):
                 item_certificado_fornecedor_id=self.item_cf.id,
             )
 
+    def test_item_ausente_em_cf_valido_retorna_colecao_vazia(self):
+        """IDs órfãos após regravação do CF não devem virar 404 genérico."""
+        payload = listar_corridas_cf_para_item_cq(
+            certificado_fornecedor_id=self.cf.id,
+            item_certificado_fornecedor_id=99999999,
+        )
+        self.assertEqual(payload['linhas'], [])
+        self.assertIn(MSG_ITEM_CF_VINCULO_INVALIDO, payload['avisos'])
+
+    def test_item_inativo_em_cf_valido_retorna_colecao_vazia(self):
+        self.item_cf.ativo = False
+        self.item_cf.save(update_fields=['ativo'])
+        payload = listar_corridas_cf_para_item_cq(
+            certificado_fornecedor_id=self.cf.id,
+            item_certificado_fornecedor_id=self.item_cf.id,
+        )
+        self.assertEqual(payload['linhas'], [])
+        self.assertIn(MSG_ITEM_CF_VINCULO_INVALIDO, payload['avisos'])
+
+    def test_item_valido_sem_corridas_retorna_colecao_vazia(self):
+        self.item_cf.corrida = ''
+        self.item_cf.lote = ''
+        self.item_cf.save(update_fields=['corrida', 'lote'])
+        self.item_cf.corridas_adicionais.all().delete()
+        payload = listar_corridas_cf_para_item_cq(
+            certificado_fornecedor_id=self.cf.id,
+            item_certificado_fornecedor_id=self.item_cf.id,
+        )
+        self.assertEqual(payload['linhas'], [])
+        self.assertIn(MSG_ITEM_CF_SEM_CORRIDAS_ELEGIVEIS, payload['avisos'])
+
+    def test_certificado_inexistente_continua_erro(self):
+        with self.assertRaises(ItemCfNaoEncontradoError):
+            listar_corridas_cf_para_item_cq(
+                certificado_fornecedor_id=99999999,
+                item_certificado_fornecedor_id=99999998,
+            )
+
     def test_item_independente_sem_vinculo_inequivoco_nao_aparece_mesmo_com_mesmo_produto(self):
         ItemCertificadoFornecedorEntrada.objects.create(
             certificado_fornecedor=self.cf,
@@ -233,10 +273,20 @@ class CorridasCfEndpointTests(CorridasCfParaCqBase):
         )
         self.assertEqual(r.status_code, 404)
 
-    def test_endpoint_404_para_id_inexistente(self):
+    def test_endpoint_colecao_vazia_para_item_inexistente_em_cf_valido(self):
         r = self.client_api.get(
             self.url,
             {'certificado_fornecedor_id': self.cf.id, 'item_certificado_fornecedor_id': 99999999},
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        body = r.json()
+        self.assertEqual(body['linhas'], [])
+        self.assertIn(MSG_ITEM_CF_VINCULO_INVALIDO, body['avisos'])
+
+    def test_endpoint_404_para_certificado_inexistente(self):
+        r = self.client_api.get(
+            self.url,
+            {'certificado_fornecedor_id': 99999999, 'item_certificado_fornecedor_id': 99999998},
         )
         self.assertEqual(r.status_code, 404)
 

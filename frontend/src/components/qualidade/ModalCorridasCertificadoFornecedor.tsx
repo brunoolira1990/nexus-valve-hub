@@ -4,6 +4,7 @@ import {
   MSG_DADOS_PROPRIOS_PENDENTES_CQ,
   MSG_DADOS_PROPRIOS_MANUAIS_CQ,
   MSG_ORIGEM_DOCUMENTAL_NAO_FISICA_CQ,
+  MSG_ESTADO_VAZIO_CORRIDAS_CF_CQ,
   TITULO_MODAL_CORRIDAS_CF_CQ,
   errosSelecaoCorridasCfCq,
   resumoDistribuicaoCorridasCfCq,
@@ -27,11 +28,13 @@ type Props = {
   erroCarregamento: string | null;
   quantidadeTotalItem: number;
   selecoesIniciais: SelecaoCorridaCfCq[];
+  /** Identidade do contexto (item/produto/CF). Troca limpa seleções anteriores. */
+  contextoChave?: string;
   /** Retorna false quando o editor cancela a confirmação de substituição. */
   onAplicar: (selecoes: SelecaoCorridaCfCq[]) => boolean;
 };
 
-const estadoInicial = (linha: CorridaCfParaCq): SelecaoEstado => ({
+const estadoInicial = (_linha: CorridaCfParaCq): SelecaoEstado => ({
   selecionada: false,
   quantidade: '',
   dadosTecnicos: 'herdados',
@@ -49,14 +52,27 @@ export function ModalCorridasCertificadoFornecedor({
   erroCarregamento,
   quantidadeTotalItem,
   selecoesIniciais,
+  contextoChave = '',
   onAplicar,
 }: Props) {
   const [estados, setEstados] = useState<Record<string, SelecaoEstado>>({});
+  const [aplicando, setAplicando] = useState(false);
 
   const linhas = dados?.linhas ?? [];
 
   useEffect(() => {
-    if (!isOpen || !dados) return;
+    if (!isOpen) {
+      setEstados({});
+      setAplicando(false);
+      return;
+    }
+    // Sem payload (carregando/erro) ou troca de contexto: não reaproveitar seleção antiga.
+    if (!dados) {
+      setEstados({});
+      setAplicando(false);
+      return;
+    }
+    setAplicando(false);
     setEstados(Object.fromEntries(
       dados.linhas.map((linha) => {
         const existente = selecoesIniciais.find(
@@ -74,7 +90,7 @@ export function ModalCorridasCertificadoFornecedor({
         ];
       }),
     ));
-  }, [dados, isOpen, selecoesIniciais]);
+  }, [dados, isOpen, selecoesIniciais, contextoChave]);
 
   const estadoDe = (linha: CorridaCfParaCq): SelecaoEstado =>
     estados[linha.chave_origem] ?? estadoInicial(linha);
@@ -102,15 +118,30 @@ export function ModalCorridasCertificadoFornecedor({
     [quantidadeTotalItem, selecoes],
   );
   const resumo = resumoDistribuicaoCorridasCfCq(quantidadeTotalItem, selecoes);
-  const podeAplicar = selecoes.length > 0 && erros.length === 0;
+  const podeAplicar = (
+    !carregando
+    && !erroCarregamento
+    && !aplicando
+    && selecoes.length > 0
+    && erros.length === 0
+  );
 
   const aplicar = () => {
-    if (!podeAplicar) return;
-    if (onAplicar(selecoes)) setEstados({});
+    if (!podeAplicar || aplicando) return;
+    setAplicando(true);
+    const ok = onAplicar(selecoes);
+    if (ok) {
+      setEstados({});
+      // Mantém `aplicando` até fechar/trocar contexto — impede reenvio se o modal
+      // permanecer montado por um instante após a aplicação.
+      return;
+    }
+    setAplicando(false);
   };
 
   const fechar = () => {
     setEstados({});
+    setAplicando(false);
     onClose();
   };
 
@@ -134,16 +165,17 @@ export function ModalCorridasCertificadoFornecedor({
             </ul>
           ) : null}
           <div className="flex justify-end gap-2">
-            <button type="button" className="erp-btn-outline" onClick={fechar}>
+            <button type="button" className="erp-btn-outline" onClick={fechar} disabled={aplicando}>
               Cancelar
             </button>
             <button
               type="button"
               className="erp-btn-primary"
               disabled={!podeAplicar}
+              aria-disabled={!podeAplicar}
               onClick={aplicar}
             >
-              Aplicar corridas selecionadas
+              {aplicando ? 'Aplicando…' : 'Aplicar corridas selecionadas'}
             </button>
           </div>
         </div>
@@ -166,8 +198,8 @@ export function ModalCorridasCertificadoFornecedor({
             </p>
           ))}
           {linhas.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Nenhuma corrida encontrada no item vinculado do Certificado de Fornecedor.
+            <p className="text-sm text-muted-foreground" role="status">
+              {MSG_ESTADO_VAZIO_CORRIDAS_CF_CQ}
             </p>
           ) : (
             <table className="w-full text-sm">
