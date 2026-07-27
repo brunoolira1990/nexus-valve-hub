@@ -22,8 +22,30 @@ vi.mock('@/services/api/analiseFinanceira', () => ({
     aprovarComAjuste: vi.fn(),
     devolver: vi.fn(),
     naoAprovar: vi.fn(),
+    capacidadeIntegracoes: vi.fn(),
+    listConsultasExternas: vi.fn(),
   },
 }));
+
+const capacidadeDesabilitada = {
+  cadastral: {
+    configurado: false,
+    disponivel: false,
+    provider: null,
+    produto: null,
+    permite_consulta: false,
+    motivo: 'PROVIDER_NAO_CONFIGURADO',
+  },
+  buro: {
+    configurado: false,
+    disponivel: false,
+    provider: null,
+    produto: null,
+    permite_consulta: false,
+    motivo: 'BURO_NAO_CONTRATADO',
+  },
+  decisao_financeira: 'MANUAL' as const,
+};
 
 const snapshotV2 = {
   schema_versao: 2,
@@ -139,10 +161,16 @@ const snapshotV2 = {
 };
 
 describe('AnaliseFinanceiraIndicadores dossiê B1', () => {
+  beforeEach(() => {
+    vi.mocked(analiseFinanceiraService.capacidadeIntegracoes).mockResolvedValue(capacidadeDesabilitada);
+  });
+
   it('seções A–F e sem JSON bruto', () => {
     const { container } = render(
       <AnaliseFinanceiraIndicadores
         snapshot={snapshotV2}
+        capacidadeIntegracoes={capacidadeDesabilitada}
+        carregarCapabilityIntegracoes={false}
         negociacao={{
           proposta_numero: 'P-1',
           cliente_nome: 'Cliente X',
@@ -173,6 +201,8 @@ describe('AnaliseFinanceiraIndicadores dossiê B1', () => {
   it('fonte PedidoVenda com aviso de homologação ignorada', () => {
     render(
       <AnaliseFinanceiraIndicadores
+        capacidadeIntegracoes={capacidadeDesabilitada}
+        carregarCapabilityIntegracoes={false}
         snapshot={{
           ...snapshotV2,
           indicadores: {
@@ -196,6 +226,8 @@ describe('AnaliseFinanceiraIndicadores dossiê B1', () => {
   it('fonte indisponível', () => {
     render(
       <AnaliseFinanceiraIndicadores
+        capacidadeIntegracoes={capacidadeDesabilitada}
+        carregarCapabilityIntegracoes={false}
         snapshot={{
           ...snapshotV2,
           indicadores: {
@@ -223,13 +255,15 @@ describe('AnaliseFinanceiraIndicadores dossiê B1', () => {
   });
 
   it('limite negativo e excesso', () => {
-    render(<AnaliseFinanceiraIndicadores snapshot={snapshotV2} />);
+    render(<AnaliseFinanceiraIndicadores snapshot={snapshotV2} capacidadeIntegracoes={capacidadeDesabilitada} carregarCapabilityIntegracoes={false} />);
     expect(screen.getByTestId('dossie-exposicao').textContent).toMatch(/-R\$\s*150/);
   });
 
   it('limite zero ambíguo', () => {
     render(
       <AnaliseFinanceiraIndicadores
+        capacidadeIntegracoes={capacidadeDesabilitada}
+        carregarCapabilityIntegracoes={false}
         snapshot={{
           ...snapshotV2,
           indicadores: {
@@ -252,6 +286,8 @@ describe('AnaliseFinanceiraIndicadores dossiê B1', () => {
   it('qualidade DIVERGENTE', () => {
     render(
       <AnaliseFinanceiraIndicadores
+        capacidadeIntegracoes={capacidadeDesabilitada}
+        carregarCapabilityIntegracoes={false}
         snapshot={{
           ...snapshotV2,
           qualidade_dados: 'DIVERGENTE',
@@ -271,6 +307,8 @@ describe('AnaliseFinanceiraIndicadores dossiê B1', () => {
   it('snapshot antigo permanece legível', () => {
     render(
       <AnaliseFinanceiraIndicadores
+        capacidadeIntegracoes={capacidadeDesabilitada}
+        carregarCapabilityIntegracoes={false}
         snapshot={{
           qualidade_dados: 'PARCIAL',
           data_corte: '2026-01-01',
@@ -288,6 +326,8 @@ describe('AnaliseFinanceiraIndicadores dossiê B1', () => {
   it('resumo restrito', () => {
     render(
       <AnaliseFinanceiraIndicadores
+        capacidadeIntegracoes={capacidadeDesabilitada}
+        carregarCapabilityIntegracoes={false}
         snapshot={{ qualidade_dados: 'PARCIAL', resumo_restrito: true, qualidade: { status: 'PARCIAL' } }}
       />,
     );
@@ -377,8 +417,10 @@ describe('AnalisesFinanceirasPage dossiê', () => {
     vi.mocked(analiseFinanceiraService.list).mockReset();
     vi.mocked(analiseFinanceiraService.getById).mockReset();
     vi.mocked(analiseFinanceiraService.aprovar).mockReset();
+    vi.mocked(analiseFinanceiraService.capacidadeIntegracoes).mockReset();
     vi.mocked(analiseFinanceiraService.list).mockResolvedValue({ count: 1, results: [baseAnalise] });
     vi.mocked(analiseFinanceiraService.getById).mockResolvedValue(baseAnalise);
+    vi.mocked(analiseFinanceiraService.capacidadeIntegracoes).mockResolvedValue(capacidadeDesabilitada);
   });
 
   it('abre detalhe com dossiê e ações', async () => {

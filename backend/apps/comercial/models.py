@@ -747,3 +747,80 @@ class AnaliseFinanceiraPropostaEvento(models.Model):
         default_permissions = ('view',)
         verbose_name = 'Evento de análise financeira'
         verbose_name_plural = 'Eventos de análise financeira'
+
+
+class ConsultaExternaAnaliseFinanceira(models.Model):
+    """Consulta externa (cadastral/birô) vinculada à análise — append-oriented.
+
+    Fundação B2/B3: sem provider real e sem dados simulados em produção.
+    """
+
+    class Tipo(models.TextChoices):
+        CADASTRAL = 'CADASTRAL', 'Cadastral'
+        BURO = 'BURO', 'Birô'
+
+    class Status(models.TextChoices):
+        PENDENTE = 'PENDENTE', 'Pendente'
+        PROCESSANDO = 'PROCESSANDO', 'Processando'
+        CONCLUIDA = 'CONCLUIDA', 'Concluída'
+        ERRO = 'ERRO', 'Erro'
+        INDISPONIVEL = 'INDISPONIVEL', 'Indisponível'
+        EXPIRADA = 'EXPIRADA', 'Expirada'
+
+    analise_financeira = models.ForeignKey(
+        AnaliseFinanceiraProposta,
+        on_delete=models.PROTECT,
+        related_name='consultas_externas',
+    )
+    tipo = models.CharField(max_length=16, choices=Tipo.choices, db_index=True)
+    provider = models.CharField(max_length=64, blank=True)
+    produto = models.CharField(max_length=64, blank=True)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.PENDENTE,
+        db_index=True,
+    )
+    solicitada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='consultas_externas_analise_financeira',
+    )
+    solicitada_em = models.DateTimeField(auto_now_add=True)
+    iniciada_em = models.DateTimeField(null=True, blank=True)
+    concluida_em = models.DateTimeField(null=True, blank=True)
+    expira_em = models.DateTimeField(null=True, blank=True, db_index=True)
+    cnpj_mascarado = models.CharField(max_length=32, blank=True)
+    resultado_normalizado = models.JSONField(default=dict, blank=True)
+    erro_sanitizado = models.CharField(max_length=255, blank=True)
+    hash_requisicao = models.CharField(max_length=64, blank=True, db_index=True)
+    protocolo_mascarado = models.CharField(max_length=64, blank=True)
+    custo_consulta = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    criada_em = models.DateTimeField(auto_now_add=True)
+    atualizada_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-solicitada_em', '-id']
+        verbose_name = 'Consulta externa da análise financeira'
+        verbose_name_plural = 'Consultas externas da análise financeira'
+        default_permissions = ('view',)
+        permissions = (
+            ('solicitar_consulta_cadastral_analise', 'Pode solicitar consulta cadastral na análise'),
+            ('ver_resultado_cadastral_analise', 'Pode ver resultado cadastral da análise'),
+            ('solicitar_consulta_buro_analise', 'Pode solicitar consulta de birô na análise'),
+            ('ver_resultado_buro_analise', 'Pode ver resultado de birô da análise'),
+        )
+        indexes = [
+            models.Index(
+                fields=['analise_financeira', 'tipo', 'solicitada_em'],
+                name='consulta_ext_analise_tipo_idx',
+            ),
+            models.Index(fields=['status'], name='consulta_ext_status_idx'),
+            models.Index(fields=['expira_em'], name='consulta_ext_expira_idx'),
+            models.Index(fields=['hash_requisicao'], name='consulta_ext_hash_idx'),
+        ]
+
+    def __str__(self) -> str:
+        return f'ConsultaExterna#{self.pk} {self.tipo} {self.status}'

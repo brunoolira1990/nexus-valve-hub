@@ -89,4 +89,36 @@ export const analiseFinanceiraService = {
     (await api.post<AnaliseFinanceiraProposta>(`${analisesPath}${id}/devolver/`, { justificativa })).data,
   naoAprovar: async (id: number, justificativa: string) =>
     (await api.post<AnaliseFinanceiraProposta>(`${analisesPath}${id}/nao-aprovar/`, { justificativa })).data,
+  capacidadeIntegracoes: async () =>
+    (await api.get<CapacidadeIntegracoesCredito>(`${analisesPath}integracoes/capacidade/`)).data,
+  listConsultasExternas: async (analiseId: number) =>
+    (
+      await api.get<{ count?: number; results?: ConsultaExternaAnaliseFinanceira[] } | ConsultaExternaAnaliseFinanceira[]>(
+        `${analisesPath}${analiseId}/consultas-externas/`,
+      )
+    ).data,
+};
+
+export type CapacidadeBlocoIntegracao = {
+  configurado: boolean;
+  disponivel: boolean;
+  provider: string | null;
+  produto: string | null;
+  permite_consulta: boolean;
+  motivo: string;
+};
+
+export type CapacidadeIntegracoesCredito = {
+  cadastral: CapacidadeBlocoIntegracao;
+  buro: CapacidadeBlocoIntegracao;
+  decisao_financeira: 'MANUAL' | string;
+};
+
+export type ConsultaExternaAnaliseFinanceira = {
+  id: number;
+  tipo: 'CADASTRAL' | 'BURO' | string;
+  status: string;
+  cnpj_mascarado?: string;
+  resultado_normalizado?: Record<string, unknown>;
+  erro_sanitizado?: string;
 };

@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 import { formatMoneyBRL } from '@/lib/money';
+import { SecoesIntegracoesExternas } from '@/components/financeiro/SecoesIntegracoesExternas';
+import type { CapacidadeIntegracoesCredito } from '@/services/api/analiseFinanceira';
 
 const AVISO_PARCIAL =
   'Alguns indicadores não puderam ser calculados com os dados disponíveis. A decisão deve ser revisada manualmente pelo Financeiro.';
@@ -125,6 +127,9 @@ type Negociacao = {
 type Props = {
   snapshot?: Record<string, unknown> | SnapshotIndicadores | null;
   negociacao?: Negociacao | null;
+  /** Capability injetada (testes) — evita HTTP. */
+  capacidadeIntegracoes?: CapacidadeIntegracoesCredito | null;
+  carregarCapabilityIntegracoes?: boolean;
 };
 
 function money(value: string | number | null | undefined, disponivel = true): string {
@@ -196,11 +201,30 @@ function qualidadeMensagem(status?: string, mensagem?: string): string {
   return PLACEHOLDER_SNAPSHOT;
 }
 
-export function AnaliseFinanceiraIndicadores({ snapshot, negociacao }: Props) {
+export function AnaliseFinanceiraIndicadores({
+  snapshot,
+  negociacao,
+  capacidadeIntegracoes = null,
+  carregarCapabilityIntegracoes = true,
+}: Props) {
   const ind = (snapshot || {}) as SnapshotIndicadores;
   const schema = ind.schema_versao;
   const isV2 = schema === 2 && Boolean(ind.indicadores);
   const isLegacy = !isV2 && (Boolean(ind.contas_receber) || Boolean(ind.exposicao) || Boolean(ind.qualidade_dados));
+
+  const secoesExternas = (
+    <>
+      <SecoesIntegracoesExternas
+        capacidade={capacidadeIntegracoes}
+        carregarCapability={carregarCapabilityIntegracoes}
+      />
+      <Section title="Recomendação automática" testId="dossie-recomendacao">
+        <Placeholder testId="dossie-recomendacao-placeholder">
+          Não existe política automática ativa. A decisão permanece sob responsabilidade do Financeiro.
+        </Placeholder>
+      </Section>
+    </>
+  );
 
   if (ind.resumo_restrito) {
     const status = ind.qualidade?.status || ind.qualidade_dados;
@@ -212,21 +236,7 @@ export function AnaliseFinanceiraIndicadores({ snapshot, negociacao }: Props) {
             Detalhe financeiro restrito. {qualidadeMensagem(status, ind.qualidade?.mensagem)}
           </p>
         </Section>
-        <Section title="Consulta cadastral externa" testId="dossie-cadastral">
-          <Placeholder testId="dossie-cadastral-placeholder">
-            Consulta cadastral externa não disponível nesta fase.
-          </Placeholder>
-        </Section>
-        <Section title="Birô de crédito" testId="dossie-buro">
-          <Placeholder testId="dossie-buro-placeholder">
-            Consulta a birô de crédito não contratada ou não disponível nesta fase.
-          </Placeholder>
-        </Section>
-        <Section title="Recomendação automática" testId="dossie-recomendacao">
-          <Placeholder testId="dossie-recomendacao-placeholder">
-            Não existe política automática ativa. A decisão permanece sob responsabilidade do Financeiro.
-          </Placeholder>
-        </Section>
+        {secoesExternas}
       </div>
     );
   }
@@ -505,23 +515,7 @@ export function AnaliseFinanceiraIndicadores({ snapshot, negociacao }: Props) {
         ) : null}
       </Section>
 
-      <Section title="Consulta cadastral externa" testId="dossie-cadastral">
-        <Placeholder testId="dossie-cadastral-placeholder">
-          Consulta cadastral externa não disponível nesta fase.
-        </Placeholder>
-      </Section>
-
-      <Section title="Birô de crédito" testId="dossie-buro">
-        <Placeholder testId="dossie-buro-placeholder">
-          Consulta a birô de crédito não contratada ou não disponível nesta fase.
-        </Placeholder>
-      </Section>
-
-      <Section title="Recomendação automática" testId="dossie-recomendacao">
-        <Placeholder testId="dossie-recomendacao-placeholder">
-          Não existe política automática ativa. A decisão permanece sob responsabilidade do Financeiro.
-        </Placeholder>
-      </Section>
+      {secoesExternas}
     </div>
   );
 }

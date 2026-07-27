@@ -29,6 +29,7 @@ from apps.comercial.analise_financeira_servico import (
     solicitar_analise,
     situacao_proposta,
 )
+from apps.comercial.integracoes_credito.views import IntegracoesCreditoActionsMixin
 from apps.comercial.models import AnaliseFinanceiraProposta, Proposta
 from rest_framework.permissions import IsAuthenticated
 
@@ -105,7 +106,7 @@ class PropostaAnaliseFinanceiraActionsMixin:
         )
 
 
-class AnaliseFinanceiraPropostaViewSet(viewsets.ReadOnlyModelViewSet):
+class AnaliseFinanceiraPropostaViewSet(IntegracoesCreditoActionsMixin, viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated, PodeVerAnaliseFinanceiraProposta]
     pagination_class = AnaliseFinanceiraPagination
     http_method_names = ['get', 'post', 'head', 'options']
