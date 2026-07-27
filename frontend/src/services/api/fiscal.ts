@@ -1165,7 +1165,8 @@ export const nfeSaidasService = {
   envioEmailEnviar: async (
     id: number,
     payload: {
-      para: string;
+      destinatarios?: string[];
+      para?: string;
       cc?: string;
       assunto: string;
       mensagem: string;
@@ -1174,7 +1175,8 @@ export const nfeSaidasService = {
   ) => {
     const res = await api.post<NFeEnvioEmailEnviarResponse>(`${nfSai}${id}/envio-email/enviar/`, payload, {
       timeout: 120_000,
-      validateStatus: (s) => s >= 200 && s < 500,
+      // 502 = falha SMTP total estruturada (não confundir com validação 400).
+      validateStatus: (s) => (s >= 200 && s < 500) || s === 502,
     });
     return res.data;
   },
@@ -1194,6 +1196,24 @@ export type NFeEnvioEmailHistorico = {
   anexo_danfe_pdf?: boolean;
 };
 
+export type NFeEnvioDestinatarioSugerido = {
+  email: string;
+  nome: string;
+  origem: 'contato' | 'email_nf' | 'email' | string;
+  contato_id: number | null;
+  selecionado: boolean;
+};
+
+export type NFeEnvioEmailResultadoItem = {
+  email: string;
+  status?: 'SUCESSO' | 'ERRO';
+  mensagem?: string;
+  /** Alias legado */
+  status_envio?: 'SUCESSO' | 'ERRO';
+  mensagem_erro?: string;
+  envio_id?: number;
+};
+
 export type NFeEnvioEmailDadosResponse = {
   ok: boolean;
   pode_enviar: boolean;
@@ -1203,8 +1223,9 @@ export type NFeEnvioEmailDadosResponse = {
   homologacao: boolean;
   alerta_homologacao?: string;
   destinatario_sugerido: string;
+  destinatarios_sugeridos?: NFeEnvioDestinatarioSugerido[];
   cliente_sem_email?: boolean;
-  destinatario_origem?: 'email_nf' | 'email' | '';
+  destinatario_origem?: 'email_nf' | 'email' | 'contato' | '';
   aviso_sem_email_cliente?: string;
   assunto_sugerido: string;
   mensagem_sugerida: string;
@@ -1228,8 +1249,16 @@ export type NFeEnvioEmailDadosResponse = {
 
 export type NFeEnvioEmailEnviarResponse = {
   ok: boolean;
+  status_geral?: 'SUCESSO' | 'PARCIAL' | 'ERRO';
   mensagem?: string;
+  total?: number;
+  sucessos?: number;
+  falhas?: number;
+  sucesso?: number;
+  erro?: number;
+  resultados?: NFeEnvioEmailResultadoItem[];
   envio?: NFeEnvioEmailHistorico | null;
+  envios?: NFeEnvioEmailHistorico[];
 };
 
 export type NFeGerarContasReceberParcela = {

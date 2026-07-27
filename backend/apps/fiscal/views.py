@@ -1552,6 +1552,7 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
 
         log = logging.getLogger(__name__)
         nf = self.get_object()
+        destinatarios = request.data['destinatarios'] if 'destinatarios' in request.data else None
         try:
             payload = enviar_email_danfe_xml_nfe_saida(
                 nf,
@@ -1563,6 +1564,7 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
                 confirmar_envio=bool(
                     request.data.get('confirmar_envio') or request.data.get('confirmar')
                 ),
+                destinatarios=destinatarios,
             )
         except NFeEnvioEmailError as exc:
             return response.Response({'ok': False, 'mensagem': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
@@ -1573,6 +1575,11 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         nf.refresh_from_db()
+        status_geral = str(payload.get('status_geral') or '')
+        if status_geral == 'ERRO':
+            # Falha SMTP total — distinto de validação (400).
+            return response.Response(payload, status=status.HTTP_502_BAD_GATEWAY)
+        # SUCESSO e PARCIAL
         return response.Response(payload, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], url_path='reprocessar-retorno-sefaz')

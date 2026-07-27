@@ -1,11 +1,21 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { AlertTriangle, CheckCircle2, Loader2, Mail, Paperclip } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2, Mail, Paperclip, XCircle } from 'lucide-react';
 import { Modal } from '@/components/Modal';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { formatDateTimeBr } from '@/lib/nfeSaidaUi';
-import { emailOperacionalValido } from '@/lib/validacaoSenha';
-import { nfeSaidasService, type NFeEnvioEmailDadosResponse } from '@/services/api/fiscal';
+import {
+  adicionarDestinatarioManual,
+  destinatariosSugeridosParaUi,
+  emailsSelecionadosEnvio,
+  rotuloOrigemDestinatario,
+  type DestinatarioEnvioUi,
+} from '@/lib/nfeEnvioDestinatarios';
+import {
+  nfeSaidasService,
+  type NFeEnvioEmailDadosResponse,
+  type NFeEnvioEmailResultadoItem,
+} from '@/services/api/fiscal';
 import { apiErrorMessage } from '@/services/api/config';
 import { toast } from 'sonner';
 
@@ -27,29 +37,6 @@ function CampoResumo({ label, value, mono }: { label: string; value: string; mon
   );
 }
 
-function parseEmailList(value: string): string[] {
-  return value
-    .split(/[,;]/)
-    .map((parte) => parte.trim())
-    .filter(Boolean);
-}
-
-function validarListaEmails(
-  value: string,
-  { obrigatorio, campo }: { obrigatorio: boolean; campo: 'para' | 'cc' },
-): string | null {
-  const emails = parseEmailList(value);
-  if (obrigatorio && emails.length === 0) {
-    return 'Informe o e-mail do destinatário.';
-  }
-  for (const email of emails) {
-    if (!emailOperacionalValido(email)) {
-      return campo === 'cc' ? `E-mail inválido em Cc: ${email}` : 'Informe um e-mail válido.';
-    }
-  }
-  return null;
-}
-
 /** Garante shape estável mesmo com campos opcionais/null da API. */
 function normalizeEnvioEmailDados(raw: unknown): NFeEnvioEmailDadosResponse {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
@@ -60,6 +47,24 @@ function normalizeEnvioEmailDados(raw: unknown): NFeEnvioEmailDadosResponse {
       ? (r.ultimo_envio as NFeEnvioEmailDadosResponse['ultimo_envio'])
       : null;
   const podeEnviar = Boolean(r.pode_enviar ?? r.ok);
+  const origemRaw = String(r.destinatario_origem ?? '');
+  const destinatarioOrigem = (
+    origemRaw === 'email_nf' || origemRaw === 'email' || origemRaw === 'contato' ? origemRaw : ''
+  ) as NFeEnvioEmailDadosResponse['destinatario_origem'];
+
+  const sugeridosRaw = Array.isArray(r.destinatarios_sugeridos) ? r.destinatarios_sugeridos : [];
+  const destinatarios_sugeridos = sugeridosRaw
+    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+    .map((item) => ({
+      email: String(item.email ?? ''),
+      nome: String(item.nome ?? ''),
+      origem: String(item.origem ?? ''),
+      contato_id:
+        item.contato_id == null || item.contato_id === ''
+          ? null
+          : Number(item.contato_id),
+      selecionado: item.selecionado !== false,
+    }));
 
   return {
     ok: podeEnviar,
@@ -70,10 +75,9 @@ function normalizeEnvioEmailDados(raw: unknown): NFeEnvioEmailDadosResponse {
     homologacao: Boolean(r.homologacao),
     alerta_homologacao: String(r.alerta_homologacao ?? ''),
     destinatario_sugerido: String(r.destinatario_sugerido ?? ''),
+    destinatarios_sugeridos,
     cliente_sem_email: Boolean(r.cliente_sem_email),
-    destinatario_origem: (r.destinatario_origem === 'email_nf' || r.destinatario_origem === 'email'
-      ? r.destinatario_origem
-      : '') as NFeEnvioEmailDadosResponse['destinatario_origem'],
+    destinatario_origem: destinatarioOrigem,
     aviso_sem_email_cliente: String(r.aviso_sem_email_cliente ?? ''),
     assunto_sugerido: String(r.assunto_sugerido ?? ''),
     mensagem_sugerida: String(r.mensagem_sugerida ?? ''),
@@ -100,8 +104,7 @@ function normalizeEnvioEmailDados(raw: unknown): NFeEnvioEmailDadosResponse {
 
 function validarFormularioEnvio(
   dados: NFeEnvioEmailDadosResponse,
-  para: string,
-  cc: string,
+  destinatarios: DestinatarioEnvioUi[],
   assunto: string,
   mensagem: string,
   confirmar: boolean,
@@ -114,11 +117,10 @@ function validarFormularioEnvio(
     return 'XML autorizado e DANFE PDF precisam estar disponíveis para envio.';
   }
 
-  const erroPara = validarListaEmails(para, { obrigatorio: true, campo: 'para' });
-  if (erroPara) return erroPara;
-
-  const erroCc = validarListaEmails(cc, { obrigatorio: false, campo: 'cc' });
-  if (erroCc) return erroCc;
+  const selecionados = emailsSelecionadosEnvio(destinatarios);
+  if (selecionados.length === 0) {
+    return 'Selecione ao menos um destinatário válido.';
+  }
 
   const assuntoLimpo = assunto.trim();
   if (!assuntoLimpo) {
@@ -148,12 +150,14 @@ export function NFeEnvioDanfeXmlModal({ open, nfeId, onClose, onEnviado }: Props
   const [avisoBloqueio, setAvisoBloqueio] = useState<string | null>(null);
   const [dados, setDados] = useState<NFeEnvioEmailDadosResponse | null>(null);
   const [envioNfeId, setEnvioNfeId] = useState<number | null>(null);
-  const [para, setPara] = useState('');
-  const [cc, setCc] = useState('');
+  const [destinatarios, setDestinatarios] = useState<DestinatarioEnvioUi[]>([]);
+  const [emailManual, setEmailManual] = useState('');
   const [assunto, setAssunto] = useState('');
   const [mensagem, setMensagem] = useState('');
   const [confirmar, setConfirmar] = useState(false);
   const [sucesso, setSucesso] = useState(false);
+  const [resultados, setResultados] = useState<NFeEnvioEmailResultadoItem[]>([]);
+  const [resumoEnvio, setResumoEnvio] = useState<string>('');
 
   useEffect(() => {
     if (!open) {
@@ -161,8 +165,8 @@ export function NFeEnvioDanfeXmlModal({ open, nfeId, onClose, onEnviado }: Props
       setSending(false);
       setDados(null);
       setEnvioNfeId(null);
-      setPara('');
-      setCc('');
+      setDestinatarios([]);
+      setEmailManual('');
       setAssunto('');
       setMensagem('');
       setConfirmar(false);
@@ -170,6 +174,8 @@ export function NFeEnvioDanfeXmlModal({ open, nfeId, onClose, onEnviado }: Props
       setErroEnvio(null);
       setAvisoBloqueio(null);
       setSucesso(false);
+      setResultados([]);
+      setResumoEnvio('');
       return;
     }
 
@@ -183,6 +189,8 @@ export function NFeEnvioDanfeXmlModal({ open, nfeId, onClose, onEnviado }: Props
     setAvisoBloqueio(null);
     setSucesso(false);
     setDados(null);
+    setResultados([]);
+    setResumoEnvio('');
     setEnvioNfeId(idCarregar);
 
     void nfeSaidasService
@@ -193,7 +201,7 @@ export function NFeEnvioDanfeXmlModal({ open, nfeId, onClose, onEnviado }: Props
         const idResolvido = normalized.nfe.id || idCarregar;
         setEnvioNfeId(idResolvido);
         setDados(normalized);
-        setPara(normalized.destinatario_sugerido || '');
+        setDestinatarios(destinatariosSugeridosParaUi(normalized.destinatarios_sugeridos));
         setAssunto(normalized.assunto_sugerido || '');
         setMensagem(normalized.mensagem_sugerida || '');
         if (!normalized.pode_enviar) {
@@ -214,7 +222,26 @@ export function NFeEnvioDanfeXmlModal({ open, nfeId, onClose, onEnviado }: Props
     };
   }, [open, nfeId]);
 
+  const selecionadosCount = emailsSelecionadosEnvio(destinatarios).length;
   const podeClicarEnviar = Boolean(dados) && !loading && !sending && !sucesso;
+
+  const toggleDestinatario = (key: string) => {
+    setDestinatarios((prev) =>
+      prev.map((item) => (item.key === key ? { ...item, selecionado: !item.selecionado } : item)),
+    );
+    if (erroEnvio) setErroEnvio(null);
+  };
+
+  const incluirManual = () => {
+    const { itens, erro } = adicionarDestinatarioManual(destinatarios, emailManual);
+    if (erro) {
+      setErroEnvio(erro);
+      return;
+    }
+    setDestinatarios(itens);
+    setEmailManual('');
+    if (erroEnvio) setErroEnvio(null);
+  };
 
   const enviar = async () => {
     if (sending) return;
@@ -229,27 +256,36 @@ export function NFeEnvioDanfeXmlModal({ open, nfeId, onClose, onEnviado }: Props
       return;
     }
 
-    const erroValidacao = validarFormularioEnvio(dados, para, cc, assunto, mensagem, confirmar);
+    const erroValidacao = validarFormularioEnvio(dados, destinatarios, assunto, mensagem, confirmar);
     if (erroValidacao) {
       setErroEnvio(erroValidacao);
       return;
     }
 
+    const lista = emailsSelecionadosEnvio(destinatarios);
     setSending(true);
     setErroEnvio(null);
     try {
       const res = await nfeSaidasService.envioEmailEnviar(idEnvio, {
-        para: para.trim(),
-        cc: cc.trim(),
+        destinatarios: lista,
         assunto: assunto.trim(),
         mensagem: mensagem.trim(),
         confirmar_envio: true,
       });
-      if (res.ok) {
+      const itens = Array.isArray(res.resultados) ? res.resultados : [];
+      setResultados(itens);
+      setResumoEnvio(res.mensagem || '');
+      const statusGeral = res.status_geral || (res.ok ? 'SUCESSO' : 'ERRO');
+      if (statusGeral === 'SUCESSO' || statusGeral === 'PARCIAL') {
         setSucesso(true);
-        toast.success(res.mensagem || 'E-mail enviado com sucesso.');
+        if (statusGeral === 'PARCIAL') {
+          toast.success(res.mensagem || 'Envio parcial concluído.');
+        } else {
+          toast.success(res.mensagem || 'E-mail enviado com sucesso.');
+        }
         onEnviado?.();
       } else {
+        // ERRO total (ex.: HTTP 502) — ainda exibe resultados individuais se houver.
         setErroEnvio(res.mensagem || 'Não foi possível enviar o e-mail.');
       }
     } catch (e) {
@@ -310,6 +346,7 @@ export function NFeEnvioDanfeXmlModal({ open, nfeId, onClose, onEnviado }: Props
                   <>
                     <Mail className="h-4 w-4 inline mr-1" />
                     Enviar e-mail
+                    {selecionadosCount > 1 ? ` (${selecionadosCount})` : ''}
                   </>
                 )}
               </button>
@@ -348,9 +385,60 @@ export function NFeEnvioDanfeXmlModal({ open, nfeId, onClose, onEnviado }: Props
             ) : null}
 
             {sucesso ? (
-              <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm flex gap-2 items-start">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
-                <span>E-mail enviado com os anexos XML autorizado e DANFE PDF.</span>
+              <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm space-y-2">
+                <div className="flex gap-2 items-start">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>
+                    {resumoEnvio ||
+                      'E-mail enviado com os anexos XML autorizado e DANFE PDF.'}
+                  </span>
+                </div>
+                {resultados.length > 0 ? (
+                  <ul className="pl-6 text-xs space-y-1" data-testid="envio-resultados">
+                    {resultados.map((item) => {
+                      const st = item.status || item.status_envio || 'ERRO';
+                      const msg = item.mensagem || item.mensagem_erro || '';
+                      return (
+                      <li key={`${item.email}-${item.envio_id ?? st}`} className="flex gap-1 items-start">
+                        {st === 'SUCESSO' ? (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                        ) : (
+                          <XCircle className="h-3.5 w-3.5 text-destructive shrink-0 mt-0.5" />
+                        )}
+                        <span>
+                          {item.email}
+                          {st === 'ERRO' && msg
+                            ? ` — ${msg}`
+                            : st === 'SUCESSO'
+                              ? ' — enviado'
+                              : ''}
+                        </span>
+                      </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
+                <p className="text-xs text-muted-foreground pl-6">
+                  Cada destinatário recebe uma mensagem individual (os endereços não são expostos entre si).
+                </p>
+              </div>
+            ) : null}
+
+            {!sucesso && resultados.length > 0 ? (
+              <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm space-y-2">
+                <p className="font-medium">Resultado do envio</p>
+                <ul className="pl-2 text-xs space-y-1" data-testid="envio-resultados">
+                  {resultados.map((item) => {
+                    const st = item.status || item.status_envio || 'ERRO';
+                    const msg = item.mensagem || item.mensagem_erro || '';
+                    return (
+                      <li key={`${item.email}-${item.envio_id ?? st}`}>
+                        {item.email}
+                        {msg ? ` — ${msg}` : st === 'ERRO' ? ' — falha' : ''}
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
             ) : null}
 
@@ -376,42 +464,68 @@ export function NFeEnvioDanfeXmlModal({ open, nfeId, onClose, onEnviado }: Props
 
             {!sucesso ? (
               <>
-                <div>
-                  <label className="erp-label" htmlFor="envio-email-para">
-                    Para
-                  </label>
+                <div className="space-y-2">
+                  <label className="erp-label">Destinatários</label>
                   {dados.aviso_sem_email_cliente ? (
-                    <p className="mt-1 text-xs text-muted-foreground">{dados.aviso_sem_email_cliente}</p>
+                    <p className="text-xs text-muted-foreground">{dados.aviso_sem_email_cliente}</p>
                   ) : null}
-                  <input
-                    id="envio-email-para"
-                    className="erp-input mt-1 w-full"
-                    value={para}
-                    disabled={formularioBloqueado}
-                    onChange={(e) => {
-                      setPara(e.target.value);
-                      limparErroEnvio();
-                    }}
-                    placeholder="e-mail do destinatário"
-                    autoComplete="email"
-                  />
-                </div>
-                <div>
-                  <label className="erp-label" htmlFor="envio-email-cc">
-                    Cc (opcional)
-                  </label>
-                  <input
-                    id="envio-email-cc"
-                    className="erp-input mt-1 w-full"
-                    value={cc}
-                    disabled={formularioBloqueado}
-                    onChange={(e) => {
-                      setCc(e.target.value);
-                      limparErroEnvio();
-                    }}
-                    placeholder="cópias separadas por vírgula"
-                    autoComplete="email"
-                  />
+                  <p className="text-xs text-muted-foreground">
+                    Selecione um ou mais contatos. Cada endereço recebe um e-mail individual com DANFE e XML.
+                  </p>
+                  {destinatarios.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      Nenhum destinatário sugerido. Inclua um e-mail manualmente abaixo.
+                    </p>
+                  ) : (
+                    <ul className="space-y-2 rounded-md border border-border p-3">
+                      {destinatarios.map((item) => (
+                        <li key={item.key}>
+                          <label className="flex items-start gap-2 text-sm cursor-pointer">
+                            <input
+                              type="checkbox"
+                              className="mt-1"
+                              checked={item.selecionado}
+                              disabled={formularioBloqueado}
+                              onChange={() => toggleDestinatario(item.key)}
+                              data-testid={`destinatario-check-${item.key}`}
+                            />
+                            <span className="min-w-0">
+                              <span className="font-medium break-all">{item.email}</span>
+                              {item.nome ? (
+                                <span className="block text-xs text-muted-foreground">{item.nome}</span>
+                              ) : null}
+                              <span className="block text-xs text-muted-foreground">
+                                {rotuloOrigemDestinatario(item.origem)}
+                              </span>
+                            </span>
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      id="envio-email-manual"
+                      className="erp-input w-full"
+                      value={emailManual}
+                      disabled={formularioBloqueado}
+                      onChange={(e) => {
+                        setEmailManual(e.target.value);
+                        limparErroEnvio();
+                      }}
+                      placeholder="Incluir e-mail adicional"
+                      autoComplete="email"
+                      aria-label="Incluir e-mail adicional"
+                    />
+                    <button
+                      type="button"
+                      className="erp-btn-secondary shrink-0"
+                      disabled={formularioBloqueado}
+                      onClick={incluirManual}
+                    >
+                      Adicionar
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <label className="erp-label" htmlFor="envio-email-assunto">
@@ -455,7 +569,8 @@ export function NFeEnvioDanfeXmlModal({ open, nfeId, onClose, onEnviado }: Props
                     }}
                   />
                   <span>
-                    Confirmo o envio do DANFE e XML desta NF-e para os destinatários informados.
+                    Confirmo o envio do DANFE e XML desta NF-e para {selecionadosCount || 'os'}{' '}
+                    destinatário(s) selecionado(s), em mensagens individuais.
                   </span>
                 </label>
               </>
