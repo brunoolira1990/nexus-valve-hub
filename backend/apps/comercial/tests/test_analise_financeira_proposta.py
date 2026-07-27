@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import uuid
 from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -266,11 +267,13 @@ class LiberacaoFinanceiraApiTests(APITestCase):
         self.client.force_authenticate(self.financeiro)
         detalhe = self.client.get(f'/api/analises-financeiras/{r.data["id"]}/').data
         ind_f = detalhe['snapshot_indicadores']
-        self.assertEqual(ind_f['qualidade_dados'], 'PARCIAL')
+        self.assertEqual(ind_f['schema_versao'], 2)
+        self.assertIn(ind_f['qualidade_dados'], ('INSUFICIENTE', 'PARCIAL'))
         self.assertFalse(ind_f['percentual_pontualidade']['disponivel'])
         self.assertIsNone(ind_f['percentual_pontualidade']['valor'])
         self.assertTrue(ind_f['contas_receber']['disponivel'])
-        self.assertEqual(ind_f['contas_receber']['saldo_aberto'], '0')
+        self.assertEqual(ind_f['contas_receber']['saldo_aberto'], '0.00')
+        self.assertTrue(ind_f['limite_credito_cadastrado']['ambiguo'])
 
     def test_401(self):
         p = _proposta_prazo([30])
@@ -451,3 +454,404 @@ class LiberacaoFinanceiraMigrationTests(TestCase):
         self.assertNotIn('RunPython', names)
         self.assertNotIn('RunSQL', names)
         self.assertIn("default_permissions': ('view',)", source.replace('"', "'"))
+
+
+class DossieInternoB1IndicadoresTests(TestCase):
+    """Fase B1 — cálculos internos do dossiê."""
+
+    def test_schema_v2_e_data_corte(self):
+        from apps.comercial.analise_financeira_indicadores import SCHEMA_VERSAO, montar_indicadores
+
+        p = _proposta_prazo([30])
+        ind = montar_indicadores(cliente=p.cliente, valor_proposta=p.valor_total, proposta_id=p.pk)
+        self.assertEqual(ind['schema_versao'], SCHEMA_VERSAO)
+        self.assertTrue(ind['data_corte'])
+        self.assertIn('qualidade', ind)
+        self.assertIn('indicadores', ind)
+
+    def test_cliente_sem_movimento_pontualidade_indisponivel(self):
+        from apps.comercial.analise_financeira_indicadores import montar_indicadores
+
+        p = _proposta_prazo([30])
+        ind = montar_indicadores(cliente=p.cliente, valor_proposta=p.valor_total, proposta_id=p.pk)
+        self.assertEqual(ind['qualidade']['status'], 'INSUFICIENTE')
+        self.assertFalse(ind['percentual_pontualidade']['disponivel'])
+        self.assertIsNone(ind['percentual_pontualidade']['valor'])
+        self.assertEqual(ind['contas_receber']['saldo_aberto'], '0.00')
+        self.assertEqual(ind['exposicao']['atual'], '0.00')
+        self.assertEqual(ind['exposicao']['projetada'], format(p.valor_total, 'f'))
+
+    def test_limite_zero_ambiguo(self):
+        from apps.comercial.analise_financeira_indicadores import montar_indicadores
+
+        p = _proposta_prazo([30])
+        self.assertEqual(p.cliente.limite_credito, 0)
+        ind = montar_indicadores(cliente=p.cliente, valor_proposta=p.valor_total, proposta_id=p.pk)
+        self.assertTrue(ind['indicadores']['limite']['ambiguo'])
+        self.assertFalse(ind['indicadores']['limite']['disponivel_antes']['disponivel'])
+
+    def test_limite_positivo_permite_negativo(self):
+        from apps.comercial.analise_financeira_indicadores import montar_indicadores
+
+        p = _proposta_prazo([30], valor=Decimal('200'))
+        p.cliente.limite_credito = Decimal('100')
+        p.cliente.save(update_fields=['limite_credito'])
+        valor = Decimal(str(p.valor_total))
+        ind = montar_indicadores(cliente=p.cliente, valor_proposta=valor, proposta_id=p.pk)
+        self.assertFalse(ind['indicadores']['limite']['ambiguo'])
+        esperado_depois = format((Decimal('100') - valor).quantize(Decimal('0.01')), 'f')
+        esperado_excesso = format(max(Decimal('0'), valor - Decimal('100')).quantize(Decimal('0.01')), 'f')
+        self.assertEqual(ind['indicadores']['limite']['disponivel_depois']['valor'], esperado_depois)
+        self.assertEqual(ind['indicadores']['limite']['excesso_sobre_limite']['valor'], esperado_excesso)
+        self.assertTrue(Decimal(ind['indicadores']['limite']['disponivel_depois']['valor']) < 0)
+
+    def test_cr_vencido_e_a_vencer(self):
+        from apps.comercial.analise_financeira_indicadores import montar_indicadores
+
+        p = _proposta_prazo([30])
+        hoje = timezone.localdate()
+        TituloFinanceiro.objects.create(
+            tipo=TituloFinanceiro.Tipo.RECEBER,
+            numero='CR-B1-001',
+            cliente=p.cliente,
+            data_emissao=hoje,
+            data_vencimento=hoje - timedelta(days=10),
+            valor_original=Decimal('80'),
+            valor_aberto=Decimal('80'),
+            status=TituloFinanceiro.Status.VENCIDO,
+        )
+        TituloFinanceiro.objects.create(
+            tipo=TituloFinanceiro.Tipo.RECEBER,
+            numero='CR-B1-002',
+            cliente=p.cliente,
+            data_emissao=hoje,
+            data_vencimento=hoje + timedelta(days=20),
+            valor_original=Decimal('120'),
+            valor_aberto=Decimal('120'),
+            status=TituloFinanceiro.Status.EM_ABERTO,
+        )
+        ind = montar_indicadores(cliente=p.cliente, valor_proposta=Decimal('50'), proposta_id=p.pk)
+        self.assertEqual(ind['contas_receber']['saldo_vencido'], '80.00')
+        self.assertEqual(ind['contas_receber']['saldo_a_vencer'], '120.00')
+        self.assertEqual(ind['contas_receber']['saldo_aberto'], '200.00')
+        self.assertEqual(ind['contas_receber']['quantidade_titulos_vencidos'], 1)
+        self.assertEqual(ind['contas_receber']['maior_atraso_dias'], 10)
+
+    def test_titulo_pago_nao_expoe(self):
+        from apps.comercial.analise_financeira_indicadores import montar_indicadores
+
+        p = _proposta_prazo([30])
+        hoje = timezone.localdate()
+        TituloFinanceiro.objects.create(
+            tipo=TituloFinanceiro.Tipo.RECEBER,
+            numero='CR-B1-PAGO',
+            cliente=p.cliente,
+            data_emissao=hoje,
+            data_vencimento=hoje,
+            valor_original=Decimal('500'),
+            valor_aberto=Decimal('0'),
+            valor_baixado=Decimal('500'),
+            status=TituloFinanceiro.Status.RECEBIDO,
+        )
+        ind = montar_indicadores(cliente=p.cliente, valor_proposta=Decimal('10'), proposta_id=p.pk)
+        self.assertEqual(ind['contas_receber']['saldo_aberto'], '0.00')
+
+    def test_baixa_pontualidade_e_atraso(self):
+        from apps.comercial.analise_financeira_indicadores import montar_indicadores
+        from apps.financeiro.constants import TipoMovimentoFinanceiro
+        from apps.financeiro.models import BaixaFinanceira
+
+        p = _proposta_prazo([30])
+        hoje = timezone.localdate()
+        t1 = TituloFinanceiro.objects.create(
+            tipo=TituloFinanceiro.Tipo.RECEBER,
+            numero='CR-B1-BX1',
+            cliente=p.cliente,
+            data_emissao=hoje - timedelta(days=40),
+            data_vencimento=hoje - timedelta(days=30),
+            valor_original=Decimal('100'),
+            valor_aberto=Decimal('0'),
+            valor_baixado=Decimal('100'),
+            status=TituloFinanceiro.Status.RECEBIDO,
+        )
+        t2 = TituloFinanceiro.objects.create(
+            tipo=TituloFinanceiro.Tipo.RECEBER,
+            numero='CR-B1-BX2',
+            cliente=p.cliente,
+            data_emissao=hoje - timedelta(days=40),
+            data_vencimento=hoje - timedelta(days=20),
+            valor_original=Decimal('100'),
+            valor_aberto=Decimal('0'),
+            valor_baixado=Decimal('100'),
+            status=TituloFinanceiro.Status.RECEBIDO,
+        )
+        BaixaFinanceira.objects.create(
+            titulo=t1,
+            data_baixa=hoje - timedelta(days=30),
+            valor=Decimal('100'),
+            tipo_movimento=TipoMovimentoFinanceiro.RECEBIMENTO,
+        )
+        BaixaFinanceira.objects.create(
+            titulo=t2,
+            data_baixa=hoje - timedelta(days=10),
+            valor=Decimal('100'),
+            tipo_movimento=TipoMovimentoFinanceiro.RECEBIMENTO,
+        )
+        ind = montar_indicadores(cliente=p.cliente, valor_proposta=Decimal('10'), proposta_id=p.pk)
+        b12 = ind['indicadores']['baixas']['periodos']['12_MESES']
+        self.assertTrue(b12['pontualidade_quantidade']['disponivel'])
+        self.assertEqual(b12['pontualidade_quantidade']['valor'], '50.00')
+        self.assertEqual(b12['quantidade_no_prazo'], 1)
+        self.assertEqual(b12['quantidade_com_atraso'], 1)
+        self.assertEqual(b12['maior_atraso_historico_dias']['valor'], 10)
+
+    def test_pedido_residual_parcial_e_item_cancelado(self):
+        from apps.comercial.analise_financeira_indicadores import montar_indicadores
+        from apps.comercial.models import ItemPedidoVenda, PedidoVenda
+
+        p = _proposta_prazo([30])
+        prod = _produto()
+        hoje = timezone.localdate()
+        ped = PedidoVenda.objects.create(
+            numero=f'PV-B1-{uuid.uuid4().hex[:6]}',
+            cliente=p.cliente,
+            empresa_emitente=p.empresa_emitente,
+            data=hoje,
+            status='ABERTO',
+            valor_total=Decimal('300'),
+        )
+        ItemPedidoVenda.objects.create(
+            pedido=ped,
+            produto=prod,
+            quantidade=Decimal('2'),
+            quantidade_negociada=Decimal('2'),
+            valor_unitario=Decimal('100'),
+            preco_por_unidade_negociada=Decimal('100'),
+            quantidade_faturada=Decimal('1'),
+            status_item=ItemPedidoVenda.StatusItem.PARCIAL,
+        )
+        ItemPedidoVenda.objects.create(
+            pedido=ped,
+            produto=prod,
+            quantidade=Decimal('1'),
+            quantidade_negociada=Decimal('1'),
+            valor_unitario=Decimal('100'),
+            preco_por_unidade_negociada=Decimal('100'),
+            quantidade_faturada=Decimal('0'),
+            status_item=ItemPedidoVenda.StatusItem.CANCELADO,
+        )
+        ind = montar_indicadores(cliente=p.cliente, valor_proposta=Decimal('10'), proposta_id=p.pk)
+        self.assertEqual(ind['pedidos_nao_faturados']['valor_residual'], '100.00')
+        self.assertEqual(ind['pedidos_nao_faturados']['quantidade_pedidos'], 1)
+
+    def test_nfe_autorizada_historico_comercial(self):
+        from apps.comercial.analise_financeira_indicadores import montar_indicadores
+        from apps.fiscal.models import NFeSaida
+
+        p = _proposta_prazo([30])
+        hoje = timezone.localdate()
+        NFeSaida.objects.create(
+            numero='NFE-B1-1',
+            cliente=p.cliente,
+            data=hoje - timedelta(days=10),
+            valor_total=Decimal('1500'),
+            status='AUTORIZADA_PRODUCAO',
+            status_emissao_sefaz=NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO,
+            ambiente_emissao=NFeSaida.AmbienteEmissao.PRODUCAO,
+            autorizada_em=timezone.now() - timedelta(days=10),
+        )
+        NFeSaida.objects.create(
+            numero='NFE-B1-CANCEL',
+            cliente=p.cliente,
+            data=hoje - timedelta(days=5),
+            valor_total=Decimal('9999'),
+            status='CANCELADA_PRODUCAO',
+            ambiente_emissao=NFeSaida.AmbienteEmissao.PRODUCAO,
+            cancelada_em=timezone.now(),
+        )
+        ind = montar_indicadores(cliente=p.cliente, valor_proposta=Decimal('10'), proposta_id=p.pk)
+        self.assertEqual(ind['indicadores']['comercial']['fonte'], 'NFE_SAIDA_PRODUCAO')
+        self.assertEqual(ind['indicadores']['comercial']['ambiente_fiscal_considerado'], 'PRODUCAO')
+        self.assertEqual(ind['indicadores']['comercial']['periodos']['12_MESES']['quantidade_vendas'], 1)
+        self.assertEqual(ind['indicadores']['comercial']['periodos']['12_MESES']['valor_vendido'], '1500.00')
+
+    def test_nfe_homologacao_nao_compõe_historico(self):
+        from apps.comercial.analise_financeira_indicadores import montar_indicadores
+        from apps.comercial.models import ItemPedidoVenda, PedidoVenda
+        from apps.fiscal.models import NFeSaida
+
+        p = _proposta_prazo([30])
+        prod = _produto()
+        hoje = timezone.localdate()
+        NFeSaida.objects.create(
+            numero='NFE-HOM-1',
+            cliente=p.cliente,
+            data=hoje - timedelta(days=3),
+            valor_total=Decimal('8000'),
+            status='AUTORIZADA_HOMOLOGACAO',
+            status_emissao_sefaz=NFeSaida.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO,
+            ambiente_emissao=NFeSaida.AmbienteEmissao.HOMOLOGACAO,
+            autorizada_em=timezone.now() - timedelta(days=3),
+        )
+        ped = PedidoVenda.objects.create(
+            numero=f'PV-HOM-{uuid.uuid4().hex[:6]}',
+            cliente=p.cliente,
+            empresa_emitente=p.empresa_emitente,
+            data=hoje - timedelta(days=2),
+            status='ABERTO',
+            valor_total=Decimal('400'),
+        )
+        ItemPedidoVenda.objects.create(
+            pedido=ped,
+            produto=prod,
+            quantidade=Decimal('1'),
+            quantidade_negociada=Decimal('1'),
+            valor_unitario=Decimal('400'),
+            preco_por_unidade_negociada=Decimal('400'),
+        )
+        ind = montar_indicadores(cliente=p.cliente, valor_proposta=Decimal('10'), proposta_id=p.pk)
+        com = ind['indicadores']['comercial']
+        self.assertEqual(com['fonte'], 'PEDIDO_VENDA')
+        self.assertEqual(com['documentos_homologacao_ignorados'], 1)
+        self.assertEqual(com['periodos']['TOTAL']['quantidade_vendas'], 1)
+        self.assertEqual(com['periodos']['TOTAL']['valor_vendido'], '400.00')
+        self.assertIn('homologação', (com['motivo_fallback_comercial'] or '').lower())
+        self.assertIn(ind['qualidade']['status'], ('PARCIAL', 'DIVERGENTE'))
+
+    def test_mistura_producao_homologacao_so_producao(self):
+        from apps.comercial.analise_financeira_indicadores import montar_indicadores
+        from apps.fiscal.models import NFeSaida
+
+        p = _proposta_prazo([30])
+        hoje = timezone.localdate()
+        NFeSaida.objects.create(
+            numero='NFE-MIX-P',
+            cliente=p.cliente,
+            data=hoje - timedelta(days=8),
+            valor_total=Decimal('700'),
+            status='AUTORIZADA_PRODUCAO',
+            status_emissao_sefaz=NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO,
+            ambiente_emissao=NFeSaida.AmbienteEmissao.PRODUCAO,
+            autorizada_em=timezone.now() - timedelta(days=8),
+        )
+        NFeSaida.objects.create(
+            numero='NFE-MIX-H',
+            cliente=p.cliente,
+            data=hoje - timedelta(days=4),
+            valor_total=Decimal('9000'),
+            status='AUTORIZADA_HOMOLOGACAO',
+            status_emissao_sefaz=NFeSaida.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO,
+            ambiente_emissao=NFeSaida.AmbienteEmissao.HOMOLOGACAO,
+            autorizada_em=timezone.now() - timedelta(days=4),
+        )
+        ind = montar_indicadores(cliente=p.cliente, valor_proposta=Decimal('10'), proposta_id=p.pk)
+        com = ind['indicadores']['comercial']
+        self.assertEqual(com['fonte'], 'NFE_SAIDA_PRODUCAO')
+        self.assertEqual(com['documentos_homologacao_ignorados'], 1)
+        self.assertEqual(com['periodos']['TOTAL']['quantidade_vendas'], 1)
+        self.assertEqual(com['periodos']['TOTAL']['valor_vendido'], '700.00')
+
+    def test_somente_homologacao_sem_pedido_indisponivel(self):
+        from apps.comercial.analise_financeira_indicadores import montar_indicadores
+        from apps.fiscal.models import NFeSaida
+
+        p = _proposta_prazo([30])
+        hoje = timezone.localdate()
+        NFeSaida.objects.create(
+            numero='NFE-HOM-ONLY',
+            cliente=p.cliente,
+            data=hoje - timedelta(days=1),
+            valor_total=Decimal('5000'),
+            status='AUTORIZADA_HOMOLOGACAO',
+            status_emissao_sefaz=NFeSaida.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO,
+            ambiente_emissao=NFeSaida.AmbienteEmissao.HOMOLOGACAO,
+            autorizada_em=timezone.now(),
+        )
+        ind = montar_indicadores(cliente=p.cliente, valor_proposta=Decimal('10'), proposta_id=p.pk)
+        com = ind['indicadores']['comercial']
+        self.assertEqual(com['fonte'], 'INDISPONIVEL')
+        self.assertEqual(com['documentos_homologacao_ignorados'], 1)
+        self.assertEqual(com['periodos']['TOTAL']['quantidade_vendas'], 0)
+        # zero real de universo vazio, mas fonte indisponível (não histórico confiável de vendas)
+        self.assertEqual(com['vendas_totais_universo'], 0)
+
+    def test_ambiente_indefinido_nao_e_producao(self):
+        from apps.comercial.analise_financeira_indicadores import montar_indicadores
+        from apps.fiscal.models import NFeSaida
+
+        p = _proposta_prazo([30])
+        hoje = timezone.localdate()
+        NFeSaida.objects.create(
+            numero='NFE-AMB-VAZIO',
+            cliente=p.cliente,
+            data=hoje - timedelta(days=1),
+            valor_total=Decimal('333'),
+            status='AUTORIZADA_PRODUCAO',
+            status_emissao_sefaz=NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO,
+            ambiente_emissao='',
+            autorizada_em=timezone.now(),
+        )
+        ind = montar_indicadores(cliente=p.cliente, valor_proposta=Decimal('10'), proposta_id=p.pk)
+        com = ind['indicadores']['comercial']
+        self.assertNotEqual(com['fonte'], 'NFE_SAIDA_PRODUCAO')
+        self.assertGreaterEqual(com['documentos_ambiente_indeterminado'], 1)
+
+    def test_divergencia_cr_pedido_residual(self):
+        from apps.comercial.analise_financeira_indicadores import montar_indicadores
+        from apps.comercial.models import ItemPedidoVenda, PedidoVenda
+
+        p = _proposta_prazo([30])
+        prod = _produto()
+        hoje = timezone.localdate()
+        ped = PedidoVenda.objects.create(
+            numero=f'PV-DIV-{uuid.uuid4().hex[:6]}',
+            cliente=p.cliente,
+            empresa_emitente=p.empresa_emitente,
+            data=hoje,
+            status='ABERTO',
+            valor_total=Decimal('100'),
+        )
+        ItemPedidoVenda.objects.create(
+            pedido=ped,
+            produto=prod,
+            quantidade=Decimal('1'),
+            quantidade_negociada=Decimal('1'),
+            valor_unitario=Decimal('100'),
+            preco_por_unidade_negociada=Decimal('100'),
+            quantidade_faturada=Decimal('0'),
+            status_item=ItemPedidoVenda.StatusItem.PENDENTE,
+        )
+        TituloFinanceiro.objects.create(
+            tipo=TituloFinanceiro.Tipo.RECEBER,
+            numero='CR-DIV-1',
+            cliente=p.cliente,
+            data_emissao=hoje,
+            data_vencimento=hoje + timedelta(days=30),
+            valor_original=Decimal('100'),
+            valor_aberto=Decimal('100'),
+            status=TituloFinanceiro.Status.EM_ABERTO,
+            origem_tipo=TituloFinanceiro.OrigemTipo.PEDIDO_VENDA,
+            origem_id=ped.pk,
+        )
+        ind = montar_indicadores(cliente=p.cliente, valor_proposta=Decimal('10'), proposta_id=p.pk)
+        self.assertEqual(ind['qualidade']['status'], 'DIVERGENTE')
+        self.assertTrue(ind['qualidade']['divergencias'])
+
+    def test_snapshot_antigo_nao_recalculado(self):
+        user = _user('snap_old')
+        p = _proposta_prazo([30])
+        analise = solicitar_analise(p, usuario=user)
+        antigo = {'schema_versao': 1, 'qualidade_dados': 'PARCIAL', 'data_corte': '2020-01-01'}
+        analise.snapshot_indicadores = antigo
+        analise.save(update_fields=['snapshot_indicadores'])
+        analise.refresh_from_db()
+        self.assertEqual(analise.snapshot_indicadores['data_corte'], '2020-01-01')
+        self.assertEqual(analise.snapshot_indicadores['schema_versao'], 1)
+
+    def test_meses_calendario(self):
+        from datetime import date
+
+        from apps.comercial.analise_financeira_indicadores import subtrair_meses_calendario
+
+        self.assertEqual(subtrair_meses_calendario(date(2026, 7, 31), 1), date(2026, 6, 30))
+        self.assertEqual(subtrair_meses_calendario(date(2026, 3, 31), 1), date(2026, 2, 28))

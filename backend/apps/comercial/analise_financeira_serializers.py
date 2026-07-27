@@ -84,8 +84,16 @@ class AnaliseFinanceiraPropostaSerializer(serializers.ModelSerializer):
         if not usuario_pode_ver_detalhe_financeiro(user):
             # Resumo comercial: sem saldos/exposição detalhados.
             ind = dict(data.get('snapshot_indicadores') or {})
+            qualidade = ind.get('qualidade') or {}
             data['snapshot_indicadores'] = {
-                'qualidade_dados': ind.get('qualidade_dados'),
+                'schema_versao': ind.get('schema_versao'),
+                'qualidade_dados': qualidade.get('status') or ind.get('qualidade_dados'),
+                'qualidade': {
+                    'status': qualidade.get('status') or ind.get('qualidade_dados'),
+                    'mensagem': qualidade.get('mensagem'),
+                }
+                if qualidade or ind.get('qualidade_dados')
+                else None,
                 'dados_indisponiveis': ind.get('dados_indisponiveis'),
                 'data_corte': ind.get('data_corte'),
                 'resumo_restrito': True,
@@ -95,6 +103,8 @@ class AnaliseFinanceiraPropostaSerializer(serializers.ModelSerializer):
                 'numero': (data.get('snapshot_proposta') or {}).get('numero'),
                 'valor_total': (data.get('snapshot_proposta') or {}).get('valor_total'),
                 'condicao': (data.get('snapshot_proposta') or {}).get('condicao'),
+                'vendedor': (data.get('snapshot_proposta') or {}).get('vendedor'),
+                'data_proposta': (data.get('snapshot_proposta') or {}).get('data_proposta'),
             }
         return data
 

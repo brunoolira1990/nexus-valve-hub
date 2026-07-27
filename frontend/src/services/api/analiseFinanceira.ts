@@ -31,6 +31,7 @@ export type AnaliseFinanceiraProposta = {
   condicao_solicitada?: CondicaoAnalise;
   condicao_aprovada?: CondicaoAnalise;
   snapshot_indicadores?: Record<string, unknown>;
+  snapshot_proposta?: Record<string, unknown>;
   solicitada_por_nome?: string | null;
   decidida_por_nome?: string | null;
   permissoes?: AnaliseFinanceiraPermissoes;

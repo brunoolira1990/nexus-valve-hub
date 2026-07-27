@@ -162,7 +162,20 @@ export default function AnalisesFinanceirasPage() {
             <p className="text-sm text-muted-foreground">Obs. vendedor: {selected.observacao_vendedor}</p>
           ) : null}
 
-          <AnaliseFinanceiraIndicadores snapshot={selected.snapshot_indicadores} />
+          <AnaliseFinanceiraIndicadores
+            snapshot={selected.snapshot_indicadores}
+            negociacao={{
+              proposta_numero: selected.proposta_numero,
+              cliente_nome: selected.cliente_nome,
+              valor_solicitado: selected.valor_solicitado,
+              condicao: selected.condicao_solicitada?.texto,
+              vendedor: (selected.snapshot_proposta as { vendedor?: string } | undefined)?.vendedor,
+              solicitada_em: selected.solicitada_em,
+              data_corte:
+                (selected.snapshot_indicadores as { data_corte?: string } | undefined)?.data_corte ||
+                (selected.snapshot_proposta as { data_corte?: string } | undefined)?.data_corte,
+            }}
+          />
 
           {actionError ? (
             <p className="text-sm text-destructive" role="alert" data-testid="analise-fin-action-error">

@@ -158,6 +158,15 @@ def solicitar_analise(proposta: Proposta, *, usuario, observacao_vendedor: str =
             'valor_solicitado': format(valor, 'f'),
             'dias': condicao['dias'],
             'versao': versao,
+            'schema_versao': indicadores.get('schema_versao'),
+            'data_corte': indicadores.get('data_corte'),
+            'qualidade': (indicadores.get('qualidade') or {}).get('status')
+            or indicadores.get('qualidade_dados'),
+            'indicadores_indisponiveis': len(
+                (indicadores.get('qualidade') or {}).get('indisponiveis')
+                or indicadores.get('dados_indisponiveis')
+                or []
+            ),
         },
     )
     return nova
