@@ -12,6 +12,7 @@ import type { Cliente, ContatoCliente, EnderecoEntregaCliente, Transportadora } 
 import type { EnderecoFiscalResumo } from '@/lib/enderecoFiscal';
 import { ClienteForm, clientToFormValues, type ClienteFormInput } from './ClienteForm';
 import { transportadorasService } from '@/services/api/transportadoras';
+import { auditoriaService } from '@/services/api/auditoria';
 
 const ClienteFormPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -20,6 +21,7 @@ const ClienteFormPage = () => {
 
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
+  const [podeVerHistorico, setPodeVerHistorico] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorHint, setErrorHint] = useState<string | null>(null);
   const [serverCnpjError, setServerCnpjError] = useState<string | null>(null);
@@ -34,6 +36,25 @@ const ClienteFormPage = () => {
   useEffect(() => {
     transportadorasService.getAll().then(setTransportadoras).catch(() => setTransportadoras([]));
   }, []);
+
+  useEffect(() => {
+    if (!isEdit) {
+      setPodeVerHistorico(false);
+      return;
+    }
+    let cancelled = false;
+    auditoriaService
+      .capacidade()
+      .then((c) => {
+        if (!cancelled) setPodeVerHistorico(Boolean(c.pode_visualizar));
+      })
+      .catch(() => {
+        if (!cancelled) setPodeVerHistorico(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isEdit]);
 
   useEffect(() => {
     if (!isEdit) {
@@ -146,6 +167,8 @@ const ClienteFormPage = () => {
           saving={saving}
           enderecoFiscalInicial={enderecoFiscalInicial}
           serverCnpjError={serverCnpjError}
+          clienteId={isEdit ? Number(id) : null}
+          podeVerHistorico={podeVerHistorico}
         />
       )}
     </div>

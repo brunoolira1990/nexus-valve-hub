@@ -11,6 +11,8 @@ import {
   schedulesEspessuraService,
 } from '@/services/api/produtos';
 import { apiErrorMessage } from '@/services/api/config';
+import { auditoriaService } from '@/services/api/auditoria';
+import { HistoricoAlteracoesPanel } from '@/components/auditoria/HistoricoAlteracoesPanel';
 import { usePaginatedList } from '@/hooks/usePaginatedList';
 import { PaginationControls } from '@/components/list/PaginationControls';
 import { EmptyState, ErrorState, LoadingState } from '@/components/list/ListStates';
@@ -424,12 +426,32 @@ const Produtos = () => {
   const [listNotice, setListNotice] = useState<string | null>(null);
   const [produtoFichaTab, setProdutoFichaTab] = useState('geral');
   const [codigoManualAutoFocus, setCodigoManualAutoFocus] = useState(false);
+  const [podeVerHistoricoProduto, setPodeVerHistoricoProduto] = useState(false);
   const previewRequestSeqRef = useRef(0);
   const famSavingRef = useRef(false);
 
   useEffect(() => {
     if (modalOpen) setProdutoFichaTab('geral');
   }, [modalOpen]);
+
+  useEffect(() => {
+    if (!modalOpen || !editing?.id) {
+      setPodeVerHistoricoProduto(false);
+      return;
+    }
+    let cancelled = false;
+    auditoriaService
+      .capacidade()
+      .then((c) => {
+        if (!cancelled) setPodeVerHistoricoProduto(Boolean(c.pode_visualizar));
+      })
+      .catch(() => {
+        if (!cancelled) setPodeVerHistoricoProduto(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [modalOpen, editing?.id]);
 
   const codigoFiguraNorm = (famQuick.codigo_figura || '').trim().toLowerCase();
   const familiaDuplicada = useMemo(
@@ -1751,6 +1773,11 @@ const Produtos = () => {
             <TabsTrigger value="fiscal">Fiscal</TabsTrigger>
             <TabsTrigger value="painel">Painel operacional</TabsTrigger>
             <TabsTrigger value="rastreabilidade">Rastreabilidade</TabsTrigger>
+            {podeVerHistoricoProduto && editing?.id ? (
+              <TabsTrigger value="historico" data-testid="produto-tab-historico">
+                Histórico
+              </TabsTrigger>
+            ) : null}
           </TabsList>
 
           <TabsContent value="geral" className="mt-0 space-y-4">
@@ -2305,6 +2332,18 @@ const Produtos = () => {
           <TabsContent value="rastreabilidade" className="mt-0">
             <ProdutoRastreabilidadeTab produtoId={editing?.id} active={produtoFichaTab === 'rastreabilidade'} />
           </TabsContent>
+
+          {podeVerHistoricoProduto && editing?.id ? (
+            <TabsContent value="historico" className="mt-0">
+              <HistoricoAlteracoesPanel
+                appLabel="produtos"
+                modelName="produto"
+                objectId={editing.id}
+                active={produtoFichaTab === 'historico'}
+                enabled={podeVerHistoricoProduto}
+              />
+            </TabsContent>
+          ) : null}
         </Tabs>
 
         <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">

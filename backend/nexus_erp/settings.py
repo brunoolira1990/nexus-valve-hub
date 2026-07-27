@@ -23,6 +23,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'apps.cadastros',
+    'apps.auditoria',
     'apps.produtos',
     'apps.corridas',
     'apps.regras_fiscais',

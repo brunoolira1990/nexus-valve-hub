@@ -44,6 +44,7 @@ import {
   validarContatosCliente,
 } from '@/lib/clienteContatosFiscais';
 import { ClienteEnderecosEntregaEditor } from '@/components/clientes/ClienteEnderecosEntregaEditor';
+import { HistoricoAlteracoesPanel } from '@/components/auditoria/HistoricoAlteracoesPanel';
 import type { Cliente, ContatoCliente, EnderecoEntregaCliente, Transportadora } from '@/types';
 import { REGIMES_CADASTRO, TIPOS_CONTA, UFS } from '@/types';
 
@@ -94,7 +95,7 @@ const schema = z.object({
 
 export type ClienteFormInput = z.infer<typeof schema>;
 
-const TAB_ITEMS = [
+const TAB_ITEMS_BASE = [
   { id: 'dados-gerais', label: 'Dados Gerais' },
   { id: 'endereco', label: 'Endereço' },
   { id: 'contatos', label: 'Contatos' },
@@ -213,6 +214,10 @@ type Props = {
   enderecoFiscalInicial?: EnderecoFiscalResumo | null;
   /** Erro de validação do servidor no campo CNPJ (ex.: duplicidade). */
   serverCnpjError?: string | null;
+  /** ID do cliente em edição — necessário para a aba Histórico. */
+  clienteId?: number | null;
+  /** Exibe aba Histórico somente com permissão de auditoria. */
+  podeVerHistorico?: boolean;
 };
 
 function AlertaEnderecoFiscal({ mensagem }: { mensagem: string }) {
@@ -240,8 +245,13 @@ export function ClienteForm({
   saving,
   enderecoFiscalInicial,
   serverCnpjError = null,
+  clienteId = null,
+  podeVerHistorico = false,
 }: Props) {
-  const [tab, setTab] = useState<string>(TAB_ITEMS[0].id);
+  const tabItems = podeVerHistorico && clienteId
+    ? [...TAB_ITEMS_BASE, { id: 'historico', label: 'Histórico' }]
+    : [...TAB_ITEMS_BASE];
+  const [tab, setTab] = useState<string>(TAB_ITEMS_BASE[0].id);
   const [enderecosEntrega, setEnderecosEntrega] = useState<EnderecoEntregaCliente[]>(
     () => enderecosEntregaInicial,
   );
@@ -516,7 +526,7 @@ export function ClienteForm({
 
   const panel = (
     <CadastroSection
-      title={TAB_ITEMS.find((t) => t.id === tab)?.label ?? ''}
+      title={tabItems.find((t) => t.id === tab)?.label ?? ''}
       description={
         tab === 'dados-gerais'
           ? 'Base cadastral e identificação principal do cliente.'
@@ -735,6 +745,18 @@ export function ClienteForm({
           />
         </>
       )}
+
+      {tab === 'historico' && podeVerHistorico && clienteId ? (
+        <div className="md:col-span-2">
+          <HistoricoAlteracoesPanel
+            appLabel="cadastros"
+            modelName="cliente"
+            objectId={clienteId}
+            active={tab === 'historico'}
+            enabled={podeVerHistorico}
+          />
+        </div>
+      ) : null}
     </CadastroSection>
   );
 
@@ -762,7 +784,7 @@ export function ClienteForm({
           </div>
         )}
 
-        <CadastroTabs tabs={TAB_ITEMS} value={tab} onValueChange={setTab}>
+        <CadastroTabs tabs={tabItems} value={tab} onValueChange={setTab}>
           {panel}
         </CadastroTabs>
 

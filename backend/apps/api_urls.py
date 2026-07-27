@@ -197,6 +197,7 @@ router.register(r'financeiro/creditos', CreditoFinanceiroViewSet, basename='fina
 urlpatterns = [
     # Rotas explícitas: garantem endpoints críticos mesmo com runserver --noreload (Docker).
     # Após alterar apps/api_urls.py ou views, reinicie: docker compose restart backend
+    path('auditoria/', include('apps.auditoria.urls')),
     path(
         'central-dfe/',
         CentralDfeViewSet.as_view({'get': 'list'}),

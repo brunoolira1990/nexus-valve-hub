@@ -27,6 +27,11 @@ from apps.produtos.familia_duplicidade import (
 from apps.produtos.conversao_medidas import ConversaoErro, converter_quantidade_produto
 from apps.produtos.polegadas import aliases_for_polegada, normalize_polegada_label, parse_polegada_to_decimal
 from apps.text_normalize import normalize_operational_fields, to_operational_upper
+from apps.auditoria.servico import (
+    registrar_produto,
+    snapshot_produto,
+    usuario_do_contexto,
+)
 from apps.produtos.descricao_norm import normalizar_descricao_produto
 from apps.produtos.material import (
     material_canonico_de_entrada,
@@ -967,16 +972,37 @@ class ProdutoSerializer(serializers.ModelSerializer):
             attrs['usa_conversao_dimensional'] = True
 
     def create(self, validated_data):
+        usuario = usuario_do_contexto(self)
         try:
-            return super().create(validated_data)
+            with transaction.atomic():
+                produto = super().create(validated_data)
+                registrar_produto(
+                    usuario=usuario,
+                    produto=produto,
+                    operacao='CREATE',
+                    estado_anterior={},
+                    estado_posterior=snapshot_produto(produto),
+                )
+                return produto
         except IntegrityError as e:
             if 'codigo_completo' in str(e).lower() or 'unique' in str(e).lower():
                 raise serializers.ValidationError({'codigo_completo': 'Código já cadastrado.'}) from e
             raise
 
     def update(self, instance, validated_data):
+        usuario = usuario_do_contexto(self)
+        antes = snapshot_produto(instance)
         try:
-            return super().update(instance, validated_data)
+            with transaction.atomic():
+                produto = super().update(instance, validated_data)
+                registrar_produto(
+                    usuario=usuario,
+                    produto=produto,
+                    operacao='UPDATE',
+                    estado_anterior=antes,
+                    estado_posterior=snapshot_produto(produto),
+                )
+                return produto
         except IntegrityError as e:
             if 'codigo_completo' in str(e).lower() or 'unique' in str(e).lower():
                 raise serializers.ValidationError({'codigo_completo': 'Código já cadastrado.'}) from e

@@ -2,6 +2,12 @@ from django.contrib.auth.models import Group, Permission
 from django.core.management.base import BaseCommand
 
 
+# Grupos administrativos (admin / administrador) usam None = todas as permissões
+# do banco no momento da execução. Com RegistroAuditoria append-only
+# (somente view_registroauditoria), esses grupos passam a visualizar o histórico
+# ao reexecutar este comando após migrate — sem conceder add/change/delete.
+# Demais grupos (operador, consulta, etc.) NÃO recebem view_registroauditoria
+# nesta fase, salvo decisão explícita futura.
 GROUPS_PERMISSIONS = {
     "admin": None,
     "administrador": None,

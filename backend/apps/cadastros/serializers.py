@@ -1,8 +1,14 @@
-from django.contrib.auth import get_user_model
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from rest_framework import serializers
 
+from apps.auditoria.servico import (
+    registrar_cliente,
+    snapshot_cliente,
+    usuario_do_contexto,
+)
 from apps.comercial.payment_terms import parse_payment_condition
 from apps.text_normalize import normalize_operational_fields
 
@@ -348,22 +354,41 @@ class ClienteSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         enderecos = validated_data.pop('enderecos_entrega', [])
         contatos = validated_data.pop('contatos', [])
-        cliente = super().create(validated_data)
-        if enderecos:
-            sincronizar_enderecos_entrega(cliente, enderecos)
-        if contatos:
-            sincronizar_contatos_cliente(cliente, contatos)
-        return cliente
+        usuario = usuario_do_contexto(self)
+        with transaction.atomic():
+            cliente = super().create(validated_data)
+            if enderecos:
+                sincronizar_enderecos_entrega(cliente, enderecos)
+            if contatos:
+                sincronizar_contatos_cliente(cliente, contatos)
+            registrar_cliente(
+                usuario=usuario,
+                cliente=cliente,
+                operacao='CREATE',
+                estado_anterior={},
+                estado_posterior=snapshot_cliente(cliente),
+            )
+            return cliente
 
     def update(self, instance, validated_data):
         enderecos = validated_data.pop('enderecos_entrega', None)
         contatos = validated_data.pop('contatos', None)
-        cliente = super().update(instance, validated_data)
-        if enderecos is not None:
-            sincronizar_enderecos_entrega(cliente, enderecos)
-        if contatos is not None:
-            sincronizar_contatos_cliente(cliente, contatos)
-        return cliente
+        usuario = usuario_do_contexto(self)
+        antes = snapshot_cliente(instance)
+        with transaction.atomic():
+            cliente = super().update(instance, validated_data)
+            if enderecos is not None:
+                sincronizar_enderecos_entrega(cliente, enderecos)
+            if contatos is not None:
+                sincronizar_contatos_cliente(cliente, contatos)
+            registrar_cliente(
+                usuario=usuario,
+                cliente=cliente,
+                operacao='UPDATE',
+                estado_anterior=antes,
+                estado_posterior=snapshot_cliente(cliente),
+            )
+            return cliente
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
