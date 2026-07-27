@@ -618,3 +618,132 @@ class ItemPedidoCompra(models.Model):
     outras_despesas_valor = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
     valor_produtos = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
     valor_total_item = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
+
+
+class AnaliseFinanceiraProposta(models.Model):
+    """Liberação financeira manual vinculada à Proposta Comercial (MVP)."""
+
+    class Status(models.TextChoices):
+        PENDENTE = 'PENDENTE', 'Pendente'
+        EM_ANALISE = 'EM_ANALISE', 'Em análise'
+        APROVADA = 'APROVADA', 'Aprovada'
+        APROVADA_COM_AJUSTE = 'APROVADA_COM_AJUSTE', 'Aprovada com ajuste'
+        DEVOLVIDA_PARA_AJUSTE = 'DEVOLVIDA_PARA_AJUSTE', 'Devolvida para ajuste'
+        NAO_APROVADA = 'NAO_APROVADA', 'Não aprovada'
+        EXPIRADA = 'EXPIRADA', 'Expirada'
+        SUBSTITUIDA = 'SUBSTITUIDA', 'Substituída'
+
+    proposta = models.ForeignKey(
+        Proposta,
+        on_delete=models.CASCADE,
+        related_name='analises_financeiras',
+    )
+    cliente = models.ForeignKey(
+        'cadastros.Cliente',
+        on_delete=models.PROTECT,
+        related_name='analises_financeiras_proposta',
+    )
+    status = models.CharField(max_length=32, choices=Status.choices, default=Status.PENDENTE, db_index=True)
+    versao = models.PositiveIntegerField(default=1)
+    solicitada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='analises_financeiras_solicitadas',
+    )
+    solicitada_em = models.DateTimeField(auto_now_add=True)
+    iniciada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='analises_financeiras_iniciadas',
+    )
+    iniciada_em = models.DateTimeField(null=True, blank=True)
+    decidida_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='analises_financeiras_decididas',
+    )
+    decidida_em = models.DateTimeField(null=True, blank=True)
+    observacao_vendedor = models.TextField(blank=True)
+    justificativa_decisao = models.TextField(blank=True)
+    valor_solicitado = models.DecimalField(max_digits=14, decimal_places=2)
+    valor_maximo_aprovado = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    valida_ate = models.DateField(null=True, blank=True)
+    snapshot_proposta = models.JSONField(default=dict, blank=True)
+    snapshot_indicadores = models.JSONField(default=dict, blank=True)
+    condicao_solicitada = models.JSONField(default=dict, blank=True)
+    condicao_aprovada = models.JSONField(default=dict, blank=True)
+    substituida_por = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='substitui',
+    )
+    criada_em = models.DateTimeField(auto_now_add=True)
+    atualizada_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-solicitada_em', '-id']
+        verbose_name = 'Análise financeira de proposta'
+        verbose_name_plural = 'Análises financeiras de propostas'
+        permissions = (
+            ('solicitar_analisefinanceiraproposta', 'Pode solicitar análise financeira de proposta'),
+            ('decidir_analisefinanceiraproposta', 'Pode decidir análise financeira de proposta'),
+            ('ver_detalhe_financeiro_analisefinanceiraproposta', 'Pode ver detalhe financeiro da análise'),
+        )
+        constraints = [
+            models.UniqueConstraint(
+                fields=['proposta'],
+                condition=models.Q(status__in=['PENDENTE', 'EM_ANALISE']),
+                name='uniq_analise_fin_ativa_por_proposta',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['status', 'solicitada_em'], name='analise_fin_status_sol_idx'),
+            models.Index(fields=['cliente', 'status'], name='analise_fin_cli_status_idx'),
+        ]
+
+    def __str__(self) -> str:
+        return f'Análise #{self.pk} proposta={self.proposta_id} {self.status}'
+
+
+class AnaliseFinanceiraPropostaEvento(models.Model):
+    """Histórico append-only das análises financeiras de proposta."""
+
+    class Tipo(models.TextChoices):
+        SOLICITADA = 'SOLICITADA', 'Solicitada'
+        INICIADA = 'INICIADA', 'Iniciada'
+        APROVADA = 'APROVADA', 'Aprovada'
+        APROVADA_COM_AJUSTE = 'APROVADA_COM_AJUSTE', 'Aprovada com ajuste'
+        DEVOLVIDA = 'DEVOLVIDA', 'Devolvida'
+        NAO_APROVADA = 'NAO_APROVADA', 'Não aprovada'
+        EXPIRADA = 'EXPIRADA', 'Expirada'
+        SUBSTITUIDA = 'SUBSTITUIDA', 'Substituída'
+
+    analise = models.ForeignKey(
+        AnaliseFinanceiraProposta,
+        on_delete=models.CASCADE,
+        related_name='eventos',
+    )
+    tipo = models.CharField(max_length=32, choices=Tipo.choices)
+    ator = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='eventos_analise_financeira_proposta',
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+    dados = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ['-criado_em', '-id']
+        default_permissions = ('view',)
+        verbose_name = 'Evento de análise financeira'
+        verbose_name_plural = 'Eventos de análise financeira'

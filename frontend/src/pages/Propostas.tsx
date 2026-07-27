@@ -37,6 +37,7 @@ import { GerarPedidoPropostaModal } from '@/components/comercial/GerarPedidoProp
 import { RecuperarPropostaModal } from '@/components/comercial/RecuperarPropostaModal';
 import { ComercialModalSection } from '@/components/comercial/ComercialModalSection';
 import { CondicaoPagamentoResumo } from '@/components/comercial/CondicaoPagamentoResumo';
+import { PropostaAnaliseFinanceiraPanel } from '@/components/comercial/PropostaAnaliseFinanceiraPanel';
 import { ClienteComercialField } from '@/components/comercial/ClienteComercialField';
 import { ProdutoComercialField } from '@/components/comercial/ProdutoComercialField';
 import { VendedorComercialField } from '@/components/comercial/VendedorComercialField';
@@ -2584,6 +2585,12 @@ const Propostas = () => {
                 </table>
               </div>
             ) : null}
+          </div>
+        ) : null}
+
+        {editing?.id ? (
+          <div className="mt-4">
+            <PropostaAnaliseFinanceiraPanel propostaId={editing.id} enabled={modalOpen} />
           </div>
         ) : null}
 

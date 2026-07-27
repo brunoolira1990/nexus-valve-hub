@@ -14,6 +14,8 @@ from .converter_proposta_pedido import (
     gerar_pedido_venda_de_proposta,
     recuperar_proposta_comercial,
 )
+from apps.comercial.analise_financeira_servico import LiberacaoFinanceiraBloqueio
+from apps.comercial.analise_financeira_views import PropostaAnaliseFinanceiraActionsMixin
 from apps.fiscal.nfe_saida_from_faturamento import gerar_nfe_saida_from_faturamento
 
 from .faturamento_pedido_venda import (
@@ -53,7 +55,7 @@ from .serializers import PedidoCompraSerializer, PedidoVendaSerializer, Proposta
 logger = logging.getLogger(__name__)
 
 
-class PropostaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
+class PropostaViewSet(PropostaAnaliseFinanceiraActionsMixin, AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
     queryset = (
         Proposta.objects.select_related(
             'cliente', 'empresa_emitente', 'cenario_fiscal_saida', 'vendedor_ref',
@@ -150,6 +152,8 @@ class PropostaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         proposta = self.get_object()
         try:
             resultado = converter_proposta_em_pedido_venda(proposta)
+        except LiberacaoFinanceiraBloqueio as exc:
+            return Response(exc.as_dict(), status=status.HTTP_400_BAD_REQUEST)
         except ValueError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(resultado, status=status.HTTP_201_CREATED)
@@ -173,6 +177,8 @@ class PropostaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
                 observacao=str(data.get('observacao') or ''),
                 usuario=request.user,
             )
+        except LiberacaoFinanceiraBloqueio as exc:
+            return Response(exc.as_dict(), status=status.HTTP_400_BAD_REQUEST)
         except ValueError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(resultado, status=status.HTTP_201_CREATED)

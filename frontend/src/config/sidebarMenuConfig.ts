@@ -124,6 +124,7 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
       { type: 'link', label: 'Contas a Receber', path: '/financeiro/contas-receber' },
       { type: 'link', label: 'Contas a Pagar', path: '/financeiro/contas-pagar' },
       { type: 'link', label: 'Créditos', path: '/financeiro/creditos' },
+      { type: 'link', label: 'Análises Financeiras', path: '/financeiro/analises' },
       { type: 'link', label: 'Relatórios', path: '/financeiro/relatorios' },
       { type: 'link', label: 'Cadastros financeiros', path: '/financeiro/cadastros' },
     ],

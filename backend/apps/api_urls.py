@@ -26,6 +26,7 @@ from apps.cadastros.views import (
     TransportadoraViewSet,
 )
 from apps.comercial.views import PedidoCompraViewSet, PedidoVendaViewSet, PropostaViewSet
+from apps.comercial.analise_financeira_views import AnaliseFinanceiraPropostaViewSet
 from apps.comercial.vendedor_views import VendedorViewSet
 from apps.contabil.views import BalanceteView, ContaViewSet, LancamentoViewSet
 from apps.financeiro.views import (
@@ -142,6 +143,7 @@ router.register(
 )
 router.register(r'vendedores', VendedorViewSet, basename='vendedor')
 router.register(r'propostas', PropostaViewSet, basename='proposta')
+router.register(r'analises-financeiras', AnaliseFinanceiraPropostaViewSet, basename='analise-financeira')
 router.register(r'pedidos-venda', PedidoVendaViewSet, basename='pedidovenda')
 router.register(r'pedidos-compra', PedidoCompraViewSet, basename='pedidocompra')
 router.register(r'nf-entradas', NFeEntradaViewSet, basename='nfentrada')

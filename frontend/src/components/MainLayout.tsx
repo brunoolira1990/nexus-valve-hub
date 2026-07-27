@@ -52,6 +52,7 @@ const breadcrumbMap: Record<string, { label: string; path?: string }[]> = {
   '/financeiro/contas-receber': [{ label: 'Financeiro' }, { label: 'Contas a Receber' }],
   '/financeiro/contas-pagar': [{ label: 'Financeiro' }, { label: 'Contas a Pagar' }],
   '/financeiro/creditos': [{ label: 'Financeiro' }, { label: 'Créditos' }],
+  '/financeiro/analises': [{ label: 'Financeiro' }, { label: 'Análises Financeiras' }],
   '/financeiro/cadastros': [{ label: 'Financeiro' }, { label: 'Cadastros' }],
   '/financeiro/relatorios': [{ label: 'Financeiro' }, { label: 'Relatórios' }],
   '/financeiro/relatorios/contas-receber': [

@@ -8,6 +8,20 @@ from django.core.management.base import BaseCommand
 # ao reexecutar este comando após migrate — sem conceder add/change/delete.
 # Demais grupos (operador, consulta, etc.) NÃO recebem view_registroauditoria
 # nesta fase, salvo decisão explícita futura.
+#
+# Liberação financeira de Proposta (AnaliseFinanceiraProposta):
+# Codenames reais (app comercial):
+#   - view_analisefinanceiraproposta
+#   - solicitar_analisefinanceiraproposta
+#   - decidir_analisefinanceiraproposta
+#   - ver_detalhe_financeiro_analisefinanceiraproposta
+#   - view_analisefinanceirapropostaevento (somente view; append-only)
+# API exige essas permissões específicas — sem fallback para change_proposta
+# ou change_titulofinanceiro.
+# NÃO atribuídas automaticamente neste seed nesta fase — rollout manual:
+# - comercial: view + solicitar
+# - financeiro: view + decidir + ver_detalhe_financeiro
+# - admin/administrador: cobrem via None após create_groups.
 GROUPS_PERMISSIONS = {
     "admin": None,
     "administrador": None,

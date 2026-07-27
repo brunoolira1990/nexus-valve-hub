@@ -381,6 +381,16 @@ def gerar_pedido_venda_de_proposta(
     if not selecionados:
         raise ValueError(MSG_NENHUM_ITEM_SELECIONADO)
 
+    from apps.comercial.analise_financeira_servico import (
+        LiberacaoFinanceiraBloqueio,
+        garantir_liberacao_para_conversao,
+    )
+
+    try:
+        garantir_liberacao_para_conversao(proposta)
+    except LiberacaoFinanceiraBloqueio:
+        raise
+
     selecionados_ids = {it.pk for it in selecionados}
     nao_selecionados = [it for it in itens_pendentes_conversao(proposta) if it.pk not in selecionados_ids]
 

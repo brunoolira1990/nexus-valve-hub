@@ -52,6 +52,7 @@ import ContasReceber from "./pages/financeiro/ContasReceber";
 import ContasPagar from "./pages/financeiro/ContasPagar";
 import FinanceiroCadastros from "./pages/financeiro/FinanceiroCadastros";
 import Creditos from "./pages/financeiro/Creditos";
+import AnalisesFinanceirasPage from "./pages/financeiro/AnalisesFinanceirasPage";
 import FinanceiroRelatoriosHub from "./pages/financeiro/relatorios/FinanceiroRelatoriosHub";
 import RelatorioContasReceberPage from "./pages/financeiro/relatorios/RelatorioContasReceberPage";
 import RelatorioContasPagarPage from "./pages/financeiro/relatorios/RelatorioContasPagarPage";
@@ -120,6 +121,7 @@ const App = () => (
         <Route path="financeiro/contas-pagar" element={<ContasPagar />} />
         <Route path="financeiro/cadastros" element={<FinanceiroCadastros />} />
         <Route path="financeiro/creditos" element={<Creditos />} />
+        <Route path="financeiro/analises" element={<AnalisesFinanceirasPage />} />
         <Route path="financeiro/relatorios" element={<FinanceiroRelatoriosHub />} />
         <Route path="financeiro/relatorios/contas-receber" element={<RelatorioContasReceberPage />} />
         <Route path="financeiro/relatorios/contas-pagar" element={<RelatorioContasPagarPage />} />
