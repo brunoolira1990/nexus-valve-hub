@@ -164,6 +164,9 @@ export default function AnalisesFinanceirasPage() {
 
           <AnaliseFinanceiraIndicadores
             snapshot={selected.snapshot_indicadores}
+            analiseId={selected.id}
+            podeVerProtestoManual={Boolean(selected.permissoes?.pode_ver_protesto_manual)}
+            podeRegistrarProtestoManual={Boolean(selected.permissoes?.pode_registrar_protesto_manual)}
             negociacao={{
               proposta_numero: selected.proposta_numero,
               cliente_nome: selected.cliente_nome,

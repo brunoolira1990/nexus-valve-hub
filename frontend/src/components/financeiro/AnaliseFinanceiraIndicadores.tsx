@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { formatMoneyBRL } from '@/lib/money';
 import { SecoesIntegracoesExternas } from '@/components/financeiro/SecoesIntegracoesExternas';
+import { SecaoProtestosCartorio } from '@/components/financeiro/SecaoProtestosCartorio';
 import type { CapacidadeIntegracoesCredito } from '@/services/api/analiseFinanceira';
 
 const AVISO_PARCIAL =
@@ -127,6 +128,9 @@ type Negociacao = {
 type Props = {
   snapshot?: Record<string, unknown> | SnapshotIndicadores | null;
   negociacao?: Negociacao | null;
+  analiseId?: number | null;
+  podeVerProtestoManual?: boolean;
+  podeRegistrarProtestoManual?: boolean;
   /** Capability injetada (testes) — evita HTTP. */
   capacidadeIntegracoes?: CapacidadeIntegracoesCredito | null;
   carregarCapabilityIntegracoes?: boolean;
@@ -204,6 +208,9 @@ function qualidadeMensagem(status?: string, mensagem?: string): string {
 export function AnaliseFinanceiraIndicadores({
   snapshot,
   negociacao,
+  analiseId = null,
+  podeVerProtestoManual = false,
+  podeRegistrarProtestoManual = false,
   capacidadeIntegracoes = null,
   carregarCapabilityIntegracoes = true,
 }: Props) {
@@ -217,6 +224,12 @@ export function AnaliseFinanceiraIndicadores({
       <SecoesIntegracoesExternas
         capacidade={capacidadeIntegracoes}
         carregarCapability={carregarCapabilityIntegracoes}
+      />
+      <SecaoProtestosCartorio
+        analiseId={analiseId}
+        podeVer={podeVerProtestoManual}
+        podeRegistrar={podeRegistrarProtestoManual}
+        carregarHistorico={Boolean(analiseId && podeVerProtestoManual)}
       />
       <Section title="Recomendação automática" testId="dossie-recomendacao">
         <Placeholder testId="dossie-recomendacao-placeholder">

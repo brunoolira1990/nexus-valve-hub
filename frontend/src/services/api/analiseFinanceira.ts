@@ -12,6 +12,8 @@ export type AnaliseFinanceiraPermissoes = {
   pode_solicitar?: boolean;
   pode_decidir?: boolean;
   pode_ver_detalhe_financeiro?: boolean;
+  pode_ver_protesto_manual?: boolean;
+  pode_registrar_protesto_manual?: boolean;
 };
 
 export type AnaliseFinanceiraProposta = {
@@ -97,6 +99,14 @@ export const analiseFinanceiraService = {
         `${analisesPath}${analiseId}/consultas-externas/`,
       )
     ).data,
+  listProtestosManuais: async (analiseId: number) =>
+    (
+      await api.get<{ count?: number; results?: ProtestoManualRegistro[] } | ProtestoManualRegistro[]>(
+        `${analisesPath}${analiseId}/protestos-manuais/`,
+      )
+    ).data,
+  registrarProtestoManual: async (analiseId: number, payload: ProtestoManualPayload) =>
+    (await api.post<ProtestoManualRegistro>(`${analisesPath}${analiseId}/protestos-manuais/registrar/`, payload)).data,
 };
 
 export type CapacidadeBlocoIntegracao = {
@@ -116,9 +126,55 @@ export type CapacidadeIntegracoesCredito = {
 
 export type ConsultaExternaAnaliseFinanceira = {
   id: number;
-  tipo: 'CADASTRAL' | 'BURO' | string;
+  tipo: 'CADASTRAL' | 'BURO' | 'PROTESTO_MANUAL' | string;
   status: string;
   cnpj_mascarado?: string;
   resultado_normalizado?: Record<string, unknown>;
   erro_sanitizado?: string;
+};
+
+export type ProtestoManualResultado =
+  | 'SEM_PROTESTOS_INFORMADOS'
+  | 'COM_PROTESTOS_INFORMADOS'
+  | 'CONSULTA_INCONCLUSIVA';
+
+export type ProtestoManualResultadoNormalizado = {
+  origem?: string;
+  registro_manual?: boolean;
+  resultado?: ProtestoManualResultado | string;
+  quantidade_informada?: number | null;
+  ufs_informadas?: string[];
+  cartorios_informados?: string | null;
+  observacao?: string | null;
+  consultado_em?: string;
+  registrado_em?: string;
+  registrado_por?: { id?: string; nome_exibicao?: string };
+  corrige_registro_id?: number | null;
+  motivo_correcao?: string | null;
+  aviso?: string;
+};
+
+export type ProtestoManualRegistro = {
+  id: number;
+  tipo: string;
+  provider?: string;
+  produto?: string;
+  status: string;
+  solicitada_em?: string;
+  concluida_em?: string | null;
+  cnpj_mascarado?: string;
+  resultado_normalizado?: ProtestoManualResultadoNormalizado;
+  registro_anterior?: number | null;
+  custo_consulta?: string | null;
+};
+
+export type ProtestoManualPayload = {
+  resultado: ProtestoManualResultado;
+  quantidade_informada?: number | null;
+  ufs_informadas?: string[];
+  cartorios_informados?: string | null;
+  observacao?: string | null;
+  consultado_em?: string;
+  registro_anterior_id?: number | null;
+  motivo_correcao?: string | null;
 };

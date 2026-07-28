@@ -5,6 +5,7 @@ from rest_framework import serializers
 from apps.comercial.integracoes_credito.permissions import (
     usuario_pode_ver_buro,
     usuario_pode_ver_cadastral,
+    usuario_pode_ver_protesto_manual,
 )
 from apps.comercial.models import ConsultaExternaAnaliseFinanceira
 
@@ -28,6 +29,7 @@ class ConsultaExternaAnaliseFinanceiraSerializer(serializers.ModelSerializer):
             'erro_sanitizado',
             'protocolo_mascarado',
             'custo_consulta',
+            'registro_anterior',
             'criada_em',
             'atualizada_em',
         )
@@ -48,6 +50,17 @@ class ConsultaExternaAnaliseFinanceiraSerializer(serializers.ModelSerializer):
                 data.pop('erro_sanitizado', None)
                 data['provider'] = ''
                 data['produto'] = ''
+        elif instance.tipo == ConsultaExternaAnaliseFinanceira.Tipo.PROTESTO_MANUAL:
+            if not usuario_pode_ver_protesto_manual(user):
+                data['resultado_normalizado'] = {}
+                data.pop('erro_sanitizado', None)
         # Nunca expor hash completo como superfície operacional desnecessária
         data.pop('hash_requisicao', None)
         return data
+
+
+class ProtestoManualRegistroSerializer(ConsultaExternaAnaliseFinanceiraSerializer):
+    """Leitura do registro de protesto manual (campos de domínio fixados no serviço)."""
+
+    class Meta(ConsultaExternaAnaliseFinanceiraSerializer.Meta):
+        fields = ConsultaExternaAnaliseFinanceiraSerializer.Meta.fields

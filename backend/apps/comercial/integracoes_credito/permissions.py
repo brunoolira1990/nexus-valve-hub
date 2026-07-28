@@ -9,6 +9,8 @@ PERM_VER_CADASTRAL = 'comercial.ver_resultado_cadastral_analise'
 PERM_SOLICITAR_BURO = 'comercial.solicitar_consulta_buro_analise'
 PERM_VER_BURO = 'comercial.ver_resultado_buro_analise'
 PERM_VIEW_CONSULTA = 'comercial.view_consultaexternaanalisefinanceira'
+PERM_REGISTRAR_PROTESTO_MANUAL = 'comercial.registrar_protesto_manual_analise'
+PERM_VER_PROTESTO_MANUAL = 'comercial.ver_protesto_manual_analise'
 
 
 def _auth(user) -> bool:
@@ -48,6 +50,23 @@ def usuario_pode_ver_buro(user) -> bool:
     return user.has_perm(PERM_VER_BURO) or user.has_perm(PERM_SOLICITAR_BURO)
 
 
+def usuario_pode_registrar_protesto_manual(user) -> bool:
+    if not _auth(user):
+        return False
+    if user.is_superuser:
+        return True
+    return user.has_perm(PERM_REGISTRAR_PROTESTO_MANUAL)
+
+
+def usuario_pode_ver_protesto_manual(user) -> bool:
+    if not _auth(user):
+        return False
+    if user.is_superuser:
+        return True
+    # Registrar implica ver; ver sozinho não autoriza registrar.
+    return user.has_perm(PERM_VER_PROTESTO_MANUAL) or user.has_perm(PERM_REGISTRAR_PROTESTO_MANUAL)
+
+
 def usuario_pode_ver_capability(user) -> bool:
     """Capability do dossiê: mesma base de visualização da análise."""
     return usuario_pode_ver_analise(user)
@@ -80,3 +99,17 @@ class PodeListarConsultasExternas(BasePermission):
     def has_permission(self, request, view):
         # Exige ao menos view da análise; filtragem por tipo ocorre na view.
         return usuario_pode_ver_analise(request.user)
+
+
+class PodeVerProtestoManual(BasePermission):
+    message = 'Você não tem permissão para ver protestos manuais da análise.'
+
+    def has_permission(self, request, view):
+        return usuario_pode_ver_protesto_manual(request.user)
+
+
+class PodeRegistrarProtestoManual(BasePermission):
+    message = 'Você não tem permissão para registrar protesto manual na análise.'
+
+    def has_permission(self, request, view):
+        return usuario_pode_registrar_protesto_manual(request.user)

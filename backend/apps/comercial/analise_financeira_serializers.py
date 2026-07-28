@@ -76,10 +76,16 @@ class AnaliseFinanceiraPropostaSerializer(serializers.ModelSerializer):
             usuario_pode_decidir_analise,
             usuario_pode_ver_detalhe_financeiro,
         )
+        from apps.comercial.integracoes_credito.permissions import (
+            usuario_pode_registrar_protesto_manual,
+            usuario_pode_ver_protesto_manual,
+        )
 
         data['permissoes'] = {
             'pode_decidir': usuario_pode_decidir_analise(user),
             'pode_ver_detalhe_financeiro': usuario_pode_ver_detalhe_financeiro(user),
+            'pode_ver_protesto_manual': usuario_pode_ver_protesto_manual(user),
+            'pode_registrar_protesto_manual': usuario_pode_registrar_protesto_manual(user),
         }
         if not usuario_pode_ver_detalhe_financeiro(user):
             # Resumo comercial: sem saldos/exposição detalhados.

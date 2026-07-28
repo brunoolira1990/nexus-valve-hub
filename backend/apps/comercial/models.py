@@ -725,6 +725,7 @@ class AnaliseFinanceiraPropostaEvento(models.Model):
         NAO_APROVADA = 'NAO_APROVADA', 'Não aprovada'
         EXPIRADA = 'EXPIRADA', 'Expirada'
         SUBSTITUIDA = 'SUBSTITUIDA', 'Substituída'
+        PROTESTO_MANUAL_REGISTRADO = 'PROTESTO_MANUAL_REGISTRADO', 'Protesto manual registrado'
 
     analise = models.ForeignKey(
         AnaliseFinanceiraProposta,
@@ -758,6 +759,7 @@ class ConsultaExternaAnaliseFinanceira(models.Model):
     class Tipo(models.TextChoices):
         CADASTRAL = 'CADASTRAL', 'Cadastral'
         BURO = 'BURO', 'Birô'
+        PROTESTO_MANUAL = 'PROTESTO_MANUAL', 'Protesto manual'
 
     class Status(models.TextChoices):
         PENDENTE = 'PENDENTE', 'Pendente'
@@ -798,6 +800,13 @@ class ConsultaExternaAnaliseFinanceira(models.Model):
     hash_requisicao = models.CharField(max_length=64, blank=True, db_index=True)
     protocolo_mascarado = models.CharField(max_length=64, blank=True)
     custo_consulta = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    registro_anterior = models.ForeignKey(
+        'self',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='correcoes',
+    )
     criada_em = models.DateTimeField(auto_now_add=True)
     atualizada_em = models.DateTimeField(auto_now=True)
 
@@ -811,6 +820,8 @@ class ConsultaExternaAnaliseFinanceira(models.Model):
             ('ver_resultado_cadastral_analise', 'Pode ver resultado cadastral da análise'),
             ('solicitar_consulta_buro_analise', 'Pode solicitar consulta de birô na análise'),
             ('ver_resultado_buro_analise', 'Pode ver resultado de birô da análise'),
+            ('registrar_protesto_manual_analise', 'Pode registrar protesto manual na análise'),
+            ('ver_protesto_manual_analise', 'Pode ver protesto manual da análise'),
         )
         indexes = [
             models.Index(
