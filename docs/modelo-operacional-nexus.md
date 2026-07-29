@@ -2,7 +2,9 @@
 
 Documento oficial do modelo operacional da Nexus Válvulas no ERP. Define como venda, compra, NF-e, estoque e expedição se relacionam **sem assumir estoque obrigatório antes da venda**.
 
-> **Leitura:** as seções numeradas a partir de 4.0.10 descrevem a fundação. O estado **atual** de financeiro, expedição, BI e manifestação está nas seções 13–17 (atualizadas) e nas seções ERP 4.0.14.x / Central DF-e mais abaixo. Homologação SEFAZ **nunca** é tratada como produção fiscal.
+> **Leitura:** as seções numeradas a partir de 4.0.10 descrevem a fundação. O estado **atual** de financeiro, expedição, BI, liberação financeira, protestos e Fiscal Saída está nas seções atualizadas e na nota de sincronização ao final. Homologação SEFAZ **nunca** é tratada como produção fiscal.
+
+> **Sincronização (28/07/2026) — pós-P1:** Fiscal Saída em **PRODUÇÃO REAL**; liberação financeira + dossiê B1 em **PRODUÇÃO**; protestos manuais em **PRODUÇÃO** (`cbb6391`); B2/B3 **FUNDAÇÃO/DESABILITADO**; C0 **FUNDAÇÃO**; auditoria Cliente/Produto **PRODUÇÃO PARCIAL**. Ver também [`roadmap-nexus-erp.md`](roadmap-nexus-erp.md).
 
 ---
 
@@ -157,19 +159,23 @@ Quantidades: `quantidade_necessaria`, `quantidade_atendida`, `quantidade_pendent
 
 ---
 
-## 11. Conciliação futura da NF-e Entrada
+## 11. Conciliação da NF-e Entrada
 
-Base preparada; **conciliação completa não implementada** na 4.0.10.
+Base preparada na 4.0.10; **conciliação completa Entrada↔PV/FAT** permanece **PRODUÇÃO PARCIAL** — existe gestão de alocações e conciliação **manual** entrada↔venda, **sem** declarar cobertura ponta a ponta completa.
 
-Futuro: vincular NF-e Entrada com PC, PV, FAT, NF-e Saída, expedição e quantidades.
+Futuro: vincular NF-e Entrada com PC, PV, FAT, NF-e Saída, expedição e quantidades de forma completa e auditável.
 
 Divergências futuras: quantidade, produto, valor, fornecedor, impostos, NF-e não localizada.
 
-Helpers read-only: `marcar_entrada_fiscal_pendente()`, `marcar_entrada_fiscal_conciliada()` — retornam dict, **não alteram banco**.
+Helpers read-only legados: `marcar_entrada_fiscal_pendente()`, `marcar_entrada_fiscal_conciliada()` — retornam dict, **não alteram banco**.
 
 ---
 
 ## 12. Regras para NF-e Saída
+
+### Status — PRODUÇÃO REAL
+
+Emissão e eventos fiscais operam no ambiente de **produção da SEFAZ**: geração, assinatura, transmissão, autorização, XML armazenado, DANFE, envio por e-mail, **cancelamento**, **CC-e** e **inutilização** de numeração. Homologação é somente teste controlado.
 
 Permitido (e já suportado pelo ERP):
 
@@ -181,7 +187,7 @@ Permitido (e já suportado pelo ERP):
 
 A validação fiscal (`validacao_nfe_saida.py`) **não exige** NF-e Entrada conciliada.
 
-UI futura: avisos operacionais (entrada pendente, retirada fornecedor, conciliação posterior).
+Avisos operacionais (entrada pendente, retirada fornecedor, conciliação posterior) podem aparecer na UI sem bloquear a emissão.
 
 ---
 
@@ -219,6 +225,18 @@ Uma NF-e Entrada pode estar relacionada a **várias vendas** atendidas pela mesm
 
 **Histórico 4.0.10:** na fundação do modelo operacional nenhum título era gerado. **Estado atual:** ver ERP 4.0.14.3 (CR auto produção) e 4.0.14.4 (CP manual). Conciliação **bancária** permanece **ausente**.
 
+### Liberação financeira e crédito no dossiê (PRODUÇÃO / fundações)
+
+| Capacidade | Status | Regra |
+|------------|--------|-------|
+| Análise financeira da Proposta | PRODUÇÃO | Decisão **manual**; guard na conversão a prazo; à vista sem análise |
+| Dossiê B1 (indicadores internos) | PRODUÇÃO | Sem decisão automática; homologação ignorada no histórico comercial |
+| Protestos manuais (cartório) | PRODUÇÃO | Consulta humana no portal; registro append-only; zero HTTP/A1 |
+| Consultas cadastral/birô B2/B3 | FUNDAÇÃO / DESABILITADO | Providers ausentes; POST → 409 |
+| Fachada A1 C0 | FUNDAÇÃO | Sem consumidor CENPROT; fluxos fiscais inalterados |
+
+Cliente ativo **não** significa crédito permanentemente aprovado.
+
 ---
 
 ## 15. Impactos em BI
@@ -230,7 +248,7 @@ Painéis `/dashboard/*` com **agregações reais** (comercial, fiscal, estoque, 
 ### Ainda planejado / incompleto
 
 - Indicadores finos de conciliação entrada×saída e divergências operacionais
-- Auditoria de alterações
+- Auditoria de alterações **além** de Cliente/Produto (MVP append-only já entregue — **PRODUÇÃO PARCIAL**)
 - SPED / exportações contábeis amplas
 
 ---
@@ -293,7 +311,9 @@ O **PDF comercial do Pedido de Venda** (ERP 4.0.13.2.1) contém pedido, condiç�
 | NF-e rascunho isolada sem autorização | **Descartar rascunho** (libera faturamento para nova NF-e; qty do pedido mantida) | Exclusão física do registro |
 | NF-e autorizada homologação/produção ou com protocolo | Bloqueio de estorno/descarte simples | — |
 
-Descarte interno e estorno **não** transmitem eventos à SEFAZ, **não** geram financeiro, **não** movimentam estoque e **não** criam expedição. Cancelamento fiscal e Carta de Correção serão fases **4.0.13.6.9** e **4.0.13.6.10**.
+Descarte interno e estorno **não** transmitem eventos à SEFAZ, **não** geram financeiro, **não** movimentam estoque e **não** criam expedição.
+
+**Eventos fiscais pós-autorização (PRODUÇÃO REAL):** cancelamento de NF-e, Carta de Correção Eletrônica (CC-e) e inutilização de numeração estão **operacionais** no ambiente de produção. Não confundir com descarte/estorno pré-autorização (ciclo interno).
 
 **Correção de Material dos Produtos e higienização de dados de teste/dev** (ERP 4.0.13.5.2): a API de produtos expõe `material` e `material_label` quando o valor existe no banco; salvar ou PATCH parcial **não** deve apagar Material existente se o campo vier vazio por engano. A listagem e o formulário usam o rótulo amigável. A limpeza de dados de teste roda **somente** em ambiente seguro (`local`, `development`, `homologacao`, `test` ou `DEBUG=True`), com **dry-run** obrigatório por padrão (`python manage.py limpar_dados_teste_nexus --dry-run`) e execução apenas com `--confirmar LIMPAR_DADOS_TESTE_NEXUS`. Critérios conservadores: PV no padrão `PV-[hash]` (ex.: `PV-3c6d60`), cliente «Cli», produto «PROD NF» — preservando PV oficial `PV-YYYYMMDD-000X`, NF-e autorizada, XML autorizado, apuração e produtos reais (inclusive sem Material por bug anterior). Sem cascade cego; exclusão pelo app retorna mensagem clara quando há vínculo (409).
 
@@ -515,11 +535,14 @@ Renderizadores legados removidos (4.0.13.6.13A): templates HTML `modelo55_confer
 
 ## 17. Próximas fases recomendadas
 
-1. Conciliação parcial/completa NF-e Entrada ligada a alocações (PC/PV/FAT).
+Organização por **trilhas** (sem datas): ver [`roadmap-nexus-erp.md`](roadmap-nexus-erp.md) §17.
+
+1. Conciliação **completa** NF-e Entrada ligada a alocações (hoje: parcial/manual).
 2. Evolução Expedição além da Fase 1A (ainda sem automação fiscal/financeira).
 3. ~~Financeiro: CR da NF-e Saída produção; CP da NF-e Entrada~~ — **entregue** (CR auto; CP manual).
 4. Kardex / MovimentoEstoque; reserva de estoque de negócio.
 5. Multiempresa operacional, CRM, SPED, versionamento de propostas — **futuros**.
+6. Liberação financeira / protestos — **entregues** (manter decisão manual; B2/B3 e C0 permanecem fundação).
 
 ---
 
@@ -1070,18 +1093,23 @@ Produtos na lista de limpeza; documentos possivelmente reais; prontidão com cr�
 
 ---
 
-## Nota de sincronização documental (19/07/2026)
+## Nota de sincronização documental (28/07/2026 — pós-P1)
 
-Atualização alinhada ao código em `producao-local`, **sem** criar versão ERP nova:
+Atualização alinhada ao código em `producao-local` (`cbb6391`), **sem** criar versão ERP nova:
 
 | Tema | Estado documentado |
 |------|-------------------|
+| Fiscal Saída | **PRODUÇÃO REAL** — emissão SEFAZ produção; cancelamento; CC-e; inutilização; DANFE; e-mail |
+| Liberação financeira | **PRODUÇÃO** — decisão manual; guard a prazo; à vista sem análise |
+| Dossiê B1 | **PRODUÇÃO** — dados internos; sem decisão automática |
+| Protestos manuais | **PRODUÇÃO** — `cbb6391`; migration `0039`; append-only; zero HTTP/A1 |
+| B2/B3 | **FUNDAÇÃO / DESABILITADO** — POSTs 409 |
+| C0 A1 | **FUNDAÇÃO** — sem CENPROT; senha plaintext = dívida separada |
 | CR pós NF-e produção | Automático; soft-fail; homologação sem financeiro |
 | CP pós NF-e entrada | Manual (decisão operacional) |
-| Estoque × NF-e / CQ | Estoque **não** bloqueia emissão de NF-e nem CQ; física opcional no CQ |
-| CQ × NF-e | Novos vínculos: NF-e saída `AUTORIZADA_PRODUCAO` |
-| Expedição | Fase 1A manual |
-| Manifestação | Inbox Fiscal `/central-dfe` (rota legada só redireciona) |
-| DANFE | BFR operacional; visualizar e baixar |
-| Pendentes / futuros | Kardex, conciliação bancária, multiempresa operacional, CRM, SPED, versionamento de propostas, conciliação completa Entrada↔Saída |
-| Pedido de Compra | Campo `observacoes` disponível na UI/API |
+| Estoque × NF-e / CQ | Estoque **não** bloqueia emissão de NF-e nem CQ |
+| Expedição | Fase 1A — **PRODUÇÃO PARCIAL** |
+| Conciliação entrada↔venda | **PRODUÇÃO PARCIAL** (manual; não cobertura completa) |
+| Auditoria | **PRODUÇÃO PARCIAL** — Cliente e Produto |
+| Manifestação | Inbox Fiscal `/central-dfe` |
+| Pendentes / futuros | Kardex, conciliação bancária, multiempresa, CRM, SPED, versionamento propostas, conciliação completa, birô/CENPROT |

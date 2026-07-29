@@ -2,16 +2,21 @@
 
 Documento central de evolução do projeto. Organiza o que já foi entregue, o que falta e a ordem recomendada das próximas fases.
 
-> **Brief consolidado do ERP:** [`brief-nexus-erp-completo.md`](brief-nexus-erp-completo.md)  
+> **Brief consolidado do ERP (briefing técnico):** [`brief-nexus-erp-completo.md`](brief-nexus-erp-completo.md)
+> **Modelo operacional:** [`modelo-operacional-nexus.md`](modelo-operacional-nexus.md)
 > **Especificação técnica detalhada:** [`especificacao-nexus-erp.md`](especificacao-nexus-erp.md)
 
 > **Roadmap vivo:** atualizar este arquivo ao concluir cada fase (marcar checklists, ajustar status e registrar a próxima decisão).
+
+> **Sincronização documental (28/07/2026) — pós-P1:** alinhado a `producao-local` no commit `cbb6391501ebef7f8040743ad98b5416484cbb4a`. Inclui Fiscal Saída em **PRODUÇÃO REAL**, liberação financeira + dossiê B1, protestos manuais (P1), fundações B2/B3 e C0, auditoria parcial Cliente/Produto. Sem alteração de código nesta atualização.
+
+**Vocabulário de status (oficial):** `PRODUÇÃO` · `PRODUÇÃO REAL` · `PRODUÇÃO PARCIAL` · `FUNDAÇÃO` · `DESABILITADO` · `PLACEHOLDER` · `NÃO INICIADO` · `LEGADO`
 
 ---
 
 ## 1. Visão geral
 
-O Nexus ERP está sendo construído por **macrofrentes**, para permitir evolução incremental com homologação fiscal e operacional antes de ligar comportamentos globais.
+O Nexus é um ERP monolítico Django + React em **operação real**, incluindo faturamento e emissão de NF-e no ambiente de **produção da SEFAZ**. Continua evoluindo por **macrofrentes**, com homologação apenas como ambiente de testes controlados — **sem** substituir a validação dos fluxos reais de produção.
 
 | # | Macrofrente | Papel |
 |---|-------------|--------|
@@ -41,24 +46,72 @@ Essa separação evita misturar “o que entrou” com “o que vamos emitir” 
 
 | Módulo | Status | Prioridade | O que já existe | O que falta | Próxima fase recomendada |
 |--------|--------|------------|-----------------|-------------|-------------------------|
-| Cadastros mestres | Concluído parcial | Média | Clientes, fornecedores, empresas, produtos, famílias; **cadastro visual por abas**; **Centro de Informações do Produto** (painel operacional + rastreabilidade); colaboradores + acesso | Contatos, endereços múltiplos, IE, regime, dados bancários refinados; multiempresa operacional | Cadastros 1 — Diagnóstico |
-| CRM | Não iniciado | Baixa | Menu placeholder (`/modulos/crm`) | Leads, pipeline, atividades | CRM 1 |
-| Propostas | Em evolução | Alta | CRUD, itens, precificação, fiscal legado/cenário, comparativo, homologação, PDF externo, conversão → PV | Versionamento, aprovação interna, PDF interno, condições avançadas | Propostas 2.0 / 2.2 |
-| Pedido de venda | Concluído parcial | Alta | Modelo, API, conversão proposta, **faturamento parcial**, PDF, vínculo NF-e saída; **observações** também no Pedido de Compra | Status operacional completo, reserva de estoque, vínculo formal estoque/financeiro além do CR da NF-e | Pedido Venda 4 — integração estoque |
-| Fiscal entrada | Em evolução | Alta | Classificação, validação XML, bloqueio, conferência, estoque; PC; data entrada; fornecedor para CP; equivalência/composição física; **Manifestação do Destinatário integrada ao Inbox Fiscal** (`/central-dfe`; rota `/manifestacao-destinatario` apenas redireciona) | Snapshot persistido, relatórios de divergência/crédito, conciliação completa Entrada↔PV/FAT | Fiscal Entrada 4 |
-| Fiscal saída / Cenário | Em evolução | Alta | Cenário, regras, editor guiado, homologação e histórico 3.10 | NF-e **consumindo** cenário na transmissão | NF-e Saída — cenário na emissão |
-| NF-e saída | Concluído parcial | Alta | Emissão produção SEFAZ; DIFAL; numeração; CC-e/cancelamento/inutilização; **DANFE BFR** (visualizar e baixar); XML oficial | Consumo `RegraFiscalSaida` na emissão; contingência; remessa/devolução | NF-e Saída — cenário na emissão |
-| NF-e entrada própria | Em evolução | Alta | Importar XML entrada própria já emitida; fundação emissão (numeração/XML preview `tpNF=0`) | Transmissão SEFAZ completa de entrada própria; devolução/recusa/retorno remessa; vínculo NF saída | Entrada Própria — emissão SEFAZ |
-| Remessas | Não iniciado | Média | CFOPs no catálogo auxiliar de saída | Modelo, emissão, retorno, controle pendente | Remessa 1 |
-| Expedição | Concluído parcial | Média | **Fase 1A** manual (`/expedicao`): status, motorista, vínculos referenciais — **sem** estoque/financeiro/fiscal automático | Automações, romaneio avançado, efeitos colaterais controlados | Expedição 1B |
-| Estoque / rastreabilidade | Em evolução | Alta | AtendimentoEstoque, aplicação física, painel produto; estoque **não bloqueia** NF-e nem CQ | **Kardex** / MovimentoEstoque, estorno, relatório ponta a ponta, reserva de negócio | Estoque 3.14 — Kardex |
-| Qualidade | Concluído parcial | Média | CF, CQ, numeração automática; CQ manual sem CF obrigatório; **novos vínculos CQ só com NF-e saída `AUTORIZADA_PRODUCAO`**; rastreabilidade física **opcional** (não bloqueia emissão) | Relatório CQ, dashboard pendências | Qualidade 4 |
-| Financeiro | **Base operacional (4.0.14+)** | Alta | CR/CP, parcelas, baixa/estorno, créditos, relatórios; **CR automático** após NF-e saída autorizada em **produção** (soft-fail: falha do CR **não** desfaz autorização); **CP manual** a partir de NF-e entrada (ação humana); homologação **sem** financeiro | Conciliação **bancária**, DRE, comissões; CP automático (se desejado — hoje é decisão operacional manual) | Financeiro 4 — Conciliação |
-| Contábil | Futuro / esqueleto | Baixa | Plano de contas + lançamentos + balancete básicos (sem integração fiscal/financeira) | Integração automática, DRE oficial, SPED | Contábil 1 |
-| Relatórios / BI / auditoria | Concluído parcial | Média | BI modular com **dados reais** (home + comercial/fiscal/estoque/compras/qualidade/expedição/financeiro); Contador export XML | SPED (placeholder), auditoria de alterações, exportações amplas | BI 2 — Auditoria |
+| Cadastros mestres | PRODUÇÃO PARCIAL | Média | Clientes, fornecedores, empresas, produtos, famílias; abas; centro de informações; colaboradores + acesso; contatos com e-mails fiscais | IE/regime refinados; multiempresa operacional; dados bancários | Cadastros — Diagnóstico |
+| CRM | PLACEHOLDER | Baixa | Menu `/modulos/crm` | Leads, pipeline, atividades | CRM 1 |
+| Propostas | PRODUÇÃO PARCIAL | Alta | CRUD, itens, precificação, fiscal/cenário, homologação, PDF, conversão → PV; **liberação financeira** no fluxo a prazo | Versionamento, PDF interno, condições avançadas | Propostas — versionamento |
+| Pedido de venda | PRODUÇÃO | Alta | Modelo, API, conversão, faturamento parcial, PDF, vínculo NF-e; guard de liberação a prazo | Reserva de estoque de negócio | Pedido Venda — estoque |
+| Liberação financeira | PRODUÇÃO | Alta | Análise manual; dossiê B1; guard Proposta→Pedido a prazo; à vista sem análise; fila `/financeiro/analises` | Automações de decisão (proibido nesta fase) | Manter manual; evoluir dossiê |
+| Protestos (cartório) | PRODUÇÃO | Alta | P1 `cbb6391`; migration `0039`; registro append-only; correção por nova linha; portal humano | Integração automática CENPROT (fora de escopo) | Operar + RBAC seed documentado |
+| Crédito externo B2/B3 | FUNDAÇÃO / DESABILITADO | Média | Model + endpoints; POSTs cadastral/birô → 409; UI desabilitada | Providers reais | Ativar só com decisão explícita |
+| Certificados A1 (C0) | FUNDAÇÃO | Média | Fachada neutra `apps/certificados`; sem HTTP/CENPROT; fiscal intocado | Consumidor CENPROT; senha A1 plaintext = dívida separada | Não ativar sem decisão |
+| Fiscal entrada | PRODUÇÃO | Alta | Classificação, XML, conferência, estoque; Manifestação no Inbox; CP manual | Snapshot persistido; conciliação completa Entrada↔PV | Fiscal Entrada — snapshot |
+| Fiscal saída / NF-e | **PRODUÇÃO REAL** | Alta | Emissão SEFAZ **produção**; XML/assinatura/transmissão/autorização; DANFE; e-mail; **cancelamento**; **CC-e**; **inutilização** | Consumo pleno do cenário na emissão; contingência; remessa/devolução | Cenário na emissão / remessas |
+| NF-e entrada própria | PRODUÇÃO PARCIAL | Alta | Importar XML já emitida; fundação emissão (preview) | Transmissão SEFAZ completa; devolução/recusa | Entrada Própria — SEFAZ |
+| Remessas | NÃO INICIADO | Média | CFOPs auxiliares | Modelo, emissão, retorno | Remessa 1 |
+| Expedição | PRODUÇÃO PARCIAL | Média | **Fase 1A** manual — sem estoque/financeiro/fiscal automático | Fase 1B+ (romaneio, automações controladas) | Expedição 1B |
+| Estoque / rastreabilidade | PRODUÇÃO PARCIAL | Alta | Saldos, atendimento, alocações; estoque **não** bloqueia NF-e/CQ; conciliação **manual** entrada↔venda | **Kardex**; ledger append-only; cobertura completa | Estoque — Kardex |
+| Qualidade | PRODUÇÃO | Média | CF, CQ, multi-corrida; vínculos CQ só NF-e produção | Relatório/dashboard pendências | Qualidade 4 |
+| Financeiro | PRODUÇÃO | Alta | CR auto pós NF-e produção; CP manual entrada; baixas; créditos; PDFs | Conciliação **bancária**; aging avançado; contas bancárias refinadas | Financeiro — conciliação |
+| Contábil | PRODUÇÃO PARCIAL | Baixa | Plano/lançamentos/balancete básicos | Integração automática; DRE oficial; SPED | Contábil 1 |
+| Relatórios / BI | PRODUÇÃO PARCIAL | Média | BI modular com dados reais; Contador export XML | SPED (placeholder); exportações amplas | BI — exportações |
+| Auditoria | PRODUÇÃO PARCIAL | Alta | Append-only **Cliente** e **Produto** (`e8b79a6`) | Pedido, NF-e, Título, demais entidades | Auditoria — expansão |
+| Folha / RH | PLACEHOLDER | Baixa | `/modulos/folha-rh` | Domínio RH | Decisão de produto |
+| Gestão de Resultado | PLACEHOLDER | Baixa | `/modulos/gestao-resultado` | Domínio | Decisão de produto |
+| SPED | PLACEHOLDER | Média | `/contador/sped` | Geração SPED | Após fiscal/contábil maduros |
+| Multiempresa | NÃO INICIADO | Média | Empresa no header (identificação) | Troca de empresa / multi-CNPJ | ERP 4.1.x |
+| Montagem | FUNDAÇÃO | Baixa | `ProcessoMontagem` / composição | Ordem de montagem com estoque | Montagem 1 |
 
-**Legenda de status:** Concluído parcial · Em evolução · Não iniciado · Futuro · Precisa revisão
+**Legenda:** usar o vocabulário oficial no topo deste documento (não misturar com “Concluído parcial” legado nas seções históricas abaixo).
 
+---
+
+## 2.1 Mapa mestre dos módulos (pós-P1)
+
+Tabela consolidada do inventário. Campos: domínio · módulo · status · app · superfície FE · usuários · permissões · dependências · riscos · limitações · migration · próxima evolução.
+
+| Domínio | Módulo / submódulo | Status | App backend | Frontend | Usuários | Permissões (notas) | Dependências | Riscos | Limitações | Migration | Próxima evolução |
+|---------|-------------------|--------|-------------|----------|----------|-------------------|--------------|--------|------------|-----------|------------------|
+| Core/Auth | JWT, minha conta, busca | PRODUÇÃO | `core` | `/login`, `/minha-conta` | Todos autenticados | JWT + grupos | — | Sessão/JWT | Troca empresa ausente | — | Hardening JWT |
+| Administração | Colaboradores / usuários | PRODUÇÃO PARCIAL | `cadastros` | `/colaboradores` | Admin | Grupos Django | Auth | Drift RBAC | Liberação/protesto fora do seed | `0016` | Seed seletivo documentado |
+| Cadastros | Empresa, Cliente, Fornecedor, Transportadora | PRODUÇÃO | `cadastros` | `/empresas`… | Comercial, Fiscal, Admin | CRUD padrão | — | Dados mestres | Multiempresa | `0016` | Refinos IE/regime |
+| Produtos | Famílias, NCM, composição | PRODUÇÃO | `produtos` | `/produtos`, `/corridas` | Produtos, Comercial | CRUD produto | Cadastros | Codificação | Montagem real futura | `0027` | Kardex / montagem |
+| Comercial | Proposta, PV, faturamento | PRODUÇÃO | `comercial` | `/propostas`, `/pedidos-venda` | Comercial | CRUD proposta/PV | Cadastros, Produtos | Guard liberação | Versionamento | `0039` | CRM / versionamento |
+| Compras | Pedido compra | PRODUÇÃO | `comercial` | `/pedidos-compra` | Compras | CRUD PC | Fornecedor | — | — | — | Conciliação plena |
+| Liberação financeira | Análise + dossiê B1 | PRODUÇÃO | `comercial` | `/financeiro/analises`, painel proposta | Financeiro | `solicitar_*`, `decidir_*`, `ver_detalhe_*` (seed manual) | Proposta, Cliente, CR | Bypass do guard | Sem decisão automática | `0037`+ | Manter manual |
+| Protestos | Registro manual cartório | PRODUÇÃO | `comercial` | Seção dossiê | Financeiro, Admin | `registrar_*`, `ver_*` protesto (concedidas em prod.) | Análise financeira | Dados manuais | Sem HTTP/A1; portal humano | `0039` | Operar |
+| Crédito externo | Cadastral / birô | FUNDAÇÃO / DESABILITADO | `integracoes_credito` | Botões disabled | — | perms B2/B3 não seedadas | Análise | Ativação prematura | POST 409 | `0038` | Provider real |
+| Certificados | Fachada A1 C0 | FUNDAÇÃO | `certificados` (fora INSTALLED) | — | — | — | Empresa A1 | Senha plaintext | Sem CENPROT | — | Consumidor futuro |
+| Fiscal Entrada | Conferência, estoque | PRODUÇÃO | `fiscal` | `/nfe-entrada`… | Fiscal, Compras | CRUD NFeEntrada | Compras, Estoque | XML fornecedor | Snapshot | `0066` | Snapshot / conciliação |
+| Fiscal Saída | Emissão NF-e | **PRODUÇÃO REAL** | `fiscal` | `/nfe-saida`, `/nfe-sefaz` | Fiscal | emissão produção | PV, Empresa A1, Regras | Regressão SEFAZ | Cenário na emissão | `0066` | Cenário / remessas |
+| DF-e | Central + manifestação | PRODUÇÃO | `fiscal` | `/central-dfe` | Fiscal | — | SEFAZ | — | Sync NSU avançado | — | Evolução Inbox |
+| CT-e | Entrada + histórico | PRODUÇÃO PARCIAL | `fiscal` | `/cte-*` | Fiscal | — | Base importada | — | Não é núcleo NF-e | — | Rateio frete |
+| Regras fiscais | Entrada/saída | PRODUÇÃO | `regras_fiscais` | `/regras-fiscais` | Fiscal | CRUD regras | — | Regra errada | — | `0013` | Homologação contínua |
+| Apuração | Gerencial | PRODUÇÃO PARCIAL | `apuracao_fiscal` | `/apuracao-fiscal` | Fiscal | — | DF-e | — | SPED ausente | — | Obrigações |
+| Estoque | Saldos / corridas | PRODUÇÃO | `fiscal`+`corridas` | `/estoque` | Estoque | view/change | Produtos | Sem Kardex | Não bloqueia NF-e | — | Kardex |
+| Atendimento | Alocação + conciliação manual | PRODUÇÃO PARCIAL | `fiscal` | `/atendimentos-estoque` | Operação | — | PV, Entrada | Cobertura incompleta | Não é conciliação plena | — | Conciliação completa |
+| Expedição | Fase 1A | PRODUÇÃO PARCIAL | `expedicao` | `/expedicao` | Logística | — | Referencial NF/PV | — | Sem efeito fiscal/financeiro | `0001` | Fase 1B |
+| Qualidade | CQ / CF | PRODUÇÃO | `qualidade` | `/certificados*` | Qualidade | CRUD certificado | NF-e, Corrida | — | Dashboard | `0013` | Relatórios |
+| Financeiro | CR/CP/baixas/créditos | PRODUÇÃO | `financeiro` | `/financeiro/*` | Financeiro | títulos/baixas | NF-e | — | Sem conciliação bancária | `0005` | Banco / aging |
+| Contábil | Plano / lançamentos | PRODUÇÃO PARCIAL | `contabil` | `/contabil` | Contábil | — | — | Esqueleto | Sem integração NF-e | `0001` | Fechamento |
+| BI | Dashboards | PRODUÇÃO PARCIAL | `core`+APIs | `/dashboard/*` | Gestão | `pode_ver_*` | Módulos | Sidebar sem RBAC geral | FE “em preparação” pontual | — | Permissões menu |
+| Relatórios | PDF operacional | PRODUÇÃO PARCIAL | `relatorios`+financeiro | Hub financeiro | Financeiro | — | Títulos | — | Isolado do DANFE | — | Ampliar |
+| Auditoria | Histórico append-only | PRODUÇÃO PARCIAL | `auditoria` | Painel histórico | Admin | `view_registroauditoria` | Cliente, Produto | Lacuna em docs | Só 2 entidades | `0001` | Expandir |
+| Contador | Export XML | PRODUÇÃO | contador API | `/contador/exportar-xmls` | Contador | — | NF-e | — | SPED placeholder | — | SPED |
+| CRM / Folha / Gestão / SPED | Placeholders | PLACEHOLDER | — | `/modulos/*`, `/contador/sped` | — | — | — | Expectativa falsa | Sem domínio | — | Decisão produto |
+| Remessas | — | NÃO INICIADO | — | — | Fiscal | — | NF-e | — | — | — | Remessa 1 |
+| Multiempresa | — | NÃO INICIADO | — | Minha Conta | Admin | — | Empresa | — | Header só visual | — | 4.1.x |
+| Infraestrutura | Compose / Caddy | PRODUÇÃO | — | — | Ops | — | — | runserver/migrate auto | Scripts untracked | — | WSGI / runbook |
+| Segurança/RBAC | Grupos | PRODUÇÃO PARCIAL | `create_groups` | Colaboradores | Admin | Grupos | — | Drift liberação/protesto | Seed incompleto | — | Trilha Governança |
 ---
 
 ## 3. Fiscal de entrada
@@ -302,6 +355,12 @@ Proposta aprovada
 ---
 
 ## 7. NF-e saída
+
+### Status oficial — PRODUÇÃO REAL
+
+O Nexus realiza faturamento e emissão de NF-e no ambiente de **produção da SEFAZ**. O fluxo operacional inclui: geração, assinatura, transmissão, autorização, armazenamento do XML, DANFE, envio por e-mail, **cancelamento**, **Carta de Correção (CC-e)** e **inutilização de numeração**.
+
+Homologação permanece disponível para testes controlados e **não** substitui a validação dos fluxos reais de produção.
 
 ### Já feito
 
@@ -754,7 +813,7 @@ Base para fiscal, comercial e estoque. Refinar progressivamente.
 
 ### Falta
 
-- Auditoria de alterações em cadastros e documentos
+- Auditoria de alterações **além** de Cliente/Produto (Pedido, NF-e, Título, etc.)
 - Logs operacionais estruturados
 - Exportações padronizadas amplas
 - SPED (placeholder no menu Contador)
@@ -764,7 +823,8 @@ Base para fiscal, comercial e estoque. Refinar progressivamente.
 | Fase | Objetivo |
 |------|----------|
 | ~~**BI 1**~~ | ~~Dashboard operacional~~ — **parcialmente entregue** (painéis com dados reais) |
-| **BI 2** | Auditoria de alterações |
+| ~~**BI 2 (MVP auditoria)**~~ | Append-only **Cliente** e **Produto** — **entregue** (`e8b79a6`) |
+| **BI 2.1** | Expandir auditoria para documentos críticos |
 | **BI 3** | Relatórios fiscais e comerciais ampliados |
 | **BI 4** | Exportações |
 
@@ -775,32 +835,76 @@ Base para fiscal, comercial e estoque. Refinar progressivamente.
 - [x] Dashboard estoque
 - [x] Dashboard qualidade
 - [x] Dashboard financeiro / expedição (dados reais; sem conciliação bancária)
-- [ ] Auditoria de alterações
+- [x] Auditoria Cliente / Produto (append-only)
+- [ ] Auditoria demais entidades
 - [ ] Exportação ampla / SPED
 
 ---
 
-## 17. Ordem recomendada das próximas fases
+## 17. Roadmap por trilhas (pós-P1)
 
-Prioridade sugerida para maximizar valor com menor risco (estado atual em `producao-local`):
+Prioridades **sem datas nem versões** — decisão do operador. Não atribuir cronograma neste documento.
 
-| Ordem | Fase | Motivo |
-|-------|------|--------|
-| 1 | Conciliação operacional NF-e Entrada ↔ alocações (PC/PV/FAT) | Fecha o modelo operacional sem mexer em SEFAZ |
-| 2 | **NF-e Saída — cenário na emissão** | Motor homologável em proposta; falta consumo na transmissão |
-| 3 | Reserva / compromisso de estoque (sem bloquear NF-e por padrão) | Alinha venda sob demanda com saldo |
-| 4 | **Estoque 3.14** — Kardex | Rastreabilidade contábil de movimentos |
-| 5 | **Financeiro 4** — Conciliação bancária | Após CR/CP estáveis |
-| 6 | Expedição 1B (após Fase 1A manual) | Vínculos operacionais mais ricos, ainda sem automação fiscal |
-| 7 | Entrada própria — transmissão SEFAZ / devoluções | Ciclo fiscal pós-venda |
-| 8 | **Remessa 1** | Pré-requisito para NF remessa |
-| 9 | **CRM 1** | Funil comercial (ainda não iniciado) |
-| 10 | **Contábil 1** / SPED | Após financeiro maduro; SPED permanece futuro |
-| — | ~~Financeiro 1–2 (CR/CP)~~ | **Entregues** (CR auto produção + CP manual entrada) |
-| — | ~~Expedição Fase 1A~~ | **Entregue** (manual) |
-| — | ~~BI 1 (painéis)~~ | **Parcialmente entregue** (dados reais) |
+### Trilha Governança
 
-Itens que **permanecem pendentes / futuros** (não marcar como feitos): Kardex, conciliação bancária, multiempresa operacional (ERP 4.1), CRM, SPED, versionamento de propostas, conciliação completa Entrada↔Saída.
+- Corrigir drift de RBAC (`create_groups` vs permissões de liberação/protesto/crédito)
+- Expandir auditoria além de Cliente/Produto
+- Substituir `runserver` em produção (WSGI/ASGI)
+- Revisar JWT / sessão
+- Proteger senha do certificado A1 (dívida plaintext)
+- Testar restauração de backup (procedimento operacional)
+
+### Trilha Financeiro
+
+- Contas bancárias refinadas
+- Conciliação bancária **manual**
+- Fluxo de caixa avançado
+- Aging
+- Automações somente em fase posterior (decisão explícita)
+
+### Trilha Estoque
+
+- Kardex
+- Saldo inicial controlado
+- Ledger append-only
+- Lote/corrida ponta a ponta
+- Rastreabilidade completa
+
+### Trilha Operacional
+
+- Conciliação **completa** entrada ↔ venda (hoje: parcial / manual)
+- Expedição 1B+
+- Remessas
+- Entrada própria (transmissão SEFAZ)
+
+### Trilha Comercial
+
+- CRM (hoje PLACEHOLDER)
+- Versionamento de propostas
+- Comissões
+
+### Trilha Fiscal / Contábil
+
+- SPED (hoje PLACEHOLDER)
+- Fechamento contábil
+- Obrigações acessórias
+- Remessas fiscais / consumo pleno do cenário na emissão
+
+### Já entregue (não reabrir como pendência)
+
+| Entrega | Status | Commit / nota |
+|---------|--------|---------------|
+| Fiscal Saída produção SEFAZ + cancelamento/CC-e/inutilização/e-mail | PRODUÇÃO REAL | Operacional |
+| Liberação financeira + dossiê B1 | PRODUÇÃO | `22a7287`, `d1587b5` |
+| Protestos manuais P1 | PRODUÇÃO | `cbb6391` + migration `0038`→`0039` |
+| B2/B3 consultas externas | FUNDAÇÃO / DESABILITADO | `ac37e64` |
+| Fachada A1 C0 | FUNDAÇÃO | `d63dc5f` |
+| Auditoria Cliente/Produto | PRODUÇÃO PARCIAL | `e8b79a6` |
+| CR auto produção / CP manual entrada | PRODUÇÃO | 4.0.14.3 / 4.0.14.4 |
+| Expedição Fase 1A | PRODUÇÃO PARCIAL | Manual |
+| Conciliação manual entrada↔venda | PRODUÇÃO PARCIAL | Não declarar cobertura completa |
+
+Itens que **permanecem pendentes / futuros:** Kardex, conciliação bancária, multiempresa operacional, CRM, SPED, versionamento de propostas, conciliação completa Entrada↔Saída, provider cadastral/birô, consumidor CENPROT.
 
 ---
 
@@ -872,7 +976,7 @@ Documentos complementares existentes:
 
 ---
 
-*Última atualização documental: 19/07/2026 — sincronização com o estado real em `producao-local` (sem criar versão ERP nova). Inclui: CR automático pós NF-e produção; CP manual de entrada; CQ com rastreabilidade física opcional; BI com dados reais; DANFE BFR (visualizar/baixar); Expedição Fase 1A; Manifestação no Inbox Fiscal; entrada própria parcial; observações em Pedido de Compra. Histórico de fases numeradas abaixo permanece como registro.*
+*Última atualização documental: 28/07/2026 — pós-P1 (`cbb6391`). Inclui: Fiscal Saída **PRODUÇÃO REAL**; liberação financeira + dossiê B1; protestos manuais; B2/B3 FUNDAÇÃO/DESABILITADO; C0 FUNDAÇÃO; auditoria Cliente/Produto; mapa mestre §2.1; roadmap por trilhas §17. Histórico de fases numeradas abaixo permanece como registro.*
 
 ## ERP 4.0.13.6.2 — Padronização segura dos campos comerciais
 
@@ -1361,3 +1465,42 @@ Auditoria de dados, performance e consistência:
 - Blocos: corridas (saldo, origem técnica, CF), certificados de qualidade, certificados de fornecedor, NF-e entrada e NF-e saída vinculadas.
 - Serviço `apps/produtos/painel_rastreabilidade.py`; aba no modal de produto com carregamento sob demanda.
 - **Sem** migration; **sem** novas regras de negócio; **sem** alterar estoque/fiscal/CQ/corridas/cadastro.
+
+## ERP 4.0.14.x — Liberação financeira, crédito e protestos (pós-inventário)
+
+### Liberação financeira (PRODUÇÃO)
+
+- Análise financeira manual da Proposta (`AnaliseFinanceiraProposta`).
+- Guard na conversão Proposta → Pedido **a prazo**; venda **à vista** sem análise.
+- Cliente ativo **não** equivale a crédito permanentemente aprovado.
+- Decisão permanece **manual** pelo Financeiro.
+- Commits: `22a7287` (MVP), `d1587b5` (dossiê B1 interno).
+
+### Dossiê B1 (PRODUÇÃO)
+
+- Indicadores internos (comercial, CR, baixas, exposição, qualidade de dados).
+- Ambiente fiscal: NF-e **produção** autorizada; homologação ignorada no histórico.
+- **Sem** decisão automática, **sem** alteração de limite/exposição/guard.
+
+### B2/B3 consultas externas (FUNDAÇÃO / DESABILITADO)
+
+- Pacote `integracoes_credito`; model `ConsultaExternaAnaliseFinanceira` (migration `0038`).
+- Providers ausentes; capability desabilitada; POSTs cadastral/birô → **409** sem persistência operacional.
+- UI: botões permanentemente desabilitados.
+- Commit: `ac37e64`.
+
+### C0 fachada A1 (FUNDAÇÃO)
+
+- Pacote `apps/certificados` (fora de `INSTALLED_APPS`).
+- Sem consumidor CENPROT; sem alteração nos fluxos fiscais.
+- Senha do certificado em plaintext = **dívida técnica separada**.
+- Commit: `d63dc5f`.
+
+### P1 Protestos manuais (PRODUÇÃO)
+
+- Tipo `PROTESTO_MANUAL`; append-only; correção por nova linha (`registro_anterior`); evento `PROTESTO_MANUAL_REGISTRADO`.
+- Migration comercial `0039_protesto_manual_analise_financeira` (depende de `0038`).
+- GET histórico + POST registrar; sem PUT/PATCH/DELETE.
+- Portal Pesquisa Protesto: link fixo no frontend (`noopener`); **zero HTTP** backend; **zero A1**.
+- Permissões: `registrar_protesto_manual_analise`, `ver_protesto_manual_analise` — em produção concedidas a financeiro/admin/administrador; **comercial sem** permissão.
+- Commit: `cbb6391501ebef7f8040743ad98b5416484cbb4a`.

@@ -1,10 +1,12 @@
 # Brief completo — Nexus ERP
 
-**Documento:** visão consolidada do sistema  
-**Versão de referência:** ERP 4.0.16.2  
-**Última atualização:** 24/06/2026  
-**Repositório:** `nexus-valve-hub`  
+**Documento:** visão consolidada do sistema (**briefing técnico oficial**)
+**Versão de referência:** ERP 4.0.14.x (linha operacional) + evoluções em `producao-local`
+**Última atualização:** 28/07/2026 (pós-P1 `cbb6391`)
+**Repositório:** `nexus-valve-hub`
 **Público-alvo:** gestão, produto, analistas, desenvolvedores e operação
+
+> Não existe arquivo separado `briefing-tecnico-nexus-app-producao.md` — este brief + o roadmap e o modelo operacional formam o conjunto oficial.
 
 ---
 
@@ -37,18 +39,21 @@
 
 ## 1. Resumo executivo
 
-O **Nexus ERP** é um sistema de gestão empresarial desenvolvido para a operação da **Nexus Válvulas e Conexões Industriais**, cobrindo o ciclo industrial-comercial desde o **cadastro técnico de produtos** (válvulas, tubos, conexões, materiais dimensionais) até **comercial, fiscal (NF-e/CT-e), estoque por corrida, qualidade (certificados) e financeiro**.
+O **Nexus ERP** é um sistema de gestão empresarial **monolítico Django + React** desenvolvido para a operação da **Nexus Válvulas e Conexões Industriais**, cobrindo o ciclo industrial-comercial desde o **cadastro técnico de produtos** até **comercial, fiscal (NF-e/CT-e), estoque por corrida, qualidade, financeiro e liberação de crédito manual**.
 
-O sistema está em **evolução incremental** por fases numeradas (ERP 4.0.x), com homologação fiscal e operacional antes de ligar comportamentos globais em produção.
+O sistema está em **operação real**, incluindo **faturamento e emissão de NF-e no ambiente de produção da SEFAZ** (Fiscal Saída — **PRODUÇÃO REAL**: geração, assinatura, transmissão, autorização, XML, DANFE, e-mail, cancelamento, CC-e e inutilização). Homologação permanece para testes controlados.
 
 | Dimensão | Situação atual |
 |----------|----------------|
-| **Maturidade geral** | Operacional em produção local com módulos avançados em fiscal saída, entrada, financeiro base e qualidade |
-| **Diferencial industrial** | Rastreabilidade por corrida/lote, certificados de fornecedor (CF) e de qualidade (CQ) |
-| **Diferencial fiscal** | Separação entrada × saída; cenário fiscal de saída com homologação por proposta; emissão NF-e homologação e produção |
-| **Modelo operacional** | Venda sob demanda — estoque **não bloqueia** emissão de NF-e saída |
-| **Financeiro** | CR automático após NF-e saída autorizada em produção; CP manual a partir de NF-e entrada; homologação sem financeiro |
-| **Pendências estratégicas** | CRM, remessas, contábil, kardex completo, deep links entre telas |
+| **Maturidade geral** | Operacional em produção com NF-e real, financeiro base e qualidade |
+| **Fiscal Saída** | **PRODUÇÃO REAL** (SEFAZ produção) |
+| **Liberação financeira / dossiê B1 / protestos** | **PRODUÇÃO** (decisão manual; P1 implantado) |
+| **Crédito externo B2/B3 / C0 A1** | **FUNDAÇÃO** (B2/B3 desabilitado; C0 sem CENPROT) |
+| **Diferencial industrial** | Rastreabilidade por corrida/lote, CF e CQ |
+| **Modelo operacional** | Venda sob demanda — estoque **não bloqueia** NF-e saída |
+| **Financeiro** | CR automático após NF-e produção; CP manual a partir de entrada; homologação sem financeiro |
+| **Auditoria** | **PRODUÇÃO PARCIAL** — Cliente e Produto |
+| **Pendências estratégicas** | Kardex, conciliação bancária, CRM, remessas, SPED, multiempresa, auditoria expandida |
 
 ---
 
@@ -98,7 +103,8 @@ Essa separação evita misturar “o que entrou” com “o que vamos emitir”.
 | **Evolução incremental** | Fases numeradas com checklist no roadmap; cada entrega documentada |
 | **Homologação antes de produção** | NF-e saída: homologação SEFAZ (tpAmb=2) validada antes da produção; emissão **produção ativa** no ambiente operacional (`NFE_PRODUCAO_HABILITADA` conforme `.env` do servidor) |
 | **Estoque não bloqueia NF-e** | Venda sob demanda; atendimento flexível (fluxos A, B e C) |
-| **Financeiro manual na origem fiscal** | CR/CP a partir de NF-e exige ação explícita do usuário |
+| **Financeiro manual na origem fiscal** | CP a partir de NF-e entrada exige ação humana; CR pós-autorização **produção** é automático com soft-fail |
+| **Liberação financeira manual** | Guard a prazo; decisão humana; cliente ativo ≠ crédito permanente |
 | **Somente leitura onde aplicável** | Painéis consolidados (BI, centro de informações do produto, rastreabilidade) não alteram regras de negócio |
 | **Documentos operacionais × base importada** | XML histórico para consulta; homologação excluída de apuração real |
 | **Backend como fonte da verdade** | Regras de negócio em services Django; frontend consome API REST |
@@ -195,20 +201,30 @@ A Nexus opera majoritariamente com **venda sob demanda**. O ERP controla **orige
 
 ## 6. Mapa de módulos e status
 
+Mapa mestre completo (inventário pós-P1): ver [`roadmap-nexus-erp.md`](roadmap-nexus-erp.md) §2.1.
+
 | Módulo | Status | Prioridade | Entregue | Falta (resumo) |
 |--------|--------|------------|----------|----------------|
-| Cadastros mestres | Parcial | Média | Clientes, fornecedores, empresas, produtos, famílias, centro de informações + rastreabilidade | Contatos múltiplos, IE/regime refinados |
-| CRM | Não iniciado | Baixa | — | Leads, pipeline |
-| Propostas | Em evolução | Alta | CRUD, fiscal, homologação, conversão PV | Versionamento, PDF avançado |
-| Pedido de venda | Parcial | Alta | PV, faturamento parcial, NF rascunho | Reserva refinada, deep links |
-| Fiscal entrada | Em evolução | Alta | Classificação, conferência, estoque, fornecedor CP | Snapshot fiscal persistido |
-| NF-e saída | Parcial | Alta | Conferência, homologação, produção, DIFAL, DANFE/XML, CC-e, cancelamento e inutilização SEFAZ | Consumo total do cenário fiscal |
-| Estoque | Em evolução | Alta | Saldo corrida, atendimento, painel produto | Kardex, estorno, relatório ponta a ponta |
-| Qualidade | Parcial | Média | CF, CQ, numeração automática, CQ manual | Dashboard pendências |
-| Financeiro | Base operacional | Alta | CR/CP, baixas, créditos, relatórios PDF | Conciliação, automação pós-autorização |
-| Contábil | Futuro | Baixa | Placeholder | Plano de contas, lançamentos |
-| BI | Parcial | Média | Dashboards por módulo (incl. Expedição), menu reorganizado, Contador export XML | SPED, menu por permissão, auditoria |
-| Remessas | Não iniciado | Média | CFOPs auxiliares | Modelo e emissão |
+| Cadastros mestres | PRODUÇÃO PARCIAL | Média | Clientes, fornecedores, empresas, produtos, famílias, rastreabilidade, e-mails fiscais | Multiempresa; IE/regime refinados |
+| CRM | PLACEHOLDER | Baixa | Menu `/modulos/crm` | Leads, pipeline |
+| Propostas | PRODUÇÃO PARCIAL | Alta | CRUD, fiscal, homologação, conversão PV, liberação financeira | Versionamento |
+| Pedido de venda | PRODUÇÃO | Alta | PV, faturamento parcial, NF-e, guard a prazo | Reserva estoque |
+| Liberação financeira | PRODUÇÃO | Alta | Análise manual, dossiê B1, fila Financeiro | Automações (fora de escopo) |
+| Protestos manuais | PRODUÇÃO | Alta | P1 append-only, migration 0039, portal humano | CENPROT automático (não iniciado) |
+| Crédito B2/B3 | FUNDAÇÃO / DESABILITADO | Média | Model + 409 | Providers |
+| C0 A1 | FUNDAÇÃO | Média | Fachada neutra | Consumidor CENPROT |
+| Fiscal entrada | PRODUÇÃO | Alta | Classificação, conferência, estoque, Inbox DF-e | Snapshot; conciliação completa |
+| Fiscal saída / NF-e | **PRODUÇÃO REAL** | Alta | Emissão SEFAZ produção; DANFE; e-mail; cancelamento; CC-e; inutilização | Cenário pleno na emissão; remessas |
+| Estoque | PRODUÇÃO PARCIAL | Alta | Saldo corrida, atendimento, conciliação manual parcial | Kardex |
+| Expedição | PRODUÇÃO PARCIAL | Média | Fase 1A | Fase 1B+ |
+| Qualidade | PRODUÇÃO | Média | CF, CQ, multi-corrida | Dashboard pendências |
+| Financeiro | PRODUÇÃO | Alta | CR auto produção; CP manual; baixas; créditos; PDFs | Conciliação bancária |
+| Contábil | PRODUÇÃO PARCIAL | Baixa | Plano/lançamentos/balancete | Integração / SPED |
+| BI / Relatórios | PRODUÇÃO PARCIAL | Média | Dashboards reais; Contador XML | SPED; exportações |
+| Auditoria | PRODUÇÃO PARCIAL | Alta | Cliente + Produto | Demais entidades |
+| Remessas | NÃO INICIADO | Média | CFOPs auxiliares | Modelo e emissão |
+| Folha/RH / Gestão Resultado / SPED | PLACEHOLDER | Baixa–Média | Rotas “em breve” | Domínio |
+| Multiempresa | NÃO INICIADO | Média | Header visual | Troca de empresa |
 
 ---
 
@@ -651,52 +667,59 @@ Documento: [`design-system-nexus.md`](design-system-nexus.md).
 
 | Limitação | Motivo / status |
 |-----------|-----------------|
-| Financeiro não gera automaticamente na autorização NF-e | Decisão de produto — controle manual e auditoria |
+| CR automático só em NF-e **produção** autorizada | Soft-fail; homologação sem financeiro |
+| CP de NF-e entrada é **manual** | Decisão de produto |
 | Estoque não bloqueia NF-e saída | Modelo operacional venda sob demanda |
 | Deep links parciais entre telas | Listagens abrem sem filtro por ID em vários casos |
-| Inutilização de numeração NF-e | Implementada — homologação e produção (`NFeInutilizacao4`) |
-| CRM e remessas | Não iniciados |
-| Contábil | Placeholder |
+| Cancelamento / CC-e / inutilização NF-e | **Operacionais em PRODUÇÃO REAL** |
+| B2/B3 cadastral/birô | FUNDAÇÃO / DESABILITADO (409) |
+| C0 / CENPROT | FUNDAÇÃO; senha A1 plaintext = dívida |
+| CRM, Folha/RH, Gestão Resultado, SPED | PLACEHOLDER |
+| Remessas / multiempresa | NÃO INICIADO |
+| Contábil | PRODUÇÃO PARCIAL (esqueleto) |
 | Inteligência de compras no painel produto | Pode contar PC + NF + conferência do mesmo evento |
 | Homologação SEFAZ | Sem valor fiscal; excluída de apuração real |
 | TanStack Query no package.json | Não utilizado — hooks locais + `usePaginatedList` |
+| Sidebar RBAC | Só Dashboard BI filtrado por permissão |
 
 ---
 
 ## 20. Roadmap e próximas fases
 
-Documento vivo: [`roadmap-nexus-erp.md`](roadmap-nexus-erp.md).
+Documento vivo: [`roadmap-nexus-erp.md`](roadmap-nexus-erp.md) — **trilhas** Governança, Financeiro, Estoque, Operacional, Comercial, Fiscal/Contábil (§17). Sem datas atribuídas neste brief.
 
-### Prioridades imediatas sugeridas
+### Prioridades sugeridas (decisão do operador)
 
-| Fase | Foco |
-|------|------|
-| NF-e Saída | Contingência; consumo pleno do cenário fiscal |
-| Fiscal Entrada 4 | Snapshot fiscal persistido pós-classificação |
-| Financeiro 2 | Conciliação; evolução pós-autorização (sem quebrar manualidade) |
-| Estoque 3.13 | Kardex e relatório ponta a ponta |
-| Propostas 2.0 | Versionamento e aprovação |
-| Deep links | Filtros por ID nas telas de destino (corridas, certificados, NF-e) |
+| Trilha | Foco |
+|--------|------|
+| Governança | RBAC drift; auditoria expandida; senha A1; backup restore |
+| Financeiro | Conciliação bancária manual; aging; contas bancárias |
+| Estoque | Kardex / ledger |
+| Operacional | Conciliação completa entrada↔venda; Expedição 1B; remessas |
+| Comercial | CRM; versionamento propostas |
+| Fiscal/Contábil | Cenário na emissão; SPED; fechamento |
 
-### Últimas entregas relevantes (4.0.16.x)
+### Últimas entregas relevantes (linha 4.0.14.x / crédito)
+
+| Entrega | Status | Referência |
+|---------|--------|------------|
+| Protestos manuais P1 | PRODUÇÃO | `cbb6391` + migration `0039` |
+| Fachada A1 C0 | FUNDAÇÃO | `d63dc5f` |
+| B2/B3 fundação crédito | FUNDAÇÃO / DESABILITADO | `ac37e64` |
+| Dossiê B1 + liberação financeira | PRODUÇÃO | `d1587b5`, `22a7287` |
+| Auditoria Cliente/Produto | PRODUÇÃO PARCIAL | `e8b79a6` |
+| E-mail DANFE multi-destinatário | PRODUÇÃO | `21a056f` |
+| Fiscal Saída SEFAZ produção | PRODUÇÃO REAL | Operacional |
+
+### Entregas anteriores (4.0.15.x / 4.0.16.x)
 
 | Fase | Entrega |
 |------|---------|
-| 4.0.16 | Dashboard BI fases 1–3 (Expedição, KPIs fiscal/compras, otimizações) |
-| 4.0.16.1 | Reorganização do menu lateral (`sidebarMenuConfig`) |
-| 4.0.16.2 | Módulo Contador — exportação ZIP de XMLs por período |
-| NF-e produção | Emissões SEFAZ produção ativas no ambiente operacional |
-
-### Entregas anteriores (4.0.15.x)
-
-| Fase | Entrega |
-|------|---------|
-| 4.0.15.2.36–2.40 | Centro de Informações do Produto (painel operacional) |
-| 4.0.15.2.41 | Aba Rastreabilidade na ficha do produto |
-| 4.0.15.2.3 | DIFAL + pool numeração NF-e saída |
-| 4.0.15.2.5 | Identificação fornecedor entrada → liberação CP |
-| 4.0.15.2.6 | CQ manual + numeração automática CQ |
-| Fiscal recente | DANFE autorizado (procNFe), ICMSUFDest, refresh listagem pós-autorização |
+| 4.0.16 | Dashboard BI fases 1–3 |
+| 4.0.16.1 | Reorganização do menu lateral |
+| 4.0.16.2 | Contador — exportação ZIP de XMLs |
+| 4.0.15.2.36–2.41 | Centro de informações + rastreabilidade do produto |
+| NF-e produção | Emissões SEFAZ produção ativas |
 
 ---
 
@@ -735,6 +758,12 @@ Documento vivo: [`roadmap-nexus-erp.md`](roadmap-nexus-erp.md).
 | **DANFE** | Documento auxiliar da NF-e em PDF |
 | **PV / PC** | Pedido de venda / Pedido de compra |
 | **CR / CP** | Conta a receber / Conta a pagar |
+| **Liberação financeira** | Análise manual da Proposta antes de Pedido a prazo |
+| **Dossiê B1** | Indicadores internos da análise financeira |
+| **P1 protestos** | Registro manual auditável de protestos em cartório |
+| **B2/B3** | Fundação de consultas externas (desabilitada) |
+| **C0** | Fachada neutra de certificado A1 (sem CENPROT) |
+| **PRODUÇÃO REAL** | Status de Fiscal Saída com emissão SEFAZ produção e eventos fiscais operacionais |
 
 ---
 
