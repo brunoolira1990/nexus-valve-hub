@@ -184,7 +184,7 @@ describe('AnaliseFinanceiraIndicadores dossiê B1', () => {
     );
     expect(screen.getByTestId('dossie-negociacao')).toBeInTheDocument();
     expect(screen.getByTestId('dossie-comercial')).toBeInTheDocument();
-    expect(screen.getByTestId('dossie-financeiro')).toBeInTheDocument();
+    expect(screen.getByTestId('dossie-comportamento-pagamento')).toBeInTheDocument();
     expect(screen.getByTestId('dossie-exposicao')).toBeInTheDocument();
     expect(screen.getByTestId('dossie-qualidade')).toBeInTheDocument();
     expect(screen.getByTestId('dossie-cadastral-placeholder')).toBeInTheDocument();
@@ -195,10 +195,10 @@ describe('AnaliseFinanceiraIndicadores dossiê B1', () => {
     expect(container.textContent).not.toMatch(/"schema_versao"/);
     expect(container.textContent).not.toContain('null');
     expect(screen.getByTestId('dossie-fonte-comercial')).toHaveTextContent('NF-e de saída autorizada em produção');
-    expect(screen.queryByTestId('dossie-aviso-homologacao')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('dossie-aviso-fonte-parcial')).not.toBeInTheDocument();
   });
 
-  it('fonte PedidoVenda com aviso de homologação ignorada', () => {
+  it('fonte PedidoVenda com aviso de fonte parcial', () => {
     render(
       <AnaliseFinanceiraIndicadores
         capacidadeIntegracoes={capacidadeDesabilitada}
@@ -219,8 +219,8 @@ describe('AnaliseFinanceiraIndicadores dossiê B1', () => {
         }}
       />,
     );
-    expect(screen.getByTestId('dossie-fonte-comercial')).toHaveTextContent('Pedidos de Venda');
-    expect(screen.getByTestId('dossie-aviso-homologacao')).toHaveTextContent('homologação');
+    expect(screen.getByTestId('dossie-fonte-comercial')).toHaveTextContent('Pedido de Venda');
+    expect(screen.getByTestId('dossie-aviso-fonte-parcial')).toHaveTextContent('homologação');
   });
 
   it('fonte indisponível', () => {
@@ -251,7 +251,9 @@ describe('AnaliseFinanceiraIndicadores dossiê B1', () => {
         }}
       />,
     );
-    expect(screen.getByTestId('dossie-fonte-comercial')).toHaveTextContent('Fonte indisponível');
+    expect(screen.getByTestId('dossie-comercial-vazio')).toHaveTextContent(
+      'Não há histórico comercial elegível',
+    );
   });
 
   it('limite negativo e excesso', () => {
@@ -320,7 +322,7 @@ describe('AnaliseFinanceiraIndicadores dossiê B1', () => {
       />,
     );
     expect(screen.getByTestId('dossie-snapshot-antigo')).toHaveTextContent(MSG_SNAPSHOT_ANTIGO);
-    expect(screen.getByTestId('dossie-financeiro')).toBeInTheDocument();
+    expect(screen.getByTestId('dossie-comportamento-pagamento')).toBeInTheDocument();
   });
 
   it('resumo restrito', () => {

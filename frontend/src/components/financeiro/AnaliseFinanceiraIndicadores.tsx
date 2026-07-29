@@ -2,13 +2,18 @@ import type { ReactNode } from 'react';
 import { formatMoneyBRL } from '@/lib/money';
 import { SecoesIntegracoesExternas } from '@/components/financeiro/SecoesIntegracoesExternas';
 import { SecaoProtestosCartorio } from '@/components/financeiro/SecaoProtestosCartorio';
+import {
+  MSG_QUALIDADE_BASE,
+  labelQualidadePainelV1,
+  mapPainelInternoV1,
+} from '@/components/financeiro/mapPainelInternoV1';
 import type { CapacidadeIntegracoesCredito } from '@/services/api/analiseFinanceira';
+
+export const MSG_SNAPSHOT_ANTIGO = 'Não disponível no snapshot desta análise.';
+const PLACEHOLDER_SNAPSHOT = MSG_SNAPSHOT_ANTIGO;
 
 const AVISO_PARCIAL =
   'Alguns indicadores não puderam ser calculados com os dados disponíveis. A decisão deve ser revisada manualmente pelo Financeiro.';
-
-const PLACEHOLDER_SNAPSHOT =
-  'Não disponível no snapshot desta análise.';
 
 type Metrica = {
   disponivel?: boolean;
@@ -85,6 +90,7 @@ type SnapshotIndicadores = {
       quantidade_itens_residual?: number | null;
     };
     exposicao?: {
+      formula?: string;
       contas_receber?: string | null;
       pedidos_nao_faturados?: string | null;
       atual?: string | null;
@@ -100,15 +106,26 @@ type SnapshotIndicadores = {
       excesso_sobre_limite?: Metrica;
     };
   };
-  // v1 compat
-  limite_credito_cadastrado?: { disponivel?: boolean; valor?: string | null; ambiguo?: boolean; mensagem?: string | null };
+  limite_credito_cadastrado?: {
+    disponivel?: boolean;
+    valor?: string | null;
+    ambiguo?: boolean;
+    mensagem?: string | null;
+  };
   contas_receber?: SnapshotIndicadores['indicadores'] extends infer I
     ? I extends { contas_receber?: infer C }
       ? C
       : never
     : never;
   pedidos_nao_faturados?: { valor_residual?: string | null; quantidade_pedidos?: number | null };
-  exposicao?: { atual?: string | null; projetada?: string | null; valor_proposta?: string | null };
+  exposicao?: {
+    formula?: string;
+    atual?: string | null;
+    projetada?: string | null;
+    valor_proposta?: string | null;
+    contas_receber?: string | null;
+    pedidos_nao_faturados?: string | null;
+  };
   percentual_pontualidade?: Metrica;
   atraso_medio_dias?: Metrica;
   data_ultima_compra?: Metrica;
@@ -131,7 +148,6 @@ type Props = {
   analiseId?: number | null;
   podeVerProtestoManual?: boolean;
   podeRegistrarProtestoManual?: boolean;
-  /** Capability injetada (testes) — evita HTTP. */
   capacidadeIntegracoes?: CapacidadeIntegracoesCredito | null;
   carregarCapabilityIntegracoes?: boolean;
 };
@@ -143,8 +159,8 @@ function money(value: string | number | null | undefined, disponivel = true): st
   return formatMoneyBRL(n);
 }
 
-function textOrUnavailable(value: string | number | null | undefined, disponivel = true): string {
-  if (!disponivel || value === null || value === undefined || value === '') return 'Indisponível';
+function textOrUnavailable(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === '') return 'Indisponível';
   return String(value);
 }
 
@@ -195,7 +211,7 @@ function Placeholder({ children, testId }: { children: string; testId: string })
   );
 }
 
-function qualidadeMensagem(status?: string, mensagem?: string): string {
+function qualidadeMensagemB1(status?: string, mensagem?: string): string {
   if (mensagem) return mensagem;
   if (status === 'PARCIAL' || status === 'INSUFICIENTE') return AVISO_PARCIAL;
   if (status === 'DIVERGENTE') {
@@ -215,6 +231,7 @@ export function AnaliseFinanceiraIndicadores({
   carregarCapabilityIntegracoes = true,
 }: Props) {
   const ind = (snapshot || {}) as SnapshotIndicadores;
+  const painel = mapPainelInternoV1(snapshot);
   const schema = ind.schema_versao;
   const isV2 = schema === 2 && Boolean(ind.indicadores);
   const isLegacy = !isV2 && (Boolean(ind.contas_receber) || Boolean(ind.exposicao) || Boolean(ind.qualidade_dados));
@@ -240,13 +257,17 @@ export function AnaliseFinanceiraIndicadores({
   );
 
   if (ind.resumo_restrito) {
-    const status = ind.qualidade?.status || ind.qualidade_dados;
     return (
       <div className="space-y-3" data-testid="analise-fin-indicadores">
         <Section title="Qualidade dos dados" testId="dossie-qualidade">
-          <p className="text-sm">Classificação: {status || 'Indisponível'}</p>
+          <p className="text-sm" data-testid="dossie-qualidade-painel">
+            Classificação (base): {labelQualidadePainelV1(painel.qualidade)}
+          </p>
+          <p className="text-xs text-muted-foreground" data-testid="dossie-qualidade-explicacao">
+            {MSG_QUALIDADE_BASE}
+          </p>
           <p className="text-sm text-muted-foreground" role="status">
-            Detalhe financeiro restrito. {qualidadeMensagem(status, ind.qualidade?.mensagem)}
+            Detalhe financeiro restrito. {qualidadeMensagemB1(painel.qualidadeB1 || undefined, ind.qualidade?.mensagem)}
           </p>
         </Section>
         {secoesExternas}
@@ -262,7 +283,6 @@ export function AnaliseFinanceiraIndicadores({
     );
   }
 
-  const qualidadeStatus = ind.qualidade?.status || ind.qualidade_dados;
   const comercial = ind.indicadores?.comercial;
   const periodosC = comercial?.periodos || {};
   const cr = ind.indicadores?.contas_receber || ind.contas_receber;
@@ -277,62 +297,88 @@ export function AnaliseFinanceiraIndicadores({
     ind.qualidade?.indisponiveis ||
     (ind.dados_indisponiveis || []).map((nome) => ({ indicador: nome, motivo: 'Indisponível neste snapshot.' }));
 
-  return (
-    <div className="space-y-4" data-testid="analise-fin-indicadores">
-      {negociacao ? (
-        <Section title="Negociação" testId="dossie-negociacao">
-          <dl className="grid gap-2 sm:grid-cols-2">
-            <Row label="Proposta" value={negociacao.proposta_numero || '—'} />
-            <Row label="Cliente" value={negociacao.cliente_nome || '—'} />
-            <Row label="Valor" value={money(negociacao.valor_solicitado)} />
-            <Row label="Condição" value={negociacao.condicao || '—'} />
-            <Row label="Vendedor" value={negociacao.vendedor || '—'} />
-            <Row
-              label="Solicitada em"
-              value={
-                negociacao.solicitada_em
-                  ? new Date(negociacao.solicitada_em).toLocaleString('pt-BR')
-                  : '—'
-              }
-            />
-            <Row label="Data de corte" value={dateLocal(negociacao.data_corte || ind.data_corte)} />
-          </dl>
-        </Section>
-      ) : null}
+  const mostrarMetricasPagamento = painel.comportamento === 'METRICAS_DISPONIVEIS';
 
-      <Section title="Histórico interno — comercial" testId="dossie-comercial">
+  return (
+    <div className="space-y-4" data-testid="analise-fin-indicadores" data-painel-interno="v1">
+      {/* 1. Negociação + data-base */}
+      <Section title="Negociação e data-base" testId="dossie-negociacao">
+        <dl className="grid gap-2 sm:grid-cols-2">
+          {negociacao ? (
+            <>
+              <Row label="Proposta" value={negociacao.proposta_numero || '—'} />
+              <Row label="Cliente" value={negociacao.cliente_nome || '—'} />
+              <Row label="Valor" value={money(negociacao.valor_solicitado)} />
+              <Row label="Condição" value={negociacao.condicao || '—'} />
+              <Row label="Vendedor" value={negociacao.vendedor || '—'} />
+              <Row
+                label="Solicitada em"
+                value={
+                  negociacao.solicitada_em
+                    ? new Date(negociacao.solicitada_em).toLocaleString('pt-BR')
+                    : '—'
+                }
+              />
+            </>
+          ) : null}
+          <Row
+            label="Data-base do dossiê"
+            value={dateLocal(negociacao?.data_corte || painel.dataBase || ind.data_corte)}
+          />
+        </dl>
+      </Section>
+
+      {/* 2. Histórico comercial */}
+      <Section title="Histórico comercial" testId="dossie-comercial">
         {!isV2 ? (
           <p className="text-sm text-muted-foreground" data-testid="dossie-snapshot-antigo">
             {PLACEHOLDER_SNAPSHOT} (histórico comercial detalhado exige snapshot v2.)
           </p>
         ) : null}
-        {isV2 ? (
+        {isV2 && painel.fonte === 'INDISPONIVEL' ? (
+          <p className="text-sm text-muted-foreground" data-testid="dossie-comercial-vazio">
+            Não há histórico comercial elegível neste snapshot.
+          </p>
+        ) : null}
+        {isV2 && painel.fonte !== 'INDISPONIVEL' ? (
           <>
             <p className="text-xs text-muted-foreground" data-testid="dossie-fonte-comercial">
-              Fonte:{' '}
-              {comercial?.fonte === 'NFE_SAIDA_PRODUCAO' || comercial?.fonte === 'NFE_SAIDA'
-                ? 'NF-e de saída autorizada em produção'
-                : comercial?.fonte === 'PEDIDO_VENDA'
-                  ? 'Pedidos de Venda'
-                  : 'Fonte indisponível'}
+              Fonte: {painel.fonteLabel}
             </p>
-            {comercial?.motivo_fallback_comercial ||
-            (comercial?.documentos_homologacao_ignorados &&
-              Number(comercial.documentos_homologacao_ignorados) > 0 &&
-              comercial?.fonte === 'PEDIDO_VENDA') ? (
+            {painel.avisoFonteParcial ? (
               <p
-                className="text-sm border border-amber-700/40 bg-amber-50 text-amber-950 rounded px-2 py-1.5"
+                className="text-sm border border-border bg-muted/40 text-foreground rounded px-2 py-1.5"
                 role="status"
-                data-testid="dossie-aviso-homologacao"
+                data-testid="dossie-aviso-fonte-parcial"
               >
-                {comercial?.motivo_fallback_comercial ||
-                  'O histórico comercial foi calculado pelos Pedidos de Venda. Documentos fiscais de homologação não são considerados como vendas reais.'}
+                {painel.avisoFonteParcial}
               </p>
             ) : null}
-            {comercial?.limitacao && comercial?.fonte === 'PEDIDO_VENDA' && !comercial?.motivo_fallback_comercial ? (
-              <p className="text-xs text-muted-foreground">{comercial.limitacao}</p>
-            ) : null}
-            <dl className="grid gap-2 sm:grid-cols-2">
+            <dl className="grid gap-2 sm:grid-cols-2" data-testid="dossie-comercial-resumo">
+              <Row
+                label="Operações (total)"
+                value={
+                  painel.quantidadeOperacoes != null
+                    ? String(painel.quantidadeOperacoes)
+                    : 'Indisponível'
+                }
+              />
+              <Row label="Primeira operação" value={dateLocal(painel.primeiraOperacao)} />
+              <Row label="Última operação" value={dateLocal(painel.ultimaOperacao)} />
+              <Row
+                label="Tempo de relacionamento"
+                value={
+                  painel.tempoRelacionamentoDias != null
+                    ? `${painel.tempoRelacionamentoDias} dias`
+                    : 'Indisponível'
+                }
+              />
+              <Row
+                label="Recência na data-base"
+                value={painel.recenciaDias != null ? `${painel.recenciaDias} dias` : 'Indisponível'}
+              />
+            </dl>
+            <dl className="grid gap-2 sm:grid-cols-2 mt-2">
               {(['6_MESES', '12_MESES', '24_MESES', 'TOTAL'] as const).map((p) => {
                 const block = periodosC[p] || {};
                 const label =
@@ -341,7 +387,14 @@ export function AnaliseFinanceiraIndicadores({
                   <div key={p} className="sm:col-span-2 border-t border-border/60 pt-2 first:border-0 first:pt-0">
                     <p className="text-xs font-medium mb-1">{label}</p>
                     <div className="grid gap-2 sm:grid-cols-3">
-                      <Row label={`Vendas (${label})`} value={textOrUnavailable(block.quantidade_vendas, true)} />
+                      <Row
+                        label={`Vendas (${label})`}
+                        value={
+                          typeof block.quantidade_vendas === 'number'
+                            ? String(block.quantidade_vendas)
+                            : 'Indisponível'
+                        }
+                      />
                       <Row label={`Valor (${label})`} value={money(block.valor_vendido)} />
                       <Row label={`Ticket médio (${label})`} value={money(block.ticket_medio)} />
                       <Row label={`Maior venda (${label})`} value={money(block.maior_venda)} />
@@ -364,111 +417,80 @@ export function AnaliseFinanceiraIndicadores({
                   </div>
                 );
               })}
-              <Row
-                label="Tempo de relacionamento"
-                value={
-                  comercial?.tempo_relacionamento_dias != null
-                    ? `${comercial.tempo_relacionamento_dias} dias`
-                    : 'Indisponível'
-                }
-              />
-              <Row
-                label="Pedidos cancelados"
-                value={textOrUnavailable(comercial?.quantidade_pedidos_cancelados, true)}
-              />
+              {typeof comercial?.quantidade_pedidos_cancelados === 'number' ? (
+                <Row label="Pedidos cancelados" value={String(comercial.quantidade_pedidos_cancelados)} />
+              ) : null}
             </dl>
           </>
-        ) : (
+        ) : null}
+        {!isV2 && isLegacy ? (
           <dl className="grid gap-2 sm:grid-cols-2">
             <Row
               label="Última compra"
-              value={textOrUnavailable(ind.data_ultima_compra?.valor, ind.data_ultima_compra?.disponivel !== false)}
+              value={textOrUnavailable(
+                ind.data_ultima_compra?.disponivel === false ? null : ind.data_ultima_compra?.valor,
+              )}
             />
             <Row
               label="Valor 12 meses"
-              value={money(ind.valor_comprado_12_meses?.valor, ind.valor_comprado_12_meses?.disponivel !== false)}
+              value={money(
+                ind.valor_comprado_12_meses?.valor,
+                ind.valor_comprado_12_meses?.disponivel !== false,
+              )}
             />
           </dl>
-        )}
+        ) : null}
       </Section>
 
-      <Section title="Histórico interno — financeiro" testId="dossie-financeiro">
+      {/* 3. Exposição atual */}
+      <Section title="Exposição atual" testId="dossie-exposicao">
         <dl className="grid gap-2 sm:grid-cols-2">
-          <Row label="Saldo total a receber" value={money(cr?.saldo_aberto)} />
-          <Row label="Saldo a vencer" value={money(cr?.saldo_a_vencer)} />
-          <Row label="Saldo vencido" value={money(cr?.saldo_vencido)} />
-          <Row label="Títulos vencidos" value={textOrUnavailable(cr?.quantidade_titulos_vencidos)} />
+          <Row label="Saldo Contas a Receber" value={money(exp?.contas_receber ?? cr?.saldo_aberto)} />
           <Row
-            label="Maior atraso aberto"
-            value={cr?.maior_atraso_dias != null ? `${cr.maior_atraso_dias} dias` : 'Indisponível'}
+            label="Títulos abertos"
+            value={
+              typeof cr?.quantidade_titulos_abertos === 'number'
+                ? String(cr.quantidade_titulos_abertos)
+                : 'Indisponível'
+            }
           />
-          {isV2 ? (
-            <>
-              <Row label="Valor recebido (12 meses)" value={money(b12.valor_total_recebido, b12.valor_total_recebido != null)} />
-              <Row
-                label="Pontualidade por quantidade (12 meses)"
-                value={pct(b12.pontualidade_quantidade || ind.percentual_pontualidade)}
-                hint={
-                  b12.pontualidade_quantidade?.disponivel === false
-                    ? b12.pontualidade_quantidade.motivo_indisponibilidade
-                    : null
-                }
-              />
-              <Row label="Pontualidade por valor (12 meses)" value={pct(b12.pontualidade_valor)} />
-              <Row
-                label="Atraso médio (12 meses)"
-                value={
-                  b12.atraso_medio_dias?.disponivel
-                    ? `${b12.atraso_medio_dias.valor} dias`
-                    : 'Indisponível'
-                }
-              />
-              <Row
-                label="Maior atraso histórico (12 meses)"
-                value={
-                  b12.maior_atraso_historico_dias?.disponivel
-                    ? `${b12.maior_atraso_historico_dias.valor} dias`
-                    : 'Indisponível'
-                }
-              />
-              <Row
-                label="Último pagamento (12 meses)"
-                value={metricaValor(b12.data_ultimo_pagamento, true)}
-              />
-              <Row
-                label="Pagamentos parciais (12 meses)"
-                value={textOrUnavailable(b12.quantidade_pagamentos_parciais, true)}
-              />
-            </>
-          ) : (
-            <>
-              <Row
-                label="Pontualidade"
-                value={pct(ind.percentual_pontualidade)}
-                hint={ind.percentual_pontualidade?.motivo || PLACEHOLDER_SNAPSHOT}
-              />
-              <Row
-                label="Atraso médio"
-                value={
-                  ind.atraso_medio_dias?.disponivel ? `${ind.atraso_medio_dias.valor} dias` : 'Indisponível'
-                }
-              />
-            </>
-          )}
-        </dl>
-      </Section>
-
-      <Section title="Exposição e limite" testId="dossie-exposicao">
-        <dl className="grid gap-2 sm:grid-cols-2">
-          <Row label="Contas a receber" value={money(exp?.contas_receber ?? cr?.saldo_aberto)} />
-          <Row label="Pedidos não faturados" value={money(exp?.pedidos_nao_faturados ?? ped?.valor_residual)} />
+          <Row
+            label="Títulos vencidos"
+            value={
+              typeof cr?.quantidade_titulos_vencidos === 'number'
+                ? String(cr.quantidade_titulos_vencidos)
+                : 'Indisponível'
+            }
+          />
+          <Row label="Valor vencido" value={money(cr?.saldo_vencido)} />
+          <Row
+            label="Residual de pedidos"
+            value={money(exp?.pedidos_nao_faturados ?? ped?.valor_residual)}
+          />
           <Row label="Exposição atual" value={money(exp?.atual)} />
+          {exp?.formula ? (
+            <div className="sm:col-span-2">
+              <p className="text-xs text-muted-foreground" data-testid="dossie-exposicao-formula">
+                Fórmula: {exp.formula}
+              </p>
+            </div>
+          ) : null}
           <Row label="Valor da Proposta" value={money(exp?.valor_proposta)} />
           <Row label="Exposição projetada" value={money(exp?.projetada)} />
           <Row
             label="Limite cadastrado"
-            value={limiteAmbiguo ? 'Indisponível' : money(limite?.cadastrado ?? ind.limite_credito_cadastrado?.valor)}
-            hint={limiteAmbiguo ? limite?.mensagem || ind.limite_credito_cadastrado?.mensagem || 'Limite não informado ou definido como zero.' : null}
+            value={
+              limiteAmbiguo
+                ? 'Indisponível'
+                : money(limite?.cadastrado ?? ind.limite_credito_cadastrado?.valor)
+            }
+            hint={
+              limiteAmbiguo
+                ? limite?.mensagem ||
+                  ind.limite_credito_cadastrado?.mensagem ||
+                  'Limite não informado ou definido como zero.'
+                : null
+            }
           />
           <Row
             label="Limite disponível antes"
@@ -494,16 +516,36 @@ export function AnaliseFinanceiraIndicadores({
                 : PLACEHOLDER_SNAPSHOT
             }
           />
+          {typeof cr?.maior_atraso_dias === 'number' ? (
+            <Row label="Maior atraso em aberto" value={`${cr.maior_atraso_dias} dias`} />
+          ) : null}
+          {typeof cr?.saldo_a_vencer === 'string' || typeof cr?.saldo_a_vencer === 'number' ? (
+            <Row label="Saldo a vencer" value={money(cr.saldo_a_vencer)} />
+          ) : null}
         </dl>
       </Section>
 
+      {/* 4. Qualidade */}
       <Section title="Qualidade dos dados" testId="dossie-qualidade">
-        <p className="text-sm font-medium" data-testid="dossie-qualidade-status">
-          {qualidadeStatus || 'Indisponível'}
+        <p className="text-sm font-medium" data-testid="dossie-qualidade-painel">
+          {labelQualidadePainelV1(painel.qualidade)}
         </p>
+        <p className="text-xs text-muted-foreground" data-testid="dossie-qualidade-explicacao">
+          {MSG_QUALIDADE_BASE}
+        </p>
+        {painel.qualidadeB1 ? (
+          <p className="text-xs text-muted-foreground" data-testid="dossie-qualidade-b1">
+            Classificação B1 de origem: <span data-testid="dossie-qualidade-status">{painel.qualidadeB1}</span>
+          </p>
+        ) : null}
         <p className="text-sm" role="status" data-testid="analise-fin-aviso-parcial">
-          {qualidadeMensagem(qualidadeStatus, ind.qualidade?.mensagem)}
+          {qualidadeMensagemB1(painel.qualidadeB1 || undefined, ind.qualidade?.mensagem)}
         </p>
+        {painel.alertaDivergente ? (
+          <p className="text-sm border border-border rounded px-2 py-1.5" role="status" data-testid="dossie-alerta-divergente">
+            Divergências detectadas entre residual de pedidos e Contas a Receber. Revisar manualmente.
+          </p>
+        ) : null}
         {ind.qualidade?.fonte_historico_comercial ? (
           <p className="text-xs text-muted-foreground">Fonte comercial: {ind.qualidade.fonte_historico_comercial}</p>
         ) : null}
@@ -528,10 +570,81 @@ export function AnaliseFinanceiraIndicadores({
         ) : null}
       </Section>
 
+      {/* 5. Comportamento de pagamento */}
+      <Section title="Comportamento de pagamento" testId="dossie-comportamento-pagamento">
+        <p className="sr-only" data-testid="dossie-comportamento-codigo">
+          {painel.comportamento}
+        </p>
+        {painel.comportamento === 'SEM_CICLOS_RECEBIMENTO' ? (
+          <p className="text-sm" role="status" data-testid="dossie-comportamento-mensagem">
+            {painel.comportamentoMensagem}
+          </p>
+        ) : null}
+        {painel.comportamento === 'DADOS_NAO_DISPONIVEIS_NO_SNAPSHOT' ? (
+          <p className="text-sm text-muted-foreground" role="status" data-testid="dossie-comportamento-mensagem">
+            {painel.comportamentoMensagem}
+          </p>
+        ) : null}
+        {mostrarMetricasPagamento ? (
+          <dl className="grid gap-2 sm:grid-cols-2" data-testid="dossie-comportamento-metricas">
+            {isV2 ? (
+              <>
+                <Row
+                  label="Valor recebido (12 meses)"
+                  value={money(b12.valor_total_recebido, b12.valor_total_recebido != null)}
+                />
+                <Row
+                  label="Pontualidade por quantidade (12 meses)"
+                  value={pct(b12.pontualidade_quantidade || ind.percentual_pontualidade)}
+                  hint={
+                    b12.pontualidade_quantidade?.disponivel === false
+                      ? b12.pontualidade_quantidade.motivo_indisponibilidade
+                      : null
+                  }
+                />
+                <Row label="Pontualidade por valor (12 meses)" value={pct(b12.pontualidade_valor)} />
+                <Row
+                  label="Atraso médio (12 meses)"
+                  value={
+                    b12.atraso_medio_dias?.disponivel ? `${b12.atraso_medio_dias.valor} dias` : 'Indisponível'
+                  }
+                />
+                <Row
+                  label="Maior atraso histórico (12 meses)"
+                  value={
+                    b12.maior_atraso_historico_dias?.disponivel
+                      ? `${b12.maior_atraso_historico_dias.valor} dias`
+                      : 'Indisponível'
+                  }
+                />
+                <Row label="Último pagamento (12 meses)" value={metricaValor(b12.data_ultimo_pagamento, true)} />
+                {typeof b12.quantidade_pagamentos_parciais === 'number' ? (
+                  <Row label="Pagamentos parciais (12 meses)" value={String(b12.quantidade_pagamentos_parciais)} />
+                ) : null}
+              </>
+            ) : (
+              <>
+                <Row
+                  label="Pontualidade"
+                  value={pct(ind.percentual_pontualidade)}
+                  hint={ind.percentual_pontualidade?.motivo || PLACEHOLDER_SNAPSHOT}
+                />
+                <Row
+                  label="Atraso médio"
+                  value={
+                    ind.atraso_medio_dias?.disponivel ? `${ind.atraso_medio_dias.valor} dias` : 'Indisponível'
+                  }
+                />
+              </>
+            )}
+          </dl>
+        ) : null}
+      </Section>
+
+      {/* 6. Externas */}
       {secoesExternas}
     </div>
   );
 }
 
 export const AVISO_QUALIDADE_PARCIAL = AVISO_PARCIAL;
-export const MSG_SNAPSHOT_ANTIGO = PLACEHOLDER_SNAPSHOT;
