@@ -315,3 +315,69 @@ class AlocacaoAtendimento4012Tests(TestCase):
                 quantidade_atendida=Decimal('4'),
                 quantidade_pendente=Decimal('4'),
             )
+
+
+class ContratoCanonicoS4BACrudVsSugestaoTests(TestCase):
+    """S4B-A — CRUD genérico sugere CONCILIADA; Fase 1 grava PENDENTE."""
+
+    def setUp(self):
+        self.produto = _produto('S4B2')
+        self.cliente = Cliente.objects.create(razao_social='Cli S4B2', cnpj='44.444.444/0001-44')
+        self.pv = PedidoVenda.objects.create(numero='PV-S4B2', cliente=self.cliente, data=date(2026, 7, 1))
+        self.item_pv = ItemPedidoVenda.objects.create(
+            pedido=self.pv,
+            produto=self.produto,
+            quantidade=Decimal('10'),
+            valor_unitario=Decimal('10'),
+        )
+
+    def test_s4ba_crud_sem_status_explicito_sugere_conciliada_para_tipo(self):
+        """Caminho CRUD *sem* NF histórica: ``_aplicar_sugestao_tipo`` preenche CONCILIADA."""
+        aloc = criar_alocacao_atendimento(
+            {
+                'pedido_venda_item': self.item_pv,
+                'produto': self.produto,
+                'quantidade_necessaria': Decimal('2'),
+                'quantidade_atendida': Decimal('2'),
+                'quantidade_pendente': Decimal('0'),
+                'tipo_atendimento': TipoAtendimentoItem.ENTRADA_CONCILIADA,
+                # status omitido / NAO_APLICAVEL → sugestão do helper
+            },
+        )
+        self.assertEqual(aloc.tipo_atendimento, TipoAtendimentoItem.ENTRADA_CONCILIADA)
+        self.assertEqual(aloc.status_entrada_fiscal, StatusEntradaFiscal.CONCILIADA)
+
+    def test_s4ba_kpi_conta_apenas_status_persistido_conciliada(self):
+        from apps.comercial.services.atendimentos_operacionais_service import (
+            calcular_kpis_atendimentos_operacionais,
+        )
+
+        criar_alocacao_atendimento(
+            {
+                'pedido_venda_item': self.item_pv,
+                'produto': self.produto,
+                'quantidade_necessaria': Decimal('1'),
+                'quantidade_atendida': Decimal('1'),
+                'quantidade_pendente': Decimal('0'),
+                'tipo_atendimento': TipoAtendimentoItem.ENTRADA_CONCILIADA,
+            },
+        )
+        item2 = ItemPedidoVenda.objects.create(
+            pedido=self.pv,
+            produto=self.produto,
+            quantidade=Decimal('5'),
+            valor_unitario=Decimal('10'),
+        )
+        criar_alocacao_atendimento(
+            {
+                'pedido_venda_item': item2,
+                'produto': self.produto,
+                'quantidade_necessaria': Decimal('1'),
+                'quantidade_pendente': Decimal('1'),
+                'tipo_atendimento': TipoAtendimentoItem.RETIRADA_FORNECEDOR,
+                'status_entrada_fiscal': StatusEntradaFiscal.PENDENTE,
+            },
+        )
+        kpis = calcular_kpis_atendimentos_operacionais()
+        self.assertEqual(kpis['entradas_conciliadas'], 1)
+        self.assertGreaterEqual(kpis['entradas_pendentes'], 1)

@@ -23,10 +23,24 @@ from apps.comercial.models import (
 )
 from apps.comercial.services.alocacao_entrada_venda_service import (
     ESTADO_CONCILIADO,
+    ESTADO_DIVERGENTE,
     ESTADO_PARCIAL,
     ESTADO_SEM_ALOCACAO,
+    TOL,
     alocar_entrada_para_venda,
+    desvincular_alocacao_entrada_venda,
+    estado_operacional_entrada,
     montar_resumo_entrada_venda,
+    total_alocado_destino_pv,
+    total_alocado_entrada,
+)
+from apps.comercial.services.atendimentos_operacionais_service import (
+    calcular_kpis_atendimentos_operacionais,
+)
+from apps.fiscal.modelo_operacional import (
+    StatusEntradaFiscal,
+    TipoAtendimentoItem,
+    resolver_origem_destino_por_tipo,
 )
 from apps.fiscal.models import (
     AlocacaoAtendimento,
@@ -525,3 +539,228 @@ class AlocacaoEntradaVendaFase1Tests(TestCase):
         )
         self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('unidades incompatíveis', (r.data.get('detail') or '').lower())
+
+
+class ContratoCanonicoS4BACaracterizacaoTests(TestCase):
+    """S4B-A — caracteriza o contrato ATUAL (inclui inconsistências conhecidas).
+
+    Não corrige comportamento: documenta tipo × status × estado quantitativo.
+    """
+
+    def setUp(self):
+        self.produto = _produto('S4BA')
+        self.cliente = Cliente.objects.create(razao_social='Cliente S4BA', cnpj=_cnpj())
+        self.fornecedor = Fornecedor.objects.create(razao_social='Forn S4BA', cnpj=_cnpj(), uf='SP')
+        self.nf = NFeEntradaHistoricaImportada.objects.create(
+            chave_acesso=('35' + 'S4B' + 'Z' * 40)[:44],
+            numero='NE-S4BA',
+            serie='1',
+            modelo='55',
+            dh_emissao=timezone.make_aware(datetime(2026, 7, 1, 10, 0)),
+            valor_total_nf=Decimal('100'),
+            fornecedor_emitente=self.fornecedor,
+            cstat='100',
+            tp_amb='1',
+        )
+        self.item_nf = ItemNFeEntradaHistoricaImportada.objects.create(
+            nf=self.nf,
+            n_item=1,
+            prod_json={'qCom': '10.000', 'uCom': 'PC'},
+        )
+        self.conf = NFeEntradaConferencia.objects.create(
+            nf_entrada_historica=self.nf,
+            status=NFeEntradaConferencia.Status.CONFERIDA,
+        )
+        self.linha, _ = self.conf.itens.get_or_create(item_nfe_historico=self.item_nf)
+        self.linha.produto = self.produto
+        self.linha.quantidade_nf = Decimal('10')
+        self.linha.unidade_nf = 'PC'
+        self.linha.quantidade_estoque_calculada = Decimal('10.000')
+        self.linha.unidade_estoque_calculada = 'PC'
+        self.linha.status = ItemNFeEntradaConferencia.Status.CONFERIDO
+        self.linha.save()
+        self.pv = PedidoVenda.objects.create(numero='PV-S4BA', cliente=self.cliente, data=date(2026, 7, 1))
+        self.item_pv = ItemPedidoVenda.objects.create(
+            pedido=self.pv,
+            produto=self.produto,
+            quantidade=Decimal('10'),
+            valor_unitario=Decimal('50'),
+            unidade_estoque_calculada='PC',
+            quantidade_estoque_calculada=Decimal('10'),
+        )
+
+    def test_s4ba_fase1_grava_tipo_conciliada_e_status_pendente(self):
+        """INCONSISTÊNCIA CARACTERIZADA (atual):
+
+        - Helper ``resolver_origem_destino_por_tipo(ENTRADA_CONCILIADA)`` sugere status CONCILIADA.
+        - Fase 1 ``_montar_dados_alocacao`` grava status PENDENTE explicitamente.
+        - ``ENTRADA_CONCILIADA`` funciona como *tipo/origem do atendimento* (opção A),
+          não como conclusão integral (opção B).
+        """
+        _, _, status_sugerido = resolver_origem_destino_por_tipo(TipoAtendimentoItem.ENTRADA_CONCILIADA)
+        self.assertEqual(status_sugerido, StatusEntradaFiscal.CONCILIADA)
+
+        aloc, acao = alocar_entrada_para_venda(
+            item_conferencia_id=self.linha.pk,
+            pedido_venda_item_id=self.item_pv.pk,
+            quantidade=Decimal('10'),
+        )
+        self.assertEqual(acao, 'criado')
+        self.assertEqual(aloc.tipo_atendimento, TipoAtendimentoItem.ENTRADA_CONCILIADA)
+        self.assertEqual(aloc.status_entrada_fiscal, StatusEntradaFiscal.PENDENTE)
+        self.assertEqual(
+            montar_resumo_entrada_venda(self.linha)['estado_operacional'],
+            ESTADO_CONCILIADO,
+        )
+
+    def test_s4ba_kpi_entradas_conciliadas_usa_status_persistido_nao_estado_qty(self):
+        """KPI atual conta ``status_entrada_fiscal=CONCILIADA``, não estado quantitativo."""
+        alocar_entrada_para_venda(
+            item_conferencia_id=self.linha.pk,
+            pedido_venda_item_id=self.item_pv.pk,
+            quantidade=Decimal('10'),
+        )
+        self.assertEqual(montar_resumo_entrada_venda(self.linha)['estado_operacional'], ESTADO_CONCILIADO)
+        kpis = calcular_kpis_atendimentos_operacionais()
+        # Alocação Fase 1 integral → estado CONCILIADO, mas status PENDENTE → fora do KPI.
+        self.assertEqual(kpis['entradas_conciliadas'], 0)
+        self.assertGreaterEqual(kpis['entradas_pendentes'], 1)
+
+    def test_s4ba_estado_operacional_regra_quantitativa_canonica(self):
+        self.assertEqual(
+            estado_operacional_entrada(quantidade_disponivel=Decimal('10'), total_alocado=Decimal('0')),
+            ESTADO_SEM_ALOCACAO,
+        )
+        self.assertEqual(
+            estado_operacional_entrada(quantidade_disponivel=Decimal('10'), total_alocado=Decimal('4')),
+            ESTADO_PARCIAL,
+        )
+        self.assertEqual(
+            estado_operacional_entrada(quantidade_disponivel=Decimal('10'), total_alocado=Decimal('10')),
+            ESTADO_CONCILIADO,
+        )
+        self.assertEqual(
+            estado_operacional_entrada(
+                quantidade_disponivel=Decimal('10'),
+                total_alocado=Decimal('10') - TOL,
+            ),
+            ESTADO_CONCILIADO,
+        )
+        self.assertEqual(
+            estado_operacional_entrada(quantidade_disponivel=Decimal('10'), total_alocado=Decimal('10.001')),
+            ESTADO_DIVERGENTE,
+        )
+
+    def test_s4ba_total_alocado_soma_quantidade_necessaria_por_origem(self):
+        pv2 = PedidoVenda.objects.create(numero='PV-S4BA-2', cliente=self.cliente, data=date(2026, 7, 2))
+        item_pv2 = ItemPedidoVenda.objects.create(
+            pedido=pv2,
+            produto=self.produto,
+            quantidade=Decimal('5'),
+            valor_unitario=Decimal('50'),
+            unidade_estoque_calculada='PC',
+            quantidade_estoque_calculada=Decimal('5'),
+        )
+        alocar_entrada_para_venda(
+            item_conferencia_id=self.linha.pk,
+            pedido_venda_item_id=self.item_pv.pk,
+            quantidade=Decimal('4'),
+        )
+        alocar_entrada_para_venda(
+            item_conferencia_id=self.linha.pk,
+            pedido_venda_item_id=item_pv2.pk,
+            quantidade=Decimal('3'),
+        )
+        self.assertEqual(total_alocado_entrada(self.item_nf.pk), Decimal('7'))
+        self.assertEqual(total_alocado_destino_pv(self.item_pv.pk), Decimal('4'))
+        self.assertEqual(montar_resumo_entrada_venda(self.linha)['estado_operacional'], ESTADO_PARCIAL)
+
+    def test_s4ba_n_entradas_um_destino_agrega_no_pv(self):
+        item_nf2 = ItemNFeEntradaHistoricaImportada.objects.create(
+            nf=self.nf,
+            n_item=2,
+            prod_json={'qCom': '5'},
+        )
+        linha2, _ = self.conf.itens.get_or_create(item_nfe_historico=item_nf2)
+        linha2.produto = self.produto
+        linha2.quantidade_estoque_calculada = Decimal('5.000')
+        linha2.unidade_estoque_calculada = 'PC'
+        linha2.status = ItemNFeEntradaConferencia.Status.CONFERIDO
+        linha2.save()
+
+        alocar_entrada_para_venda(
+            item_conferencia_id=self.linha.pk,
+            pedido_venda_item_id=self.item_pv.pk,
+            quantidade=Decimal('6'),
+        )
+        alocar_entrada_para_venda(
+            item_conferencia_id=linha2.pk,
+            pedido_venda_item_id=self.item_pv.pk,
+            quantidade=Decimal('4'),
+        )
+        self.assertEqual(total_alocado_destino_pv(self.item_pv.pk), Decimal('10'))
+        self.assertEqual(total_alocado_entrada(self.item_nf.pk), Decimal('6'))
+        self.assertEqual(total_alocado_entrada(item_nf2.pk), Decimal('4'))
+
+    def test_s4ba_upsert_substitui_nao_soma_e_ajuste_para_baixo(self):
+        a1, acao1 = alocar_entrada_para_venda(
+            item_conferencia_id=self.linha.pk,
+            pedido_venda_item_id=self.item_pv.pk,
+            quantidade=Decimal('7'),
+        )
+        self.assertEqual(acao1, 'criado')
+        a2, acao2 = alocar_entrada_para_venda(
+            item_conferencia_id=self.linha.pk,
+            pedido_venda_item_id=self.item_pv.pk,
+            quantidade=Decimal('7'),
+        )
+        self.assertEqual(acao2, 'atualizado')
+        self.assertEqual(a1.pk, a2.pk)
+        self.assertEqual(AlocacaoAtendimento.objects.count(), 1)
+        self.assertEqual(a2.quantidade_necessaria, Decimal('7.000'))
+
+        a3, acao3 = alocar_entrada_para_venda(
+            item_conferencia_id=self.linha.pk,
+            pedido_venda_item_id=self.item_pv.pk,
+            quantidade=Decimal('3'),
+        )
+        self.assertEqual(acao3, 'atualizado')
+        self.assertEqual(a3.quantidade_necessaria, Decimal('3.000'))
+        self.assertEqual(a3.quantidade_atendida, Decimal('3.000'))
+        self.assertEqual(a3.quantidade_pendente, Decimal('0'))
+        self.assertEqual(total_alocado_entrada(self.item_nf.pk), Decimal('3'))
+
+    def test_s4ba_desvincular_remove_registro_e_agregado_zera(self):
+        aloc, _ = alocar_entrada_para_venda(
+            item_conferencia_id=self.linha.pk,
+            pedido_venda_item_id=self.item_pv.pk,
+            quantidade=Decimal('5'),
+        )
+        desvincular_alocacao_entrada_venda(aloc)
+        self.assertEqual(AlocacaoAtendimento.objects.count(), 0)
+        self.assertEqual(total_alocado_entrada(self.item_nf.pk), Decimal('0'))
+        self.assertEqual(
+            montar_resumo_entrada_venda(self.linha)['estado_operacional'],
+            ESTADO_SEM_ALOCACAO,
+        )
+
+    def test_s4ba_homologacao_bloqueada_na_validacao_de_vinculo(self):
+        from apps.comercial.services.alocacao_atendimento_service import AlocacaoAtendimentoErro
+        from apps.comercial.services.alocacao_atendimento_vinculos import validar_vinculos_alocacao
+
+        self.nf.tp_amb = '2'
+        self.nf.save(update_fields=['tp_amb'])
+        with self.assertRaises(AlocacaoAtendimentoErro) as ctx:
+            validar_vinculos_alocacao({'nf_entrada_historica_item': self.item_nf})
+        self.assertIn('homologação', str(ctx.exception).lower())
+
+    def test_s4ba_fase1_nao_movimenta_estoque_nem_financeiro(self):
+        estoque_antes = EstoqueCorrida.objects.count()
+        titulos_antes = TituloFinanceiro.objects.count()
+        alocar_entrada_para_venda(
+            item_conferencia_id=self.linha.pk,
+            pedido_venda_item_id=self.item_pv.pk,
+            quantidade=Decimal('2'),
+        )
+        self.assertEqual(EstoqueCorrida.objects.count(), estoque_antes)
+        self.assertEqual(TituloFinanceiro.objects.count(), titulos_antes)

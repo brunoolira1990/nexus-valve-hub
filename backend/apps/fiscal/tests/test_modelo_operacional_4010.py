@@ -210,3 +210,41 @@ class AlocacaoAtendimentoModelTests(TestCase):
         mensagens = ' '.join(resultado.get('mensagens', []))
         self.assertNotIn('entrada fiscal', mensagens.lower())
         self.assertNotIn('nf-e entrada', mensagens.lower())
+
+
+class ContratoCanonicoS4BAModeloOperacionalTests(TestCase):
+    """S4B-A — semântica dos helpers vs Fase 1 (caracterização)."""
+
+    def test_s4ba_entrada_conciliada_no_helper_sugere_status_conciliada(self):
+        """Opção A confirmada pelo mapeamento: tipo sugere status, mas não prova conclusão qty."""
+        from apps.fiscal.modelo_operacional import resolver_origem_destino_por_tipo
+
+        origem, destino, status = resolver_origem_destino_por_tipo(TipoAtendimentoItem.ENTRADA_CONCILIADA)
+        self.assertEqual(origem, OrigemFisica.ESTOQUE_PROPRIO)
+        self.assertEqual(destino, DestinoFisico.CLIENTE)
+        self.assertEqual(status, StatusEntradaFiscal.CONCILIADA)
+
+    def test_s4ba_obter_resumo_com_tipo_entrada_conciliada_usa_status_sugerido(self):
+        res = obter_resumo_atendimento_item(
+            tipo_atendimento=TipoAtendimentoItem.ENTRADA_CONCILIADA,
+            quantidade_necessaria='10',
+            quantidade_atendida='10',
+        )
+        self.assertEqual(res['tipo_atendimento'], TipoAtendimentoItem.ENTRADA_CONCILIADA)
+        self.assertEqual(res['status_entrada_fiscal'], StatusEntradaFiscal.CONCILIADA)
+        self.assertEqual(res['quantidade_pendente'], '0')
+
+    def test_s4ba_saida_continua_permitida_antes_da_entrada(self):
+        cliente = Cliente.objects.create(razao_social='Cli S4BA', cnpj='33.333.333/0001-33')
+        nf = NFeSaida.objects.create(
+            numero='NF-S4BA-4010',
+            cliente=cliente,
+            data=date(2026, 7, 15),
+            status='Rascunho',
+            valor_total=Decimal('50'),
+        )
+        resultado = validar_nfe_saida_para_emissao(nf)
+        texto = ' '.join(resultado.get('mensagens', [])).lower()
+        self.assertNotIn('entrada fiscal', texto)
+        self.assertNotIn('alocacao', texto)
+        self.assertNotIn('concilia', texto)
