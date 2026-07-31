@@ -39,15 +39,28 @@ export interface AtendimentoOperacionalItem {
   criado_em?: string | null;
 }
 
+export interface ConciliacaoEntradaQuantitativaKpis {
+  total_origens: number;
+  sem_alocacao: number;
+  parciais: number;
+  conciliadas: number;
+  divergentes: number;
+}
+
 export interface AtendimentosOperacionaisKpis {
   total: number;
+  /** Contagem documental por status_entrada_fiscal=PENDENTE (não é estado qty). */
   entradas_pendentes: number;
+  /** Contagem documental por status_entrada_fiscal=CONCILIADA (não é estado qty). */
   entradas_conciliadas: number;
   retiradas_fornecedor: number;
   entregas_diretas: number;
   sem_compra_vinculada: number;
   com_cte_conferido: number;
+  /** Bloco aditivo S4B-B — ausente em respostas antigas. */
+  conciliacao_entrada_quantitativa?: ConciliacaoEntradaQuantitativaKpis;
 }
+
 
 export interface AtendimentosOperacionaisListResponse {
   count: number;

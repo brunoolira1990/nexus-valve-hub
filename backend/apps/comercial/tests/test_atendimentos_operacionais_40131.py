@@ -240,9 +240,268 @@ class AtendimentosOperacionais40131Tests(TestCase):
         data = r.json()
         self.assertIn('total', data)
         self.assertGreaterEqual(data['total'], 1)
+        self.assertIn('conciliacao_entrada_quantitativa', data)
+        bloco = data['conciliacao_entrada_quantitativa']
+        for key in ('total_origens', 'sem_alocacao', 'parciais', 'conciliadas', 'divergentes'):
+            self.assertIn(key, bloco)
 
     def test_filtro_cte_vinculado_vazio(self):
         r = self.client.get('/api/atendimentos-operacionais/', {'tem_cte_vinculado': 'true'})
         self.assertEqual(r.status_code, status.HTTP_200_OK)
         ids = {x['id'] for x in r.json()['results']}
         self.assertNotIn(self.aloc.pk, ids)
+
+
+class ConciliacaoEntradaQuantitativaS4BBTests(TestCase):
+    """S4B-B — KPI quantitativo por item de entrada distinto (sem regravar status)."""
+
+    def setUp(self):
+        from django.utils import timezone
+        from datetime import datetime
+
+        from apps.fiscal.models import (
+            ItemNFeEntradaConferencia,
+            ItemNFeEntradaHistoricaImportada,
+            NFeEntradaConferencia,
+            NFeEntradaHistoricaImportada,
+        )
+
+        self.ItemNFeEntradaConferencia = ItemNFeEntradaConferencia
+        self.ItemNFeEntradaHistoricaImportada = ItemNFeEntradaHistoricaImportada
+        self.NFeEntradaConferencia = NFeEntradaConferencia
+        self.NFeEntradaHistoricaImportada = NFeEntradaHistoricaImportada
+        self.timezone = timezone
+        self.datetime = datetime
+
+        self.user = get_user_model().objects.create_user('s4bb', 's4bb@test.com', 'x')
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+        self.produto = _produto('S4BB')
+        self.cliente = Cliente.objects.create(razao_social='Cli S4BB', cnpj='55.555.555/0001-55')
+        self.fornecedor = Fornecedor.objects.create(
+            razao_social='Forn S4BB',
+            cnpj='66.666.666/0001-66',
+            uf='SP',
+        )
+
+    def _origem(self, *, n_item: int, qtd: str = '10') -> tuple:
+        from apps.comercial.services.alocacao_entrada_venda_service import alocar_entrada_para_venda
+
+        nf = self.NFeEntradaHistoricaImportada.objects.create(
+            chave_acesso=('35' + f'S4{n_item}' + 'Z' * 40)[:44],
+            numero=f'NE-S4BB-{n_item}',
+            serie='1',
+            modelo='55',
+            dh_emissao=self.timezone.make_aware(self.datetime(2026, 7, 1, 10, 0)),
+            valor_total_nf=Decimal('100'),
+            fornecedor_emitente=self.fornecedor,
+            cstat='100',
+            tp_amb='1',
+        )
+        item_nf = self.ItemNFeEntradaHistoricaImportada.objects.create(
+            nf=nf,
+            n_item=n_item,
+            prod_json={'qCom': qtd, 'uCom': 'PC'},
+        )
+        conf = self.NFeEntradaConferencia.objects.create(
+            nf_entrada_historica=nf,
+            status=self.NFeEntradaConferencia.Status.CONFERIDA,
+        )
+        linha, _ = conf.itens.get_or_create(item_nfe_historico=item_nf)
+        linha.produto = self.produto
+        linha.quantidade_nf = Decimal(qtd)
+        linha.unidade_nf = 'PC'
+        linha.quantidade_estoque_calculada = Decimal(qtd)
+        linha.unidade_estoque_calculada = 'PC'
+        linha.status = self.ItemNFeEntradaConferencia.Status.CONFERIDO
+        linha.save()
+        return item_nf, linha, alocar_entrada_para_venda
+
+    def _pv_item(self, *, numero: str, qtd: str = '10'):
+        pv = PedidoVenda.objects.create(numero=numero, cliente=self.cliente, data=date(2026, 7, 1))
+        return ItemPedidoVenda.objects.create(
+            pedido=pv,
+            produto=self.produto,
+            quantidade=Decimal(qtd),
+            valor_unitario=Decimal('10'),
+            unidade_estoque_calculada='PC',
+            quantidade_estoque_calculada=Decimal(qtd),
+        )
+
+    def test_s4bb_origem_integral_uma_venda(self):
+        from apps.comercial.services.atendimentos_operacionais_service import (
+            calcular_conciliacao_entrada_quantitativa,
+        )
+
+        item_nf, linha, alocar = self._origem(n_item=1, qtd='10')
+        pvi = self._pv_item(numero='PV-S4BB-1', qtd='10')
+        aloc, _ = alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('10'))
+        self.assertEqual(aloc.status_entrada_fiscal, StatusEntradaFiscal.PENDENTE)
+        bloco = calcular_conciliacao_entrada_quantitativa(
+            AlocacaoAtendimento.objects.filter(nf_entrada_historica_item_id=item_nf.pk),
+        )
+        self.assertEqual(bloco['total_origens'], 1)
+        self.assertEqual(bloco['conciliadas'], 1)
+        self.assertEqual(bloco['parciais'], 0)
+        self.assertEqual(
+            bloco['total_origens'],
+            bloco['sem_alocacao'] + bloco['parciais'] + bloco['conciliadas'] + bloco['divergentes'],
+        )
+        aloc.refresh_from_db()
+        self.assertEqual(aloc.status_entrada_fiscal, StatusEntradaFiscal.PENDENTE)
+
+    def test_s4bb_origem_parcial(self):
+        from apps.comercial.services.atendimentos_operacionais_service import (
+            calcular_conciliacao_entrada_quantitativa,
+        )
+
+        item_nf, linha, alocar = self._origem(n_item=2, qtd='10')
+        pvi = self._pv_item(numero='PV-S4BB-2', qtd='10')
+        alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('4'))
+        bloco = calcular_conciliacao_entrada_quantitativa(
+            AlocacaoAtendimento.objects.filter(nf_entrada_historica_item_id=item_nf.pk),
+        )
+        self.assertEqual(bloco['parciais'], 1)
+        self.assertEqual(bloco['conciliadas'], 0)
+
+    def test_s4bb_uma_origem_duas_vendas_conta_uma_vez(self):
+        from apps.comercial.services.atendimentos_operacionais_service import (
+            calcular_conciliacao_entrada_quantitativa,
+        )
+
+        item_nf, linha, alocar = self._origem(n_item=3, qtd='10')
+        pvi1 = self._pv_item(numero='PV-S4BB-3a', qtd='6')
+        pvi2 = self._pv_item(numero='PV-S4BB-3b', qtd='4')
+        alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi1.pk, quantidade=Decimal('6'))
+        alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi2.pk, quantidade=Decimal('4'))
+        qs = AlocacaoAtendimento.objects.filter(nf_entrada_historica_item_id=item_nf.pk)
+        self.assertEqual(qs.count(), 2)
+        bloco = calcular_conciliacao_entrada_quantitativa(qs)
+        self.assertEqual(bloco['total_origens'], 1)
+        self.assertEqual(bloco['conciliadas'], 1)
+
+    def test_s4bb_duas_origens_uma_venda(self):
+        from apps.comercial.services.atendimentos_operacionais_service import (
+            calcular_conciliacao_entrada_quantitativa,
+        )
+
+        item1, linha1, alocar = self._origem(n_item=4, qtd='5')
+        item2, linha2, _ = self._origem(n_item=5, qtd='5')
+        pvi = self._pv_item(numero='PV-S4BB-45', qtd='10')
+        alocar(item_conferencia_id=linha1.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('5'))
+        alocar(item_conferencia_id=linha2.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('5'))
+        qs = AlocacaoAtendimento.objects.filter(
+            nf_entrada_historica_item_id__in=[item1.pk, item2.pk],
+        )
+        bloco = calcular_conciliacao_entrada_quantitativa(qs)
+        self.assertEqual(bloco['total_origens'], 2)
+        self.assertEqual(bloco['conciliadas'], 2)
+
+    def test_s4bb_acima_disponivel_divergente(self):
+        from apps.comercial.services.atendimentos_operacionais_service import (
+            calcular_conciliacao_entrada_quantitativa,
+        )
+
+        item_nf, linha, alocar = self._origem(n_item=6, qtd='10')
+        pvi = self._pv_item(numero='PV-S4BB-6', qtd='10')
+        aloc, _ = alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('10'))
+        # Força inconsistência residual sem passar pelas validações de alocar.
+        AlocacaoAtendimento.objects.filter(pk=aloc.pk).update(quantidade_necessaria=Decimal('12'))
+        bloco = calcular_conciliacao_entrada_quantitativa(
+            AlocacaoAtendimento.objects.filter(nf_entrada_historica_item_id=item_nf.pk),
+        )
+        self.assertEqual(bloco['divergentes'], 1)
+
+    def test_s4bb_desvincular_ultima_remove_origem_do_conjunto(self):
+        from apps.comercial.services.alocacao_entrada_venda_service import desvincular_alocacao_entrada_venda
+        from apps.comercial.services.atendimentos_operacionais_service import (
+            calcular_conciliacao_entrada_quantitativa,
+        )
+
+        item_nf, linha, alocar = self._origem(n_item=7, qtd='10')
+        pvi = self._pv_item(numero='PV-S4BB-7', qtd='10')
+        aloc, _ = alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('10'))
+        desvincular_alocacao_entrada_venda(aloc)
+        bloco = calcular_conciliacao_entrada_quantitativa(
+            AlocacaoAtendimento.objects.filter(nf_entrada_historica_item_id=item_nf.pk),
+        )
+        # Limitação documentada: sem linhas, origem some (não vira SEM_ALOCACAO).
+        self.assertEqual(bloco['total_origens'], 0)
+        self.assertEqual(bloco['sem_alocacao'], 0)
+
+    def test_s4bb_tipo_entrada_conciliada_parcial_nao_forca_conciliado(self):
+        from apps.comercial.services.atendimentos_operacionais_service import (
+            calcular_conciliacao_entrada_quantitativa,
+        )
+
+        item_nf, linha, alocar = self._origem(n_item=8, qtd='10')
+        pvi = self._pv_item(numero='PV-S4BB-8', qtd='10')
+        aloc, _ = alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('3'))
+        self.assertEqual(aloc.tipo_atendimento, TipoAtendimentoItem.ENTRADA_CONCILIADA)
+        bloco = calcular_conciliacao_entrada_quantitativa(
+            AlocacaoAtendimento.objects.filter(nf_entrada_historica_item_id=item_nf.pk),
+        )
+        self.assertEqual(bloco['parciais'], 1)
+        self.assertEqual(bloco['conciliadas'], 0)
+
+    def test_s4bb_sem_n_plus_1_para_varias_origens(self):
+        from apps.comercial.services.atendimentos_operacionais_service import (
+            calcular_conciliacao_entrada_quantitativa,
+        )
+
+        def _montar(n: int) -> list[int]:
+            ids = []
+            for i in range(n):
+                item_nf, linha, alocar = self._origem(n_item=100 + n * 10 + i, qtd='4')
+                pvi = self._pv_item(numero=f'PV-S4BB-Q{n}-{i}', qtd='4')
+                alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('4'))
+                ids.append(item_nf.pk)
+            return ids
+
+        ids5 = _montar(5)
+        qs5 = AlocacaoAtendimento.objects.filter(nf_entrada_historica_item_id__in=ids5)
+        with self.assertNumQueries(2):
+            bloco5 = calcular_conciliacao_entrada_quantitativa(qs5)
+        self.assertEqual(bloco5['total_origens'], 5)
+        self.assertEqual(bloco5['conciliadas'], 5)
+        self.assertEqual(
+            bloco5['total_origens'],
+            bloco5['sem_alocacao'] + bloco5['parciais'] + bloco5['conciliadas'] + bloco5['divergentes'],
+        )
+
+        ids10 = _montar(10)
+        qs10 = AlocacaoAtendimento.objects.filter(nf_entrada_historica_item_id__in=ids10)
+        with self.assertNumQueries(2):
+            bloco10 = calcular_conciliacao_entrada_quantitativa(qs10)
+        self.assertEqual(bloco10['total_origens'], 10)
+        # Mesmo teto de queries com o dobro de origens (sem N+1).
+
+    def test_s4bb_api_kpis_aditivo_e_sem_efeitos_colaterais(self):
+        _, linha, alocar = self._origem(n_item=9, qtd='10')
+        pvi = self._pv_item(numero='PV-S4BB-9', qtd='10')
+        aloc, _ = alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('10'))
+        estoque_antes = EstoqueCorrida.objects.count()
+        status_antes = aloc.status_entrada_fiscal
+        r = self.client.get('/api/atendimentos-operacionais/kpis/')
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        data = r.json()
+        self.assertIn('entradas_conciliadas', data)  # documental preservado
+        self.assertIn('conciliacao_entrada_quantitativa', data)
+        self.assertGreaterEqual(data['conciliacao_entrada_quantitativa']['conciliadas'], 1)
+        aloc.refresh_from_db()
+        self.assertEqual(aloc.status_entrada_fiscal, status_antes)
+        self.assertEqual(EstoqueCorrida.objects.count(), estoque_antes)
+
+    def test_s4bb_saida_nao_bloqueada_por_entrada(self):
+        from apps.fiscal.models import NFeSaida
+        from apps.fiscal.validacao_nfe_saida import validar_nfe_saida_para_emissao
+
+        nf = NFeSaida.objects.create(
+            numero='NF-S4BB',
+            cliente=self.cliente,
+            data=date(2026, 7, 15),
+            status='Rascunho',
+            valor_total=Decimal('10'),
+        )
+        texto = ' '.join(validar_nfe_saida_para_emissao(nf).get('mensagens', [])).lower()
+        self.assertNotIn('entrada fiscal', texto)

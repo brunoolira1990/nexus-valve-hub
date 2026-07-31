@@ -302,7 +302,16 @@ def serializar_atendimento_operacional(alocacao: AlocacaoAtendimento) -> dict[st
     }
 
 
-def calcular_kpis_atendimentos_operacionais(qs: QuerySet | None = None) -> dict[str, int]:
+def calcular_kpis_atendimentos_operacionais(qs: QuerySet | None = None) -> dict[str, Any]:
+    """KPIs da listagem.
+
+    Campos de topo (entradas_pendentes / entradas_conciliadas) permanecem
+    **documentais** (``status_entrada_fiscal``).
+
+    O bloco ``conciliacao_entrada_quantitativa`` conta **itens de entrada
+    histórica distintos** pelo estado quantitativo canônico
+    (``estado_operacional_entrada``), sem alterar registros.
+    """
     base = qs if qs is not None else queryset_atendimentos_operacionais()
     return {
         'total': base.count(),
@@ -319,6 +328,78 @@ def calcular_kpis_atendimentos_operacionais(qs: QuerySet | None = None) -> dict[
         ).count(),
         'sem_compra_vinculada': base.filter(pedido_compra_item_id__isnull=True).count(),
         'com_cte_conferido': base.filter(cte_historico_importado_id__isnull=False).count(),
+        'conciliacao_entrada_quantitativa': calcular_conciliacao_entrada_quantitativa(base),
+    }
+
+
+def calcular_conciliacao_entrada_quantitativa(qs: QuerySet | None = None) -> dict[str, int]:
+    """Agrega estado quantitativo por ``nf_entrada_historica_item`` distinto.
+
+    Fonte canônica de disponível: ``ItemNFeEntradaConferencia.quantidade_estoque_calculada``
+    (mesma base de ``quantidade_disponivel_entrada``). Sem conversão de unidade.
+
+    Se a quantidade interna estiver ausente (sem conferência ou campo nulo),
+    **não** se inventa zero na fórmula — a origem é classificada como DIVERGENTE.
+
+    Limitação: o queryset é baseado em ``AlocacaoAtendimento``. Origens sem
+    nenhuma alocação não entram — ``sem_alocacao`` só ocorre se restar linha
+    com total alocado ≈ 0. Desvincular a última alocação remove a origem do
+    conjunto (não vira SEM_ALOCACAO).
+    """
+    from django.db.models import Sum
+
+    from apps.comercial.services.alocacao_entrada_venda_service import (
+        ESTADO_CONCILIADO,
+        ESTADO_DIVERGENTE,
+        ESTADO_PARCIAL,
+        ESTADO_SEM_ALOCACAO,
+        estado_operacional_entrada,
+    )
+    from apps.fiscal.models import ItemNFeEntradaConferencia
+
+    base = qs if qs is not None else queryset_atendimentos_operacionais()
+    agregados = list(
+        base.exclude(nf_entrada_historica_item_id__isnull=True)
+        .values('nf_entrada_historica_item_id')
+        .annotate(total_alocado=Sum('quantidade_necessaria')),
+    )
+    hist_ids = [row['nf_entrada_historica_item_id'] for row in agregados]
+
+    disponiveis: dict[int, Decimal] = {}
+    if hist_ids:
+        for row in ItemNFeEntradaConferencia.objects.filter(
+            item_nfe_historico_id__in=hist_ids,
+        ).values('item_nfe_historico_id', 'quantidade_estoque_calculada'):
+            raw = row['quantidade_estoque_calculada']
+            if raw is None:
+                # Ausência explícita: não inventar zero (helper canônico também rejeita None).
+                continue
+            disponiveis[int(row['item_nfe_historico_id'])] = Decimal(str(raw))
+
+    contagem = {
+        ESTADO_SEM_ALOCACAO: 0,
+        ESTADO_PARCIAL: 0,
+        ESTADO_CONCILIADO: 0,
+        ESTADO_DIVERGENTE: 0,
+    }
+    for row in agregados:
+        hid = int(row['nf_entrada_historica_item_id'])
+        alocado = row['total_alocado'] if row['total_alocado'] is not None else Decimal('0')
+        if hid not in disponiveis:
+            estado = ESTADO_DIVERGENTE
+        else:
+            estado = estado_operacional_entrada(
+                quantidade_disponivel=disponiveis[hid],
+                total_alocado=alocado,
+            )
+        contagem[estado] = contagem.get(estado, 0) + 1
+
+    return {
+        'total_origens': len(agregados),
+        'sem_alocacao': contagem[ESTADO_SEM_ALOCACAO],
+        'parciais': contagem[ESTADO_PARCIAL],
+        'conciliadas': contagem[ESTADO_CONCILIADO],
+        'divergentes': contagem[ESTADO_DIVERGENTE],
     }
 
 

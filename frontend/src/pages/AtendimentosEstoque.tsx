@@ -9,7 +9,11 @@ import { ProdutoComercialField } from '@/components/comercial/ProdutoComercialFi
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import { atendimentosOperacionaisService } from '@/services/api/atendimentosOperacionais';
 import { alocacaoAtendimentoService } from '@/services/api/alocacaoAtendimento';
-import type { AtendimentoOperacionalItem, AtendimentosOperacionaisKpis } from '@/types/atendimentosOperacionais';
+import type {
+  AtendimentoOperacionalItem,
+  AtendimentosOperacionaisKpis,
+  ConciliacaoEntradaQuantitativaKpis,
+} from '@/types/atendimentosOperacionais';
 import type { OpcaoFornecedor } from '@/types/alocacaoAtendimentoOpcoes';
 import { STATUS_ENTRADA_FISCAL, TIPOS_ATENDIMENTO } from '@/types/alocacaoAtendimento';
 import type { Cliente, Produto } from '@/types';
@@ -28,14 +32,19 @@ function fmtQty(v?: string | null): string {
   return n.toLocaleString('pt-BR', { maximumFractionDigits: 3 });
 }
 
-const KPI_CARDS: {
+/** Documentais (status_entrada_fiscal). Preferir bloco quantitativo para conciliação. */
+const KPI_CARDS_DOCUMENTAIS: {
   key: keyof AtendimentosOperacionaisKpis;
   label: string;
   filter?: Record<string, string>;
 }[] = [
   { key: 'total', label: 'Total de atendimentos' },
-  { key: 'entradas_pendentes', label: 'Entradas pendentes', filter: { status_entrada_fiscal: 'PENDENTE' } },
-  { key: 'entradas_conciliadas', label: 'Entradas conciliadas', filter: { status_entrada_fiscal: 'CONCILIADA' } },
+  { key: 'entradas_pendentes', label: 'Status documental pendente', filter: { status_entrada_fiscal: 'PENDENTE' } },
+  {
+    key: 'entradas_conciliadas',
+    label: 'Status documental conciliada',
+    filter: { status_entrada_fiscal: 'CONCILIADA' },
+  },
   {
     key: 'retiradas_fornecedor',
     label: 'Retiradas fornecedor',
@@ -49,6 +58,30 @@ const KPI_CARDS: {
   { key: 'sem_compra_vinculada', label: 'Sem compra vinculada', filter: { somente_sem_compra: 'true' } },
   { key: 'com_cte_conferido', label: 'Com CT-e conferido', filter: { tem_cte_vinculado: 'true' } },
 ];
+
+const KPI_CARDS_QUANTITATIVOS: {
+  key: keyof ConciliacaoEntradaQuantitativaKpis;
+  label: string;
+}[] = [
+  { key: 'total_origens', label: 'Origens de entrada' },
+  { key: 'conciliadas', label: 'Conciliadas (qty)' },
+  { key: 'parciais', label: 'Parciais (qty)' },
+  { key: 'divergentes', label: 'Divergentes (qty)' },
+];
+
+/** Preferência S4B-B: bloco quantitativo quando presente; senão só documentais. */
+export function resolverExibicaoKpisAtendimentos(kpis: AtendimentosOperacionaisKpis | null | undefined): {
+  documentais: typeof KPI_CARDS_DOCUMENTAIS;
+  quantitativos: typeof KPI_CARDS_QUANTITATIVOS | null;
+  bloco: ConciliacaoEntradaQuantitativaKpis | null;
+} {
+  const bloco = kpis?.conciliacao_entrada_quantitativa ?? null;
+  return {
+    documentais: KPI_CARDS_DOCUMENTAIS,
+    quantitativos: bloco ? KPI_CARDS_QUANTITATIVOS : null,
+    bloco,
+  };
+}
 
 const AtendimentosEstoque = () => {
   const [kpis, setKpis] = useState<AtendimentosOperacionaisKpis | null>(null);
@@ -138,18 +171,55 @@ const AtendimentosEstoque = () => {
       />
 
       {kpis ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 mb-4">
-          {KPI_CARDS.map((card) => (
-            <button
-              key={card.key}
-              type="button"
-              className="text-left rounded-lg border border-border bg-card px-3 py-2 hover:bg-muted/50 transition-colors"
-              onClick={() => applyKpiFilter(card.filter)}
-            >
-              <div className="text-2xl font-semibold tabular-nums">{kpis[card.key]}</div>
-              <div className="text-xs text-muted-foreground leading-snug">{card.label}</div>
-            </button>
-          ))}
+        <div className="space-y-3 mb-4">
+          {(() => {
+            const exibicao = resolverExibicaoKpisAtendimentos(kpis);
+            return (
+              <>
+                {exibicao.quantitativos && exibicao.bloco ? (
+                  <div data-testid="kpis-conciliacao-quantitativa">
+                    <p className="text-xs text-muted-foreground mb-1.5">
+                      Conciliação quantitativa (por item de entrada)
+                    </p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      {exibicao.quantitativos.map((card) => (
+                        <div
+                          key={card.key}
+                          className="rounded-lg border border-border bg-card px-3 py-2"
+                          data-testid={`kpi-qty-${card.key}`}
+                        >
+                          <div className="text-2xl font-semibold tabular-nums">
+                            {exibicao.bloco![card.key]}
+                          </div>
+                          <div className="text-xs text-muted-foreground leading-snug">{card.label}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                <div data-testid="kpis-documentais">
+                  {exibicao.bloco ? (
+                    <p className="text-xs text-muted-foreground mb-1.5">Indicadores documentais e operacionais</p>
+                  ) : null}
+                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
+                    {exibicao.documentais.map((card) => (
+                      <button
+                        key={card.key}
+                        type="button"
+                        className="text-left rounded-lg border border-border bg-card px-3 py-2 hover:bg-muted/50 transition-colors"
+                        onClick={() => applyKpiFilter(card.filter)}
+                      >
+                        <div className="text-2xl font-semibold tabular-nums">
+                          {typeof kpis[card.key] === 'number' ? kpis[card.key] : '—'}
+                        </div>
+                        <div className="text-xs text-muted-foreground leading-snug">{card.label}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            );
+          })()}
         </div>
       ) : null}
 

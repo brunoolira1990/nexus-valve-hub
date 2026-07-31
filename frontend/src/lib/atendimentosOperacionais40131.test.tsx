@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import AtendimentosEstoque from '@/pages/AtendimentosEstoque';
-import type { AtendimentoOperacionalItem } from '@/types/atendimentosOperacionais';
+import AtendimentosEstoque, { resolverExibicaoKpisAtendimentos } from '@/pages/AtendimentosEstoque';
+import type { AtendimentoOperacionalItem, AtendimentosOperacionaisKpis } from '@/types/atendimentosOperacionais';
+
 
 const row: AtendimentoOperacionalItem = {
   id: 1,
@@ -148,6 +149,52 @@ describe('ERP 4.0.13.1 — Atendimentos Operacionais', () => {
   it('mostra controles de paginação quando há registros', () => {
     renderPage();
     expect(screen.getByRole('button', { name: 'Anterior' })).toBeInTheDocument();
+  });
+});
+
+describe('S4B-B — exibição KPI quantitativo', () => {
+  it('usa bloco quantitativo quando presente e preserva documentais', () => {
+    const kpis: AtendimentosOperacionaisKpis = {
+      total: 9,
+      entradas_pendentes: 7,
+      entradas_conciliadas: 0,
+      retiradas_fornecedor: 0,
+      entregas_diretas: 0,
+      sem_compra_vinculada: 0,
+      com_cte_conferido: 0,
+      conciliacao_entrada_quantitativa: {
+        total_origens: 5,
+        sem_alocacao: 0,
+        parciais: 0,
+        conciliadas: 5,
+        divergentes: 0,
+      },
+    };
+    const ex = resolverExibicaoKpisAtendimentos(kpis);
+    expect(ex.bloco?.conciliadas).toBe(5);
+    expect(ex.quantitativos?.map((c) => c.key)).toEqual([
+      'total_origens',
+      'conciliadas',
+      'parciais',
+      'divergentes',
+    ]);
+    expect(ex.documentais.some((c) => c.label.includes('documental'))).toBe(true);
+  });
+
+  it('fallback sem bloco quantitativo (resposta antiga)', () => {
+    const kpis: AtendimentosOperacionaisKpis = {
+      total: 1,
+      entradas_pendentes: 1,
+      entradas_conciliadas: 0,
+      retiradas_fornecedor: 0,
+      entregas_diretas: 0,
+      sem_compra_vinculada: 0,
+      com_cte_conferido: 0,
+    };
+    const ex = resolverExibicaoKpisAtendimentos(kpis);
+    expect(ex.bloco).toBeNull();
+    expect(ex.quantitativos).toBeNull();
+    expect(ex.documentais.length).toBeGreaterThan(0);
   });
 });
 
