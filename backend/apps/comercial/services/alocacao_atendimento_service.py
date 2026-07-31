@@ -103,7 +103,17 @@ def _normalizar_payload(dados: dict[str, Any], *, parcial: bool = False) -> dict
 
 
 @transaction.atomic
-def criar_alocacao_atendimento(dados: dict[str, Any]) -> AlocacaoAtendimento:
+def criar_alocacao_atendimento(
+    dados: dict[str, Any],
+    *,
+    ator=None,
+    origem_sistema: str | None = None,
+    motivo: str | None = None,
+) -> AlocacaoAtendimento:
+    from apps.comercial.services.alocacao_atendimento_evento_service import exigir_ator_ou_origem_sistema
+
+    exigir_ator_ou_origem_sistema(ator=ator, origem_sistema=origem_sistema)
+
     if not dados.get('produto'):
         raise AlocacaoAtendimentoErro('Informe o produto.')
     pvi = dados.get('pedido_venda_item')
@@ -132,6 +142,7 @@ def criar_alocacao_atendimento(dados: dict[str, Any]) -> AlocacaoAtendimento:
     nf_hist_id = nf_hist.pk if hasattr(nf_hist, 'pk') else (int(nf_hist) if nf_hist else None)
 
     # Entrada histórica × PV: único caminho = serviço de domínio (mesmas invariantes).
+    # Emite CONCILIADA no service de Fase 1 — não emitir CRIADA aqui (anti-duplicidade).
     if nf_hist_id and pvi_id:
         from apps.comercial.services.alocacao_entrada_venda_service import alocar_entrada_para_venda
 
@@ -144,6 +155,10 @@ def criar_alocacao_atendimento(dados: dict[str, Any]) -> AlocacaoAtendimento:
             observacao_operacional=dados.get('observacao_operacional') or '',
             faturamento_item_id=fat.pk if hasattr(fat, 'pk') else fat,
             item_nf_saida_id=nf_sai.pk if hasattr(nf_sai, 'pk') else nf_sai,
+            ator=ator,
+            origem_sistema=origem_sistema,
+            motivo=motivo,
+            registrar_evento=True,
         )
         return aloc
 
@@ -174,11 +189,47 @@ def criar_alocacao_atendimento(dados: dict[str, Any]) -> AlocacaoAtendimento:
                 f'ultrapassa a quantidade disponível ({disponivel}).',
             )
 
-    return AlocacaoAtendimento.objects.create(**dados)
+    from apps.comercial.services.alocacao_atendimento_evento_service import (
+        registrar_evento_alocacao,
+        snapshot_alocacao,
+    )
+    from apps.fiscal.models import AlocacaoAtendimentoEvento
+
+    aloc = AlocacaoAtendimento.objects.create(**dados)
+    depois = snapshot_alocacao(aloc)
+    registrar_evento_alocacao(
+        evento=AlocacaoAtendimentoEvento.Evento.CRIADA,
+        alocacao=aloc,
+        alocacao_id_snapshot=aloc.pk,
+        antes={},
+        depois=depois,
+        ator=ator,
+        origem_sistema=origem_sistema,
+        motivo=motivo,
+    )
+    return aloc
 
 
 @transaction.atomic
-def atualizar_alocacao_atendimento(alocacao: AlocacaoAtendimento, dados: dict[str, Any]) -> AlocacaoAtendimento:
+def atualizar_alocacao_atendimento(
+    alocacao: AlocacaoAtendimento,
+    dados: dict[str, Any],
+    *,
+    ator=None,
+    origem_sistema: str | None = None,
+    motivo: str | None = None,
+) -> AlocacaoAtendimento:
+    from apps.comercial.services.alocacao_atendimento_evento_service import (
+        campos_alterados,
+        exigir_ator_ou_origem_sistema,
+        registrar_evento_alocacao,
+        snapshot_alocacao,
+        snapshots_iguais,
+    )
+    from apps.fiscal.models import AlocacaoAtendimentoEvento
+
+    exigir_ator_ou_origem_sistema(ator=ator, origem_sistema=origem_sistema)
+
     payload = _normalizar_payload(dados, parcial=True)
 
     def _id_de(campo: str, atual):
@@ -196,23 +247,58 @@ def atualizar_alocacao_atendimento(alocacao: AlocacaoAtendimento, dados: dict[st
     q_pen = _dec(payload['quantidade_pendente']) if 'quantidade_pendente' in payload else _dec(alocacao.quantidade_pendente)
     obs = payload['observacao_operacional'] if 'observacao_operacional' in payload else (alocacao.observacao_operacional or '')
 
+    # Fase 1: um único CONCILIADA. Se a PK for substituída no upsert, rastrear no mesmo evento.
     if hist_id and pvi_id:
         from apps.comercial.services.alocacao_entrada_venda_service import alocar_entrada_para_venda
 
         fat_id = _id_de('faturamento_item', alocacao.faturamento_item_id)
         nf_id = _id_de('item_nf_saida', alocacao.item_nf_saida_id)
         old_pk = alocacao.pk
-        aloc, _acao = alocar_entrada_para_venda(
+        antes_origem = snapshot_alocacao(alocacao)
+        aloc, acao = alocar_entrada_para_venda(
             nf_entrada_historica_item_id=int(hist_id),
             pedido_venda_item_id=int(pvi_id),
             quantidade=q_nec,
             observacao_operacional=obs or '',
             faturamento_item_id=fat_id,
             item_nf_saida_id=nf_id,
+            ator=ator,
+            origem_sistema=origem_sistema,
+            motivo=motivo,
+            registrar_evento=False,
         )
         if aloc.pk != old_pk:
+            # Limpeza interna do upsert: sem EXCLUIDA; CONCILIADA carrega a rastreabilidade.
             AlocacaoAtendimento.objects.filter(pk=old_pk).delete()
+            registrar_evento_alocacao(
+                evento=AlocacaoAtendimentoEvento.Evento.CONCILIADA,
+                alocacao=aloc,
+                alocacao_id_snapshot=aloc.pk,
+                antes=antes_origem,
+                depois=snapshot_alocacao(aloc),
+                ator=ator,
+                origem_sistema=origem_sistema,
+                motivo=motivo,
+                extras_depois={
+                    'acao_upsert': 'substituido',
+                    'alocacao_id_anterior': old_pk,
+                },
+            )
+        else:
+            registrar_evento_alocacao(
+                evento=AlocacaoAtendimentoEvento.Evento.CONCILIADA,
+                alocacao=aloc,
+                alocacao_id_snapshot=aloc.pk,
+                antes=antes_origem,
+                depois=snapshot_alocacao(aloc),
+                ator=ator,
+                origem_sistema=origem_sistema,
+                motivo=motivo,
+                extras_depois={'acao_upsert': acao},
+            )
         return aloc
+
+    antes = snapshot_alocacao(alocacao)
 
     for k, v in payload.items():
         if hasattr(alocacao, k):
@@ -246,11 +332,51 @@ def atualizar_alocacao_atendimento(alocacao: AlocacaoAtendimento, dados: dict[st
             )
 
     alocacao.save()
+    depois = snapshot_alocacao(alocacao)
+    if not snapshots_iguais(antes, depois):
+        registrar_evento_alocacao(
+            evento=AlocacaoAtendimentoEvento.Evento.ATUALIZADA,
+            alocacao=alocacao,
+            alocacao_id_snapshot=alocacao.pk,
+            antes=antes,
+            depois=depois,
+            ator=ator,
+            origem_sistema=origem_sistema,
+            motivo=motivo,
+            extras_depois={'campos_alterados': campos_alterados(antes, depois)},
+        )
     return alocacao
 
 
 @transaction.atomic
-def excluir_alocacao_atendimento(alocacao: AlocacaoAtendimento) -> None:
+def excluir_alocacao_atendimento(
+    alocacao: AlocacaoAtendimento,
+    *,
+    ator=None,
+    origem_sistema: str | None = None,
+    motivo: str | None = None,
+) -> None:
+    from apps.comercial.services.alocacao_atendimento_evento_service import (
+        exigir_ator_ou_origem_sistema,
+        registrar_evento_alocacao,
+        snapshot_alocacao,
+    )
+    from apps.fiscal.models import AlocacaoAtendimentoEvento
+
+    exigir_ator_ou_origem_sistema(ator=ator, origem_sistema=origem_sistema)
+
+    antes = snapshot_alocacao(alocacao)
+    aloc_id = alocacao.pk
+    registrar_evento_alocacao(
+        evento=AlocacaoAtendimentoEvento.Evento.EXCLUIDA,
+        alocacao=alocacao,
+        alocacao_id_snapshot=aloc_id,
+        antes=antes,
+        depois={},
+        ator=ator,
+        origem_sistema=origem_sistema,
+        motivo=motivo,
+    )
     alocacao.delete()
 
 

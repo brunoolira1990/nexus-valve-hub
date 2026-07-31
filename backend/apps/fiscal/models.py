@@ -1832,6 +1832,92 @@ class AlocacaoAtendimento(models.Model):
         return f'Alocação #{self.pk} produto={self.produto_id} tipo={self.tipo_atendimento}'
 
 
+class AlocacaoAtendimentoEvento(models.Model):
+    """Trilha append-only das ações sobre AlocacaoAtendimento (S4C-B1).
+
+    Sobrevive à exclusão física da alocação via snapshots de IDs.
+    """
+
+    class Evento(models.TextChoices):
+        CRIADA = 'CRIADA', 'Criada'
+        ATUALIZADA = 'ATUALIZADA', 'Atualizada'
+        CONCILIADA = 'CONCILIADA', 'Conciliada (entrada × venda)'
+        QUANTIDADE_AJUSTADA = 'QUANTIDADE_AJUSTADA', 'Quantidade ajustada'
+        DESVINCULADA = 'DESVINCULADA', 'Desvinculada'
+        EXCLUIDA = 'EXCLUIDA', 'Excluída'
+
+    evento = models.CharField(max_length=32, choices=Evento.choices, db_index=True)
+    alocacao = models.ForeignKey(
+        AlocacaoAtendimento,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='eventos',
+    )
+    alocacao_id_snapshot = models.PositiveBigIntegerField(db_index=True)
+    ator = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='eventos_alocacao_atendimento',
+    )
+    ator_id_snapshot = models.PositiveBigIntegerField(null=True, blank=True, db_index=True)
+    ator_rotulo_snapshot = models.CharField(max_length=64)
+    nf_entrada_historica_item_id_snapshot = models.PositiveBigIntegerField(
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+    pedido_venda_item_id_snapshot = models.PositiveBigIntegerField(
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+    antes = models.JSONField(default=dict, blank=True)
+    depois = models.JSONField(default=dict, blank=True)
+    motivo = models.CharField(max_length=255, blank=True, default='')
+    criado_em = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-criado_em', '-id']
+        default_permissions = ('view',)
+        verbose_name = 'Evento de alocação de atendimento'
+        verbose_name_plural = 'Eventos de alocação de atendimento'
+        indexes = [
+            models.Index(
+                fields=['alocacao_id_snapshot', 'criado_em'],
+                name='fisc_aloc_evt_aloc_cri_idx',
+            ),
+            models.Index(
+                fields=['nf_entrada_historica_item_id_snapshot', 'criado_em'],
+                name='fisc_aloc_evt_hist_cri_idx',
+            ),
+            models.Index(
+                fields=['pedido_venda_item_id_snapshot', 'criado_em'],
+                name='fisc_aloc_evt_pvi_cri_idx',
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f'{self.evento} aloc={self.alocacao_id_snapshot}@{self.criado_em}'
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError('Eventos de alocação de atendimento são imutáveis.')
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError('Eventos de alocação de atendimento são imutáveis.')
+
+    # Append-only na camada de aplicação: save/delete de instância bloqueados.
+    # QuerySet.update/delete do ORM continuam tecnicamente possíveis (necessário para
+    # SET_NULL legítimo ao remover AlocacaoAtendimento ou User). Não há Manager
+    # bloqueador no projeto que preserve esse SET_NULL — proteção via API read-only,
+    # default_permissions=('view',), ausência de Admin e único writer
+    # ``registrar_evento_alocacao``.
+
+
 class NFeEntradaAgrupamentoConferencia(models.Model):
     """Agrupamento conferencial NF-e entrada ↔ produto interno — ERP 4.0.13.7."""
 

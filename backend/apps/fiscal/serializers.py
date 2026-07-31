@@ -61,6 +61,7 @@ from .atendimento_estoque import (
 )
 from .models import (
     AlocacaoAtendimento,
+    AlocacaoAtendimentoEvento,
     AtendimentoEstoque,
     CTeEntrada,
     CTeHistoricoImportado,
@@ -3190,12 +3191,45 @@ class AlocacaoAtendimentoSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         from apps.comercial.services.alocacao_atendimento_service import criar_alocacao_atendimento
 
-        return criar_alocacao_atendimento(validated_data)
+        request = self.context.get('request')
+        user = getattr(request, 'user', None) if request is not None else None
+        if user is not None and getattr(user, 'is_authenticated', False):
+            return criar_alocacao_atendimento(validated_data, ator=user)
+        raise serializers.ValidationError(
+            {'detail': 'Chamada sem ator autenticado exige origem_sistema explícita.'},
+        )
 
     def update(self, instance, validated_data):
         from apps.comercial.services.alocacao_atendimento_service import atualizar_alocacao_atendimento
 
-        return atualizar_alocacao_atendimento(instance, validated_data)
+        request = self.context.get('request')
+        user = getattr(request, 'user', None) if request is not None else None
+        if user is not None and getattr(user, 'is_authenticated', False):
+            return atualizar_alocacao_atendimento(instance, validated_data, ator=user)
+        raise serializers.ValidationError(
+            {'detail': 'Chamada sem ator autenticado exige origem_sistema explícita.'},
+        )
+
+
+class AlocacaoAtendimentoEventoSerializer(serializers.ModelSerializer):
+    """S4C-B1 — leitura da trilha append-only (allowlist explícita, sem User aninhado)."""
+
+    class Meta:
+        model = AlocacaoAtendimentoEvento
+        fields = (
+            'id',
+            'evento',
+            'alocacao_id_snapshot',
+            'ator_id_snapshot',
+            'ator_rotulo_snapshot',
+            'nf_entrada_historica_item_id_snapshot',
+            'pedido_venda_item_id_snapshot',
+            'antes',
+            'depois',
+            'motivo',
+            'criado_em',
+        )
+        read_only_fields = fields
 
 
 class NFeGerarContasReceberParcelaSerializer(serializers.Serializer):

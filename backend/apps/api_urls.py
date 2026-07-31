@@ -59,6 +59,7 @@ from apps.fiscal.central_dfe.views import CentralDfeViewSet
 from apps.fiscal.dfe_recebidos.views import DfeRecebidosCapturaView
 from apps.fiscal.manifestacao_destinatario.views import ManifestacaoDestinatarioViewSet
 from apps.fiscal.views import (
+    AlocacaoAtendimentoEventoViewSet,
     AlocacaoAtendimentoViewSet,
     AtendimentosOperacionaisViewSet,
     AtendimentoEstoqueViewSet,
@@ -183,6 +184,11 @@ router.register(
     basename='atendimento-operacional',
 )
 router.register(r'alocacoes-atendimento', AlocacaoAtendimentoViewSet, basename='alocacao-atendimento')
+router.register(
+    r'alocacoes-atendimento-eventos',
+    AlocacaoAtendimentoEventoViewSet,
+    basename='alocacao-atendimento-evento',
+)
 router.register(r'contas', ContaViewSet, basename='conta')
 router.register(r'lancamentos', LancamentoViewSet, basename='lancamento')
 router.register(r'certificados', CertificadoViewSet, basename='certificado')

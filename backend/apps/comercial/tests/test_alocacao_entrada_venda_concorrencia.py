@@ -126,14 +126,14 @@ class AlocacaoEntradaVendaConcorrenciaTests(TransactionTestCase):
                 item_conferencia_id=linha.pk,
                 pedido_venda_item_id=pvi.pk,
                 quantidade=Decimal('4'),
-            )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
 
         def w2():
             return alocar_entrada_para_venda(
                 item_conferencia_id=linha.pk,
                 pedido_venda_item_id=pvi.pk,
                 quantidade=Decimal('7'),
-            )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
 
         results, errors = self._run_parallel(w1, w2)
         self.assertTrue(all(e is None or isinstance(e, AlocacaoAtendimentoErro) for e in errors))
@@ -157,14 +157,14 @@ class AlocacaoEntradaVendaConcorrenciaTests(TransactionTestCase):
                 item_conferencia_id=linha.pk,
                 pedido_venda_item_id=pvi1.pk,
                 quantidade=Decimal('6'),
-            )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
 
         def w2():
             return alocar_entrada_para_venda(
                 item_conferencia_id=linha.pk,
                 pedido_venda_item_id=pvi2.pk,
                 quantidade=Decimal('6'),
-            )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
 
         results, errors = self._run_parallel(w1, w2)
         sucesso = sum(1 for r in results if r is not None)
@@ -184,14 +184,14 @@ class AlocacaoEntradaVendaConcorrenciaTests(TransactionTestCase):
                 item_conferencia_id=linha1.pk,
                 pedido_venda_item_id=pvi.pk,
                 quantidade=Decimal('6'),
-            )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
 
         def w2():
             return alocar_entrada_para_venda(
                 item_conferencia_id=linha2.pk,
                 pedido_venda_item_id=pvi.pk,
                 quantidade=Decimal('6'),
-            )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
 
         results, errors = self._run_parallel(w1, w2)
         sucesso = sum(1 for r in results if r is not None)
@@ -208,18 +208,20 @@ class AlocacaoEntradaVendaConcorrenciaTests(TransactionTestCase):
             item_conferencia_id=linha.pk,
             pedido_venda_item_id=pvi1.pk,
             quantidade=Decimal('4'),
-        )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         a2, _ = alocar_entrada_para_venda(
             item_conferencia_id=linha.pk,
             pedido_venda_item_id=pvi2.pk,
             quantidade=Decimal('4'),
-        )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
 
         def w1():
-            return atualizar_quantidade_alocacao_entrada_venda(a1, quantidade=Decimal('6'))
+            return atualizar_quantidade_alocacao_entrada_venda(a1, quantidade=Decimal('6'),
+            origem_sistema='SISTEMA:AJUSTAR_QUANTIDADE')
 
         def w2():
-            return atualizar_quantidade_alocacao_entrada_venda(a2, quantidade=Decimal('6'))
+            return atualizar_quantidade_alocacao_entrada_venda(a2, quantidade=Decimal('6'),
+            origem_sistema='SISTEMA:AJUSTAR_QUANTIDADE')
 
         results, errors = self._run_parallel(w1, w2)
         sucesso = sum(1 for r in results if r is not None)

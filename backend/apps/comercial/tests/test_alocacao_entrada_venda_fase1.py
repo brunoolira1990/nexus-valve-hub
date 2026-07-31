@@ -188,12 +188,12 @@ class AlocacaoEntradaVendaFase1Tests(TestCase):
             item_conferencia_id=self.linha.pk,
             pedido_venda_item_id=self.item_pv.pk,
             quantidade=Decimal('4'),
-        )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         alocar_entrada_para_venda(
             item_conferencia_id=self.linha.pk,
             pedido_venda_item_id=item_pv2.pk,
             quantidade=Decimal('3'),
-        )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         resumo = montar_resumo_entrada_venda(self.linha)
         self.assertEqual(resumo['total_alocado'], '7.000')
         self.assertEqual(resumo['estado_operacional'], ESTADO_PARCIAL)
@@ -216,12 +216,12 @@ class AlocacaoEntradaVendaFase1Tests(TestCase):
             item_conferencia_id=self.linha.pk,
             pedido_venda_item_id=self.item_pv.pk,
             quantidade=Decimal('6'),
-        )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         alocar_entrada_para_venda(
             item_conferencia_id=linha2.pk,
             pedido_venda_item_id=self.item_pv.pk,
             quantidade=Decimal('3'),
-        )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         total = AlocacaoAtendimento.objects.filter(pedido_venda_item=self.item_pv).count()
         self.assertEqual(total, 2)
 
@@ -273,7 +273,7 @@ class AlocacaoEntradaVendaFase1Tests(TestCase):
             item_conferencia_id=self.linha.pk,
             pedido_venda_item_id=self.item_pv.pk,
             quantidade=Decimal('4'),
-        )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         self.assertEqual(acao, 'criado')
         r = self.client.patch(
             f'/api/alocacoes-atendimento/{cri.pk}/quantidade-entrada-venda/',
@@ -289,7 +289,7 @@ class AlocacaoEntradaVendaFase1Tests(TestCase):
             item_conferencia_id=self.linha.pk,
             pedido_venda_item_id=self.item_pv.pk,
             quantidade=Decimal('10'),
-        )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         self.assertEqual(montar_resumo_entrada_venda(self.linha)['estado_operacional'], ESTADO_CONCILIADO)
         r = self.client.post(f'/api/alocacoes-atendimento/{cri.pk}/desvincular-entrada-venda/')
         self.assertEqual(r.status_code, status.HTTP_200_OK)
@@ -367,7 +367,7 @@ class AlocacaoEntradaVendaFase1Tests(TestCase):
             item_conferencia_id=self.linha.pk,
             pedido_venda_item_id=self.item_pv.pk,
             quantidade=Decimal('2'),
-        )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         self.assertEqual(acao, 'criado')
         self.assertEqual(aloc.faturamento_item_id, fat_item.pk)
         self.assertEqual(aloc.item_nf_saida_id, nf_item.pk)
@@ -396,7 +396,7 @@ class AlocacaoEntradaVendaFase1Tests(TestCase):
             item_conferencia_id=self.linha.pk,
             pedido_venda_item_id=self.item_pv.pk,
             quantidade=Decimal('2'),
-        )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         self.assertIsNone(aloc.faturamento_item_id)
         self.assertIsNone(aloc.item_nf_saida_id)
         opcao = self.client.get(
@@ -413,12 +413,12 @@ class AlocacaoEntradaVendaFase1Tests(TestCase):
             item_conferencia_id=self.linha.pk,
             pedido_venda_item_id=self.item_pv.pk,
             quantidade=Decimal('2'),
-        )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         a2, acao2 = alocar_entrada_para_venda(
             item_conferencia_id=self.linha.pk,
             pedido_venda_item_id=self.item_pv.pk,
             quantidade=Decimal('5'),
-        )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         self.assertEqual(acao1, 'criado')
         self.assertEqual(acao2, 'atualizado')
         self.assertEqual(a1.pk, a2.pk)
@@ -505,7 +505,7 @@ class AlocacaoEntradaVendaFase1Tests(TestCase):
             item_conferencia_id=self.linha.pk,
             pedido_venda_item_id=self.item_pv.pk,
             quantidade=Decimal('1'),
-        )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         self.assertIsNotNone(aloc.pk)
         self.assertEqual(EstoqueCorrida.objects.count(), 0)
 
@@ -604,7 +604,7 @@ class ContratoCanonicoS4BACaracterizacaoTests(TestCase):
             item_conferencia_id=self.linha.pk,
             pedido_venda_item_id=self.item_pv.pk,
             quantidade=Decimal('10'),
-        )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         self.assertEqual(acao, 'criado')
         self.assertEqual(aloc.tipo_atendimento, TipoAtendimentoItem.ENTRADA_CONCILIADA)
         self.assertEqual(aloc.status_entrada_fiscal, StatusEntradaFiscal.PENDENTE)
@@ -619,7 +619,7 @@ class ContratoCanonicoS4BACaracterizacaoTests(TestCase):
             item_conferencia_id=self.linha.pk,
             pedido_venda_item_id=self.item_pv.pk,
             quantidade=Decimal('10'),
-        )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         self.assertEqual(montar_resumo_entrada_venda(self.linha)['estado_operacional'], ESTADO_CONCILIADO)
         kpis = calcular_kpis_atendimentos_operacionais()
         # Alocação Fase 1 integral → estado CONCILIADO, mas status PENDENTE → fora do KPI.
@@ -665,12 +665,12 @@ class ContratoCanonicoS4BACaracterizacaoTests(TestCase):
             item_conferencia_id=self.linha.pk,
             pedido_venda_item_id=self.item_pv.pk,
             quantidade=Decimal('4'),
-        )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         alocar_entrada_para_venda(
             item_conferencia_id=self.linha.pk,
             pedido_venda_item_id=item_pv2.pk,
             quantidade=Decimal('3'),
-        )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         self.assertEqual(total_alocado_entrada(self.item_nf.pk), Decimal('7'))
         self.assertEqual(total_alocado_destino_pv(self.item_pv.pk), Decimal('4'))
         self.assertEqual(montar_resumo_entrada_venda(self.linha)['estado_operacional'], ESTADO_PARCIAL)
@@ -692,12 +692,12 @@ class ContratoCanonicoS4BACaracterizacaoTests(TestCase):
             item_conferencia_id=self.linha.pk,
             pedido_venda_item_id=self.item_pv.pk,
             quantidade=Decimal('6'),
-        )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         alocar_entrada_para_venda(
             item_conferencia_id=linha2.pk,
             pedido_venda_item_id=self.item_pv.pk,
             quantidade=Decimal('4'),
-        )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         self.assertEqual(total_alocado_destino_pv(self.item_pv.pk), Decimal('10'))
         self.assertEqual(total_alocado_entrada(self.item_nf.pk), Decimal('6'))
         self.assertEqual(total_alocado_entrada(item_nf2.pk), Decimal('4'))
@@ -707,13 +707,13 @@ class ContratoCanonicoS4BACaracterizacaoTests(TestCase):
             item_conferencia_id=self.linha.pk,
             pedido_venda_item_id=self.item_pv.pk,
             quantidade=Decimal('7'),
-        )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         self.assertEqual(acao1, 'criado')
         a2, acao2 = alocar_entrada_para_venda(
             item_conferencia_id=self.linha.pk,
             pedido_venda_item_id=self.item_pv.pk,
             quantidade=Decimal('7'),
-        )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         self.assertEqual(acao2, 'atualizado')
         self.assertEqual(a1.pk, a2.pk)
         self.assertEqual(AlocacaoAtendimento.objects.count(), 1)
@@ -723,7 +723,7 @@ class ContratoCanonicoS4BACaracterizacaoTests(TestCase):
             item_conferencia_id=self.linha.pk,
             pedido_venda_item_id=self.item_pv.pk,
             quantidade=Decimal('3'),
-        )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         self.assertEqual(acao3, 'atualizado')
         self.assertEqual(a3.quantidade_necessaria, Decimal('3.000'))
         self.assertEqual(a3.quantidade_atendida, Decimal('3.000'))
@@ -735,8 +735,9 @@ class ContratoCanonicoS4BACaracterizacaoTests(TestCase):
             item_conferencia_id=self.linha.pk,
             pedido_venda_item_id=self.item_pv.pk,
             quantidade=Decimal('5'),
-        )
-        desvincular_alocacao_entrada_venda(aloc)
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
+        desvincular_alocacao_entrada_venda(aloc,
+            origem_sistema='SISTEMA:DESVINCULAR_ENTRADA_VENDA')
         self.assertEqual(AlocacaoAtendimento.objects.count(), 0)
         self.assertEqual(total_alocado_entrada(self.item_nf.pk), Decimal('0'))
         self.assertEqual(
@@ -761,6 +762,6 @@ class ContratoCanonicoS4BACaracterizacaoTests(TestCase):
             item_conferencia_id=self.linha.pk,
             pedido_venda_item_id=self.item_pv.pk,
             quantidade=Decimal('2'),
-        )
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         self.assertEqual(EstoqueCorrida.objects.count(), estoque_antes)
         self.assertEqual(TituloFinanceiro.objects.count(), titulos_antes)

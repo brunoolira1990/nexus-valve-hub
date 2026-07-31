@@ -196,7 +196,7 @@ class AlocacaoAtendimento4012Tests(TestCase):
                 'tipo_atendimento': TipoAtendimentoItem.RETIRADA_FORNECEDOR,
                 'status_entrada_fiscal': StatusEntradaFiscal.PENDENTE,
             },
-        )
+            origem_sistema='SISTEMA:CRIAR_ALOCACAO')
         resumo = montar_resumo_faturamento(self.pv)
         self.assertTrue(resumo['resumo_atendimento_operacional']['tem_alocacao'])
 
@@ -217,7 +217,7 @@ class AlocacaoAtendimento4012Tests(TestCase):
                 'tipo_atendimento': TipoAtendimentoItem.RETIRADA_FORNECEDOR,
                 'status_entrada_fiscal': StatusEntradaFiscal.PENDENTE,
             },
-        )
+            origem_sistema='SISTEMA:CRIAR_ALOCACAO')
         r = self.client.get(f'/api/nf-saidas/{nf.pk}/alocacoes-atendimento/')
         self.assertEqual(r.status_code, status.HTTP_200_OK)
         self.assertTrue(r.data['resumo_atendimento_operacional']['tem_alocacao'])
@@ -232,7 +232,7 @@ class AlocacaoAtendimento4012Tests(TestCase):
                 'quantidade_necessaria': Decimal('1'),
                 'tipo_atendimento': TipoAtendimentoItem.RETIRADA_FORNECEDOR,
             },
-        )
+            origem_sistema='SISTEMA:CRIAR_ALOCACAO')
         self.assertEqual(EstoqueCorrida.objects.count(), estoque_antes)
         self.assertEqual(AtendimentoEstoque.objects.count(), atend_antes)
 
@@ -261,7 +261,7 @@ class AlocacaoAtendimento4012Tests(TestCase):
                 'tipo_atendimento': TipoAtendimentoItem.RETIRADA_FORNECEDOR,
                 'status_entrada_fiscal': StatusEntradaFiscal.PENDENTE,
             },
-        )
+            origem_sistema='SISTEMA:CRIAR_ALOCACAO')
         nf = NFeSaida.objects.create(
             numero='NF-4012C',
             cliente=self.cliente,
@@ -290,8 +290,9 @@ class AlocacaoAtendimento4012Tests(TestCase):
                 'quantidade_pendente': Decimal('2'),
                 'tipo_atendimento': TipoAtendimentoItem.RETIRADA_FORNECEDOR,
             },
-        )
-        atualizar_alocacao_atendimento(aloc, {'observacao_operacional': 'ok'})
+            origem_sistema='SISTEMA:CRIAR_ALOCACAO')
+        atualizar_alocacao_atendimento(aloc, {'observacao_operacional': 'ok'},
+            origem_sistema='SISTEMA:ATUALIZAR_ALOCACAO')
         aloc.refresh_from_db()
         self.assertEqual(aloc.observacao_operacional, 'ok')
 
@@ -303,8 +304,9 @@ class AlocacaoAtendimento4012Tests(TestCase):
                 'quantidade_necessaria': Decimal('1'),
                 'tipo_atendimento': TipoAtendimentoItem.NAO_DEFINIDO,
             },
-        )
-        excluir_alocacao_atendimento(aloc)
+            origem_sistema='SISTEMA:CRIAR_ALOCACAO')
+        excluir_alocacao_atendimento(aloc,
+            origem_sistema='SISTEMA:EXCLUIR_ALOCACAO')
         self.assertFalse(AlocacaoAtendimento.objects.filter(pk=aloc.pk).exists())
 
     def test_quantidade_atendida_mais_pendente_maior_que_necessaria(self):
@@ -343,7 +345,7 @@ class ContratoCanonicoS4BACrudVsSugestaoTests(TestCase):
                 'tipo_atendimento': TipoAtendimentoItem.ENTRADA_CONCILIADA,
                 # status omitido / NAO_APLICAVEL → sugestão do helper
             },
-        )
+            origem_sistema='SISTEMA:CRIAR_ALOCACAO')
         self.assertEqual(aloc.tipo_atendimento, TipoAtendimentoItem.ENTRADA_CONCILIADA)
         self.assertEqual(aloc.status_entrada_fiscal, StatusEntradaFiscal.CONCILIADA)
 
@@ -361,7 +363,7 @@ class ContratoCanonicoS4BACrudVsSugestaoTests(TestCase):
                 'quantidade_pendente': Decimal('0'),
                 'tipo_atendimento': TipoAtendimentoItem.ENTRADA_CONCILIADA,
             },
-        )
+            origem_sistema='SISTEMA:CRIAR_ALOCACAO')
         item2 = ItemPedidoVenda.objects.create(
             pedido=self.pv,
             produto=self.produto,
@@ -377,7 +379,7 @@ class ContratoCanonicoS4BACrudVsSugestaoTests(TestCase):
                 'tipo_atendimento': TipoAtendimentoItem.RETIRADA_FORNECEDOR,
                 'status_entrada_fiscal': StatusEntradaFiscal.PENDENTE,
             },
-        )
+            origem_sistema='SISTEMA:CRIAR_ALOCACAO')
         kpis = calcular_kpis_atendimentos_operacionais()
         self.assertEqual(kpis['entradas_conciliadas'], 1)
         self.assertGreaterEqual(kpis['entradas_pendentes'], 1)

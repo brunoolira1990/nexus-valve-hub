@@ -107,6 +107,7 @@ from .nfe_historica_periodo import PeriodoInvalido, aplicar_filtros_vinculo, bou
 from .nfe_import.service_entrada import importar_arquivos_entrada
 from .nfe_import.service import importar_arquivos, reprocessar_eventos_pendentes_saida
 from .serializers import (
+    AlocacaoAtendimentoEventoSerializer,
     AlocacaoAtendimentoSerializer,
     AtendimentoEstoqueListSerializer,
     CTeEntradaOperacionalSerializer,
@@ -3925,7 +3926,7 @@ class AlocacaoAtendimentoViewSet(AutocompleteOrPaginationMixin, viewsets.ModelVi
 
         instance = self.get_object()
         try:
-            excluir_alocacao_atendimento(instance)
+            excluir_alocacao_atendimento(instance, ator=request.user)
         except AlocacaoAtendimentoErro as exc:
             return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return response.Response(status=status.HTTP_204_NO_CONTENT)
@@ -4025,6 +4026,7 @@ class AlocacaoAtendimentoViewSet(AutocompleteOrPaginationMixin, viewsets.ModelVi
                 observacao_operacional=data.get('observacao_operacional') or '',
                 faturamento_item_id=data.get('faturamento_item_id') or None,
                 item_nf_saida_id=data.get('item_nf_saida_id') or None,
+                ator=request.user,
             )
         except (TypeError, ValueError) as exc:
             return response.Response({'detail': str(exc) or 'Payload inválido.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -4057,6 +4059,7 @@ class AlocacaoAtendimentoViewSet(AutocompleteOrPaginationMixin, viewsets.ModelVi
             aloc = atualizar_quantidade_alocacao_entrada_venda(
                 instance,
                 quantidade=request.data.get('quantidade'),
+                ator=request.user,
             )
         except AlocacaoAtendimentoErro as exc:
             return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
@@ -4080,7 +4083,7 @@ class AlocacaoAtendimentoViewSet(AutocompleteOrPaginationMixin, viewsets.ModelVi
         instance = self.get_object()
         hist_id = instance.nf_entrada_historica_item_id
         try:
-            desvincular_alocacao_entrada_venda(instance)
+            desvincular_alocacao_entrada_venda(instance, ator=request.user)
         except AlocacaoAtendimentoErro as exc:
             return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         resumo = None
@@ -4091,6 +4094,49 @@ class AlocacaoAtendimentoViewSet(AutocompleteOrPaginationMixin, viewsets.ModelVi
             except AlocacaoAtendimentoErro:
                 resumo = None
         return response.Response({'detail': 'Alocação desvinculada.', 'resumo': resumo})
+
+
+class AlocacaoAtendimentoEventoViewSet(AutocompleteOrPaginationMixin, viewsets.ReadOnlyModelViewSet):
+    """S4C-B1 — consulta read-only da trilha append-only de AlocacaoAtendimento."""
+
+    serializer_class = AlocacaoAtendimentoEventoSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = NexusPageNumberPagination
+    http_method_names = ['get', 'head', 'options']
+
+    def get_queryset(self):
+        from apps.fiscal.models import AlocacaoAtendimentoEvento
+
+        qs = AlocacaoAtendimentoEvento.objects.all()
+        p = self.request.query_params
+
+        def _int_param(name: str) -> int | None:
+            raw = (p.get(name) or '').strip()
+            if not raw:
+                return None
+            try:
+                return int(raw)
+            except ValueError:
+                return None
+
+        aloc_id = _int_param('alocacao_id_snapshot')
+        if aloc_id is not None:
+            qs = qs.filter(alocacao_id_snapshot=aloc_id)
+        hist_id = _int_param('nf_entrada_historica_item_id_snapshot')
+        if hist_id is not None:
+            qs = qs.filter(nf_entrada_historica_item_id_snapshot=hist_id)
+        pvi_id = _int_param('pedido_venda_item_id_snapshot')
+        if pvi_id is not None:
+            qs = qs.filter(pedido_venda_item_id_snapshot=pvi_id)
+        evento = (p.get('evento') or '').strip()
+        if evento:
+            qs = qs.filter(evento=evento)
+        return aplicar_ordering(
+            qs,
+            p.get('ordering'),
+            {'criado_em': 'criado_em', 'id': 'id'},
+            '-criado_em',
+        )
 
 
 class AtendimentosOperacionaisViewSet(AutocompleteOrPaginationMixin, viewsets.GenericViewSet):

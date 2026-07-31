@@ -617,13 +617,21 @@ def alocar_entrada_para_venda(
     observacao_operacional: str = '',
     faturamento_item_id: int | None = None,
     item_nf_saida_id: int | None = None,
+    ator=None,
+    origem_sistema: str | None = None,
+    motivo: str | None = None,
+    registrar_evento: bool = True,
 ) -> tuple[AlocacaoAtendimento, AcaoUpsert]:
     """Cria ou atualiza alocação entrada×PV.
 
     Semântica do upsert: a quantidade enviada é o valor TOTAL final da alocação
     (substitui; não soma à anterior).
+    Emite no máximo um evento CONCILIADA quando ``registrar_evento`` é True.
     """
     from apps.comercial.models import ItemPedidoVenda
+    from apps.comercial.services.alocacao_atendimento_evento_service import exigir_ator_ou_origem_sistema
+
+    exigir_ator_ou_origem_sistema(ator=ator, origem_sistema=origem_sistema)
 
     if quantidade is None or quantidade == '':
         raise AlocacaoAtendimentoErro('Quantidade deve ser maior que zero.')
@@ -702,13 +710,45 @@ def alocar_entrada_para_venda(
     )
     validar_vinculos_alocacao(dados)
 
+    from apps.comercial.services.alocacao_atendimento_evento_service import (
+        registrar_evento_alocacao,
+        snapshot_alocacao,
+    )
+    from apps.fiscal.models import AlocacaoAtendimentoEvento
+
     if existente:
+        antes = snapshot_alocacao(existente)
         for k, v in dados.items():
             setattr(existente, k, v)
         existente.save()
+        if registrar_evento:
+            registrar_evento_alocacao(
+                evento=AlocacaoAtendimentoEvento.Evento.CONCILIADA,
+                alocacao=existente,
+                alocacao_id_snapshot=existente.pk,
+                antes=antes,
+                depois=snapshot_alocacao(existente),
+                ator=ator,
+                origem_sistema=origem_sistema,
+                motivo=motivo,
+                extras_depois={'acao_upsert': 'atualizado'},
+            )
         return existente, 'atualizado'
 
-    return AlocacaoAtendimento.objects.create(**dados), 'criado'
+    aloc = AlocacaoAtendimento.objects.create(**dados)
+    if registrar_evento:
+        registrar_evento_alocacao(
+            evento=AlocacaoAtendimentoEvento.Evento.CONCILIADA,
+            alocacao=aloc,
+            alocacao_id_snapshot=aloc.pk,
+            antes={},
+            depois=snapshot_alocacao(aloc),
+            ator=ator,
+            origem_sistema=origem_sistema,
+            motivo=motivo,
+            extras_depois={'acao_upsert': 'criado'},
+        )
+    return aloc, 'criado'
 
 
 @transaction.atomic
@@ -716,7 +756,14 @@ def atualizar_quantidade_alocacao_entrada_venda(
     alocacao: AlocacaoAtendimento,
     *,
     quantidade: Decimal | str | float | int,
+    ator=None,
+    origem_sistema: str | None = None,
+    motivo: str | None = None,
 ) -> AlocacaoAtendimento:
+    from apps.comercial.services.alocacao_atendimento_evento_service import exigir_ator_ou_origem_sistema
+
+    exigir_ator_ou_origem_sistema(ator=ator, origem_sistema=origem_sistema)
+
     if quantidade is None or quantidade == '':
         raise AlocacaoAtendimentoErro('Quantidade deve ser maior que zero.')
     qtd = _dec(quantidade)
@@ -744,21 +791,67 @@ def atualizar_quantidade_alocacao_entrada_venda(
         item_conf=item_conf,
         item_pv=pvi,
     )
+
+    from apps.comercial.services.alocacao_atendimento_evento_service import (
+        registrar_evento_alocacao,
+        snapshot_alocacao,
+    )
+    from apps.fiscal.models import AlocacaoAtendimentoEvento
+
+    antes = snapshot_alocacao(aloc)
     aloc.quantidade_necessaria = qtd
     aloc.quantidade_atendida = qtd
     aloc.quantidade_pendente = Decimal('0')
     aloc.save(update_fields=['quantidade_necessaria', 'quantidade_atendida', 'quantidade_pendente', 'atualizado_em'])
+    registrar_evento_alocacao(
+        evento=AlocacaoAtendimentoEvento.Evento.QUANTIDADE_AJUSTADA,
+        alocacao=aloc,
+        alocacao_id_snapshot=aloc.pk,
+        antes=antes,
+        depois=snapshot_alocacao(aloc),
+        ator=ator,
+        origem_sistema=origem_sistema,
+        motivo=motivo,
+    )
     return aloc
 
 
 @transaction.atomic
-def desvincular_alocacao_entrada_venda(alocacao: AlocacaoAtendimento) -> None:
+def desvincular_alocacao_entrada_venda(
+    alocacao: AlocacaoAtendimento,
+    *,
+    ator=None,
+    origem_sistema: str | None = None,
+    motivo: str | None = None,
+) -> None:
     """Remove apenas o vínculo operacional. Sem efeito em estoque/PC/financeiro/fiscal."""
+    from apps.comercial.services.alocacao_atendimento_evento_service import (
+        exigir_ator_ou_origem_sistema,
+        registrar_evento_alocacao,
+        snapshot_alocacao,
+    )
+    from apps.fiscal.models import AlocacaoAtendimentoEvento
+
+    exigir_ator_ou_origem_sistema(ator=ator, origem_sistema=origem_sistema)
+
     hist_id = alocacao.nf_entrada_historica_item_id
     pvi_id = alocacao.pedido_venda_item_id
     if hist_id and pvi_id:
         _bloquear_origem_destino(hist_id=hist_id, pvi_id=pvi_id)
     aloc = AlocacaoAtendimento.objects.select_for_update().get(pk=alocacao.pk)
+
+    antes = snapshot_alocacao(aloc)
+    aloc_id = aloc.pk
+    registrar_evento_alocacao(
+        evento=AlocacaoAtendimentoEvento.Evento.DESVINCULADA,
+        alocacao=aloc,
+        alocacao_id_snapshot=aloc_id,
+        antes=antes,
+        depois={},
+        ator=ator,
+        origem_sistema=origem_sistema,
+        motivo=motivo,
+    )
     aloc.delete()
 
 

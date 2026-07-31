@@ -83,7 +83,7 @@ class AtendimentosOperacionais40131Tests(TestCase):
                 'destino_fisico': DestinoFisico.CLIENTE,
                 'fornecedor': self.fornecedor,
             },
-        )
+            origem_sistema='SISTEMA:CRIAR_ALOCACAO')
 
     def test_lista_atendimentos_operacionais(self):
         r = self.client.get('/api/atendimentos-operacionais/')
@@ -181,7 +181,7 @@ class AtendimentosOperacionais40131Tests(TestCase):
                     'quantidade_pendente': Decimal('1'),
                     'tipo_atendimento': TipoAtendimentoItem.NAO_DEFINIDO,
                 },
-            )
+            origem_sistema='SISTEMA:CRIAR_ALOCACAO')
         with CaptureQueriesContext(connection) as ctx:
             r = self.client.get('/api/atendimentos-operacionais/', {'page_size': 10})
         self.assertEqual(r.status_code, status.HTTP_200_OK)
@@ -335,7 +335,8 @@ class ConciliacaoEntradaQuantitativaS4BBTests(TestCase):
 
         item_nf, linha, alocar = self._origem(n_item=1, qtd='10')
         pvi = self._pv_item(numero='PV-S4BB-1', qtd='10')
-        aloc, _ = alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('10'))
+        aloc, _ = alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('10'),
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         self.assertEqual(aloc.status_entrada_fiscal, StatusEntradaFiscal.PENDENTE)
         bloco = calcular_conciliacao_entrada_quantitativa(
             AlocacaoAtendimento.objects.filter(nf_entrada_historica_item_id=item_nf.pk),
@@ -357,7 +358,8 @@ class ConciliacaoEntradaQuantitativaS4BBTests(TestCase):
 
         item_nf, linha, alocar = self._origem(n_item=2, qtd='10')
         pvi = self._pv_item(numero='PV-S4BB-2', qtd='10')
-        alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('4'))
+        alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('4'),
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         bloco = calcular_conciliacao_entrada_quantitativa(
             AlocacaoAtendimento.objects.filter(nf_entrada_historica_item_id=item_nf.pk),
         )
@@ -372,8 +374,10 @@ class ConciliacaoEntradaQuantitativaS4BBTests(TestCase):
         item_nf, linha, alocar = self._origem(n_item=3, qtd='10')
         pvi1 = self._pv_item(numero='PV-S4BB-3a', qtd='6')
         pvi2 = self._pv_item(numero='PV-S4BB-3b', qtd='4')
-        alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi1.pk, quantidade=Decimal('6'))
-        alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi2.pk, quantidade=Decimal('4'))
+        alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi1.pk, quantidade=Decimal('6'),
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
+        alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi2.pk, quantidade=Decimal('4'),
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         qs = AlocacaoAtendimento.objects.filter(nf_entrada_historica_item_id=item_nf.pk)
         self.assertEqual(qs.count(), 2)
         bloco = calcular_conciliacao_entrada_quantitativa(qs)
@@ -388,8 +392,10 @@ class ConciliacaoEntradaQuantitativaS4BBTests(TestCase):
         item1, linha1, alocar = self._origem(n_item=4, qtd='5')
         item2, linha2, _ = self._origem(n_item=5, qtd='5')
         pvi = self._pv_item(numero='PV-S4BB-45', qtd='10')
-        alocar(item_conferencia_id=linha1.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('5'))
-        alocar(item_conferencia_id=linha2.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('5'))
+        alocar(item_conferencia_id=linha1.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('5'),
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
+        alocar(item_conferencia_id=linha2.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('5'),
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         qs = AlocacaoAtendimento.objects.filter(
             nf_entrada_historica_item_id__in=[item1.pk, item2.pk],
         )
@@ -404,7 +410,8 @@ class ConciliacaoEntradaQuantitativaS4BBTests(TestCase):
 
         item_nf, linha, alocar = self._origem(n_item=6, qtd='10')
         pvi = self._pv_item(numero='PV-S4BB-6', qtd='10')
-        aloc, _ = alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('10'))
+        aloc, _ = alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('10'),
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         # Força inconsistência residual sem passar pelas validações de alocar.
         AlocacaoAtendimento.objects.filter(pk=aloc.pk).update(quantidade_necessaria=Decimal('12'))
         bloco = calcular_conciliacao_entrada_quantitativa(
@@ -420,8 +427,10 @@ class ConciliacaoEntradaQuantitativaS4BBTests(TestCase):
 
         item_nf, linha, alocar = self._origem(n_item=7, qtd='10')
         pvi = self._pv_item(numero='PV-S4BB-7', qtd='10')
-        aloc, _ = alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('10'))
-        desvincular_alocacao_entrada_venda(aloc)
+        aloc, _ = alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('10'),
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
+        desvincular_alocacao_entrada_venda(aloc,
+            origem_sistema='SISTEMA:DESVINCULAR_ENTRADA_VENDA')
         bloco = calcular_conciliacao_entrada_quantitativa(
             AlocacaoAtendimento.objects.filter(nf_entrada_historica_item_id=item_nf.pk),
         )
@@ -436,7 +445,8 @@ class ConciliacaoEntradaQuantitativaS4BBTests(TestCase):
 
         item_nf, linha, alocar = self._origem(n_item=8, qtd='10')
         pvi = self._pv_item(numero='PV-S4BB-8', qtd='10')
-        aloc, _ = alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('3'))
+        aloc, _ = alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('3'),
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         self.assertEqual(aloc.tipo_atendimento, TipoAtendimentoItem.ENTRADA_CONCILIADA)
         bloco = calcular_conciliacao_entrada_quantitativa(
             AlocacaoAtendimento.objects.filter(nf_entrada_historica_item_id=item_nf.pk),
@@ -454,7 +464,8 @@ class ConciliacaoEntradaQuantitativaS4BBTests(TestCase):
             for i in range(n):
                 item_nf, linha, alocar = self._origem(n_item=100 + n * 10 + i, qtd='4')
                 pvi = self._pv_item(numero=f'PV-S4BB-Q{n}-{i}', qtd='4')
-                alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('4'))
+                alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('4'),
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
                 ids.append(item_nf.pk)
             return ids
 
@@ -479,7 +490,8 @@ class ConciliacaoEntradaQuantitativaS4BBTests(TestCase):
     def test_s4bb_api_kpis_aditivo_e_sem_efeitos_colaterais(self):
         _, linha, alocar = self._origem(n_item=9, qtd='10')
         pvi = self._pv_item(numero='PV-S4BB-9', qtd='10')
-        aloc, _ = alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('10'))
+        aloc, _ = alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('10'),
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         estoque_antes = EstoqueCorrida.objects.count()
         status_antes = aloc.status_entrada_fiscal
         r = self.client.get('/api/atendimentos-operacionais/kpis/')

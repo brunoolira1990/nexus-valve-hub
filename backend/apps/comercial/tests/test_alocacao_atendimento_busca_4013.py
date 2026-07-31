@@ -240,7 +240,7 @@ class AlocacaoAtendimentoBusca4013Tests(TestCase):
                 'nf_entrada_historica_item': item_nf,
                 'cte_historico_importado': cte,
             },
-        )
+            origem_sistema='SISTEMA:CRIAR_ALOCACAO')
         # CTE não faz parte do payload Fase 1; vínculo complementar pós-alocação (sem reentrada no upsert).
         AlocacaoAtendimento.objects.filter(pk=aloc.pk).update(cte_historico_importado=cte)
         aloc.refresh_from_db()
@@ -266,7 +266,7 @@ class AlocacaoAtendimentoBusca4013Tests(TestCase):
                     'nf_entrada_historica_item': item_nf,
                     'tipo_atendimento': TipoAtendimentoItem.NAO_DEFINIDO,
                 },
-            )
+            origem_sistema='SISTEMA:CRIAR_ALOCACAO')
         self.assertIn('homologação', str(ctx.exception).lower())
         self.assertNotIn('conferência não encontrado', str(ctx.exception).lower())
 
@@ -286,7 +286,7 @@ class AlocacaoAtendimentoBusca4013Tests(TestCase):
                     'pedido_compra_item': item_pc_outro,
                     'tipo_atendimento': TipoAtendimentoItem.NAO_DEFINIDO,
                 },
-            )
+            origem_sistema='SISTEMA:CRIAR_ALOCACAO')
 
     def test_vinculo_nao_movimenta_estoque(self):
         estoque_antes = EstoqueCorrida.objects.count()
@@ -300,7 +300,7 @@ class AlocacaoAtendimentoBusca4013Tests(TestCase):
                 'pedido_compra_item': self.item_pc,
                 'tipo_atendimento': TipoAtendimentoItem.RETIRADA_FORNECEDOR,
             },
-        )
+            origem_sistema='SISTEMA:CRIAR_ALOCACAO')
         self.assertEqual(EstoqueCorrida.objects.count(), estoque_antes)
         self.assertEqual(AtendimentoEstoque.objects.count(), atend_antes)
 
@@ -314,7 +314,7 @@ class AlocacaoAtendimentoBusca4013Tests(TestCase):
                 'pedido_compra_item': self.item_pc,
                 'tipo_atendimento': TipoAtendimentoItem.RETIRADA_FORNECEDOR,
             },
-        )
+            origem_sistema='SISTEMA:CRIAR_ALOCACAO')
         r = self.client.get(f'/api/pedidos-venda/{self.pv.pk}/alocacoes-atendimento/')
         self.assertEqual(r.status_code, status.HTTP_200_OK)
         aloc = r.data['alocacoes'][0]
