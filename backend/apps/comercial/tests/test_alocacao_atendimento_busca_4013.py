@@ -30,6 +30,7 @@ from apps.fiscal.modelo_operacional import StatusEntradaFiscal, TipoAtendimentoI
 from apps.fiscal.models import (
     AlocacaoAtendimento,
     CTeHistoricoImportado,
+    ItemNFeEntradaConferencia,
     ItemNFeEntradaHistoricaImportada,
     NFeEntradaConferencia,
     NFeEntradaHistoricaImportada,
@@ -126,6 +127,28 @@ class AlocacaoAtendimentoBusca4013Tests(TestCase):
         )
         return nf
 
+    def _item_conferencia_para_historico(
+        self,
+        item_nf: ItemNFeEntradaHistoricaImportada,
+        *,
+        quantidade: Decimal | str = '10',
+        item_pedido_compra: ItemPedidoCompra | None = None,
+    ) -> ItemNFeEntradaConferencia:
+        """Fixture mínima exigida pela Fase 1 (histórica × PV)."""
+        conf = NFeEntradaConferencia.objects.get(nf_entrada_historica_id=item_nf.nf_id)
+        qtd = Decimal(str(quantidade))
+        linha, _ = conf.itens.get_or_create(item_nfe_historico=item_nf)
+        linha.produto = self.produto
+        linha.quantidade_nf = qtd
+        linha.unidade_nf = 'PC'
+        linha.quantidade_estoque_calculada = qtd
+        linha.unidade_estoque_calculada = 'PC'
+        linha.status = ItemNFeEntradaConferencia.Status.CONFERIDO
+        if item_pedido_compra is not None:
+            linha.item_pedido_compra = item_pedido_compra
+        linha.save()
+        return linha
+
     def test_nao_retorna_nfe_homologacao_na_busca(self):
         self._nf_producao(tp_amb='2', numero='999')
         rows = buscar_nfe_entrada_importada_opcoes({'search': '999'})
@@ -195,7 +218,15 @@ class AlocacaoAtendimentoBusca4013Tests(TestCase):
             n_item=1,
             prod_json={'xProd': 'Prod 4013', 'qCom': '5', 'uCom': 'PC'},
         )
+        # Fase 1 exige item de conferência; PC entra via conferência (payload CRUD não é repassado).
+        self._item_conferencia_para_historico(
+            item_nf,
+            quantidade='5',
+            item_pedido_compra=self.item_pc,
+        )
         cte = self._cte_conferido()
+        estoque_antes = EstoqueCorrida.objects.count()
+        qtd_rec_pc_antes = self.item_pc.quantidade_recebida
         aloc = criar_alocacao_atendimento(
             {
                 'pedido_venda_item': self.item_pv,
@@ -210,14 +241,22 @@ class AlocacaoAtendimentoBusca4013Tests(TestCase):
                 'cte_historico_importado': cte,
             },
         )
+        # CTE não faz parte do payload Fase 1; vínculo complementar pós-alocação (sem reentrada no upsert).
+        AlocacaoAtendimento.objects.filter(pk=aloc.pk).update(cte_historico_importado=cte)
+        aloc.refresh_from_db()
         self.assertEqual(aloc.pedido_compra_item_id, self.item_pc.pk)
         v = montar_vinculos_exibicao(aloc)
         self.assertIn('PC-4013', v['pedido_compra_label'] or '')
         self.assertTrue(v['tem_cte_vinculado'])
+        self.assertEqual(EstoqueCorrida.objects.count(), estoque_antes)
+        self.item_pc.refresh_from_db()
+        self.assertEqual(self.item_pc.quantidade_recebida, qtd_rec_pc_antes)
 
     def test_bloqueia_nfe_homologacao_no_vinculo(self):
         nf = self._nf_producao(tp_amb='2')
         item_nf = ItemNFeEntradaHistoricaImportada.objects.create(nf=nf, n_item=1, prod_json={})
+        # Conferência mínima para o fluxo chegar à validação de ambiente (não ao erro de ausência).
+        self._item_conferencia_para_historico(item_nf, quantidade='1')
         with self.assertRaises(AlocacaoAtendimentoErro) as ctx:
             criar_alocacao_atendimento(
                 {
@@ -229,6 +268,7 @@ class AlocacaoAtendimentoBusca4013Tests(TestCase):
                 },
             )
         self.assertIn('homologação', str(ctx.exception).lower())
+        self.assertNotIn('conferência não encontrado', str(ctx.exception).lower())
 
     def test_bloqueia_produto_incompativel_pc(self):
         item_pc_outro = ItemPedidoCompra.objects.create(
