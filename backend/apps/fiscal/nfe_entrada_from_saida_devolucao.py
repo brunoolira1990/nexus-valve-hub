@@ -208,10 +208,17 @@ def impostos_json_from_imposto_xml(imposto_json: dict[str, Any] | None) -> dict[
     icms_blk = raw.get('ICMS') if isinstance(raw.get('ICMS'), dict) else {}
     pis_blk = raw.get('PIS') if isinstance(raw.get('PIS'), dict) else {}
     cof_blk = raw.get('COFINS') if isinstance(raw.get('COFINS'), dict) else {}
+    ipi_blk = raw.get('IPI') if isinstance(raw.get('IPI'), dict) else {}
     icms = _primeiro_grupo_imposto(icms_blk)
     pis = _primeiro_grupo_imposto(pis_blk)
     cof = _primeiro_grupo_imposto(cof_blk)
-    return {
+    # IPI costuma ter IPITrib / IPINT sob a chave IPI
+    ipi = _primeiro_grupo_imposto(ipi_blk) if ipi_blk else {}
+    if not ipi and isinstance(ipi_blk.get('IPITrib'), dict):
+        ipi = ipi_blk['IPITrib']
+    if not ipi and isinstance(ipi_blk.get('IPINT'), dict):
+        ipi = ipi_blk['IPINT']
+    out: dict[str, Any] = {
         'icms': {
             'cst': str(icms.get('CST') or icms.get('CSOSN') or '41'),
             'orig': str(icms.get('orig') or '0'),
@@ -232,6 +239,14 @@ def impostos_json_from_imposto_xml(imposto_json: dict[str, Any] | None) -> dict[
             'valor': cof.get('vCOFINS'),
         },
     }
+    if ipi:
+        out['ipi'] = {
+            'cst': str(ipi.get('CST') or ''),
+            'base': ipi.get('vBC'),
+            'aliquota': ipi.get('pIPI'),
+            'valor': ipi.get('vIPI'),
+        }
+    return out
 
 
 def _resolver_produto_de_prod_json(prod_json: dict[str, Any]) -> Produto | None:
