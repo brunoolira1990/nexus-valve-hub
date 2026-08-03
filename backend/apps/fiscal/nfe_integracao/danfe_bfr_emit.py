@@ -18,19 +18,36 @@ def extract_text(node, tag: str) -> str:
     return get_tag_text(node, URL, tag)
 
 
-def montar_emit_extras_nfe_saida(nfe_saida) -> dict[str, str]:
-    """E-mail, site e telefone do cadastro (telefone também como fallback do DANFE)."""
+def montar_emit_extras_empresa(empresa) -> dict[str, str]:
+    """E-mail, site e telefone do cadastro da empresa emitente."""
     extras: dict[str, str] = {}
+    if not empresa:
+        return extras
     try:
-        pedido = getattr(nfe_saida, 'pedido_venda', None)
-        emp = getattr(pedido, 'empresa_emitente', None) if pedido else None
-        if emp:
-            extras['email'] = (getattr(emp, 'email', None) or '').strip()
-            extras['site'] = (getattr(emp, 'site', None) or '').strip()
-            extras['telefone'] = (getattr(emp, 'telefone', None) or '').strip()
+        extras['email'] = (getattr(empresa, 'email', None) or '').strip()
+        extras['site'] = (getattr(empresa, 'site', None) or '').strip()
+        extras['telefone'] = (getattr(empresa, 'telefone', None) or '').strip()
     except Exception:
         pass
     return extras
+
+
+def montar_emit_extras_nfe_saida(nfe_saida) -> dict[str, str]:
+    """E-mail, site e telefone do cadastro (telefone também como fallback do DANFE)."""
+    try:
+        pedido = getattr(nfe_saida, 'pedido_venda', None)
+        emp = getattr(pedido, 'empresa_emitente', None) if pedido else None
+        return montar_emit_extras_empresa(emp)
+    except Exception:
+        return {}
+
+
+def montar_emit_extras_nfe_entrada(nfe_entrada) -> dict[str, str]:
+    """Extras do emitente para DANFE de entrada própria (mesmo layout da saída)."""
+    try:
+        return montar_emit_extras_empresa(getattr(nfe_entrada, 'empresa_emitente', None))
+    except Exception:
+        return {}
 
 
 def montar_endereco_emitente_bfr(emit_node, extras: dict[str, str] | None = None) -> str:

@@ -285,6 +285,9 @@ def sanitizar_xml_para_bfr(xml: str) -> str:
     return texto
 
 
+MSG_MARCA_CONFERENCIA = 'DANFE DE CONFERÊNCIA\nSEM VALOR FISCAL'
+
+
 def _montar_config_danfe(
     DanfeConfig,
     *,
@@ -327,6 +330,9 @@ def gerar_danfe_bfr_de_xml_string(
     nfe_saida=None,
     ambiente: str | None = None,
     tem_protocolo: bool | None = None,
+    logo_path: str | None = None,
+    emit_extras: dict | None = None,
+    marca_dagua: str | None = None,
 ) -> bytes:
     """Gera PDF DANFE a partir de XML NF-e (string). Não altera NF-e nem transmite SEFAZ."""
     _, DanfeConfig = _importar_danfe()
@@ -337,22 +343,27 @@ def gerar_danfe_bfr_de_xml_string(
     if ambiente is None:
         ambiente = _tp_amb_do_xml(xml_limpo)
 
-    marca: str | None = None
+    marca: str | None = marca_dagua
     cancelada_bfr = False
-    if nfe_saida is not None:
+    if marca is None and nfe_saida is not None:
         marca = resolver_marca_dagua_danfe(
             nfe_saida,
             ambiente,
             tem_protocolo=bool(tem_protocolo),
         )
         cancelada_bfr = usar_watermark_cancelada_bfr(nfe_saida)
-    elif not tem_protocolo and ambiente != '1':
-        marca = 'DANFE DE CONFERÊNCIA\nSEM VALOR FISCAL'
+    elif marca is None and not tem_protocolo:
+        # Homologação e produção sem protocolo: mesma marca da saída em conferência.
+        marca = MSG_MARCA_CONFERENCIA
 
-    config = _montar_config_danfe(DanfeConfig, nfe_saida=nfe_saida, xml=xml_limpo)
+    config = _montar_config_danfe(
+        DanfeConfig,
+        nfe_saida=nfe_saida,
+        xml=xml_limpo,
+        logo_path=logo_path,
+    )
 
-    emit_extras = None
-    if nfe_saida is not None:
+    if emit_extras is None and nfe_saida is not None:
         from apps.fiscal.nfe_integracao.danfe_bfr_emit import montar_emit_extras_nfe_saida
 
         emit_extras = montar_emit_extras_nfe_saida(nfe_saida)

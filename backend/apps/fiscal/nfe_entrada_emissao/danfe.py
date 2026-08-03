@@ -35,11 +35,14 @@ def gerar_preview_danfe_nfe_entrada(nf: NFeEntrada) -> tuple[bytes, dict[str, An
     Exige numeração reservada (mesmo requisito do preview XML).
     """
     from apps.fiscal.nfe_integracao.danfe_brazil_fiscal_report import (
+        MSG_MARCA_CONFERENCIA,
         DanfeBfrError,
         DanfeBfrIndisponivelError,
         brazil_fiscal_report_disponivel,
         gerar_danfe_bfr_de_xml_string,
     )
+    from apps.fiscal.nfe_integracao.danfe_bfr_emit import montar_emit_extras_nfe_entrada
+    from apps.fiscal.nfe_integracao.danfe_empresa_logo import get_emitente_logo_nfe_entrada
     from apps.fiscal.nfe_entrada_emissao.xml_oficial import gerar_preview_xml_oficial_nfe_entrada
 
     if nf.tipo_origem != NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_EMITIDA:
@@ -68,7 +71,14 @@ def gerar_preview_danfe_nfe_entrada(nf: NFeEntrada) -> tuple[bytes, dict[str, An
 
     tp_amb = str(preview.get('tp_amb') or _tp_amb(nf))
     try:
-        pdf = gerar_danfe_bfr_de_xml_string(xml, ambiente=tp_amb, tem_protocolo=False)
+        pdf = gerar_danfe_bfr_de_xml_string(
+            xml,
+            ambiente=tp_amb,
+            tem_protocolo=False,
+            logo_path=get_emitente_logo_nfe_entrada(nf),
+            emit_extras=montar_emit_extras_nfe_entrada(nf),
+            marca_dagua=MSG_MARCA_CONFERENCIA,
+        )
     except (DanfeBfrError, DanfeBfrIndisponivelError) as exc:
         raise NFeEntradaDanfeError(str(exc)) from exc
 
@@ -102,6 +112,8 @@ def gerar_danfe_autorizado_nfe_entrada(nf: NFeEntrada) -> tuple[bytes, dict[str,
         brazil_fiscal_report_disponivel,
         gerar_danfe_bfr_de_xml_string,
     )
+    from apps.fiscal.nfe_integracao.danfe_bfr_emit import montar_emit_extras_nfe_entrada
+    from apps.fiscal.nfe_integracao.danfe_empresa_logo import get_emitente_logo_nfe_entrada
 
     if nf.tipo_origem != NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_EMITIDA:
         raise NFeEntradaDanfeError('DANFE autorizado disponível apenas para ENTRADA_PROPRIA_EMITIDA.')
@@ -118,7 +130,13 @@ def gerar_danfe_autorizado_nfe_entrada(nf: NFeEntrada) -> tuple[bytes, dict[str,
 
     tp_amb = _tp_amb(nf)
     try:
-        pdf = gerar_danfe_bfr_de_xml_string(xml, ambiente=tp_amb, tem_protocolo=True)
+        pdf = gerar_danfe_bfr_de_xml_string(
+            xml,
+            ambiente=tp_amb,
+            tem_protocolo=True,
+            logo_path=get_emitente_logo_nfe_entrada(nf),
+            emit_extras=montar_emit_extras_nfe_entrada(nf),
+        )
     except (DanfeBfrError, DanfeBfrIndisponivelError) as exc:
         raise NFeEntradaDanfeError(str(exc)) from exc
 

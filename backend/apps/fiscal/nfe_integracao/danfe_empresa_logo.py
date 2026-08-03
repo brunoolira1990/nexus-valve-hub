@@ -39,3 +39,12 @@ def get_emitente_logo_nfe_saida(nfe_saida) -> str | None:
     except Exception as exc:
         logger.debug('logo NF-e %s: %s', getattr(nfe_saida, 'pk', None), exc)
         return None
+
+
+def get_emitente_logo_nfe_entrada(nfe_entrada) -> str | None:
+    """Logo da empresa emitente da NF-e de entrada própria."""
+    try:
+        return get_empresa_logo_path_or_none(getattr(nfe_entrada, 'empresa_emitente', None))
+    except Exception as exc:
+        logger.debug('logo NF-e entrada %s: %s', getattr(nfe_entrada, 'pk', None), exc)
+        return None
