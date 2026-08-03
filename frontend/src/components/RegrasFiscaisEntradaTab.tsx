@@ -2,6 +2,31 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Copy, CopyPlus, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Modal } from '@/components/Modal';
+import { CatalogCodigoFiscalSelect } from '@/components/fiscal/CatalogCodigoFiscalSelect';
+import { CatalogCfopSearchSelect } from '@/components/fiscal/CatalogCfopSearchSelect';
+import {
+  ALIQUOTA_CBS_2026_OPCOES,
+  ALIQUOTA_COFINS_OPCOES,
+  ALIQUOTA_IBS_UF_2026_OPCOES,
+  ALIQUOTA_ICMS_OPCOES,
+  ALIQUOTA_PIS_OPCOES,
+  BOOL_TRI_OPCOES,
+  CFOP_ENTRADA_OPCOES,
+  CLASSIFICACAO_TRIBUTARIA_OPCOES,
+  CSOSN_OPCOES,
+  CST_IBS_CBS_OPCOES,
+  CST_ICMS_OPCOES,
+  CST_IPI_OPCOES,
+  CST_PIS_COFINS_OPCOES,
+  EMPTY_LABEL_NAO_VALIDAR,
+  FONTE_REGRA_BASE_IBS_CBS_OPCOES,
+  HINT_CFOP_ENTRADA,
+  HINT_CFOP_SAIDA,
+  MODALIDADE_BC_ICMS_OPCOES,
+  MODO_BASE_IBS_CBS_OPCOES,
+  MOTIVO_DESONERACAO_ICMS_OPCOES,
+  TIPO_CALCULO_TRIBUTO_OPCOES,
+} from '@/lib/catalogosFiscais';
 import {
   cfopOrigemRegraEntrada,
   decFieldToForm,
@@ -936,6 +961,10 @@ export const RegrasFiscaisEntradaTab = ({ autoOpenNew, prefill }: Props) => {
         ) : null}
         {erro ? <p className="text-destructive text-sm mb-3">{erro}</p> : null}
         <p className="text-xs text-muted-foreground mb-2">{HINT_CAMPOS_NAO_VALIDADOS}</p>
+        <p className="text-[11px] text-muted-foreground mb-3">
+          Prefira <strong className="text-foreground font-medium">selecionar</strong> nos catálogos.
+          Campo vazio = não valida / espelha a NF-e de origem na devolução.
+        </p>
 
         <div className="flex flex-wrap gap-1 mb-3">
           {ABAS_FORM.map((aba) => (
@@ -953,28 +982,46 @@ export const RegrasFiscaisEntradaTab = ({ autoOpenNew, prefill }: Props) => {
           {abaForm === 'cfop' ? (
             <section>
               <h3 className="font-semibold text-sm mb-2 border-b border-border pb-1">CFOP e UF</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <label className="erp-label">CFOP origem (NF)</label>
-                  <input
-                    className="erp-input mt-1"
-                    placeholder="Ex.: 6102"
-                    value={form.cfop_origem}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setForm((p) => ({ ...p, cfop_origem: v, cfop: v }));
+              {form.tipo_operacao_fiscal === 'DEVOLUCAO_VENDA' ? (
+                <div className="mb-3">
+                  <button
+                    type="button"
+                    className="erp-btn-outline erp-btn-sm text-[11px]"
+                    onClick={() => {
+                      setForm((p) => ({
+                        ...p,
+                        cst_pis_esperado: '98',
+                        aliquota_pis: '0.65',
+                        cst_cofins_esperado: '98',
+                        aliquota_cofins: '3',
+                        cst_ipi_esperado: p.cst_ipi_esperado || '49',
+                      }));
+                      toast.success('Preset Lucro Presumido aplicado (PIS/COFINS 98). Revise e salve.');
+                      setAbaForm('pis');
                     }}
-                  />
+                  >
+                    Preencher PIS/COFINS Lucro Presumido (98)
+                  </button>
                 </div>
-                <div>
-                  <label className="erp-label">CFOP entrada esperado</label>
-                  <input
-                    className="erp-input mt-1"
-                    placeholder="Ex.: 1102"
-                    value={form.cfop_entrada}
-                    onChange={(e) => f('cfop_entrada', e.target.value)}
-                  />
-                </div>
+              ) : null}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <CatalogCfopSearchSelect
+                  label="CFOP origem (NF de saída)"
+                  value={form.cfop_origem}
+                  onChange={(v) => setForm((p) => ({ ...p, cfop_origem: v, cfop: v }))}
+                  ufOrigem={form.uf_origem}
+                  ufDestino={form.uf_destino}
+                  hint={HINT_CFOP_SAIDA}
+                />
+                <CatalogCfopSearchSelect
+                  label="CFOP entrada esperado"
+                  value={form.cfop_entrada}
+                  onChange={(v) => f('cfop_entrada', v)}
+                  opcoes={CFOP_ENTRADA_OPCOES}
+                  agruparPorUf={false}
+                  hint={HINT_CFOP_ENTRADA}
+                  placeholder="Buscar CFOP de entrada..."
+                />
                 <div>
                   <label className="erp-label">UF origem</label>
                   <select className="erp-select mt-1" value={form.uf_origem} onChange={(e) => f('uf_origem', e.target.value)}>
@@ -1039,29 +1086,119 @@ export const RegrasFiscaisEntradaTab = ({ autoOpenNew, prefill }: Props) => {
             <section>
               <h3 className="font-semibold text-sm mb-2 border-b border-border pb-1">ICMS</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div><label className="erp-label">CST ICMS</label><input className="erp-input mt-1" value={form.cst_icms_esperado} onChange={(e) => f('cst_icms_esperado', e.target.value)} /></div>
-                <div><label className="erp-label">CSOSN</label><input className="erp-input mt-1" value={form.csosn_esperado} onChange={(e) => f('csosn_esperado', e.target.value)} /></div>
-                <div><label className="erp-label">Modalidade BC</label><input className="erp-input mt-1" value={form.modalidade_bc_icms} onChange={(e) => f('modalidade_bc_icms', e.target.value)} /></div>
-                <div><label className="erp-label">Alíquota ICMS (%)</label><input className="erp-input mt-1" value={form.aliquota_icms} onChange={(e) => f('aliquota_icms', e.target.value)} /></div>
-                <div><label className="erp-label">Redução BC (%)</label><input className="erp-input mt-1" value={form.reducao_bc_icms} onChange={(e) => f('reducao_bc_icms', e.target.value)} /></div>
-                <div><label className="erp-label">Cód. benefício</label><input className="erp-input mt-1" value={form.codigo_beneficio_icms} onChange={(e) => f('codigo_beneficio_icms', e.target.value)} /></div>
-                <div><label className="erp-label">Motivo desoneração</label><input className="erp-input mt-1" value={form.motivo_desoneracao_icms} onChange={(e) => f('motivo_desoneracao_icms', e.target.value)} /></div>
-                <div><label className="erp-label">ST aplicável</label><select className="erp-select mt-1" value={form.icms_st_aplicavel} onChange={(e) => f('icms_st_aplicavel', e.target.value as '' | 'sim' | 'nao')}><option value="">— Não validar —</option><option value="sim">Sim</option><option value="nao">Não</option></select></div>
-                <div><label className="erp-label">CST ICMS ST</label><input className="erp-input mt-1" value={form.cst_icms_st_esperado} onChange={(e) => f('cst_icms_st_esperado', e.target.value)} /></div>
-                <div><label className="erp-label">Alíquota ICMS ST (%)</label><input className="erp-input mt-1" value={form.aliquota_icms_st} onChange={(e) => f('aliquota_icms_st', e.target.value)} /></div>
-                <div><label className="erp-label">MVA ST (%)</label><input className="erp-input mt-1" value={form.mva_st} onChange={(e) => f('mva_st', e.target.value)} /></div>
-                <div><label className="erp-label">Redução BC ST (%)</label><input className="erp-input mt-1" value={form.reducao_bc_st} onChange={(e) => f('reducao_bc_st', e.target.value)} /></div>
-              
+                <CatalogCodigoFiscalSelect
+                  label="CST ICMS"
+                  value={form.cst_icms_esperado}
+                  onChange={(v) => f('cst_icms_esperado', v)}
+                  opcoes={CST_ICMS_OPCOES}
+                  emptyLabel={EMPTY_LABEL_NAO_VALIDAR}
+                />
+                <CatalogCodigoFiscalSelect
+                  label="CSOSN"
+                  value={form.csosn_esperado}
+                  onChange={(v) => f('csosn_esperado', v)}
+                  opcoes={CSOSN_OPCOES}
+                  emptyLabel={EMPTY_LABEL_NAO_VALIDAR}
+                />
+                <CatalogCodigoFiscalSelect
+                  label="Modalidade BC"
+                  value={form.modalidade_bc_icms}
+                  onChange={(v) => f('modalidade_bc_icms', v)}
+                  opcoes={MODALIDADE_BC_ICMS_OPCOES}
+                  emptyLabel={EMPTY_LABEL_NAO_VALIDAR}
+                />
+                <CatalogCodigoFiscalSelect
+                  label="Alíquota ICMS (%)"
+                  value={form.aliquota_icms}
+                  onChange={(v) => f('aliquota_icms', v)}
+                  opcoes={ALIQUOTA_ICMS_OPCOES}
+                  emptyLabel={EMPTY_LABEL_NAO_VALIDAR}
+                />
+                <div>
+                  <label className="erp-label">Redução BC (%)</label>
+                  <input className="erp-input mt-1" value={form.reducao_bc_icms} onChange={(e) => f('reducao_bc_icms', e.target.value)} />
+                </div>
+                <div>
+                  <label className="erp-label">Cód. benefício</label>
+                  <input className="erp-input mt-1" value={form.codigo_beneficio_icms} onChange={(e) => f('codigo_beneficio_icms', e.target.value)} />
+                </div>
+                <CatalogCodigoFiscalSelect
+                  label="Motivo desoneração"
+                  value={form.motivo_desoneracao_icms}
+                  onChange={(v) => f('motivo_desoneracao_icms', v)}
+                  opcoes={MOTIVO_DESONERACAO_ICMS_OPCOES}
+                  emptyLabel={EMPTY_LABEL_NAO_VALIDAR}
+                />
+                <div>
+                  <label className="erp-label">ST aplicável</label>
+                  <select
+                    className="erp-select mt-1"
+                    value={form.icms_st_aplicavel}
+                    onChange={(e) => f('icms_st_aplicavel', e.target.value as '' | 'sim' | 'nao')}
+                  >
+                    {BOOL_TRI_OPCOES.map((o) => (
+                      <option key={o.value || 'nv'} value={o.value}>
+                        {o.value === '' ? '— Não validar —' : o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <CatalogCodigoFiscalSelect
+                  label="CST ICMS ST"
+                  value={form.cst_icms_st_esperado}
+                  onChange={(v) => f('cst_icms_st_esperado', v)}
+                  opcoes={CST_ICMS_OPCOES}
+                  emptyLabel={EMPTY_LABEL_NAO_VALIDAR}
+                />
+                <CatalogCodigoFiscalSelect
+                  label="Alíquota ICMS ST (%)"
+                  value={form.aliquota_icms_st}
+                  onChange={(v) => f('aliquota_icms_st', v)}
+                  opcoes={ALIQUOTA_ICMS_OPCOES}
+                  emptyLabel={EMPTY_LABEL_NAO_VALIDAR}
+                />
+                <div>
+                  <label className="erp-label">MVA ST (%)</label>
+                  <input className="erp-input mt-1" value={form.mva_st} onChange={(e) => f('mva_st', e.target.value)} />
+                </div>
+                <div>
+                  <label className="erp-label">Redução BC ST (%)</label>
+                  <input className="erp-input mt-1" value={form.reducao_bc_st} onChange={(e) => f('reducao_bc_st', e.target.value)} />
+                </div>
               </div>
               <h4 className="font-medium text-xs mt-4 mb-2 text-muted-foreground">FCP (opcional)</h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div><label className="erp-label">FCP aplicável</label><select className="erp-select mt-1" value={form.fcp_aplicavel} onChange={(e) => f('fcp_aplicavel', e.target.value as '' | 'sim' | 'nao')}><option value="">— Não validar —</option><option value="sim">Sim</option><option value="nao">Não</option></select></div>
-                <div><label className="erp-label">Alíquota FCP (%)</label><input className="erp-input mt-1" value={form.aliquota_fcp} onChange={(e) => f('aliquota_fcp', e.target.value)} /></div>
-                <div><label className="erp-label">Alíquota FCP ST (%)</label><input className="erp-input mt-1" value={form.aliquota_fcp_st} onChange={(e) => f('aliquota_fcp_st', e.target.value)} /></div>
-                <div><label className="erp-label">Redução BC FCP (%)</label><input className="erp-input mt-1" value={form.reducao_bc_fcp} onChange={(e) => f('reducao_bc_fcp', e.target.value)} /></div>
-                <div><label className="erp-label">Valor FCP/unidade</label><input className="erp-input mt-1" value={form.valor_fcp_unidade} onChange={(e) => f('valor_fcp_unidade', e.target.value)} /></div>
+                <div>
+                  <label className="erp-label">FCP aplicável</label>
+                  <select
+                    className="erp-select mt-1"
+                    value={form.fcp_aplicavel}
+                    onChange={(e) => f('fcp_aplicavel', e.target.value as '' | 'sim' | 'nao')}
+                  >
+                    {BOOL_TRI_OPCOES.map((o) => (
+                      <option key={`fcp-${o.value || 'nv'}`} value={o.value}>
+                        {o.value === '' ? '— Não validar —' : o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="erp-label">Alíquota FCP (%)</label>
+                  <input className="erp-input mt-1" value={form.aliquota_fcp} onChange={(e) => f('aliquota_fcp', e.target.value)} />
+                </div>
+                <div>
+                  <label className="erp-label">Alíquota FCP ST (%)</label>
+                  <input className="erp-input mt-1" value={form.aliquota_fcp_st} onChange={(e) => f('aliquota_fcp_st', e.target.value)} />
+                </div>
+                <div>
+                  <label className="erp-label">Redução BC FCP (%)</label>
+                  <input className="erp-input mt-1" value={form.reducao_bc_fcp} onChange={(e) => f('reducao_bc_fcp', e.target.value)} />
+                </div>
+                <div>
+                  <label className="erp-label">Valor FCP/unidade</label>
+                  <input className="erp-input mt-1" value={form.valor_fcp_unidade} onChange={(e) => f('valor_fcp_unidade', e.target.value)} />
+                </div>
               </div>
-
             </section>
           ) : null}
 
@@ -1069,11 +1206,32 @@ export const RegrasFiscaisEntradaTab = ({ autoOpenNew, prefill }: Props) => {
             <section>
               <h3 className="font-semibold text-sm mb-2 border-b border-border pb-1">IPI</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div><label className="erp-label">CST IPI</label><input className="erp-input mt-1" value={form.cst_ipi_esperado} onChange={(e) => f('cst_ipi_esperado', e.target.value)} /></div>
-                <div><label className="erp-label">Tipo cálculo</label><input className="erp-input mt-1" value={form.tipo_calculo_ipi} onChange={(e) => f('tipo_calculo_ipi', e.target.value)} /></div>
-                <div><label className="erp-label">Alíquota IPI (%)</label><input className="erp-input mt-1" value={form.aliquota_ipi} onChange={(e) => f('aliquota_ipi', e.target.value)} /></div>
-                <div><label className="erp-label">Valor/unidade</label><input className="erp-input mt-1" value={form.valor_ipi_unidade} onChange={(e) => f('valor_ipi_unidade', e.target.value)} /></div>
-                <div><label className="erp-label">Enquadramento</label><input className="erp-input mt-1" value={form.enquadramento_ipi} onChange={(e) => f('enquadramento_ipi', e.target.value)} /></div>
+                <CatalogCodigoFiscalSelect
+                  label="CST IPI"
+                  value={form.cst_ipi_esperado}
+                  onChange={(v) => f('cst_ipi_esperado', v)}
+                  opcoes={CST_IPI_OPCOES}
+                  emptyLabel={EMPTY_LABEL_NAO_VALIDAR}
+                />
+                <CatalogCodigoFiscalSelect
+                  label="Tipo cálculo"
+                  value={form.tipo_calculo_ipi}
+                  onChange={(v) => f('tipo_calculo_ipi', v)}
+                  opcoes={TIPO_CALCULO_TRIBUTO_OPCOES}
+                  emptyLabel={EMPTY_LABEL_NAO_VALIDAR}
+                />
+                <div>
+                  <label className="erp-label">Alíquota IPI (%)</label>
+                  <input className="erp-input mt-1" value={form.aliquota_ipi} onChange={(e) => f('aliquota_ipi', e.target.value)} />
+                </div>
+                <div>
+                  <label className="erp-label">Valor/unidade</label>
+                  <input className="erp-input mt-1" value={form.valor_ipi_unidade} onChange={(e) => f('valor_ipi_unidade', e.target.value)} />
+                </div>
+                <div>
+                  <label className="erp-label">Enquadramento</label>
+                  <input className="erp-input mt-1" value={form.enquadramento_ipi} onChange={(e) => f('enquadramento_ipi', e.target.value)} />
+                </div>
               </div>
             </section>
           ) : null}
@@ -1082,12 +1240,42 @@ export const RegrasFiscaisEntradaTab = ({ autoOpenNew, prefill }: Props) => {
             <section>
               <h3 className="font-semibold text-sm mb-2 border-b border-border pb-1">PIS</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div><label className="erp-label">CST PIS</label><input className="erp-input mt-1" value={form.cst_pis_esperado} onChange={(e) => f('cst_pis_esperado', e.target.value)} /></div>
-                <div><label className="erp-label">Tipo cálculo</label><input className="erp-input mt-1" value={form.tipo_calculo_pis} onChange={(e) => f('tipo_calculo_pis', e.target.value)} /></div>
-                <div><label className="erp-label">Alíquota PIS (%)</label><input className="erp-input mt-1" value={form.aliquota_pis} onChange={(e) => f('aliquota_pis', e.target.value)} /></div>
-                <div><label className="erp-label">Redução base (%)</label><input className="erp-input mt-1" value={form.reducao_base_pis} onChange={(e) => f('reducao_base_pis', e.target.value)} /></div>
-                <div><label className="erp-label">Valor mín./unidade</label><input className="erp-input mt-1" value={form.valor_minimo_pis_unidade} onChange={(e) => f('valor_minimo_pis_unidade', e.target.value)} /></div>
-                <div><label className="erp-label">Alíquota PIS ST (%)</label><input className="erp-input mt-1" value={form.aliquota_pis_st} onChange={(e) => f('aliquota_pis_st', e.target.value)} /></div>
+                <CatalogCodigoFiscalSelect
+                  label="CST PIS"
+                  value={form.cst_pis_esperado}
+                  onChange={(v) => f('cst_pis_esperado', v)}
+                  opcoes={CST_PIS_COFINS_OPCOES}
+                  emptyLabel={EMPTY_LABEL_NAO_VALIDAR}
+                />
+                <CatalogCodigoFiscalSelect
+                  label="Tipo cálculo"
+                  value={form.tipo_calculo_pis}
+                  onChange={(v) => f('tipo_calculo_pis', v)}
+                  opcoes={TIPO_CALCULO_TRIBUTO_OPCOES}
+                  emptyLabel={EMPTY_LABEL_NAO_VALIDAR}
+                />
+                <CatalogCodigoFiscalSelect
+                  label="Alíquota PIS (%)"
+                  value={form.aliquota_pis}
+                  onChange={(v) => f('aliquota_pis', v)}
+                  opcoes={ALIQUOTA_PIS_OPCOES}
+                  emptyLabel={EMPTY_LABEL_NAO_VALIDAR}
+                />
+                <div>
+                  <label className="erp-label">Redução base (%)</label>
+                  <input className="erp-input mt-1" value={form.reducao_base_pis} onChange={(e) => f('reducao_base_pis', e.target.value)} />
+                </div>
+                <div>
+                  <label className="erp-label">Valor mín./unidade</label>
+                  <input className="erp-input mt-1" value={form.valor_minimo_pis_unidade} onChange={(e) => f('valor_minimo_pis_unidade', e.target.value)} />
+                </div>
+                <CatalogCodigoFiscalSelect
+                  label="Alíquota PIS ST (%)"
+                  value={form.aliquota_pis_st}
+                  onChange={(v) => f('aliquota_pis_st', v)}
+                  opcoes={ALIQUOTA_PIS_OPCOES}
+                  emptyLabel={EMPTY_LABEL_NAO_VALIDAR}
+                />
               </div>
             </section>
           ) : null}
@@ -1096,25 +1284,116 @@ export const RegrasFiscaisEntradaTab = ({ autoOpenNew, prefill }: Props) => {
             <section>
               <h3 className="font-semibold text-sm mb-2 border-b border-border pb-1">COFINS</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div><label className="erp-label">CST COFINS</label><input className="erp-input mt-1" value={form.cst_cofins_esperado} onChange={(e) => f('cst_cofins_esperado', e.target.value)} /></div>
-                <div><label className="erp-label">Tipo cálculo</label><input className="erp-input mt-1" value={form.tipo_calculo_cofins} onChange={(e) => f('tipo_calculo_cofins', e.target.value)} /></div>
-                <div><label className="erp-label">Alíquota COFINS (%)</label><input className="erp-input mt-1" value={form.aliquota_cofins} onChange={(e) => f('aliquota_cofins', e.target.value)} /></div>
-                <div><label className="erp-label">Redução base (%)</label><input className="erp-input mt-1" value={form.reducao_base_cofins} onChange={(e) => f('reducao_base_cofins', e.target.value)} /></div>
-                <div><label className="erp-label">Valor mín./unidade</label><input className="erp-input mt-1" value={form.valor_minimo_cofins_unidade} onChange={(e) => f('valor_minimo_cofins_unidade', e.target.value)} /></div>
-                <div><label className="erp-label">Alíquota COFINS ST (%)</label><input className="erp-input mt-1" value={form.aliquota_cofins_st} onChange={(e) => f('aliquota_cofins_st', e.target.value)} /></div>
+                <CatalogCodigoFiscalSelect
+                  label="CST COFINS"
+                  value={form.cst_cofins_esperado}
+                  onChange={(v) => f('cst_cofins_esperado', v)}
+                  opcoes={CST_PIS_COFINS_OPCOES}
+                  emptyLabel={EMPTY_LABEL_NAO_VALIDAR}
+                />
+                <CatalogCodigoFiscalSelect
+                  label="Tipo cálculo"
+                  value={form.tipo_calculo_cofins}
+                  onChange={(v) => f('tipo_calculo_cofins', v)}
+                  opcoes={TIPO_CALCULO_TRIBUTO_OPCOES}
+                  emptyLabel={EMPTY_LABEL_NAO_VALIDAR}
+                />
+                <CatalogCodigoFiscalSelect
+                  label="Alíquota COFINS (%)"
+                  value={form.aliquota_cofins}
+                  onChange={(v) => f('aliquota_cofins', v)}
+                  opcoes={ALIQUOTA_COFINS_OPCOES}
+                  emptyLabel={EMPTY_LABEL_NAO_VALIDAR}
+                />
+                <div>
+                  <label className="erp-label">Redução base (%)</label>
+                  <input className="erp-input mt-1" value={form.reducao_base_cofins} onChange={(e) => f('reducao_base_cofins', e.target.value)} />
+                </div>
+                <div>
+                  <label className="erp-label">Valor mín./unidade</label>
+                  <input className="erp-input mt-1" value={form.valor_minimo_cofins_unidade} onChange={(e) => f('valor_minimo_cofins_unidade', e.target.value)} />
+                </div>
+                <CatalogCodigoFiscalSelect
+                  label="Alíquota COFINS ST (%)"
+                  value={form.aliquota_cofins_st}
+                  onChange={(v) => f('aliquota_cofins_st', v)}
+                  opcoes={ALIQUOTA_COFINS_OPCOES}
+                  emptyLabel={EMPTY_LABEL_NAO_VALIDAR}
+                />
               </div>
             </section>
           ) : null}
-
 
           {abaForm === 'reforma' ? (
             <section>
               <h3 className="font-semibold text-sm mb-2 border-b border-border pb-1">Reforma Tributária</h3>
               <p className="text-xs text-muted-foreground mb-3">
-                Campos preparatórios (IBS/CBS). Não bloqueiam conferência nesta fase; salvos em JSON.
+                Campos preparatórios (IBS/CBS). Em devolução, deixe vazio para espelhar a saída; ou selecione a
+                alíquota-teste 2026.
               </p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {REFORMA_TRIBUTARIA_KEYS.map((key) => (
+                <CatalogCodigoFiscalSelect
+                  label="CST IBS/CBS"
+                  value={form.reforma_tributaria.cst_ibs_cbs}
+                  onChange={(v) => fReforma('cst_ibs_cbs', v)}
+                  opcoes={CST_IBS_CBS_OPCOES}
+                  emptyLabel={EMPTY_LABEL_NAO_VALIDAR}
+                />
+                <CatalogCodigoFiscalSelect
+                  label="Classificação tributária"
+                  value={form.reforma_tributaria.classificacao_tributaria}
+                  onChange={(v) => fReforma('classificacao_tributaria', v)}
+                  opcoes={CLASSIFICACAO_TRIBUTARIA_OPCOES}
+                  emptyLabel={EMPTY_LABEL_NAO_VALIDAR}
+                />
+                <CatalogCodigoFiscalSelect
+                  label="Alíquota CBS (%)"
+                  value={form.reforma_tributaria.aliquota_cbs}
+                  onChange={(v) => fReforma('aliquota_cbs', v)}
+                  opcoes={ALIQUOTA_CBS_2026_OPCOES}
+                  emptyLabel={EMPTY_LABEL_NAO_VALIDAR}
+                />
+                <CatalogCodigoFiscalSelect
+                  label="Alíquota IBS estadual (%)"
+                  value={form.reforma_tributaria.aliquota_ibs_estadual}
+                  onChange={(v) => fReforma('aliquota_ibs_estadual', v)}
+                  opcoes={ALIQUOTA_IBS_UF_2026_OPCOES}
+                  emptyLabel={EMPTY_LABEL_NAO_VALIDAR}
+                />
+                <div>
+                  <label className="erp-label">Alíquota IBS municipal (%)</label>
+                  <input
+                    className="erp-input mt-1"
+                    value={form.reforma_tributaria.aliquota_ibs_municipal}
+                    onChange={(e) => fReforma('aliquota_ibs_municipal', e.target.value)}
+                  />
+                </div>
+                <CatalogCodigoFiscalSelect
+                  label="Modo base IBS/CBS"
+                  value={form.reforma_tributaria.modo_base_ibs_cbs}
+                  onChange={(v) => fReforma('modo_base_ibs_cbs', v)}
+                  opcoes={MODO_BASE_IBS_CBS_OPCOES}
+                  emptyLabel={EMPTY_LABEL_NAO_VALIDAR}
+                />
+                <CatalogCodigoFiscalSelect
+                  label="Fonte da regra de base"
+                  value={form.reforma_tributaria.fonte_regra_base_ibs_cbs}
+                  onChange={(v) => fReforma('fonte_regra_base_ibs_cbs', v)}
+                  opcoes={FONTE_REGRA_BASE_IBS_CBS_OPCOES}
+                  emptyLabel={EMPTY_LABEL_NAO_VALIDAR}
+                />
+                {REFORMA_TRIBUTARIA_KEYS.filter(
+                  (key) =>
+                    ![
+                      'cst_ibs_cbs',
+                      'classificacao_tributaria',
+                      'aliquota_cbs',
+                      'aliquota_ibs_estadual',
+                      'aliquota_ibs_municipal',
+                      'modo_base_ibs_cbs',
+                      'fonte_regra_base_ibs_cbs',
+                    ].includes(key),
+                ).map((key) => (
                   <div key={key}>
                     <label className="erp-label">{key.replace(/_/g, ' ')}</label>
                     <input

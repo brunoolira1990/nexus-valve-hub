@@ -19,6 +19,10 @@ type Props = {
   ufDestino?: string;
   placeholder?: string;
   hint?: string;
+  /** Catálogo a exibir (padrão: CFOP de saída). */
+  opcoes?: OpcaoCatalogo[];
+  /** Agrupa por UF só quando o catálogo é de saída. */
+  agruparPorUf?: boolean;
 };
 
 function renderGrupo(
@@ -57,26 +61,28 @@ export const CatalogCfopSearchSelect = ({
   ufDestino = '',
   placeholder = 'Buscar CFOP por código ou descrição...',
   hint,
+  opcoes = CFOP_SAIDA_OPCOES,
+  agruparPorUf = true,
 }: Props) => {
   const rootRef = useRef<HTMLDivElement>(null);
   const [aberto, setAberto] = useState(false);
   const [busca, setBusca] = useState('');
 
   const codigo = normalizarCfopCodigo(value);
-  const descricaoAtual = codigo ? labelCfopCatalogo(codigo) : '';
-  const foraCatalogo = codigo !== '' && !CFOP_SAIDA_OPCOES.some((o) => o.value === codigo);
+  const descricaoAtual = codigo ? labelCfopCatalogo(codigo, opcoes) : '';
+  const foraCatalogo = codigo !== '' && !opcoes.some((o) => o.value === codigo);
 
   const opcoesFiltradas = useMemo(() => {
-    const base = opcoesComValorAtual(codigo, CFOP_SAIDA_OPCOES);
+    const base = opcoesComValorAtual(codigo, opcoes);
     return filtrarCfopBusca(base, busca);
-  }, [busca, codigo]);
+  }, [busca, codigo, opcoes]);
 
   const { maisProvaveis, outros } = useMemo(
-    () => agruparCfopSaida(opcoesFiltradas, ufOrigem, ufDestino),
-    [opcoesFiltradas, ufOrigem, ufDestino],
+    () => (agruparPorUf ? agruparCfopSaida(opcoesFiltradas, ufOrigem, ufDestino) : { maisProvaveis: [], outros: opcoesFiltradas }),
+    [agruparPorUf, opcoesFiltradas, ufOrigem, ufDestino],
   );
 
-  const prefixoUf = prefixoCfopProvavel(ufOrigem, ufDestino);
+  const prefixoUf = agruparPorUf ? prefixoCfopProvavel(ufOrigem, ufDestino) : null;
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {

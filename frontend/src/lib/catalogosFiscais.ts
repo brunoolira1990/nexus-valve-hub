@@ -418,15 +418,76 @@ export const CFOP_SAIDA_OPCOES: OpcaoCatalogo[] = [
 export const HINT_CFOP_SAIDA =
   'Selecione o CFOP aplicável. O catálogo é auxiliar; confirme a operação com a contabilidade.';
 
+/** Catálogo auxiliar de CFOP de entrada (compra, devolução, remessa). */
+export const CFOP_ENTRADA_OPCOES: OpcaoCatalogo[] = [
+  { value: '1102', label: '1102 — Compra para comercialização' },
+  { value: '1201', label: '1201 — Devolução de venda de produção do estabelecimento' },
+  { value: '1202', label: '1202 — Devolução de venda de mercadoria adquirida de terceiros' },
+  { value: '1403', label: '1403 — Compra para comercialização em operação com ST' },
+  { value: '1556', label: '1556 — Compra de material para uso ou consumo' },
+  { value: '1901', label: '1901 — Entrada para industrialização por encomenda' },
+  { value: '1902', label: '1902 — Retorno de mercadoria utilizada na industrialização' },
+  { value: '1949', label: '1949 — Outra entrada de mercadoria ou prestação de serviço' },
+  { value: '2102', label: '2102 — Compra para comercialização' },
+  { value: '2201', label: '2201 — Devolução de venda de produção do estabelecimento' },
+  { value: '2202', label: '2202 — Devolução de venda de mercadoria adquirida de terceiros' },
+  { value: '2403', label: '2403 — Compra para comercialização em operação com ST' },
+  { value: '2556', label: '2556 — Compra de material para uso ou consumo' },
+  { value: '2901', label: '2901 — Entrada para industrialização por encomenda' },
+  { value: '2902', label: '2902 — Retorno de mercadoria utilizada na industrialização' },
+  { value: '2949', label: '2949 — Outra entrada de mercadoria ou prestação de serviço' },
+];
+
+export const HINT_CFOP_ENTRADA =
+  'Selecione o CFOP de entrada. Em devolução de venda use 1201/1202 (mesmo estado) ou 2201/2202 (outra UF).';
+
+/** Alíquotas comuns — evita digitação manual pelo operador. */
+export const ALIQUOTA_PIS_OPCOES: OpcaoCatalogo[] = [
+  { value: '0.65', label: '0,65% — Lucro Presumido (cumulativo)' },
+  { value: '1.65', label: '1,65% — Não cumulativo' },
+];
+
+export const ALIQUOTA_COFINS_OPCOES: OpcaoCatalogo[] = [
+  { value: '3', label: '3,00% — Lucro Presumido (cumulativo)' },
+  { value: '7.6', label: '7,60% — Não cumulativo' },
+];
+
+export const ALIQUOTA_ICMS_OPCOES: OpcaoCatalogo[] = [
+  { value: '4', label: '4%' },
+  { value: '7', label: '7%' },
+  { value: '12', label: '12%' },
+  { value: '17', label: '17%' },
+  { value: '18', label: '18%' },
+  { value: '19', label: '19%' },
+  { value: '20', label: '20%' },
+  { value: '25', label: '25%' },
+];
+
+export const ALIQUOTA_CBS_2026_OPCOES: OpcaoCatalogo[] = [
+  { value: '0.9', label: '0,90% — alíquota-teste CBS 2026' },
+];
+
+export const ALIQUOTA_IBS_UF_2026_OPCOES: OpcaoCatalogo[] = [
+  { value: '0.1', label: '0,10% — alíquota-teste IBS UF 2026' },
+];
+
+export const EMPTY_LABEL_NAO_VALIDAR = '— Não validar / espelha origem —';
+
 export function normalizarCfopCodigo(valor: string): string {
   return (valor || '').replace(/\D/g, '').slice(0, 4);
 }
 
-export function labelCfopCatalogo(codigo: string, opcoes: OpcaoCatalogo[] = CFOP_SAIDA_OPCOES): string {
+export function labelCfopCatalogo(
+  codigo: string,
+  opcoes: OpcaoCatalogo[] = CFOP_SAIDA_OPCOES,
+): string {
   const c = normalizarCfopCodigo(codigo);
   if (!c) return '';
   const op = opcoes.find((o) => o.value === c);
   if (op) return op.label;
+  // Tenta também catálogo de entrada
+  const opEnt = CFOP_ENTRADA_OPCOES.find((o) => o.value === c);
+  if (opEnt) return opEnt.label;
   return `Valor atual: ${c}`;
 }
 
