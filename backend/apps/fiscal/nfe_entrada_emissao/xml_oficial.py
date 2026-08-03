@@ -365,11 +365,18 @@ def montar_tnfe_entrada(
     doc = _digits(dest.get('cnpj')) or _digits(dest.get('cpf'))
     dest_nome = HOMOLOG_DEST_XNOME if tp_amb == '2' else (_text(dest.get('x_nome'))[:60] or 'Destinatário')
     dest_ie = ie_apenas_digitos(dest.get('ie'))
-    dest_kw: dict[str, Any] = {'xNome': dest_nome, 'indIEDest': '1' if dest_ie else '9'}
+    dest_kw: dict[str, Any] = {
+        'xNome': dest_nome,
+        'indIEDest': _text(dest.get('ind_ie_dest')) or ('1' if dest_ie else '9'),
+    }
     if len(doc) == 14:
         dest_kw['CNPJ'] = doc
     elif len(doc) == 11:
         dest_kw['CPF'] = doc
+    # indIEDest=1 exige <IE> — sem a tag a SEFAZ rejeita (ex.: «sem informação da IE do destinatário»).
+    if dest_ie:
+        dest_kw['IE'] = dest_ie
+        dest_kw['indIEDest'] = '1'
     inf.dest = nfe.Tnfe.InfNfe.Dest(**dest_kw)
     inf.dest.enderDest = _ender_dest_entrada(dados)
 

@@ -398,6 +398,13 @@ def gerar_entrada_devolucao_from_nfe_saida(
         chave_nfe_referenciada=chave,
         nfe_saida_origem=nf,
         valor_total=Decimal('0'),
+        dest_json={
+            'cnpj': getattr(nf.cliente, 'cnpj', '') or '',
+            'ie': getattr(nf.cliente, 'ie', '') or '',
+            'x_nome': getattr(nf.cliente, 'razao_social', '') or '',
+            'origem': 'nfe_saida',
+            'nfe_saida_id': nf.pk,
+        },
     )
 
     contexto = montar_contexto_devolucao_venda(
@@ -548,6 +555,17 @@ def gerar_entrada_devolucao_from_nfe_saida_historica(
         chave_nfe_referenciada=chave,
         nfe_saida_historica_origem=nf,
         valor_total=Decimal('0'),
+        dest_json={
+            **(nf.dest_json if isinstance(nf.dest_json, dict) else {}),
+            'cnpj': getattr(cliente, 'cnpj', '') or '',
+            'ie': getattr(cliente, 'ie', '')
+            or ((nf.dest_json or {}).get('ie') if isinstance(nf.dest_json, dict) else '')
+            or ((nf.dest_json or {}).get('IE') if isinstance(nf.dest_json, dict) else '')
+            or '',
+            'x_nome': getattr(cliente, 'razao_social', '') or '',
+            'origem': 'nfe_saida_historica',
+            'nfe_historica_id': nf.pk,
+        },
     )
 
     contexto = montar_contexto_devolucao_venda(

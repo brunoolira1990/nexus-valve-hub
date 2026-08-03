@@ -42,6 +42,23 @@ def validar_destinatario_entrada_propria_emitida(nf: NFeEntrada) -> None:
             'Destinatário deve ser Cliente ou Fornecedor — não ambos simultaneamente.',
         )
 
+    # IE obrigatória quando o destinatário é contribuinte (PJ com IE no cadastro ou origem).
+    from apps.fiscal.nfe_entrada_emissao.dados_preview import _ie_from_origem
+    from apps.fiscal.nfe_emissao.xml_serializacao import ie_apenas_digitos
+
+    ie_cadastro = ''
+    if tem_cliente and nf.cliente_destinatario_id:
+        ie_cadastro = ie_apenas_digitos(getattr(nf.cliente_destinatario, 'ie', None))
+    elif tem_fornecedor and nf.fornecedor_id:
+        ie_cadastro = ie_apenas_digitos(getattr(nf.fornecedor, 'ie', None))
+    ie_ok = ie_cadastro or ie_apenas_digitos(_ie_from_origem(nf))
+    if not ie_ok:
+        raise NFeEntradaEmissaoValidationError(
+            'Destinatário sem IE. Informe a Inscrição Estadual no cadastro do cliente '
+            '(ou garanta a IE na NF-e de origem). A SEFAZ rejeita NF-e sem IE do destinatário '
+            'quando indIEDest=1.',
+        )
+
 
 def validar_itens_entrada_propria_emitida(nf: NFeEntrada) -> None:
     itens = list(nf.itens.all())

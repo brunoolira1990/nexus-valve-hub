@@ -66,6 +66,48 @@ def _cliente_dest_dict(cli) -> dict[str, Any]:
     }
 
 
+def _ie_from_origem(nf: NFeEntrada) -> str:
+    """Fallback da IE do destinatário a partir da NF-e de origem / dest_json."""
+    # 1) Snapshot gravado na entrada
+    dest_snap = nf.dest_json if isinstance(nf.dest_json, dict) else {}
+    ie = _text(dest_snap.get('ie') or dest_snap.get('IE'))
+    if ie:
+        return ie
+
+    # 2) NF-e saída operacional vinculada
+    origem = getattr(nf, 'nfe_saida_origem', None)
+    if origem is not None:
+        cli = getattr(origem, 'cliente', None)
+        if cli is not None and _text(cli.ie):
+            return _text(cli.ie)
+        for attr in ('xml_autorizado', 'xml_nfe_gerado'):
+            xml = _text(getattr(origem, attr, None))
+            if not xml:
+                continue
+            import re
+
+            m = re.search(
+                r'<dest\b[^>]*>.*?<IE>([^<]+)</IE>',
+                xml,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+            if m:
+                return _text(m.group(1))
+
+    # 3) NF-e histórica vinculada
+    hist = getattr(nf, 'nfe_saida_historica_origem', None)
+    if hist is not None:
+        dj = hist.dest_json if isinstance(getattr(hist, 'dest_json', None), dict) else {}
+        ie_h = _text(dj.get('ie') or dj.get('IE'))
+        if ie_h:
+            return ie_h
+        cli_h = getattr(hist, 'cliente', None)
+        if cli_h is not None and _text(cli_h.ie):
+            return _text(cli_h.ie)
+
+    return ''
+
+
 def _fornecedor_dest_dict(forn) -> dict[str, Any]:
     end = _participante_endereco(forn)
     doc = _digits(forn.cnpj, max_len=14)
@@ -126,6 +168,13 @@ def gerar_dados_preview_nfe_entrada(nf: NFeEntrada) -> dict[str, Any]:
         dest = _fornecedor_dest_dict(nf.fornecedor)
     else:
         dest = {}
+
+    # Devolução: se o cadastro do cliente veio sem IE, tenta a origem (saída/XML).
+    if not _text(dest.get('ie')):
+        ie_origem = _ie_from_origem(nf)
+        if ie_origem:
+            dest['ie'] = ie_origem
+            dest['ie_origem'] = 'nfe_origem'
 
     itens_db = list(nf.itens.select_related('produto').order_by('id'))
     itens = [_linha_item(it, n_item=idx) for idx, it in enumerate(itens_db, start=1)]
