@@ -100,6 +100,78 @@ export const nfeEntradasService = {
       })
     ).data;
   },
+  criarEntradaPropriaEmitida: async (data: Omit<NFeEntrada, 'id' | 'fornecedor_nome'>) => {
+    const { valor_total: _vt, itens, ...rest } = data;
+    return (
+      await api.post<NFeEntrada>(`${nfEnt}criar-entrada-propria-emitida/`, {
+        ...rest,
+        itens: stripNfItens(itens || []),
+      })
+    ).data;
+  },
+  validarEmissaoHomologacao: async (id: number) =>
+    (
+      await api.get<{
+        ok: boolean;
+        pronta: boolean;
+        pendencias: Array<{ codigo?: string; mensagem?: string }>;
+        alertas: Array<{ codigo?: string; mensagem?: string }>;
+        mensagem?: string;
+        ambiente?: string;
+      }>(`${nfEnt}${id}/validar-emissao-homologacao/`, {
+        validateStatus: (s) => s >= 200 && s < 500,
+      })
+    ).data,
+  validarEmissaoProducao: async (id: number) =>
+    (
+      await api.get<{
+        ok: boolean;
+        pronta: boolean;
+        pendencias: Array<{ codigo?: string; mensagem?: string }>;
+        alertas: Array<{ codigo?: string; mensagem?: string }>;
+        mensagem?: string;
+        ambiente?: string;
+      }>(`${nfEnt}${id}/validar-emissao-producao/`, {
+        validateStatus: (s) => s >= 200 && s < 500,
+      })
+    ).data,
+  reservarNumeracao: async (id: number) =>
+    (
+      await api.post<{
+        ok: boolean;
+        nf_entrada_id: number;
+        serie_nfe: string;
+        numero_nfe: string;
+        chave_acesso: string;
+        ambiente_emissao?: string;
+        status_emissao_sefaz?: string;
+      }>(`${nfEnt}${id}/reservar-numeracao/`)
+    ).data,
+  previewXmlOficial: async (id: number) =>
+    (await api.get<{ ok?: boolean; bloqueado?: boolean; xml?: string; mensagem?: string }>(`${nfEnt}${id}/preview-xml-oficial/`, {
+      validateStatus: (s) => s >= 200 && s < 500,
+    })).data,
+  gerarXmlOficial: async (id: number) =>
+    (await api.post<{ ok?: boolean; bloqueado?: boolean; xml?: string; mensagem?: string }>(`${nfEnt}${id}/gerar-xml-oficial-emissao/`)).data,
+  emitirHomologacao: async (id: number) => {
+    const res = await api.post<NFeEmissaoHomologacaoResponse>(
+      `${nfEnt}${id}/emitir-homologacao/`,
+      {},
+      { timeout: 120_000, validateStatus: (s) => s >= 200 && s < 500 },
+    );
+    return res.data;
+  },
+  emitirProducao: async (
+    id: number,
+    payload: { confirmar_emissao_producao: boolean; confirmar_ambiente: string },
+  ) => {
+    const res = await api.post<NFeEmissaoProducaoResponse>(
+      `${nfEnt}${id}/emitir-producao/`,
+      payload,
+      { timeout: 120_000, validateStatus: (s) => s >= 200 && s < 500 },
+    );
+    return res.data;
+  },
 };
 
 export type ValidacaoNFeSaidaItem = {

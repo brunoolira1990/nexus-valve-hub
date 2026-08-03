@@ -199,8 +199,36 @@ class NFeEntradaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         if instance.tipo_origem == NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_IMPORTADA:
             instance.delete()
             return
+        if instance.tipo_origem == NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_EMITIDA:
+            if instance.status_emissao_sefaz in (
+                NFeEntrada.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO,
+                NFeEntrada.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO,
+            ):
+                from rest_framework.exceptions import ValidationError
+
+                raise ValidationError(
+                    {'detail': 'NF-e entrada própria autorizada na SEFAZ não pode ser excluída.'},
+                )
+            instance.delete()
+            return
         reverter_todos_itens_entrada(instance)
         instance.delete()
+
+    @action(
+        detail=False,
+        methods=['post'],
+        url_path='criar-entrada-propria-emitida',
+    )
+    def criar_entrada_propria_emitida(self, request):
+        """Cria rascunho ENTRADA_PROPRIA_EMITIDA (sem estoque) para emissão SEFAZ."""
+        ser = self.get_serializer(
+            data=request.data,
+            context={**self.get_serializer_context(), 'entrada_propria_emitida': True},
+        )
+        ser.is_valid(raise_exception=True)
+        nf = ser.save()
+        out = self.get_serializer(nf)
+        return response.Response(out.data, status=status.HTTP_201_CREATED)
 
     @action(
         detail=False,
@@ -236,6 +264,19 @@ class NFeEntradaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         nf = self.get_object()
         validacao = validar_pre_emissao_homologacao_entrada(nf, exigir_numeracao=False)
         payload = montar_resposta_validacao_entrada(validacao, nf=nf)
+        status_code = status.HTTP_200_OK if payload['ok'] else status.HTTP_409_CONFLICT
+        return response.Response(payload, status=status_code)
+
+    @action(detail=True, methods=['get'], url_path='validar-emissao-producao')
+    def validar_emissao_producao(self, request, pk=None):
+        from apps.fiscal.nfe_entrada_emissao.resposta import montar_resposta_validacao_entrada
+        from apps.fiscal.nfe_entrada_emissao.validacao import validar_pre_emissao_producao_entrada
+
+        nf = self.get_object()
+        validacao = validar_pre_emissao_producao_entrada(nf, exigir_numeracao=False)
+        payload = montar_resposta_validacao_entrada(validacao, nf=nf)
+        payload['sem_transmissao'] = True
+        payload['sem_assinatura'] = True
         status_code = status.HTTP_200_OK if payload['ok'] else status.HTTP_409_CONFLICT
         return response.Response(payload, status=status_code)
 
@@ -293,7 +334,7 @@ class NFeEntradaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
                 'nf_entrada_id': nf.pk,
                 'xml': xml,
                 'status_emissao_sefaz': nf.status_emissao_sefaz or '',
-                'sem_autorizacao': True,
+                'sem_autorizacao': not bool(nf.protocolo_autorizacao),
             },
         )
 
@@ -315,9 +356,175 @@ class NFeEntradaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
                 'serie_nfe': num.serie,
                 'numero_nfe': num.nnf,
                 'chave_acesso': nf.chave_acesso,
+                'ambiente_emissao': nf.ambiente_emissao,
                 'status_emissao_sefaz': nf.status_emissao_sefaz,
             },
         )
+
+    @action(detail=True, methods=['post'], url_path='emitir-homologacao')
+    def emitir_homologacao(self, request, pk=None):
+        import logging
+
+        from apps.fiscal.nfe_emissao.assinatura import NFeAssinaturaError
+        from apps.fiscal.nfe_emissao.numeracao import NFeNumeracaoError
+        from apps.fiscal.nfe_emissao.transmissao import NFeTransmissaoError
+        from apps.fiscal.nfe_entrada_emissao.resposta_emissao import montar_resposta_emissao_entrada
+        from apps.fiscal.nfe_entrada_emissao.servico import (
+            NFeEntradaEmissaoHomologacaoError,
+            emitir_nfe_entrada_homologacao,
+        )
+        from apps.fiscal.nfe_entrada_emissao.xml_oficial import NFeEntradaXmlError
+        from apps.fiscal.nfe_integracao.adapters.exceptions import CertificadoA1Error
+
+        log = logging.getLogger(__name__)
+        nf = self.get_object()
+        try:
+            payload = emitir_nfe_entrada_homologacao(nf, usuario=request.user)
+        except NFeEntradaEmissaoHomologacaoError as exc:
+            det = getattr(exc, 'detalhes', None) or {}
+            erros = det.get('erros') or [str(exc)]
+            etapa = str(det.get('etapa') or getattr(exc, 'etapa', '') or '')
+            nf.refresh_from_db()
+            payload = montar_resposta_emissao_entrada(
+                nf,
+                ok=False,
+                ambiente='homologacao',
+                mensagem=str(exc),
+                erros=erros if isinstance(erros, list) else [str(erros)],
+                etapa=etapa,
+            )
+            from apps.fiscal.nfe_emissao.xsd_erros import aplicar_erros_validacao_no_payload
+
+            aplicar_erros_validacao_no_payload(payload, det, mensagem=str(exc))
+            return response.Response(payload, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        except (NFeEntradaXmlError, NFeAssinaturaError, NFeNumeracaoError, NFeTransmissaoError, CertificadoA1Error) as exc:
+            nf.refresh_from_db()
+            payload = montar_resposta_emissao_entrada(
+                nf,
+                ok=False,
+                ambiente='homologacao',
+                mensagem=str(exc),
+                erros=[str(exc)],
+                etapa=getattr(exc, 'etapa', '') or 'PRE_TRANSMISSAO',
+            )
+            return response.Response(payload, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            log.exception('Erro técnico emissão homologação entrada nf_id=%s', pk)
+            payload = montar_resposta_emissao_entrada(
+                nf,
+                ok=False,
+                ambiente='homologacao',
+                mensagem='Erro técnico ao transmitir para a SEFAZ. Tente novamente ou contate o suporte.',
+                erros=['erro_tecnico'],
+            )
+            return response.Response(payload, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        code = status.HTTP_200_OK if payload.get('ok') else status.HTTP_422_UNPROCESSABLE_ENTITY
+        return response.Response(payload, status=code)
+
+    @action(detail=True, methods=['post'], url_path='emitir-producao')
+    def emitir_producao(self, request, pk=None):
+        import logging
+
+        from apps.fiscal.nfe_emissao.assinatura import NFeAssinaturaError
+        from apps.fiscal.nfe_emissao.config_producao import (
+            MSG_PRODUCAO_NAO_HABILITADA,
+            NFeProducaoConfirmacaoError,
+            NFeProducaoDesabilitadaError,
+            nfe_producao_habilitada,
+        )
+        from apps.fiscal.nfe_emissao.numeracao import NFeNumeracaoError
+        from apps.fiscal.nfe_emissao.transmissao_producao import NFeTransmissaoProducaoError
+        from apps.fiscal.nfe_entrada_emissao.resposta_emissao import montar_resposta_emissao_entrada
+        from apps.fiscal.nfe_entrada_emissao.servico_producao import (
+            NFeEntradaEmissaoProducaoError,
+            emitir_nfe_entrada_producao,
+        )
+        from apps.fiscal.nfe_entrada_emissao.xml_oficial import NFeEntradaXmlError
+        from apps.fiscal.nfe_integracao.adapters.exceptions import CertificadoA1Error
+
+        log = logging.getLogger(__name__)
+        nf = self.get_object()
+        if not nfe_producao_habilitada():
+            return response.Response(
+                montar_resposta_emissao_entrada(
+                    nf,
+                    ok=False,
+                    ambiente='producao',
+                    mensagem=MSG_PRODUCAO_NAO_HABILITADA,
+                    erros=[MSG_PRODUCAO_NAO_HABILITADA],
+                ),
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        try:
+            payload = emitir_nfe_entrada_producao(
+                nf,
+                usuario=request.user,
+                confirmacao_payload=request.data if isinstance(request.data, dict) else {},
+            )
+        except NFeProducaoDesabilitadaError as exc:
+            return response.Response(
+                montar_resposta_emissao_entrada(
+                    nf, ok=False, ambiente='producao', mensagem=str(exc), erros=[str(exc)],
+                ),
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        except NFeProducaoConfirmacaoError as exc:
+            return response.Response(
+                montar_resposta_emissao_entrada(
+                    nf, ok=False, ambiente='producao', mensagem=str(exc), erros=[str(exc)],
+                ),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except NFeEntradaEmissaoProducaoError as exc:
+            det = getattr(exc, 'detalhes', None) or {}
+            erros = det.get('erros') or [str(exc)]
+            etapa = str(det.get('etapa') or getattr(exc, 'etapa', '') or '')
+            nf.refresh_from_db()
+            payload = montar_resposta_emissao_entrada(
+                nf,
+                ok=False,
+                ambiente='producao',
+                mensagem=str(exc),
+                erros=erros if isinstance(erros, list) else [str(erros)],
+                etapa=etapa,
+            )
+            from apps.fiscal.nfe_emissao.xsd_erros import aplicar_erros_validacao_no_payload
+
+            aplicar_erros_validacao_no_payload(payload, det, mensagem=str(exc))
+            return response.Response(payload, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        except (
+            NFeEntradaXmlError,
+            NFeAssinaturaError,
+            NFeNumeracaoError,
+            NFeTransmissaoProducaoError,
+            CertificadoA1Error,
+        ) as exc:
+            nf.refresh_from_db()
+            return response.Response(
+                montar_resposta_emissao_entrada(
+                    nf,
+                    ok=False,
+                    ambiente='producao',
+                    mensagem=str(exc),
+                    erros=[str(exc)],
+                    etapa=getattr(exc, 'etapa', '') or 'PRE_TRANSMISSAO',
+                ),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception:
+            log.exception('Erro técnico emissão produção entrada nf_id=%s', pk)
+            return response.Response(
+                montar_resposta_emissao_entrada(
+                    nf,
+                    ok=False,
+                    ambiente='producao',
+                    mensagem='Erro técnico ao transmitir para a SEFAZ. Tente novamente ou contate o suporte.',
+                    erros=['erro_tecnico'],
+                ),
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        code = status.HTTP_200_OK if payload.get('ok') else status.HTTP_422_UNPROCESSABLE_ENTITY
+        return response.Response(payload, status=code)
 
 
 class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):

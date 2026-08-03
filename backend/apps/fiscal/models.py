@@ -29,6 +29,8 @@ class NFeEntrada(models.Model):
         EM_CONFERENCIA = 'EM_CONFERENCIA', 'Em conferência'
         PRONTA_HOMOLOGACAO = 'PRONTA_HOMOLOGACAO', 'Pronta homologação'
         AUTORIZADA_HOMOLOGACAO = 'AUTORIZADA_HOMOLOGACAO', 'Autorizada homologação'
+        PRONTA_PRODUCAO = 'PRONTA_PRODUCAO', 'Pronta produção'
+        AUTORIZADA_PRODUCAO = 'AUTORIZADA_PRODUCAO', 'Autorizada produção'
         REJEITADA = 'REJEITADA', 'Rejeitada'
         ERRO_TRANSMISSAO = 'ERRO_TRANSMISSAO', 'Erro transmissão'
         IMPORTADA_PENDENTE_CONFERENCIA = (
@@ -47,6 +49,9 @@ class NFeEntrada(models.Model):
         ENVIADA_HOMOLOGACAO = 'ENVIADA_HOMOLOGACAO', 'Enviada homologação'
         AUTORIZADA_HOMOLOGACAO = 'AUTORIZADA_HOMOLOGACAO', 'Autorizada homologação'
         REJEITADA_HOMOLOGACAO = 'REJEITADA_HOMOLOGACAO', 'Rejeitada homologação'
+        ENVIADA_PRODUCAO = 'ENVIADA_PRODUCAO', 'Enviada produção'
+        AUTORIZADA_PRODUCAO = 'AUTORIZADA_PRODUCAO', 'Autorizada produção'
+        REJEITADA_PRODUCAO = 'REJEITADA_PRODUCAO', 'Rejeitada produção'
         ERRO_TRANSMISSAO = 'ERRO_TRANSMISSAO', 'Erro transmissão'
 
     numero = models.CharField(max_length=64)
@@ -106,7 +111,7 @@ class NFeEntrada(models.Model):
         related_name='nf_entradas_vinculadas',
     )
 
-    # ERP 4.0.15.0 — emissão entrada própria (fundação; sem transmissão nesta fase)
+    # ERP 4.0.15.x — emissão entrada própria (tpNF=0); numeração compartilhada com saída
     ambiente_emissao = models.CharField(
         max_length=16,
         choices=AmbienteEmissao.choices,

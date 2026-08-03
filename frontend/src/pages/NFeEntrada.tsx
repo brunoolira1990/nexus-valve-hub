@@ -53,9 +53,15 @@ const NFeEntrada = () => {
   const [editing, setEditing] = useState<NFeEntrada | null>(null);
   const [form, setForm] = useState({
     numero: '',
-    fornecedor_id: 1,
-    fornecedor_nome: 'Tupy S.A.',
+    empresa_emitente_id: undefined as number | undefined,
+    cliente_destinatario_id: undefined as number | undefined,
+    fornecedor_id: undefined as number | undefined,
+    fornecedor_nome: '',
     data: '',
+    fin_nfe: '4',
+    nat_op: 'Devolução de mercadoria',
+    chave_nfe_referenciada: '',
+    ambiente_emissao: 'producao' as 'homologacao' | 'producao',
     pedido_compra_id: undefined as number | undefined,
     cte_id: undefined as number | undefined,
   });
@@ -64,6 +70,7 @@ const NFeEntrada = () => {
   const [detalheOpen, setDetalheOpen] = useState(false);
   const [revisaoId, setRevisaoId] = useState<number | null>(null);
   const [revisaoOpen, setRevisaoOpen] = useState(false);
+  const [saveBusy, setSaveBusy] = useState(false);
 
   const abrirDetalhe = (id: number) => {
     setDetalheId(id);
@@ -99,14 +106,46 @@ const NFeEntrada = () => {
     }
   };
 
+  const impostosPadrao = () => ({
+    icms: { cst: '41', orig: '0' },
+    pis: { cst: '07' },
+    cofins: { cst: '07' },
+  });
+
   const addItem = () =>
-    setItens((p) => [...p, { id: Date.now(), produto_id: 1, produto_nome: '', quantidade: 1, valor: 0, corrida_id: undefined }]);
+    setItens((p) => [
+      ...p,
+      {
+        id: Date.now(),
+        produto_id: 0,
+        produto_nome: '',
+        quantidade: 1,
+        valor: 0,
+        ncm: '',
+        cfop: '1202',
+        unidade: 'UN',
+        impostos_json: impostosPadrao(),
+      },
+    ]);
   const removeItem = (id: number) => setItens((p) => p.filter((i) => i.id !== id));
   const total = itens.reduce((s, i) => s + i.quantidade * i.valor, 0);
 
   const openEntradaPropria = () => {
     setEditing(null);
-    setForm({ numero: '', fornecedor_id: 1, fornecedor_nome: '', data: '', pedido_compra_id: undefined, cte_id: undefined });
+    setForm({
+      numero: '',
+      empresa_emitente_id: undefined,
+      cliente_destinatario_id: undefined,
+      fornecedor_id: undefined,
+      fornecedor_nome: '',
+      data: new Date().toISOString().slice(0, 10),
+      fin_nfe: '4',
+      nat_op: 'Devolução de mercadoria',
+      chave_nfe_referenciada: '',
+      ambiente_emissao: 'producao',
+      pedido_compra_id: undefined,
+      cte_id: undefined,
+    });
     setItens([]);
     setModalOpen(true);
   };
@@ -157,16 +196,63 @@ const NFeEntrada = () => {
   };
 
   const handleSave = async () => {
-    const data = { ...form, itens, valor_total: total };
-    if (editing) await nfeEntradasService.update(editing.id, data);
-    else await nfeEntradasService.create(data as Omit<NFeEntrada, 'id'>);
-    setModalOpen(false);
-    void reload();
+    if (!form.empresa_emitente_id) {
+      toast.error('Informe o ID da empresa emitente.');
+      return;
+    }
+    if (!form.cliente_destinatario_id && !form.fornecedor_id) {
+      toast.error('Informe cliente OU fornecedor como destinatário.');
+      return;
+    }
+    if (form.cliente_destinatario_id && form.fornecedor_id) {
+      toast.error('Destinatário deve ser cliente ou fornecedor — não ambos.');
+      return;
+    }
+    if (!itens.length) {
+      toast.error('Inclua ao menos um item com NCM, CFOP e unidade.');
+      return;
+    }
+    setSaveBusy(true);
+    try {
+      const data = {
+        numero: form.numero || `EP-${Date.now()}`,
+        data: form.data,
+        empresa_emitente_id: form.empresa_emitente_id,
+        cliente_destinatario_id: form.cliente_destinatario_id ?? null,
+        fornecedor_id: form.fornecedor_id ?? null,
+        fin_nfe: form.fin_nfe,
+        nat_op: form.nat_op,
+        chave_nfe_referenciada: form.chave_nfe_referenciada,
+        ambiente_emissao: form.ambiente_emissao,
+        pedido_compra_id: form.pedido_compra_id,
+        cte_id: form.cte_id,
+        itens,
+        valor_total: total,
+        fornecedor_nome: '',
+      };
+      if (editing) {
+        await nfeEntradasService.update(editing.id, data);
+        toast.success('Rascunho atualizado.');
+      } else {
+        const criada = await nfeEntradasService.criarEntradaPropriaEmitida(data);
+        toast.success('Rascunho criado — abra os detalhes para emitir na SEFAZ.');
+        setModalOpen(false);
+        void reload();
+        abrirDetalhe(criada.id);
+        return;
+      }
+      setModalOpen(false);
+      void reload();
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setSaveBusy(false);
+    }
   };
 
   const emitenteLabel = (e: NFeEntrada) => {
-    if (e.tipo_origem === 'ENTRADA_PROPRIA_IMPORTADA') {
-      return e.destinatario_nome ? `${e.fornecedor_nome} → ${e.destinatario_nome}` : e.fornecedor_nome;
+    if (e.tipo_origem === 'ENTRADA_PROPRIA_IMPORTADA' || e.tipo_origem === 'ENTRADA_PROPRIA_EMITIDA') {
+      return e.destinatario_nome ? `${e.fornecedor_nome || 'Empresa'} → ${e.destinatario_nome}` : e.fornecedor_nome;
     }
     return e.fornecedor_nome;
   };
@@ -362,67 +448,181 @@ const NFeEntrada = () => {
       <Modal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={editing ? 'Editar entrada própria' : 'Emitir entrada própria'}
+        title={editing ? 'Editar entrada própria emitida' : 'Emitir entrada própria'}
         size="xl"
       >
+        <p className="text-sm text-muted-foreground mb-4">
+          Cria rascunho <strong>ENTRADA_PROPRIA_EMITIDA</strong> (sem estoque). Após salvar, use
+          <strong> Ver detalhes</strong> para validar, numerar e transmitir à SEFAZ.
+        </p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <div>
-            <label className="erp-label">Número</label>
-            <input className="erp-input mt-1" value={form.numero} onChange={(e) => setForm((p) => ({ ...p, numero: e.target.value }))} />
-          </div>
-          <div>
-            <label className="erp-label">Fornecedor</label>
-            <select className="erp-select mt-1" value={form.fornecedor_id} onChange={(e) => setForm((p) => ({ ...p, fornecedor_id: +e.target.value }))}>
-              <option value={1}>Tupy S.A.</option>
-              <option value={2}>Vallourec</option>
-            </select>
-          </div>
-          <div>
-            <label className="erp-label">Data</label>
-            <input type="date" className="erp-input mt-1" value={form.data} onChange={(e) => setForm((p) => ({ ...p, data: e.target.value }))} />
-          </div>
-          <div>
-            <label className="erp-label">Pedido Compra (opcional)</label>
+            <label className="erp-label">Número interno</label>
             <input
               className="erp-input mt-1"
-              placeholder="PC-001"
-              value={form.pedido_compra_id ?? ''}
-              onChange={(e) => setForm((p) => ({ ...p, pedido_compra_id: e.target.value ? +e.target.value : undefined }))}
+              placeholder="Opcional — gerado se vazio"
+              value={form.numero}
+              onChange={(e) => setForm((p) => ({ ...p, numero: e.target.value }))}
             />
           </div>
           <div>
-            <label className="erp-label">CT-e vinculado (opcional)</label>
+            <label className="erp-label">Empresa emitente (ID)</label>
+            <input
+              type="number"
+              className="erp-input mt-1"
+              value={form.empresa_emitente_id ?? ''}
+              onChange={(e) =>
+                setForm((p) => ({
+                  ...p,
+                  empresa_emitente_id: e.target.value ? +e.target.value : undefined,
+                }))
+              }
+            />
+          </div>
+          <div>
+            <label className="erp-label">Data</label>
+            <input
+              type="date"
+              className="erp-input mt-1"
+              value={form.data}
+              onChange={(e) => setForm((p) => ({ ...p, data: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="erp-label">Cliente destinatário (ID)</label>
+            <input
+              type="number"
+              className="erp-input mt-1"
+              value={form.cliente_destinatario_id ?? ''}
+              onChange={(e) =>
+                setForm((p) => ({
+                  ...p,
+                  cliente_destinatario_id: e.target.value ? +e.target.value : undefined,
+                  fornecedor_id: e.target.value ? undefined : p.fornecedor_id,
+                }))
+              }
+            />
+          </div>
+          <div>
+            <label className="erp-label">Ou fornecedor destinatário (ID)</label>
+            <input
+              type="number"
+              className="erp-input mt-1"
+              value={form.fornecedor_id ?? ''}
+              onChange={(e) =>
+                setForm((p) => ({
+                  ...p,
+                  fornecedor_id: e.target.value ? +e.target.value : undefined,
+                  cliente_destinatario_id: e.target.value ? undefined : p.cliente_destinatario_id,
+                }))
+              }
+            />
+          </div>
+          <div>
+            <label className="erp-label">Ambiente</label>
+            <select
+              className="erp-select mt-1"
+              value={form.ambiente_emissao}
+              onChange={(e) =>
+                setForm((p) => ({
+                  ...p,
+                  ambiente_emissao: e.target.value as 'homologacao' | 'producao',
+                }))
+              }
+            >
+              <option value="producao">Produção</option>
+              <option value="homologacao">Homologação</option>
+            </select>
+          </div>
+          <div>
+            <label className="erp-label">finNFe</label>
+            <select
+              className="erp-select mt-1"
+              value={form.fin_nfe}
+              onChange={(e) => setForm((p) => ({ ...p, fin_nfe: e.target.value }))}
+            >
+              <option value="1">1 — Normal</option>
+              <option value="2">2 — Complementar</option>
+              <option value="3">3 — Ajuste</option>
+              <option value="4">4 — Devolução</option>
+            </select>
+          </div>
+          <div>
+            <label className="erp-label">Natureza da operação</label>
             <input
               className="erp-input mt-1"
-              placeholder="CTE-001"
-              value={form.cte_id ?? ''}
-              onChange={(e) => setForm((p) => ({ ...p, cte_id: e.target.value ? +e.target.value : undefined }))}
+              value={form.nat_op}
+              onChange={(e) => setForm((p) => ({ ...p, nat_op: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="erp-label">Chave NF-e referenciada</label>
+            <input
+              className="erp-input mt-1 font-mono text-xs"
+              maxLength={44}
+              placeholder="Obrigatória recomendada se finNFe=4"
+              value={form.chave_nfe_referenciada}
+              onChange={(e) => setForm((p) => ({ ...p, chave_nfe_referenciada: e.target.value }))}
             />
           </div>
         </div>
         <div className="border border-border rounded-md p-3">
           <div className="flex justify-between items-center mb-3">
-            <h3 className="font-medium text-sm">Itens</h3>
+            <h3 className="font-medium text-sm">Itens fiscais</h3>
             <button type="button" onClick={addItem} className="erp-btn-outline erp-btn-sm">
               <Plus className="h-3 w-3" /> Item
             </button>
           </div>
           {itens.map((item, idx) => (
-            <div key={item.id} className="grid grid-cols-5 gap-2 mb-2 items-end">
+            <div key={item.id} className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-3 items-end border-b border-border pb-3">
               <div>
-                <label className="text-xs text-muted-foreground">Produto</label>
-                <select
+                <label className="text-xs text-muted-foreground">Produto ID</label>
+                <input
+                  type="number"
                   className="erp-input h-8 text-sm"
-                  value={item.produto_id}
+                  value={item.produto_id || ''}
                   onChange={(e) => {
                     const n = [...itens];
-                    n[idx] = { ...n[idx], produto_id: +e.target.value };
+                    n[idx] = { ...n[idx], produto_id: +e.target.value || 0 };
                     setItens(n);
                   }}
-                >
-                  <option value={1}>Válvula Gaveta 2&quot;</option>
-                  <option value={2}>Válvula Esfera 4&quot;</option>
-                </select>
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">NCM</label>
+                <input
+                  className="erp-input h-8 text-sm"
+                  value={item.ncm || ''}
+                  onChange={(e) => {
+                    const n = [...itens];
+                    n[idx] = { ...n[idx], ncm: e.target.value };
+                    setItens(n);
+                  }}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">CFOP</label>
+                <input
+                  className="erp-input h-8 text-sm"
+                  value={item.cfop || ''}
+                  onChange={(e) => {
+                    const n = [...itens];
+                    n[idx] = { ...n[idx], cfop: e.target.value };
+                    setItens(n);
+                  }}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Unidade</label>
+                <input
+                  className="erp-input h-8 text-sm"
+                  value={item.unidade || ''}
+                  onChange={(e) => {
+                    const n = [...itens];
+                    n[idx] = { ...n[idx], unidade: e.target.value };
+                    setItens(n);
+                  }}
+                />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground">Qtd</label>
@@ -437,54 +637,59 @@ const NFeEntrada = () => {
                   }}
                 />
               </div>
-              <div>
-                <label className="text-xs text-muted-foreground">Valor</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  className="erp-input h-8 text-sm"
-                  value={item.valor}
-                  onChange={(e) => {
-                    const n = [...itens];
-                    n[idx] = { ...n[idx], valor: +e.target.value };
-                    setItens(n);
-                  }}
-                />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground">Corrida</label>
-                <select
-                  className="erp-input h-8 text-sm"
-                  value={item.corrida_id ?? ''}
-                  onChange={(e) => {
-                    const n = [...itens];
-                    n[idx] = { ...n[idx], corrida_id: +e.target.value || undefined };
-                    setItens(n);
-                  }}
+              <div className="flex gap-1 items-end">
+                <div className="flex-1">
+                  <label className="text-xs text-muted-foreground">Valor unit.</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="erp-input h-8 text-sm"
+                    value={item.valor}
+                    onChange={(e) => {
+                      const n = [...itens];
+                      n[idx] = { ...n[idx], valor: +e.target.value };
+                      setItens(n);
+                    }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeItem(item.id)}
+                  className="erp-btn-ghost erp-btn-sm text-destructive h-8"
                 >
-                  <option value="">Nova corrida</option>
-                  <option value={1}>C-2024-001</option>
-                  <option value={2}>C-2024-002</option>
-                </select>
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <button type="button" onClick={() => removeItem(item.id)} className="erp-btn-ghost erp-btn-sm text-destructive h-8">
-                <X className="h-4 w-4" />
-              </button>
             </div>
           ))}
-          <div className="text-right mt-3 pt-3 border-t border-border font-bold">Total: R$ {total.toFixed(2)}</div>
+          <p className="text-xs text-muted-foreground mb-2">
+            Impostos padrão NT (ICMS CST 41 / PIS-COFINS 07). Ajuste via API se necessário.
+          </p>
+          <div className="text-right mt-3 pt-3 border-t border-border font-bold">
+            Total: R$ {total.toFixed(2)}
+          </div>
         </div>
         <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
           <button type="button" onClick={() => setModalOpen(false)} className="erp-btn-outline">
             Cancelar
           </button>
-          <button type="button" onClick={() => void handleSave()} className="erp-btn-primary">
-            Salvar
+          <button
+            type="button"
+            disabled={saveBusy}
+            onClick={() => void handleSave()}
+            className="erp-btn-primary"
+          >
+            {saveBusy ? 'Salvando…' : 'Salvar rascunho'}
           </button>
         </div>
       </Modal>
 
-      <NFeEntradaDetalheDrawer nfeId={detalheId} open={detalheOpen} onClose={fecharDetalhe} />
+      <NFeEntradaDetalheDrawer
+        nfeId={detalheId}
+        open={detalheOpen}
+        onClose={fecharDetalhe}
+        onChanged={() => void reload()}
+      />
       <NFeEntradaRevisaoDrawer nfeId={revisaoId} open={revisaoOpen} onClose={fecharRevisao} />
     </div>
   );

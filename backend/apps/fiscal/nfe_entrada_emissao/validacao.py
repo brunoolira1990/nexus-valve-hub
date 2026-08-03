@@ -147,12 +147,12 @@ def _validar_impostos_item(item: ItemNFeEntrada, indice: int) -> list[dict[str, 
     return out
 
 
-def validar_pre_emissao_homologacao_entrada(
+def _validar_pre_emissao_entrada_comum(
     nf: NFeEntrada,
     *,
+    ambiente: str,
     exigir_numeracao: bool = False,
 ) -> dict[str, Any]:
-    """Retorna pronta, pendencias e alertas para emissão homologação (sem transmitir)."""
     pendencias: list[dict[str, str]] = []
     alertas: list[dict[str, str]] = []
 
@@ -161,9 +161,17 @@ def validar_pre_emissao_homologacao_entrada(
             _pendencia('TIPO_ORIGEM_INVALIDO', 'Apenas NF-e entrada própria emitida pode ser validada para emissão.'),
         )
 
-    if nf.ambiente_emissao != NFeEntrada.AmbienteEmissao.HOMOLOGACAO:
+    ambiente_esperado = (
+        NFeEntrada.AmbienteEmissao.PRODUCAO
+        if ambiente == 'producao'
+        else NFeEntrada.AmbienteEmissao.HOMOLOGACAO
+    )
+    if (nf.ambiente_emissao or NFeEntrada.AmbienteEmissao.HOMOLOGACAO) != ambiente_esperado:
         pendencias.append(
-            _pendencia('AMBIENTE_INVALIDO', 'Emissão disponível apenas em ambiente homologação nesta fase.'),
+            _pendencia(
+                'AMBIENTE_INVALIDO',
+                f'NF-e deve estar marcada para ambiente {ambiente} para esta emissão.',
+            ),
         )
 
     if not nf.empresa_emitente_id:
@@ -193,7 +201,7 @@ def validar_pre_emissao_homologacao_entrada(
             pendencias.append(
                 _pendencia(
                     'NUMERACAO_NAO_RESERVADA',
-                    'Reserve a numeração de entrada própria em homologação antes de gerar o XML oficial.',
+                    f'Reserve a numeração de entrada própria em {ambiente} antes de gerar o XML oficial.',
                 ),
             )
 
@@ -212,16 +220,99 @@ def validar_pre_emissao_homologacao_entrada(
         if not _text(emp.ie):
             pendencias.append(_pendencia('EMITENTE_IE_AUSENTE', 'IE da empresa emitente obrigatória.'))
 
-    pronta = len(pendencias) == 0
     return {
-        'pronta': pronta,
+        'pronta': len(pendencias) == 0,
         'pendencias': pendencias,
         'alertas': alertas,
         'nf_entrada_id': nf.pk,
-        'ambiente': 'homologacao',
-        'mensagem': (
-            'NF-e entrada própria pronta para preview XML (sem transmissão).'
-            if pronta
-            else 'Existem pendências antes do preview/emissão homologação.'
-        ),
+        'ambiente': ambiente,
     }
+
+
+def validar_pre_emissao_homologacao_entrada(
+    nf: NFeEntrada,
+    *,
+    exigir_numeracao: bool = False,
+) -> dict[str, Any]:
+    """Retorna pronta, pendencias e alertas para emissão homologação."""
+    payload = _validar_pre_emissao_entrada_comum(
+        nf,
+        ambiente='homologacao',
+        exigir_numeracao=exigir_numeracao,
+    )
+    if nf.status_emissao_sefaz == NFeEntrada.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO:
+        payload['pendencias'].append(
+            _pendencia('JA_AUTORIZADA', 'NF-e já autorizada em homologação SEFAZ.'),
+        )
+        payload['pronta'] = False
+    payload['mensagem'] = (
+        'NF-e entrada própria pronta para emissão homologação SEFAZ.'
+        if payload['pronta']
+        else 'Existem pendências antes da emissão homologação.'
+    )
+    return payload
+
+
+def validar_pre_emissao_producao_entrada(
+    nf: NFeEntrada,
+    *,
+    exigir_numeracao: bool = False,
+) -> dict[str, Any]:
+    """Retorna pronta, pendencias e alertas para emissão produção."""
+    from apps.fiscal.nfe_emissao.config_producao import MSG_PRODUCAO_NAO_HABILITADA, nfe_producao_habilitada
+    from apps.fiscal.nfe_integracao.adapters.certificado_a1 import carregar_certificado_empresa
+    from apps.fiscal.nfe_integracao.adapters.exceptions import CertificadoA1Error
+
+    payload = _validar_pre_emissao_entrada_comum(
+        nf,
+        ambiente='producao',
+        exigir_numeracao=exigir_numeracao,
+    )
+    pendencias = payload['pendencias']
+
+    if not nfe_producao_habilitada():
+        pendencias.append(_pendencia('PRODUCAO_DESABILITADA', MSG_PRODUCAO_NAO_HABILITADA))
+
+    if nf.status_emissao_sefaz == NFeEntrada.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO:
+        pendencias.append(_pendencia('JA_AUTORIZADA', 'NF-e já autorizada em produção SEFAZ.'))
+
+    if nf.status_emissao_sefaz == NFeEntrada.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO:
+        pendencias.append(
+            _pendencia(
+                'JA_AUTORIZADA_HOMOLOG',
+                'NF-e já autorizada em homologação — use nova NF-e para produção.',
+            ),
+        )
+
+    if (
+        nf.ambiente_emissao == NFeEntrada.AmbienteEmissao.HOMOLOGACAO
+        and _text(nf.chave_acesso)
+    ):
+        pendencias.append(
+            _pendencia(
+                'NUMERACAO_HOMOLOG_RESERVADA',
+                'Numeração de homologação já reservada — use nova NF-e para produção.',
+            ),
+        )
+
+    emp = nf.empresa_emitente
+    if emp:
+        try:
+            carregar_certificado_empresa(emp)
+        except CertificadoA1Error as exc:
+            pendencias.append(_pendencia('CERTIFICADO_A1', str(exc)))
+
+    payload['pronta'] = len(pendencias) == 0
+    payload['mensagem'] = (
+        'NF-e entrada própria pronta para emissão produção SEFAZ.'
+        if payload['pronta']
+        else 'Existem pendências antes da emissão produção.'
+    )
+    return payload
+
+
+def exigir_pronta_ou_erro(validacao: dict[str, Any]) -> None:
+    if validacao.get('pronta'):
+        return
+    msgs = [p['mensagem'] for p in (validacao.get('pendencias') or [])]
+    raise NFeEntradaEmissaoValidationError(msgs[0] if msgs else 'NF-e com pendências de emissão.')

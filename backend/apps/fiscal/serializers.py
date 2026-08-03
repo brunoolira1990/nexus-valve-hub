@@ -294,6 +294,16 @@ class ItemNFeEntradaSerializer(serializers.ModelSerializer):
                 raise ValidationError({'cfop': 'CFOP obrigatório para entrada própria emitida.'})
             if not unidade:
                 raise ValidationError({'unidade': 'Unidade obrigatória para entrada própria emitida.'})
+        elif self.context.get('entrada_propria_emitida'):
+            ncm = (attrs.get('ncm') or '').strip()
+            cfop = (attrs.get('cfop') or '').strip()
+            unidade = (attrs.get('unidade') or '').strip()
+            if not ncm:
+                raise ValidationError({'ncm': 'NCM obrigatório para entrada própria emitida.'})
+            if not cfop:
+                raise ValidationError({'cfop': 'CFOP obrigatório para entrada própria emitida.'})
+            if not unidade:
+                raise ValidationError({'unidade': 'Unidade obrigatória para entrada própria emitida.'})
         return attrs
 
     def to_representation(self, instance):
@@ -481,25 +491,62 @@ class NFeEntradaSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         attrs = super().validate(attrs)
         normalize_operational_fields(attrs, {'numero'})
+        emitida = bool(self.context.get('entrada_propria_emitida')) or (
+            self.instance and self.instance.tipo_origem == NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_EMITIDA
+        )
         tipo = (
-            attrs.get('tipo_origem')
-            or (self.instance.tipo_origem if self.instance else NFeEntrada.TipoOrigem.MANUAL)
+            NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_EMITIDA
+            if emitida
+            else (
+                attrs.get('tipo_origem')
+                or (self.instance.tipo_origem if self.instance else NFeEntrada.TipoOrigem.MANUAL)
+            )
         )
         if tipo == NFeEntrada.TipoOrigem.MANUAL:
             forn = attrs.get('fornecedor')
             if forn is None and not (self.instance and self.instance.fornecedor_id):
                 raise ValidationError({'fornecedor_id': 'Fornecedor obrigatório para entrada manual.'})
-        if self.instance and self.instance.tipo_origem == NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_EMITIDA:
+        if emitida:
             from apps.fiscal.nfe_entrada_emissao.validacao import (
                 NFeEntradaEmissaoValidationError,
                 validar_destinatario_entrada_propria_emitida,
             )
 
-            nf_ctx = self.instance
+            emp = attrs.get('empresa_emitente')
+            if emp is None and not (self.instance and self.instance.empresa_emitente_id):
+                raise ValidationError({'empresa_emitente_id': 'Empresa emitente obrigatória.'})
+
+            if self.instance and self.instance.numero_nfe:
+                novo_amb = attrs.get('ambiente_emissao')
+                if (
+                    novo_amb is not None
+                    and novo_amb != self.instance.ambiente_emissao
+                ):
+                    raise ValidationError(
+                        {
+                            'ambiente_emissao': (
+                                'Não é possível alterar o ambiente após reservar a numeração fiscal.'
+                            ),
+                        },
+                    )
+
+            class _Ctx:
+                pass
+
+            nf_ctx = self.instance or _Ctx()
+            if not self.instance:
+                nf_ctx.cliente_destinatario_id = None
+                nf_ctx.fornecedor_id = None
+                nf_ctx.cliente_destinatario = None
+                nf_ctx.fornecedor = None
             if 'fornecedor' in attrs:
                 nf_ctx.fornecedor = attrs['fornecedor']
+                nf_ctx.fornecedor_id = attrs['fornecedor'].pk if attrs['fornecedor'] else None
             if 'cliente_destinatario' in attrs:
                 nf_ctx.cliente_destinatario = attrs['cliente_destinatario']
+                nf_ctx.cliente_destinatario_id = (
+                    attrs['cliente_destinatario'].pk if attrs['cliente_destinatario'] else None
+                )
             try:
                 validar_destinatario_entrada_propria_emitida(nf_ctx)
             except NFeEntradaEmissaoValidationError as exc:
@@ -509,6 +556,8 @@ class NFeEntradaSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data['fornecedor_id'] = instance.fornecedor_id
+        data['empresa_emitente_id'] = instance.empresa_emitente_id
+        data['cliente_destinatario_id'] = instance.cliente_destinatario_id
         data['data'] = instance.data.isoformat()
         data['valor_total'] = float(instance.valor_total)
         data['pedido_compra_id'] = instance.pedido_compra_id
@@ -534,8 +583,13 @@ class NFeEntradaSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def create(self, validated_data):
         itens_data = validated_data.pop('itens', [])
-        validated_data.setdefault('tipo_origem', NFeEntrada.TipoOrigem.MANUAL)
-        validated_data.setdefault('status_operacional', NFeEntrada.StatusOperacional.RASCUNHO)
+        if self.context.get('entrada_propria_emitida'):
+            validated_data['tipo_origem'] = NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_EMITIDA
+            validated_data.setdefault('status_operacional', NFeEntrada.StatusOperacional.RASCUNHO)
+            validated_data.setdefault('ambiente_emissao', NFeEntrada.AmbienteEmissao.HOMOLOGACAO)
+        else:
+            validated_data.setdefault('tipo_origem', NFeEntrada.TipoOrigem.MANUAL)
+            validated_data.setdefault('status_operacional', NFeEntrada.StatusOperacional.RASCUNHO)
         nf = NFeEntrada.objects.create(**validated_data)
         for item in itens_data:
             ItemNFeEntrada.objects.create(nf=nf, **item)
@@ -547,8 +601,15 @@ class NFeEntradaSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         if instance.tipo_origem == NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_IMPORTADA:
             raise ValidationError({'detail': 'NF-e de entrada própria importada não pode ser editada por este formulário.'})
+        if instance.status_emissao_sefaz in (
+            NFeEntrada.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO,
+            NFeEntrada.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO,
+        ):
+            raise ValidationError({'detail': 'NF-e autorizada na SEFAZ não pode ser editada.'})
         itens_data = validated_data.pop('itens', None)
-        reverter_todos_itens_entrada(instance)
+        is_emitida = instance.tipo_origem == NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_EMITIDA
+        if not is_emitida:
+            reverter_todos_itens_entrada(instance)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
@@ -557,10 +618,11 @@ class NFeEntradaSerializer(serializers.ModelSerializer):
             for item in itens_data:
                 ItemNFeEntrada.objects.create(nf=instance, **item)
         recalcular_valor_nf_entrada(instance)
-        try:
-            aplicar_todos_itens_entrada(instance)
-        except ValueError as exc:
-            raise ValidationError({'detail': str(exc)}) from exc
+        if not is_emitida:
+            try:
+                aplicar_todos_itens_entrada(instance)
+            except ValueError as exc:
+                raise ValidationError({'detail': str(exc)}) from exc
         return instance
 
 

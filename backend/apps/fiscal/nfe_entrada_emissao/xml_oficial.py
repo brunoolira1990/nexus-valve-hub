@@ -16,14 +16,17 @@ from apps.fiscal.nfe_emissao.xml_serializacao import (
     serializar_tnfe_nfe,
 )
 from apps.fiscal.nfe_entrada_emissao.dados_preview import gerar_dados_preview_nfe_entrada
-from apps.fiscal.nfe_entrada_emissao.validacao import validar_pre_emissao_homologacao_entrada
+from apps.fiscal.nfe_entrada_emissao.validacao import (
+    validar_pre_emissao_homologacao_entrada,
+    validar_pre_emissao_producao_entrada,
+)
 from apps.fiscal.nfe_integracao.adapters.nfelib_adapter import nfelib_disponivel
 from apps.fiscal.nfe_integracao.nfe_chave_acesso import ChaveAcessoNFe
 from apps.fiscal.nfe_saida_preview import _digits, _text
 
 HOMOLOG_DEST_XNOME = 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL'
 VERSAO_PROC = 'NexusERP-4.0.15-entrada'
-MSG_XML_ENTRADA = 'XML oficial NF-e entrada própria (tpNF=0) — não assinar, não transmitir SEFAZ.'
+MSG_XML_ENTRADA = 'XML oficial NF-e entrada própria (tpNF=0).'
 
 PIS_COFINS_NT_CSTS = frozenset({'04', '05', '06', '07', '08', '09', '49'})
 ICMS_NT_CSTS = frozenset({'40', '41', '50', '60'})
@@ -294,7 +297,7 @@ def _chave_from_nf(nf: NFeEntrada) -> ChaveAcessoNFe:
     chave_44 = _text(nf.chave_acesso)
     if len(chave_44) != 44:
         raise NFeEntradaXmlError(
-            'Reserve a numeração de entrada própria em homologação antes de gerar o preview XML oficial.',
+            'Reserve a numeração de entrada própria antes de gerar o XML oficial.',
         )
     return ChaveAcessoNFe(
         chave_43=chave_44[:43],
@@ -304,9 +307,38 @@ def _chave_from_nf(nf: NFeEntrada) -> ChaveAcessoNFe:
     )
 
 
+def _tp_amb_de_nf(nf: NFeEntrada) -> str:
+    if nf.ambiente_emissao == NFeEntrada.AmbienteEmissao.PRODUCAO:
+        return '1'
+    return '2'
+
+
+def _validacao_para_ambiente(nf: NFeEntrada, *, exigir_numeracao: bool) -> dict[str, Any]:
+    if nf.ambiente_emissao == NFeEntrada.AmbienteEmissao.PRODUCAO:
+        return validar_pre_emissao_producao_entrada(nf, exigir_numeracao=exigir_numeracao)
+    return validar_pre_emissao_homologacao_entrada(nf, exigir_numeracao=exigir_numeracao)
+
+
+def gerar_bytes_xml_oficial_nfe_entrada(nf: NFeEntrada) -> bytes:
+    """Gera XML oficial tpNF=0 conforme ambiente da NF — levanta NFeEntradaXmlError se bloqueado."""
+    validacao = _validacao_para_ambiente(nf, exigir_numeracao=True)
+    if not validacao['pronta']:
+        msgs = [p['mensagem'] for p in validacao['pendencias']]
+        raise NFeEntradaXmlError(msgs[0] if msgs else 'NF-e com pendências.')
+
+    dados = gerar_dados_preview_nfe_entrada(nf)
+    if dados.get('bloqueado'):
+        raise NFeEntradaXmlError(dados.get('mensagem') or 'Dados da NF-e bloqueados para XML.')
+
+    chave = _chave_from_nf(nf)
+    tp_amb = _tp_amb_de_nf(nf)
+    tnfe = montar_tnfe_entrada(dados, nf_entrada=nf, chave=chave, tp_amb=tp_amb)
+    return serializar_tnfe_nfe(tnfe).encode('utf-8')
+
+
 def gerar_xml_oficial_nfe_entrada(nf: NFeEntrada, *, persistir: bool = False) -> dict[str, Any]:
     """Gera XML oficial tpNF=0 — preview ou persistência em xml_nfe_gerado."""
-    validacao = validar_pre_emissao_homologacao_entrada(nf, exigir_numeracao=True)
+    validacao = _validacao_para_ambiente(nf, exigir_numeracao=True)
     if not validacao['pronta']:
         msgs = [p['mensagem'] for p in validacao['pendencias']]
         return {
@@ -322,7 +354,8 @@ def gerar_xml_oficial_nfe_entrada(nf: NFeEntrada, *, persistir: bool = False) ->
         return {'ok': False, 'bloqueado': True, 'mensagem': dados.get('mensagem'), 'nf_entrada_id': nf.pk}
 
     chave = _chave_from_nf(nf)
-    tnfe = montar_tnfe_entrada(dados, nf_entrada=nf, chave=chave, tp_amb='2')
+    tp_amb = _tp_amb_de_nf(nf)
+    tnfe = montar_tnfe_entrada(dados, nf_entrada=nf, chave=chave, tp_amb=tp_amb)
     xml = serializar_tnfe_nfe(tnfe)
 
     if persistir:
@@ -342,16 +375,18 @@ def gerar_xml_oficial_nfe_entrada(nf: NFeEntrada, *, persistir: bool = False) ->
         'xml_format': 'nfelib_4.00',
         'versao_layout': '4.00',
         'tp_nf': '0',
+        'tp_amb': tp_amb,
         'fin_nfe': _text(nf.fin_nfe),
         'chave_acesso': nf.chave_acesso,
         'serie_nfe': nf.serie_nfe,
         'numero_nfe': nf.numero_nfe,
+        'ambiente_emissao': nf.ambiente_emissao,
         'validacao': validacao,
         'pendencias': validacao.get('pendencias') or [],
         'alertas': validacao.get('alertas') or [],
         'mensagens': [MSG_XML_ENTRADA],
-        'sem_assinatura': True,
-        'sem_transmissao': True,
+        'sem_assinatura': not persistir,
+        'sem_transmissao': not persistir,
         'sem_protocolo': True,
     }
 

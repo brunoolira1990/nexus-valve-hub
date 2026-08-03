@@ -2296,11 +2296,26 @@ export interface ItemNFe {
   valor: number;
   corrida_id?: number;
   corrida_numero?: string;
+  ncm?: string;
+  cfop?: string;
+  unidade?: string;
+  impostos_json?: Record<string, unknown>;
 }
 
-export type NFeEntradaTipoOrigem = 'MANUAL' | 'ENTRADA_PROPRIA_IMPORTADA';
+export type NFeEntradaTipoOrigem = 'MANUAL' | 'ENTRADA_PROPRIA_IMPORTADA' | 'ENTRADA_PROPRIA_EMITIDA';
 
-export type NFeEntradaStatusOperacional = 'RASCUNHO' | 'IMPORTADA_PENDENTE_CONFERENCIA';
+export type NFeEntradaStatusOperacional =
+  | 'RASCUNHO'
+  | 'EM_CONFERENCIA'
+  | 'PRONTA_HOMOLOGACAO'
+  | 'AUTORIZADA_HOMOLOGACAO'
+  | 'PRONTA_PRODUCAO'
+  | 'AUTORIZADA_PRODUCAO'
+  | 'REJEITADA'
+  | 'ERRO_TRANSMISSAO'
+  | 'IMPORTADA_PENDENTE_CONFERENCIA';
+
+export type NFeEntradaAmbienteEmissao = 'homologacao' | 'producao';
 
 export type NFeEntradaItemJsonRaw = import('@/lib/nfeEntradaItensJson').NFeEntradaItemJsonRaw;
 
@@ -2310,6 +2325,8 @@ export interface NFeEntrada {
   fornecedor_id?: number | null;
   fornecedor_nome: string;
   fornecedor_cnpj?: string;
+  empresa_emitente_id?: number | null;
+  cliente_destinatario_id?: number | null;
   destinatario_nome?: string;
   data: string;
   valor_total: number;
@@ -2319,6 +2336,16 @@ export interface NFeEntrada {
   tipo_origem_label?: string;
   status_operacional?: NFeEntradaStatusOperacional;
   status_operacional_label?: string;
+  ambiente_emissao?: NFeEntradaAmbienteEmissao | string;
+  fin_nfe?: string;
+  nat_op?: string;
+  chave_nfe_referenciada?: string;
+  serie_nfe?: string;
+  numero_nfe?: string;
+  status_emissao_sefaz?: string;
+  protocolo_autorizacao?: string;
+  cstat_autorizacao?: string;
+  motivo_autorizacao?: string;
   pedido_compra_id?: number;
   cte_id?: number;
   importado_em?: string | null;
