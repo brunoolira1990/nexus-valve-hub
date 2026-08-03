@@ -25,7 +25,7 @@ from apps.fiscal.nfe_integracao.nfe_chave_acesso import ChaveAcessoNFe
 from apps.fiscal.nfe_saida_preview import _digits, _text
 
 HOMOLOG_DEST_XNOME = 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL'
-VERSAO_PROC = 'NexusERP-4.0.15-entrada'
+VERSAO_PROC = 'NexusERP-4.0.15'  # maxLength XSD = 20
 MSG_XML_ENTRADA = 'XML oficial NF-e entrada própria (tpNF=0).'
 
 PIS_COFINS_NT_CSTS = frozenset({'04', '05', '06', '07', '08', '09'})
@@ -78,17 +78,21 @@ def _build_icms_entrada(impostos: dict, linha: dict):
     elif cst == '60':
         wrap.ICMS60 = nfe.Tnfe.InfNfe.Det.Imposto.Icms.Icms60(orig=orig, CST=cst)
     elif cst == '20':
+        # Schema ICMS20 exige pRedBC antes de vBC (mesmo quando a redução é 0).
+        v_prod = _dec(linha.get('v_prod'))
+        v_bc = _dec_field(icms.get('base')) or v_prod
         p_red = _dec(icms.get('reducao_bc') or icms.get('p_red_bc') or icms.get('pRedBC'))
+        if p_red <= 0 and v_prod > 0 and v_bc < v_prod:
+            p_red = ((v_prod - v_bc) / v_prod * Decimal('100')).quantize(Decimal('0.0001'))
         kwargs: dict[str, Any] = {
             'orig': orig,
             'CST': cst,
             'modBC': mod_bc,
-            'vBC': _dec_field(icms.get('base')) or _dec(linha.get('v_prod')),
+            'pRedBC': p_red if p_red > 0 else Decimal('0.00'),
+            'vBC': v_bc,
             'pICMS': _dec_field(icms.get('aliquota')),
             'vICMS': _dec_field(icms.get('valor')),
         }
-        if p_red > 0:
-            kwargs['pRedBC'] = p_red
         wrap.ICMS20 = nfe.Tnfe.InfNfe.Det.Imposto.Icms.Icms20(**kwargs)
     elif cst in ICMS_NT_CSTS:
         raise NFeEntradaXmlError(f'CST ICMS {cst} ainda não mapeado no builder de entrada.')
