@@ -48,6 +48,9 @@ export function NFeEntradaEmissaoPanel({ nfe, onAtualizado }: Props) {
   const autorizadaHomolog = nfe.status_emissao_sefaz === 'AUTORIZADA_HOMOLOGACAO';
   const autorizadaProd = nfe.status_emissao_sefaz === 'AUTORIZADA_PRODUCAO';
   const bloqueada = autorizadaHomolog || autorizadaProd;
+  const temNumeracaoReservada = Boolean(
+    (nfe.serie_nfe || '').trim() && (nfe.numero_nfe || '').trim() && (nfe.chave_acesso || '').trim(),
+  );
   const numeracaoHomologTravada =
     !bloqueada &&
     (nfe.ambiente_emissao || '').toLowerCase() === 'homologacao' &&
@@ -56,6 +59,8 @@ export function NFeEntradaEmissaoPanel({ nfe, onAtualizado }: Props) {
     (p) => p.codigo === 'NUMERACAO_HOMOLOG_RESERVADA',
   );
   const mostrarPrepararProducao = numeracaoHomologTravada || pendenciaHomologNumeracao;
+  const ambienteAtual = (nfe.ambiente_emissao || '').toLowerCase();
+  const isAmbienteProducao = ambienteAtual === 'producao';
 
   const carregarChecklists = useCallback(async () => {
     if (bloqueada) return;
@@ -110,12 +115,29 @@ export function NFeEntradaEmissaoPanel({ nfe, onAtualizado }: Props) {
     run('Emissão produção', async () => {
       const res = await nfeEntradasService.emitirProducao(nfe.id, montarPayloadEmitirProducao());
       if (!res.ok && !res.autorizado) {
-        throw new Error(res.mensagem || res.xmotivo || 'Emissão produção não autorizada');
+        const erros = Array.isArray(res.erros) ? res.erros.map(String).filter(Boolean) : [];
+        throw new Error(
+          res.mensagem || res.xmotivo || erros[0] || 'Emissão produção não autorizada',
+        );
       }
       return res;
     });
 
+  const reservarNumeracao = (ambiente: 'homologacao' | 'producao') =>
+    run(`Reservar numeração (${ambiente})`, async () => {
+      await nfeEntradasService.update(nfe.id, { ambiente_emissao: ambiente });
+      return nfeEntradasService.reservarNumeracao(nfe.id);
+    });
+
   const abrirDanfe = async (modo: 'preview' | 'autorizado') => {
+    if (modo === 'preview' && !temNumeracaoReservada) {
+      toast.error(
+        isAmbienteProducao
+          ? 'Reserve a numeração em Produção (botão «Reservar nº») antes do Preview DANFE.'
+          : 'Reserve a numeração (botão «Reservar nº») antes do Preview DANFE.',
+      );
+      return;
+    }
     setBusy(modo === 'autorizado' ? 'DANFE autorizado' : 'Preview DANFE');
     try {
       if (modo === 'autorizado') {
@@ -193,13 +215,9 @@ export function NFeEntradaEmissaoPanel({ nfe, onAtualizado }: Props) {
               <button
                 type="button"
                 className="erp-btn-outline erp-btn-sm text-xs"
-                disabled={!!busy}
-                onClick={() =>
-                  void run('Reservar numeração', async () => {
-                    await nfeEntradasService.update(nfe.id, { ambiente_emissao: 'homologacao' });
-                    return nfeEntradasService.reservarNumeracao(nfe.id);
-                  })
-                }
+                disabled={!!busy || temNumeracaoReservada}
+                onClick={() => void reservarNumeracao('homologacao')}
+                title={temNumeracaoReservada ? 'Numeração já reservada nesta NF-e.' : undefined}
               >
                 Reservar nº
               </button>
@@ -266,15 +284,27 @@ export function NFeEntradaEmissaoPanel({ nfe, onAtualizado }: Props) {
                 </button>
               </div>
             ) : null}
+            {!temNumeracaoReservada && isAmbienteProducao && !mostrarPrepararProducao ? (
+              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                Sem série/nNF reservados — use <strong>Reservar nº</strong> para conferir o DANFE
+                antes de emitir (consome a sequência real de produção).
+              </p>
+            ) : null}
             {checklistProd && !checklistProd.pronta ? (
               <ul className="text-xs text-destructive list-disc pl-4">
-                {(checklistProd.pendencias || []).slice(0, 5).map((p) => (
+                {(checklistProd.pendencias || []).slice(0, 8).map((p) => (
                   <li key={p.codigo || p.mensagem}>{p.mensagem}</li>
                 ))}
               </ul>
+            ) : checklistProd?.pronta ? (
+              <p className="text-xs text-muted-foreground">
+                Checklist produção OK. Emissão exige permissão (admin / fiscal_nfe_producao) e
+                confirmação explícita no modal.
+              </p>
             ) : (
               <p className="text-xs text-muted-foreground">
-                Exige flag NFE_PRODUCAO_HABILITADA e permissão do usuário.
+                Clique em Validar produção para ver pendências. Emissão real exige
+                NFE_PRODUCAO_HABILITADA e permissão do usuário.
               </p>
             )}
             <div className="flex flex-wrap gap-2">
@@ -293,10 +323,23 @@ export function NFeEntradaEmissaoPanel({ nfe, onAtualizado }: Props) {
               </button>
               <button
                 type="button"
+                className="erp-btn-outline erp-btn-sm text-xs"
+                disabled={!!busy || mostrarPrepararProducao || temNumeracaoReservada}
+                onClick={() => void reservarNumeracao('producao')}
+                title={
+                  temNumeracaoReservada
+                    ? 'Numeração já reservada nesta NF-e.'
+                    : 'Reserva série/nNF na sequência de produção (mesma da saída).'
+                }
+              >
+                Reservar nº
+              </button>
+              <button
+                type="button"
                 className="erp-btn-outline erp-btn-sm text-xs inline-flex items-center gap-1"
                 disabled={!!busy}
                 onClick={() => void abrirDanfe('preview')}
-                title="Abre o DANFE de conferência (PDF). Reserve a numeração no ambiente de produção."
+                title="Abre o DANFE de conferência (PDF). Exige numeração reservada em produção."
               >
                 <FileText className="h-3.5 w-3.5" />
                 {busy === 'Preview DANFE' ? 'Gerando…' : 'Preview DANFE'}
@@ -304,7 +347,7 @@ export function NFeEntradaEmissaoPanel({ nfe, onAtualizado }: Props) {
               <button
                 type="button"
                 className="erp-btn-primary erp-btn-sm text-xs"
-                disabled={!!busy || autorizadaProd}
+                disabled={!!busy || autorizadaProd || mostrarPrepararProducao}
                 onClick={() => {
                   setCheckboxOk(false);
                   setTextoConfirmacao('');
