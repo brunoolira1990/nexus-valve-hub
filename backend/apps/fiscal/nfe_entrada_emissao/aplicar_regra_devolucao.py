@@ -7,6 +7,9 @@ from typing import Any
 
 from apps.fiscal.models import ItemNFeEntrada, NFeEntrada
 from apps.fiscal.nfe_entrada_emissao.perfil_devolucao_lucro_presumido import (
+    CST_COFINS_DEVOLUCAO_LP,
+    CST_IPI_DEVOLUCAO,
+    CST_PIS_DEVOLUCAO_LP,
     aplicar_perfil_impostos_devolucao_lucro_presumido,
     cfop_entrada_devolucao_from_saida,
 )
@@ -159,13 +162,15 @@ def impostos_json_from_regra_entrada(
         aliq_icms = _dec(fb_icms.get('aliquota'))
     red_icms = _dec(esp.get('reducao_bc_icms'))
 
-    cst_pis = str(esp.get('cst_pis') or fb_pis.get('cst') or '07').strip()
+    # Devolução LP: CST 98 é o padrão quando a regra não declara PIS/COFINS.
+    # (Não herdar CST 01 da saída — isso era o bug visto na revisão fiscal.)
+    cst_pis = str(esp.get('cst_pis') or CST_PIS_DEVOLUCAO_LP).strip()
     aliq_pis = _dec(esp.get('aliquota_pis'))
     if aliq_pis is None:
         aliq_pis = _dec(fb_pis.get('aliquota'))
     red_pis = _dec(esp.get('reducao_base_pis'))
 
-    cst_cof = str(esp.get('cst_cofins') or fb_cof.get('cst') or '07').strip()
+    cst_cof = str(esp.get('cst_cofins') or CST_COFINS_DEVOLUCAO_LP).strip()
     aliq_cof = _dec(esp.get('aliquota_cofins'))
     if aliq_cof is None:
         aliq_cof = _dec(fb_cof.get('aliquota'))
@@ -213,20 +218,30 @@ def impostos_json_from_regra_entrada(
         out['_meta'] = {**meta_fb, **out['_meta']}
 
     cst_ipi = str(esp.get('cst_ipi') or fb_ipi.get('cst') or '').strip()
+    if not cst_ipi and (fb_ipi.get('valor') or fb_ipi.get('base') or fb.get('imposto_devol')):
+        cst_ipi = CST_IPI_DEVOLUCAO
     if cst_ipi or fb_ipi:
         aliq_ipi = _dec(esp.get('aliquota_ipi'))
         if aliq_ipi is None:
             aliq_ipi = _dec(fb_ipi.get('aliquota'))
+        # CST 49 (devolução): grupo IPI sem tributação; valor vai em imposto_devol.
         out['ipi'] = _bloco_imposto_calculado(
-            cst=cst_ipi or str(fb_ipi.get('cst') or ''),
+            cst=cst_ipi or CST_IPI_DEVOLUCAO,
             aliquota=aliq_ipi,
             valor_base=v_item,
-            nt_csts=frozenset(),  # IPI: se CST informado com alíquota, calcula
+            nt_csts=frozenset({CST_IPI_DEVOLUCAO}),
         )
+        v_ipi_fb = _dec(fb_ipi.get('valor'))
+        if v_ipi_fb is not None and v_ipi_fb > 0 and not out.get('imposto_devol'):
+            from apps.fiscal.nfe_entrada_emissao.perfil_devolucao_lucro_presumido import P_DEVOL_PADRAO
+
+            out['imposto_devol'] = {
+                'p_devol': P_DEVOL_PADRAO,
+                'v_ipi_devol': _money(v_ipi_fb),
+            }
         if not out['ipi'].get('cst'):
-            # sem CST útil — mantém fallback cru
             if fb_ipi:
-                out['ipi'] = {**fb_ipi}
+                out['ipi'] = {**fb_ipi, 'cst': CST_IPI_DEVOLUCAO}
             else:
                 del out['ipi']
 
@@ -265,6 +280,8 @@ def resolver_cfop_e_impostos_devolucao(
         valor_item=valor_item,
         impostos_fallback=impostos_fallback,
     )
+    # Perfil LP prevalece sobre CST herdado da saída quando a regra omite PIS/COFINS.
+    impostos = aplicar_perfil_impostos_devolucao_lucro_presumido(impostos)
     return cfop, impostos, regra
 
 
@@ -314,6 +331,9 @@ def aplicar_regras_devolucao_nfe_entrada(nf_entrada: NFeEntrada) -> dict[str, An
             contexto=contexto,
             regras=regras,
         )
+        # Garante CST 98/IPI devol mesmo se a regra veio sem PIS/COFINS preenchidos.
+        if isinstance(impostos, dict):
+            impostos = aplicar_perfil_impostos_devolucao_lucro_presumido(impostos)
         if isinstance(impostos, dict):
             impostos = {**impostos}
             meta_out = impostos.get('_meta') if isinstance(impostos.get('_meta'), dict) else {}
