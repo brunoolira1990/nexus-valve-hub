@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatMoneyBRL } from '@/lib/money';
 import { formatQuantityBR } from '@/lib/numberFields';
@@ -25,6 +25,7 @@ type ImpostosShape = {
   pis?: ImpostoBloco;
   cofins?: ImpostoBloco;
   ipi?: ImpostoBloco;
+  _meta?: Record<string, unknown>;
 };
 
 function labelFinNfe(fin?: string | null): string {
@@ -54,14 +55,17 @@ function asImpostos(raw?: Record<string, unknown> | null): ImpostosShape {
     return { icms: {}, pis: {}, cofins: {} };
   }
   const bloco = (key: keyof ImpostosShape): ImpostoBloco => {
+    if (key === '_meta') return {};
     const v = raw[key];
     return v && typeof v === 'object' ? { ...(v as ImpostoBloco) } : {};
   };
+  const meta = raw._meta;
   return {
     icms: bloco('icms'),
     pis: bloco('pis'),
     cofins: bloco('cofins'),
     ipi: bloco('ipi'),
+    _meta: meta && typeof meta === 'object' ? { ...(meta as Record<string, unknown>) } : undefined,
   };
 }
 
@@ -77,8 +81,28 @@ function strCampo(val: unknown): string {
   return String(val);
 }
 
+function regraDoItem(it: ItemNFe): string {
+  const meta = asImpostos(it.impostos_json)._meta;
+  const nome = meta?.regra_nome;
+  return nome ? String(nome) : '';
+}
+
+function itemIncompleto(it: ItemNFe): boolean {
+  const imp = asImpostos(it.impostos_json);
+  return (
+    !(it.cfop || '').trim() ||
+    !(imp.icms?.cst || '').trim() ||
+    !(imp.pis?.cst || '').trim() ||
+    !(imp.cofins?.cst || '').trim()
+  );
+}
+
 function impostosIguais(a?: Record<string, unknown> | null, b?: Record<string, unknown> | null): boolean {
-  return JSON.stringify(asImpostos(a)) === JSON.stringify(asImpostos(b));
+  const strip = (raw?: Record<string, unknown> | null) => {
+    const i = asImpostos(raw);
+    return { icms: i.icms, pis: i.pis, cofins: i.cofins, ipi: i.ipi };
+  };
+  return JSON.stringify(strip(a)) === JSON.stringify(strip(b));
 }
 
 function CampoImposto({
@@ -172,11 +196,14 @@ function BlocoImposto({
 
 export function NFeEntradaEmitidaRevisaoFiscal({ nfe, onAtualizado }: Props) {
   const editavel = podeEditarItens(nfe);
+  const isDevolucao = (nfe.fin_nfe || '').trim() === '4';
   const [itensDraft, setItensDraft] = useState<ItemNFe[]>(nfe.itens || []);
   const [finDraft, setFinDraft] = useState(nfe.fin_nfe || '');
   const [natDraft, setNatDraft] = useState(nfe.nat_op || '');
   const [chaveRefDraft, setChaveRefDraft] = useState(nfe.chave_nfe_referenciada || '');
   const [saving, setSaving] = useState(false);
+  const [aplicandoRegra, setAplicandoRegra] = useState(false);
+  const [expandidos, setExpandidos] = useState<Set<number>>(() => new Set());
 
   useEffect(() => {
     setItensDraft(nfe.itens || []);
@@ -215,17 +242,54 @@ export function NFeEntradaEmitidaRevisaoFiscal({ nfe, onAtualizado }: Props) {
     grupo: keyof ImpostosShape,
     patch: Partial<ImpostoBloco>,
   ) => {
+    if (grupo === '_meta') return;
     setItensDraft((prev) =>
       prev.map((it) => {
         if (it.id !== itemId) return it;
-        const atual = asImpostos(it.impostos_json);
-        const next: ImpostosShape = {
-          ...atual,
+        const raw = (it.impostos_json || {}) as Record<string, unknown>;
+        const atual = asImpostos(raw);
+        const next: Record<string, unknown> = {
+          ...raw,
+          icms: atual.icms || {},
+          pis: atual.pis || {},
+          cofins: atual.cofins || {},
           [grupo]: { ...(atual[grupo] || {}), ...patch },
         };
-        return { ...it, impostos_json: next as Record<string, unknown> };
+        if (atual.ipi) next.ipi = atual.ipi;
+        if (atual._meta) next._meta = atual._meta;
+        return { ...it, impostos_json: next };
       }),
     );
+  };
+
+  const toggleExpand = (id: number) => {
+    setExpandidos((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const aplicarRegras = async () => {
+    if (!editavel || dirty) {
+      if (dirty) toast.error('Salve ou descarte as alterações manuais antes de aplicar a regra.');
+      return;
+    }
+    setAplicandoRegra(true);
+    try {
+      const res = await nfeEntradasService.aplicarRegrasDevolucao(nfe.id);
+      if (!res.ok) {
+        toast.error(res.mensagem || res.detail || 'Não foi possível aplicar as regras fiscais.');
+        return;
+      }
+      toast.success(res.mensagem || 'Regras fiscais aplicadas.');
+      await onAtualizado();
+    } catch (e) {
+      toast.error(apiErrorMessage(e, { fallback: 'Não foi possível aplicar as regras fiscais.' }));
+    } finally {
+      setAplicandoRegra(false);
+    }
   };
 
   const salvar = async () => {
@@ -278,12 +342,26 @@ export function NFeEntradaEmitidaRevisaoFiscal({ nfe, onAtualizado }: Props) {
 
   return (
     <div className="nexus-card p-4 space-y-4">
-      <div>
-        <h3 className="text-sm font-semibold">Revisão fiscal (antes da emissão)</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Confira finalidade, natureza, chave referenciada, CFOP/NCM e impostos (ICMS, PIS, COFINS)
-          de cada item — é o que vai no XML para a SEFAZ.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold">Revisão fiscal (antes da emissão)</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Resumo por item. Expanda só o que precisar ajustar (exceção). Em devolução, use a regra
+            fiscal <span className="font-medium text-foreground">DEVOLUCAO_VENDA</span>.
+          </p>
+        </div>
+        {editavel && isDevolucao ? (
+          <button
+            type="button"
+            className="erp-btn-secondary erp-btn-sm inline-flex items-center gap-1.5"
+            disabled={aplicandoRegra || dirty}
+            onClick={() => void aplicarRegras()}
+            title={dirty ? 'Salve as alterações manuais antes' : 'Reaplica CFOP/impostos pela regra fiscal'}
+          >
+            {aplicandoRegra ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            {aplicandoRegra ? 'Aplicando…' : 'Aplicar regra fiscal'}
+          </button>
+        ) : null}
       </div>
 
       <dl className="grid sm:grid-cols-2 gap-x-4 gap-y-3">
@@ -342,104 +420,53 @@ export function NFeEntradaEmitidaRevisaoFiscal({ nfe, onAtualizado }: Props) {
         </div>
       </dl>
 
-      <div className="space-y-3">
-        <p className="text-xs font-medium text-muted-foreground">
-          Itens ({itensDraft.length}) — identificação, CFOP e impostos
-        </p>
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-muted-foreground">Itens ({itensDraft.length})</p>
         {itensDraft.length === 0 ? (
           <p className="text-sm text-destructive">Nenhum item na entrada própria. Não emita sem itens.</p>
         ) : (
-          itensDraft.map((it, idx) => {
-            const imp = asImpostos(it.impostos_json);
-            const nItem = it.numero_item ?? idx + 1;
-            return (
-              <div key={it.id} className="border border-border rounded-lg p-3 space-y-3">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <p className="text-xs text-muted-foreground">Item {nItem}</p>
-                    <p className="text-sm font-medium">
-                      {it.descricao_xml || it.produto_nome || `Produto #${it.produto_id}`}
-                    </p>
-                  </div>
-                  <p className="text-xs tabular-nums text-muted-foreground">
-                    {formatQuantityBR(Number(it.quantidade))} × {formatMoneyBRL(Number(it.valor))} ={' '}
-                    <span className="font-semibold text-foreground">
-                      {formatMoneyBRL(Number(it.quantidade) * Number(it.valor))}
-                    </span>
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <CampoImposto
-                    label="NCM"
-                    value={it.ncm || ''}
-                    editavel={editavel}
-                    mono
-                    wide
-                    onChange={(v) => atualizarItem(it.id, { ncm: v.replace(/\D/g, '').slice(0, 8) })}
-                  />
-                  <CampoImposto
-                    label="CFOP"
-                    value={it.cfop || ''}
-                    editavel={editavel}
-                    mono
-                    onChange={(v) => atualizarItem(it.id, { cfop: v.replace(/\D/g, '').slice(0, 4) })}
-                  />
-                  <CampoImposto
-                    label="Un."
-                    value={it.unidade || ''}
-                    editavel={editavel}
-                    mono
-                    onChange={(v) => atualizarItem(it.id, { unidade: v.slice(0, 6) })}
-                  />
-                  <CampoImposto
-                    label="Qtd"
-                    value={strCampo(it.quantidade)}
-                    editavel={editavel}
-                    onChange={(v) => atualizarItem(it.id, { quantidade: Number(v.replace(',', '.')) || 0 })}
-                  />
-                  <CampoImposto
-                    label="V. unit."
-                    value={strCampo(it.valor)}
-                    editavel={editavel}
-                    wide
-                    onChange={(v) => atualizarItem(it.id, { valor: Number(v.replace(',', '.')) || 0 })}
-                  />
-                </div>
-
-                <div className="grid gap-2 md:grid-cols-3">
-                  <BlocoImposto
-                    titulo="ICMS"
-                    bloco={imp.icms || {}}
-                    editavel={editavel}
-                    comOrigem
-                    onChange={(patch) => atualizarImposto(it.id, 'icms', patch)}
-                  />
-                  <BlocoImposto
-                    titulo="PIS"
-                    bloco={imp.pis || {}}
-                    editavel={editavel}
-                    onChange={(patch) => atualizarImposto(it.id, 'pis', patch)}
-                  />
-                  <BlocoImposto
-                    titulo="COFINS"
-                    bloco={imp.cofins || {}}
-                    editavel={editavel}
-                    onChange={(patch) => atualizarImposto(it.id, 'cofins', patch)}
-                  />
-                </div>
-
-                {(imp.ipi?.cst || imp.ipi?.base || imp.ipi?.valor || editavel) && (
-                  <BlocoImposto
-                    titulo="IPI (se houver)"
-                    bloco={imp.ipi || {}}
-                    editavel={editavel}
-                    onChange={(patch) => atualizarImposto(it.id, 'ipi', patch)}
-                  />
-                )}
-              </div>
-            );
-          })
+          <div className="border border-border rounded-lg overflow-hidden">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/40 text-muted-foreground">
+                <tr className="text-left">
+                  <th className="px-2 py-1.5 w-8" />
+                  <th className="px-2 py-1.5 font-medium">#</th>
+                  <th className="px-2 py-1.5 font-medium">Produto</th>
+                  <th className="px-2 py-1.5 font-medium font-mono">CFOP</th>
+                  <th className="px-2 py-1.5 font-medium font-mono">NCM</th>
+                  <th className="px-2 py-1.5 font-medium">ICMS</th>
+                  <th className="px-2 py-1.5 font-medium">PIS</th>
+                  <th className="px-2 py-1.5 font-medium">COFINS</th>
+                  <th className="px-2 py-1.5 font-medium">Regra</th>
+                  <th className="px-2 py-1.5 font-medium text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {itensDraft.map((it, idx) => {
+                  const imp = asImpostos(it.impostos_json);
+                  const nItem = it.numero_item ?? idx + 1;
+                  const aberto = expandidos.has(it.id);
+                  const incompleto = itemIncompleto(it);
+                  const regra = regraDoItem(it);
+                  return (
+                    <FragmentRow
+                      key={it.id}
+                      it={it}
+                      nItem={nItem}
+                      aberto={aberto}
+                      incompleto={incompleto}
+                      regra={regra}
+                      imp={imp}
+                      editavel={editavel}
+                      onToggle={() => toggleExpand(it.id)}
+                      onAtualizarItem={atualizarItem}
+                      onAtualizarImposto={atualizarImposto}
+                    />
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
@@ -457,5 +484,159 @@ export function NFeEntradaEmitidaRevisaoFiscal({ nfe, onAtualizado }: Props) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function FragmentRow({
+  it,
+  nItem,
+  aberto,
+  incompleto,
+  regra,
+  imp,
+  editavel,
+  onToggle,
+  onAtualizarItem,
+  onAtualizarImposto,
+}: {
+  it: ItemNFe;
+  nItem: number;
+  aberto: boolean;
+  incompleto: boolean;
+  regra: string;
+  imp: ImpostosShape;
+  editavel: boolean;
+  onToggle: () => void;
+  onAtualizarItem: (id: number, patch: Partial<ItemNFe>) => void;
+  onAtualizarImposto: (itemId: number, grupo: keyof ImpostosShape, patch: Partial<ImpostoBloco>) => void;
+}) {
+  return (
+    <>
+      <tr
+        className={`border-t border-border ${incompleto ? 'bg-destructive/5' : 'hover:bg-muted/20'}`}
+      >
+        <td className="px-1 py-1.5">
+          <button
+            type="button"
+            className="p-1 text-muted-foreground hover:text-foreground"
+            onClick={onToggle}
+            aria-label={aberto ? 'Recolher detalhe' : 'Expandir detalhe'}
+          >
+            {aberto ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          </button>
+        </td>
+        <td className="px-2 py-1.5 font-mono tabular-nums">{nItem}</td>
+        <td className="px-2 py-1.5 max-w-[12rem] truncate" title={it.descricao_xml || it.produto_nome || ''}>
+          {it.descricao_xml || it.produto_nome || `#${it.produto_id}`}
+          {incompleto ? (
+            <span className="ml-1 text-destructive">· pendente</span>
+          ) : null}
+        </td>
+        <td className="px-2 py-1.5 font-mono">{it.cfop || '—'}</td>
+        <td className="px-2 py-1.5 font-mono">{it.ncm || '—'}</td>
+        <td className="px-2 py-1.5 font-mono">{imp.icms?.cst || '—'}</td>
+        <td className="px-2 py-1.5 font-mono">{imp.pis?.cst || '—'}</td>
+        <td className="px-2 py-1.5 font-mono">{imp.cofins?.cst || '—'}</td>
+        <td className="px-2 py-1.5 text-muted-foreground max-w-[8rem] truncate" title={regra || 'Fallback'}>
+          {regra || '—'}
+        </td>
+        <td className="px-2 py-1.5 text-right tabular-nums">
+          {formatMoneyBRL(Number(it.quantidade) * Number(it.valor))}
+        </td>
+      </tr>
+      {aberto ? (
+        <tr className="border-t border-border bg-muted/10">
+          <td colSpan={10} className="px-3 py-3">
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <p className="text-sm font-medium">
+                  {it.descricao_xml || it.produto_nome || `Produto #${it.produto_id}`}
+                </p>
+                <p className="text-xs tabular-nums text-muted-foreground">
+                  {formatQuantityBR(Number(it.quantidade))} × {formatMoneyBRL(Number(it.valor))}
+                </p>
+              </div>
+              {regra ? (
+                <p className="text-[11px] text-muted-foreground">
+                  Regra aplicada: <span className="text-foreground font-medium">{regra}</span>
+                </p>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">
+                  Sem regra DEVOLUCAO_VENDA — CFOP/impostos por convenção ou espelho da saída.
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <CampoImposto
+                  label="NCM"
+                  value={it.ncm || ''}
+                  editavel={editavel}
+                  mono
+                  wide
+                  onChange={(v) => onAtualizarItem(it.id, { ncm: v.replace(/\D/g, '').slice(0, 8) })}
+                />
+                <CampoImposto
+                  label="CFOP"
+                  value={it.cfop || ''}
+                  editavel={editavel}
+                  mono
+                  onChange={(v) => onAtualizarItem(it.id, { cfop: v.replace(/\D/g, '').slice(0, 4) })}
+                />
+                <CampoImposto
+                  label="Un."
+                  value={it.unidade || ''}
+                  editavel={editavel}
+                  mono
+                  onChange={(v) => onAtualizarItem(it.id, { unidade: v.slice(0, 6) })}
+                />
+                <CampoImposto
+                  label="Qtd"
+                  value={strCampo(it.quantidade)}
+                  editavel={editavel}
+                  onChange={(v) =>
+                    onAtualizarItem(it.id, { quantidade: Number(v.replace(',', '.')) || 0 })
+                  }
+                />
+                <CampoImposto
+                  label="V. unit."
+                  value={strCampo(it.valor)}
+                  editavel={editavel}
+                  wide
+                  onChange={(v) => onAtualizarItem(it.id, { valor: Number(v.replace(',', '.')) || 0 })}
+                />
+              </div>
+              <div className="grid gap-2 md:grid-cols-3">
+                <BlocoImposto
+                  titulo="ICMS"
+                  bloco={imp.icms || {}}
+                  editavel={editavel}
+                  comOrigem
+                  onChange={(patch) => onAtualizarImposto(it.id, 'icms', patch)}
+                />
+                <BlocoImposto
+                  titulo="PIS"
+                  bloco={imp.pis || {}}
+                  editavel={editavel}
+                  onChange={(patch) => onAtualizarImposto(it.id, 'pis', patch)}
+                />
+                <BlocoImposto
+                  titulo="COFINS"
+                  bloco={imp.cofins || {}}
+                  editavel={editavel}
+                  onChange={(patch) => onAtualizarImposto(it.id, 'cofins', patch)}
+                />
+              </div>
+              {(imp.ipi?.cst || imp.ipi?.base || imp.ipi?.valor || editavel) && (
+                <BlocoImposto
+                  titulo="IPI (se houver)"
+                  bloco={imp.ipi || {}}
+                  editavel={editavel}
+                  onChange={(patch) => onAtualizarImposto(it.id, 'ipi', patch)}
+                />
+              )}
+            </div>
+          </td>
+        </tr>
+      ) : null}
+    </>
   );
 }

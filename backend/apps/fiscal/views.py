@@ -461,6 +461,26 @@ class NFeEntradaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         payload['nfe_entrada'] = NFeEntradaSerializer(nf).data
         return response.Response(payload)
 
+    @action(detail=True, methods=['post'], url_path='aplicar-regras-devolucao')
+    def aplicar_regras_devolucao(self, request, pk=None):
+        """Reaplica RegraFiscalEntrada DEVOLUCAO_VENDA nos itens do rascunho."""
+        from apps.fiscal.nfe_entrada_emissao.aplicar_regra_devolucao import (
+            aplicar_regras_devolucao_nfe_entrada,
+        )
+        from apps.fiscal.serializers import NFeEntradaSerializer
+
+        nf = self.get_object()
+        try:
+            payload = aplicar_regras_devolucao_nfe_entrada(nf)
+        except ValueError as exc:
+            return response.Response(
+                {'ok': False, 'detail': str(exc), 'mensagem': str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        nf.refresh_from_db()
+        payload['nfe_entrada'] = NFeEntradaSerializer(nf).data
+        return response.Response(payload)
+
     @action(detail=True, methods=['post'], url_path='emitir-homologacao')
     def emitir_homologacao(self, request, pk=None):
         import logging

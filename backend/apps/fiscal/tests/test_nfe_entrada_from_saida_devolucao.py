@@ -162,6 +162,41 @@ class NFeEntradaFromSaidaDevolucaoTests(TestCase):
         res = self.client_api.post(f'/api/nf-saidas/{self.nf.pk}/gerar-entrada-devolucao/', {}, format='json')
         self.assertEqual(res.status_code, 400)
 
+    def test_aplica_regra_devolucao_venda(self) -> None:
+        from apps.regras_fiscais.models import RegraFiscalEntrada
+
+        RegraFiscalEntrada.objects.create(
+            nome='Dev venda 5102',
+            ativo=True,
+            prioridade=10,
+            tipo_operacao_fiscal=RegraFiscalEntrada.TipoOperacaoFiscal.DEVOLUCAO_VENDA,
+            cfop_origem='5102',
+            cfop_entrada='1202',
+            ncm='84818200',
+            cst_icms_esperado='41',
+            cst_pis_esperado='07',
+            cst_cofins_esperado='07',
+        )
+        res = gerar_entrada_devolucao_from_nfe_saida(self.nf, usuario=self.user)
+        self.assertTrue(res['ok'])
+        item = ItemNFeEntrada.objects.get(nf_id=res['nf_entrada_id'])
+        self.assertEqual(item.cfop, '1202')
+        self.assertEqual(item.impostos_json['icms']['cst'], '41')
+        self.assertEqual(item.impostos_json['pis']['cst'], '07')
+        self.assertEqual(item.impostos_json['_meta']['regra_nome'], 'Dev venda 5102')
+        self.assertEqual(item.impostos_json['_meta']['cfop_saida'], '5102')
+
+        # Reaplicar via API
+        api = self.client_api.post(
+            f'/api/nf-entradas/{res["nf_entrada_id"]}/aplicar-regras-devolucao/',
+            {},
+            format='json',
+        )
+        self.assertEqual(api.status_code, 200, api.content)
+        body = api.json()
+        self.assertTrue(body['ok'])
+        self.assertEqual(body['itens_com_regra'], 1)
+
 
 class NFeEntradaFromSaidaHistoricaDevolucaoTests(TestCase):
     def setUp(self) -> None:

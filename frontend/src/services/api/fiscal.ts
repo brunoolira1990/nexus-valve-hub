@@ -158,6 +158,19 @@ export const nfeEntradasService = {
     }>(`${nfEnt}${id}/preparar-para-producao/`, {}, { validateStatus: (s) => s >= 200 && s < 500 });
     return res.data;
   },
+  aplicarRegrasDevolucao: async (id: number) => {
+    const res = await api.post<{
+      ok: boolean;
+      nf_entrada_id?: number;
+      itens_atualizados?: number;
+      itens_com_regra?: number;
+      regras?: string[];
+      mensagem?: string;
+      detail?: string;
+      nfe_entrada?: NFeEntrada;
+    }>(`${nfEnt}${id}/aplicar-regras-devolucao/`, {}, { validateStatus: (s) => s >= 200 && s < 500 });
+    return res.data;
+  },
   previewXmlOficial: async (id: number) =>
     (await api.get<{ ok?: boolean; bloqueado?: boolean; xml?: string; mensagem?: string }>(`${nfEnt}${id}/preview-xml-oficial/`, {
       validateStatus: (s) => s >= 200 && s < 500,

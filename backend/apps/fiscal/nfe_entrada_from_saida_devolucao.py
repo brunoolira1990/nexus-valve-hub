@@ -16,6 +16,10 @@ from apps.fiscal.models import (
     NFeSaida,
     NFeSaidaHistoricaImportada,
 )
+from apps.fiscal.nfe_entrada_emissao.aplicar_regra_devolucao import (
+    montar_contexto_devolucao_venda,
+    resolver_cfop_e_impostos_devolucao,
+)
 from apps.fiscal.nfe_emissao.empresa_emitente import resolver_empresa_emitente_nfe
 from apps.fiscal.serializers import NFeEntradaSerializer, recalcular_valor_nf_entrada
 from apps.fiscal.snapshot_fiscal_helpers import (
@@ -361,6 +365,12 @@ def gerar_entrada_devolucao_from_nfe_saida(
         valor_total=Decimal('0'),
     )
 
+    contexto = montar_contexto_devolucao_venda(
+        empresa_emitente=empresa,
+        cliente_destinatario=nf.cliente,
+    )
+    regras_usadas: list[str] = []
+
     for idx, item in enumerate(itens_saida, start=1):
         snap_fisc = item.snapshot_fiscal if isinstance(item.snapshot_fiscal, dict) else {}
         cfop_sai = cfop_from_snapshot_fiscal(snap_fisc)
@@ -369,6 +379,22 @@ def gerar_entrada_devolucao_from_nfe_saida(
         snap_prod = item.snapshot_produto if isinstance(item.snapshot_produto, dict) else {}
         if not snap_prod and item.produto_id:
             snap_prod = build_produto_snapshot(item.produto)
+        impostos_fb = _impostos_json_from_item_saida(item)
+        v_item = (item.quantidade or Decimal('0')) * (item.valor or Decimal('0'))
+        cfop, impostos, regra = resolver_cfop_e_impostos_devolucao(
+            cfop_saida=cfop_sai,
+            ncm=ncm,
+            produto_id=item.produto_id,
+            valor_item=v_item,
+            impostos_fallback=impostos_fb,
+            contexto=contexto,
+        )
+        if isinstance(impostos, dict):
+            impostos = {**impostos}
+            meta = impostos.get('_meta') if isinstance(impostos.get('_meta'), dict) else {}
+            impostos['_meta'] = {**meta, 'cfop_saida': cfop_sai}
+        if regra and regra.nome not in regras_usadas:
+            regras_usadas.append(regra.nome)
         ItemNFeEntrada.objects.create(
             nf=entrada,
             produto_id=item.produto_id,
@@ -378,21 +404,27 @@ def gerar_entrada_devolucao_from_nfe_saida(
             snapshot_produto=snap_prod or {},
             numero_item=idx,
             ncm=ncm,
-            cfop=cfop_entrada_devolucao_from_saida(cfop_sai),
+            cfop=cfop,
             unidade=unidade,
             descricao_xml=str(snap_prod.get('descricao') or getattr(item.produto, 'descricao', '') or '')[:120],
-            impostos_json=_impostos_json_from_item_saida(item),
+            impostos_json=impostos or impostos_fb,
         )
 
     recalcular_valor_nf_entrada(entrada)
     entrada.refresh_from_db()
+    msg_regra = (
+        f' Regra(s) fiscal(is): {", ".join(regras_usadas)}.'
+        if regras_usadas
+        else ' Nenhuma regra DEVOLUCAO_VENDA casou — CFOP/impostos por convenção/espelho da saída.'
+    )
     return _resposta_entrada(
         entrada,
         ja_existia=False,
         itens_criados=len(itens_saida),
         mensagem=(
-            'Rascunho de entrada própria (devolução) criado a partir da NF-e de saída. '
-            'Revise e emita pela tela Entrada Própria.'
+            'Rascunho de entrada própria (devolução) criado a partir da NF-e de saída.'
+            + msg_regra
+            + ' Revise e emita pela tela Entrada Própria.'
         ),
     )
 
@@ -483,6 +515,12 @@ def gerar_entrada_devolucao_from_nfe_saida_historica(
         valor_total=Decimal('0'),
     )
 
+    contexto = montar_contexto_devolucao_venda(
+        empresa_emitente=nf.empresa_emitente,
+        cliente_destinatario=cliente,
+    )
+    regras_usadas: list[str] = []
+
     for idx, (item, produto, prod_json) in enumerate(resolvidos, start=1):
         qtd = _dec_prod(prod_json.get('qCom') or prod_json.get('qTrib') or '1')
         v_un = _dec_prod(prod_json.get('vUnCom') or prod_json.get('vUnTrib'))
@@ -494,6 +532,24 @@ def gerar_entrada_devolucao_from_nfe_saida_historica(
         ncm = _digits(prod_json.get('NCM') or prod_json.get('ncm') or getattr(produto, 'ncm', ''), max_len=8)
         cfop_sai = _digits(prod_json.get('CFOP') or prod_json.get('cfop'), max_len=4)
         unidade = str(prod_json.get('uCom') or prod_json.get('uTrib') or produto.unidade or 'UN').strip()[:6]
+        impostos_fb = impostos_json_from_imposto_xml(
+            item.imposto_json if isinstance(item.imposto_json, dict) else {},
+        )
+        v_item = qtd * v_un if v_un > 0 else v_prod
+        cfop, impostos, regra = resolver_cfop_e_impostos_devolucao(
+            cfop_saida=cfop_sai,
+            ncm=ncm,
+            produto_id=produto.pk,
+            valor_item=v_item,
+            impostos_fallback=impostos_fb,
+            contexto=contexto,
+        )
+        if isinstance(impostos, dict):
+            impostos = {**impostos}
+            meta = impostos.get('_meta') if isinstance(impostos.get('_meta'), dict) else {}
+            impostos['_meta'] = {**meta, 'cfop_saida': cfop_sai}
+        if regra and regra.nome not in regras_usadas:
+            regras_usadas.append(regra.nome)
         ItemNFeEntrada.objects.create(
             nf=entrada,
             produto=produto,
@@ -502,22 +558,26 @@ def gerar_entrada_devolucao_from_nfe_saida_historica(
             snapshot_produto=build_produto_snapshot(produto),
             numero_item=item.n_item or idx,
             ncm=ncm,
-            cfop=cfop_entrada_devolucao_from_saida(cfop_sai),
+            cfop=cfop,
             unidade=unidade or 'UN',
             descricao_xml=str(prod_json.get('xProd') or produto.descricao or '')[:120],
-            impostos_json=impostos_json_from_imposto_xml(
-                item.imposto_json if isinstance(item.imposto_json, dict) else {},
-            ),
+            impostos_json=impostos or impostos_fb,
         )
 
     recalcular_valor_nf_entrada(entrada)
     entrada.refresh_from_db()
+    msg_regra = (
+        f' Regra(s) fiscal(is): {", ".join(regras_usadas)}.'
+        if regras_usadas
+        else ' Nenhuma regra DEVOLUCAO_VENDA casou — CFOP/impostos por convenção/espelho do XML.'
+    )
     return _resposta_entrada(
         entrada,
         ja_existia=False,
         itens_criados=len(resolvidos),
         mensagem=(
-            'Rascunho de entrada própria (devolução) criado a partir da NF-e importada por XML. '
-            'Revise e emita pela tela Entrada Própria.'
+            'Rascunho de entrada própria (devolução) criado a partir da NF-e importada por XML.'
+            + msg_regra
+            + ' Revise e emita pela tela Entrada Própria.'
         ),
     )
