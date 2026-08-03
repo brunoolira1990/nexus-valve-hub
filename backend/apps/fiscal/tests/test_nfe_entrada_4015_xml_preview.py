@@ -73,12 +73,13 @@ def _produto() -> Produto:
     )
 
 
-def _config_entrada(empresa: Empresa, *, proximo: int = 200) -> NFeNumeracaoConfiguracao:
+def _config_saida(empresa: Empresa, *, proximo: int = 200) -> NFeNumeracaoConfiguracao:
+    """Sequência compartilhada com NF-e saída."""
     cfg, _ = NFeNumeracaoConfiguracao.objects.get_or_create(
         empresa=empresa,
         modelo_documento='55',
         ambiente=NFeNumeracaoConfiguracao.Ambiente.HOMOLOGACAO,
-        tipo_operacao=NFeNumeracaoConfiguracao.TipoOperacao.ENTRADA_PROPRIA,
+        tipo_operacao=NFeNumeracaoConfiguracao.TipoOperacao.SAIDA,
         serie='0',
         defaults={'proximo_numero': proximo, 'ativo': True},
     )
@@ -123,7 +124,7 @@ def _nf_pronta(
         impostos_json=IMPOSTOS_ITEM_NT,
     )
     if reservar:
-        _config_entrada(empresa, proximo=300 + nf.pk % 100)
+        _config_saida(empresa, proximo=300 + nf.pk % 100)
         reservar_numeracao_nfe_entrada(nf, usuario=user)
         nf.refresh_from_db()
     return nf
@@ -228,7 +229,7 @@ class NFeEntrada4015XmlPreviewTests(TestCase):
         val = validar_pre_emissao_homologacao_entrada(nf, exigir_numeracao=True)
         self.assertTrue(any(p['codigo'] == 'NUMERACAO_NAO_RESERVADA' for p in val['pendencias']))
 
-    def test_reserva_entrada_nao_altera_contador_saida(self) -> None:
+    def test_reserva_entrada_consome_contador_saida(self) -> None:
         ensure_numeracao_padrao_nfe(self.empresa)
         cfg_saida = NFeNumeracaoConfiguracao.objects.get(
             empresa=self.empresa,
@@ -237,9 +238,12 @@ class NFeEntrada4015XmlPreviewTests(TestCase):
             serie='0',
         )
         prox_antes = cfg_saida.proximo_numero
-        nf = _nf_pronta(self.empresa, cliente=self.cliente, reservar=True, user=self.user)
+        nf = _nf_pronta(self.empresa, cliente=self.cliente, reservar=False)
+        reservar_numeracao_nfe_entrada(nf, usuario=self.user)
+        nf.refresh_from_db()
         cfg_saida.refresh_from_db()
-        self.assertEqual(cfg_saida.proximo_numero, prox_antes)
+        self.assertEqual(cfg_saida.proximo_numero, prox_antes + 1)
+        self.assertEqual(nf.numero_nfe, str(prox_antes).zfill(9))
         self.assertTrue(nf.chave_acesso)
 
     def test_preview_xml_tp_nf_zero(self) -> None:

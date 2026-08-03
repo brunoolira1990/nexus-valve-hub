@@ -1,16 +1,25 @@
-"""Reserva de numeração fiscal NF-e entrada própria (tipo_operacao=entrada_propria)."""
+"""Reserva de numeração fiscal NF-e entrada própria.
+
+Decisão de produto (confirmada): usa a **mesma sequência da saída**
+(``tipo_operacao=saida`` — mesma série e contador ``nNF``).
+Só o documento muda para entrada (``tpNF=0``).
+"""
 
 from __future__ import annotations
 
 import logging
 import secrets
-from dataclasses import dataclass
 
 from django.db import transaction
 from django.utils import timezone
 
 from apps.fiscal.models import NFeEntrada, NFeNumeracaoConfiguracao
-from apps.fiscal.nfe_emissao.numeracao import NFeNumeracaoError, NumeracaoReservada
+from apps.fiscal.nfe_emissao.numeracao import (
+    NFeNumeracaoError,
+    NumeracaoReservada,
+    _travar_config_numeracao_nfe_saida,
+    obter_config_numeracao,
+)
 from apps.fiscal.nfe_emissao.serie_fiscal import (
     normalizar_serie_xml,
     serie_para_chave,
@@ -24,7 +33,10 @@ from apps.fiscal.nfe_integracao.nfe_chave_acesso import ChaveAcessoNFe, aamm_da_
 
 logger = logging.getLogger(__name__)
 
-MSG_SEM_CONFIG_ENTRADA = 'Cadastre numeração de entrada própria em homologação.'
+MSG_SEM_CONFIG_ENTRADA = (
+    'Cadastre numeração NF-e (tipo saída) para a empresa/ambiente. '
+    'Entrada própria compartilha a mesma sequência da saída.'
+)
 
 
 def _lock_nfe_entrada(nf_id: int) -> NFeEntrada:
@@ -55,25 +67,11 @@ def obter_config_numeracao_entrada(
     ambiente: str = NFeNumeracaoConfiguracao.Ambiente.HOMOLOGACAO,
     modelo: str = '55',
 ) -> NFeNumeracaoConfiguracao:
-    cfg = (
-        NFeNumeracaoConfiguracao.objects.filter(
-            empresa_id=empresa_id,
-            ambiente=ambiente,
-            modelo_documento=modelo,
-            tipo_operacao=NFeNumeracaoConfiguracao.TipoOperacao.ENTRADA_PROPRIA,
-            ativo=True,
-        )
-        .order_by('serie')
-        .first()
-    )
-    if not cfg:
-        raise NFeNumeracaoError(MSG_SEM_CONFIG_ENTRADA)
-    if ambiente != NFeNumeracaoConfiguracao.Ambiente.PRODUCAO:
-        try:
-            validar_serie_autorizacao_normal(cfg.serie)
-        except Exception as exc:
-            raise NFeNumeracaoError(str(exc)) from exc
-    return cfg
+    """Resolve a config de numeração compartilhada com a saída."""
+    try:
+        return obter_config_numeracao(empresa_id, ambiente=ambiente, modelo=modelo)
+    except NFeNumeracaoError as exc:
+        raise NFeNumeracaoError(MSG_SEM_CONFIG_ENTRADA) from exc
 
 
 @transaction.atomic
@@ -89,7 +87,12 @@ def reservar_numeracao_nfe_entrada(
 
     ambiente = nf.ambiente_emissao or NFeEntrada.AmbienteEmissao.HOMOLOGACAO
     if ambiente == NFeEntrada.AmbienteEmissao.PRODUCAO:
-        raise NFeNumeracaoError('Emissão em produção não está habilitada nesta fase.')
+        from apps.fiscal.nfe_emissao.config_producao import exigir_producao_habilitada
+
+        try:
+            exigir_producao_habilitada()
+        except PermissionError as exc:
+            raise NFeNumeracaoError(str(exc)) from exc
 
     try:
         validar_rascunho_entrada_propria_emitida(nf)
@@ -124,19 +127,22 @@ def reservar_numeracao_nfe_entrada(
     if not empresa:
         raise NFeNumeracaoError('Empresa emitente obrigatória para reservar numeração.')
 
-    cfg = (
-        NFeNumeracaoConfiguracao.objects.select_for_update()
-        .filter(pk=obter_config_numeracao_entrada(empresa.pk, ambiente=ambiente).pk)
-        .first()
-    )
-    if not cfg:
-        raise NFeNumeracaoError(MSG_SEM_CONFIG_ENTRADA)
+    try:
+        cfg = _travar_config_numeracao_nfe_saida(
+            empresa.pk,
+            ambiente=ambiente,
+            serie_nfe=nf.serie_nfe or None,
+        )
+    except NFeNumeracaoError as exc:
+        raise NFeNumeracaoError(MSG_SEM_CONFIG_ENTRADA) from exc
 
+    # Entrada própria consome o contador da saída (sem pool de descarte de NFeSaida).
     nnf_int = int(cfg.proximo_numero)
     if nnf_int < 1 or nnf_int > 999_999_999:
         raise NFeNumeracaoError('Próximo número fiscal fora do intervalo permitido.')
 
-    validar_serie_autorizacao_normal(cfg.serie)
+    if ambiente != NFeEntrada.AmbienteEmissao.PRODUCAO:
+        validar_serie_autorizacao_normal(cfg.serie)
     serie = _serie_digits(cfg.serie)
     serie_chave = serie_para_chave(cfg.serie)
     nnf = _nnf_str(nnf_int)
@@ -182,6 +188,15 @@ def reservar_numeracao_nfe_entrada(
     cfg.proximo_numero = nnf_int + 1
     cfg.ultimo_numero_reservado = nnf_int
     cfg.save(update_fields=['proximo_numero', 'ultimo_numero_reservado', 'atualizado_em'])
+
+    logger.info(
+        'NUMERACAO_ENTRADA_RESERVADA_SEQ_SAIDA nf_entrada_id=%s cfg_id=%s serie=%s numero=%s ambiente=%s',
+        nf.pk,
+        cfg.pk,
+        serie,
+        nnf,
+        ambiente,
+    )
 
     return NumeracaoReservada(
         serie=serie,

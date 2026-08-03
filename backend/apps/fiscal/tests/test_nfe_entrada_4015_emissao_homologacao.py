@@ -61,12 +61,13 @@ def _produto() -> Produto:
     )
 
 
-def _config_entrada(empresa: Empresa, *, proximo: int = 100) -> NFeNumeracaoConfiguracao:
+def _config_saida(empresa: Empresa, *, proximo: int = 100, ambiente: str = 'homologacao') -> NFeNumeracaoConfiguracao:
+    """Config da sequência compartilhada (tipo_operacao=saida)."""
     return NFeNumeracaoConfiguracao.objects.create(
         empresa=empresa,
         modelo_documento='55',
-        ambiente=NFeNumeracaoConfiguracao.Ambiente.HOMOLOGACAO,
-        tipo_operacao=NFeNumeracaoConfiguracao.TipoOperacao.ENTRADA_PROPRIA,
+        ambiente=ambiente,
+        tipo_operacao=NFeNumeracaoConfiguracao.TipoOperacao.SAIDA,
         serie='0',
         proximo_numero=proximo,
         ativo=True,
@@ -136,7 +137,7 @@ class NFeEntrada4015EmissaoHomologacaoTests(TestCase):
         self.assertEqual(EstoqueCorrida.objects.count(), 0)
 
     def test_reservar_numeracao_entrada_propria(self) -> None:
-        cfg = _config_entrada(self.empresa, proximo=501)
+        cfg = _config_saida(self.empresa, proximo=501)
         nf = _rascunho_emitida(self.empresa, fornecedor=self.fornecedor)
         num = reservar_numeracao_nfe_entrada(nf, usuario=self.user)
         nf.refresh_from_db()
@@ -148,8 +149,9 @@ class NFeEntrada4015EmissaoHomologacaoTests(TestCase):
         self.assertEqual(nf.status_emissao_sefaz, NFeEntrada.StatusEmissaoSefaz.NUMERACAO_RESERVADA)
         self.assertEqual(cfg.proximo_numero, 502)
         self.assertEqual(cfg.ultimo_numero_reservado, 501)
+        self.assertEqual(cfg.tipo_operacao, NFeNumeracaoConfiguracao.TipoOperacao.SAIDA)
 
-    def test_reserva_entrada_nao_altera_contador_saida(self) -> None:
+    def test_reserva_entrada_consome_contador_saida(self) -> None:
         ensure_numeracao_padrao_nfe(self.empresa)
         cfg_saida = NFeNumeracaoConfiguracao.objects.get(
             empresa=self.empresa,
@@ -157,21 +159,22 @@ class NFeEntrada4015EmissaoHomologacaoTests(TestCase):
             tipo_operacao=NFeNumeracaoConfiguracao.TipoOperacao.SAIDA,
             serie='0',
         )
-        proximo_saida_antes = cfg_saida.proximo_numero
-        _config_entrada(self.empresa, proximo=10)
+        proximo_antes = cfg_saida.proximo_numero
         nf = _rascunho_emitida(self.empresa, cliente=self.cliente)
-        reservar_numeracao_nfe_entrada(nf, usuario=self.user)
+        num = reservar_numeracao_nfe_entrada(nf, usuario=self.user)
         cfg_saida.refresh_from_db()
-        self.assertEqual(cfg_saida.proximo_numero, proximo_saida_antes)
+        self.assertEqual(num.nnf, str(proximo_antes).zfill(9))
+        self.assertEqual(cfg_saida.proximo_numero, proximo_antes + 1)
+        self.assertEqual(cfg_saida.ultimo_numero_reservado, proximo_antes)
 
-    def test_falha_reserva_sem_config_entrada(self) -> None:
+    def test_falha_reserva_sem_config_saida(self) -> None:
         nf = _rascunho_emitida(self.empresa, cliente=self.cliente)
         with self.assertRaises(NFeNumeracaoError) as ctx:
             reservar_numeracao_nfe_entrada(nf, usuario=self.user)
         self.assertIn(MSG_SEM_CONFIG_ENTRADA, str(ctx.exception))
 
-    def test_falha_reserva_ambiente_producao(self) -> None:
-        _config_entrada(self.empresa)
+    def test_falha_reserva_ambiente_producao_sem_flag(self) -> None:
+        _config_saida(self.empresa, ambiente='producao', proximo=10)
         nf = _rascunho_emitida(self.empresa, cliente=self.cliente)
         nf.ambiente_emissao = NFeEntrada.AmbienteEmissao.PRODUCAO
         nf.save(update_fields=['ambiente_emissao'])
@@ -209,12 +212,21 @@ class NFeEntrada4015EmissaoHomologacaoTests(TestCase):
             validar_itens_entrada_propria_emitida(nf)
         self.assertIn('CFOP', str(ctx.exception))
 
-    def test_obter_config_entrada_usa_tipo_operacao_entrada_propria(self) -> None:
+    def test_obter_config_entrada_usa_tipo_operacao_saida(self) -> None:
         ensure_numeracao_padrao_nfe(self.empresa)
-        cfg_entrada = _config_entrada(self.empresa, proximo=77)
+        # Config isolada de entrada_propria NÃO deve ser usada.
+        NFeNumeracaoConfiguracao.objects.create(
+            empresa=self.empresa,
+            modelo_documento='55',
+            ambiente=NFeNumeracaoConfiguracao.Ambiente.HOMOLOGACAO,
+            tipo_operacao=NFeNumeracaoConfiguracao.TipoOperacao.ENTRADA_PROPRIA,
+            serie='9',
+            proximo_numero=77,
+            ativo=True,
+        )
         obtida = obter_config_numeracao_entrada(self.empresa.pk)
-        self.assertEqual(obtida.pk, cfg_entrada.pk)
-        self.assertEqual(obtida.tipo_operacao, NFeNumeracaoConfiguracao.TipoOperacao.ENTRADA_PROPRIA)
+        self.assertEqual(obtida.tipo_operacao, NFeNumeracaoConfiguracao.TipoOperacao.SAIDA)
+        self.assertEqual(obtida.serie, '0')
 
     def test_tipo_origem_manual_e_importada_preservados(self) -> None:
         nf_manual = NFeEntrada.objects.create(
