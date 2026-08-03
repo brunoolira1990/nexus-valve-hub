@@ -136,9 +136,19 @@ def reservar_numeracao_nfe_entrada(
     except NFeNumeracaoError as exc:
         raise NFeNumeracaoError(MSG_SEM_CONFIG_ENTRADA) from exc
 
-    # Entrada própria consome o contador da saída (sem pool de descarte de NFeSaida).
-    nnf_int = int(cfg.proximo_numero)
-    if nnf_int < 1 or nnf_int > 999_999_999:
+    from apps.fiscal.nfe_entrada_emissao.preparar_producao import consumir_numero_liberado_cfg
+
+    # Entrada própria consome o contador da saída (com reuso do pool de descartes locais).
+    nnf_int, numero_liberado = consumir_numero_liberado_cfg(cfg)
+    if numero_liberado is not None:
+        logger.info(
+            'NUMERACAO_ENTRADA_POOL_CONSUMIDA nf_entrada_id=%s cfg_id=%s numero=%s pool_id=%s',
+            nf.pk,
+            cfg.pk,
+            nnf_int,
+            numero_liberado.pk,
+        )
+    if numero_liberado is None and (nnf_int < 1 or nnf_int > 999_999_999):
         raise NFeNumeracaoError('Próximo número fiscal fora do intervalo permitido.')
 
     if ambiente != NFeEntrada.AmbienteEmissao.PRODUCAO:
@@ -185,9 +195,12 @@ def reservar_numeracao_nfe_entrada(
         ],
     )
 
-    cfg.proximo_numero = nnf_int + 1
     cfg.ultimo_numero_reservado = nnf_int
-    cfg.save(update_fields=['proximo_numero', 'ultimo_numero_reservado', 'atualizado_em'])
+    if numero_liberado is None:
+        cfg.proximo_numero = nnf_int + 1
+        cfg.save(update_fields=['proximo_numero', 'ultimo_numero_reservado', 'atualizado_em'])
+    else:
+        cfg.save(update_fields=['ultimo_numero_reservado', 'atualizado_em'])
 
     logger.info(
         'NUMERACAO_ENTRADA_RESERVADA_SEQ_SAIDA nf_entrada_id=%s cfg_id=%s serie=%s numero=%s ambiente=%s',

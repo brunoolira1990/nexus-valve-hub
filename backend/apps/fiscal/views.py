@@ -426,6 +426,41 @@ class NFeEntradaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
             },
         )
 
+    @action(detail=True, methods=['post'], url_path='preparar-para-producao')
+    def preparar_para_producao(self, request, pk=None):
+        """Desfaz numeração local de homologação e marca a NF-e para emissão em produção."""
+        from apps.fiscal.nfe_emissao.config_producao import nfe_producao_habilitada
+        from apps.fiscal.nfe_entrada_emissao.preparar_producao import (
+            NFeEntradaPrepararProducaoError,
+            preparar_entrada_para_producao,
+        )
+        from apps.fiscal.serializers import NFeEntradaSerializer
+
+        if not nfe_producao_habilitada():
+            from apps.fiscal.nfe_emissao.config_producao import MSG_PRODUCAO_NAO_HABILITADA
+
+            return response.Response(
+                {'ok': False, 'detail': MSG_PRODUCAO_NAO_HABILITADA, 'mensagem': MSG_PRODUCAO_NAO_HABILITADA},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        nf = self.get_object()
+        try:
+            payload = preparar_entrada_para_producao(nf, usuario=request.user)
+        except NFeEntradaPrepararProducaoError as exc:
+            return response.Response(
+                {'ok': False, 'detail': str(exc), 'mensagem': str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except PermissionError as exc:
+            return response.Response(
+                {'ok': False, 'detail': str(exc), 'mensagem': str(exc)},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        nf.refresh_from_db()
+        payload['nfe_entrada'] = NFeEntradaSerializer(nf).data
+        return response.Response(payload)
+
     @action(detail=True, methods=['post'], url_path='emitir-homologacao')
     def emitir_homologacao(self, request, pk=None):
         import logging

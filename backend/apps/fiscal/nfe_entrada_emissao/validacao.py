@@ -291,7 +291,8 @@ def validar_pre_emissao_producao_entrada(
         pendencias.append(
             _pendencia(
                 'NUMERACAO_HOMOLOG_RESERVADA',
-                'Numeração de homologação já reservada — use nova NF-e para produção.',
+                'Numeração de homologação já reservada — use "Preparar para produção" '
+                'nesta mesma NF-e (desfaz a reserva local sem SEFAZ) ou gere uma nova nota.',
             ),
         )
 

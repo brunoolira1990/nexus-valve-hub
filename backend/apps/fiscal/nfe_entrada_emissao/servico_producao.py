@@ -144,7 +144,20 @@ def emitir_nfe_entrada_producao(
     )
 
     # Garante ambiente produção antes da validação (ainda sem numeração).
-    if not nf_entrada.numero_nfe:
+    # Se reservou em homologação sem SEFAZ, desfaz e prepara a mesma NF.
+    from apps.fiscal.nfe_entrada_emissao.preparar_producao import (
+        NFeEntradaPrepararProducaoError,
+        precisa_preparar_para_producao,
+        preparar_entrada_para_producao,
+    )
+
+    if precisa_preparar_para_producao(nf_entrada):
+        try:
+            preparar_entrada_para_producao(nf_entrada, usuario=usuario)
+            nf_entrada.refresh_from_db()
+        except NFeEntradaPrepararProducaoError as exc:
+            raise NFeEntradaEmissaoProducaoError(str(exc), detalhes={'erros': [str(exc)]}) from exc
+    elif not nf_entrada.numero_nfe:
         NFeEntrada.objects.filter(pk=nf_entrada.pk).update(
             ambiente_emissao=NFeEntrada.AmbienteEmissao.PRODUCAO,
         )
@@ -169,7 +182,7 @@ def emitir_nfe_entrada_producao(
                 )
             if nf.numero_nfe and nf.ambiente_emissao != NFeEntrada.AmbienteEmissao.PRODUCAO:
                 raise NFeEntradaEmissaoProducaoError(
-                    'Numeração já reservada em outro ambiente — use nova NF-e para produção.',
+                    'Numeração já reservada em outro ambiente — use "Preparar para produção".',
                 )
 
             nf.ambiente_emissao = NFeEntrada.AmbienteEmissao.PRODUCAO

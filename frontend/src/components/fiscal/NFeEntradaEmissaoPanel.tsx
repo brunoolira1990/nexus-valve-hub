@@ -48,6 +48,14 @@ export function NFeEntradaEmissaoPanel({ nfe, onAtualizado }: Props) {
   const autorizadaHomolog = nfe.status_emissao_sefaz === 'AUTORIZADA_HOMOLOGACAO';
   const autorizadaProd = nfe.status_emissao_sefaz === 'AUTORIZADA_PRODUCAO';
   const bloqueada = autorizadaHomolog || autorizadaProd;
+  const numeracaoHomologTravada =
+    !bloqueada &&
+    (nfe.ambiente_emissao || '').toLowerCase() === 'homologacao' &&
+    Boolean((nfe.chave_acesso || '').trim() || (nfe.numero_nfe || '').trim());
+  const pendenciaHomologNumeracao = (checklistProd?.pendencias || []).some(
+    (p) => p.codigo === 'NUMERACAO_HOMOLOG_RESERVADA',
+  );
+  const mostrarPrepararProducao = numeracaoHomologTravada || pendenciaHomologNumeracao;
 
   const carregarChecklists = useCallback(async () => {
     if (bloqueada) return;
@@ -230,6 +238,34 @@ export function NFeEntradaEmissaoPanel({ nfe, onAtualizado }: Props) {
               <ShieldAlert className="h-3.5 w-3.5" />
               Produção SEFAZ
             </p>
+            {mostrarPrepararProducao ? (
+              <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950 space-y-2">
+                <p>
+                  Esta NF-e tem numeração de <strong>homologação</strong> reservada. Para emitir em
+                  produção na <strong>mesma nota</strong>, desfaça a reserva local (sem SEFAZ) e
+                  prepare o ambiente.
+                </p>
+                <button
+                  type="button"
+                  className="erp-btn-primary erp-btn-sm text-xs"
+                  disabled={!!busy}
+                  onClick={() =>
+                    void run('Preparar para produção', async () => {
+                      const res = await nfeEntradasService.prepararParaProducao(nfe.id);
+                      if (!res.ok) {
+                        throw new Error(res.mensagem || res.detail || 'Não foi possível preparar para produção.');
+                      }
+                      return res;
+                    })
+                  }
+                >
+                  {busy === 'Preparar para produção' ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : null}
+                  Desfazer homologação e preparar produção
+                </button>
+              </div>
+            ) : null}
             {checklistProd && !checklistProd.pronta ? (
               <ul className="text-xs text-destructive list-disc pl-4">
                 {(checklistProd.pendencias || []).slice(0, 5).map((p) => (
@@ -245,9 +281,9 @@ export function NFeEntradaEmissaoPanel({ nfe, onAtualizado }: Props) {
               <button
                 type="button"
                 className="erp-btn-outline erp-btn-sm text-xs"
-                disabled={!!busy}
+                disabled={!!busy || mostrarPrepararProducao}
                 onClick={() =>
-                  void run('Preparar produção', async () => {
+                  void run('Validar produção', async () => {
                     await nfeEntradasService.update(nfe.id, { ambiente_emissao: 'producao' });
                     return nfeEntradasService.validarEmissaoProducao(nfe.id);
                   })

@@ -147,6 +147,17 @@ export const nfeEntradasService = {
         status_emissao_sefaz?: string;
       }>(`${nfEnt}${id}/reservar-numeracao/`)
     ).data,
+  prepararParaProducao: async (id: number) => {
+    const res = await api.post<{
+      ok: boolean;
+      ja_pronta?: boolean;
+      nf_entrada_id: number;
+      ambiente_emissao?: string;
+      mensagem?: string;
+      detail?: string;
+    }>(`${nfEnt}${id}/preparar-para-producao/`, {}, { validateStatus: (s) => s >= 200 && s < 500 });
+    return res.data;
+  },
   previewXmlOficial: async (id: number) =>
     (await api.get<{ ok?: boolean; bloqueado?: boolean; xml?: string; mensagem?: string }>(`${nfEnt}${id}/preview-xml-oficial/`, {
       validateStatus: (s) => s >= 200 && s < 500,
