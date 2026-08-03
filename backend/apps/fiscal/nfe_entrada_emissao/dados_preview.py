@@ -171,6 +171,7 @@ def _calcular_totais(itens: list[dict[str, Any]]) -> dict[str, str]:
     v_pis = Decimal('0')
     v_cofins = Decimal('0')
     v_ipi = Decimal('0')
+    v_ipi_devol = Decimal('0')
     v_bc = Decimal('0')
 
     for linha in itens:
@@ -180,10 +181,14 @@ def _calcular_totais(itens: list[dict[str, Any]]) -> dict[str, str]:
         pis = imp.get('pis') or {}
         cof = imp.get('cofins') or {}
         ipi = imp.get('ipi') or {}
+        devol = imp.get('imposto_devol') if isinstance(imp.get('imposto_devol'), dict) else {}
         v_icms += _dec(icms.get('valor'))
         v_pis += _dec(pis.get('valor'))
         v_cofins += _dec(cof.get('valor'))
-        v_ipi += _dec(ipi.get('valor'))
+        # Em devolução, IPI destacado via vIPIDevol (não soma em vIPI).
+        v_ipi_devol += _dec(devol.get('v_ipi_devol') or devol.get('vIPIDevol'))
+        if not devol:
+            v_ipi += _dec(ipi.get('valor'))
         v_bc += _dec(icms.get('base'))
 
     q = Decimal('0.01')
@@ -194,6 +199,7 @@ def _calcular_totais(itens: list[dict[str, Any]]) -> dict[str, str]:
         'v_pis': f'{v_pis.quantize(q)}',
         'v_cofins': f'{v_cofins.quantize(q)}',
         'v_ipi': f'{v_ipi.quantize(q)}',
+        'v_ipi_devol': f'{v_ipi_devol.quantize(q)}',
         'v_bc': f'{v_bc.quantize(q)}',
         'v_desc': '0.00',
     }

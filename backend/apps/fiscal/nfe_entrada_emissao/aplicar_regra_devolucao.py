@@ -6,6 +6,10 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
 from apps.fiscal.models import ItemNFeEntrada, NFeEntrada
+from apps.fiscal.nfe_entrada_emissao.perfil_devolucao_lucro_presumido import (
+    aplicar_perfil_impostos_devolucao_lucro_presumido,
+    cfop_entrada_devolucao_from_saida,
+)
 from apps.fiscal.nfe_entrada_emissao.validacao import ICMS_NT_CSTS, PIS_COFINS_NT_CSTS
 from apps.regras_fiscais.entrada_fiscal import (
     ContextoFiscalEntrada,
@@ -19,11 +23,11 @@ Q2 = Decimal('0.01')
 Q4 = Decimal('0.0001')
 
 
-def _cfop_entrada_fallback(cfop_saida: str) -> str:
-    digits = ''.join(c for c in str(cfop_saida or '') if c.isdigit())[:4]
-    if digits.startswith('6'):
-        return '2202'
-    return '1202'
+def _cfop_entrada_fallback(cfop_saida: str, contexto: ContextoFiscalEntrada | None = None) -> str:
+    mesma_uf: bool | None = None
+    if contexto and contexto.uf_origem and contexto.uf_destino:
+        mesma_uf = contexto.uf_origem == contexto.uf_destino
+    return cfop_entrada_devolucao_from_saida(cfop_saida, mesma_uf=mesma_uf)
 
 
 def _dec(val: Any) -> Decimal | None:
@@ -199,6 +203,15 @@ def impostos_json_from_regra_entrada(
         },
     }
 
+    # Preserva IPI devolvido e reforma (CBS/IBS) espelhados da saída.
+    if isinstance(fb.get('imposto_devol'), dict):
+        out['imposto_devol'] = dict(fb['imposto_devol'])
+    if isinstance(fb.get('reforma_tributaria'), dict):
+        out['reforma_tributaria'] = dict(fb['reforma_tributaria'])
+    if isinstance(fb.get('_meta'), dict):
+        meta_fb = {k: v for k, v in fb['_meta'].items() if k in ('cfop_saida', 'perfil_devolucao')}
+        out['_meta'] = {**meta_fb, **out['_meta']}
+
     cst_ipi = str(esp.get('cst_ipi') or fb_ipi.get('cst') or '').strip()
     if cst_ipi or fb_ipi:
         aliq_ipi = _dec(esp.get('aliquota_ipi'))
@@ -241,7 +254,7 @@ def resolver_cfop_e_impostos_devolucao(
         contexto=contexto,
         regras=regras,
     )
-    cfop_fb = _cfop_entrada_fallback(cfop_saida)
+    cfop_fb = _cfop_entrada_fallback(cfop_saida, contexto)
     if regra is None:
         return cfop_fb, impostos_fallback or {}, None
 
@@ -291,12 +304,13 @@ def aplicar_regras_devolucao_nfe_entrada(nf_entrada: NFeEntrada) -> dict[str, An
         cfop_saida = str(meta.get('cfop_saida') or '').strip()
 
         v_item = (item.quantidade or Decimal('0')) * (item.valor or Decimal('0'))
+        impostos_fb = aplicar_perfil_impostos_devolucao_lucro_presumido(impostos_atuais)
         cfop, impostos, regra = resolver_cfop_e_impostos_devolucao(
             cfop_saida=cfop_saida,
             ncm=item.ncm or '',
             produto_id=item.produto_id,
             valor_item=v_item,
-            impostos_fallback=impostos_atuais,
+            impostos_fallback=impostos_fb,
             contexto=contexto,
             regras=regras,
         )

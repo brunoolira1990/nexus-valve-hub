@@ -20,12 +20,18 @@ from apps.fiscal.nfe_entrada_emissao.aplicar_regra_devolucao import (
     montar_contexto_devolucao_venda,
     resolver_cfop_e_impostos_devolucao,
 )
+from apps.fiscal.nfe_entrada_emissao.perfil_devolucao_lucro_presumido import (
+    aplicar_perfil_impostos_devolucao_lucro_presumido,
+    cfop_entrada_devolucao_from_saida,
+    reforma_tributaria_from_imposto_xml,
+)
 from apps.fiscal.nfe_emissao.empresa_emitente import resolver_empresa_emitente_nfe
 from apps.fiscal.serializers import NFeEntradaSerializer, recalcular_valor_nf_entrada
 from apps.fiscal.snapshot_fiscal_helpers import (
     cfop_from_snapshot_fiscal,
     get_cofins_snapshot,
     get_icms_snapshot,
+    get_ipi_snapshot,
     get_ncm_snapshot,
     get_pis_snapshot,
 )
@@ -47,6 +53,15 @@ MSG_HIST_SEM_PRODUTO = (
     'Cadastre/ajuste o código do produto (cProd) ou NCM único e tente novamente.'
 )
 
+# Reexport — testes e callers históricos.
+__all__ = (
+    'NFeEntradaFromSaidaError',
+    'cfop_entrada_devolucao_from_saida',
+    'gerar_entrada_devolucao_from_nfe_saida',
+    'gerar_entrada_devolucao_from_nfe_saida_historica',
+    'impostos_json_from_imposto_xml',
+)
+
 
 class NFeEntradaFromSaidaError(ValueError):
     pass
@@ -59,14 +74,6 @@ def _digits(val: Any, *, max_len: int | None = None) -> str:
     return out
 
 
-def cfop_entrada_devolucao_from_saida(cfop_saida: str) -> str:
-    """Convenção V1: 1xxx→1202 (dentro do estado), 6xxx→2202 (interestadual)."""
-    digits = _digits(cfop_saida, max_len=4)
-    if digits.startswith('6'):
-        return '2202'
-    return '1202'
-
-
 def _impostos_json_from_item_saida(item: ItemNFeSaida) -> dict[str, Any]:
     snap = item.snapshot_fiscal if isinstance(item.snapshot_fiscal, dict) else {}
 
@@ -75,7 +82,8 @@ def _impostos_json_from_item_saida(item: ItemNFeSaida) -> dict[str, Any]:
         icms_raw = snap.get('icms') if isinstance(snap.get('icms'), dict) else {}
         pis_raw = snap.get('pis') if isinstance(snap.get('pis'), dict) else {}
         cof_raw = snap.get('cofins') if isinstance(snap.get('cofins'), dict) else {}
-        return {
+        ipi_raw = snap.get('ipi') if isinstance(snap.get('ipi'), dict) else {}
+        mirrored: dict[str, Any] = {
             'icms': {
                 'cst': str(icms_raw.get('cst') or icms_raw.get('cst_icms') or icms_raw.get('csosn') or '41'),
                 'orig': str(icms_raw.get('orig') or '0'),
@@ -84,44 +92,67 @@ def _impostos_json_from_item_saida(item: ItemNFeSaida) -> dict[str, Any]:
                 'valor': icms_raw.get('valor'),
             },
             'pis': {
-                'cst': str(pis_raw.get('cst') or '07'),
+                'cst': str(pis_raw.get('cst') or '01'),
                 'base': pis_raw.get('base'),
                 'aliquota': pis_raw.get('aliquota'),
                 'valor': pis_raw.get('valor'),
             },
             'cofins': {
-                'cst': str(cof_raw.get('cst') or '07'),
+                'cst': str(cof_raw.get('cst') or '01'),
                 'base': cof_raw.get('base'),
                 'aliquota': cof_raw.get('aliquota'),
                 'valor': cof_raw.get('valor'),
             },
         }
+        if ipi_raw:
+            mirrored['ipi'] = {
+                'cst': str(ipi_raw.get('cst') or ''),
+                'base': ipi_raw.get('base'),
+                'aliquota': ipi_raw.get('aliquota'),
+                'valor': ipi_raw.get('valor'),
+            }
+        return aplicar_perfil_impostos_devolucao_lucro_presumido(
+            mirrored,
+            snapshot_fiscal_saida=snap,
+        )
 
     icms = get_icms_snapshot(snap)
     pis = get_pis_snapshot(snap)
     cof = get_cofins_snapshot(snap)
+    ipi = get_ipi_snapshot(snap)
     cst_icms = icms.get('cst_icms') or icms.get('csosn') or '41'
-    return {
+    mirrored = {
         'icms': {
             'cst': cst_icms,
-            'orig': '0',
+            'orig': str(icms.get('orig') or snap.get('origem_mercadoria') or snap.get('orig') or '0'),
             'base': icms.get('base') or None,
             'aliquota': icms.get('aliquota') or None,
             'valor': icms.get('valor') or None,
         },
         'pis': {
-            'cst': pis.get('cst') or '07',
+            'cst': pis.get('cst') or '01',
             'base': pis.get('base') or None,
             'aliquota': pis.get('aliquota') or None,
             'valor': pis.get('valor') or None,
         },
         'cofins': {
-            'cst': cof.get('cst') or '07',
+            'cst': cof.get('cst') or '01',
             'base': cof.get('base') or None,
             'aliquota': cof.get('aliquota') or None,
             'valor': cof.get('valor') or None,
         },
     }
+    if ipi.get('valor') or ipi.get('base') or ipi.get('aliquota') or ipi.get('cst'):
+        mirrored['ipi'] = {
+            'cst': ipi.get('cst') or '',
+            'base': ipi.get('base') or None,
+            'aliquota': ipi.get('aliquota') or None,
+            'valor': ipi.get('valor') or None,
+        }
+    return aplicar_perfil_impostos_devolucao_lucro_presumido(
+        mirrored,
+        snapshot_fiscal_saida=snap,
+    )
 
 
 def _unidade_item(item: ItemNFeSaida) -> str:
@@ -250,7 +281,11 @@ def impostos_json_from_imposto_xml(imposto_json: dict[str, Any] | None) -> dict[
             'aliquota': ipi.get('pIPI'),
             'valor': ipi.get('vIPI'),
         }
-    return out
+    reforma = reforma_tributaria_from_imposto_xml(raw)
+    return aplicar_perfil_impostos_devolucao_lucro_presumido(
+        out,
+        reforma_extra=reforma,
+    )
 
 
 def _resolver_produto_de_prod_json(prod_json: dict[str, Any]) -> Produto | None:

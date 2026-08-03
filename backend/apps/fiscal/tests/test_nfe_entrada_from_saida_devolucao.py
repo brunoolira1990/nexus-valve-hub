@@ -120,8 +120,12 @@ class NFeEntradaFromSaidaDevolucaoTests(TestCase):
         self.client_api.force_authenticate(self.user)
 
     def test_cfop_mapeamento(self) -> None:
+        self.assertEqual(cfop_entrada_devolucao_from_saida('5101'), '1201')
         self.assertEqual(cfop_entrada_devolucao_from_saida('5102'), '1202')
+        self.assertEqual(cfop_entrada_devolucao_from_saida('6101'), '2201')
         self.assertEqual(cfop_entrada_devolucao_from_saida('6102'), '2202')
+        self.assertEqual(cfop_entrada_devolucao_from_saida('5102', mesma_uf=False), '2202')
+        self.assertEqual(cfop_entrada_devolucao_from_saida('6101', mesma_uf=True), '1201')
 
     def test_gerar_rascunho_entrada(self) -> None:
         res = gerar_entrada_devolucao_from_nfe_saida(self.nf, usuario=self.user)
@@ -139,6 +143,12 @@ class NFeEntradaFromSaidaDevolucaoTests(TestCase):
         self.assertEqual(item.ncm, '84818200')
         self.assertEqual(item.quantidade, Decimal('2'))
         self.assertEqual(item.impostos_json['icms']['cst'], '00')
+        # Lucro Presumido: PIS/COFINS CST 98 espelhando alíquotas da saída
+        self.assertEqual(item.impostos_json['pis']['cst'], '98')
+        self.assertEqual(item.impostos_json['cofins']['cst'], '98')
+        self.assertEqual(str(item.impostos_json['pis']['aliquota']), '1.65')
+        self.assertEqual(str(item.impostos_json['cofins']['aliquota']), '7.6')
+        self.assertEqual(item.impostos_json['_meta']['perfil_devolucao'], 'lucro_presumido_2026')
 
     def test_idempotente(self) -> None:
         r1 = gerar_entrada_devolucao_from_nfe_saida(self.nf, usuario=self.user)
@@ -174,15 +184,15 @@ class NFeEntradaFromSaidaDevolucaoTests(TestCase):
             cfop_entrada='1202',
             ncm='84818200',
             cst_icms_esperado='41',
-            cst_pis_esperado='07',
-            cst_cofins_esperado='07',
+            cst_pis_esperado='98',
+            cst_cofins_esperado='98',
         )
         res = gerar_entrada_devolucao_from_nfe_saida(self.nf, usuario=self.user)
         self.assertTrue(res['ok'])
         item = ItemNFeEntrada.objects.get(nf_id=res['nf_entrada_id'])
         self.assertEqual(item.cfop, '1202')
         self.assertEqual(item.impostos_json['icms']['cst'], '41')
-        self.assertEqual(item.impostos_json['pis']['cst'], '07')
+        self.assertEqual(item.impostos_json['pis']['cst'], '98')
         self.assertEqual(item.impostos_json['_meta']['regra_nome'], 'Dev venda 5102')
         self.assertEqual(item.impostos_json['_meta']['cfop_saida'], '5102')
 
@@ -278,6 +288,8 @@ class NFeEntradaFromSaidaHistoricaDevolucaoTests(TestCase):
         self.assertEqual(item.cfop, '1202')
         self.assertEqual(item.quantidade, Decimal('2'))
         self.assertEqual(item.impostos_json['icms']['cst'], '00')
+        self.assertEqual(item.impostos_json['pis']['cst'], '98')
+        self.assertEqual(item.impostos_json['cofins']['cst'], '98')
 
     def test_idempotente_historica(self) -> None:
         r1 = gerar_entrada_devolucao_from_nfe_saida_historica(self.nf, usuario=self.user)

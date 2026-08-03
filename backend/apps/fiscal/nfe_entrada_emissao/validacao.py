@@ -188,13 +188,15 @@ def _validar_pre_emissao_entrada_comum(
     if not _text(nf.nat_op):
         pendencias.append(_pendencia('NAT_OP_AUSENTE', 'Natureza da operação (nat_op) obrigatória.'))
 
-    if _text(nf.fin_nfe) == '4' and not _text(nf.chave_nfe_referenciada):
-        alertas.append(
-            _alerta(
-                'CHAVE_REFERENCIA_AUSENTE',
-                'fin_nfe=4 sem chave_nfe_referenciada — NFref não será gerada no XML.',
-            ),
-        )
+    if _text(nf.fin_nfe) == '4':
+        ch_ref = ''.join(c for c in _text(nf.chave_nfe_referenciada) if c.isdigit())
+        if len(ch_ref) != 44:
+            pendencias.append(
+                _pendencia(
+                    'CHAVE_REFERENCIA_INVALIDA',
+                    'Devolução (finNFe=4) exige chave da NF-e original com 44 dígitos para gerar <refNFe>.',
+                ),
+            )
 
     if exigir_numeracao or _text(nf.chave_acesso):
         if not (nf.chave_acesso and nf.serie_nfe and nf.numero_nfe and nf.codigo_numerico):

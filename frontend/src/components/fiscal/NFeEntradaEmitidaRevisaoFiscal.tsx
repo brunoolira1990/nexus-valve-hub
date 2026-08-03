@@ -25,6 +25,8 @@ type ImpostosShape = {
   pis?: ImpostoBloco;
   cofins?: ImpostoBloco;
   ipi?: ImpostoBloco;
+  imposto_devol?: { p_devol?: string; v_ipi_devol?: string };
+  reforma_tributaria?: Record<string, unknown>;
   _meta?: Record<string, unknown>;
 };
 
@@ -50,21 +52,40 @@ function podeEditarItens(nfe: NFeEntrada): boolean {
   return (nfe.status_operacional || '').toUpperCase() === 'RASCUNHO';
 }
 
+function strCampo(val: unknown): string {
+  if (val === null || val === undefined) return '';
+  return String(val);
+}
+
 function asImpostos(raw?: Record<string, unknown> | null): ImpostosShape {
   if (!raw || typeof raw !== 'object') {
     return { icms: {}, pis: {}, cofins: {} };
   }
-  const bloco = (key: keyof ImpostosShape): ImpostoBloco => {
-    if (key === '_meta') return {};
+  const bloco = (key: 'icms' | 'pis' | 'cofins' | 'ipi'): ImpostoBloco => {
     const v = raw[key];
     return v && typeof v === 'object' ? { ...(v as ImpostoBloco) } : {};
   };
   const meta = raw._meta;
+  const devolRaw = raw.imposto_devol;
+  const reformaRaw = raw.reforma_tributaria;
+  let imposto_devol: ImpostosShape['imposto_devol'];
+  if (devolRaw && typeof devolRaw === 'object') {
+    const d = devolRaw as Record<string, unknown>;
+    imposto_devol = {
+      p_devol: strCampo(d.p_devol ?? d.pDevol),
+      v_ipi_devol: strCampo(d.v_ipi_devol ?? d.vIPIDevol),
+    };
+  }
   return {
     icms: bloco('icms'),
     pis: bloco('pis'),
     cofins: bloco('cofins'),
     ipi: bloco('ipi'),
+    imposto_devol,
+    reforma_tributaria:
+      reformaRaw && typeof reformaRaw === 'object'
+        ? { ...(reformaRaw as Record<string, unknown>) }
+        : undefined,
     _meta: meta && typeof meta === 'object' ? { ...(meta as Record<string, unknown>) } : undefined,
   };
 }
@@ -74,11 +95,6 @@ function fmtNum(val: unknown): string {
   const n = Number(String(val).replace(',', '.'));
   if (!Number.isFinite(n)) return String(val);
   return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
-}
-
-function strCampo(val: unknown): string {
-  if (val === null || val === undefined) return '';
-  return String(val);
 }
 
 function regraDoItem(it: ItemNFe): string {
@@ -239,10 +255,9 @@ export function NFeEntradaEmitidaRevisaoFiscal({ nfe, onAtualizado }: Props) {
 
   const atualizarImposto = (
     itemId: number,
-    grupo: keyof ImpostosShape,
+    grupo: 'icms' | 'pis' | 'cofins' | 'ipi',
     patch: Partial<ImpostoBloco>,
   ) => {
-    if (grupo === '_meta') return;
     setItensDraft((prev) =>
       prev.map((it) => {
         if (it.id !== itemId) return it;
@@ -255,7 +270,9 @@ export function NFeEntradaEmitidaRevisaoFiscal({ nfe, onAtualizado }: Props) {
           cofins: atual.cofins || {},
           [grupo]: { ...(atual[grupo] || {}), ...patch },
         };
-        if (atual.ipi) next.ipi = atual.ipi;
+        if (atual.ipi && grupo !== 'ipi') next.ipi = atual.ipi;
+        if (atual.imposto_devol) next.imposto_devol = atual.imposto_devol;
+        if (atual.reforma_tributaria) next.reforma_tributaria = atual.reforma_tributaria;
         if (atual._meta) next._meta = atual._meta;
         return { ...it, impostos_json: next };
       }),
@@ -508,7 +525,7 @@ function FragmentRow({
   editavel: boolean;
   onToggle: () => void;
   onAtualizarItem: (id: number, patch: Partial<ItemNFe>) => void;
-  onAtualizarImposto: (itemId: number, grupo: keyof ImpostosShape, patch: Partial<ImpostoBloco>) => void;
+  onAtualizarImposto: (itemId: number, grupo: 'icms' | 'pis' | 'cofins' | 'ipi', patch: Partial<ImpostoBloco>) => void;
 }) {
   return (
     <>
@@ -627,12 +644,32 @@ function FragmentRow({
               </div>
               {(imp.ipi?.cst || imp.ipi?.base || imp.ipi?.valor || editavel) && (
                 <BlocoImposto
-                  titulo="IPI (se houver)"
+                  titulo="IPI (CST 49 em devolução)"
                   bloco={imp.ipi || {}}
                   editavel={editavel}
                   onChange={(patch) => onAtualizarImposto(it.id, 'ipi', patch)}
                 />
               )}
+              {imp.imposto_devol?.v_ipi_devol ? (
+                <p className="text-[11px] text-muted-foreground">
+                  IPI devolvido (vIPIDevol):{' '}
+                  <span className="font-mono text-foreground">{fmtNum(imp.imposto_devol.v_ipi_devol)}</span>
+                  {imp.imposto_devol.p_devol
+                    ? ` · pDevol ${fmtNum(imp.imposto_devol.p_devol)}%`
+                    : null}
+                </p>
+              ) : null}
+              {imp.reforma_tributaria ? (
+                <p className="text-[11px] text-muted-foreground">
+                  Reforma 2026 — CBS {fmtNum(imp.reforma_tributaria.aliquota_cbs)}% /{' '}
+                  {fmtNum(imp.reforma_tributaria.valor_cbs)} · IBS UF{' '}
+                  {fmtNum(imp.reforma_tributaria.aliquota_ibs_estadual)}% /{' '}
+                  {fmtNum(
+                    imp.reforma_tributaria.valor_ibs_estadual ??
+                      imp.reforma_tributaria.valor_ibs_uf,
+                  )}
+                </p>
+              ) : null}
             </div>
           </td>
         </tr>

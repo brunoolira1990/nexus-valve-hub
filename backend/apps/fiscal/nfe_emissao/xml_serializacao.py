@@ -105,7 +105,7 @@ def build_icms_tot_bindings(nfe_module: Any, tot: dict[str, Any]) -> Any:
         vDesc=_dec_str(tot.get('v_desc')),
         vII=z,
         vIPI=_dec_str(tot.get('v_ipi')),
-        vIPIDevol=z,
+        vIPIDevol=_dec_str(tot.get('v_ipi_devol')),
         vPIS=_dec_str(tot.get('v_pis')),
         vCOFINS=_dec_str(tot.get('v_cofins')),
         vOutro=z,

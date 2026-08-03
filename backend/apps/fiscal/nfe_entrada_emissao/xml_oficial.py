@@ -28,8 +28,10 @@ HOMOLOG_DEST_XNOME = 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL
 VERSAO_PROC = 'NexusERP-4.0.15-entrada'
 MSG_XML_ENTRADA = 'XML oficial NF-e entrada própria (tpNF=0).'
 
-PIS_COFINS_NT_CSTS = frozenset({'04', '05', '06', '07', '08', '09', '49'})
+PIS_COFINS_NT_CSTS = frozenset({'04', '05', '06', '07', '08', '09'})
+PIS_COFINS_ALIQ_CSTS = frozenset({'01', '02'})
 ICMS_NT_CSTS = frozenset({'40', '41', '50', '60'})
+IPI_NT_CSTS = frozenset({'01', '02', '03', '04', '05', '51', '52', '53', '54', '55', '49'})
 
 
 class NFeEntradaXmlError(ValueError):
@@ -96,9 +98,17 @@ def _build_pis_entrada(impostos: dict):
     wrap = nfe.Tnfe.InfNfe.Det.Imposto.Pis()
     if cst in PIS_COFINS_NT_CSTS:
         wrap.PISNT = nfe.Tnfe.InfNfe.Det.Imposto.Pis.Pisnt(CST=cst)
-    else:
+    elif cst in PIS_COFINS_ALIQ_CSTS:
         wrap.PISAliq = nfe.Tnfe.InfNfe.Det.Imposto.Pis.Pisaliq(
             CST=cst,
+            vBC=_dec_field(pis.get('base')),
+            pPIS=_dec_field(pis.get('aliquota'), 4),
+            vPIS=_dec_field(pis.get('valor')),
+        )
+    else:
+        # CST 49/50/98/99… → PISOutr (ex.: devolução Lucro Presumido CST 98)
+        wrap.PISOutr = nfe.Tnfe.InfNfe.Det.Imposto.Pis.Pisoutr(
+            CST=cst or '98',
             vBC=_dec_field(pis.get('base')),
             pPIS=_dec_field(pis.get('aliquota'), 4),
             vPIS=_dec_field(pis.get('valor')),
@@ -114,9 +124,16 @@ def _build_cofins_entrada(impostos: dict):
     wrap = nfe.Tnfe.InfNfe.Det.Imposto.Cofins()
     if cst in PIS_COFINS_NT_CSTS:
         wrap.COFINSNT = nfe.Tnfe.InfNfe.Det.Imposto.Cofins.Cofinsnt(CST=cst)
-    else:
+    elif cst in PIS_COFINS_ALIQ_CSTS:
         wrap.COFINSAliq = nfe.Tnfe.InfNfe.Det.Imposto.Cofins.Cofinsaliq(
             CST=cst,
+            vBC=_dec_field(cof.get('base')),
+            pCOFINS=_dec_field(cof.get('aliquota'), 4),
+            vCOFINS=_dec_field(cof.get('valor')),
+        )
+    else:
+        wrap.COFINSOutr = nfe.Tnfe.InfNfe.Det.Imposto.Cofins.Cofinsoutr(
+            CST=cst or '98',
             vBC=_dec_field(cof.get('base')),
             pCOFINS=_dec_field(cof.get('aliquota'), 4),
             vCOFINS=_dec_field(cof.get('valor')),
@@ -124,8 +141,43 @@ def _build_cofins_entrada(impostos: dict):
     return wrap
 
 
+def _build_ipi_entrada(impostos: dict):
+    from nfelib.nfe.bindings.v4_0 import leiaute_nfe_v4_00 as layout
+
+    ipi = impostos.get('ipi') if isinstance(impostos.get('ipi'), dict) else {}
+    cst = _text(ipi.get('cst'))
+    if not cst and not _dec(ipi.get('valor')) and not _dec(ipi.get('aliquota')):
+        return None
+    wrap = layout.Tipi(cEnq='999')
+    if cst in IPI_NT_CSTS or not _dec(ipi.get('valor')):
+        wrap.IPINT = layout.Tipi.Ipint(CST=cst or '49')
+    else:
+        wrap.IPITrib = layout.Tipi.Ipitrib(
+            CST=cst or '00',
+            vBC=_dec_field(ipi.get('base')),
+            pIPI=_dec_field(ipi.get('aliquota'), 4),
+            vIPI=_dec_field(ipi.get('valor')),
+        )
+    return wrap
+
+
+def _build_imposto_devol_entrada(impostos: dict):
+    from nfelib.nfe.bindings.v4_0 import nfe_v4_00 as nfe
+
+    devol = impostos.get('imposto_devol') if isinstance(impostos.get('imposto_devol'), dict) else {}
+    v_ipi_devol = _dec_field(devol.get('v_ipi_devol') or devol.get('vIPIDevol'))
+    if v_ipi_devol is None or v_ipi_devol <= 0:
+        return None
+    p_devol = _dec_field(devol.get('p_devol') or devol.get('pDevol'), 2) or Decimal('100.00')
+    return nfe.Tnfe.InfNfe.Det.ImpostoDevol(
+        pDevol=p_devol,
+        IPI=nfe.Tnfe.InfNfe.Det.ImpostoDevol.Ipi(vIPIDevol=v_ipi_devol),
+    )
+
+
 def _build_det_entrada(linha: dict) -> Any:
     from nfelib.nfe.bindings.v4_0 import nfe_v4_00 as nfe
+    from apps.fiscal.reforma_tributaria.xml import build_reforma_tributaria_item_bindings
 
     impostos = linha.get('impostos_json') or {}
     q = _dec(linha.get('q_com'))
@@ -145,16 +197,37 @@ def _build_det_entrada(linha: dict) -> Any:
         cEANTrib='SEM GTIN',
         indTot='1',
     )
-    imposto = nfe.Tnfe.InfNfe.Det.Imposto(
-        ICMS=_build_icms_entrada(impostos, linha),
-        PIS=_build_pis_entrada(impostos),
-        COFINS=_build_cofins_entrada(impostos),
-    )
-    return nfe.Tnfe.InfNfe.Det(
-        nItem=str(linha.get('n_item')),
-        prod=prod,
-        imposto=imposto,
-    )
+    imposto_kw: dict[str, Any] = {
+        'ICMS': _build_icms_entrada(impostos, linha),
+        'PIS': _build_pis_entrada(impostos),
+        'COFINS': _build_cofins_entrada(impostos),
+    }
+    ipi = _build_ipi_entrada(impostos)
+    if ipi is not None:
+        imposto_kw['IPI'] = ipi
+
+    # Reforma Tributária (CBS/IBS) — replica valores da saída quando calculados.
+    linha_rtc = {
+        **linha,
+        'snapshot_fiscal': {
+            'reforma_tributaria': impostos.get('reforma_tributaria')
+            if isinstance(impostos.get('reforma_tributaria'), dict)
+            else {},
+        },
+    }
+    ibscbs = build_reforma_tributaria_item_bindings(linha_rtc)
+    if ibscbs is not None:
+        imposto_kw['IBSCBS'] = ibscbs
+
+    det_kw: dict[str, Any] = {
+        'nItem': str(linha.get('n_item')),
+        'prod': prod,
+        'imposto': nfe.Tnfe.InfNfe.Det.Imposto(**imposto_kw),
+    }
+    imposto_devol = _build_imposto_devol_entrada(impostos)
+    if imposto_devol is not None:
+        det_kw['impostoDevol'] = imposto_devol
+    return nfe.Tnfe.InfNfe.Det(**det_kw)
 
 
 def _ender_emit_entrada(dados: dict[str, Any]):
@@ -287,7 +360,27 @@ def montar_tnfe_entrada(
         raise NFeEntradaXmlError('NF-e sem itens.')
 
     tot = dados.get('totais') or {}
-    inf.total = nfe.Tnfe.InfNfe.Total(ICMSTot=build_icms_tot_bindings(nfe, tot))
+    from apps.fiscal.reforma_tributaria.xml import build_reforma_tributaria_total_bindings
+
+    total_kw: dict[str, Any] = {'ICMSTot': build_icms_tot_bindings(nfe, tot)}
+    # Passa itens com snapshot_fiscal sintético para agregar IBSCBSTot
+    itens_rtc = []
+    for linha in dados.get('itens') or []:
+        impostos = linha.get('impostos_json') or {}
+        itens_rtc.append(
+            {
+                **linha,
+                'snapshot_fiscal': {
+                    'reforma_tributaria': impostos.get('reforma_tributaria')
+                    if isinstance(impostos.get('reforma_tributaria'), dict)
+                    else {},
+                },
+            },
+        )
+    ibscbs_tot = build_reforma_tributaria_total_bindings(itens_rtc)
+    if ibscbs_tot is not None:
+        total_kw['IBSCBSTot'] = ibscbs_tot
+    inf.total = nfe.Tnfe.InfNfe.Total(**total_kw)
     inf.pag = build_pag_bindings(nfe, tot)
 
     return nfe.Tnfe(infNFe=inf)
