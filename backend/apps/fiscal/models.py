@@ -110,6 +110,14 @@ class NFeEntrada(models.Model):
         blank=True,
         related_name='nf_entradas_vinculadas',
     )
+    nfe_saida_origem = models.ForeignKey(
+        'fiscal.NFeSaida',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='entradas_proprias_geradas',
+        help_text='NF-e de saída que originou esta entrada própria (devolução/recusa).',
+    )
 
     # ERP 4.0.15.x — emissão entrada própria (tpNF=0); numeração compartilhada com saída
     ambiente_emissao = models.CharField(

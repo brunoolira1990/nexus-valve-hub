@@ -1528,6 +1528,34 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         code = status.HTTP_200_OK if payload.get('ok') else status.HTTP_422_UNPROCESSABLE_ENTITY
         return response.Response(payload, status=code)
 
+    @action(detail=True, methods=['post'], url_path='gerar-entrada-devolucao')
+    def gerar_entrada_devolucao(self, request, pk=None):
+        """Cria rascunho de entrada própria (finNFe=4) a partir desta NF-e Saída autorizada."""
+        from apps.fiscal.nfe_entrada_from_saida_devolucao import (
+            NFeEntradaFromSaidaError,
+            gerar_entrada_devolucao_from_nfe_saida,
+        )
+
+        nf = self.get_object()
+        try:
+            payload = gerar_entrada_devolucao_from_nfe_saida(nf, usuario=request.user)
+        except NFeEntradaFromSaidaError as exc:
+            return response.Response(
+                {'ok': False, 'detail': str(exc), 'mensagem': str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as exc:
+            return response.Response(
+                {
+                    'ok': False,
+                    'detail': 'Erro ao gerar entrada própria a partir da saída.',
+                    'mensagem': str(exc),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        code = status.HTTP_200_OK if payload.get('ja_existia') else status.HTTP_201_CREATED
+        return response.Response(payload, status=code)
+
     @action(detail=True, methods=['get'], url_path='inutilizacao/dados')
     def inutilizacao_dados(self, request, pk=None):
         """Contexto read-only da inutilização SEFAZ do número da NF-e."""

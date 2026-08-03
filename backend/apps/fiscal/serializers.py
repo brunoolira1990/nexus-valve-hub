@@ -457,6 +457,7 @@ class NFeEntradaSerializer(serializers.ModelSerializer):
             'itens_json',
             'importado_em',
             'nome_arquivo',
+            'nfe_saida_origem_id',
         )
         read_only_fields = (
             'tipo_origem',
@@ -471,6 +472,7 @@ class NFeEntradaSerializer(serializers.ModelSerializer):
             'itens_json',
             'importado_em',
             'nome_arquivo',
+            'nfe_saida_origem_id',
         )
 
     def get_fornecedor_nome(self, obj):

@@ -69,6 +69,7 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
   const [cancelamentoOpen, setCancelamentoOpen] = useState(false);
   const [inutilizacaoOpen, setInutilizacaoOpen] = useState(false);
   const [envioEmailOpen, setEnvioEmailOpen] = useState(false);
+  const [gerarEntradaLoading, setGerarEntradaLoading] = useState(false);
 
   useEffect(() => {
     if (!open || !nfeId) {
@@ -230,6 +231,29 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
       throw e;
     } finally {
       setDescarteLoading(false);
+    }
+  };
+
+  const gerarEntradaDevolucao = async () => {
+    if (!nfe?.id) return;
+    setGerarEntradaLoading(true);
+    try {
+      const res = await nfeSaidasService.gerarEntradaDevolucao(nfe.id);
+      if (!res.ok && !res.nf_entrada_id) {
+        toast.error(res.mensagem || res.detail || 'Não foi possível gerar a entrada própria.');
+        return;
+      }
+      toast.success(
+        res.ja_existia
+          ? res.mensagem || 'Entrada própria já existia — abrindo rascunho.'
+          : res.mensagem || 'Rascunho de entrada própria criado.',
+      );
+      onClose();
+      navigate(`/nfe-entrada?detalhe=${res.nf_entrada_id}`);
+    } catch (e) {
+      toast.error(apiErrorMessage(e, { fallback: 'Não foi possível gerar a entrada própria.' }));
+    } finally {
+      setGerarEntradaLoading(false);
     }
   };
 
@@ -419,6 +443,8 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
               onDescartar={() => setDescarteOpen(true)}
               onConsultaSefaz={() => setConsultaSefazOpen(true)}
               onCartaCorrecao={() => setCartaCorrecaoOpen(true)}
+              onGerarEntradaDevolucao={() => void gerarEntradaDevolucao()}
+              gerarEntradaDevolucaoLoading={gerarEntradaLoading}
               onCancelamento={() => setCancelamentoOpen(true)}
               onInutilizacao={() => setInutilizacaoOpen(true)}
               onEnvioDanfeXml={() => setEnvioEmailOpen(true)}

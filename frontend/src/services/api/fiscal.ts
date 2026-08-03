@@ -1058,6 +1058,18 @@ export const nfeSaidasService = {
     );
     return res.data;
   },
+  gerarEntradaDevolucao: async (id: number) => {
+    const res = await api.post<{
+      ok: boolean;
+      ja_existia?: boolean;
+      nf_entrada_id: number;
+      numero?: string;
+      mensagem?: string;
+      detail?: string;
+      nfe_entrada?: NFeEntrada;
+    }>(`${nfSai}${id}/gerar-entrada-devolucao/`, {}, { validateStatus: (s) => s >= 200 && s < 500 });
+    return res.data;
+  },
   cartaCorrecaoDados: async (id: number) =>
     (await api.get<NFeCartaCorrecaoDadosResponse>(`${nfSai}${id}/carta-correcao/dados/`)).data,
   previaCartaCorrecao: async (id: number, payload: { texto_correcao: string }) => {

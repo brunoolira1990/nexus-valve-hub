@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, X, ExternalLink, FileUp, AlertCircle, Copy, FileSearch, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { NexusButton } from '@/components/nexus';
@@ -30,6 +30,7 @@ const BASE_NFE_ENTRADA_IMPORTADA_PATH = '/nfe-entrada-historica-importada';
 
 const NFeEntrada = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const {
     items,
     count,
@@ -71,6 +72,18 @@ const NFeEntrada = () => {
   const [revisaoId, setRevisaoId] = useState<number | null>(null);
   const [revisaoOpen, setRevisaoOpen] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
+
+  useEffect(() => {
+    const raw = searchParams.get('detalhe');
+    if (!raw) return;
+    const id = Number(raw);
+    if (!Number.isFinite(id) || id <= 0) return;
+    setDetalheId(id);
+    setDetalheOpen(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete('detalhe');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const abrirDetalhe = (id: number) => {
     setDetalheId(id);

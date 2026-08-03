@@ -48,6 +48,7 @@ export type NFeSaidaAcaoId =
   | 'descartar_rascunho'
   | 'consulta_sefaz'
   | 'carta_correcao'
+  | 'gerar_entrada_devolucao'
   | 'cancelamento'
   | 'inutilizacao'
   | 'enviar_danfe_xml'
@@ -315,6 +316,17 @@ export function obterMatrizAcoesNfeSaida(
     if (podeEmitirCartaCorrecao(ctx)) {
       acoes.push(acao({ id: 'carta_correcao', grupo: 'fiscal', label: ACTION_LABELS.cartaCorrecao }));
     }
+    acoes.push(
+      acao({
+        id: 'gerar_entrada_devolucao',
+        grupo: 'fiscal',
+        label: 'Gerar entrada própria (devolução)',
+        habilitada: Boolean(ctx.chaveAcesso),
+        title: ctx.chaveAcesso
+          ? 'Cria rascunho de NF-e entrada própria referenciando esta saída'
+          : 'Chave de acesso indisponível',
+      }),
+    );
     if (podeCancelarNfeSefaz(ctx)) {
       acoes.push(acao({ id: 'cancelamento', grupo: 'fiscal', label: ACTION_LABELS.cancelarNfe }));
     }
@@ -351,6 +363,17 @@ export function obterMatrizAcoesNfeSaida(
     if (podeEmitirCartaCorrecao(ctx)) {
       acoes.push(acao({ id: 'carta_correcao', grupo: 'fiscal', label: ACTION_LABELS.cartaCorrecao }));
     }
+    acoes.push(
+      acao({
+        id: 'gerar_entrada_devolucao',
+        grupo: 'fiscal',
+        label: 'Gerar entrada própria (devolução)',
+        habilitada: Boolean(ctx.chaveAcesso),
+        title: ctx.chaveAcesso
+          ? 'Cria rascunho de NF-e entrada própria referenciando esta saída'
+          : 'Chave de acesso indisponível',
+      }),
+    );
     if (podeCancelarNfeSefaz(ctx)) {
       acoes.push(acao({ id: 'cancelamento', grupo: 'fiscal', label: ACTION_LABELS.cancelarNfe }));
     }

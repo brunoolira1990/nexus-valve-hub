@@ -35,6 +35,8 @@ type Props = {
   consultaSefazLoading?: boolean;
   onCartaCorrecao?: () => void;
   cartaCorrecaoLoading?: boolean;
+  onGerarEntradaDevolucao?: () => void;
+  gerarEntradaDevolucaoLoading?: boolean;
   onCancelamento?: () => void;
   onInutilizacao?: () => void;
   onEnvioDanfeXml?: () => void;
@@ -152,6 +154,8 @@ export function NFeSaidaAcoesGruposPanel({
   consultaSefazLoading,
   onCartaCorrecao,
   cartaCorrecaoLoading,
+  onGerarEntradaDevolucao,
+  gerarEntradaDevolucaoLoading,
   onCancelamento,
   onInutilizacao,
   onEnvioDanfeXml,
@@ -285,6 +289,20 @@ export function NFeSaidaAcoesGruposPanel({
             onClick={onCartaCorrecao}
           >
             {cartaCorrecaoLoading ? <Loader2 className="h-3 w-3 animate-spin inline mr-1" /> : null}
+            {acao.label}
+          </button>
+        );
+      case 'gerar_entrada_devolucao':
+        return (
+          <button
+            key={acao.id}
+            type="button"
+            className="erp-btn-outline erp-btn-sm"
+            disabled={!acao.habilitada || gerarEntradaDevolucaoLoading || !onGerarEntradaDevolucao}
+            title={acao.title}
+            onClick={onGerarEntradaDevolucao}
+          >
+            {gerarEntradaDevolucaoLoading ? <Loader2 className="h-3 w-3 animate-spin inline mr-1" /> : null}
             {acao.label}
           </button>
         );

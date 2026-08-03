@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, ClipboardCheck, Loader2, Save, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { BotaoAtualizarImpostosNFe } from '@/components/fiscal/NFeSaidaAtualizarImpostosModal';
@@ -149,6 +150,7 @@ function SeveridadeBloco({
 }
 
 export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
+  const navigate = useNavigate();
   const [conf, setConf] = useState<NFeSaidaConferenciaPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [saveLoading, setSaveLoading] = useState(false);
@@ -703,6 +705,25 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
       throw err;
     } finally {
       setDescarteLoading(false);
+    }
+  };
+
+  const executarGerarEntradaDevolucao = async () => {
+    try {
+      const res = await nfeSaidasService.gerarEntradaDevolucao(nfeId);
+      if (!res.ok && !res.nf_entrada_id) {
+        toast.error(res.mensagem || res.detail || 'Não foi possível gerar a entrada própria.');
+        return;
+      }
+      toast.success(
+        res.ja_existia
+          ? res.mensagem || 'Entrada própria já existia — abrindo rascunho.'
+          : res.mensagem || 'Rascunho de entrada própria criado.',
+      );
+      onClose();
+      navigate(`/nfe-entrada?detalhe=${res.nf_entrada_id}`);
+    } catch (err) {
+      toast.error(apiErrorMessage(err, { fallback: 'Não foi possível gerar a entrada própria.' }));
     }
   };
 
@@ -1609,6 +1630,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                       onClick={() => {
                         if (acao.id === 'consulta_sefaz') setConsultaSefazOpen(true);
                         if (acao.id === 'carta_correcao') setCartaCorrecaoOpen(true);
+                        if (acao.id === 'gerar_entrada_devolucao') void executarGerarEntradaDevolucao();
                         if (acao.id === 'cancelamento') setCancelamentoOpen(true);
                         if (acao.id === 'inutilizacao') setInutilizacaoOpen(true);
                       }}
