@@ -2237,6 +2237,34 @@ class NFeSaidaHistoricaImportadaViewSet(viewsets.ReadOnlyModelViewSet):
             return NFeSaidaHistoricaImportadaListSerializer
         return NFeSaidaHistoricaImportadaSerializer
 
+    @action(detail=True, methods=['post'], url_path='gerar-entrada-devolucao')
+    def gerar_entrada_devolucao(self, request, pk=None):
+        """Cria rascunho de entrada própria (finNFe=4) a partir desta NF-e saída importada por XML."""
+        from apps.fiscal.nfe_entrada_from_saida_devolucao import (
+            NFeEntradaFromSaidaError,
+            gerar_entrada_devolucao_from_nfe_saida_historica,
+        )
+
+        nf = self.get_object()
+        try:
+            payload = gerar_entrada_devolucao_from_nfe_saida_historica(nf, usuario=request.user)
+        except NFeEntradaFromSaidaError as exc:
+            return response.Response(
+                {'ok': False, 'detail': str(exc), 'mensagem': str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as exc:
+            return response.Response(
+                {
+                    'ok': False,
+                    'detail': 'Erro ao gerar entrada própria a partir da NF-e importada.',
+                    'mensagem': str(exc),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        code = status.HTTP_200_OK if payload.get('ja_existia') else status.HTTP_201_CREATED
+        return response.Response(payload, status=code)
+
     def _base_historica_filtrada(self, request):
         try:
             di, df, meta = resolver_periodo(request.query_params)

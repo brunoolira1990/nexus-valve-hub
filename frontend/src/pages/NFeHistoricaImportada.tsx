@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { FileUp, FileCheck, Copy, AlertCircle, RefreshCw, Info, ClipboardList } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { FileUp, FileCheck, Copy, AlertCircle, RefreshCw, Info, ClipboardList, Undo2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { DfeClassificacaoBadges } from '@/components/fiscal/DfeClassificacaoBadges';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
@@ -87,9 +88,11 @@ const badgeStatusClass = (statusVisual: string) => {
 };
 
 const NFeHistoricaImportada = () => {
+  const navigate = useNavigate();
   const [lista, setLista] = useState<NFeSaidaHistoricaList[]>([]);
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState(false);
+  const [gerarEntradaBusy, setGerarEntradaBusy] = useState(false);
   const [ultimoResultado, setUltimoResultado] = useState<NFeHistoricaImportResultado | null>(null);
   const [erroUpload, setErroUpload] = useState<string | null>(null);
   const [detalhe, setDetalhe] = useState<NFeSaidaHistoricaDetalhe | null>(null);
@@ -208,6 +211,29 @@ const NFeHistoricaImportada = () => {
       setModalDetalhe(true);
     } catch (e) {
       setErroUpload(apiErrorMessage(e));
+    }
+  };
+
+  const gerarEntradaDevolucao = async () => {
+    if (!detalhe?.id) return;
+    setGerarEntradaBusy(true);
+    try {
+      const res = await nfeHistoricaImportadaService.gerarEntradaDevolucao(detalhe.id);
+      if (!res.ok && !res.nf_entrada_id) {
+        toast.error(res.mensagem || res.detail || 'Não foi possível gerar a entrada própria.');
+        return;
+      }
+      toast.success(
+        res.ja_existia
+          ? res.mensagem || 'Entrada própria já existia — abrindo rascunho.'
+          : res.mensagem || 'Rascunho de entrada própria criado.',
+      );
+      setModalDetalhe(false);
+      navigate(`/nfe-entrada?detalhe=${res.nf_entrada_id}`);
+    } catch (e) {
+      toast.error(apiErrorMessage(e, { fallback: 'Não foi possível gerar a entrada própria.' }));
+    } finally {
+      setGerarEntradaBusy(false);
     }
   };
 
@@ -1050,6 +1076,21 @@ const NFeHistoricaImportada = () => {
                     </pre>
                   </details>
                 ))}
+              </div>
+            )}
+
+            {!detalhe.cancelada && (
+              <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
+                <button
+                  type="button"
+                  className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1.5"
+                  disabled={gerarEntradaBusy}
+                  onClick={() => void gerarEntradaDevolucao()}
+                  title="Cria rascunho de entrada própria (finNFe=4) referenciando esta NF-e importada"
+                >
+                  <Undo2 className="h-3.5 w-3.5" />
+                  {gerarEntradaBusy ? 'Gerando…' : 'Gerar entrada própria (devolução)'}
+                </button>
               </div>
             )}
           </div>

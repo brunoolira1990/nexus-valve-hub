@@ -262,4 +262,15 @@ export const nfeHistoricaImportadaService = {
     (await api.get<NFeEventoPendenteApi[]>(`${base}eventos-pendentes/`, { params: { limit } })).data,
   reprocessarEventosPendentes: async () =>
     (await api.post<ReprocessarEventosPendentesResponse>(`${base}reprocessar-eventos-pendentes/`)).data,
+  gerarEntradaDevolucao: async (id: number) => {
+    const res = await api.post<{
+      ok: boolean;
+      ja_existia?: boolean;
+      nf_entrada_id: number;
+      numero?: string;
+      mensagem?: string;
+      detail?: string;
+    }>(`${base}${id}/gerar-entrada-devolucao/`, {}, { validateStatus: (s) => s >= 200 && s < 500 });
+    return res.data;
+  },
 };

@@ -8,7 +8,14 @@ from typing import Any
 
 from django.db import transaction
 
-from apps.fiscal.models import ItemNFeEntrada, ItemNFeSaida, NFeEntrada, NFeSaida
+from apps.fiscal.models import (
+    ItemNFeEntrada,
+    ItemNFeSaida,
+    ItemNFeSaidaHistoricaImportada,
+    NFeEntrada,
+    NFeSaida,
+    NFeSaidaHistoricaImportada,
+)
 from apps.fiscal.nfe_emissao.empresa_emitente import resolver_empresa_emitente_nfe
 from apps.fiscal.serializers import NFeEntradaSerializer, recalcular_valor_nf_entrada
 from apps.fiscal.snapshot_fiscal_helpers import (
@@ -18,6 +25,7 @@ from apps.fiscal.snapshot_fiscal_helpers import (
     get_ncm_snapshot,
     get_pis_snapshot,
 )
+from apps.produtos.models import Produto
 from apps.produtos.snapshot import build_produto_snapshot
 
 NAT_OP_DEVOLUCAO = 'Devolução de mercadoria'
@@ -27,6 +35,13 @@ MSG_SEM_ITENS = 'NF-e de saída sem itens para espelhar na entrada própria.'
 MSG_SEM_EMITENTE = 'Empresa emitente da NF-e de saída não resolvida.'
 MSG_SEM_CLIENTE = 'NF-e de saída sem cliente — necessário para destinatário da entrada própria.'
 MSG_CANCELADA = 'NF-e de saída cancelada não pode gerar entrada própria.'
+MSG_HIST_NAO_AUTORIZADA = (
+    'Gere a entrada própria apenas a partir de NF-e saída importada autorizada (não cancelada).'
+)
+MSG_HIST_SEM_PRODUTO = (
+    'Não foi possível vincular produto do cadastro a um ou mais itens do XML. '
+    'Cadastre/ajuste o código do produto (cProd) ou NCM único e tente novamente.'
+)
 
 
 class NFeEntradaFromSaidaError(ValueError):
@@ -138,15 +153,123 @@ def _saida_autorizada(nf: NFeSaida) -> bool:
     )
 
 
-def _buscar_entrada_existente(nf_saida: NFeSaida) -> NFeEntrada | None:
+def _buscar_entrada_existente(
+    *,
+    nfe_saida: NFeSaida | None = None,
+    nfe_historica: NFeSaidaHistoricaImportada | None = None,
+    chave: str = '',
+) -> NFeEntrada | None:
     qs = NFeEntrada.objects.filter(tipo_origem=NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_EMITIDA)
-    por_fk = qs.filter(nfe_saida_origem_id=nf_saida.pk).order_by('-id').first()
-    if por_fk:
-        return por_fk
-    chave = (nf_saida.chave_acesso or '').strip()
-    if len(chave) == 44:
-        return qs.filter(chave_nfe_referenciada=chave).order_by('-id').first()
+    if nfe_saida is not None:
+        por_fk = qs.filter(nfe_saida_origem_id=nfe_saida.pk).order_by('-id').first()
+        if por_fk:
+            return por_fk
+    if nfe_historica is not None:
+        por_hist = qs.filter(nfe_saida_historica_origem_id=nfe_historica.pk).order_by('-id').first()
+        if por_hist:
+            return por_hist
+    chave44 = _digits(chave, max_len=44)
+    if len(chave44) == 44:
+        return qs.filter(chave_nfe_referenciada=chave44).order_by('-id').first()
     return None
+
+
+def _resposta_entrada(entrada: NFeEntrada, *, ja_existia: bool, mensagem: str, itens_criados: int = 0) -> dict[str, Any]:
+    ser = NFeEntradaSerializer(entrada)
+    payload: dict[str, Any] = {
+        'ok': True,
+        'ja_existia': ja_existia,
+        'nf_entrada_id': entrada.pk,
+        'numero': entrada.numero,
+        'tipo_origem': entrada.tipo_origem,
+        'status_operacional': entrada.status_operacional,
+        'mensagem': mensagem,
+        'nfe_entrada': ser.data,
+    }
+    if not ja_existia:
+        payload['itens_criados'] = itens_criados
+    return payload
+
+
+def _primeiro_grupo_imposto(bloco: Any) -> dict[str, Any]:
+    if not isinstance(bloco, dict):
+        return {}
+    for _k, v in bloco.items():
+        if isinstance(v, dict):
+            return v
+        if isinstance(v, list) and v and isinstance(v[0], dict):
+            return v[0]
+    return {}
+
+
+def impostos_json_from_imposto_xml(imposto_json: dict[str, Any] | None) -> dict[str, Any]:
+    """Converte imposto_json do XML importado para shape da entrada própria."""
+    raw = imposto_json if isinstance(imposto_json, dict) else {}
+    icms_blk = raw.get('ICMS') if isinstance(raw.get('ICMS'), dict) else {}
+    pis_blk = raw.get('PIS') if isinstance(raw.get('PIS'), dict) else {}
+    cof_blk = raw.get('COFINS') if isinstance(raw.get('COFINS'), dict) else {}
+    icms = _primeiro_grupo_imposto(icms_blk)
+    pis = _primeiro_grupo_imposto(pis_blk)
+    cof = _primeiro_grupo_imposto(cof_blk)
+    return {
+        'icms': {
+            'cst': str(icms.get('CST') or icms.get('CSOSN') or '41'),
+            'orig': str(icms.get('orig') or '0'),
+            'base': icms.get('vBC'),
+            'aliquota': icms.get('pICMS'),
+            'valor': icms.get('vICMS'),
+        },
+        'pis': {
+            'cst': str(pis.get('CST') or '07'),
+            'base': pis.get('vBC'),
+            'aliquota': pis.get('pPIS'),
+            'valor': pis.get('vPIS'),
+        },
+        'cofins': {
+            'cst': str(cof.get('CST') or '07'),
+            'base': cof.get('vBC'),
+            'aliquota': cof.get('pCOFINS'),
+            'valor': cof.get('vCOFINS'),
+        },
+    }
+
+
+def _resolver_produto_de_prod_json(prod_json: dict[str, Any]) -> Produto | None:
+    c_prod = str(prod_json.get('cProd') or prod_json.get('cprod') or '').strip()
+    ncm = _digits(prod_json.get('NCM') or prod_json.get('ncm'), max_len=8)
+    if c_prod:
+        p = Produto.objects.filter(codigo_completo__iexact=c_prod).first()
+        if p:
+            return p
+        p = Produto.objects.filter(codigo_completo__icontains=c_prod).order_by('id').first()
+        if p:
+            return p
+    if ncm:
+        qs = Produto.objects.filter(ncm=ncm).order_by('id')
+        if qs.count() == 1:
+            return qs.first()
+    return None
+
+
+def _dec_prod(val: Any) -> Decimal:
+    if val is None or val == '':
+        return Decimal('0')
+    try:
+        return Decimal(str(val).replace(',', '.'))
+    except Exception:
+        return Decimal('0')
+
+
+def _historica_autorizada(nf: NFeSaidaHistoricaImportada) -> bool:
+    if nf.cancelada:
+        return False
+    st = (nf.status_documento or '').strip().lower()
+    if st in ('cancelada', 'cancelado'):
+        return False
+    cstat = (nf.cstat or '').strip()
+    if cstat and cstat not in ('100', '150'):
+        return False
+    return True
 
 
 @transaction.atomic
@@ -178,19 +301,13 @@ def gerar_entrada_devolucao_from_nfe_saida(
         raise NFeEntradaFromSaidaError(MSG_SEM_CHAVE)
     chave = _digits(chave, max_len=44)
 
-    existente = _buscar_entrada_existente(nf)
+    existente = _buscar_entrada_existente(nfe_saida=nf, chave=chave)
     if existente:
-        ser = NFeEntradaSerializer(existente)
-        return {
-            'ok': True,
-            'ja_existia': True,
-            'nf_entrada_id': existente.pk,
-            'numero': existente.numero,
-            'tipo_origem': existente.tipo_origem,
-            'status_operacional': existente.status_operacional,
-            'mensagem': 'Já existe entrada própria vinculada a esta NF-e de saída.',
-            'nfe_entrada': ser.data,
-        }
+        return _resposta_entrada(
+            existente,
+            ja_existia=True,
+            mensagem='Já existe entrada própria vinculada a esta NF-e de saída.',
+        )
 
     try:
         empresa = resolver_empresa_emitente_nfe(nf)
@@ -254,18 +371,138 @@ def gerar_entrada_devolucao_from_nfe_saida(
 
     recalcular_valor_nf_entrada(entrada)
     entrada.refresh_from_db()
-    ser = NFeEntradaSerializer(entrada)
-    return {
-        'ok': True,
-        'ja_existia': False,
-        'nf_entrada_id': entrada.pk,
-        'numero': entrada.numero,
-        'tipo_origem': entrada.tipo_origem,
-        'status_operacional': entrada.status_operacional,
-        'itens_criados': len(itens_saida),
-        'mensagem': (
+    return _resposta_entrada(
+        entrada,
+        ja_existia=False,
+        itens_criados=len(itens_saida),
+        mensagem=(
             'Rascunho de entrada própria (devolução) criado a partir da NF-e de saída. '
             'Revise e emita pela tela Entrada Própria.'
         ),
-        'nfe_entrada': ser.data,
-    }
+    )
+
+
+@transaction.atomic
+def gerar_entrada_devolucao_from_nfe_saida_historica(
+    nfe_historica: NFeSaidaHistoricaImportada,
+    *,
+    usuario=None,
+) -> dict[str, Any]:
+    """
+    Cria rascunho ENTRADA_PROPRIA_EMITIDA a partir de NF-e saída importada por XML.
+    Não transmite SEFAZ; não aplica estoque/financeiro.
+    """
+    del usuario
+    nf = (
+        NFeSaidaHistoricaImportada.objects.select_related('cliente', 'empresa_emitente')
+        .prefetch_related('itens')
+        .get(pk=nfe_historica.pk)
+    )
+
+    if not _historica_autorizada(nf):
+        raise NFeEntradaFromSaidaError(MSG_HIST_NAO_AUTORIZADA)
+
+    chave = _digits(nf.chave_acesso, max_len=44)
+    if len(chave) != 44:
+        raise NFeEntradaFromSaidaError(MSG_SEM_CHAVE)
+
+    existente = _buscar_entrada_existente(nfe_historica=nf, chave=chave)
+    if existente:
+        return _resposta_entrada(
+            existente,
+            ja_existia=True,
+            mensagem='Já existe entrada própria vinculada a esta NF-e importada.',
+        )
+
+    if not nf.empresa_emitente_id:
+        raise NFeEntradaFromSaidaError(MSG_SEM_EMITENTE)
+
+    cliente = nf.cliente
+    if cliente is None:
+        from apps.fiscal.nfe_import.service import _resolve_cliente
+
+        cliente = _resolve_cliente(nf.dest_json if isinstance(nf.dest_json, dict) else {})
+    if cliente is None:
+        raise NFeEntradaFromSaidaError(
+            'Cliente destinatário não encontrado no cadastro. '
+            'Vincule o CNPJ do destinatário do XML a um Cliente e tente novamente.',
+        )
+
+    itens_hist = list(nf.itens.all().order_by('n_item', 'id'))
+    if not itens_hist:
+        raise NFeEntradaFromSaidaError(MSG_SEM_ITENS)
+
+    faltando: list[str] = []
+    resolvidos: list[tuple[ItemNFeSaidaHistoricaImportada, Produto, dict[str, Any]]] = []
+    for item in itens_hist:
+        prod_json = item.prod_json if isinstance(item.prod_json, dict) else {}
+        produto = _resolver_produto_de_prod_json(prod_json)
+        if not produto:
+            label = str(prod_json.get('xProd') or prod_json.get('cProd') or f'item {item.n_item}')
+            faltando.append(f'{item.n_item}: {label}')
+            continue
+        resolvidos.append((item, produto, prod_json))
+    if faltando:
+        raise NFeEntradaFromSaidaError(f'{MSG_HIST_SEM_PRODUTO} Itens: {"; ".join(faltando[:8])}')
+
+    ambiente = (
+        NFeEntrada.AmbienteEmissao.HOMOLOGACAO
+        if (nf.tp_amb or '').strip() == '2'
+        else NFeEntrada.AmbienteEmissao.PRODUCAO
+    )
+    numero_ref = (nf.numero or str(nf.pk)).strip()
+
+    entrada = NFeEntrada.objects.create(
+        numero=f'EP-DEV-XML-{numero_ref}'[:64],
+        data=date.today(),
+        tipo_origem=NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_EMITIDA,
+        status_operacional=NFeEntrada.StatusOperacional.RASCUNHO,
+        ambiente_emissao=ambiente,
+        empresa_emitente_id=nf.empresa_emitente_id,
+        cliente_destinatario=cliente,
+        fornecedor=None,
+        fin_nfe='4',
+        nat_op=(nf.nat_op or NAT_OP_DEVOLUCAO)[:60] or NAT_OP_DEVOLUCAO,
+        chave_nfe_referenciada=chave,
+        nfe_saida_historica_origem=nf,
+        valor_total=Decimal('0'),
+    )
+
+    for idx, (item, produto, prod_json) in enumerate(resolvidos, start=1):
+        qtd = _dec_prod(prod_json.get('qCom') or prod_json.get('qTrib') or '1')
+        v_un = _dec_prod(prod_json.get('vUnCom') or prod_json.get('vUnTrib'))
+        v_prod = _dec_prod(prod_json.get('vProd'))
+        if v_un <= 0 and qtd > 0 and v_prod > 0:
+            v_un = (v_prod / qtd).quantize(Decimal('0.0001'))
+        if qtd <= 0:
+            qtd = Decimal('1')
+        ncm = _digits(prod_json.get('NCM') or prod_json.get('ncm') or getattr(produto, 'ncm', ''), max_len=8)
+        cfop_sai = _digits(prod_json.get('CFOP') or prod_json.get('cfop'), max_len=4)
+        unidade = str(prod_json.get('uCom') or prod_json.get('uTrib') or produto.unidade or 'UN').strip()[:6]
+        ItemNFeEntrada.objects.create(
+            nf=entrada,
+            produto=produto,
+            quantidade=qtd,
+            valor=v_un,
+            snapshot_produto=build_produto_snapshot(produto),
+            numero_item=item.n_item or idx,
+            ncm=ncm,
+            cfop=cfop_entrada_devolucao_from_saida(cfop_sai),
+            unidade=unidade or 'UN',
+            descricao_xml=str(prod_json.get('xProd') or produto.descricao or '')[:120],
+            impostos_json=impostos_json_from_imposto_xml(
+                item.imposto_json if isinstance(item.imposto_json, dict) else {},
+            ),
+        )
+
+    recalcular_valor_nf_entrada(entrada)
+    entrada.refresh_from_db()
+    return _resposta_entrada(
+        entrada,
+        ja_existia=False,
+        itens_criados=len(resolvidos),
+        mensagem=(
+            'Rascunho de entrada própria (devolução) criado a partir da NF-e importada por XML. '
+            'Revise e emita pela tela Entrada Própria.'
+        ),
+    )
