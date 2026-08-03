@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Loader2, ShieldAlert } from 'lucide-react';
+import { FileText, Loader2, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   AlertDialog,
@@ -14,6 +14,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PopupBlockedError } from '@/lib/downloadBlobFile';
 import {
   confirmacaoProducaoValida,
   montarPayloadEmitirProducao,
@@ -106,6 +107,25 @@ export function NFeEntradaEmissaoPanel({ nfe, onAtualizado }: Props) {
       return res;
     });
 
+  const abrirDanfe = async (modo: 'preview' | 'autorizado') => {
+    setBusy(modo === 'autorizado' ? 'DANFE autorizado' : 'Preview DANFE');
+    try {
+      if (modo === 'autorizado') {
+        await nfeEntradasService.visualizarDanfeAutorizado(nfe.id);
+      } else {
+        await nfeEntradasService.visualizarDanfePreview(nfe.id);
+      }
+    } catch (e) {
+      if (e instanceof PopupBlockedError) {
+        toast.error('Pop-up bloqueado. Permita janelas deste site para ver o DANFE.');
+      } else {
+        toast.error(apiErrorMessage(e, { fallback: 'Não foi possível abrir o DANFE.' }));
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const prodConfirmOk = confirmacaoProducaoValida(checkboxOk, textoConfirmacao);
 
   return (
@@ -185,6 +205,16 @@ export function NFeEntradaEmissaoPanel({ nfe, onAtualizado }: Props) {
               </button>
               <button
                 type="button"
+                className="erp-btn-outline erp-btn-sm text-xs inline-flex items-center gap-1"
+                disabled={!!busy}
+                onClick={() => void abrirDanfe('preview')}
+                title="Abre o DANFE de conferência (PDF). Requer numeração reservada."
+              >
+                <FileText className="h-3.5 w-3.5" />
+                {busy === 'Preview DANFE' ? 'Gerando…' : 'Preview DANFE'}
+              </button>
+              <button
+                type="button"
                 className="erp-btn-primary erp-btn-sm text-xs"
                 disabled={!!busy || autorizadaHomolog}
                 onClick={() => void emitirHomolog()}
@@ -227,6 +257,16 @@ export function NFeEntradaEmissaoPanel({ nfe, onAtualizado }: Props) {
               </button>
               <button
                 type="button"
+                className="erp-btn-outline erp-btn-sm text-xs inline-flex items-center gap-1"
+                disabled={!!busy}
+                onClick={() => void abrirDanfe('preview')}
+                title="Abre o DANFE de conferência (PDF). Reserve a numeração no ambiente de produção."
+              >
+                <FileText className="h-3.5 w-3.5" />
+                {busy === 'Preview DANFE' ? 'Gerando…' : 'Preview DANFE'}
+              </button>
+              <button
+                type="button"
                 className="erp-btn-primary erp-btn-sm text-xs"
                 disabled={!!busy || autorizadaProd}
                 onClick={() => {
@@ -241,9 +281,20 @@ export function NFeEntradaEmissaoPanel({ nfe, onAtualizado }: Props) {
           </div>
         </>
       ) : (
-        <p className="text-xs text-muted-foreground">
-          NF-e já autorizada ({autorizadaProd ? 'produção' : 'homologação'}). Emissão encerrada.
-        </p>
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">
+            NF-e já autorizada ({autorizadaProd ? 'produção' : 'homologação'}). Emissão encerrada.
+          </p>
+          <button
+            type="button"
+            className="erp-btn-outline erp-btn-sm text-xs inline-flex items-center gap-1"
+            disabled={!!busy}
+            onClick={() => void abrirDanfe('autorizado')}
+          >
+            <FileText className="h-3.5 w-3.5" />
+            {busy === 'DANFE autorizado' ? 'Gerando…' : 'Ver DANFE autorizado'}
+          </button>
+        </div>
       )}
 
       <AlertDialog open={modalProd} onOpenChange={setModalProd}>

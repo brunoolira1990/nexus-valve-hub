@@ -2296,9 +2296,11 @@ export interface ItemNFe {
   valor: number;
   corrida_id?: number;
   corrida_numero?: string;
+  numero_item?: number;
   ncm?: string;
   cfop?: string;
   unidade?: string;
+  descricao_xml?: string;
   impostos_json?: Record<string, unknown>;
 }
 

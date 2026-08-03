@@ -79,6 +79,8 @@ function RevisaoSecaoItens({ nfe }: { nfe: NFeEntrada }) {
               <thead>
                 <tr>
                   <th>Produto</th>
+                  <th>NCM</th>
+                  <th>CFOP</th>
                   <th className="text-right">Qtd</th>
                   <th className="text-right">Valor unit.</th>
                   <th className="text-right">Total</th>
@@ -88,6 +90,8 @@ function RevisaoSecaoItens({ nfe }: { nfe: NFeEntrada }) {
                 {nfe.itens.map((it) => (
                   <tr key={it.id}>
                     <td>{it.produto_nome || `Produto #${it.produto_id}`}</td>
+                    <td className="font-mono">{it.ncm || '—'}</td>
+                    <td className="font-mono font-semibold">{it.cfop || '—'}</td>
                     <td className="text-right nexus-numeric">{it.quantidade}</td>
                     <td className="text-right nexus-numeric">{formatMoneyBRL(it.valor)}</td>
                     <td className="text-right nexus-numeric">

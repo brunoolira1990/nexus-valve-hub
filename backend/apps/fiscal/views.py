@@ -300,6 +300,71 @@ class NFeEntradaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
             )
         return response.Response(payload)
 
+    def _resposta_danfe_entrada(self, request, *, autorizado: bool):
+        from django.http import HttpResponse
+
+        from apps.fiscal.nfe_entrada_emissao.danfe import (
+            NFeEntradaDanfeError,
+            gerar_danfe_autorizado_nfe_entrada,
+            gerar_preview_danfe_nfe_entrada,
+        )
+
+        nf = self.get_object()
+        try:
+            if autorizado:
+                pdf, meta = gerar_danfe_autorizado_nfe_entrada(nf)
+            else:
+                pdf, meta = gerar_preview_danfe_nfe_entrada(nf)
+        except NFeEntradaDanfeError as exc:
+            return response.Response(
+                {
+                    'detail': str(exc),
+                    'mensagem': str(exc),
+                    'bloqueado': True,
+                    'nf_entrada_id': nf.pk,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        except Exception as exc:
+            return response.Response(
+                {
+                    'detail': f'Não foi possível gerar o DANFE: {exc}',
+                    'mensagem': str(exc),
+                    'bloqueado': True,
+                    'nf_entrada_id': nf.pk,
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        if meta.get('bloqueado') or not pdf:
+            return response.Response(meta, status=status.HTTP_409_CONFLICT)
+        headers = {
+            'Content-Disposition': f'inline; filename="{meta["filename"]}"',
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
+            'Pragma': 'no-cache',
+            'X-Danfe-Renderer': str(meta.get('render_engine') or 'brazil_fiscal_report'),
+            'X-Danfe-Renderer-Oficial': 'BFR',
+        }
+        if meta.get('danfe_origem'):
+            headers['X-Danfe-Origem'] = str(meta.get('danfe_origem'))
+        if meta.get('danfe_renderer_label'):
+            headers['X-Danfe-Renderer-Label'] = str(meta.get('danfe_renderer_label'))
+        return HttpResponse(pdf, content_type='application/pdf', headers=headers)
+
+    @action(detail=True, methods=['get'], url_path='preview-danfe')
+    def preview_danfe(self, request, pk=None):
+        """DANFE de conferência da entrada própria (pré-emissão)."""
+        return self._resposta_danfe_entrada(request, autorizado=False)
+
+    @action(detail=True, methods=['get'], url_path='danfe-conferencia')
+    def danfe_conferencia(self, request, pk=None):
+        """Alias do preview DANFE entrada própria."""
+        return self._resposta_danfe_entrada(request, autorizado=False)
+
+    @action(detail=True, methods=['get'], url_path='danfe-autorizado')
+    def danfe_autorizado(self, request, pk=None):
+        """DANFE final da entrada própria autorizada na SEFAZ."""
+        return self._resposta_danfe_entrada(request, autorizado=True)
+
     @action(detail=True, methods=['post'], url_path='gerar-xml-oficial-emissao')
     def gerar_xml_oficial_emissao(self, request, pk=None):
         from apps.fiscal.nfe_entrada_emissao.xml_oficial import gerar_xml_oficial_nfe_entrada

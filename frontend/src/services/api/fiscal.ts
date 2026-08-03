@@ -151,6 +151,44 @@ export const nfeEntradasService = {
     (await api.get<{ ok?: boolean; bloqueado?: boolean; xml?: string; mensagem?: string }>(`${nfEnt}${id}/preview-xml-oficial/`, {
       validateStatus: (s) => s >= 200 && s < 500,
     })).data,
+  previewDanfeBlob: async (id: number) => {
+    const res = await api.get<Blob>(`${nfEnt}${id}/preview-danfe/`, {
+      responseType: 'blob',
+      params: { t: Date.now() },
+      headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+      validateStatus: (s) => s >= 200 && s < 500,
+    });
+    return resolveBlobDownload(
+      res,
+      `danfe-conferencia-entrada-${id}.pdf`,
+      'Não foi possível gerar o DANFE de conferência da entrada própria.',
+    );
+  },
+  danfeAutorizadoBlob: async (id: number) => {
+    const res = await api.get<Blob>(`${nfEnt}${id}/danfe-autorizado/`, {
+      responseType: 'blob',
+      params: { t: Date.now() },
+      headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+      validateStatus: (s) => s >= 200 && s < 500,
+    });
+    return resolveBlobDownload(
+      res,
+      `danfe-autorizado-entrada-${id}.pdf`,
+      'Não foi possível gerar o DANFE autorizado da entrada própria.',
+    );
+  },
+  visualizarDanfePreview: async (id: number) => {
+    await visualizarPdfEmNovaAba(async () => {
+      const { blob } = await nfeEntradasService.previewDanfeBlob(id);
+      return blob;
+    });
+  },
+  visualizarDanfeAutorizado: async (id: number) => {
+    await visualizarPdfEmNovaAba(async () => {
+      const { blob } = await nfeEntradasService.danfeAutorizadoBlob(id);
+      return blob;
+    });
+  },
   gerarXmlOficial: async (id: number) =>
     (await api.post<{ ok?: boolean; bloqueado?: boolean; xml?: string; mensagem?: string }>(`${nfEnt}${id}/gerar-xml-oficial-emissao/`)).data,
   emitirHomologacao: async (id: number) => {

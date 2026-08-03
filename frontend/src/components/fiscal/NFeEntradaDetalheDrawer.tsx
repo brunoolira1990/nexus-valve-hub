@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/drawer';
 import { StatusBadge } from '@/components/nexus/StatusBadge';
 import { NFeEntradaEmissaoPanel } from '@/components/fiscal/NFeEntradaEmissaoPanel';
+import { NFeEntradaEmitidaRevisaoFiscal } from '@/components/fiscal/NFeEntradaEmitidaRevisaoFiscal';
 import { formatDateBr } from '@/lib/dateBr';
 import { formatMoneyBRL } from '@/lib/money';
 import {
@@ -70,7 +71,7 @@ export function NFeEntradaDetalheDrawer({ nfeId, open, onClose, onChanged }: Pro
             </DrawerClose>
           </div>
           <p className="text-sm text-muted-foreground text-left mt-1">
-            Resumo operacional — identificação, status e emissão SEFAZ quando aplicável.
+            Resumo operacional, revisão fiscal (CFOP/itens) e emissão SEFAZ quando aplicável.
           </p>
         </DrawerHeader>
 
@@ -137,6 +138,15 @@ export function NFeEntradaDetalheDrawer({ nfeId, open, onClose, onChanged }: Pro
                   </p>
                 ) : null}
               </div>
+              {exibirPainelEmissaoEntrada(nfe) ? (
+                <NFeEntradaEmitidaRevisaoFiscal
+                  nfe={nfe}
+                  onAtualizado={async () => {
+                    load();
+                    onChanged?.();
+                  }}
+                />
+              ) : null}
               {exibirPainelEmissaoEntrada(nfe) ? (
                 <NFeEntradaEmissaoPanel
                   nfe={nfe}
