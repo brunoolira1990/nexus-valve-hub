@@ -403,7 +403,8 @@ def gerar_danfe_bfr_de_xml_string(
                     return pdf
             except Exception:
                 pass
-        raise DanfeBfrError(f'Não foi possível gerar o DANFE: {exc}') from exc
+        detalhe = str(exc).strip() or repr(exc)
+        raise DanfeBfrError(f'Não foi possível gerar o DANFE: {detalhe}') from exc
 
     if not pdf.startswith(b'%PDF'):
         raise DanfeBfrError('Saída não é um PDF válido.')

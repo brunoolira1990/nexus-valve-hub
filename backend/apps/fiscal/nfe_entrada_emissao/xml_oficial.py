@@ -65,8 +65,9 @@ def _build_icms_entrada(impostos: dict, linha: dict):
     from nfelib.nfe.bindings.v4_0 import nfe_v4_00 as nfe
 
     icms = impostos.get('icms') or {}
-    cst = _text(icms.get('cst') or icms.get('cst_icms') or icms.get('csosn'))
+    cst = (_text(icms.get('cst') or icms.get('cst_icms') or icms.get('csosn')) or '00').zfill(2)[:2]
     orig = _text(icms.get('orig')) or '0'
+    mod_bc = _text(icms.get('modalidade_bc')) or '3'
     wrap = nfe.Tnfe.InfNfe.Det.Imposto.Icms()
     if cst == '40':
         wrap.ICMS40 = nfe.Tnfe.InfNfe.Det.Imposto.Icms.Icms40(orig=orig, CST=cst)
@@ -76,13 +77,26 @@ def _build_icms_entrada(impostos: dict, linha: dict):
         wrap.ICMS50 = nfe.Tnfe.InfNfe.Det.Imposto.Icms.Icms50(orig=orig, CST=cst)
     elif cst == '60':
         wrap.ICMS60 = nfe.Tnfe.InfNfe.Det.Imposto.Icms.Icms60(orig=orig, CST=cst)
+    elif cst == '20':
+        p_red = _dec(icms.get('reducao_bc') or icms.get('p_red_bc') or icms.get('pRedBC'))
+        kwargs: dict[str, Any] = {
+            'orig': orig,
+            'CST': cst,
+            'modBC': mod_bc,
+            'vBC': _dec_field(icms.get('base')) or _dec(linha.get('v_prod')),
+            'pICMS': _dec_field(icms.get('aliquota')),
+            'vICMS': _dec_field(icms.get('valor')),
+        }
+        if p_red > 0:
+            kwargs['pRedBC'] = p_red
+        wrap.ICMS20 = nfe.Tnfe.InfNfe.Det.Imposto.Icms.Icms20(**kwargs)
     elif cst in ICMS_NT_CSTS:
         raise NFeEntradaXmlError(f'CST ICMS {cst} ainda não mapeado no builder de entrada.')
     else:
         wrap.ICMS00 = nfe.Tnfe.InfNfe.Det.Imposto.Icms.Icms00(
             orig=orig,
-            CST=cst.zfill(2)[:2],
-            modBC='3',
+            CST=cst,
+            modBC=mod_bc,
             vBC=_dec_field(icms.get('base')),
             pICMS=_dec_field(icms.get('aliquota')),
             vICMS=_dec_field(icms.get('valor')),
@@ -381,6 +395,8 @@ def montar_tnfe_entrada(
     if ibscbs_tot is not None:
         total_kw['IBSCBSTot'] = ibscbs_tot
     inf.total = nfe.Tnfe.InfNfe.Total(**total_kw)
+    # Obrigatório no schema e no DANFE BFR (KeyError se modFrete ausente).
+    inf.transp = nfe.Tnfe.InfNfe.Transp(modFrete='9')
     inf.pag = build_pag_bindings(nfe, tot)
 
     return nfe.Tnfe(infNFe=inf)
