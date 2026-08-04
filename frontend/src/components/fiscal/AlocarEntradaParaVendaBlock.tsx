@@ -26,13 +26,14 @@ export function AlocarEntradaParaVendaBlock({ itemConferenciaId, produtoId, onAt
   const [erro, setErro] = useState('');
   const [busy, setBusy] = useState(false);
   // Fechado por padrão: evita formulário alto em cada linha e montagem desnecessária do autocomplete.
-  // Opções de PV só são buscadas ao digitar (AsyncAutocomplete + debounce).
   const [aberto, setAberto] = useState(false);
   const [opcaoPv, setOpcaoPv] = useState<OpcaoPedidoVendaItemAlocacao | null>(null);
   const [quantidade, setQuantidade] = useState('');
   const [editId, setEditId] = useState<number | null>(null);
   const [editQty, setEditQty] = useState('');
   const [resumoCarregado, setResumoCarregado] = useState(false);
+  const [sugestoesPv, setSugestoesPv] = useState<OpcaoPedidoVendaItemAlocacao[]>([]);
+  const [sugestoesBusy, setSugestoesBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -51,19 +52,43 @@ export function AlocarEntradaParaVendaBlock({ itemConferenciaId, produtoId, onAt
   }, [itemConferenciaId]);
 
   // Resumo sob demanda: ao montar só se o operador abrir, ou após mutação.
-  // Não dispara busca de PV no mount.
   useEffect(() => {
     setResumo(null);
     setResumoCarregado(false);
     setErro('');
     setAberto(false);
     setOpcaoPv(null);
+    setSugestoesPv([]);
   }, [itemConferenciaId]);
 
   useEffect(() => {
     if (!aberto || resumoCarregado) return;
     void load();
   }, [aberto, resumoCarregado, load]);
+
+  // Produto já vinculado na conferência → listar PVs desse produto sem digitar código de novo.
+  useEffect(() => {
+    if (!aberto || !produtoId) {
+      setSugestoesPv([]);
+      return;
+    }
+    let cancelled = false;
+    setSugestoesBusy(true);
+    void alocacaoAtendimentoService
+      .opcoesPedidosVendaItens('', { limit: 20, produto_id: produtoId })
+      .then((list) => {
+        if (!cancelled) setSugestoesPv(list);
+      })
+      .catch(() => {
+        if (!cancelled) setSugestoesPv([]);
+      })
+      .finally(() => {
+        if (!cancelled) setSugestoesBusy(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [aberto, produtoId]);
 
   const buscarPvItens = useCallback(
     (term: string, limit?: number) =>
@@ -73,6 +98,14 @@ export function AlocarEntradaParaVendaBlock({ itemConferenciaId, produtoId, onAt
       }),
     [produtoId],
   );
+
+  const selecionarPv = (option: OpcaoPedidoVendaItemAlocacao) => {
+    setOpcaoPv(option);
+    const saldoDest = Number(option.saldo_destino || 0);
+    const saldoEnt = Number(resumo?.saldo_entrada || 0);
+    const sugerido = Math.min(saldoDest, saldoEnt);
+    if (sugerido > 0) setQuantidade(sugerido.toFixed(3));
+  };
 
   const alocar = async () => {
     if (!opcaoPv) {
@@ -227,24 +260,61 @@ export function AlocarEntradaParaVendaBlock({ itemConferenciaId, produtoId, onAt
 
       {aberto ? (
         <div className="space-y-1.5 pt-1">
+          {produtoId ? (
+            <div className="space-y-1">
+              <p className="text-[9px] text-muted-foreground">
+                Pedidos de Venda do mesmo produto (já vinculado na conferência):
+              </p>
+              {sugestoesBusy ? (
+                <p className="text-[9px] text-muted-foreground">Carregando pedidos…</p>
+              ) : sugestoesPv.length === 0 ? (
+                <p className="text-[9px] text-muted-foreground">
+                  Nenhum Pedido de Venda aberto para este produto.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-1 max-h-36 overflow-auto">
+                  {sugestoesPv.map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`text-left rounded border px-1.5 py-1 text-[9px] hover:bg-background ${
+                        opcaoPv?.id === opt.id
+                          ? 'border-primary bg-background'
+                          : 'border-border/60 bg-background/50'
+                      }`}
+                      disabled={busy}
+                      onClick={() => selecionarPv(opt)}
+                    >
+                      <div className="font-medium text-foreground line-clamp-1">{opt.label}</div>
+                      <div className="text-muted-foreground">
+                        Necessidade {opt.quantidade_necessaria}
+                        {opt.unidade_necessidade ? ` ${opt.unidade_necessidade}` : ''} · Saldo{' '}
+                        {opt.saldo_destino}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
           <AsyncAutocomplete<OpcaoPedidoVendaItemAlocacao>
             value={opcaoPv?.id ?? null}
             selectedOption={opcaoPv}
-            placeholder="Buscar item de Pedido de Venda…"
-            minChars={2}
+            placeholder={
+              produtoId
+                ? 'Filtrar por nº do PV ou cliente…'
+                : 'Buscar item de Pedido de Venda…'
+            }
+            minChars={produtoId ? 0 : 2}
             search={buscarPvItens}
             getOptionValue={(o) => o.id}
             getOptionLabel={(o) => o.label}
             onChange={(_v, option) => {
-              setOpcaoPv(option ?? null);
-              if (option) {
-                const saldoDest = Number(option.saldo_destino || 0);
-                const saldoEnt = Number(resumo?.saldo_entrada || 0);
-                const sugerido = Math.min(saldoDest, saldoEnt);
-                if (sugerido > 0) setQuantidade(sugerido.toFixed(3));
-              }
+              if (option) selecionarPv(option);
+              else setOpcaoPv(null);
             }}
             inputClassName="h-7 text-[10px]"
+            emptyMessage="Nenhum Pedido de Venda encontrado para este produto."
           />
           {opcaoPv ? (
             <div className="text-[9px] text-muted-foreground space-y-0.5">

@@ -154,14 +154,21 @@ describe('AlocarEntradaParaVendaBlock — lazy load e erro', () => {
     expect(screen.queryByPlaceholderText(/Pedido de Venda/i)).not.toBeInTheDocument();
   });
 
-  it('ao Abrir: carrega resumo uma vez; formulário aparece; PV só sob digitação', async () => {
+  it('ao Abrir: carrega resumo e lista PVs do mesmo produto (sem digitar código)', async () => {
     vi.mocked(alocacaoAtendimentoService.resumoEntradaVenda).mockResolvedValue(resumoBase);
+    vi.mocked(alocacaoAtendimentoService.opcoesPedidosVendaItens).mockResolvedValue([opcaoPv]);
     render(<AlocarEntradaParaVendaBlock itemConferenciaId={10} produtoId={1} />);
     abrirBloco();
     await waitFor(() => expect(alocacaoAtendimentoService.resumoEntradaVenda).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getByText('Sem alocação')).toBeInTheDocument());
-    expect(screen.getByPlaceholderText(/Pedido de Venda/i)).toBeInTheDocument();
-    expect(alocacaoAtendimentoService.opcoesPedidosVendaItens).not.toHaveBeenCalled();
+    expect(screen.getByPlaceholderText(/Filtrar por nº do PV ou cliente/i)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(alocacaoAtendimentoService.opcoesPedidosVendaItens).toHaveBeenCalledWith(
+        '',
+        expect.objectContaining({ produto_id: 1 }),
+      ),
+    );
+    expect(await screen.findByText(opcaoPv.label)).toBeInTheDocument();
   });
 
   it('erro na API de resumo → bloco mostra erro e permanece visível', async () => {
@@ -183,12 +190,12 @@ describe('AlocarEntradaParaVendaBlock — lazy load e erro', () => {
 
     render(<AlocarEntradaParaVendaBlock itemConferenciaId={10} produtoId={1} />);
     abrirBloco();
-    const input = await screen.findByPlaceholderText(/Pedido de Venda/i);
+    const input = await screen.findByPlaceholderText(/Filtrar por nº do PV ou cliente/i);
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: 'PV' } });
     // Debounce de 300ms do AsyncAutocomplete
     await waitFor(() =>
-      expect(alocacaoAtendimentoService.opcoesPedidosVendaItens).toHaveBeenCalledTimes(1),
+      expect(alocacaoAtendimentoService.opcoesPedidosVendaItens).toHaveBeenCalled(),
     );
     fireEvent.click(await screen.findByText(opcaoPv.label));
     fireEvent.click(screen.getByText('Salvar alocação'));
