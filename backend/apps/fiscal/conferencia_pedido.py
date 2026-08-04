@@ -738,6 +738,12 @@ def aplicar_pos_save_item_conferencia(
     """Recalcula estoque (se produto), divergências e status operacional da linha."""
     alertas: list[str] = []
 
+    # Vincular item do pedido já implica o produto do pedido — não exigir escolha duplicada.
+    if not item_conf.produto_id and item_conf.item_pedido_compra_id:
+        item_pc = item_conf.item_pedido_compra
+        if item_pc and item_pc.produto_id:
+            item_conf.produto_id = item_pc.produto_id
+
     if item_conf.produto_id:
         produto = item_conf.produto
         unidade_destino = (

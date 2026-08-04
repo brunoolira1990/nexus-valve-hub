@@ -74,6 +74,7 @@ import {
   computarProgressoConferencia,
   filtrarItensOperador,
   itemPendenteProduto,
+  patchVinculoItemPedido,
   proximoPassoOperador,
 } from '@/lib/conferenciaNfeOperadorUi';
 import type {
@@ -181,6 +182,33 @@ export function NFeEntradaConferenciaPanel({
   useEffect(() => {
     void load().catch((e) => setErro(apiErrorMessage(e)));
   }, [nfId]);
+
+  const produtoIdDoItemPedido = (itemPedidoId: number | null | undefined): number | null => {
+    if (!itemPedidoId || !pedidoSelecionado) return null;
+    const ipc = pedidoSelecionado.itens.find((row) => row.id === itemPedidoId);
+    return ipc?.produto_id ?? null;
+  };
+
+  const vincularItemPedido = (item: ItemConferenciaNFeEntrada, itemPedidoId: number | null) => {
+    const produtoId = produtoIdDoItemPedido(itemPedidoId);
+    if (produtoId && !item.produto_id) {
+      const ipc = pedidoSelecionado?.itens.find((row) => row.id === itemPedidoId);
+      setProdutoCache((m) => {
+        if (m.has(produtoId)) return m;
+        const next = new Map(m);
+        next.set(produtoId, {
+          id: produtoId,
+          codigo_completo: '',
+          descricao: ipc?.produto_nome || '',
+        } as Produto);
+        return next;
+      });
+      void produtosService.getById(produtoId).then((p) => {
+        if (p) setProdutoCache((m) => new Map(m).set(p.id, p));
+      });
+    }
+    updateItem(item.id, patchVinculoItemPedido({ item, itemPedidoId, produtoIdDoPedido: produtoId }));
+  };
 
   const notifyUpdated = () => {
     onUpdated?.();
@@ -1003,8 +1031,8 @@ export function NFeEntradaConferenciaPanel({
               {modoTecnico ? <th>NCM/CFOP</th> : null}
               <th>{modoTecnico ? 'Fiscal' : 'Situação'}</th>
               <th>Qtd. nota</th>
-              <th>Item do pedido</th>
-              <th>Produto no sistema</th>
+              <th>Linha do pedido</th>
+              <th>Produto (estoque)</th>
               <th>Corrida/Lote</th>
               <th>{modoTecnico ? 'Estoque calc.' : 'Conversão'}</th>
               <th>Status</th>
@@ -1181,7 +1209,7 @@ export function NFeEntradaConferenciaPanel({
                             <button
                               type="button"
                               className="erp-btn-outline erp-btn-sm ml-2 mt-1"
-                              onClick={() => updateItem(it.id, { item_pedido_compra_id: melhor.id })}
+                              onClick={() => vincularItemPedido(it, melhor.id)}
                             >
                               Aplicar sugestão
                             </button>
@@ -1197,9 +1225,7 @@ export function NFeEntradaConferenciaPanel({
                         className="erp-select w-full"
                         value={it.item_pedido_compra_id ?? ''}
                         onChange={(e) =>
-                          updateItem(it.id, {
-                            item_pedido_compra_id: e.target.value ? Number(e.target.value) : null,
-                          })
+                          vincularItemPedido(it, e.target.value ? Number(e.target.value) : null)
                         }
                       >
                         <option value="">Sem vínculo com pedido</option>

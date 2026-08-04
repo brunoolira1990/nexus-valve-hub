@@ -114,7 +114,12 @@ def converter_quantidade_produto(
     if qtd < 0:
         raise ConversaoErro("Quantidade deve ser maior ou igual a zero.")
     if not produto.get_usa_conversao_dimensional_efetivo() and uo != ud:
-        raise ConversaoErro("Produto sem conversão dimensional habilitada.")
+        raise ConversaoErro(
+            "Produto sem conversão dimensional habilitada. "
+            "No cadastro do produto, marque «Usa conversão dimensional?» "
+            "e preencha os fatores (peso por peça/metro etc.). "
+            f"Unidade da NF: {uo}; estoque: {ud}."
+        )
 
     if uo == ud:
         quantidade_destino = qtd

@@ -107,3 +107,19 @@ export function filtrarItensOperador(
   if (!soPendencias) return itens;
   return itens.filter((it) => itemComProblemaOperador(it));
 }
+
+/** Ao vincular item do pedido, preenche produto se ainda estiver vazio. */
+export function patchVinculoItemPedido(params: {
+  item: Pick<ItemConferenciaNFeEntrada, 'produto_id'>;
+  itemPedidoId: number | null;
+  produtoIdDoPedido: number | null | undefined;
+}): Partial<ItemConferenciaNFeEntrada> {
+  const { item, itemPedidoId, produtoIdDoPedido } = params;
+  const patch: Partial<ItemConferenciaNFeEntrada> = {
+    item_pedido_compra_id: itemPedidoId,
+  };
+  if (itemPedidoId && !item.produto_id && produtoIdDoPedido) {
+    patch.produto_id = produtoIdDoPedido;
+  }
+  return patch;
+}
