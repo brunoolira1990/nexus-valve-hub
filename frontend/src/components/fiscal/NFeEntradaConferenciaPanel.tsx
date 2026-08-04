@@ -448,28 +448,16 @@ export function NFeEntradaConferenciaPanel({
               progresso.fiscalBloqueado > 0 ||
               progresso.fiscalSemRegra > 0 ||
               progresso.divergentes > 0) && (
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {progresso.produtosFaltando > 0 ? (
-                  <span className="erp-badge-warning text-[10px]">
-                    Falta produto: {progresso.produtosFaltando}
-                  </span>
-                ) : null}
-                {progresso.fiscalBloqueado > 0 ? (
-                  <span className="erp-badge-danger text-[10px]">
-                    Fiscal bloqueado: {progresso.fiscalBloqueado}
-                  </span>
-                ) : null}
-                {progresso.fiscalSemRegra > 0 ? (
-                  <span className="erp-badge-warning text-[10px]">
-                    Sem regra fiscal: {progresso.fiscalSemRegra}
-                  </span>
-                ) : null}
-                {progresso.divergentes > 0 ? (
-                  <span className="erp-badge-warning text-[10px]">
-                    Diferença no pedido: {progresso.divergentes}
-                  </span>
-                ) : null}
-              </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                {[
+                  progresso.produtosFaltando > 0 ? `${progresso.produtosFaltando} sem produto` : null,
+                  progresso.fiscalBloqueado > 0 ? `${progresso.fiscalBloqueado} fiscal bloqueado` : null,
+                  progresso.fiscalSemRegra > 0 ? `${progresso.fiscalSemRegra} sem regra` : null,
+                  progresso.divergentes > 0 ? `${progresso.divergentes} com diferença no pedido` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </p>
             )}
           </div>
         </div>
@@ -995,30 +983,64 @@ export function NFeEntradaConferenciaPanel({
         </p>
       ) : null}
       {dados ? (
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
-          <div className="flex flex-wrap items-center gap-3 text-sm">
-            <label className="inline-flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={soPendencias}
-                onChange={(e) => setSoPendencias(e.target.checked)}
-              />
-              <span>Só pendências</span>
-            </label>
-            <label className="inline-flex items-center gap-2 cursor-pointer text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={modoTecnico}
-                onChange={(e) => setModoTecnico(e.target.checked)}
-              />
-              <span>Modo técnico</span>
-            </label>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-md border border-border/70 bg-muted/20 px-3 py-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <div
+              className="inline-flex rounded-md border border-border bg-background p-0.5 shadow-sm"
+              role="group"
+              aria-label="Exibir linhas"
+            >
+              <button
+                type="button"
+                className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+                  !soPendencias
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                aria-pressed={!soPendencias}
+                onClick={() => setSoPendencias(false)}
+              >
+                Todas
+              </button>
+              <button
+                type="button"
+                className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+                  soPendencias
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                aria-pressed={soPendencias}
+                onClick={() => setSoPendencias(true)}
+              >
+                Pendências
+                {progresso.produtosFaltando +
+                  progresso.divergentes +
+                  progresso.fiscalBloqueado +
+                  progresso.fiscalSemRegra >
+                0
+                  ? ` (${itensVisiveis.length})`
+                  : ''}
+              </button>
+            </div>
+            <button
+              type="button"
+              className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
+                modoTecnico
+                  ? 'border-primary/40 bg-primary/10 text-foreground'
+                  : 'border-transparent text-muted-foreground hover:border-border hover:bg-background'
+              }`}
+              aria-pressed={modoTecnico}
+              onClick={() => setModoTecnico((v) => !v)}
+            >
+              {modoTecnico ? 'Ocultar detalhes técnicos' : 'Detalhes técnicos'}
+            </button>
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-[11px] text-muted-foreground tabular-nums">
             {soPendencias
-              ? `Mostrando ${itensVisiveis.length} de ${dados.itens.length} linha(s)`
-              : `${dados.itens.length} linha(s)`}
-            {soPendencias && itensVisiveis.length === 0 ? ' — nenhuma pendência' : ''}
+              ? itensVisiveis.length === 0
+                ? 'Nenhuma pendência'
+                : `${itensVisiveis.length} de ${dados.itens.length} linhas`
+              : `${dados.itens.length} linhas`}
           </p>
         </div>
       ) : null}
