@@ -744,6 +744,100 @@ def montar_resumo_elegibilidade_estoque(
     return resumo
 
 
+def sanear_conversao_unidade_peca_item(
+    item_conf: ItemNFeEntradaConferencia,
+    conferencia: NFeEntradaConferencia,
+    *,
+    persistir: bool = True,
+) -> bool:
+    """Corrige linhas em que NF/estoque/pedido misturam UN↔PC e a qty ficou 0.
+
+    Retorna True se houve alteração persistida (ou que seria persistida).
+    """
+    from apps.produtos.conversao_medidas import (
+        normalizar_unidade_medida,
+        unidades_medidas_equivalentes,
+    )
+
+    if not item_conf.produto_id or item_conf.status == item_conf.Status.IGNORADO:
+        return False
+
+    produto = item_conf.produto
+    if not produto:
+        return False
+
+    # Composição física / equivalência explícita: não interferir.
+    from apps.fiscal.rastreabilidade_conferencia import item_usa_equivalencia_entrada
+
+    if item_usa_equivalencia_entrada(item_conf):
+        return False
+    if produto.get_controla_composicao_fisica_efetivo():
+        return False
+
+    u_nf = item_conf.unidade_nf or ''
+    u_dest = normalizar_unidade_medida(
+        produto.get_unidade_estoque_efetiva() or produto.unidade or u_nf or 'PC'
+    ) or 'PC'
+    if not unidades_medidas_equivalentes(u_nf, u_dest):
+        return False
+
+    q_nf = _dec(item_conf.quantidade_nf or 0)
+    q_calc = item_conf.quantidade_estoque_calculada
+    precisa_qty = q_calc is None or _dec(q_calc) <= 0
+    tem_div_unidade = 'unidade_diferente' in (item_conf.divergencias or [])
+    alertas = list(item_conf.alertas or [])
+    alertas_limpos = [
+        a
+        for a in alertas
+        if 'conversão dimensional' not in (a or '').lower()
+        and 'conversao dimensional' not in (a or '').lower()
+    ]
+    tem_alerta_conv = len(alertas_limpos) != len(alertas)
+
+    if not (precisa_qty or tem_div_unidade or tem_alerta_conv):
+        return False
+
+    if precisa_qty and q_nf > 0:
+        item_conf.quantidade_estoque_calculada = q_nf
+    item_conf.unidade_estoque_calculada = u_dest
+    item_conf.alertas = alertas_limpos
+
+    divergencias, div_alertas = calcular_divergencias_item_conferencia(item_conf, conferencia)
+    item_conf.divergencias = list(dict.fromkeys(divergencias))
+    if div_alertas:
+        merged = list(item_conf.alertas or [])
+        for msg in div_alertas:
+            if msg not in merged:
+                merged.append(msg)
+        item_conf.alertas = merged
+
+    if item_conf.status != item_conf.Status.IGNORADO:
+        item_conf.status = calcular_status_operacional_item_conferencia(item_conf)
+
+    if persistir:
+        item_conf.save(
+            update_fields=[
+                'quantidade_estoque_calculada',
+                'unidade_estoque_calculada',
+                'alertas',
+                'divergencias',
+                'status',
+                'atualizado_em',
+            ]
+        )
+    return True
+
+
+def sanear_conversao_unidade_peca_conferencia(conferencia: NFeEntradaConferencia) -> int:
+    """Sanea todas as linhas da conferência. Retorna quantas foram corrigidas."""
+    n = 0
+    qs = conferencia.itens.select_related('produto', 'produto__familia', 'item_pedido_compra').all()
+    for item in qs:
+        if sanear_conversao_unidade_peca_item(item, conferencia, persistir=True):
+            n += 1
+    return n
+
+
 def aplicar_pos_save_item_conferencia(
     item_conf: ItemNFeEntradaConferencia,
     conferencia: NFeEntradaConferencia,

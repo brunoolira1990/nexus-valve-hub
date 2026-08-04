@@ -2839,6 +2839,9 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
             conferencia = self._get_or_build_conferencia(nf)
             conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
             self._normalizar_equivalencias_legado_conferencia(conferencia)
+            from apps.fiscal.conferencia_pedido import sanear_conversao_unidade_peca_conferencia
+
+            sanear_conversao_unidade_peca_conferencia(conferencia)
             conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
             return response.Response(NFeEntradaConferenciaSerializer(conferencia).data)
         except Exception as exc:  # noqa: BLE001

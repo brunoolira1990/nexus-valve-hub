@@ -667,6 +667,12 @@ def alocar_entrada_para_venda(
             'Vincule o produto interno na conferência antes de alocar para venda.',
         )
 
+    # Se a linha ficou com 0.000 PC por UN×PC, corrige antes de validar saldo.
+    from apps.fiscal.conferencia_pedido import sanear_conversao_unidade_peca_item
+
+    sanear_conversao_unidade_peca_item(item_conf, item_conf.conferencia, persistir=True)
+    item_conf.refresh_from_db()
+
     pvi = ItemPedidoVenda.objects.select_related('pedido', 'pedido__cliente', 'produto').get(
         pk=pedido_venda_item_id,
     )
