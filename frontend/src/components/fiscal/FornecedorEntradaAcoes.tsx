@@ -132,7 +132,7 @@ export function FornecedorEntradaAcoes({
         </ul>
       ) : null}
 
-      <Modal open={modalCadastro} onClose={() => setModalCadastro(false)} title="Cadastrar fornecedor">
+      <Modal isOpen={modalCadastro} onClose={() => setModalCadastro(false)} title="Cadastrar fornecedor">
         <div className="grid gap-3 sm:grid-cols-2 text-sm">
           <label className="sm:col-span-2">
             <span className="text-xs text-muted-foreground">Razão social *</span>
@@ -189,7 +189,7 @@ export function FornecedorEntradaAcoes({
         </div>
       </Modal>
 
-      <Modal open={modalVincular} onClose={() => setModalVincular(false)} title="Vincular fornecedor existente">
+      <Modal isOpen={modalVincular} onClose={() => setModalVincular(false)} title="Vincular fornecedor existente">
         <FornecedorSearchSelect
           valueId={fornecedorSel?.id ?? null}
           selectedFornecedor={fornecedorSel}
