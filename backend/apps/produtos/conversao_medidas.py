@@ -14,6 +14,28 @@ class ConversaoErro(ValueError):
     pass
 
 
+# Sinônimos de peça/unidade contável — NF e pedido misturam UN/PC com frequência.
+_UNIDADES_PECA = frozenset({
+    'PC', 'UN', 'UND', 'UNID', 'PÇ', 'PZA', 'PECA', 'PEÇA', 'PÇS', 'PCS',
+})
+
+
+def normalizar_unidade_medida(unidade: str | None) -> str:
+    """Normaliza unidade para comparação/conversão (UN/UND/PÇ → PC)."""
+    u = (unidade or '').strip().upper()
+    if not u:
+        return ''
+    if u in _UNIDADES_PECA:
+        return 'PC'
+    return u
+
+
+def unidades_medidas_equivalentes(a: str | None, b: str | None) -> bool:
+    na = normalizar_unidade_medida(a)
+    nb = normalizar_unidade_medida(b)
+    return bool(na and nb and na == nb)
+
+
 def _dec(value) -> Decimal:
     if isinstance(value, Decimal):
         return value
@@ -109,8 +131,8 @@ def converter_quantidade_produto(
     unidade_destino: str,
 ) -> ResultadoConversao:
     qtd = _dec(quantidade)
-    uo = (unidade_origem or "").upper()
-    ud = (unidade_destino or "").upper()
+    uo = normalizar_unidade_medida(unidade_origem)
+    ud = normalizar_unidade_medida(unidade_destino)
     if qtd < 0:
         raise ConversaoErro("Quantidade deve ser maior ou igual a zero.")
     if not produto.get_usa_conversao_dimensional_efetivo() and uo != ud:
@@ -118,7 +140,8 @@ def converter_quantidade_produto(
             "Produto sem conversão dimensional habilitada. "
             "No cadastro do produto, marque «Usa conversão dimensional?» "
             "e preencha os fatores (peso por peça/metro etc.). "
-            f"Unidade da NF: {uo}; estoque: {ud}."
+            f"Unidade da NF: {uo or (unidade_origem or '').upper()}; "
+            f"estoque: {ud or (unidade_destino or '').upper()}."
         )
 
     if uo == ud:

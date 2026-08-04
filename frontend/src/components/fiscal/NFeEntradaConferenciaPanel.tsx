@@ -1161,9 +1161,10 @@ export function NFeEntradaConferenciaPanel({
                             >
                               {labelElegibilidadeEstoque(it.elegibilidade_estoque.status)}
                             </span>
-                            {modoTecnico && (it.elegibilidade_estoque.mensagens || []).length > 0 ? (
+                            {((modoTecnico || it.elegibilidade_estoque.status === 'BLOQUEADO') &&
+                              (it.elegibilidade_estoque.mensagens || []).length > 0) ? (
                               <p
-                                className="text-[9px] text-muted-foreground line-clamp-2"
+                                className="text-[9px] text-muted-foreground line-clamp-3"
                                 title={it.elegibilidade_estoque.mensagens.join(' ')}
                               >
                                 {it.elegibilidade_estoque.mensagens[0]}

@@ -436,7 +436,9 @@ def calcular_divergencias_item_conferencia(
         if item_pc:
             if item_conf.produto_id and item_pc.produto_id != item_conf.produto_id:
                 divergencias.append('produto_diferente_pedido')
-            if (item_pc.unidade_negociada or '').upper() != (item_conf.unidade_nf or '').upper():
+            from apps.produtos.conversao_medidas import unidades_medidas_equivalentes
+
+            if not unidades_medidas_equivalentes(item_pc.unidade_negociada, item_conf.unidade_nf):
                 divergencias.append('unidade_diferente')
             q_pedido = _dec(item_pc.quantidade_negociada or item_pc.quantidade)
             soma_nf = _soma_quantidade_nf_vinculada_item_pedido(conferencia, item_pc.id)
@@ -635,7 +637,18 @@ def avaliar_elegibilidade_estoque_item_conferencia(
         bloqueado = True
 
     if bool(item_conf.divergencias) and not divergencias_aceitas:
-        mensagens.append('Existem divergências operacionais não aceitas.')
+        labels = {
+            'produto_diferente_pedido': 'produto diferente do pedido',
+            'unidade_diferente': 'unidade diferente do pedido',
+            'quantidade_diferente': 'quantidade diferente do pedido',
+            'preco_diferente': 'preço diferente do pedido',
+            'ncm_divergente_nf_produto': 'NCM da NF diferente do produto',
+        }
+        detalhe = ', '.join(labels.get(d, d) for d in (item_conf.divergencias or []))
+        if detalhe:
+            mensagens.append(f'Existem divergências operacionais não aceitas: {detalhe}.')
+        else:
+            mensagens.append('Existem divergências operacionais não aceitas.')
         motivos.append('divergencias_operacionais')
         bloqueado = True
 
