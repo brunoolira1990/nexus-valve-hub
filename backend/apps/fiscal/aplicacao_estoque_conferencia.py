@@ -41,6 +41,7 @@ from apps.fiscal.nfe_entrada_data_entrada import (
     datetime_operacional_data_entrada,
     resolver_data_entrada_conferencia,
 )
+from apps.fiscal.pedido_compra_baixa import aplicar_baixa_pedido_compra_conferencia
 from apps.regras_fiscais.entrada_fiscal import (
     avaliar_item_entrada_fiscal,
     carregar_regras_fiscais_entrada_ativas,
