@@ -70,6 +70,12 @@ import {
   itemControlaComposicaoFisica,
   itemTipoComposicaoFisica,
 } from '@/components/fiscal/EquivalenciaEntradaEditor';
+import {
+  computarProgressoConferencia,
+  filtrarItensOperador,
+  itemPendenteProduto,
+  proximoPassoOperador,
+} from '@/lib/conferenciaNfeOperadorUi';
 import type {
   ItemConferenciaNFeEntrada,
   NFeEntradaConferencia,
@@ -99,9 +105,11 @@ export function NFeEntradaConferenciaPanel({
   const [erro, setErro] = useState('');
   const [avisoPedido, setAvisoPedido] = useState('');
   const [busy, setBusy] = useState(false);
-  const [resumoAberto, setResumoAberto] = useState(true);
-  const [resumoFiscalAberto, setResumoFiscalAberto] = useState(true);
-  const [resumoElegibilidadeAberto, setResumoElegibilidadeAberto] = useState(true);
+  const [resumoAberto, setResumoAberto] = useState(false);
+  const [resumoFiscalAberto, setResumoFiscalAberto] = useState(false);
+  const [resumoElegibilidadeAberto, setResumoElegibilidadeAberto] = useState(false);
+  const [soPendencias, setSoPendencias] = useState(true);
+  const [modoTecnico, setModoTecnico] = useState(false);
   const [equivalenciasAberto, setEquivalenciasAberto] = useState(true);
   const [eqBusy, setEqBusy] = useState(false);
   const [modalAplicarOpen, setModalAplicarOpen] = useState(false);
@@ -148,6 +156,13 @@ export function NFeEntradaConferenciaPanel({
   const pedidoSelecionado = useMemo(
     () => (dados?.pedido_compra_id ? pedidos.find((p) => p.id === dados.pedido_compra_id) : undefined),
     [dados?.pedido_compra_id, pedidos],
+  );
+
+  const progresso = useMemo(() => computarProgressoConferencia(dados), [dados]);
+  const proximoPasso = useMemo(() => proximoPassoOperador(dados, progresso), [dados, progresso]);
+  const itensVisiveis = useMemo(
+    () => filtrarItensOperador(dados?.itens ?? [], soPendencias),
+    [dados?.itens, soPendencias],
   );
 
   const load = async () => {
@@ -364,22 +379,80 @@ export function NFeEntradaConferenciaPanel({
     }
   };
 
+  const pctProdutos =
+    progresso.itensAtivos > 0
+      ? Math.round((progresso.produtosOk / progresso.itensAtivos) * 100)
+      : 0;
+
   return (
     <div>
-      {!embedded ? <PageHeader title="Conferência NF-e de Entrada" /> : null}
-      {!embedded ? (
-      <div className="mb-4 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
-        Revisão segura da NF-e importada: salvar ou finalizar a conferência não gera contas a pagar, não movimenta estoque e não
-        concilia atendimento automaticamente. A aplicação de estoque físico e o financeiro exigem ação explícita posterior.
-      </div>
+      {!embedded ? <PageHeader title="Conferência da nota de entrada" /> : null}
+      {dados ? (
+        <div className="mb-4 rounded-lg border border-border bg-muted/30 px-4 py-3 space-y-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-foreground">{proximoPasso}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Salvar ou finalizar só revisa a nota — estoque e financeiro só depois, se você pedir.
+              </p>
+            </div>
+            <div className="text-xs text-muted-foreground shrink-0">
+              {labelStatusConferenciaCabecalho(dados.status)}
+              {estoqueJaAplicado ? (
+                <span className="erp-badge-success text-[10px] ml-2">Estoque aplicado</span>
+              ) : null}
+            </div>
+          </div>
+          <div>
+            <div className="flex justify-between text-[11px] text-muted-foreground mb-1">
+              <span>
+                Produtos vinculados: {progresso.produtosOk}/{progresso.itensAtivos || progresso.totalItens}
+              </span>
+              <span>{pctProdutos}%</span>
+            </div>
+            <div className="h-2 rounded-full bg-muted overflow-hidden">
+              <div
+                className="h-full rounded-full bg-emerald-600 transition-[width] duration-300"
+                style={{ width: `${pctProdutos}%` }}
+              />
+            </div>
+            {(progresso.produtosFaltando > 0 ||
+              progresso.fiscalBloqueado > 0 ||
+              progresso.fiscalSemRegra > 0 ||
+              progresso.divergentes > 0) && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {progresso.produtosFaltando > 0 ? (
+                  <span className="erp-badge-warning text-[10px]">
+                    Falta produto: {progresso.produtosFaltando}
+                  </span>
+                ) : null}
+                {progresso.fiscalBloqueado > 0 ? (
+                  <span className="erp-badge-danger text-[10px]">
+                    Fiscal bloqueado: {progresso.fiscalBloqueado}
+                  </span>
+                ) : null}
+                {progresso.fiscalSemRegra > 0 ? (
+                  <span className="erp-badge-warning text-[10px]">
+                    Sem regra fiscal: {progresso.fiscalSemRegra}
+                  </span>
+                ) : null}
+                {progresso.divergentes > 0 ? (
+                  <span className="erp-badge-warning text-[10px]">
+                    Diferença no pedido: {progresso.divergentes}
+                  </span>
+                ) : null}
+              </div>
+            )}
+          </div>
+        </div>
       ) : null}
       {dados && (
         <div className="erp-card p-4 mb-4 grid md:grid-cols-4 gap-3 text-sm">
           <div><div className="text-muted-foreground text-xs">Fornecedor</div><div>{dados.fornecedor_nome}</div></div>
           <div><div className="text-muted-foreground text-xs">CNPJ</div><div>{dados.fornecedor_cnpj || '—'}</div></div>
-          <div><div className="text-muted-foreground text-xs">NF-e</div><div>{dados.numero}/{dados.serie}</div></div>
+          <div><div className="text-muted-foreground text-xs">Nota</div><div>{dados.numero}/{dados.serie}</div></div>
           <div>
-            <div className="text-muted-foreground text-xs">Status</div>
+            <div className="text-muted-foreground text-xs">Situação</div>
             <div>{labelStatusConferenciaCabecalho(dados.status)}</div>
             {estoqueJaAplicado ? (
               <span className="erp-badge-success text-[10px] mt-1 inline-block">Estoque aplicado</span>
@@ -401,7 +474,7 @@ export function NFeEntradaConferenciaPanel({
               }
             />
             <p className="text-[11px] text-muted-foreground mt-1">
-              Competência operacional/fiscal da entrada. Pode ser diferente da emissão (ex.: virada de mês).
+              Data em que a mercadoria entrou. Pode ser diferente da emissão (ex.: virada de mês).
             </p>
           </div>
           <div><div className="text-muted-foreground text-xs">Valor total</div><div>R$ {Number(dados.valor_total || 0).toFixed(2)}</div></div>
@@ -423,11 +496,11 @@ export function NFeEntradaConferenciaPanel({
             </select>
             {!dados.pedido_compra_id ? (
               <p className="text-xs text-muted-foreground mt-2">
-                Sem pedido de compra vinculado. A conferência seguirá sem comparação Pedido × NF.
+                Sem pedido vinculado. A conferência segue sem comparar com pedido.
               </p>
             ) : (
               <p className="text-xs text-muted-foreground mt-2">
-                Vincule itens do pedido linha a linha para comparar Pedido × NF (opcional para finalizar a conferência).
+                Opcional: vincule cada linha ao item do pedido para comparar quantidades.
               </p>
             )}
           </div>
@@ -446,7 +519,7 @@ export function NFeEntradaConferenciaPanel({
             />
           </div>
           <div className="md:col-span-4 pt-2 border-t border-border/60">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">Ações financeiras</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">Financeiro</p>
             <NFeEntradaFinanceiroAcoes
               nfeEntradaId={nfId}
               conferenciaStatus={dados.status}
@@ -460,7 +533,7 @@ export function NFeEntradaConferenciaPanel({
       {dados ? (
         <details className="erp-card mb-4 group" open={resumoAberto} onToggle={(e) => setResumoAberto(e.currentTarget.open)}>
           <summary className="cursor-pointer list-none px-4 py-3 flex flex-wrap items-center gap-2 border-b border-border/60">
-            <span className="text-sm font-medium">Resumo Pedido × NF</span>
+            <span className="text-sm font-medium">Comparação com o pedido</span>
             {dados.resumo_pedido?.pedido_selecionado ? (
               <>
                 <span className="erp-badge-success text-[10px]">Vinculados: {dados.resumo_pedido.totais.vinculados}</span>
@@ -804,7 +877,7 @@ export function NFeEntradaConferenciaPanel({
           onToggle={(e) => setResumoFiscalAberto(e.currentTarget.open)}
         >
           <summary className="cursor-pointer list-none px-4 py-3 flex flex-wrap items-center gap-2 border-b border-border/60">
-            <span className="text-sm font-medium">Resumo fiscal (entrada)</span>
+            <span className="text-sm font-medium">Situação fiscal</span>
             <span className="erp-badge-success text-[10px]">OK: {dados.resumo_fiscal.ok}</span>
             <span className="erp-badge-warning text-[10px]">Alerta: {dados.resumo_fiscal.alerta}</span>
             <span className="erp-badge-warning text-[10px]">Sem regra: {dados.resumo_fiscal.sem_regra}</span>
@@ -861,7 +934,7 @@ export function NFeEntradaConferenciaPanel({
           onToggle={(e) => setResumoElegibilidadeAberto(e.currentTarget.open)}
         >
           <summary className="cursor-pointer list-none px-4 py-3 flex flex-wrap items-center gap-2 border-b border-border/60">
-            <span className="text-sm font-medium">Elegibilidade para estoque (checklist)</span>
+            <span className="text-sm font-medium">Pronto para estoque?</span>
             <span className="erp-badge-success text-[10px]">Aptos: {dados.resumo_elegibilidade_estoque.aptos}</span>
             <span className="erp-badge-warning text-[10px]">
               Com alerta: {dados.resumo_elegibilidade_estoque.aptos_com_alerta}
@@ -890,31 +963,65 @@ export function NFeEntradaConferenciaPanel({
       {erro && <div className="text-destructive text-sm mb-3 whitespace-pre-line">{erro}</div>}
       {dados && !dados.pedido_compra_id ? (
         <p className="text-xs text-muted-foreground mb-2 px-1">
-          Selecione um pedido de compra se quiser comparar Pedido × NF. A conferência pode seguir sem pedido.
+          Selecione um pedido se quiser comparar com a nota. A conferência pode seguir sem pedido.
         </p>
+      ) : null}
+      {dados ? (
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={soPendencias}
+                onChange={(e) => setSoPendencias(e.target.checked)}
+              />
+              <span>Só pendências</span>
+            </label>
+            <label className="inline-flex items-center gap-2 cursor-pointer text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={modoTecnico}
+                onChange={(e) => setModoTecnico(e.target.checked)}
+              />
+              <span>Modo técnico</span>
+            </label>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {soPendencias
+              ? `Mostrando ${itensVisiveis.length} de ${dados.itens.length} linha(s)`
+              : `${dados.itens.length} linha(s)`}
+            {soPendencias && itensVisiveis.length === 0 ? ' — nenhuma pendência' : ''}
+          </p>
+        </div>
       ) : null}
       <div className="erp-card overflow-x-auto">
         <table className="erp-table text-sm [&_td]:py-2 [&_th]:py-2">
           <thead>
             <tr>
               <th>Item</th>
-              <th>Fornecedor</th>
-              <th>NCM/CFOP</th>
-              <th>Fiscal</th>
-              <th>NF</th>
+              <th>Da nota</th>
+              {modoTecnico ? <th>NCM/CFOP</th> : null}
+              <th>{modoTecnico ? 'Fiscal' : 'Situação'}</th>
+              <th>Qtd. nota</th>
               <th>Item do pedido</th>
-              <th>Produto cadastrado</th>
+              <th>Produto no sistema</th>
               <th>Corrida/Lote</th>
-              <th>Estoque calc.</th>
+              <th>{modoTecnico ? 'Estoque calc.' : 'Conversão'}</th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody>
-            {dados?.itens.map((it, idx) => (
-              <tr key={it.id}>
+            {itensVisiveis.map((it) => {
+              const idxOriginal = (dados?.itens ?? []).findIndex((x) => x.id === it.id);
+              const numItem = idxOriginal >= 0 ? idxOriginal + 1 : it.numero_item || '—';
+              return (
+              <tr
+                key={it.id}
+                className={itemPendenteProduto(it) ? 'bg-amber-50/40 dark:bg-amber-950/20' : undefined}
+              >
                 <td>
                   <div className="flex flex-col gap-1">
-                    <span>{idx + 1}</span>
+                    <span>{numItem}</span>
                     {it.item_pedido_compra_id ? (
                       <span className="erp-badge-success text-[10px] w-fit">Com pedido</span>
                     ) : (
@@ -926,16 +1033,18 @@ export function NFeEntradaConferenciaPanel({
                   <div>{it.dados_nf?.codigo_fornecedor || '—'}</div>
                   <div className="text-xs text-muted-foreground">{it.dados_nf?.descricao_fornecedor || '—'}</div>
                 </td>
+                {modoTecnico ? (
                 <td className="text-xs whitespace-nowrap">
                   {it.dados_nf?.ncm || '—'} / {it.dados_nf?.cfop || '—'}
                 </td>
+                ) : null}
                 <td className="min-w-[11rem] max-w-[14rem]">
                   {(() => {
                     const rf = it.resultado_fiscal;
                     const trib = it.tributos_nf;
                     const cstLabel = [trib?.cst_icms, trib?.csosn].filter(Boolean).join(' / ') || '—';
                     const msg = mensagemFiscalEntrada(rf);
-                    const criarRegraUrl = buildCriarRegraFiscalEntradaUrl(rf, dados.resumo_fiscal);
+                    const criarRegraUrl = buildCriarRegraFiscalEntradaUrl(rf, dados?.resumo_fiscal);
                     const cfopNf = (rf?.cfop_nf || it.dados_nf?.cfop || '').trim();
                     const cfopEntradaEsp = (rf?.cfop_entrada_esperado || '').trim();
                     const cenario =
@@ -948,31 +1057,35 @@ export function NFeEntradaConferenciaPanel({
                         >
                           {labelStatusFiscalEntrada(rf?.status || 'SEM_REGRA')}
                         </span>
-                        {cfopNf ? (
+                        {modoTecnico && cfopNf ? (
                           <div className="text-muted-foreground font-mono">
                             CFOP NF: {cfopNf}
                             {cfopEntradaEsp ? ` → Entrada esp.: ${cfopEntradaEsp}` : ''}
                           </div>
                         ) : null}
-                        {(() => {
-                          const impResumo = resumoImpostosLinha(
-                            trib as Record<string, string | undefined> | undefined,
-                          );
-                          return impResumo ? (
-                            <div
-                              className="text-muted-foreground line-clamp-2"
-                              title="CST de entrada (convertido do XML do fornecedor)"
-                            >
-                              {impResumo}
-                            </div>
-                          ) : (
-                            <div className="text-muted-foreground">CST: {cstLabel}</div>
-                          );
-                        })()}
-                        <div className="truncate font-medium" title={tituloMatch ? `${cenario}\n${tituloMatch}` : cenario}>
-                          {cenario}
-                        </div>
-                        {(rf?.divergencias?.length ?? 0) > 0 ? (
+                        {modoTecnico
+                          ? (() => {
+                              const impResumo = resumoImpostosLinha(
+                                trib as Record<string, string | undefined> | undefined,
+                              );
+                              return impResumo ? (
+                                <div
+                                  className="text-muted-foreground line-clamp-2"
+                                  title="CST de entrada (convertido do XML do fornecedor)"
+                                >
+                                  {impResumo}
+                                </div>
+                              ) : (
+                                <div className="text-muted-foreground">CST: {cstLabel}</div>
+                              );
+                            })()
+                          : null}
+                        {modoTecnico ? (
+                          <div className="truncate font-medium" title={tituloMatch ? `${cenario}\n${tituloMatch}` : cenario}>
+                            {cenario}
+                          </div>
+                        ) : null}
+                        {modoTecnico && (rf?.divergencias?.length ?? 0) > 0 ? (
                           <ul className="text-amber-700 dark:text-amber-300 space-y-0.5">
                             {divergenciasFiscaisResumo(rf, 3).map((d) => (
                               <li key={d} className="truncate" title={d}>
@@ -992,16 +1105,16 @@ export function NFeEntradaConferenciaPanel({
                             className="text-primary underline block truncate"
                             title="Abrir cadastro de regra fiscal de entrada"
                           >
-                            Criar regra fiscal de entrada
+                            {modoTecnico ? 'Criar regra fiscal de entrada' : 'Criar regra fiscal'}
                           </Link>
                         ) : null}
-                        {rf?.movimenta_estoque ? (
+                        {modoTecnico && rf?.movimenta_estoque ? (
                           <span className="erp-badge-info text-[9px]">Mov. estoque</span>
                         ) : null}
-                        {rf?.exige_certificado_fornecedor ? (
+                        {modoTecnico && rf?.exige_certificado_fornecedor ? (
                           <span className="erp-badge-warning text-[9px]">Cert. fornec.</span>
                         ) : null}
-                        {rf?.tem_reforma_configurada ? (
+                        {modoTecnico && rf?.tem_reforma_configurada ? (
                           <span
                             className="erp-badge-secondary text-[9px]"
                             title="Reforma Tributária configurada na regra (sem comparação automática nesta fase)"
@@ -1009,7 +1122,10 @@ export function NFeEntradaConferenciaPanel({
                             Reforma configurada
                           </span>
                         ) : null}
-                        {it.elegibilidade_estoque ? (
+                        {it.elegibilidade_estoque &&
+                        (modoTecnico ||
+                          it.elegibilidade_estoque.status === 'BLOQUEADO' ||
+                          it.elegibilidade_estoque.status === 'APTO_COM_ALERTA') ? (
                           <div className="pt-1 border-t border-border/50 space-y-0.5">
                             <span
                               className={`${badgeClassElegibilidadeEstoque(it.elegibilidade_estoque.status)} inline-block`}
@@ -1017,7 +1133,7 @@ export function NFeEntradaConferenciaPanel({
                             >
                               {labelElegibilidadeEstoque(it.elegibilidade_estoque.status)}
                             </span>
-                            {(it.elegibilidade_estoque.mensagens || []).length > 0 ? (
+                            {modoTecnico && (it.elegibilidade_estoque.mensagens || []).length > 0 ? (
                               <p
                                 className="text-[9px] text-muted-foreground line-clamp-2"
                                 title={it.elegibilidade_estoque.mensagens.join(' ')}
@@ -1036,11 +1152,13 @@ export function NFeEntradaConferenciaPanel({
                             ) : null}
                           </div>
                         ) : null}
-                        {(it.vinculos_atendimento ?? []).map((v) => (
-                          <span key={v.linha_id} className="erp-badge-info text-[9px] inline-block mt-1">
-                            Atende NF saída {v.numero_nf_saida}
-                          </span>
-                        ))}
+                        {modoTecnico
+                          ? (it.vinculos_atendimento ?? []).map((v) => (
+                              <span key={v.linha_id} className="erp-badge-info text-[9px] inline-block mt-1">
+                                Atende NF saída {v.numero_nf_saida}
+                              </span>
+                            ))
+                          : null}
                       </div>
                     );
                   })()}
@@ -1049,7 +1167,7 @@ export function NFeEntradaConferenciaPanel({
                   {Number(it.quantidade_nf || 0).toFixed(3)} {it.unidade_nf}
                 </td>
                 <td>
-                  {dados.pedido_compra_id && pedidoSelecionado ? (
+                  {dados?.pedido_compra_id && pedidoSelecionado ? (
                     <div className="space-y-1 min-w-[280px]">
                       {(() => {
                         const melhor = (it.sugestoes_item_pedido || [])[0];
@@ -1072,7 +1190,7 @@ export function NFeEntradaConferenciaPanel({
                       })()}
                       {!it.item_pedido_compra_id && it.status !== 'IGNORADO' ? (
                         <p className="text-[10px] text-amber-700 dark:text-amber-300">
-                          Linha sem item de pedido vinculado.
+                          Linha ainda sem vínculo com o pedido.
                         </p>
                       ) : null}
                       <select
@@ -1084,7 +1202,7 @@ export function NFeEntradaConferenciaPanel({
                           })
                         }
                       >
-                        <option value="">Não vinculado</option>
+                        <option value="">Sem vínculo com pedido</option>
                         {(it.sugestoes_item_pedido || []).map((s) => (
                           <option key={`sug-pc-${s.id}`} value={s.id}>
                             ★ {labelSugestaoItemPedidoCurta(s)} · {Number(s.quantidade).toFixed(3)}{' '}
@@ -1108,7 +1226,7 @@ export function NFeEntradaConferenciaPanel({
                   <div className="space-y-1 [&_input]:mt-0 [&_input]:h-8 [&_input]:text-xs [&_.erp-btn-outline]:text-[10px] [&_.erp-btn-outline]:py-0.5 [&_.erp-btn-outline]:mt-1">
                     {it.produto_sugerido && !it.produto_id && !sugestoesCorrelacaoIgnoradas.has(it.id) ? (
                       <div className="rounded border border-amber-300/80 bg-amber-50 px-2 py-1.5 text-[10px] text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100">
-                        <div className="font-medium">Sugestão (histórico fornecedor)</div>
+                        <div className="font-medium">Sugestão pelo histórico deste fornecedor</div>
                         <div className="truncate" title={`${it.produto_sugerido.codigo} · ${it.produto_sugerido.descricao}`}>
                           {it.produto_sugerido.codigo} · {it.produto_sugerido.descricao}
                         </div>
@@ -1167,7 +1285,7 @@ export function NFeEntradaConferenciaPanel({
                     <AsyncAutocomplete<Produto>
                       value={it.produto_id ?? null}
                       selectedOption={it.produto_id ? produtoCache.get(it.produto_id) ?? null : null}
-                      placeholder="Buscar produto por código ou descrição..."
+                      placeholder="Buscar produto (código ou descrição)..."
                       minChars={2}
                       limit={40}
                       search={buscarProdutos}
@@ -1411,7 +1529,8 @@ export function NFeEntradaConferenciaPanel({
                   ) : null}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -1422,11 +1541,11 @@ export function NFeEntradaConferenciaPanel({
             checked={Boolean(dados?.divergencias_aceitas)}
             onChange={(e) => dados && setDados({ ...dados, divergencias_aceitas: e.target.checked })}
           />
-          Aceitar divergências
+          Aceitar diferenças com o pedido
         </label>
         <textarea
           className="erp-input min-h-[88px]"
-          placeholder="Observação das divergências"
+          placeholder="Observação das diferenças (se houver)"
           value={dados?.observacao_divergencias || ''}
           onChange={(e) =>
             dados && setDados({ ...dados, observacao_divergencias: normalizeOperationalInput(e.target.value) })
@@ -1444,15 +1563,15 @@ export function NFeEntradaConferenciaPanel({
           </button>
         ) : null}
         <button type="button" className="erp-btn-outline" onClick={() => setReabrirOpen(true)} disabled={busy}>
-          Reabrir entrada para correção
+          Reabrir para correção
         </button>
         <button type="button" className="erp-btn-outline" onClick={() => void salvar()} disabled={busy}>
           {dados?.financeiro?.possui_pendencias_operacionais
-            ? 'Salvar conferência com pendências'
-            : 'Salvar conferência'}
+            ? 'Salvar com pendências'
+            : 'Salvar'}
         </button>
         <button type="button" className="erp-btn-primary" onClick={() => void preparar()} disabled={busy}>
-          Finalizar conferência
+          Finalizar
         </button>
         {podeAplicarEstoque ? (
           <button
@@ -1461,20 +1580,18 @@ export function NFeEntradaConferenciaPanel({
             onClick={() => void abrirModalAplicar()}
             disabled={busy}
           >
-            Aplicar estoque físico
+            Aplicar estoque
           </button>
         ) : null}
       </div>
       {estoqueJaAplicado ? (
         <p className="text-xs text-emerald-700 mt-3 max-w-3xl ml-auto text-right">
-          Estoque físico aplicado em{' '}
-          {dados.estoque_aplicado_em ? new Date(dados.estoque_aplicado_em).toLocaleString('pt-BR') : '—'}.
-          Esta operação é idempotente e não deve ser repetida.
+          Estoque aplicado em{' '}
+          {dados?.estoque_aplicado_em ? new Date(dados.estoque_aplicado_em).toLocaleString('pt-BR') : '—'}.
         </p>
       ) : (
         <p className="text-xs text-muted-foreground mt-3 max-w-3xl ml-auto text-right">
-          &quot;Finalizar conferência&quot; valida e encerra a revisão fiscal da NF-e. &quot;Aplicar estoque físico&quot; incrementa{' '}
-          <span className="font-mono">EstoqueCorrida</span> uma única vez por linha elegível.
+          Finalizar encerra a revisão da nota. Aplicar estoque só depois, quando você confirmar.
         </p>
       )}
       {modalAplicarOpen && previewAplicar ? (

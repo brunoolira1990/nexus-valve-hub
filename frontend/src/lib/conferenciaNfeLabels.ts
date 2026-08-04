@@ -61,10 +61,10 @@ export const NOTA_SALDO_CONFERENCIA_PEDIDO =
   'Este saldo é calculado pelas conferências vinculadas ao pedido. Não representa movimentação de estoque.';
 
 export const LABEL_STATUS_CONFERENCIA_ITEM: Record<string, string> = {
-  PENDENTE_PRODUTO: 'Pendente produto',
-  PRODUTO_VINCULADO: 'Produto vinculado',
-  CONFERIDO: 'Conferido',
-  DIVERGENTE: 'Divergente',
+  PENDENTE_PRODUTO: 'Falta vincular produto',
+  PRODUTO_VINCULADO: 'Produto ok',
+  CONFERIDO: 'Ok',
+  DIVERGENTE: 'Diferença no pedido',
   IGNORADO: 'Ignorado',
 };
 
