@@ -46,7 +46,9 @@ def _qty_str(v: Decimal) -> str:
 
 
 def _norm_unidade(u: str | None) -> str:
-    return (u or '').strip().upper()
+    from apps.produtos.conversao_medidas import normalizar_unidade_medida
+
+    return normalizar_unidade_medida(u)
 
 
 def obter_item_conferencia_por_historico(
@@ -101,19 +103,28 @@ def obter_item_conferencia(
 
 
 def quantidade_disponivel_entrada(item_conf: ItemNFeEntradaConferencia) -> Decimal:
-    """Quantidade interna normalizada: somente quantidade_estoque_calculada."""
-    if item_conf.quantidade_estoque_calculada is None:
+    """Quantidade interna: estoque calculado; fallback NF quando UN/PC equivalentes."""
+    from apps.produtos.conversao_medidas import unidades_medidas_equivalentes
+
+    q_calc = item_conf.quantidade_estoque_calculada
+    if q_calc is not None and _dec(q_calc) > 0:
+        return _dec(q_calc)
+
+    q_nf = _dec(item_conf.quantidade_nf or 0)
+    u_calc = item_conf.unidade_estoque_calculada or ''
+    u_nf = item_conf.unidade_nf or ''
+    if q_nf > 0 and unidades_medidas_equivalentes(u_nf, u_calc or 'PC'):
+        return q_nf
+
+    if q_calc is None:
         raise AlocacaoAtendimentoErro(
             'Quantidade interna da conferência (quantidade_estoque_calculada) está ausente. '
-            'Confirme produto/equivalência antes de alocar.',
+            'Salve a conferência com o produto vinculado antes de alocar.',
         )
-    q = _dec(item_conf.quantidade_estoque_calculada)
-    if q <= 0:
-        raise AlocacaoAtendimentoErro(
-            'Quantidade interna da conferência (quantidade_estoque_calculada) está zerada. '
-            'Confirme produto/equivalência e a quantidade de estoque calculada antes de alocar.',
-        )
-    return q
+    raise AlocacaoAtendimentoErro(
+        'Quantidade interna da conferência (quantidade_estoque_calculada) está zerada. '
+        'Salve a conferência novamente para recalcular a conversão (UN/PC) antes de alocar.',
+    )
 
 
 def unidade_origem_entrada(item_conf: ItemNFeEntradaConferencia) -> str:

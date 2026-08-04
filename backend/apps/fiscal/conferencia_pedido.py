@@ -759,9 +759,14 @@ def aplicar_pos_save_item_conferencia(
 
     if item_conf.produto_id:
         produto = item_conf.produto
-        unidade_destino = (
-            produto.get_unidade_estoque_efetiva() or produto.unidade or item_conf.unidade_nf or 'UN'
-        ).upper()
+        from apps.produtos.conversao_medidas import (
+            normalizar_unidade_medida,
+            unidades_medidas_equivalentes,
+        )
+
+        unidade_destino = normalizar_unidade_medida(
+            produto.get_unidade_estoque_efetiva() or produto.unidade or item_conf.unidade_nf or 'PC'
+        ) or 'PC'
         item_conf.unidade_estoque_calculada = unidade_destino
 
         from apps.fiscal.composicao_fisica_conferencia import (
@@ -815,23 +820,38 @@ def aplicar_pos_save_item_conferencia(
             try:
                 from apps.produtos.conversao_medidas import converter_quantidade_produto
 
-                res = converter_quantidade_produto(
-                    produto=produto,
-                    quantidade=item_conf.quantidade_nf,
-                    unidade_origem=item_conf.unidade_nf,
-                    unidade_destino=unidade_destino,
-                )
-                item_conf.quantidade_estoque_calculada = res.quantidade_destino
-                item_conf.peso_total_kg = res.peso_kg or Decimal('0')
-                item_conf.metros_total = res.metros or Decimal('0')
-                item_conf.barras_total = res.barras or Decimal('0')
-                item_conf.toneladas_total = (
-                    (item_conf.peso_total_kg / Decimal('1000')).quantize(Decimal('0.001'))
-                    if item_conf.peso_total_kg
-                    else Decimal('0')
-                )
+                # UN/PC (e sinônimos) são a mesma unidade contável — copia qty sem exigir
+                # «conversão dimensional» (peso/metro).
+                if unidades_medidas_equivalentes(item_conf.unidade_nf, unidade_destino):
+                    q_nf = _dec(item_conf.quantidade_nf or 0)
+                    item_conf.quantidade_estoque_calculada = q_nf
+                    item_conf.peso_total_kg = Decimal('0')
+                    item_conf.metros_total = Decimal('0')
+                    item_conf.barras_total = Decimal('0')
+                    item_conf.toneladas_total = Decimal('0')
+                else:
+                    res = converter_quantidade_produto(
+                        produto=produto,
+                        quantidade=item_conf.quantidade_nf,
+                        unidade_origem=item_conf.unidade_nf,
+                        unidade_destino=unidade_destino,
+                    )
+                    item_conf.quantidade_estoque_calculada = res.quantidade_destino
+                    item_conf.peso_total_kg = res.peso_kg or Decimal('0')
+                    item_conf.metros_total = res.metros or Decimal('0')
+                    item_conf.barras_total = res.barras or Decimal('0')
+                    item_conf.toneladas_total = (
+                        (item_conf.peso_total_kg / Decimal('1000')).quantize(Decimal('0.001'))
+                        if item_conf.peso_total_kg
+                        else Decimal('0')
+                    )
             except Exception as exc:  # noqa: BLE001
-                alertas.append(str(exc))
+                # Fallback: mesma peça (UN×PC) mesmo se a conversão dimensional falhar.
+                if unidades_medidas_equivalentes(item_conf.unidade_nf, unidade_destino):
+                    item_conf.quantidade_estoque_calculada = _dec(item_conf.quantidade_nf or 0)
+                else:
+                    alertas.append(str(exc))
+                    item_conf.quantidade_estoque_calculada = Decimal('0')
                 if not item_conf.unidade_estoque_calculada:
                     item_conf.unidade_estoque_calculada = unidade_destino
 

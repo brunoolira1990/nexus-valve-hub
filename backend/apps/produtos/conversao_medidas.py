@@ -16,13 +16,16 @@ class ConversaoErro(ValueError):
 
 # Sinônimos de peça/unidade contável — NF e pedido misturam UN/PC com frequência.
 _UNIDADES_PECA = frozenset({
-    'PC', 'UN', 'UND', 'UNID', 'PÇ', 'PZA', 'PECA', 'PEÇA', 'PÇS', 'PCS',
+    'PC', 'PCS', 'PÇ', 'PÇS', 'PZA', 'PECA', 'PEÇA', 'PECAS', 'PEÇAS',
+    'UN', 'UND', 'UNID', 'UNIDADE', 'UNIDADES', 'U', 'UN.', 'UND.',
 })
 
 
 def normalizar_unidade_medida(unidade: str | None) -> str:
     """Normaliza unidade para comparação/conversão (UN/UND/PÇ → PC)."""
-    u = (unidade or '').strip().upper()
+    u = (unidade or '').strip().upper().replace(' ', '')
+    # Remove pontuação final comum em XML (UN., UND.)
+    u = u.rstrip('.')
     if not u:
         return ''
     if u in _UNIDADES_PECA:
