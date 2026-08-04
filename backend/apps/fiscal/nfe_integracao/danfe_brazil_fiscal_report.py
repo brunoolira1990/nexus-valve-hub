@@ -130,6 +130,10 @@ class DanfeNexus:
                     inf_cpl_xml_para_exibicao_danfe,
                     montar_inf_cpl_para_danfe,
                 )
+                from apps.fiscal.nfe_integracao.documento_fiscal_referenciado import (
+                    anexar_referencias_ao_inf_cpl,
+                    chaves_ref_nfe_do_ide,
+                )
 
                 fisco = extract_text(self.inf_adic, 'infAdFisco')
                 if self._nexus_nfe_saida is not None:
@@ -137,6 +141,9 @@ class DanfeNexus:
                 else:
                     obs_raw = extract_text(self.inf_adic, 'infCpl') or ''
                     obs = inf_cpl_xml_para_exibicao_danfe(obs_raw)
+
+                # Devolução/ajuste: NFref no ide deve aparecer nas Informações Complementares.
+                obs = anexar_referencias_ao_inf_cpl(obs, chaves_ref_nfe_do_ide(self.ide))
 
                 _dest_end, cpl, cpl_truncado = self._get_dest_end_text(self.dest)
                 if cpl_truncado and cpl:

@@ -280,6 +280,8 @@ class NFeEntrada4015XmlPreviewTests(TestCase):
         self.assertIn(CHAVE_REF_44, xml)
         self.assertEqual(_xml_val(xml, 'tPag'), '90')
         self.assertEqual(_xml_val(xml, 'vPag'), '0.00')
+        self.assertIn('DOCUMENTO FISCAL REFERENCIADO', _xml_val(xml, 'infCpl') or '')
+        self.assertIn(CHAVE_REF_44, (_xml_val(xml, 'infCpl') or '').replace(' ', ''))
 
     def test_preview_xml_destinatario_cliente(self) -> None:
         nf = _nf_pronta(self.empresa, cliente=self.cliente, user=self.user)

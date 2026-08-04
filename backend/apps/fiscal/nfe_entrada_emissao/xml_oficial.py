@@ -410,6 +410,18 @@ def montar_tnfe_entrada(
     inf.transp = nfe.Tnfe.InfNfe.Transp(modFrete='9')
     inf.pag = build_pag_bindings(nfe, tot, fin_nfe=fin_nfe)
 
+    from apps.fiscal.nfe_integracao.documento_fiscal_referenciado import (
+        montar_inf_cpl_bindings_entrada,
+        montar_inf_cpl_entrada_com_referencia,
+    )
+
+    inf_cpl = montar_inf_cpl_entrada_com_referencia(
+        chave_nfe_referenciada=nf_entrada.chave_nfe_referenciada if fin_nfe in ('3', '4') else '',
+    )
+    inf_adic = montar_inf_cpl_bindings_entrada(nfe, inf_cpl)
+    if inf_adic is not None:
+        inf.infAdic = inf_adic
+
     return nfe.Tnfe(infNFe=inf)
 
 
