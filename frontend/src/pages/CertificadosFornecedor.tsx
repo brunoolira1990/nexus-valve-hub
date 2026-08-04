@@ -342,6 +342,8 @@ const CertificadosFornecedor = () => {
   } = usePaginatedList<CertificadoFornecedorEntrada>({ fetchPage: fetchCertificadosPage });
   const [nfEntradas, setNfEntradas] = useState<NFeEntrada[]>([]);
   const [nfHistoricas, setNfHistoricas] = useState<NFeEntradaHistoricaList[]>([]);
+  const [nfOperacionalCache, setNfOperacionalCache] = useState<NFeEntrada | null>(null);
+  const [nfHistoricaCache, setNfHistoricaCache] = useState<NFeEntradaHistoricaList | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<CertificadoFornecedorEntrada | null>(null);
   const [form, setForm] = useState(emptyForm());
@@ -357,10 +359,44 @@ const CertificadosFornecedor = () => {
   const [includeRascunhoBusca, setIncludeRascunhoBusca] = useState(false);
   const [mensagemInfo, setMensagemInfo] = useState<string | null>(null);
 
+  // Busca no servidor (lista paginada ~100 itens não contém todas as NF-e).
   useEffect(() => {
-    nfeEntradasService.getAll().then(setNfEntradas).catch(() => setNfEntradas([]));
-    nfeEntradaHistoricaImportadaService.list().then(setNfHistoricas).catch(() => setNfHistoricas([]));
-  }, []);
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      const q = buscaNfOperacional.trim();
+      nfeEntradasService
+        .getAll({ search: q || undefined, limit: 50 })
+        .then((rows) => {
+          if (!cancelled) setNfEntradas(rows);
+        })
+        .catch(() => {
+          if (!cancelled) setNfEntradas([]);
+        });
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [buscaNfOperacional]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      const q = buscaNfHistorica.trim();
+      nfeEntradaHistoricaImportadaService
+        .list({ search: q || undefined, limit: 50 })
+        .then((rows) => {
+          if (!cancelled) setNfHistoricas(rows);
+        })
+        .catch(() => {
+          if (!cancelled) setNfHistoricas([]);
+        });
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [buscaNfHistorica]);
 
   const labelSalvarFornecedorSemRegistrar = (): string => {
     if (form.status === 'cancelado') {
@@ -426,25 +462,20 @@ const CertificadosFornecedor = () => {
     chaveAcesso: n.chave_acesso || '',
   });
 
-  const nfOperacionaisFiltradas = useMemo(() => {
-    const q = buscaNfOperacional.trim().toLowerCase();
-    if (!q) return nfEntradas;
-    return nfEntradas.filter((n) => {
-      const r = toResumoOperacional(n);
-      const hay = `${r.numero} ${r.serie} ${r.fornecedor} ${r.fornecedorCnpj} ${r.emissao} ${r.valorTotal ?? ''} ${r.chaveAcesso}`.toLowerCase();
-      return hay.includes(q);
-    });
-  }, [nfEntradas, buscaNfOperacional]);
+  /** Mantém a NF já escolhida na lista mesmo se a busca atual não a trouxer. */
+  const nfOperacionaisOpcoes = useMemo(() => {
+    const id = form.nf_entrada_operacional;
+    if (!id || !nfOperacionalCache || nfOperacionalCache.id !== id) return nfEntradas;
+    if (nfEntradas.some((n) => n.id === id)) return nfEntradas;
+    return [nfOperacionalCache, ...nfEntradas];
+  }, [nfEntradas, form.nf_entrada_operacional, nfOperacionalCache]);
 
-  const nfHistoricasFiltradas = useMemo(() => {
-    const q = buscaNfHistorica.trim().toLowerCase();
-    if (!q) return nfHistoricas;
-    return nfHistoricas.filter((n) => {
-      const r = toResumoHistorica(n);
-      const hay = `${r.numero} ${r.serie} ${r.fornecedor} ${r.fornecedorCnpj} ${r.emissao} ${r.valorTotal ?? ''} ${r.chaveAcesso}`.toLowerCase();
-      return hay.includes(q);
-    });
-  }, [nfHistoricas, buscaNfHistorica]);
+  const nfHistoricasOpcoes = useMemo(() => {
+    const id = form.nf_entrada_historica;
+    if (!id || !nfHistoricaCache || nfHistoricaCache.id !== id) return nfHistoricas;
+    if (nfHistoricas.some((n) => n.id === id)) return nfHistoricas;
+    return [nfHistoricaCache, ...nfHistoricas];
+  }, [nfHistoricas, form.nf_entrada_historica, nfHistoricaCache]);
 
   const openNew = () => {
     setEditing(null);
@@ -452,6 +483,8 @@ const CertificadosFornecedor = () => {
     setSaveErrors([]);
     setBuscaNfOperacional('');
     setBuscaNfHistorica('');
+    setNfOperacionalCache(null);
+    setNfHistoricaCache(null);
     setNfeSelecionadaResumo(null);
     setModalOpen(true);
   };
@@ -475,8 +508,10 @@ const CertificadosFornecedor = () => {
       })),
     });
     setSaveErrors([]);
-    setBuscaNfOperacional('');
-    setBuscaNfHistorica('');
+    setBuscaNfOperacional(row.nf_entrada_operacional && row.numero_nf_entrada ? row.numero_nf_entrada : '');
+    setBuscaNfHistorica(row.nf_entrada_historica && row.numero_nf_entrada ? row.numero_nf_entrada : '');
+    setNfOperacionalCache(null);
+    setNfHistoricaCache(null);
     setNfeSelecionadaResumo({
       numero: row.numero_nf_entrada || '',
       serie: row.serie_nf_entrada || '',
@@ -980,7 +1015,7 @@ const CertificadosFornecedor = () => {
               <label className="erp-label">NF-e entrada operacional</label>
               <input
                 className="erp-input mt-1"
-                placeholder="Buscar por numero, serie, fornecedor, CNPJ, data, valor..."
+                placeholder="Digite o número da NF-e (busca no servidor)..."
                 value={buscaNfOperacional}
                 onChange={(e) => setBuscaNfOperacional(e.target.value)}
               />
@@ -988,9 +1023,11 @@ const CertificadosFornecedor = () => {
                 const id = e.target.value ? +e.target.value : null;
                 setF('nf_entrada_operacional', id);
                 setF('nf_entrada_historica', null);
+                setNfHistoricaCache(null);
                 if (id) {
-                  const n = nfEntradas.find((x) => x.id === id);
+                  const n = nfOperacionaisOpcoes.find((x) => x.id === id);
                   if (n) {
+                    setNfOperacionalCache(n);
                     const r = toResumoOperacional(n);
                     setNfeSelecionadaResumo(r);
                     setF('fornecedor_nome_snapshot', r.fornecedor);
@@ -999,10 +1036,12 @@ const CertificadosFornecedor = () => {
                     setF('serie_nf_entrada', r.serie || '');
                     setF('data_nf_entrada', r.emissao || '');
                   }
+                } else {
+                  setNfOperacionalCache(null);
                 }
               }}>
                 <option value="">Selecione...</option>
-                {nfOperacionaisFiltradas.map((n) => {
+                {nfOperacionaisOpcoes.map((n) => {
                   const r = toResumoOperacional(n);
                   return <option key={n.id} value={n.id} title={labelNfCompleta(r)}>{labelNfCompacta(r)}</option>;
                 })}
@@ -1012,7 +1051,7 @@ const CertificadosFornecedor = () => {
               <label className="erp-label">NF-e entrada historica</label>
               <input
                 className="erp-input mt-1"
-                placeholder="Buscar por numero, serie, fornecedor, CNPJ, chave, data, valor..."
+                placeholder="Digite o número da NF-e (busca no servidor)..."
                 value={buscaNfHistorica}
                 onChange={(e) => setBuscaNfHistorica(e.target.value)}
               />
@@ -1020,9 +1059,11 @@ const CertificadosFornecedor = () => {
                 const id = e.target.value ? +e.target.value : null;
                 setF('nf_entrada_historica', id);
                 setF('nf_entrada_operacional', null);
+                setNfOperacionalCache(null);
                 if (id) {
-                  const n = nfHistoricas.find((x) => x.id === id);
+                  const n = nfHistoricasOpcoes.find((x) => x.id === id);
                   if (n) {
+                    setNfHistoricaCache(n);
                     const r = toResumoHistorica(n);
                     setNfeSelecionadaResumo(r);
                     setF('fornecedor', n.fornecedor_id || null);
@@ -1032,10 +1073,12 @@ const CertificadosFornecedor = () => {
                     setF('serie_nf_entrada', r.serie || '');
                     setF('data_nf_entrada', r.emissao || '');
                   }
+                } else {
+                  setNfHistoricaCache(null);
                 }
               }}>
                 <option value="">Selecione...</option>
-                {nfHistoricasFiltradas.map((n) => {
+                {nfHistoricasOpcoes.map((n) => {
                   const r = toResumoHistorica(n);
                   return <option key={n.id} value={n.id} title={labelNfCompleta(r)}>{labelNfCompacta(r)}</option>;
                 })}
