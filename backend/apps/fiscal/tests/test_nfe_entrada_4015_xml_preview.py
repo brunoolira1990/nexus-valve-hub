@@ -258,6 +258,8 @@ class NFeEntrada4015XmlPreviewTests(TestCase):
         nf = _nf_pronta(self.empresa, fornecedor=self.fornecedor, fin_nfe='3', user=self.user)
         out = gerar_preview_xml_oficial_nfe_entrada(nf)
         self.assertEqual(_xml_val(out['xml'], 'finNFe'), '3')
+        self.assertEqual(_xml_val(out['xml'], 'tPag'), '90')
+        self.assertEqual(_xml_val(out['xml'], 'vPag'), '0.00')
 
     def test_preview_xml_sem_nfref_sem_chave(self) -> None:
         nf = _nf_pronta(self.empresa, cliente=self.cliente, fin_nfe='1', user=self.user)
@@ -276,6 +278,8 @@ class NFeEntrada4015XmlPreviewTests(TestCase):
         xml = out['xml']
         self.assertEqual(_xml_val(xml, 'finNFe'), '4')
         self.assertIn(CHAVE_REF_44, xml)
+        self.assertEqual(_xml_val(xml, 'tPag'), '90')
+        self.assertEqual(_xml_val(xml, 'vPag'), '0.00')
 
     def test_preview_xml_destinatario_cliente(self) -> None:
         nf = _nf_pronta(self.empresa, cliente=self.cliente, user=self.user)

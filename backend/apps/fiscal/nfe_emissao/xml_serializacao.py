@@ -121,10 +121,21 @@ def build_pag_bindings(
     tot: dict[str, Any],
     *,
     duplicatas: list[dict[str, Any]] | None = None,
+    fin_nfe: str | None = None,
 ) -> Any:
-    """Grupo pag obrigatório NF-e 4.00 — à vista tPag 01; a prazo tPag 15 (boleto)."""
-    v_nf = _dec_str(tot.get('v_nf'))
+    """Grupo pag obrigatório NF-e 4.00.
+
+    - finNFe 3 (ajuste) ou 4 (devolução): tPag 90 (Sem Pagamento) e vPag 0.00
+      (rejeições SEFAZ 871 / 904 — NT 2016.002).
+    - demais: à vista tPag 01; a prazo tPag 15 (boleto).
+    """
     DetPag = nfe_module.Tnfe.InfNfe.Pag.DetPag
+    fin = str(fin_nfe or '').strip()
+    if fin in ('3', '4'):
+        return nfe_module.Tnfe.InfNfe.Pag(
+            detPag=[DetPag(tPag='90', vPag='0.00')],
+        )
+    v_nf = _dec_str(tot.get('v_nf'))
     t_pag = '15' if duplicatas else '01'
     return nfe_module.Tnfe.InfNfe.Pag(
         detPag=[DetPag(tPag=t_pag, vPag=v_nf)],

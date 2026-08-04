@@ -175,6 +175,14 @@ class NFeAVistaCobrancaSemAlterarTPagTests(TestCase):
         esperado = build_pag_bindings(_FakeMod, tot, duplicatas=[]).detPag[0].tPag
         self.assertEqual(pag.detPag[0].tPag, esperado)
 
+    def test_fin_nfe_ajuste_e_devolucao_usam_tpag_90(self):
+        tot = {'v_nf': '900.00', 'v_desc': '0.00'}
+        for fin in ('3', '4'):
+            with self.subTest(fin_nfe=fin):
+                pag = build_pag_bindings(_FakeMod, tot, duplicatas=[{'valor': '10'}], fin_nfe=fin)
+                self.assertEqual(pag.detPag[0].tPag, '90')
+                self.assertEqual(pag.detPag[0].vPag, '0.00')
+
     def test_tpag_nao_e_escolhido_pela_regra_de_prazo(self):
         """Dois planos [0] usam a mesma heurística de pag; a regra de prazo não mapeia tPag."""
         tot = {'v_nf': '50.00', 'v_desc': '0.00'}

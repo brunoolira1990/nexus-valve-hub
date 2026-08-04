@@ -408,7 +408,7 @@ def montar_tnfe_entrada(
     inf.total = nfe.Tnfe.InfNfe.Total(**total_kw)
     # Obrigatório no schema e no DANFE BFR (KeyError se modFrete ausente).
     inf.transp = nfe.Tnfe.InfNfe.Transp(modFrete='9')
-    inf.pag = build_pag_bindings(nfe, tot)
+    inf.pag = build_pag_bindings(nfe, tot, fin_nfe=fin_nfe)
 
     return nfe.Tnfe(infNFe=inf)
 
