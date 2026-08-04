@@ -115,6 +115,8 @@ def resolver_ou_criar_corrida(
     data_recebimento: date,
     nf_entrada_ref: str = '',
 ) -> Corrida:
+    from django.db import IntegrityError
+
     numero = normalizar_numero_corrida(numero_texto)
     if not numero:
         raise ValueError('Número de corrida obrigatório para aplicar estoque.')
@@ -132,13 +134,29 @@ def resolver_ou_criar_corrida(
             )
         return existente
 
-    return Corrida.objects.create(
-        numero=numero,
-        produto_id=produto_id,
-        fornecedor_id=fornecedor_id,
-        data_recebimento=data_recebimento,
-        nf_entrada=(nf_entrada_ref or '')[:64],
-    )
+    try:
+        return Corrida.objects.create(
+            numero=numero,
+            produto_id=produto_id,
+            fornecedor_id=fornecedor_id,
+            data_recebimento=data_recebimento,
+            nf_entrada=(nf_entrada_ref or '')[:64],
+        )
+    except IntegrityError:
+        # Corrida: race condition OU unique global antigo ainda no banco (migrate corridas).
+        existente = Corrida.objects.filter(numero=numero, produto_id=produto_id).first()
+        if existente:
+            return existente
+        conflito = Corrida.objects.filter(numero=numero).exclude(produto_id=produto_id).first()
+        if conflito:
+            raise ValueError(
+                f'Corrida "{numero}" ainda está bloqueada por unicidade global no banco. '
+                'No servidor rode: docker compose exec -T backend python manage.py migrate corridas',
+            ) from None
+        raise ValueError(
+            f'Não foi possível criar a corrida "{numero}" para este produto (conflito no banco). '
+            'Rode migrate corridas e tente novamente.',
+        ) from None
 
 
 def numero_corrida_sem_rastreabilidade(produto_id: int, fornecedor_id: int, ordem: int | None = None) -> str:
