@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FileUp, FileCheck, Copy, ClipboardList, Printer } from 'lucide-react';
 import { toast } from 'sonner';
@@ -32,6 +32,13 @@ import { TableSkeleton } from '@/components/nexus/Skeleton';
 import { chaveNfeResumida } from '@/lib/chaveNfeResumida';
 import { openBlobInNewTab } from '@/lib/downloadBlobFile';
 import {
+  aplicarCompetenciaMmAaaa,
+  intervaloMesAnterior,
+  intervaloMesAtual,
+  labelPeriodoFiltro,
+  PERIODO_ATALHO_JUN_2026,
+} from '@/lib/periodoFiltroFiscal';
+import {
   labelBotaoPrincipalConferenciaNfeEntradaHistorica,
   labelStatusOperacionalNfeEntradaHistorica,
   rotaConferenciaNfeEntradaHistorica,
@@ -55,6 +62,8 @@ const NFeHistoricaEntradaImportada = () => {
   const navigate = useNavigate();
   const tipoDataInicial = lerTipoDataPersistido();
   const [tipoData, setTipoDataState] = useState<'emissao' | 'entrada'>(tipoDataInicial);
+  const [competencia, setCompetencia] = useState('');
+  const [chaveFiltro, setChaveFiltro] = useState('');
   const {
     items,
     count,
@@ -67,6 +76,7 @@ const NFeHistoricaEntradaImportada = () => {
     setPageSize,
     filters,
     setFilter,
+    setFilters,
     loading,
     error: loadError,
     reload,
@@ -92,6 +102,56 @@ const NFeHistoricaEntradaImportada = () => {
     },
     [setFilter],
   );
+
+  const aplicarPeriodo = useCallback(
+    (inicio: string, fim: string) => {
+      setCompetencia('');
+      setFilters((prev) => {
+        const next = { ...prev };
+        if (inicio) next.data_inicio = inicio;
+        else delete next.data_inicio;
+        if (fim) next.data_fim = fim;
+        else delete next.data_fim;
+        return next;
+      });
+    },
+    [setFilters],
+  );
+
+  const limparPeriodo = useCallback(() => {
+    setCompetencia('');
+    setFilters((prev) => {
+      const next = { ...prev };
+      delete next.data_inicio;
+      delete next.data_fim;
+      return next;
+    });
+  }, [setFilters]);
+
+  const aplicarCompetencia = useCallback(() => {
+    const periodo = aplicarCompetenciaMmAaaa(competencia);
+    if (!periodo) {
+      toast.error('Informe a competência no formato mm/aaaa.');
+      return;
+    }
+    setFilters((prev) => ({
+      ...prev,
+      data_inicio: periodo.inicio,
+      data_fim: periodo.fim,
+    }));
+  }, [competencia, setFilters]);
+
+  const periodoFiltroLabel = useMemo(
+    () => labelPeriodoFiltro({ dataInicio, dataFim, competencia }),
+    [dataInicio, dataFim, competencia],
+  );
+
+  // Chave dedicada alimenta a busca textual (API já filtra por chave_acesso).
+  useEffect(() => {
+    const digits = chaveFiltro.replace(/\D/g, '');
+    if (!digits) return;
+    setSearch(digits);
+  }, [chaveFiltro, setSearch]);
 
   const [busy, setBusy] = useState(false);
   const [resultado, setResultado] = useState<NFeEntradaHistoricaImportResultado | null>(null);
@@ -151,8 +211,6 @@ const NFeHistoricaEntradaImportada = () => {
       <PageHeader
         title="Base de NF-e Entrada Importada"
         description="XMLs de entrada usados para apuração fiscal, base contábil, relatórios e precificação. Não geram estoque, contas a pagar ou conciliação operacional automaticamente."
-        searchValue={search}
-        onSearch={setSearch}
       />
 
       <NexusCard variant="action" className="mb-6">
@@ -257,15 +315,120 @@ const NFeHistoricaEntradaImportada = () => {
         </div>
       )}
 
-      <NexusCard className="mb-4">
+      <NexusCard className="p-4 mb-4">
         <div className="flex flex-wrap gap-3 items-end">
+          <div>
+            <label className="erp-label">{tipoData === 'entrada' ? 'Entrada de' : 'Emissão de'}</label>
+            <input
+              type="date"
+              className="erp-input mt-1"
+              value={dataInicio}
+              onChange={(e) => {
+                setCompetencia('');
+                setFilter('data_inicio', e.target.value);
+              }}
+            />
+          </div>
+          <div>
+            <label className="erp-label">{tipoData === 'entrada' ? 'Entrada até' : 'Emissão até'}</label>
+            <input
+              type="date"
+              className="erp-input mt-1"
+              value={dataFim}
+              onChange={(e) => {
+                setCompetencia('');
+                setFilter('data_fim', e.target.value);
+              }}
+            />
+          </div>
+          <div>
+            <label className="erp-label">Competência (mm/aaaa)</label>
+            <div className="flex gap-2 mt-1">
+              <input
+                className="erp-input w-28"
+                value={competencia}
+                onChange={(e) => setCompetencia(e.target.value)}
+                placeholder="06/2026"
+              />
+              <button type="button" className="erp-btn-outline erp-btn-sm" onClick={aplicarCompetencia}>
+                Aplicar
+              </button>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 items-end">
+            <button
+              type="button"
+              className="erp-btn-outline erp-btn-sm"
+              onClick={() => {
+                const p = intervaloMesAtual();
+                aplicarPeriodo(p.inicio, p.fim);
+              }}
+            >
+              Este mês
+            </button>
+            <button
+              type="button"
+              className="erp-btn-outline erp-btn-sm"
+              onClick={() => {
+                const p = intervaloMesAnterior();
+                aplicarPeriodo(p.inicio, p.fim);
+              }}
+            >
+              Mês anterior
+            </button>
+            <button
+              type="button"
+              className="erp-btn-outline erp-btn-sm"
+              onClick={() => aplicarPeriodo(PERIODO_ATALHO_JUN_2026.inicio, PERIODO_ATALHO_JUN_2026.fim)}
+            >
+              Jun/2026
+            </button>
+            <button type="button" className="erp-btn-ghost erp-btn-sm" onClick={limparPeriodo}>
+              Limpar período
+            </button>
+          </div>
+          <div className="min-w-[220px]">
+            <label className="erp-label">Chave de acesso</label>
+            <input
+              className="erp-input mt-1 w-full font-mono text-sm"
+              value={chaveFiltro}
+              onChange={(e) => setChaveFiltro(e.target.value)}
+              placeholder="44 dígitos"
+            />
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <label className="erp-label">Busca</label>
+            <input
+              className="erp-input mt-1 w-full"
+              value={search}
+              onChange={(e) => {
+                setChaveFiltro('');
+                setSearch(e.target.value);
+              }}
+              placeholder="Número, fornecedor, chave…"
+            />
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground mt-3">
+          Filtro ativo: {periodoFiltroLabel}
+          {tipoData === 'entrada' ? ' (por data de entrada na conferência)' : ' (por data de emissão)'}.
+        </p>
+        <div className="flex flex-wrap gap-3 items-end mt-3 pt-3 border-t border-border/60">
           <select className="erp-select" value={empresaId} onChange={(e) => setFilter('empresa_destinataria_id', e.target.value)}>
             <option value="">Empresa destinatária (todas)</option>
-            {empresas.map((e) => <option key={e.id} value={e.id}>{e.razao_social}</option>)}
+            {empresas.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.razao_social}
+              </option>
+            ))}
           </select>
           <select className="erp-select" value={fornecedorId} onChange={(e) => setFilter('fornecedor_id', e.target.value)}>
             <option value="">Fornecedor emitente (todos)</option>
-            {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.razao_social}</option>)}
+            {fornecedores.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.razao_social}
+              </option>
+            ))}
           </select>
           <select
             className="erp-select"
@@ -273,7 +436,9 @@ const NFeHistoricaEntradaImportada = () => {
             onChange={(e) => setFilter('status_conferencia', e.target.value)}
           >
             {STATUS_CONFERENCIA_FILTRO_OPCOES.map((opt) => (
-              <option key={opt.value || 'todos'} value={opt.value}>{opt.label}</option>
+              <option key={opt.value || 'todos'} value={opt.value}>
+                {opt.label}
+              </option>
             ))}
           </select>
           <select
@@ -285,25 +450,9 @@ const NFeHistoricaEntradaImportada = () => {
             <option value="emissao">Data de emissão</option>
             <option value="entrada">Data de entrada</option>
           </select>
-          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            Data inicial
-            <input
-              type="date"
-              className="erp-input"
-              value={dataInicio}
-              onChange={(e) => setFilter('data_inicio', e.target.value)}
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            Data final
-            <input
-              type="date"
-              className="erp-input"
-              value={dataFim}
-              onChange={(e) => setFilter('data_fim', e.target.value)}
-            />
-          </label>
-          <NexusButton type="button" variant="outline" onClick={() => void reload()}>Atualizar</NexusButton>
+          <NexusButton type="button" variant="outline" onClick={() => void reload()}>
+            Atualizar
+          </NexusButton>
         </div>
       </NexusCard>
 

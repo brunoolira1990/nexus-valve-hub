@@ -137,5 +137,7 @@ describe('ERP 4.0.9.1 — migração visual Nexus', () => {
     expect(screen.getByRole('heading', { name: 'Base de NF-e Entrada Importada' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Chave' })).toBeInTheDocument();
     expect(screen.getByText(/Nenhuma NF-e de entrada importada encontrada/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Este mês/i })).toBeInTheDocument();
+    expect(screen.getByText(/Competência \(mm\/aaaa\)/i)).toBeInTheDocument();
   });
 });
