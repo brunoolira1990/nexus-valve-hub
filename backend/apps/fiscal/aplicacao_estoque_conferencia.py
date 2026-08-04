@@ -123,11 +123,12 @@ def resolver_ou_criar_corrida(
             'Fornecedor da NF não identificado no cadastro; não é possível criar corrida mestre.',
         )
 
-    existente = Corrida.objects.filter(numero=numero).first()
+    # Unicidade operacional: (número, produto). O mesmo heat pode entrar em vários produtos.
+    existente = Corrida.objects.filter(numero=numero, produto_id=produto_id).first()
     if existente:
-        if existente.produto_id != produto_id or existente.fornecedor_id != fornecedor_id:
+        if existente.fornecedor_id and existente.fornecedor_id != fornecedor_id:
             raise ValueError(
-                f'Corrida "{numero}" já cadastrada para outro produto ou fornecedor.',
+                f'Corrida "{numero}" já cadastrada para este produto com outro fornecedor.',
             )
         return existente
 

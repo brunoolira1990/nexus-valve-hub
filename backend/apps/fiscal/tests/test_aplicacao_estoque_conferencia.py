@@ -257,3 +257,32 @@ class AplicacaoEstoqueAPITests(TestCase):
         )
         self.assertEqual(r.status_code, status.HTTP_200_OK, r.content)
         self.assertTrue(r.json()['aplicado'])
+
+
+class ResolverCorridaMesmoNumeroProdutosTests(TestCase):
+    """Mesmo heat/corrida em produtos diferentes é permitido."""
+
+    def test_mesmo_numero_em_produtos_diferentes(self):
+        from apps.fiscal.aplicacao_estoque_conferencia import resolver_ou_criar_corrida
+
+        ctx_a = _setup_conferencia('C1', corrida='W1722549')
+        ctx_b = _setup_conferencia('C2', corrida='W1722549')
+        # mesmo fornecedor (reusa forn de A no setup B — na prática NF única)
+        forn = ctx_a['forn']
+        c1 = resolver_ou_criar_corrida(
+            produto_id=ctx_a['prod'].id,
+            fornecedor_id=forn.id,
+            numero_texto='W1722549',
+            data_recebimento=date(2026, 6, 1),
+        )
+        c2 = resolver_ou_criar_corrida(
+            produto_id=ctx_b['prod'].id,
+            fornecedor_id=forn.id,
+            numero_texto='W1722549',
+            data_recebimento=date(2026, 6, 1),
+        )
+        self.assertNotEqual(c1.id, c2.id)
+        self.assertEqual(c1.numero, c2.numero)
+        self.assertEqual(c1.produto_id, ctx_a['prod'].id)
+        self.assertEqual(c2.produto_id, ctx_b['prod'].id)
+        self.assertEqual(Corrida.objects.filter(numero='W1722549').count(), 2)

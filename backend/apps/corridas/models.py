@@ -2,7 +2,9 @@ from django.db import models
 
 
 class Corrida(models.Model):
-    numero = models.CharField(max_length=64, unique=True)
+    # Mesmo nº de corrida/heat pode existir em produtos diferentes (comum em mill certificates).
+    # A unicidade é por produto + número — não global só pelo número.
+    numero = models.CharField(max_length=64, db_index=True)
     produto = models.ForeignKey(
         'produtos.Produto',
         on_delete=models.PROTECT,
@@ -21,6 +23,12 @@ class Corrida(models.Model):
 
     class Meta:
         ordering = ['-data_recebimento', 'numero']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['numero', 'produto'],
+                name='corridas_corrida_numero_produto_uniq',
+            ),
+        ]
 
     def __str__(self):
         return self.numero
