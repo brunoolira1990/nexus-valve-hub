@@ -154,7 +154,11 @@ def montar_preview_reabertura_entrada_fornecedor(
         _adicionar_impedimento(
             impedimentos,
             'ALOCACAO_ENTRADA_VENDA',
-            'Existem alocações para Pedidos de Venda.',
+            (
+                f'Existem {alocacoes_count} alocação(ões) Entrada × Pedido de Venda. '
+                'Na conferência, abra «Alocar para venda» na linha e use Desvincular; '
+                'depois tente reabrir de novo. A reabertura não remove alocações sozinha.'
+            ),
         )
 
     atendimentos_count = atendimento_qs.count()

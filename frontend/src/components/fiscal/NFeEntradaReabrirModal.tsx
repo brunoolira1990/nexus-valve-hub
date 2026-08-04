@@ -148,6 +148,12 @@ export function NFeEntradaReabrirModal({
                       <li key={item.codigo}>{item.mensagem}</li>
                     ))}
                   </ul>
+                  {preview.impedimentos.some((i) => i.codigo === 'ALOCACAO_ENTRADA_VENDA') ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      «Salvar com pendências» não remove alocação. Feche este modal, desvincule em
+                      «Alocar para venda» e abra de novo «Reabrir para correção».
+                    </p>
+                  ) : null}
                 </div>
               ) : (
                 <p className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-emerald-800 dark:text-emerald-200">
