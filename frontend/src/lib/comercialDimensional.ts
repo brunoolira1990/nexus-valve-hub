@@ -21,18 +21,52 @@ export function unidadesNegociacaoProduto(produto?: Produto | null): string[] {
 /** Unidades permitidas no pedido de compra (compra → estoque). */
 export function unidadesNegociacaoCompraProduto(produto?: Produto | null): string[] {
   if (!produto) return ['PC'];
-  const list = (produto.unidades_compra_permitidas?.length ? produto.unidades_compra_permitidas : []) || [];
-  const out = Array.from(new Set(list.map((u) => (u || '').toUpperCase()).filter(Boolean)));
-  if (out.length) return out;
-  const fallback = (
+  const list = (
+    produto.unidades_compra_permitidas_efetivas?.length
+      ? produto.unidades_compra_permitidas_efetivas
+      : produto.unidades_compra_permitidas?.length
+        ? produto.unidades_compra_permitidas
+        : []
+  ) || [];
+  let out = Array.from(new Set(list.map((u) => (u || '').toUpperCase()).filter(Boolean)));
+  if (!out.length) {
+    const fallback = (
+      produto.unidade_compra_efetiva ||
+      produto.unidade_compra_padrao ||
+      produto.unidade_estoque_efetiva ||
+      produto.unidade_estoque ||
+      produto.unidade_venda_efetiva ||
+      produto.unidade_venda_padrao ||
+      produto.unidade ||
+      'PC'
+    ).toUpperCase();
+    out = [fallback];
+  }
+
+  // Tubo/barra dimensional: permitir negociar em metro mesmo se o cadastro só listou BR.
+  const usaConv = Boolean(produto.usa_conversao_dimensional_efetivo || produto.usa_conversao_dimensional);
+  const tipoComp = (produto.tipo_composicao_fisica_efetivo || 'BARRA_M').toUpperCase();
+  if (usaConv && tipoComp === 'BARRA_M') {
+    out = Array.from(new Set([...out, 'M', 'BR']));
+    if (Number(produto.peso_por_metro_kg_efetivo || produto.peso_por_metro_kg || 0) > 0) {
+      out = Array.from(new Set([...out, 'KG']));
+    }
+  }
+
+  const preferida = (
     produto.unidade_compra_efetiva ||
     produto.unidade_compra_padrao ||
-    produto.unidade_venda_efetiva ||
-    produto.unidade_venda_padrao ||
-    produto.unidade ||
-    'PC'
+    produto.unidade_estoque_efetiva ||
+    ''
   ).toUpperCase();
-  return [fallback];
+  if (preferida && out.includes(preferida)) {
+    return [preferida, ...out.filter((u) => u !== preferida)];
+  }
+  // Em barra dimensional, M primeiro facilita compra por metro.
+  if (usaConv && tipoComp === 'BARRA_M' && out.includes('M')) {
+    return ['M', ...out.filter((u) => u !== 'M')];
+  }
+  return out;
 }
 
 export function labelPrecoPorUnidade(unidade?: string): string {

@@ -424,6 +424,7 @@ export interface Produto {
   peso_por_metro_kg_efetivo?: number | null;
   comprimento_padrao_barra_m_efetivo?: number | null;
   unidades_venda_permitidas_efetivas?: string[];
+  unidades_compra_permitidas_efetivas?: string[];
   controla_composicao_fisica_efetivo?: boolean;
   controla_composicao_fisica?: boolean;
   tipo_composicao_fisica?: string;

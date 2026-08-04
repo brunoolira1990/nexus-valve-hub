@@ -25,6 +25,36 @@ def _q(value: Decimal, q: Decimal) -> Decimal:
     return value.quantize(q, rounding=ROUND_HALF_UP)
 
 
+def _expand_unidades_dimensionais(produto: Produto, base: set[str], *, contexto: str) -> set[str]:
+    """Garante M/BR (barra) ou KG/PC (peça) quando há conversão dimensional ativa."""
+    out = {u for u in base if u}
+    if not produto.get_usa_conversao_dimensional_efetivo():
+        return out
+
+    tipo = (produto.get_tipo_composicao_fisica_efetivo() or 'BARRA_M').strip().upper()
+    if tipo == 'BARRA_M':
+        out.update({'M', 'BR'})
+        if produto.get_peso_por_metro_kg_efetivo():
+            out.add('KG')
+    elif tipo == 'PECA_KG':
+        out.update({'KG', 'PC'})
+        if produto.get_peso_por_chapa_kg_efetivo():
+            out.add('CH')
+
+    stock = (produto.get_unidade_estoque_efetiva() or '').strip().upper()
+    if stock:
+        out.add(stock)
+    if contexto == 'compra':
+        compra = (produto.get_unidade_compra_efetiva() or '').strip().upper()
+        if compra:
+            out.add(compra)
+    else:
+        venda = (produto.get_unidade_venda_efetiva() or '').strip().upper()
+        if venda:
+            out.add(venda)
+    return out
+
+
 def _allowed_unidades_negociacao(produto: Produto, contexto: str) -> set[str]:
     if contexto == 'compra':
         own = {str(u).strip().upper() for u in (produto.unidades_compra_permitidas or []) if str(u).strip()}
@@ -54,8 +84,8 @@ def _allowed_unidades_negociacao(produto: Produto, contexto: str) -> set[str]:
                 or produto.unidade
                 or 'PC'
             ).strip().upper()
-            return {fallback}
-        return base
+            base = {fallback}
+        return _expand_unidades_dimensionais(produto, base, contexto='compra')
 
     own = {str(u).strip().upper() for u in (produto.unidades_venda_permitidas or []) if str(u).strip()}
     fam = set()
@@ -64,8 +94,8 @@ def _allowed_unidades_negociacao(produto: Produto, contexto: str) -> set[str]:
     base = own or fam
     if not base:
         fallback = (produto.get_unidade_venda_efetiva() or produto.unidade or 'PC').strip().upper()
-        return {fallback}
-    return base
+        base = {fallback}
+    return _expand_unidades_dimensionais(produto, base, contexto='venda')
 
 
 def _safe_convert(
