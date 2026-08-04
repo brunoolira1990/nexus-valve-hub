@@ -3136,6 +3136,21 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
             )
         except ValueError as exc:
             return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:  # noqa: BLE001
+            from django.db import IntegrityError
+
+            if isinstance(exc, IntegrityError):
+                return response.Response(
+                    {
+                        'detail': (
+                            'Conflito ao gravar corrida/estoque. '
+                            'Confirme se a migration corridas (número por produto) foi aplicada: '
+                            'python manage.py migrate corridas'
+                        ),
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            raise
 
         if data.get('pendencias') or (data.get('alertas') and not confirmar_alertas):
             return response.Response(
