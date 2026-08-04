@@ -3097,7 +3097,19 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
             resp = self._resposta_erro_schema_nfe_entrada(exc)
             if resp:
                 return resp
-            raise
+            import logging
+            from django.db import IntegrityError
+
+            logging.getLogger(__name__).exception('aplicar-estoque falhou nf=%s', pk)
+            if isinstance(exc, (ValueError, IntegrityError)):
+                return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            return response.Response(
+                {
+                    'detail': str(exc) or 'Erro interno ao aplicar estoque.',
+                    'erro_tipo': type(exc).__name__,
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     def _aplicar_estoque_conferencia_impl(self, request, pk=None):
         nf = self.get_queryset().get(pk=pk)
