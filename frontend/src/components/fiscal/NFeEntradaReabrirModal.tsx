@@ -55,6 +55,7 @@ export function NFeEntradaReabrirModal({
   const [motivo, setMotivo] = useState('');
   const [loading, setLoading] = useState(false);
   const [enviando, setEnviando] = useState(false);
+  const [desvinculando, setDesvinculando] = useState(false);
   const [erro, setErro] = useState('');
 
   useEffect(() => {
@@ -84,8 +85,29 @@ export function NFeEntradaReabrirModal({
   }, [open, nfeHistoricaId]);
 
   const fechar = () => {
-    if (enviando) return;
+    if (enviando || desvinculando) return;
     onOpenChange(false);
+  };
+
+  const desvincularAlocacoes = async () => {
+    if (!nfeHistoricaId) return;
+    if (
+      !window.confirm(
+        'Desvincular todas as alocações Entrada × Pedido de Venda desta NF? Estoque e financeiro não são alterados.',
+      )
+    ) {
+      return;
+    }
+    setDesvinculando(true);
+    setErro('');
+    try {
+      const res = await nfeEntradaConferenciaService.desvincularAlocacoesVenda(nfeHistoricaId);
+      setPreview(res.preview);
+    } catch (error) {
+      setErro(apiErrorMessage(error));
+    } finally {
+      setDesvinculando(false);
+    }
   };
 
   const confirmar = async () => {
@@ -149,10 +171,20 @@ export function NFeEntradaReabrirModal({
                     ))}
                   </ul>
                   {preview.impedimentos.some((i) => i.codigo === 'ALOCACAO_ENTRADA_VENDA') ? (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      «Salvar com pendências» não remove alocação. Feche este modal, desvincule em
-                      «Alocar para venda» e abra de novo «Reabrir para correção».
-                    </p>
+                    <div className="mt-3 space-y-2">
+                      <p className="text-xs text-muted-foreground">
+                        «Salvar com pendências» não remove alocação. Desvincule aqui para liberar a
+                        reabertura.
+                      </p>
+                      <button
+                        type="button"
+                        className="erp-btn-outline text-sm"
+                        disabled={desvinculando || enviando}
+                        onClick={() => void desvincularAlocacoes()}
+                      >
+                        {desvinculando ? 'Desvinculando…' : 'Desvincular alocações Entrada × Venda'}
+                      </button>
+                    </div>
                   ) : null}
                 </div>
               ) : (
@@ -195,13 +227,13 @@ export function NFeEntradaReabrirModal({
         </div>
 
         <DialogFooter className="gap-2 sm:gap-0">
-          <button type="button" className="erp-btn-outline" disabled={enviando} onClick={fechar}>
+          <button type="button" className="erp-btn-outline" disabled={enviando || desvinculando} onClick={fechar}>
             Fechar
           </button>
           <button
             type="button"
             className="erp-btn-primary"
-            disabled={loading || enviando || !preview?.pode_reabrir || !motivoValido}
+            disabled={loading || enviando || desvinculando || !preview?.pode_reabrir || !motivoValido}
             onClick={() => void confirmar()}
           >
             {enviando ? 'Reabrindo…' : 'Reabrir entrada para correção'}

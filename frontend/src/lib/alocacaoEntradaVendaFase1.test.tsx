@@ -144,22 +144,20 @@ describe('AlocarEntradaParaVendaBlock — lazy load e erro', () => {
     vi.clearAllMocks();
   });
 
-  it('no mount: bloco visível, sem chamada de resumo nem opções de PV', async () => {
+  it('no mount: bloco visível e carrega resumo (para permitir Desvincular)', async () => {
     vi.mocked(alocacaoAtendimentoService.resumoEntradaVenda).mockResolvedValue(resumoBase);
     render(<AlocarEntradaParaVendaBlock itemConferenciaId={10} produtoId={1} />);
     expect(screen.getByText('Alocar para venda')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Abrir' })).toBeInTheDocument();
-    expect(alocacaoAtendimentoService.resumoEntradaVenda).not.toHaveBeenCalled();
+    await waitFor(() => expect(alocacaoAtendimentoService.resumoEntradaVenda).toHaveBeenCalledTimes(1));
     expect(alocacaoAtendimentoService.opcoesPedidosVendaItens).not.toHaveBeenCalled();
-    expect(screen.queryByPlaceholderText(/Pedido de Venda/i)).not.toBeInTheDocument();
   });
 
-  it('ao Abrir: carrega resumo e lista PVs do mesmo produto (sem digitar código)', async () => {
+  it('ao Abrir: lista PVs do mesmo produto (sem digitar código)', async () => {
     vi.mocked(alocacaoAtendimentoService.resumoEntradaVenda).mockResolvedValue(resumoBase);
     vi.mocked(alocacaoAtendimentoService.opcoesPedidosVendaItens).mockResolvedValue([opcaoPv]);
     render(<AlocarEntradaParaVendaBlock itemConferenciaId={10} produtoId={1} />);
+    await waitFor(() => expect(alocacaoAtendimentoService.resumoEntradaVenda).toHaveBeenCalled());
     abrirBloco();
-    await waitFor(() => expect(alocacaoAtendimentoService.resumoEntradaVenda).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getByText('Sem alocação')).toBeInTheDocument());
     expect(screen.getByPlaceholderText(/Filtrar por nº do PV ou cliente/i)).toBeInTheDocument();
     await waitFor(() =>

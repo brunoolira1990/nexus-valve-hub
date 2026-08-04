@@ -28,6 +28,16 @@ export const nfeEntradaConferenciaService = {
         { motivo },
       )
     ).data,
+  desvincularAlocacoesVenda: async (nfeHistoricaId: number, motivo?: string) =>
+    (
+      await api.post<{
+        detail: string;
+        alocacoes_removidas: number;
+        preview: PreviewReaberturaEntradaFornecedor;
+      }>(`${base}${nfeHistoricaId}/conferencia/desvincular-alocacoes-venda/`, {
+        motivo: motivo || undefined,
+      })
+    ).data,
   previewAplicarEstoque: async (nfeHistoricaId: number, confirmarAlertas = false) =>
     (
       await api.get<ResultadoAplicacaoEstoque>(

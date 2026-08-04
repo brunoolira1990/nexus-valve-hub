@@ -85,6 +85,7 @@ from .nfe_historica_entrada_fiscal import (
 from .nfe_entrada_data_entrada import filtrar_entrada_historica_por_competencia, mensagem_erro_schema_nfe_entrada, parse_data_entrada
 from .nfe_entrada_reabertura import (
     ReaberturaEntradaFornecedorErro,
+    desvincular_alocacoes_entrada_venda_da_nf,
     montar_preview_reabertura_entrada_fornecedor,
     reabrir_entrada_fornecedor,
 )
@@ -2956,6 +2957,30 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
         conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
         resultado['conferencia'] = NFeEntradaConferenciaSerializer(conferencia).data
         return response.Response(resultado)
+
+    @action(detail=True, methods=['post'], url_path='conferencia/desvincular-alocacoes-venda')
+    @transaction.atomic
+    def desvincular_alocacoes_venda_conferencia(self, request, pk=None):
+        """Remove alocações Entrada×PV da NF para liberar a reabertura da conferência."""
+        from apps.comercial.services.alocacao_atendimento_service import AlocacaoAtendimentoErro
+
+        nf = self.get_queryset().select_related('conferencia').get(pk=pk)
+        try:
+            removidas = desvincular_alocacoes_entrada_venda_da_nf(
+                nf,
+                ator=request.user,
+                motivo=(request.data or {}).get('motivo') or None,
+            )
+        except AlocacaoAtendimentoErro as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        preview = montar_preview_reabertura_entrada_fornecedor(nf)
+        return response.Response(
+            {
+                'detail': f'{removidas} alocação(ões) desvinculada(s).',
+                'alocacoes_removidas': removidas,
+                'preview': preview,
+            }
+        )
 
     @action(detail=True, methods=['post'], url_path='preparar-estoque')
     @transaction.atomic

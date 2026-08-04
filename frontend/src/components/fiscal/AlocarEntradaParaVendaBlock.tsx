@@ -51,7 +51,7 @@ export function AlocarEntradaParaVendaBlock({ itemConferenciaId, produtoId, onAt
     }
   }, [itemConferenciaId]);
 
-  // Resumo sob demanda: ao montar só se o operador abrir, ou após mutação.
+  // Resumo sempre no mount: Desvincular precisa aparecer sem depender de «Abrir».
   useEffect(() => {
     setResumo(null);
     setResumoCarregado(false);
@@ -59,12 +59,15 @@ export function AlocarEntradaParaVendaBlock({ itemConferenciaId, produtoId, onAt
     setAberto(false);
     setOpcaoPv(null);
     setSugestoesPv([]);
-  }, [itemConferenciaId]);
-
-  useEffect(() => {
-    if (!aberto || resumoCarregado) return;
     void load();
-  }, [aberto, resumoCarregado, load]);
+  }, [itemConferenciaId, load]);
+
+  // Se já há alocação, abre o bloco para o Desvincular ficar visível.
+  useEffect(() => {
+    if (resumo && (resumo.alocacoes?.length ?? 0) > 0) {
+      setAberto(true);
+    }
+  }, [resumo]);
 
   // Produto já vinculado na conferência → listar PVs desse produto sem digitar código de novo.
   useEffect(() => {

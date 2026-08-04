@@ -275,6 +275,29 @@ def _bloquear_dependencias(conferencia: NFeEntradaConferencia) -> None:
 
 
 @transaction.atomic
+def desvincular_alocacoes_entrada_venda_da_nf(
+    nf: NFeEntradaHistoricaImportada,
+    *,
+    ator=None,
+    origem_sistema: str | None = None,
+    motivo: str | None = None,
+) -> int:
+    """Remove todas as alocações Entrada×PV da NF histórica. Retorna quantas removeu."""
+    from apps.comercial.services.alocacao_entrada_venda_service import desvincular_alocacao_entrada_venda
+
+    qs = list(
+        AlocacaoAtendimento.objects.filter(nf_entrada_historica_item__nf=nf).order_by('id'),
+    )
+    for aloc in qs:
+        desvincular_alocacao_entrada_venda(
+            aloc,
+            ator=ator,
+            origem_sistema=origem_sistema,
+            motivo=motivo or 'Desvínculo para permitir reabertura da conferência',
+        )
+    return len(qs)
+
+
 def reabrir_entrada_fornecedor(
     nf_id: int,
     *,
