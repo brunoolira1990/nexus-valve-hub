@@ -87,6 +87,7 @@ from .conferencia_pedido import (
     avaliar_elegibilidade_estoque_item_conferencia,
     build_snapshot_pedido,
     carregar_certificados_fornecedor_por_item_conferencia,
+    fiscal_dispensa_produto_cadastrado,
     item_pedido_resumo_dict,
     montar_resumo_elegibilidade_estoque,
     montar_resumo_pedido_conferencia,
@@ -1891,11 +1892,19 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             getattr(self.instance, 'quantidade_estoque_calculada', Decimal('0')),
         )
         motivo_ignorado = attrs.get('motivo_ignorado', getattr(self.instance, 'motivo_ignorado', ''))
-        if status in {ItemNFeEntradaConferencia.Status.PRODUTO_VINCULADO, ItemNFeEntradaConferencia.Status.CONFERIDO} and not produto:
+        dispensa_produto = False
+        if not produto and self.instance is not None:
+            resultado_fiscal = self.get_resultado_fiscal(self.instance)
+            dispensa_produto = fiscal_dispensa_produto_cadastrado(resultado_fiscal)
+        if (
+            status in {ItemNFeEntradaConferencia.Status.PRODUTO_VINCULADO, ItemNFeEntradaConferencia.Status.CONFERIDO}
+            and not produto
+            and not dispensa_produto
+        ):
             raise serializers.ValidationError(
                 {'produto_id': 'Produto cadastrado no NEXUS APP é obrigatório para este status.'}
             )
-        if status == ItemNFeEntradaConferencia.Status.CONFERIDO:
+        if status == ItemNFeEntradaConferencia.Status.CONFERIDO and produto:
             produto_alterado = self._produto_esta_sendo_alterado(self.instance, attrs, produto)
             equivalencias_no_payload = (
                 hasattr(self, 'initial_data') and 'equivalencias' in self.initial_data

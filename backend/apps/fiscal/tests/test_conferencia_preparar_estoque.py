@@ -126,12 +126,13 @@ def _setup_conferencia(suffix: str, *, com_pedido: bool = True):
         },
     )
     conf, _ = NFeEntradaConferencia.objects.get_or_create(nf_entrada_historica=nf)
+    conf.data_entrada = date(2026, 6, 1)
     if com_pedido:
         conf.pedido_compra = pedido
-        conf.save(update_fields=['pedido_compra'])
+        conf.save(update_fields=['pedido_compra', 'data_entrada'])
     else:
         conf.pedido_compra = None
-        conf.save(update_fields=['pedido_compra'])
+        conf.save(update_fields=['pedido_compra', 'data_entrada'])
     linha1, _ = conf.itens.get_or_create(item_nfe_historico=item_nf)
     linha2, _ = conf.itens.get_or_create(item_nfe_historico=item_nf2)
     for linha, item_nf_row in ((linha1, item_nf), (linha2, item_nf2)):
@@ -398,6 +399,13 @@ class ConferenciaPrepararEstoqueTests(TestCase):
             calcular_status_operacional_item_conferencia(linha),
             ItemNFeEntradaConferencia.Status.PENDENTE_PRODUTO,
         )
+        self.assertEqual(
+            calcular_status_operacional_item_conferencia(
+                linha,
+                resultado_fiscal={'movimenta_estoque': False},
+            ),
+            ItemNFeEntradaConferencia.Status.CONFERIDO,
+        )
         linha.produto = ctx['prod']
         linha.produto_id = ctx['prod'].id
         self.assertEqual(
@@ -540,6 +548,77 @@ class ConferenciaPrepararEstoqueFiscalTests(TestCase):
             severidade=RegraFiscalEntrada.Severidade.BLOQUEIO,
         )
         r_prep = ctx['client'].post(ctx['url_prep'], {}, format='json')
+        self.assertEqual(r_prep.status_code, status.HTTP_400_BAD_REQUEST)
+        pendencias = r_prep.json().get('pendencias') or []
+        self.assertTrue(any('produto cadastrado' in p.lower() for p in pendencias))
+
+    def test_preparar_uso_consumo_sem_produto(self):
+        ctx = self._ctx_fiscal('uc')
+        ctx['conf'].data_entrada = date(2026, 6, 1)
+        ctx['conf'].save(update_fields=['data_entrada'])
+        RegraFiscalEntrada.objects.create(
+            nome='Uso e consumo 5102',
+            ativo=True,
+            prioridade=20,
+            cfop='5102',
+            cfop_entrada='1556',
+            tipo_operacao_fiscal=RegraFiscalEntrada.TipoOperacaoFiscal.USO_CONSUMO,
+            cst_icms_esperado='00',
+            movimenta_estoque=False,
+            severidade=RegraFiscalEntrada.Severidade.INFORMATIVO,
+        )
+        r_save = ctx['client'].post(
+            ctx['url_conf'],
+            {
+                'pedido_compra_id': None,
+                'data_entrada': '2026-06-01',
+                'itens': [
+                    {'id': ctx['linha1'].id},
+                    {
+                        'id': ctx['linha2'].id,
+                        'status': 'IGNORADO',
+                        'motivo_ignorado': 'Não usado',
+                    },
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(r_save.status_code, status.HTTP_200_OK, r_save.content)
+        ctx['linha1'].refresh_from_db()
+        self.assertIsNone(ctx['linha1'].produto_id)
+        self.assertEqual(ctx['linha1'].status, ItemNFeEntradaConferencia.Status.CONFERIDO)
+        item_api = next(i for i in r_save.json()['itens'] if i['id'] == ctx['linha1'].id)
+        self.assertFalse(item_api.get('resultado_fiscal', {}).get('movimenta_estoque'))
+
+        r_prep = ctx['client'].post(
+            ctx['url_prep'],
+            {'data_entrada': '2026-06-01'},
+            format='json',
+        )
+        self.assertEqual(r_prep.status_code, status.HTTP_200_OK, r_prep.content)
+        ctx['conf'].refresh_from_db()
+        self.assertEqual(ctx['conf'].status, NFeEntradaConferencia.Status.PREPARADA)
+
+    def test_preparar_ainda_exige_produto_quando_movimenta_estoque(self):
+        ctx = self._ctx_fiscal('mp')
+        ctx['conf'].data_entrada = date(2026, 6, 1)
+        ctx['conf'].save(update_fields=['data_entrada'])
+        RegraFiscalEntrada.objects.create(
+            nome='Compra com estoque 5102',
+            ativo=True,
+            prioridade=20,
+            cfop='5102',
+            cfop_entrada='1102',
+            tipo_operacao_fiscal=RegraFiscalEntrada.TipoOperacaoFiscal.COMPRA,
+            cst_icms_esperado='00',
+            movimenta_estoque=True,
+            severidade=RegraFiscalEntrada.Severidade.INFORMATIVO,
+        )
+        r_prep = ctx['client'].post(
+            ctx['url_prep'],
+            {'data_entrada': '2026-06-01'},
+            format='json',
+        )
         self.assertEqual(r_prep.status_code, status.HTTP_400_BAD_REQUEST)
         pendencias = r_prep.json().get('pendencias') or []
         self.assertTrue(any('produto cadastrado' in p.lower() for p in pendencias))

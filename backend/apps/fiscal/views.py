@@ -2891,6 +2891,14 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
         conferencia.refresh_from_db()
         limpar_vinculos_pedido_invalidos(conferencia)
 
+        from apps.regras_fiscais.entrada_fiscal import (
+            carregar_regras_fiscais_entrada_ativas,
+            montar_contexto_fiscal_entrada,
+        )
+
+        contexto_fiscal = montar_contexto_fiscal_entrada(conferencia)
+        regras_fiscais = carregar_regras_fiscais_entrada_ativas()
+
         itens_payload = payload.get('itens') or []
         for raw_item in itens_payload:
             item_id = raw_item.get('id')
@@ -2915,6 +2923,8 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
                 context={
                     'conferencia': conferencia,
                     'pedido_compra_id': conferencia.pedido_compra_id,
+                    'contexto_fiscal_entrada': contexto_fiscal,
+                    'regras_fiscais_entrada': regras_fiscais,
                 },
             )
             item_serializer.is_valid(raise_exception=True)
@@ -2929,7 +2939,12 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
                     )
                     .get(pk=saved.pk)
                 )
-            aplicar_pos_save_item_conferencia(saved, conferencia)
+            aplicar_pos_save_item_conferencia(
+                saved,
+                conferencia,
+                contexto_fiscal=contexto_fiscal,
+                regras_fiscais=regras_fiscais,
+            )
 
         conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
         return response.Response(NFeEntradaConferenciaSerializer(conferencia).data)
@@ -3003,8 +3018,20 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
         if erro_data:
             return response.Response({'detail': erro_data}, status=status.HTTP_400_BAD_REQUEST)
         conferencia.refresh_from_db()
+        from apps.regras_fiscais.entrada_fiscal import (
+            carregar_regras_fiscais_entrada_ativas,
+            montar_contexto_fiscal_entrada,
+        )
+
+        contexto_fiscal = montar_contexto_fiscal_entrada(conferencia)
+        regras_fiscais = carregar_regras_fiscais_entrada_ativas()
         for item_obj in conferencia.itens.all():
-            aplicar_pos_save_item_conferencia(item_obj, conferencia)
+            aplicar_pos_save_item_conferencia(
+                item_obj,
+                conferencia,
+                contexto_fiscal=contexto_fiscal,
+                regras_fiscais=regras_fiscais,
+            )
         conferencia.refresh_from_db()
         itens = list(
             conferencia.itens.select_related(
@@ -3014,7 +3041,12 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
                 'item_pedido_compra',
             ).all(),
         )
-        pendencias, bloqueio_fiscal = validar_preparar_estoque_conferencia(conferencia, itens)
+        pendencias, bloqueio_fiscal = validar_preparar_estoque_conferencia(
+            conferencia,
+            itens,
+            contexto_fiscal=contexto_fiscal,
+            regras_fiscais=regras_fiscais,
+        )
         if pendencias:
             payload_resp: dict = {
                 'detail': 'Não foi possível preparar estoque.',

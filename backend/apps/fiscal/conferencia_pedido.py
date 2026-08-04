@@ -457,11 +457,43 @@ def calcular_divergencias_item_conferencia(
     return divergencias, alertas
 
 
-def calcular_status_operacional_item_conferencia(item_conf: ItemNFeEntradaConferencia) -> str:
+def fiscal_dispensa_produto_cadastrado(resultado_fiscal: dict[str, Any] | None) -> bool:
+    """Uso/consumo e demais regras com movimenta_estoque=False não exigem produto."""
+    if not resultado_fiscal:
+        return False
+    return resultado_fiscal.get('movimenta_estoque') is False
+
+
+def _resultado_fiscal_item_conferencia(
+    item_conf: ItemNFeEntradaConferencia,
+    conferencia: NFeEntradaConferencia,
+    *,
+    contexto_fiscal=None,
+    regras_fiscais=None,
+) -> dict[str, Any]:
+    from apps.regras_fiscais.entrada_fiscal import (
+        avaliar_item_entrada_fiscal,
+        carregar_regras_fiscais_entrada_ativas,
+        montar_contexto_fiscal_entrada,
+    )
+
+    contexto = contexto_fiscal if contexto_fiscal is not None else montar_contexto_fiscal_entrada(conferencia)
+    regras = regras_fiscais if regras_fiscais is not None else carregar_regras_fiscais_entrada_ativas()
+    return avaliar_item_entrada_fiscal(item_conf, contexto, regras)
+
+
+def calcular_status_operacional_item_conferencia(
+    item_conf: ItemNFeEntradaConferencia,
+    *,
+    resultado_fiscal: dict[str, Any] | None = None,
+) -> str:
     """Status operacional da linha (exceto IGNORADO definido manualmente)."""
     if item_conf.status == ItemNFeEntradaConferencia.Status.IGNORADO:
         return item_conf.status
     if not item_conf.produto_id:
+        if fiscal_dispensa_produto_cadastrado(resultado_fiscal):
+            # Sem estoque (ex.: uso e consumo): linha ok sem cadastro de produto.
+            return ItemNFeEntradaConferencia.Status.CONFERIDO
         return ItemNFeEntradaConferencia.Status.PENDENTE_PRODUTO
     if item_conf.divergencias:
         return ItemNFeEntradaConferencia.Status.DIVERGENTE
@@ -473,6 +505,9 @@ def calcular_status_operacional_item_conferencia(item_conf: ItemNFeEntradaConfer
 def validar_preparar_estoque_conferencia(
     conferencia: NFeEntradaConferencia,
     itens: list[ItemNFeEntradaConferencia],
+    *,
+    contexto_fiscal=None,
+    regras_fiscais=None,
 ) -> tuple[list[str], bool]:
     """Pendências que impedem preparar estoque (pedido de compra é opcional)."""
     pendencias: list[str] = []
@@ -495,6 +530,14 @@ def validar_preparar_estoque_conferencia(
                 pendencias.append(f'Item {n_item}: motivo de ignorado obrigatório.')
             continue
         if not it.produto_id:
+            rf = _resultado_fiscal_item_conferencia(
+                it,
+                conferencia,
+                contexto_fiscal=contexto_fiscal,
+                regras_fiscais=regras_fiscais,
+            )
+            if fiscal_dispensa_produto_cadastrado(rf):
+                continue
             faltam_produto.append(n_item)
             continue
         if it.status not in statuses_ok:
@@ -841,6 +884,9 @@ def sanear_conversao_unidade_peca_conferencia(conferencia: NFeEntradaConferencia
 def aplicar_pos_save_item_conferencia(
     item_conf: ItemNFeEntradaConferencia,
     conferencia: NFeEntradaConferencia,
+    *,
+    contexto_fiscal=None,
+    regras_fiscais=None,
 ) -> ItemNFeEntradaConferencia:
     """Recalcula estoque (se produto), divergências e status operacional da linha."""
     alertas: list[str] = []
@@ -955,7 +1001,18 @@ def aplicar_pos_save_item_conferencia(
     item_conf.divergencias = list(dict.fromkeys(divergencias))
 
     if item_conf.status != item_conf.Status.IGNORADO:
-        item_conf.status = calcular_status_operacional_item_conferencia(item_conf)
+        rf = None
+        if not item_conf.produto_id:
+            rf = _resultado_fiscal_item_conferencia(
+                item_conf,
+                conferencia,
+                contexto_fiscal=contexto_fiscal,
+                regras_fiscais=regras_fiscais,
+            )
+        item_conf.status = calcular_status_operacional_item_conferencia(
+            item_conf,
+            resultado_fiscal=rf,
+        )
 
     item_conf.save()
 

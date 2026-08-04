@@ -17,8 +17,17 @@ export type ProgressoConferenciaOperador = {
   ignorados: number;
 };
 
+/** Uso/consumo e regras com movimenta_estoque=false não exigem produto cadastrado. */
+export function itemExigeProduto(it: ItemConferenciaNFeEntrada): boolean {
+  if (it.status === 'IGNORADO') return false;
+  if (it.resultado_fiscal?.movimenta_estoque === false) return false;
+  if ((it.elegibilidade_estoque?.status || '').toUpperCase() === 'NAO_MOVIMENTA') return false;
+  return true;
+}
+
 export function itemPendenteProduto(it: ItemConferenciaNFeEntrada): boolean {
   if (it.status === 'IGNORADO') return false;
+  if (!itemExigeProduto(it)) return false;
   return !it.produto_id || it.status === 'PENDENTE_PRODUTO';
 }
 
@@ -41,7 +50,7 @@ export function computarProgressoConferencia(
   return {
     totalItens: itens.length,
     itensAtivos: ativos.length,
-    produtosOk: ativos.filter((it) => Boolean(it.produto_id) && it.status !== 'PENDENTE_PRODUTO').length,
+    produtosOk: ativos.filter((it) => !itemPendenteProduto(it)).length,
     produtosFaltando: ativos.filter((it) => itemPendenteProduto(it)).length,
     fiscalBloqueado: Number(dados?.resumo_fiscal?.bloqueado || 0),
     fiscalSemRegra: Number(dados?.resumo_fiscal?.sem_regra || 0),
