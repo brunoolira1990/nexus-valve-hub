@@ -179,8 +179,8 @@ class NFeEntradaHistoricaListagemFiltrosTest(TestCase):
 
     def test_ordenacao_padrao_por_data_entrada_conferencia_nao_importacao(self) -> None:
         """
-        NF importada/emissão recente com data_entrada antiga na conferência
-        deve ordenar pela data de entrada, não pela importação.
+        Com data_entrada, ordena da mais recente para a mais antiga
+        (não pela importação/emissão).
         """
         nf_junho_recente = NFeEntradaHistoricaImportada.objects.create(
             chave_acesso='5' * 44,
@@ -208,10 +208,12 @@ class NFeEntradaHistoricaListagemFiltrosTest(TestCase):
         idx_pendente = ids.index(self.nf_pendente.id)
         idx_finalizada = ids.index(self.nf_finalizada.id)
         idx_junho = ids.index(nf_junho_recente.id)
-        self.assertLess(idx_pendente, idx_finalizada)
-        self.assertLess(idx_finalizada, idx_junho)
+        # data_entrada DESC: 30/06 > 25/04 > 05/03
+        self.assertLess(idx_junho, idx_finalizada)
+        self.assertLess(idx_finalizada, idx_pendente)
 
-    def test_ordenacao_mesma_data_entrada_fornecedor_e_numero(self) -> None:
+    def test_ordenacao_mesma_data_entrada_mais_recentes_primeiro(self) -> None:
+        """Com a mesma data_entrada, desempata por importado_em/emissão/id (mais recente primeiro)."""
         nf_alpha_10 = NFeEntradaHistoricaImportada.objects.create(
             chave_acesso='6' * 44,
             numero='010',
@@ -266,12 +268,6 @@ class NFeEntradaHistoricaListagemFiltrosTest(TestCase):
 
         resp = self.client.get(self.url)
         ids = [row['id'] for row in resp.data['results']]
-        grupo = [nf_alpha_10.id, nf_alpha_20.id, nf_beta_5.id]
-        posicoes = [ids.index(i) for i in grupo]
-        self.assertEqual(posicoes, sorted(posicoes))
-        self.assertLess(posicoes[0], posicoes[1])
-        self.assertLess(posicoes[1], posicoes[2])
-        self.assertEqual(
-            [ids[i] for i in posicoes],
-            [nf_alpha_10.id, nf_alpha_20.id, nf_beta_5.id],
-        )
+        # Mais recente (maior id / importado_em) primeiro entre a mesma data_entrada
+        self.assertLess(ids.index(nf_beta_5.id), ids.index(nf_alpha_20.id))
+        self.assertLess(ids.index(nf_alpha_20.id), ids.index(nf_alpha_10.id))

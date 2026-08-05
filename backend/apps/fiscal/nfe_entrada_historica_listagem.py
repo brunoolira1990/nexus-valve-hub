@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from django.db.models import Case, CharField, F, IntegerField, Q, QuerySet, Value, When
-from django.db.models.functions import Cast, Coalesce, Lower
+from django.db.models import Case, F, IntegerField, Q, QuerySet, Value, When
 from django.http import QueryDict
 
 from apps.fiscal.models import NFeEntradaHistoricaImportada
@@ -126,12 +125,11 @@ def aplicar_ordering_listagem_entrada_historica(
     """
     Ordenação operacional da base NF-e Entrada importada.
 
-    Padrão (fechamento mensal):
+    Padrão (fila + mais recentes primeiro):
     1. Sem data_entrada na conferência (precisam regularização)
-    2. data_entrada crescente (conferência — não importação/emissão)
-    3. Fornecedor A-Z
-    4. Número NF
-    5. id
+    2. data_entrada decrescente (mais recente primeiro)
+    3. importado_em / emissão decrescentes (desempate — não A-Z)
+    4. id
     """
     from nexus_erp.list_mixins import aplicar_ordering
 
@@ -146,7 +144,7 @@ def aplicar_ordering_listagem_entrada_historica(
                 'importado_em': 'importado_em',
                 'data_entrada': 'conferencia__data_entrada',
             },
-            'conferencia__data_entrada',
+            '-importado_em',
         )
 
     return (
@@ -156,18 +154,11 @@ def aplicar_ordering_listagem_entrada_historica(
                 default=Value(1),
                 output_field=IntegerField(),
             ),
-            _fornecedor_nome_ord=Lower(
-                Coalesce(
-                    F('fornecedor_emitente__razao_social'),
-                    Cast(F('emit_json__xNome'), CharField()),
-                    Value('', output_field=CharField()),
-                ),
-            ),
         ).order_by(
             '_sem_data_entrada',
-            'conferencia__data_entrada',
-            '_fornecedor_nome_ord',
-            'numero',
-            'id',
+            F('conferencia__data_entrada').desc(nulls_last=True),
+            F('importado_em').desc(nulls_last=True),
+            F('dh_emissao').desc(nulls_last=True),
+            '-id',
         )
     )
