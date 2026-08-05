@@ -82,6 +82,7 @@ vi.mock('@/services/api/alocacaoAtendimento', () => ({
     alocarEntradaVenda: vi.fn(),
     atualizarQuantidadeEntradaVenda: vi.fn(),
     desvincularEntradaVenda: vi.fn(),
+    listEventos: vi.fn().mockResolvedValue({ results: [], count: 0 }),
   },
 }));
 
@@ -158,7 +159,7 @@ describe('AlocarEntradaParaVendaBlock — lazy load e erro', () => {
     render(<AlocarEntradaParaVendaBlock itemConferenciaId={10} produtoId={1} />);
     await waitFor(() => expect(alocacaoAtendimentoService.resumoEntradaVenda).toHaveBeenCalled());
     abrirBloco();
-    await waitFor(() => expect(screen.getByText('Sem alocação')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Qty: sem alocação')).toBeInTheDocument());
     expect(screen.getByPlaceholderText(/Filtrar por nº do PV ou cliente/i)).toBeInTheDocument();
     await waitFor(() =>
       expect(alocacaoAtendimentoService.opcoesPedidosVendaItens).toHaveBeenCalledWith(
@@ -179,7 +180,9 @@ describe('AlocarEntradaParaVendaBlock — lazy load e erro', () => {
   });
 
   it('criar alocação: busca PV ao digitar, salva e atualiza saldos', async () => {
-    vi.mocked(alocacaoAtendimentoService.resumoEntradaVenda).mockResolvedValue(resumoBase);
+    vi.mocked(alocacaoAtendimentoService.resumoEntradaVenda)
+      .mockResolvedValueOnce(resumoBase)
+      .mockResolvedValue(resumoComAlocacao);
     vi.mocked(alocacaoAtendimentoService.opcoesPedidosVendaItens).mockResolvedValue([opcaoPv]);
     vi.mocked(alocacaoAtendimentoService.alocarEntradaVenda).mockResolvedValue({
       alocacao: alocacaoItem() as never,
@@ -202,20 +205,23 @@ describe('AlocarEntradaParaVendaBlock — lazy load e erro', () => {
     expect(alocacaoAtendimentoService.alocarEntradaVenda).toHaveBeenCalledWith(
       expect.objectContaining({ item_conferencia_id: 10, pedido_venda_item_id: 99 }),
     );
-    await waitFor(() => expect(screen.getByText('Parcial')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Qty: parcial')).toBeInTheDocument());
     expect(screen.getByText(/Alocado:\s*4\.000/)).toBeInTheDocument();
     expect(screen.getByText(/qty 4\.000/)).toBeInTheDocument();
   });
 
   it('editar quantidade: salva e atualiza resumo', async () => {
-    vi.mocked(alocacaoAtendimentoService.resumoEntradaVenda).mockResolvedValue(resumoComAlocacao);
+    const resumoEditado = {
+      ...resumoComAlocacao,
+      total_alocado: '5.000',
+      saldo_entrada: '5.000',
+      alocacoes: [alocacaoItem({ quantidade_alocada: '5.000' })],
+    };
+    vi.mocked(alocacaoAtendimentoService.resumoEntradaVenda)
+      .mockResolvedValueOnce(resumoComAlocacao)
+      .mockResolvedValue(resumoEditado);
     vi.mocked(alocacaoAtendimentoService.atualizarQuantidadeEntradaVenda).mockResolvedValue({
-      resumo: {
-        ...resumoComAlocacao,
-        total_alocado: '5.000',
-        saldo_entrada: '5.000',
-        alocacoes: [alocacaoItem({ quantidade_alocada: '5.000' })],
-      },
+      resumo: resumoEditado,
     });
 
     render(<AlocarEntradaParaVendaBlock itemConferenciaId={10} produtoId={1} />);
@@ -232,7 +238,9 @@ describe('AlocarEntradaParaVendaBlock — lazy load e erro', () => {
   });
 
   it('desvincular: confirma, remove alocação e volta a Sem alocação', async () => {
-    vi.mocked(alocacaoAtendimentoService.resumoEntradaVenda).mockResolvedValue(resumoComAlocacao);
+    vi.mocked(alocacaoAtendimentoService.resumoEntradaVenda)
+      .mockResolvedValueOnce(resumoComAlocacao)
+      .mockResolvedValue(resumoBase);
     vi.mocked(alocacaoAtendimentoService.desvincularEntradaVenda).mockResolvedValue({
       resumo: resumoBase,
     } as never);
@@ -244,9 +252,44 @@ describe('AlocarEntradaParaVendaBlock — lazy load e erro', () => {
 
     expect(confirmSpy).toHaveBeenCalled();
     await waitFor(() => expect(alocacaoAtendimentoService.desvincularEntradaVenda).toHaveBeenCalledWith(1));
-    await waitFor(() => expect(screen.getByText('Sem alocação')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Qty: sem alocação')).toBeInTheDocument());
     expect(screen.queryByText(/qty 4\.000/)).not.toBeInTheDocument();
     confirmSpy.mockRestore();
+  });
+
+  it('S4D: timeline read-only dos eventos da origem', async () => {
+    vi.mocked(alocacaoAtendimentoService.resumoEntradaVenda).mockResolvedValue(resumoComAlocacao);
+    vi.mocked(alocacaoAtendimentoService.listEventos).mockResolvedValue({
+      count: 1,
+      page: 1,
+      page_size: 15,
+      total_pages: 1,
+      next: null,
+      previous: null,
+      results: [
+        {
+          id: 7,
+          evento: 'CONCILIADA',
+          alocacao_id_snapshot: 1,
+          ator_id_snapshot: 2,
+          ator_rotulo_snapshot: 'bruno',
+          nf_entrada_historica_item_id_snapshot: 20,
+          pedido_venda_item_id_snapshot: 99,
+          motivo: '',
+          criado_em: '2026-08-05T12:00:00Z',
+        },
+      ],
+    });
+
+    render(<AlocarEntradaParaVendaBlock itemConferenciaId={10} produtoId={1} />);
+    await waitFor(() =>
+      expect(alocacaoAtendimentoService.listEventos).toHaveBeenCalledWith(
+        expect.objectContaining({ nf_entrada_historica_item_id: 20 }),
+      ),
+    );
+    await waitFor(() => expect(screen.getByTestId('alocacao-eventos-timeline')).toBeInTheDocument());
+    expect(screen.getByText(/Conciliada \(entrada × venda\)/)).toBeInTheDocument();
+    expect(screen.getByText(/bruno/)).toBeInTheDocument();
   });
 
   it('estoque não aplicado → aviso; estoque aplicado → sem aviso de estoque', async () => {

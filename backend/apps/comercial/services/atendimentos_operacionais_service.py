@@ -121,6 +121,27 @@ def filtrar_atendimentos_operacionais(params: dict[str, Any]) -> QuerySet:
             Q(quantidade_pendente__gt=0) | Q(status_entrada_fiscal=StatusEntradaFiscal.PENDENTE),
         )
 
+    estado_op = (params.get('estado_operacional') or '').strip().upper()
+    if estado_op:
+        from apps.comercial.services.alocacao_entrada_venda_service import (
+            ESTADO_CONCILIADO,
+            ESTADO_DIVERGENTE,
+            ESTADO_PARCIAL,
+            ESTADO_SEM_ALOCACAO,
+        )
+
+        if estado_op in {
+            ESTADO_SEM_ALOCACAO,
+            ESTADO_PARCIAL,
+            ESTADO_CONCILIADO,
+            ESTADO_DIVERGENTE,
+        }:
+            hist_ids = _hist_ids_com_estado_operacional(qs, estado_op)
+            if hist_ids:
+                qs = qs.filter(nf_entrada_historica_item_id__in=hist_ids)
+            else:
+                qs = qs.none()
+
     data_inicio = _parse_date(params.get('data_inicio'))
     data_fim = _parse_date(params.get('data_fim'), end_of_day=True)
     if data_inicio:
@@ -346,15 +367,37 @@ def calcular_conciliacao_entrada_quantitativa(qs: QuerySet | None = None) -> dic
     com total alocado ≈ 0. Desvincular a última alocação remove a origem do
     conjunto (não vira SEM_ALOCACAO).
     """
-    from django.db.models import Sum
-
     from apps.comercial.services.alocacao_entrada_venda_service import (
         ESTADO_CONCILIADO,
         ESTADO_DIVERGENTE,
         ESTADO_PARCIAL,
         ESTADO_SEM_ALOCACAO,
-        estado_operacional_entrada,
     )
+
+    contagem = {
+        ESTADO_SEM_ALOCACAO: 0,
+        ESTADO_PARCIAL: 0,
+        ESTADO_CONCILIADO: 0,
+        ESTADO_DIVERGENTE: 0,
+    }
+    agregados = _agregar_estado_por_origem(qs)
+    for _hid, estado in agregados:
+        contagem[estado] = contagem.get(estado, 0) + 1
+
+    return {
+        'total_origens': len(agregados),
+        'sem_alocacao': contagem[ESTADO_SEM_ALOCACAO],
+        'parciais': contagem[ESTADO_PARCIAL],
+        'conciliadas': contagem[ESTADO_CONCILIADO],
+        'divergentes': contagem[ESTADO_DIVERGENTE],
+    }
+
+
+def _agregar_estado_por_origem(qs: QuerySet | None = None) -> list[tuple[int, str]]:
+    """Lista (hist_id, estado_operacional) das origens presentes no queryset."""
+    from django.db.models import Sum
+
+    from apps.comercial.services.alocacao_entrada_venda_service import estado_operacional_entrada
     from apps.fiscal.models import ItemNFeEntradaConferencia
 
     base = qs if qs is not None else queryset_atendimentos_operacionais()
@@ -372,16 +415,12 @@ def calcular_conciliacao_entrada_quantitativa(qs: QuerySet | None = None) -> dic
         ).values('item_nfe_historico_id', 'quantidade_estoque_calculada'):
             raw = row['quantidade_estoque_calculada']
             if raw is None:
-                # Ausência explícita: não inventar zero (helper canônico também rejeita None).
                 continue
             disponiveis[int(row['item_nfe_historico_id'])] = Decimal(str(raw))
 
-    contagem = {
-        ESTADO_SEM_ALOCACAO: 0,
-        ESTADO_PARCIAL: 0,
-        ESTADO_CONCILIADO: 0,
-        ESTADO_DIVERGENTE: 0,
-    }
+    from apps.comercial.services.alocacao_entrada_venda_service import ESTADO_DIVERGENTE
+
+    out: list[tuple[int, str]] = []
     for row in agregados:
         hid = int(row['nf_entrada_historica_item_id'])
         alocado = row['total_alocado'] if row['total_alocado'] is not None else Decimal('0')
@@ -392,15 +431,12 @@ def calcular_conciliacao_entrada_quantitativa(qs: QuerySet | None = None) -> dic
                 quantidade_disponivel=disponiveis[hid],
                 total_alocado=alocado,
             )
-        contagem[estado] = contagem.get(estado, 0) + 1
+        out.append((hid, estado))
+    return out
 
-    return {
-        'total_origens': len(agregados),
-        'sem_alocacao': contagem[ESTADO_SEM_ALOCACAO],
-        'parciais': contagem[ESTADO_PARCIAL],
-        'conciliadas': contagem[ESTADO_CONCILIADO],
-        'divergentes': contagem[ESTADO_DIVERGENTE],
-    }
+
+def _hist_ids_com_estado_operacional(qs: QuerySet, estado_alvo: str) -> list[int]:
+    return [hid for hid, estado in _agregar_estado_por_origem(qs) if estado == estado_alvo]
 
 
 def parse_filtros_query_params(query_params) -> dict[str, Any]:
@@ -411,6 +447,7 @@ def parse_filtros_query_params(query_params) -> dict[str, Any]:
         'search',
         'tipo_atendimento',
         'status_entrada_fiscal',
+        'estado_operacional',
         'origem_fisica',
         'destino_fisico',
         'data_inicio',

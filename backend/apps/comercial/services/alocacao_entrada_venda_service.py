@@ -223,6 +223,46 @@ def estado_operacional_entrada(
     return ESTADO_PARCIAL
 
 
+def status_documental_para_estado_operacional(estado: str) -> str:
+    """Mapeia estado qty → status_entrada_fiscal (S4D)."""
+    if estado == ESTADO_CONCILIADO:
+        return StatusEntradaFiscal.CONCILIADA
+    if estado == ESTADO_DIVERGENTE:
+        return StatusEntradaFiscal.DIVERGENTE
+    return StatusEntradaFiscal.PENDENTE
+
+
+def sincronizar_status_documental_origem_historica(hist_id: int | None) -> str | None:
+    """S4D — alinha ``status_entrada_fiscal`` ao estado qty da origem.
+
+    Aplica só a alocações ``ENTRADA_CONCILIADA`` (não mexe em CANCELADA).
+    Retorna o estado operacional calculado, ou None se não houver origem.
+    """
+    if not hist_id:
+        return None
+    try:
+        item_conf = obter_item_conferencia_por_historico(int(hist_id), for_update=False)
+    except AlocacaoAtendimentoErro:
+        return None
+
+    disponivel_raw = item_conf.quantidade_estoque_calculada
+    disponivel = _dec(disponivel_raw) if disponivel_raw is not None else Decimal('0')
+    alocado = total_alocado_entrada(int(hist_id))
+    estado = estado_operacional_entrada(quantidade_disponivel=disponivel, total_alocado=alocado)
+    novo_status = status_documental_para_estado_operacional(estado)
+
+    AlocacaoAtendimento.objects.filter(
+        nf_entrada_historica_item_id=int(hist_id),
+        tipo_atendimento=TipoAtendimentoItem.ENTRADA_CONCILIADA,
+    ).exclude(
+        status_entrada_fiscal=StatusEntradaFiscal.CANCELADA,
+    ).exclude(
+        status_entrada_fiscal=novo_status,
+    ).update(status_entrada_fiscal=novo_status)
+
+    return estado
+
+
 def listar_documentos_relacionados_pv_item(pedido_venda_item) -> dict[str, Any]:
     """Informação de Fat/NF-e ligados ao item — sem escolher FK ambígua."""
     from apps.comercial.models import ItemFaturamentoPedidoVenda
@@ -480,6 +520,8 @@ def montar_resumo_entrada_venda(item_conf: ItemNFeEntradaConferencia) -> dict[st
                 'necessidade_destino': _qty_str(necessidade),
                 'total_alocado_destino': _qty_str(alocado_dest),
                 'saldo_destino': _qty_str(max(necessidade - alocado_dest, Decimal('0'))),
+                'status_entrada_fiscal': a.status_entrada_fiscal,
+                'tipo_atendimento': a.tipo_atendimento,
                 'faturamento_id': fat.faturamento_id if fat else None,
                 'faturamento_numero': fat.faturamento.numero_faturamento if fat and fat.faturamento_id else None,
                 'nfe_saida_id': nf_item.nf_id if nf_item else None,
@@ -750,6 +792,8 @@ def alocar_entrada_para_venda(
                 motivo=motivo,
                 extras_depois={'acao_upsert': 'atualizado'},
             )
+        sincronizar_status_documental_origem_historica(hist_id)
+        existente.refresh_from_db()
         return existente, 'atualizado'
 
     aloc = AlocacaoAtendimento.objects.create(**dados)
@@ -765,6 +809,8 @@ def alocar_entrada_para_venda(
             motivo=motivo,
             extras_depois={'acao_upsert': 'criado'},
         )
+    sincronizar_status_documental_origem_historica(hist_id)
+    aloc.refresh_from_db()
     return aloc, 'criado'
 
 
@@ -830,6 +876,8 @@ def atualizar_quantidade_alocacao_entrada_venda(
         origem_sistema=origem_sistema,
         motivo=motivo,
     )
+    sincronizar_status_documental_origem_historica(hist_id)
+    aloc.refresh_from_db()
     return aloc
 
 
@@ -870,7 +918,7 @@ def desvincular_alocacao_entrada_venda(
         motivo=motivo,
     )
     aloc.delete()
-
+    sincronizar_status_documental_origem_historica(hist_id)
 
 def eh_alocacao_entrada_venda(dados: dict[str, Any] | None = None, alocacao: AlocacaoAtendimento | None = None) -> bool:
     """True quando há origem histórica e destino PV (fluxo Fase 1)."""

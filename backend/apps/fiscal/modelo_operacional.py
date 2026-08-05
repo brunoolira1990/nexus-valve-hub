@@ -139,7 +139,7 @@ def marcar_entrada_fiscal_pendente(**kwargs: Any) -> dict[str, str]:
 
 
 def marcar_entrada_fiscal_conciliada(**kwargs: Any) -> dict[str, str]:
-    """Indicador operacional — conciliação real será fase futura."""
+    """Indicador operacional — S4D sincroniza status via estado qty nas escritas Fase 1."""
     _ = kwargs
     return {'status_entrada_fiscal': StatusEntradaFiscal.CONCILIADA}
 

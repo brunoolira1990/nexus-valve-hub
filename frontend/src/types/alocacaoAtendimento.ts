@@ -62,7 +62,7 @@ export type AlocacoesAtendimentoListResponse = {
 export const TIPOS_ATENDIMENTO = [
   { value: 'NAO_DEFINIDO', label: 'Não definido' },
   { value: 'ESTOQUE_PROPRIO', label: 'Estoque próprio' },
-  { value: 'ENTRADA_CONCILIADA', label: 'Entrada conciliada' },
+  { value: 'ENTRADA_CONCILIADA', label: 'Modo: entrada × venda' },
   { value: 'RETIRADA_FORNECEDOR', label: 'Retirada no fornecedor' },
   { value: 'ENTREGA_DIRETA_FORNECEDOR_CLIENTE', label: 'Entrega direta fornecedor → cliente' },
   { value: 'RETIRADA_FORNECEDOR_TRANSPORTADORA', label: 'Retirada fornecedor → transportadora' },
@@ -72,11 +72,11 @@ export const TIPOS_ATENDIMENTO = [
 
 export const STATUS_ENTRADA_FISCAL = [
   { value: 'NAO_APLICAVEL', label: 'Não aplicável' },
-  { value: 'PENDENTE', label: 'Entrada pendente' },
-  { value: 'RECEBIDA', label: 'Recebida' },
-  { value: 'CONCILIADA', label: 'Entrada conciliada' },
-  { value: 'DIVERGENTE', label: 'Divergente' },
-  { value: 'CANCELADA', label: 'Cancelada' },
+  { value: 'PENDENTE', label: 'Status fiscal: pendente' },
+  { value: 'RECEBIDA', label: 'Status fiscal: recebida' },
+  { value: 'CONCILIADA', label: 'Status fiscal: conciliada' },
+  { value: 'DIVERGENTE', label: 'Status fiscal: divergente' },
+  { value: 'CANCELADA', label: 'Status fiscal: cancelada' },
 ] as const;
 
 export const ORIGEM_FISICA = [

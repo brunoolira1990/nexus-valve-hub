@@ -132,4 +132,26 @@ export const alocacaoAtendimentoService = {
         `${base}${id}/desvincular-entrada-venda/`,
       )
     ).data,
+
+  listEventos: async (params: {
+    nf_entrada_historica_item_id?: number;
+    alocacao_id_snapshot?: number;
+    page_size?: number;
+  }) => {
+    const { nf_entrada_historica_item_id, ...rest } = params;
+    const response = await api.get<PaginatedResponse<import('@/types/alocacaoEntradaVenda').AlocacaoAtendimentoEvento>>(
+      'alocacoes-atendimento-eventos/',
+      {
+        params: buildListParams({
+          page_size: rest.page_size ?? 20,
+          alocacao_id_snapshot: rest.alocacao_id_snapshot,
+          // API S4C filtra pelo snapshot (não pelo FK vivo).
+          ...(nf_entrada_historica_item_id != null
+            ? { nf_entrada_historica_item_id_snapshot: nf_entrada_historica_item_id }
+            : {}),
+        }),
+      },
+    );
+    return response.data;
+  },
 };

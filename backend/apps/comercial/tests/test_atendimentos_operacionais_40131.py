@@ -337,7 +337,8 @@ class ConciliacaoEntradaQuantitativaS4BBTests(TestCase):
         pvi = self._pv_item(numero='PV-S4BB-1', qtd='10')
         aloc, _ = alocar(item_conferencia_id=linha.pk, pedido_venda_item_id=pvi.pk, quantidade=Decimal('10'),
             origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
-        self.assertEqual(aloc.status_entrada_fiscal, StatusEntradaFiscal.PENDENTE)
+        # S4D: qty CONCILIADO promove status documental para CONCILIADA.
+        self.assertEqual(aloc.status_entrada_fiscal, StatusEntradaFiscal.CONCILIADA)
         bloco = calcular_conciliacao_entrada_quantitativa(
             AlocacaoAtendimento.objects.filter(nf_entrada_historica_item_id=item_nf.pk),
         )
@@ -349,7 +350,7 @@ class ConciliacaoEntradaQuantitativaS4BBTests(TestCase):
             bloco['sem_alocacao'] + bloco['parciais'] + bloco['conciliadas'] + bloco['divergentes'],
         )
         aloc.refresh_from_db()
-        self.assertEqual(aloc.status_entrada_fiscal, StatusEntradaFiscal.PENDENTE)
+        self.assertEqual(aloc.status_entrada_fiscal, StatusEntradaFiscal.CONCILIADA)
 
     def test_s4bb_origem_parcial(self):
         from apps.comercial.services.atendimentos_operacionais_service import (

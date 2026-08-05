@@ -49,6 +49,8 @@ export type AlocacaoEntradaVendaResumoItem = {
   necessidade_destino: string;
   total_alocado_destino: string;
   saldo_destino: string;
+  status_entrada_fiscal?: string;
+  tipo_atendimento?: string;
   faturamento_id: number | null;
   faturamento_numero: string | null;
   nfe_saida_id: number | null;
@@ -75,8 +77,20 @@ export type ResumoEntradaVenda = {
 };
 
 export const LABEL_ESTADO_OPERACIONAL: Record<EstadoOperacionalEntradaVenda, string> = {
-  SEM_ALOCACAO: 'Sem alocação',
-  PARCIAL: 'Parcial',
-  CONCILIADO: 'Conciliado',
-  DIVERGENTE: 'Divergente',
+  SEM_ALOCACAO: 'Qty: sem alocação',
+  PARCIAL: 'Qty: parcial',
+  CONCILIADO: 'Qty: conciliado',
+  DIVERGENTE: 'Qty: divergente',
+};
+
+export type AlocacaoAtendimentoEvento = {
+  id: number;
+  evento: string;
+  alocacao_id_snapshot: number;
+  ator_id_snapshot: number | null;
+  ator_rotulo_snapshot: string;
+  nf_entrada_historica_item_id_snapshot: number | null;
+  pedido_venda_item_id_snapshot: number | null;
+  motivo: string;
+  criado_em: string;
 };

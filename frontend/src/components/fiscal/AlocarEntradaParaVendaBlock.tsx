@@ -4,9 +4,11 @@ import { alocacaoAtendimentoService } from '@/services/api/alocacaoAtendimento';
 import { apiErrorMessage } from '@/services/api/config';
 import {
   LABEL_ESTADO_OPERACIONAL,
+  type AlocacaoAtendimentoEvento,
   type OpcaoPedidoVendaItemAlocacao,
   type ResumoEntradaVenda,
 } from '@/types/alocacaoEntradaVenda';
+import { STATUS_ENTRADA_FISCAL } from '@/types/alocacaoAtendimento';
 
 type Props = {
   itemConferenciaId: number;
@@ -19,6 +21,29 @@ function badgeEstado(estado: ResumoEntradaVenda['estado_operacional']): string {
   if (estado === 'PARCIAL') return 'erp-badge-warning';
   if (estado === 'DIVERGENTE') return 'erp-badge-danger';
   return 'erp-badge-secondary';
+}
+
+const LABEL_EVENTO: Record<string, string> = {
+  CRIADA: 'Criada',
+  ATUALIZADA: 'Atualizada',
+  CONCILIADA: 'Conciliada (entrada × venda)',
+  QUANTIDADE_AJUSTADA: 'Quantidade ajustada',
+  DESVINCULADA: 'Desvinculada',
+  EXCLUIDA: 'Excluída',
+};
+
+function fmtEventoQuando(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
 }
 
 export function AlocarEntradaParaVendaBlock({ itemConferenciaId, produtoId, onAtualizado }: Props) {
@@ -34,20 +59,35 @@ export function AlocarEntradaParaVendaBlock({ itemConferenciaId, produtoId, onAt
   const [resumoCarregado, setResumoCarregado] = useState(false);
   const [sugestoesPv, setSugestoesPv] = useState<OpcaoPedidoVendaItemAlocacao[]>([]);
   const [sugestoesBusy, setSugestoesBusy] = useState(false);
+  const [eventos, setEventos] = useState<AlocacaoAtendimentoEvento[]>([]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<ResumoEntradaVenda | null> => {
     try {
       const data = await alocacaoAtendimentoService.resumoEntradaVenda({
         item_conferencia_id: itemConferenciaId,
       });
       setResumo(data);
       setErro('');
-      setQuantidade((prev) => prev || data.saldo_entrada || '');
       setResumoCarregado(true);
+      if (data.nf_entrada_historica_item_id) {
+        try {
+          const ev = await alocacaoAtendimentoService.listEventos({
+            nf_entrada_historica_item_id: data.nf_entrada_historica_item_id,
+            page_size: 15,
+          });
+          setEventos(ev.results || []);
+        } catch {
+          setEventos([]);
+        }
+      } else {
+        setEventos([]);
+      }
+      return data;
     } catch (e) {
       setErro(apiErrorMessage(e));
       setResumoCarregado(true);
       // Mantém o bloco visível; não limpa o título/ação.
+      return null;
     }
   }, [itemConferenciaId]);
 
@@ -59,7 +99,10 @@ export function AlocarEntradaParaVendaBlock({ itemConferenciaId, produtoId, onAt
     setAberto(false);
     setOpcaoPv(null);
     setSugestoesPv([]);
-    void load();
+    setEventos([]);
+    void load().then((data) => {
+      if (data) setQuantidade(data.saldo_entrada || '');
+    });
   }, [itemConferenciaId, load]);
 
   // Se já há alocação, abre o bloco para o Desvincular ficar visível.
@@ -118,14 +161,14 @@ export function AlocarEntradaParaVendaBlock({ itemConferenciaId, produtoId, onAt
     setBusy(true);
     setErro('');
     try {
-      const res = await alocacaoAtendimentoService.alocarEntradaVenda({
+      await alocacaoAtendimentoService.alocarEntradaVenda({
         item_conferencia_id: itemConferenciaId,
         pedido_venda_item_id: opcaoPv.id,
         quantidade,
       });
-      setResumo(res.resumo);
       setOpcaoPv(null);
-      setQuantidade(res.resumo.saldo_entrada);
+      const data = await load();
+      if (data) setQuantidade(data.saldo_entrada || '');
       onAtualizado?.();
     } catch (e) {
       setErro(apiErrorMessage(e));
@@ -138,9 +181,10 @@ export function AlocarEntradaParaVendaBlock({ itemConferenciaId, produtoId, onAt
     setBusy(true);
     setErro('');
     try {
-      const res = await alocacaoAtendimentoService.atualizarQuantidadeEntradaVenda(id, editQty);
-      setResumo(res.resumo);
+      await alocacaoAtendimentoService.atualizarQuantidadeEntradaVenda(id, editQty);
       setEditId(null);
+      const data = await load();
+      if (data) setQuantidade(data.saldo_entrada || '');
       onAtualizado?.();
     } catch (e) {
       setErro(apiErrorMessage(e));
@@ -156,9 +200,9 @@ export function AlocarEntradaParaVendaBlock({ itemConferenciaId, produtoId, onAt
     setBusy(true);
     setErro('');
     try {
-      const res = await alocacaoAtendimentoService.desvincularEntradaVenda(id);
-      if (res.resumo) setResumo(res.resumo);
-      else await load();
+      await alocacaoAtendimentoService.desvincularEntradaVenda(id);
+      const data = await load();
+      if (data) setQuantidade(data.saldo_entrada || '');
       onAtualizado?.();
     } catch (e) {
       setErro(apiErrorMessage(e));
@@ -203,6 +247,9 @@ export function AlocarEntradaParaVendaBlock({ itemConferenciaId, produtoId, onAt
         <div key={a.id} className="rounded border border-border/50 p-1.5 space-y-1 text-[9px]">
           <div className="text-muted-foreground">
             {a.pedido_venda_numero} · {a.cliente_nome || '—'} · {a.produto_codigo} · qty {a.quantidade_alocada}
+            {a.status_entrada_fiscal
+              ? ` · ${STATUS_ENTRADA_FISCAL.find((s) => s.value === a.status_entrada_fiscal)?.label || a.status_entrada_fiscal}`
+              : ''}
           </div>
           {(a.faturamento_numero || a.nfe_saida_numero) && (
             <div className="text-muted-foreground">
@@ -358,6 +405,23 @@ export function AlocarEntradaParaVendaBlock({ itemConferenciaId, produtoId, onAt
               Salvar alocação
             </button>
           </div>
+        </div>
+      ) : null}
+
+      {aberto && eventos.length > 0 ? (
+        <div className="border-t border-border/40 pt-1.5 space-y-1" data-testid="alocacao-eventos-timeline">
+          <p className="text-[10px] font-medium text-foreground">Histórico da alocação</p>
+          <ul className="space-y-0.5 max-h-28 overflow-y-auto">
+            {eventos.map((ev) => (
+              <li key={ev.id} className="text-[9px] text-muted-foreground leading-snug">
+                <span className="text-foreground">{LABEL_EVENTO[ev.evento] || ev.evento}</span>
+                {' · '}
+                {fmtEventoQuando(ev.criado_em)}
+                {ev.ator_rotulo_snapshot ? ` · ${ev.ator_rotulo_snapshot}` : ''}
+                {ev.motivo ? ` — ${ev.motivo}` : ''}
+              </li>
+            ))}
+          </ul>
         </div>
       ) : null}
 

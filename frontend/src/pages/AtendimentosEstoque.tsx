@@ -62,11 +62,12 @@ const KPI_CARDS_DOCUMENTAIS: {
 const KPI_CARDS_QUANTITATIVOS: {
   key: keyof ConciliacaoEntradaQuantitativaKpis;
   label: string;
+  filter?: Record<string, string>;
 }[] = [
   { key: 'total_origens', label: 'Origens de entrada' },
-  { key: 'conciliadas', label: 'Conciliadas (qty)' },
-  { key: 'parciais', label: 'Parciais (qty)' },
-  { key: 'divergentes', label: 'Divergentes (qty)' },
+  { key: 'conciliadas', label: 'Qty: conciliadas', filter: { estado_operacional: 'CONCILIADO' } },
+  { key: 'parciais', label: 'Qty: parciais', filter: { estado_operacional: 'PARCIAL' } },
+  { key: 'divergentes', label: 'Qty: divergentes', filter: { estado_operacional: 'DIVERGENTE' } },
 ];
 
 /** Preferência S4B-B: bloco quantitativo quando presente; senão só documentais. */
@@ -126,6 +127,7 @@ const AtendimentosEstoque = () => {
       somente_pendentes: '',
       tipo_atendimento: '',
       status_entrada_fiscal: '',
+      estado_operacional: '',
       somente_sem_compra: '',
       tem_nfe_entrada_vinculada: '',
       tem_cte_vinculado: '',
@@ -143,6 +145,7 @@ const AtendimentosEstoque = () => {
       search: filters.search || '',
       tipo_atendimento: filters.tipo_atendimento || '',
       status_entrada_fiscal: filters.status_entrada_fiscal || '',
+      estado_operacional: filters.estado_operacional || '',
       cliente_id: filters.cliente_id || '',
       produto_id: filters.produto_id || '',
       fornecedor_id: filters.fornecedor_id || '',
@@ -183,16 +186,19 @@ const AtendimentosEstoque = () => {
                     </p>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                       {exibicao.quantitativos.map((card) => (
-                        <div
+                        <button
                           key={card.key}
-                          className="rounded-lg border border-border bg-card px-3 py-2"
+                          type="button"
+                          className="rounded-lg border border-border bg-card px-3 py-2 text-left hover:border-primary/40 transition-colors"
                           data-testid={`kpi-qty-${card.key}`}
+                          onClick={() => applyKpiFilter(card.filter)}
+                          disabled={!card.filter}
                         >
                           <div className="text-2xl font-semibold tabular-nums">
                             {exibicao.bloco![card.key]}
                           </div>
                           <div className="text-xs text-muted-foreground leading-snug">{card.label}</div>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -233,7 +239,7 @@ const AtendimentosEstoque = () => {
             onChange={(e) => setFilter('search', e.target.value)}
           />
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           <div>
             <label className="erp-label">Tipo de atendimento</label>
             <select
@@ -250,7 +256,7 @@ const AtendimentosEstoque = () => {
             </select>
           </div>
           <div>
-            <label className="erp-label">Entrada fiscal</label>
+            <label className="erp-label">Status fiscal</label>
             <select
               className="erp-select mt-1 w-full"
               value={filterParams.status_entrada_fiscal}
@@ -262,6 +268,20 @@ const AtendimentosEstoque = () => {
                   {o.label}
                 </option>
               ))}
+            </select>
+          </div>
+          <div>
+            <label className="erp-label">Qty (estado operacional)</label>
+            <select
+              className="erp-select mt-1 w-full"
+              value={filterParams.estado_operacional}
+              onChange={(e) => setFilter('estado_operacional', e.target.value)}
+            >
+              <option value="">Todos</option>
+              <option value="SEM_ALOCACAO">Qty: sem alocação</option>
+              <option value="PARCIAL">Qty: parcial</option>
+              <option value="CONCILIADO">Qty: conciliado</option>
+              <option value="DIVERGENTE">Qty: divergente</option>
             </select>
           </div>
           <div>

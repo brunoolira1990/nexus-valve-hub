@@ -161,13 +161,15 @@ Quantidades: `quantidade_necessaria`, `quantidade_atendida`, `quantidade_pendent
 
 ## 11. Conciliação da NF-e Entrada
 
-Base preparada na 4.0.10; **conciliação completa Entrada↔PV/FAT** permanece **PRODUÇÃO PARCIAL** — existe gestão de alocações e conciliação **manual** entrada↔venda, **sem** declarar cobertura ponta a ponta completa.
+Base preparada na 4.0.10; **conciliação manual Entrada↔PV** (Fase 1) está em uso operacional.
 
-Futuro: vincular NF-e Entrada com PC, PV, FAT, NF-e Saída, expedição e quantidades de forma completa e auditável.
+**S4D (contrato documental × qty):** ao criar/ajustar/desvincular alocação `ENTRADA_CONCILIADA`, o sistema **auto-promove** `status_entrada_fiscal` conforme o estado quantitativo da origem (`CONCILIADO` → `CONCILIADA`, `DIVERGENTE` → `DIVERGENTE`, demais → `PENDENTE`). Não há botão separado “Marcar conciliada”. KPI documental e qty passam a alinhar após alocação integral.
 
-Divergências futuras: quantidade, produto, valor, fornecedor, impostos, NF-e não localizada.
+Ainda **fora** do escopo V1: baixar PC, movimentar estoque, gerar financeiro, bloquear NF-e saída, segundo motor de conciliação.
 
-Helpers read-only legados: `marcar_entrada_fiscal_pendente()`, `marcar_entrada_fiscal_conciliada()` — retornam dict, **não alteram banco**.
+Helpers read-only legados: `marcar_entrada_fiscal_pendente()`, `marcar_entrada_fiscal_conciliada()` — retornam dict, **não alteram banco** (o sync real está em `sincronizar_status_documental_origem_historica`).
+
+Futuro: vincular NF-e Entrada com PC, FAT, expedição e quantidades de forma completa e auditável ponta a ponta.
 
 ---
 

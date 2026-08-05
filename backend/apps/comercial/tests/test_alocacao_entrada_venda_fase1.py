@@ -589,14 +589,8 @@ class ContratoCanonicoS4BACaracterizacaoTests(TestCase):
             quantidade_estoque_calculada=Decimal('10'),
         )
 
-    def test_s4ba_fase1_grava_tipo_conciliada_e_status_pendente(self):
-        """INCONSISTÊNCIA CARACTERIZADA (atual):
-
-        - Helper ``resolver_origem_destino_por_tipo(ENTRADA_CONCILIADA)`` sugere status CONCILIADA.
-        - Fase 1 ``_montar_dados_alocacao`` grava status PENDENTE explicitamente.
-        - ``ENTRADA_CONCILIADA`` funciona como *tipo/origem do atendimento* (opção A),
-          não como conclusão integral (opção B).
-        """
+    def test_s4d_fase1_promove_status_quando_qty_conciliado(self):
+        """S4D: qty CONCILIADO promove ``status_entrada_fiscal`` para CONCILIADA."""
         _, _, status_sugerido = resolver_origem_destino_por_tipo(TipoAtendimentoItem.ENTRADA_CONCILIADA)
         self.assertEqual(status_sugerido, StatusEntradaFiscal.CONCILIADA)
 
@@ -607,14 +601,14 @@ class ContratoCanonicoS4BACaracterizacaoTests(TestCase):
             origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         self.assertEqual(acao, 'criado')
         self.assertEqual(aloc.tipo_atendimento, TipoAtendimentoItem.ENTRADA_CONCILIADA)
-        self.assertEqual(aloc.status_entrada_fiscal, StatusEntradaFiscal.PENDENTE)
+        self.assertEqual(aloc.status_entrada_fiscal, StatusEntradaFiscal.CONCILIADA)
         self.assertEqual(
             montar_resumo_entrada_venda(self.linha)['estado_operacional'],
             ESTADO_CONCILIADO,
         )
 
-    def test_s4ba_kpi_entradas_conciliadas_usa_status_persistido_nao_estado_qty(self):
-        """KPI atual conta ``status_entrada_fiscal=CONCILIADA``, não estado quantitativo."""
+    def test_s4d_kpi_documental_alinha_com_qty_apos_sync(self):
+        """Após S4D, KPI documental vê alocação integral como CONCILIADA."""
         alocar_entrada_para_venda(
             item_conferencia_id=self.linha.pk,
             pedido_venda_item_id=self.item_pv.pk,
@@ -622,9 +616,19 @@ class ContratoCanonicoS4BACaracterizacaoTests(TestCase):
             origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
         self.assertEqual(montar_resumo_entrada_venda(self.linha)['estado_operacional'], ESTADO_CONCILIADO)
         kpis = calcular_kpis_atendimentos_operacionais()
-        # Alocação Fase 1 integral → estado CONCILIADO, mas status PENDENTE → fora do KPI.
-        self.assertEqual(kpis['entradas_conciliadas'], 0)
-        self.assertGreaterEqual(kpis['entradas_pendentes'], 1)
+        self.assertGreaterEqual(kpis['entradas_conciliadas'], 1)
+
+    def test_s4d_parcial_mantem_status_pendente(self):
+        aloc, _ = alocar_entrada_para_venda(
+            item_conferencia_id=self.linha.pk,
+            pedido_venda_item_id=self.item_pv.pk,
+            quantidade=Decimal('4'),
+            origem_sistema='SISTEMA:CONCILIAR_ENTRADA_VENDA')
+        self.assertEqual(aloc.status_entrada_fiscal, StatusEntradaFiscal.PENDENTE)
+        self.assertEqual(
+            montar_resumo_entrada_venda(self.linha)['estado_operacional'],
+            ESTADO_PARCIAL,
+        )
 
     def test_s4ba_estado_operacional_regra_quantitativa_canonica(self):
         self.assertEqual(
