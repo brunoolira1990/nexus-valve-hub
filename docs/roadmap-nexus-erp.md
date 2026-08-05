@@ -94,7 +94,7 @@ Tabela consolidada do inventário. Campos: domínio · módulo · status · app 
 | Fiscal Entrada | Conferência, estoque | PRODUÇÃO | `fiscal` | `/nfe-entrada`… | Fiscal, Compras | CRUD NFeEntrada | Compras, Estoque | XML fornecedor | Snapshot | `0066` | Snapshot / conciliação |
 | Fiscal Saída | Emissão NF-e | **PRODUÇÃO REAL** | `fiscal` | `/nfe-saida`, `/nfe-sefaz` | Fiscal | emissão produção | PV, Empresa A1, Regras | Regressão SEFAZ | Cenário na emissão | `0066` | Cenário / remessas |
 | DF-e | Central + manifestação | PRODUÇÃO | `fiscal` | `/central-dfe` | Fiscal | — | SEFAZ | — | Sync NSU avançado | — | Evolução Inbox |
-| CT-e | Entrada + histórico | PRODUÇÃO PARCIAL | `fiscal` | `/cte-*` | Fiscal | — | Base importada | — | Não é núcleo NF-e | — | Rateio frete |
+| CT-e | Entrada + histórico | PRODUÇÃO REAL (parcial p/ custo produto) | `fiscal` | `/cte-*` | Fiscal | rateio+CP+impostos+regra FRETE_TRANSPORTE | Base importada | — | Frete operacional sem custo automático no item | — | Custo no produto / MD CT-e |
 | Regras fiscais | Entrada/saída | PRODUÇÃO | `regras_fiscais` | `/regras-fiscais` | Fiscal | CRUD regras | — | Regra errada | — | `0013` | Homologação contínua |
 | Apuração | Gerencial | PRODUÇÃO PARCIAL | `apuracao_fiscal` | `/apuracao-fiscal` | Fiscal | — | DF-e | — | SPED ausente | — | Obrigações |
 | Estoque | Saldos / corridas | PRODUÇÃO | `fiscal`+`corridas` | `/estoque` | Estoque | view/change | Produtos | Sem Kardex | Não bloqueia NF-e | — | Kardex |

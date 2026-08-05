@@ -21,6 +21,13 @@ const RegrasFiscais = () => {
       ncm: searchParams.get('ncm') || undefined,
       uf_origem: searchParams.get('uf_origem') || undefined,
       uf_destino: searchParams.get('uf_destino') || undefined,
+      tipo_operacao_fiscal: searchParams.get('tipo_operacao_fiscal') || undefined,
+      movimenta_estoque:
+        searchParams.get('movimenta_estoque') === '0'
+          ? false
+          : searchParams.get('movimenta_estoque') === '1'
+            ? true
+            : undefined,
     }),
     [searchParams],
   );

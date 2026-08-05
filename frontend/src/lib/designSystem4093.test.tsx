@@ -153,10 +153,15 @@ describe('ERP 4.0.9.3 — migração visual Nexus (Estoque/CT-e/Fiscal)', () => 
   });
 
   it('CT-e Entrada renderiza DataTable', () => {
-    render(<CTeEntrada />);
+    render(
+      <MemoryRouter>
+        <CTeEntrada />
+      </MemoryRouter>,
+    );
     expect(screen.getByRole('heading', { name: 'CT-e Entrada' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Transportadora' })).toBeInTheDocument();
-    expect(screen.getByText('Nenhum CT-e de entrada encontrado.')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'ICMS' })).toBeInTheDocument();
+    expect(screen.getByText('Nenhum CT-e operacional encontrado.')).toBeInTheDocument();
   });
 
   it('chave resumida não exibe XML/chave completa na listagem', () => {

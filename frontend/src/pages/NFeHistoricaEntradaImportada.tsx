@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { FileUp, FileCheck, Copy, ClipboardList, Printer } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader } from '@/components/PageHeader';
@@ -169,6 +169,7 @@ const NFeHistoricaEntradaImportada = () => {
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [diagCopiado, setDiagCopiado] = useState(false);
   const [reabrirId, setReabrirId] = useState<number | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
     void (async () => {
@@ -177,6 +178,30 @@ const NFeHistoricaEntradaImportada = () => {
       setFornecedores(f);
     })().catch((e) => setErro(apiErrorMessage(e)));
   }, []);
+
+  useEffect(() => {
+    const raw = (searchParams.get('id') || '').trim();
+    if (!raw) return;
+    const id = Number(raw);
+    if (!Number.isFinite(id) || id <= 0) return;
+    let cancelled = false;
+    void nfeHistoricaEntradaImportadaService
+      .getById(id)
+      .then((d) => {
+        if (cancelled) return;
+        setDetalhe(d);
+        setModal(true);
+        const next = new URLSearchParams(searchParams);
+        next.delete('id');
+        setSearchParams(next, { replace: true });
+      })
+      .catch((e) => {
+        if (!cancelled) setErro(apiErrorMessage(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, setSearchParams]);
 
   const onFiles = async (files: FileList | null) => {
     if (!files?.length) return;

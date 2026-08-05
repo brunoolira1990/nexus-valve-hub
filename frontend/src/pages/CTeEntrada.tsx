@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ExternalLink } from 'lucide-react';
+import { CTeHistoricoDetalheModal } from '@/components/fiscal/CTeHistoricoDetalheModal';
 import { DfeClassificacaoBadges } from '@/components/fiscal/DfeClassificacaoBadges';
 import { PageHeader } from '@/components/PageHeader';
 import { NexusButton } from '@/components/nexus';
@@ -15,8 +17,14 @@ import { formatDateBr } from '@/lib/dateBr';
 
 const BASE_CTE_IMPORTADA_PATH = '/cte-historico-importado';
 
+const fmtMoney = (v: unknown): string => {
+  const n = Number(v ?? 0);
+  return `R$ ${(Number.isFinite(n) ? n : 0).toFixed(2)}`;
+};
+
 const CTeEntrada = () => {
   const navigate = useNavigate();
+  const [detalheId, setDetalheId] = useState<number | null>(null);
   const {
     items,
     count,
@@ -36,7 +44,7 @@ const CTeEntrada = () => {
     <div>
       <PageHeader
         title="CT-e Entrada"
-        description="Conhecimentos de transporte conferidos para uso operacional. A conferência não gera financeiro, expedição ou rateio automaticamente."
+        description="Conhecimentos conferidos para uso operacional (frete, impostos e NF-es). No detalhe: rateio assistido e geração explícita de Contas a Pagar — a conferência sozinha não gera financeiro."
         searchValue={search}
         onSearch={setSearch}
         searchPlaceholder="Digite parte do número do CT-e."
@@ -48,7 +56,7 @@ const CTeEntrada = () => {
         }
       />
       {error ? <ErrorState onRetry={() => void reload()} /> : null}
-      {loading ? <TableSkeleton rows={6} cols={7} /> : null}
+      {loading ? <TableSkeleton rows={6} cols={9} /> : null}
       {!loading && !error ? (
         <DataTableShell>
           <DataTable>
@@ -58,6 +66,8 @@ const CTeEntrada = () => {
                 <th>Transportadora</th>
                 <th>Tomador</th>
                 <th>Valor Frete</th>
+                <th>ICMS</th>
+                <th>NF-es</th>
                 <th>Data</th>
                 <th>Status</th>
                 <th className="w-24">Ações</th>
@@ -66,7 +76,7 @@ const CTeEntrada = () => {
             <tbody>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={7}>
+                  <td colSpan={9}>
                     <div className="py-10 px-4 text-center">
                       <p className="text-sm font-medium text-foreground">Nenhum CT-e operacional encontrado.</p>
                       <p className="text-sm text-muted-foreground mt-2 max-w-xl mx-auto">
@@ -90,10 +100,22 @@ const CTeEntrada = () => {
                     <td className="font-medium">
                       {e.numero}
                       {e.serie ? `/${e.serie}` : ''}
+                      {e.cfop ? (
+                        <div className="text-xs text-muted-foreground font-normal">CFOP {e.cfop}</div>
+                      ) : null}
                     </td>
                     <td>{e.transportadora_nome}</td>
                     <td>{e.tomador_nome}</td>
-                    <td className="nexus-numeric">R$ {Number(e.valor_frete ?? 0).toFixed(2)}</td>
+                    <td className="nexus-numeric">{fmtMoney(e.valor_frete)}</td>
+                    <td className="text-xs tabular-nums whitespace-nowrap">
+                      <div>{fmtMoney(e.impostos?.icms_valor)}</div>
+                      {(e.impostos?.cbs_valor || e.impostos?.ibs_valor) ? (
+                        <div className="text-muted-foreground">
+                          CBS {fmtMoney(e.impostos?.cbs_valor)} · IBS {fmtMoney(e.impostos?.ibs_valor)}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="tabular-nums">{e.qtd_nfe_referenciadas ?? 0}</td>
                     <td>{e.data ? formatDateBr(e.data) : '—'}</td>
                     <td>
                       <div className="flex flex-col gap-1 items-start">
@@ -110,7 +132,7 @@ const CTeEntrada = () => {
                         type="button"
                         variant="outline"
                         className="erp-btn-sm"
-                        onClick={() => navigate(BASE_CTE_IMPORTADA_PATH)}
+                        onClick={() => setDetalheId(e.cte_historico_id ?? e.id)}
                       >
                         Detalhes
                       </NexusButton>
@@ -132,6 +154,13 @@ const CTeEntrada = () => {
           ) : null}
         </DataTableShell>
       ) : null}
+
+      <CTeHistoricoDetalheModal
+        open={detalheId != null}
+        cteId={detalheId}
+        onClose={() => setDetalheId(null)}
+        onConferenciaAtualizada={() => void reload()}
+      />
     </div>
   );
 };

@@ -70,6 +70,8 @@ def queryset_cte_entrada_operacional() -> QuerySet[CTeHistoricoImportado]:
 
 
 def resolver_documentos_vinculados(cte: CTeHistoricoImportado) -> list[dict[str, Any]]:
+    from apps.fiscal.models import NFeEntrada
+
     linhas: list[dict[str, Any]] = []
     for chave in cte.chaves_nfe_vinculadas or []:
         ch = str(chave).strip()
@@ -77,6 +79,7 @@ def resolver_documentos_vinculados(cte: CTeHistoricoImportado) -> list[dict[str,
             continue
         entrada = NFeEntradaHistoricaImportada.objects.filter(chave_acesso=ch).first()
         if entrada:
+            op = NFeEntrada.objects.filter(chave_acesso=ch).only('id', 'numero', 'status_operacional').first()
             linhas.append(
                 {
                     'chave_acesso': ch,
@@ -86,6 +89,10 @@ def resolver_documentos_vinculados(cte: CTeHistoricoImportado) -> list[dict[str,
                     'documento_id': entrada.id,
                     'numero': entrada.numero,
                     'serie': entrada.serie,
+                    'rota_detalhe': f'/nfe-entrada-historica-importada?id={entrada.id}',
+                    'nfe_entrada_operacional_id': op.id if op else None,
+                    'nfe_entrada_status': op.status_operacional if op else None,
+                    'rota_operacional': f'/nfe-entrada?detalhe={op.id}' if op else None,
                 },
             )
             continue
@@ -100,6 +107,28 @@ def resolver_documentos_vinculados(cte: CTeHistoricoImportado) -> list[dict[str,
                     'documento_id': saida.id,
                     'numero': saida.numero,
                     'serie': saida.serie,
+                    'rota_detalhe': f'/nfe-historica-importada?id={saida.id}',
+                    'nfe_entrada_operacional_id': None,
+                    'nfe_entrada_status': None,
+                    'rota_operacional': None,
+                },
+            )
+            continue
+        op = NFeEntrada.objects.filter(chave_acesso=ch).only('id', 'numero', 'status_operacional').first()
+        if op:
+            linhas.append(
+                {
+                    'chave_acesso': ch,
+                    'localizada': True,
+                    'origem': 'NFE_ENTRADA_OPERACIONAL',
+                    'origem_label': 'NF-e Entrada operacional',
+                    'documento_id': op.id,
+                    'numero': op.numero,
+                    'serie': getattr(op, 'serie', '') or '',
+                    'rota_detalhe': f'/nfe-entrada?detalhe={op.id}',
+                    'nfe_entrada_operacional_id': op.id,
+                    'nfe_entrada_status': op.status_operacional,
+                    'rota_operacional': f'/nfe-entrada?detalhe={op.id}',
                 },
             )
             continue
@@ -112,6 +141,10 @@ def resolver_documentos_vinculados(cte: CTeHistoricoImportado) -> list[dict[str,
                 'documento_id': None,
                 'numero': None,
                 'serie': None,
+                'rota_detalhe': None,
+                'nfe_entrada_operacional_id': None,
+                'nfe_entrada_status': None,
+                'rota_operacional': None,
             },
         )
     return linhas
@@ -141,7 +174,17 @@ def serializar_resposta_conferencia(cte: CTeHistoricoImportado) -> dict[str, Any
         ),
         'pode_entrar_apuracao': pode_entrar_apuracao(cte),
         'documentos_vinculados_resumo': resolver_documentos_vinculados(cte),
+        'regra_fiscal': _regra_fiscal_cte_safe(cte),
     }
+
+
+def _regra_fiscal_cte_safe(cte: CTeHistoricoImportado) -> dict[str, Any]:
+    from apps.fiscal.cte_regra_fiscal import avaliar_regra_fiscal_cte
+
+    try:
+        return avaliar_regra_fiscal_cte(cte)
+    except Exception:
+        return {'status': 'SEM_REGRA', 'mensagem': 'Falha ao avaliar regra fiscal do CT-e.', 'pode_conferir': False}
 
 
 def conferir_cte_importado(
@@ -152,6 +195,13 @@ def conferir_cte_importado(
     ok, msg = pode_marcar_conferido_operacional(cte)
     if not ok:
         raise ConferenciaCteErro(msg)
+
+    from apps.fiscal.cte_regra_fiscal import exigir_regra_fiscal_cte_ok
+
+    try:
+        exigir_regra_fiscal_cte_ok(cte)
+    except ValueError as exc:
+        raise ConferenciaCteErro(str(exc)) from exc
 
     payload = dados or {}
     checklist = {

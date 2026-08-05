@@ -1046,6 +1046,7 @@ export type TipoOperacaoFiscalEntrada =
   | 'BONIFICACAO'
   | 'USO_CONSUMO'
   | 'INDUSTRIALIZACAO'
+  | 'FRETE_TRANSPORTE'
   | 'OUTROS'
   | '';
 
@@ -2594,7 +2595,7 @@ export interface ResumoPedidoConferencia {
 }
 
 export interface FornecedorEntradaStatus {
-  status: 'vinculado' | 'encontrado_unico' | 'nao_encontrado' | 'duplicidade' | 'sem_cnpj';
+  status: 'vinculado' | 'encontrado_unico' | 'nao_encontrado' | 'duplicidade' | 'sem_cnpj' | 'propria_empresa';
   fornecedor_id?: number | null;
   fornecedor_nome?: string;
   fornecedor_cnpj?: string;
@@ -2605,6 +2606,7 @@ export interface FornecedorEntradaStatus {
   identificado?: boolean;
   pode_cadastrar?: boolean;
   pode_vincular_manual?: boolean;
+  remetente_propria_empresa?: boolean;
   sugestao_cadastro?: {
     razao_social?: string;
     nome_fantasia?: string;
@@ -2867,16 +2869,27 @@ export interface CTeEntrada {
   numero: string;
   serie?: string;
   chave_acesso?: string;
+  cfop?: string;
   transportadora_id?: number;
   transportadora_nome: string;
   tomador_id?: number;
   tomador_nome: string;
   valor_frete: number;
+  valor_receber?: number;
   data: string;
   status_conferencia?: string;
   apto_operacional?: boolean;
   classificacao_dfe?: import('@/components/fiscal/DfeClassificacaoBadges').ClassificacaoDfe;
   nfe_ids?: number[];
+  qtd_nfe_referenciadas?: number;
+  impostos?: {
+    icms_base: number;
+    icms_aliquota: number;
+    icms_valor: number;
+    cbs_valor: number;
+    ibs_valor: number;
+    tem_reforma_ibscbs: boolean;
+  };
 }
 
 export interface EstoqueItem {

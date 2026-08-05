@@ -595,7 +595,7 @@ Detalhamento: `docs/base-dfe-importada.md`.
 
 ### ERP 4.0.10.2.2 — conferência CT-e importado
 
-- **Conferir CT-e** na base importada: checklist + observações; status `CONFERIDO` com `apto_operacional=true`.
+- **Conferir CT-e** na base importada: checklist + observações; exige regra fiscal de entrada tipo **Frete / transporte (CT-e)** para o CFOP do documento; status `CONFERIDO` com `apto_operacional=true`.
 - **CT-e Entrada** lista apenas conferidos (produção, autorizado, não cancelado/divergente/ignorado).
 - Conferência **não** gera financeiro, expedição, rateio, estoque nem altera apuração.
 

@@ -87,10 +87,73 @@ export type CTeConferenciaResposta = {
 export type CTeDocumentoVinculadoResumo = {
   chave_acesso: string;
   localizada: boolean;
-  origem: string;
+  origem: string | null;
   origem_label: string;
   documento_id: number | null;
-  status_encontrada: string;
+  numero?: string | null;
+  serie?: string | null;
+  rota_detalhe?: string | null;
+  nfe_entrada_operacional_id?: number | null;
+  nfe_entrada_status?: string | null;
+  rota_operacional?: string | null;
+};
+
+export type CTeFinanceiroFlags = {
+  financeiro_gerado: boolean;
+  pode_gerar_contas_pagar: boolean;
+  motivo_bloqueio_financeiro: string;
+  valor_frete_base: string;
+  fornecedor_credor_id: number | null;
+  fornecedor_credor_nome: string;
+  fornecedor_credor_cnpj: string;
+  impostos: {
+    icms_base: number;
+    icms_aliquota: number;
+    icms_valor: number;
+    cbs_valor: number;
+    ibs_valor: number;
+    tem_reforma_ibscbs: boolean;
+  };
+  rateio_salvo: boolean;
+  contas_pagar_vinculadas: {
+    id: number;
+    numero: string;
+    status: string;
+    cancelado: boolean;
+    tipo_lancamento: string;
+    tipo_tributo: string;
+    valor_original: string;
+  }[];
+};
+
+export type CTeRateioLinha = {
+  chave_acesso: string;
+  documento_id?: number | null;
+  origem?: string | null;
+  origem_label?: string;
+  numero?: string | null;
+  serie?: string | null;
+  valor_documento: string;
+  percentual: string;
+  valor_frete: string;
+};
+
+export type CTeRateioSugestao = {
+  metodo: string;
+  valor_base: string;
+  linhas: CTeRateioLinha[];
+  impostos_snapshot: CTeFinanceiroFlags['impostos'];
+  rateado: boolean;
+  rateio_atual: Record<string, unknown>;
+  rateado_em: string | null;
+};
+
+export type CTePreviewContasPagar = CTeFinanceiroFlags & {
+  data_emissao: string;
+  vencimento_sugerido: string;
+  parcela_frete: { descricao: string; valor: string; data_vencimento: string };
+  tributos_sugeridos: { tipo_tributo: string; label: string; valor: string }[];
+  aviso: string;
 };
 
 export type CTeHistoricoDetalhe = CTeHistoricoList & {
@@ -117,6 +180,21 @@ export type CTeHistoricoDetalhe = CTeHistoricoList & {
   divergencia_motivo?: string;
   checklist_conferencia_json?: Record<string, boolean>;
   documentos_vinculados_resumo?: CTeDocumentoVinculadoResumo[];
+  rateio_frete_json?: Record<string, unknown>;
+  rateado_em?: string | null;
+  financeiro?: CTeFinanceiroFlags | null;
+  regra_fiscal?: {
+    status: string;
+    mensagem: string;
+    cfop_cte?: string;
+    regra_id?: number | null;
+    regra_nome?: string;
+    cfop_entrada?: string;
+    severidade?: string | null;
+    movimenta_estoque?: boolean;
+    pode_conferir?: boolean;
+    pode_gerar_financeiro?: boolean;
+  } | null;
   eventos: {
     id: number;
     chave_acesso: string;
@@ -252,5 +330,30 @@ export const cteHistoricoImportadoService = {
       `${base}${id}/fornecedor/cadastrar-vincular/`,
       payload,
     )).data,
+  sugerirRateioFrete: async (id: number) =>
+    (await api.get<CTeRateioSugestao>(`${base}${id}/frete/sugerir-rateio/`)).data,
+  salvarRateioFrete: async (id: number, payload: { linhas: CTeRateioLinha[]; metodo?: string }) =>
+    (await api.post<{ cte: CTeHistoricoDetalhe; rateio: CTeRateioSugestao }>(
+      `${base}${id}/frete/salvar-rateio/`,
+      payload,
+    )).data,
+  previewContasPagar: async (id: number) =>
+    (await api.get<CTePreviewContasPagar>(`${base}${id}/financeiro/preview-contas-pagar/`)).data,
+  gerarContasPagar: async (
+    id: number,
+    payload: {
+      data_vencimento?: string;
+      gerar_impostos_separados?: boolean;
+      observacoes?: string;
+    } = {},
+  ) =>
+    (
+      await api.post<{
+        titulo_frete_id: number;
+        titulo_frete_numero: string;
+        titulos_tributo_ids: number[];
+        flags: CTeFinanceiroFlags;
+      }>(`${base}${id}/financeiro/gerar-contas-pagar/`, payload)
+    ).data,
 };
 

@@ -22,11 +22,13 @@ export type RegrasFiscaisEntradaPrefill = {
   ncm?: string;
   uf_origem?: string;
   uf_destino?: string;
+  tipo_operacao_fiscal?: string;
+  movimenta_estoque?: boolean;
 };
 
 export function buildCriarRegraFiscalEntradaUrl(
   rf: ResultadoFiscalEntrada | undefined,
-  ctx?: { uf_origem?: string; uf_destino?: string },
+  ctx?: { uf_origem?: string; uf_destino?: string; tipo_operacao_fiscal?: string },
 ): string {
   const p = new URLSearchParams({ aba: 'entrada', nova: '1' });
   const cfop = (rf?.cfop_nf || '').trim();
@@ -40,6 +42,33 @@ export function buildCriarRegraFiscalEntradaUrl(
   const ufd = (ctx?.uf_destino || '').trim();
   if (ufo) p.set('uf_origem', ufo);
   if (ufd) p.set('uf_destino', ufd);
+  const tipo = (ctx?.tipo_operacao_fiscal || '').trim();
+  if (tipo) p.set('tipo_operacao_fiscal', tipo);
+  if (tipo === 'FRETE_TRANSPORTE') p.set('movimenta_estoque', '0');
+  return `/regras-fiscais?${p.toString()}`;
+}
+
+/** Prefill para regra de frete/CT-e a partir do CFOP do documento. */
+export function buildCriarRegraFiscalCteUrl(opts: {
+  cfop?: string;
+  uf_origem?: string;
+  uf_destino?: string;
+}): string {
+  const p = new URLSearchParams({
+    aba: 'entrada',
+    nova: '1',
+    tipo_operacao_fiscal: 'FRETE_TRANSPORTE',
+    movimenta_estoque: '0',
+  });
+  const cfop = (opts.cfop || '').trim();
+  if (cfop) {
+    p.set('cfop', cfop);
+    p.set('cfop_origem', cfop);
+  }
+  const ufo = (opts.uf_origem || '').trim();
+  const ufd = (opts.uf_destino || '').trim();
+  if (ufo) p.set('uf_origem', ufo);
+  if (ufd) p.set('uf_destino', ufd);
   return `/regras-fiscais?${p.toString()}`;
 }
 
@@ -51,9 +80,9 @@ const TIPO_OP_LABEL: Record<string, string> = {
   BONIFICACAO: 'Bonificação',
   USO_CONSUMO: 'Uso e consumo',
   INDUSTRIALIZACAO: 'Industrialização',
+  FRETE_TRANSPORTE: 'Frete / transporte (CT-e)',
   OUTROS: 'Outros',
 };
-
 export function labelCenarioRegraEntrada(regra: RegraFiscalEntrada): string {
   const label = (regra.label_configuracao || regra.descricao_cenario || '').trim();
   if (label) return label;

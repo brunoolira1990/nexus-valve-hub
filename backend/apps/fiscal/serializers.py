@@ -2522,6 +2522,22 @@ class NFeSaidaHistoricaImportadaSerializer(serializers.ModelSerializer):
         return data
 
 
+def resumo_impostos_cte_operacional(obj: CTeHistoricoImportado) -> dict[str, Any]:
+    """ICMS materializado + snapshot CBS/IBS (reforma) para listagem operacional."""
+    reforma = obj.reforma_e_outros_json if isinstance(obj.reforma_e_outros_json, dict) else {}
+    ibscbs = reforma.get('ibscbs') if isinstance(reforma.get('ibscbs'), dict) else {}
+    cbs = float(ibscbs.get('cbs_valor') or 0) if ibscbs else 0.0
+    ibs = float(ibscbs.get('ibs_valor') or 0) if ibscbs else 0.0
+    return {
+        'icms_base': float(obj.icms_base or 0),
+        'icms_aliquota': float(obj.icms_aliquota or 0),
+        'icms_valor': float(obj.icms_valor or 0),
+        'cbs_valor': cbs,
+        'ibs_valor': ibs,
+        'tem_reforma_ibscbs': bool(ibscbs.get('presente')),
+    }
+
+
 class CTeEntradaOperacionalSerializer(serializers.ModelSerializer):
     """CT-e conferido na base importada, exposto na tela CT-e Entrada operacional."""
 
@@ -2532,6 +2548,9 @@ class CTeEntradaOperacionalSerializer(serializers.ModelSerializer):
     status_conferencia = serializers.CharField(read_only=True)
     classificacao_dfe = serializers.SerializerMethodField(read_only=True)
     cte_historico_id = serializers.IntegerField(source='id', read_only=True)
+    impostos = serializers.SerializerMethodField(read_only=True)
+    qtd_nfe_referenciadas = serializers.SerializerMethodField(read_only=True)
+    valor_receber = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = CTeHistoricoImportado
@@ -2541,13 +2560,17 @@ class CTeEntradaOperacionalSerializer(serializers.ModelSerializer):
             'numero',
             'serie',
             'chave_acesso',
+            'cfop',
             'transportadora_nome',
             'tomador_nome',
             'valor_frete',
+            'valor_receber',
             'data',
             'status_conferencia',
             'apto_operacional',
             'classificacao_dfe',
+            'impostos',
+            'qtd_nfe_referenciadas',
         )
 
     def get_transportadora_nome(self, obj):
@@ -2563,8 +2586,18 @@ class CTeEntradaOperacionalSerializer(serializers.ModelSerializer):
     def get_valor_frete(self, obj):
         return float(obj.valor_total_servico or 0)
 
+    def get_valor_receber(self, obj):
+        return float(obj.valor_receber or 0)
+
     def get_data(self, obj):
         return obj.dh_emissao.date().isoformat() if obj.dh_emissao else None
+
+    def get_impostos(self, obj):
+        return resumo_impostos_cte_operacional(obj)
+
+    def get_qtd_nfe_referenciadas(self, obj):
+        chaves = obj.chaves_nfe_vinculadas or []
+        return len([c for c in chaves if str(c).strip()])
 
     def get_classificacao_dfe(self, obj):
         from apps.fiscal.dfe_classificacao import metadados_classificacao_dfe
@@ -2580,6 +2613,7 @@ class CTeEntradaOperacionalSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data['valor_frete'] = float(instance.valor_total_servico or 0)
+        data['valor_receber'] = float(instance.valor_receber or 0)
         return data
 
 
@@ -2810,6 +2844,8 @@ class CTeHistoricoImportadoSerializer(serializers.ModelSerializer):
     classificacao_dfe = serializers.SerializerMethodField(read_only=True)
     documentos_vinculados_resumo = serializers.SerializerMethodField(read_only=True)
     conferido_por_nome = serializers.SerializerMethodField(read_only=True)
+    financeiro = serializers.SerializerMethodField(read_only=True)
+    regra_fiscal = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = CTeHistoricoImportado
@@ -2886,9 +2922,29 @@ class CTeHistoricoImportadoSerializer(serializers.ModelSerializer):
             'divergencia_motivo',
             'ignorado_operacionalmente',
             'checklist_conferencia_json',
+            'rateio_frete_json',
+            'rateado_em',
+            'financeiro',
+            'regra_fiscal',
             'classificacao_dfe',
             'documentos_vinculados_resumo',
         )
+
+    def get_financeiro(self, obj):
+        from apps.fiscal.cte_financeiro import montar_flags_financeiro_cte
+
+        try:
+            return montar_flags_financeiro_cte(obj)
+        except Exception:
+            return None
+
+    def get_regra_fiscal(self, obj):
+        from apps.fiscal.cte_regra_fiscal import avaliar_regra_fiscal_cte
+
+        try:
+            return avaliar_regra_fiscal_cte(obj)
+        except Exception:
+            return None
 
     def get_transportadora_nome(self, obj):
         return obj.transportadora.razao_social if obj.transportadora_id else (obj.emit_json or {}).get('xNome', '')

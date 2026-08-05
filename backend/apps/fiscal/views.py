@@ -3562,6 +3562,77 @@ class CTeHistoricoImportadoViewSet(AutocompleteOrPaginationMixin, viewsets.ReadO
             return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return response.Response(serializar_resposta_conferencia(cte))
 
+    @action(detail=True, methods=['get'], url_path='financeiro/flags')
+    def financeiro_flags(self, request, pk=None):
+        from apps.fiscal.cte_financeiro import montar_flags_financeiro_cte
+
+        return response.Response(montar_flags_financeiro_cte(self.get_object()))
+
+    @action(detail=True, methods=['get'], url_path='frete/sugerir-rateio')
+    def sugerir_rateio_frete(self, request, pk=None):
+        from apps.fiscal.cte_financeiro import CteFinanceiroErro, sugerir_rateio_frete_cte
+
+        try:
+            return response.Response(sugerir_rateio_frete_cte(self.get_object()))
+        except CteFinanceiroErro as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'], url_path='frete/salvar-rateio')
+    def salvar_rateio_frete(self, request, pk=None):
+        from apps.fiscal.cte_financeiro import CteFinanceiroErro, salvar_rateio_frete_cte, sugerir_rateio_frete_cte
+        from apps.fiscal.serializers import CTeHistoricoImportadoSerializer
+
+        data = request.data or {}
+        linhas = data.get('linhas')
+        if not isinstance(linhas, list):
+            return response.Response({'detail': 'Informe linhas (lista) do rateio.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            cte = salvar_rateio_frete_cte(
+                self.get_object(),
+                linhas=linhas,
+                metodo=str(data.get('metodo') or 'MANUAL'),
+                usuario=request.user,
+            )
+        except CteFinanceiroErro as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return response.Response(
+            {
+                'cte': CTeHistoricoImportadoSerializer(cte, context={'request': request}).data,
+                'rateio': sugerir_rateio_frete_cte(cte),
+            }
+        )
+
+    @action(detail=True, methods=['get'], url_path='financeiro/preview-contas-pagar')
+    def preview_contas_pagar_cte(self, request, pk=None):
+        from apps.fiscal.cte_financeiro import CteFinanceiroErro, preview_contas_pagar_cte
+
+        try:
+            return response.Response(preview_contas_pagar_cte(self.get_object()))
+        except CteFinanceiroErro as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'], url_path='financeiro/gerar-contas-pagar')
+    def gerar_contas_pagar_cte(self, request, pk=None):
+        from apps.fiscal.cte_financeiro import CteFinanceiroErro, gerar_contas_pagar_de_cte
+
+        data = request.data or {}
+        try:
+            result = gerar_contas_pagar_de_cte(
+                self.get_object(),
+                data_vencimento=data.get('data_vencimento'),
+                gerar_impostos_separados=bool(data.get('gerar_impostos_separados', True)),
+                categoria_id=data.get('categoria') or data.get('categoria_id'),
+                centro_custo_id=data.get('centro_custo') or data.get('centro_custo_id'),
+                forma_pagamento_prevista_codigo=str(data.get('forma_pagamento_prevista_codigo') or ''),
+                conta_financeira_prevista_id=data.get('conta_financeira_prevista')
+                or data.get('conta_financeira_prevista_id'),
+                observacoes=str(data.get('observacoes') or ''),
+                usuario=request.user,
+            )
+        except (CteFinanceiroErro, ValueError) as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return response.Response(result, status=status.HTTP_201_CREATED)
+
     @action(
         detail=False,
         methods=['post'],

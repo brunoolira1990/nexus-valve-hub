@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, FileCheck, FileUp, Info, RefreshCw, Printer } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { DfeClassificacaoBadges } from '@/components/fiscal/DfeClassificacaoBadges';
 import { CTeHistoricoDetalheModal } from '@/components/fiscal/CTeHistoricoDetalheModal';
 import { PageHeader } from '@/components/PageHeader';
@@ -188,6 +188,21 @@ const CTeHistoricoImportado = () => {
   const [detalheRow, setDetalheRow] = useState<CTeHistoricoList | null>(null);
   const [modalDetalhe, setModalDetalhe] = useState(false);
   const [abaInicialConferencia, setAbaInicialConferencia] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  useEffect(() => {
+    const raw = (searchParams.get('id') || '').trim();
+    if (!raw) return;
+    const id = Number(raw);
+    if (!Number.isFinite(id) || id <= 0) return;
+    setDetalheId(id);
+    setDetalheRow(null);
+    setAbaInicialConferencia(false);
+    setModalDetalhe(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete('id');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     void (async () => {

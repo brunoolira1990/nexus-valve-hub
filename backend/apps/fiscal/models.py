@@ -1500,6 +1500,16 @@ class CTeHistoricoImportado(models.Model):
     ignorado_operacionalmente = models.BooleanField(default=False)
     checklist_conferencia_json = models.JSONField(default=dict, blank=True)
 
+    rateio_frete_json = models.JSONField(default=dict, blank=True)
+    rateado_em = models.DateTimeField(null=True, blank=True)
+    rateado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ctes_historicos_rateados',
+    )
+
     class Meta:
         ordering = ['-dh_emissao', '-id']
         verbose_name = 'CT-e importado (histórico)'

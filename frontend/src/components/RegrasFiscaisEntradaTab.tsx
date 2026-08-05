@@ -138,6 +138,7 @@ const TIPOS_OP: { value: TipoOperacaoFiscalEntrada; label: string }[] = [
   { value: 'BONIFICACAO', label: 'Bonificação' },
   { value: 'USO_CONSUMO', label: 'Uso e consumo' },
   { value: 'INDUSTRIALIZACAO', label: 'Industrialização' },
+  { value: 'FRETE_TRANSPORTE', label: 'Frete / transporte (CT-e)' },
   { value: 'OUTROS', label: 'Outros' },
 ];
 
@@ -208,6 +209,12 @@ function formFromEscopo(
     base.cfop = cfopOrigem;
     base.uf_origem = prefill.uf_origem || '';
     base.uf_destino = prefill.uf_destino || '';
+    if (prefill.tipo_operacao_fiscal) {
+      base.tipo_operacao_fiscal = prefill.tipo_operacao_fiscal;
+    }
+    if (typeof prefill.movimenta_estoque === 'boolean') {
+      base.movimenta_estoque = prefill.movimenta_estoque;
+    }
   }
   return base;
 }

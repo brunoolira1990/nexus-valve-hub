@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { FileUp, FileCheck, Copy, AlertCircle, RefreshCw, Info, ClipboardList, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { DfeClassificacaoBadges } from '@/components/fiscal/DfeClassificacaoBadges';
@@ -89,6 +89,7 @@ const badgeStatusClass = (statusVisual: string) => {
 
 const NFeHistoricaImportada = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [lista, setLista] = useState<NFeSaidaHistoricaList[]>([]);
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState(false);
@@ -213,6 +214,19 @@ const NFeHistoricaImportada = () => {
       setErroUpload(apiErrorMessage(e));
     }
   };
+
+  useEffect(() => {
+    const raw = (searchParams.get('id') || '').trim();
+    if (!raw) return;
+    const id = Number(raw);
+    if (!Number.isFinite(id) || id <= 0) return;
+    void abrirDetalhe(id).then(() => {
+      const next = new URLSearchParams(searchParams);
+      next.delete('id');
+      setSearchParams(next, { replace: true });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- abre só quando ?id= chega
+  }, [searchParams.get('id')]);
 
   const gerarEntradaDevolucao = async () => {
     if (!detalhe?.id) return;

@@ -122,6 +122,7 @@ class RegraFiscalEntrada(models.Model):
         BONIFICACAO = 'BONIFICACAO', 'Bonificação'
         USO_CONSUMO = 'USO_CONSUMO', 'Uso e consumo'
         INDUSTRIALIZACAO = 'INDUSTRIALIZACAO', 'Industrialização'
+        FRETE_TRANSPORTE = 'FRETE_TRANSPORTE', 'Frete / transporte (CT-e)'
         OUTROS = 'OUTROS', 'Outros'
 
     cenario = models.ForeignKey(

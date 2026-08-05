@@ -92,6 +92,7 @@ class TituloFinanceiro(models.Model):
         NFE_SAIDA = 'NFE_SAIDA', 'NF-e Saída'
         PEDIDO_COMPRA = 'PEDIDO_COMPRA', 'Pedido de Compra'
         NFE_ENTRADA = 'NFE_ENTRADA', 'NF-e Entrada'
+        CTE = 'CTE', 'CT-e'
         SERVICO = 'SERVICO', 'Serviço'
         AJUSTE = 'AJUSTE', 'Ajuste manual'
         IMPORTACAO = 'IMPORTACAO', 'Importação futura'

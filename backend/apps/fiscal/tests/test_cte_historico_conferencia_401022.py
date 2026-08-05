@@ -23,6 +23,8 @@ from apps.fiscal.cte_historico_conferencia import (
 from apps.fiscal.dfe_classificacao import pode_entrar_apuracao
 from apps.fiscal.models import CTeEntrada, CTeHistoricoImportado, NFeEntradaHistoricaImportada
 from apps.fiscal.services.apuracao_fiscal import build_apuracao_fiscal
+from apps.fiscal.tests.cte_regra_fiscal_fixtures import CFOP_CTE_TESTE, garantir_regra_frete_cte
+from apps.regras_fiscais.models import RegraFiscalEntrada
 
 
 def _dh() -> datetime:
@@ -46,6 +48,7 @@ class CTeHistoricoConferencia401022Test(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(self.user)
         self.dh = _dh()
+        garantir_regra_frete_cte()
 
     def _criar_cte(
         self,
@@ -56,6 +59,7 @@ class CTeHistoricoConferencia401022Test(TestCase):
         status_conferencia: str = CTeHistoricoImportado.StatusConferencia.PROCESSADO,
         cancelado: bool = False,
         valor: str = '1500.00',
+        cfop: str = CFOP_CTE_TESTE,
     ) -> CTeHistoricoImportado:
         return CTeHistoricoImportado.objects.create(
             chave_acesso=chave_suffix * 44,
@@ -66,6 +70,7 @@ class CTeHistoricoConferencia401022Test(TestCase):
             cstat=cstat,
             cancelado=cancelado,
             valor_total_servico=Decimal(valor),
+            cfop=cfop,
             status_conferencia=status_conferencia,
             apto_operacional=False,
         )
@@ -175,6 +180,10 @@ class CTeHistoricoConferencia401022Test(TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]['id'], ok.id)
         self.assertIn('sem_financeiro_automatico', results[0]['classificacao_dfe']['badges'])
+        self.assertIn('impostos', results[0])
+        self.assertIn('icms_valor', results[0]['impostos'])
+        self.assertIn('cbs_valor', results[0]['impostos'])
+        self.assertEqual(results[0]['qtd_nfe_referenciadas'], 0)
 
     def test_documentos_vinculados_resumo(self) -> None:
         ch_nfe = '3' * 44
@@ -193,6 +202,9 @@ class CTeHistoricoConferencia401022Test(TestCase):
         resp = self.client.get(url)
         docs = resp.data.get('documentos_vinculados_resumo') or []
         self.assertTrue(any(d['localizada'] for d in docs))
+        hit = next(d for d in docs if d['localizada'])
+        self.assertTrue(hit.get('rota_detalhe', '').startswith('/nfe-entrada-historica-importada?id='))
+        self.assertEqual(hit.get('documento_id'), NFeEntradaHistoricaImportada.objects.get(chave_acesso=ch_nfe).id)
 
     def test_homologacao_fora_apuracao(self) -> None:
         cte = self._criar_cte(chave_suffix='d', tp_amb='2')
@@ -217,4 +229,15 @@ class CTeHistoricoConferencia401022Test(TestCase):
         cte = self._criar_cte(chave_suffix='g')
         url = reverse('cte-hist-importado-conferir', args=[cte.id])
         resp = self.client.post(url, {'confirmar_tomador': True}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_sem_regra_fiscal_bloqueia_conferir(self) -> None:
+        RegraFiscalEntrada.objects.filter(
+            tipo_operacao_fiscal=RegraFiscalEntrada.TipoOperacaoFiscal.FRETE_TRANSPORTE,
+        ).delete()
+        cte = self._criar_cte(chave_suffix='h')
+        with self.assertRaises(ConferenciaCteErro):
+            conferir_cte_importado(cte, self.user, _payload_conferir())
+        url = reverse('cte-hist-importado-conferir', args=[cte.id])
+        resp = self.client.post(url, _payload_conferir(), format='json')
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)

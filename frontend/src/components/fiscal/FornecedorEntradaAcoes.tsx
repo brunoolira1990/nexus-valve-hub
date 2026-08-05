@@ -88,6 +88,19 @@ export function FornecedorEntradaAcoes({
     }
   };
 
+  if (st?.status === 'propria_empresa' || st?.remetente_propria_empresa) {
+    return (
+      <div className={`text-xs text-sky-900 bg-sky-50 border border-sky-200 rounded-md px-3 py-2 ${className}`}>
+        <strong>Remetente é a própria empresa</strong>
+        {st?.fornecedor_nome ? <> — {st.fornecedor_nome}</> : null}
+        <span className="block mt-1 text-muted-foreground">
+          {st?.mensagem ||
+            'CT-e de frete de saída/remessa. Não cadastre como fornecedor. O credor do frete é a transportadora.'}
+        </span>
+      </div>
+    );
+  }
+
   if (identificado) {
     return (
       <div className={`text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2 ${className}`}>

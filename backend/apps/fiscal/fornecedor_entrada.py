@@ -30,6 +30,7 @@ class StatusIdentificacaoFornecedor(str, Enum):
     NAO_ENCONTRADO = 'nao_encontrado'
     DUPLICIDADE = 'duplicidade'
     SEM_CNPJ = 'sem_cnpj'
+    PROPRIA_EMPRESA = 'propria_empresa'
 
 
 @dataclass
@@ -56,12 +57,14 @@ class ResultadoIdentificacaoFornecedor:
             'identificado': self.status in {
                 StatusIdentificacaoFornecedor.VINCULADO,
                 StatusIdentificacaoFornecedor.ENCONTRADO_UNICO,
+                StatusIdentificacaoFornecedor.PROPRIA_EMPRESA,
             },
             'pode_cadastrar': self.status == StatusIdentificacaoFornecedor.NAO_ENCONTRADO,
             'pode_vincular_manual': self.status in {
                 StatusIdentificacaoFornecedor.NAO_ENCONTRADO,
                 StatusIdentificacaoFornecedor.DUPLICIDADE,
             },
+            'remetente_propria_empresa': self.status == StatusIdentificacaoFornecedor.PROPRIA_EMPRESA,
         }
 
 
@@ -402,12 +405,47 @@ def cadastrar_ou_vincular_fornecedor_cte_entrada(
     return fornecedor, True, cte
 
 
+def _cnpj_eh_empresa_do_erp(cnpj: str, cte: CTeHistoricoImportado | None = None) -> tuple[bool, str]:
+    """True se o CNPJ é de Empresa cadastrada (ou tomadora/destinatária do CT-e)."""
+    doc = norm_digits(cnpj)
+    if len(doc) != 14:
+        return False, ''
+    from apps.cadastros.models import Empresa
+
+    if cte is not None:
+        for emp in (cte.empresa_tomadora, cte.empresa_destinataria, cte.empresa_recebedora):
+            if emp and norm_digits(emp.cnpj) == doc:
+                return True, emp.razao_social or ''
+    for e in Empresa.objects.all().only('cnpj', 'razao_social')[:200]:
+        if norm_digits(e.cnpj) == doc:
+            return True, e.razao_social or ''
+    return False, ''
+
+
 def montar_status_fornecedor_cte_entrada(
     cte: CTeHistoricoImportado,
     *,
     auto_vincular: bool = True,
 ) -> dict[str, Any]:
     party = cte.rem_json or {}
+    cnpj_rem = cnpj_participante_normalizado(party)
+    eh_empresa, nome_empresa = _cnpj_eh_empresa_do_erp(cnpj_rem, cte)
+    if eh_empresa:
+        return ResultadoIdentificacaoFornecedor(
+            status=StatusIdentificacaoFornecedor.PROPRIA_EMPRESA,
+            fornecedor_id=None,
+            fornecedor_nome=nome_empresa or party.get('xNome', ''),
+            fornecedor_cnpj=cnpj_rem,
+            cnpj_documento=cnpj_rem,
+            mensagem=(
+                'Remetente é a própria empresa (CT-e de frete de saída/remessa). '
+                'Não é necessário cadastrar como fornecedor. '
+                'O credor do frete é a transportadora/emitente.'
+            ),
+        ).as_dict() | {
+            'sugestao_cadastro': {},
+        }
+
     if auto_vincular and not cte.fornecedor_remetente_id:
         resultado = tentar_vincular_fornecedor_cte_entrada(cte, persistir=True)
     else:

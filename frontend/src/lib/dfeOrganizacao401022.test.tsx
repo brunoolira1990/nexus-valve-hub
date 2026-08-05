@@ -214,10 +214,10 @@ describe('ERP 4.0.10.2.2 CT-e conferência', () => {
     });
   });
 
-  it('CT-e Entrada descreve conferência sem efeitos automáticos', () => {
+  it('CT-e Entrada descreve hub operacional sem efeito financeiro automático', () => {
     vi.mocked(usePaginatedList).mockReturnValue({ ...paginatedEmpty } as never);
     renderWithRouter(<CTeEntrada />);
-    expect(screen.getByText(/não gera financeiro, expedição ou rateio automaticamente/i)).toBeTruthy();
+    expect(screen.getByText(/não gera financeiro/i)).toBeTruthy();
   });
 
   it('CT-e Entrada lista conferido com badges', async () => {
@@ -230,6 +230,15 @@ describe('ERP 4.0.10.2.2 CT-e conferência', () => {
       valor_frete: 1500,
       data: '2026-05-15',
       status_conferencia: 'CONFERIDO',
+      qtd_nfe_referenciadas: 2,
+      impostos: {
+        icms_base: 1500,
+        icms_aliquota: 12,
+        icms_valor: 180,
+        cbs_valor: 0,
+        ibs_valor: 0,
+        tem_reforma_ibscbs: false,
+      },
       classificacao_dfe: {
         categoria: 'BASE_DFE_IMPORTADA',
         badges: ['conferido', 'sem_financeiro_automatico', 'sem_expedicao_automatica'],
@@ -246,6 +255,9 @@ describe('ERP 4.0.10.2.2 CT-e conferência', () => {
     renderWithRouter(<CTeEntrada />);
     expect(screen.getByText('Transp')).toBeTruthy();
     expect(screen.getAllByText(/Conferido/i).length).toBeGreaterThan(0);
+    expect(screen.getByText('ICMS')).toBeTruthy();
+    expect(screen.getByText('R$ 180.00')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Detalhes' })).toBeTruthy();
   });
 
   it('marcar divergente exige motivo no modal', async () => {

@@ -76,8 +76,18 @@ Na base importada, o usuário revisa o CT-e e marca **Conferido**, **Divergente*
 **O que a conferência faz:**
 
 - registra usuário, data, checklist e observações;
-- com status **Conferido** + `apto_operacional=true`, o CT-e aparece em **CT-e Entrada** (`/cte-entrada`) para uso operacional futuro;
+- com status **Conferido** + `apto_operacional=true`, o CT-e aparece em **CT-e Entrada** (`/cte-entrada`) para uso operacional;
+- na listagem operacional: frete, **ICMS**, snapshot **CBS/IBS** (quando presente no XML), contagem de NF-es referenciadas e **Detalhes** abre o mesmo modal da base;
 - documentos **Divergente** ou **Ignorado** permanecem na base importada (apuração/BI/precificação quando fiscalmente válidos), mas não entram na listagem operacional.
+
+**Em evolução (fluxo completo — CTe-C/D + regra fiscal):**
+- **Regra fiscal obrigatória** antes de conferir / gerar CP: tipo «Frete / transporte (CT-e)» (`FRETE_TRANSPORTE`), CFOP origem = CFOP do CT-e, sem NCM, `movimenta_estoque=Não`. Serviço: `cte_regra_fiscal.py`.
+- Aba **Frete / financeiro** no detalhe do CT-e conferido.
+- Rateio assistido do frete nas NF-es referenciadas (proporcional ao valor; editável).
+- Geração explícita de **Contas a Pagar** do frete (credor = transportadora/emitente como Fornecedor pelo CNPJ).
+- Opcional: títulos tributo separados (**ICMS / CBS / IBS**) quando houver valor no XML.
+- Remetente = própria empresa: status `propria_empresa` (não pede cadastrar fornecedor).
+- Sem estoque, expedição ou rateio automático no custo do produto.
 
 Estados: `IMPORTADO`, `PROCESSADO`, `PREPARADO`, `CONFERIDO`, `DIVERGENTE`, `IGNORADO`, `CANCELADO`.
 
