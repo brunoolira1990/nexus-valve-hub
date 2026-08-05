@@ -70,7 +70,7 @@ def queryset_cte_entrada_operacional() -> QuerySet[CTeHistoricoImportado]:
 
 
 def resolver_documentos_vinculados(cte: CTeHistoricoImportado) -> list[dict[str, Any]]:
-    from apps.fiscal.models import NFeEntrada
+    from apps.fiscal.models import NFeEntrada, NFeSaida
 
     linhas: list[dict[str, Any]] = []
     for chave in cte.chaves_nfe_vinculadas or []:
@@ -96,21 +96,46 @@ def resolver_documentos_vinculados(cte: CTeHistoricoImportado) -> list[dict[str,
                 },
             )
             continue
-        saida = NFeSaidaHistoricaImportada.objects.filter(chave_acesso=ch).first()
-        if saida:
+        saida_hist = NFeSaidaHistoricaImportada.objects.filter(chave_acesso=ch).first()
+        if saida_hist:
             linhas.append(
                 {
                     'chave_acesso': ch,
                     'localizada': True,
                     'origem': 'BASE_NFE_SAIDA_IMPORTADA',
                     'origem_label': 'Base NF-e Saída Importada',
-                    'documento_id': saida.id,
-                    'numero': saida.numero,
-                    'serie': saida.serie,
-                    'rota_detalhe': f'/nfe-historica-importada?id={saida.id}',
+                    'documento_id': saida_hist.id,
+                    'numero': saida_hist.numero,
+                    'serie': saida_hist.serie,
+                    'rota_detalhe': f'/nfe-historica-importada?id={saida_hist.id}',
                     'nfe_entrada_operacional_id': None,
                     'nfe_entrada_status': None,
                     'rota_operacional': None,
+                },
+            )
+            continue
+        saida_op = (
+            NFeSaida.objects.filter(chave_acesso=ch)
+            .only('id', 'numero', 'numero_nfe', 'serie_nfe', 'status')
+            .first()
+        )
+        if saida_op:
+            numero = (saida_op.numero_nfe or saida_op.numero or '').strip() or str(saida_op.numero)
+            serie = (saida_op.serie_nfe or '').strip()
+            linhas.append(
+                {
+                    'chave_acesso': ch,
+                    'localizada': True,
+                    'origem': 'NFE_SAIDA_OPERACIONAL',
+                    'origem_label': 'NF-e Saída (ERP)',
+                    'documento_id': saida_op.id,
+                    'numero': numero,
+                    'serie': serie,
+                    'rota_detalhe': f'/nfe-saida?nfe={saida_op.id}',
+                    'nfe_entrada_operacional_id': None,
+                    'nfe_entrada_status': None,
+                    'rota_operacional': f'/nfe-saida?nfe={saida_op.id}',
+                    'nfe_saida_status': saida_op.status or '',
                 },
             )
             continue

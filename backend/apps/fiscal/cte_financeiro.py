@@ -20,7 +20,12 @@ from apps.cadastros.models import Fornecedor
 from apps.financeiro.models import CategoriaFinanceira, ContaFinanceira, CentroCusto, TituloFinanceiro
 from apps.financeiro.services.titulo import criar_titulo_financeiro
 from apps.fiscal.cte_historico_conferencia import resolver_documentos_vinculados
-from apps.fiscal.models import CTeHistoricoImportado, NFeEntradaHistoricaImportada, NFeSaidaHistoricaImportada
+from apps.fiscal.models import (
+    CTeHistoricoImportado,
+    NFeEntradaHistoricaImportada,
+    NFeSaida,
+    NFeSaidaHistoricaImportada,
+)
 from apps.fiscal.serializers import resumo_impostos_cte_operacional
 from apps.produtos.cnpj_fornecedor import cnpj_apenas_digitos
 
@@ -122,6 +127,10 @@ def _valor_documento_nfe(chave: str, origem: str | None, documento_id: int | Non
         nf = NFeSaidaHistoricaImportada.objects.filter(pk=documento_id).only('valor_total_nf').first()
         if nf:
             return _round_money(nf.valor_total_nf or 0)
+    if origem == 'NFE_SAIDA_OPERACIONAL' and documento_id:
+        nf = NFeSaida.objects.filter(pk=documento_id).only('valor_total').first()
+        if nf:
+            return _round_money(nf.valor_total or 0)
     return Decimal('0')
 
 

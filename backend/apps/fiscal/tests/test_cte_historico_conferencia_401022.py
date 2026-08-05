@@ -19,12 +19,14 @@ from apps.fiscal.cte_historico_conferencia import (
     marcar_cte_importado_divergente,
     ignorar_cte_importado_operacionalmente,
     queryset_cte_entrada_operacional,
+    resolver_documentos_vinculados,
 )
 from apps.fiscal.dfe_classificacao import pode_entrar_apuracao
-from apps.fiscal.models import CTeEntrada, CTeHistoricoImportado, NFeEntradaHistoricaImportada
+from apps.fiscal.models import CTeEntrada, CTeHistoricoImportado, NFeEntradaHistoricaImportada, NFeSaida
 from apps.fiscal.services.apuracao_fiscal import build_apuracao_fiscal
 from apps.fiscal.tests.cte_regra_fiscal_fixtures import CFOP_CTE_TESTE, garantir_regra_frete_cte
 from apps.regras_fiscais.models import RegraFiscalEntrada
+from apps.cadastros.models import Cliente
 
 
 def _dh() -> datetime:
@@ -205,6 +207,29 @@ class CTeHistoricoConferencia401022Test(TestCase):
         hit = next(d for d in docs if d['localizada'])
         self.assertTrue(hit.get('rota_detalhe', '').startswith('/nfe-entrada-historica-importada?id='))
         self.assertEqual(hit.get('documento_id'), NFeEntradaHistoricaImportada.objects.get(chave_acesso=ch_nfe).id)
+
+    def test_documentos_vinculados_nfe_saida_operacional(self) -> None:
+        ch_nfe = '4' * 44
+        cli = Cliente.objects.create(razao_social='Cli CTE', cnpj='11222333000181')
+        nf = NFeSaida.objects.create(
+            numero='390',
+            numero_nfe='390',
+            serie_nfe='1',
+            cliente=cli,
+            data=self.dh.date(),
+            valor_total=Decimal('1500.00'),
+            status='AUTORIZADA',
+            chave_acesso=ch_nfe,
+        )
+        cte = self._criar_cte(chave_suffix='i')
+        cte.chaves_nfe_vinculadas = [ch_nfe]
+        cte.save(update_fields=['chaves_nfe_vinculadas'])
+        docs = resolver_documentos_vinculados(cte)
+        self.assertEqual(len(docs), 1)
+        self.assertTrue(docs[0]['localizada'])
+        self.assertEqual(docs[0]['origem'], 'NFE_SAIDA_OPERACIONAL')
+        self.assertEqual(docs[0]['documento_id'], nf.id)
+        self.assertEqual(docs[0]['rota_detalhe'], f'/nfe-saida?nfe={nf.id}')
 
     def test_homologacao_fora_apuracao(self) -> None:
         cte = self._criar_cte(chave_suffix='d', tp_amb='2')
