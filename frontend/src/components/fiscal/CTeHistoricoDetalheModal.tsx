@@ -422,6 +422,59 @@ export function CTeHistoricoDetalheModal({
               )}
 
               <div className="border-t border-border pt-3 space-y-2">
+                <p className="text-xs font-medium">Situação financeira do frete</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Frete tomado não gera CP automaticamente. Marque «Pago à vista» ou «Não gera CP» quando já quitado;
+                  só «A pagar» habilita Contas a Pagar. Isso não altera a apuração fiscal.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {(
+                    [
+                      ['A_PAGAR', 'A pagar'],
+                      ['PAGO_AVISTA', 'Pago à vista'],
+                      ['NAO_GERA_CP', 'Não gera CP'],
+                    ] as const
+                  ).map(([sit, label]) => {
+                    const atual =
+                      previewCp?.situacao_financeira_frete ||
+                      detalhe.situacao_financeira_frete ||
+                      'PENDENTE';
+                    return (
+                      <NexusButton
+                        key={sit}
+                        type="button"
+                        size="sm"
+                        variant={atual === sit ? 'default' : 'outline'}
+                        disabled={busy || !cteId || atual === 'CP_GERADO'}
+                        onClick={() => {
+                          if (!cteId) return;
+                          setBusy(true);
+                          void cteHistoricoImportadoService
+                            .definirSituacaoFinanceiraFrete(cteId, { situacao: sit })
+                            .then(async () => {
+                              await carregar(cteId);
+                              await carregarFrete(cteId);
+                            })
+                            .catch((e) => setErro(apiErrorMessage(e)))
+                            .finally(() => setBusy(false));
+                        }}
+                      >
+                        {label}
+                      </NexusButton>
+                    );
+                  })}
+                </div>
+                {(previewCp?.situacao_financeira_frete || detalhe.situacao_financeira_frete) && (
+                  <p className="text-xs text-muted-foreground">
+                    Atual:{' '}
+                    <span className="font-medium text-foreground">
+                      {previewCp?.situacao_financeira_frete || detalhe.situacao_financeira_frete}
+                    </span>
+                  </p>
+                )}
+              </div>
+
+              <div className="border-t border-border pt-3 space-y-2">
                 <p className="text-xs font-medium">Contas a pagar</p>
                 {previewCp ? (
                   <>

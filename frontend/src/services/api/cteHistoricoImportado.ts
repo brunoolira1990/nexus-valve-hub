@@ -102,6 +102,9 @@ export type CTeFinanceiroFlags = {
   financeiro_gerado: boolean;
   pode_gerar_contas_pagar: boolean;
   motivo_bloqueio_financeiro: string;
+  situacao_financeira_frete?: string;
+  situacao_financeira_obs?: string;
+  situacao_financeira_em?: string | null;
   valor_frete_base: string;
   fornecedor_credor_id: number | null;
   fornecedor_credor_nome: string;
@@ -182,6 +185,9 @@ export type CTeHistoricoDetalhe = CTeHistoricoList & {
   documentos_vinculados_resumo?: CTeDocumentoVinculadoResumo[];
   rateio_frete_json?: Record<string, unknown>;
   rateado_em?: string | null;
+  situacao_financeira_frete?: string;
+  situacao_financeira_em?: string | null;
+  situacao_financeira_obs?: string;
   financeiro?: CTeFinanceiroFlags | null;
   regra_fiscal?: {
     status: string;
@@ -339,6 +345,17 @@ export const cteHistoricoImportadoService = {
     )).data,
   previewContasPagar: async (id: number) =>
     (await api.get<CTePreviewContasPagar>(`${base}${id}/financeiro/preview-contas-pagar/`)).data,
+  definirSituacaoFinanceiraFrete: async (
+    id: number,
+    payload: { situacao: string; observacao?: string },
+  ) =>
+    (
+      await api.post<{
+        id: number;
+        situacao_financeira_frete: string;
+        financeiro: CTeFinanceiroFlags;
+      }>(`${base}${id}/financeiro/situacao-frete/`, payload)
+    ).data,
   gerarContasPagar: async (
     id: number,
     payload: {

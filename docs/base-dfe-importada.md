@@ -82,12 +82,14 @@ Na base importada, o usuário revisa o CT-e e marca **Conferido**, **Divergente*
 
 **Em evolução (fluxo completo — CTe-C/D + regra fiscal):**
 - **Regra fiscal obrigatória** antes de conferir / gerar CP: tipo «Frete / transporte (CT-e)» (`FRETE_TRANSPORTE`), CFOP origem = CFOP do CT-e, sem NCM, `movimenta_estoque=Não`. Serviço: `cte_regra_fiscal.py`.
+- **Situação financeira do frete** (independente da apuração): `PENDENTE` | `A_PAGAR` | `PAGO_AVISTA` | `NAO_GERA_CP` | `CP_GERADO`. Só `A_PAGAR` habilita gerar Contas a Pagar; frete pago à vista não gera título.
 - Aba **Frete / financeiro** no detalhe do CT-e conferido.
 - Rateio assistido do frete nas NF-es referenciadas (proporcional ao valor; editável).
 - Geração explícita de **Contas a Pagar** do frete (credor = transportadora/emitente como Fornecedor pelo CNPJ).
 - Opcional: títulos tributo separados (**ICMS / CBS / IBS**) quando houver valor no XML.
 - Remetente = própria empresa: status `propria_empresa` (não pede cadastrar fornecedor).
 - Sem estoque, expedição ou rateio automático no custo do produto.
+- **Apuração:** CT-e entra no resumo (qtd, valor frete, ICMS) e na Reforma (CBS/IBS); CP/à vista não afetam a apuração.
 
 Estados: `IMPORTADO`, `PROCESSADO`, `PREPARADO`, `CONFERIDO`, `DIVERGENTE`, `IGNORADO`, `CANCELADO`.
 

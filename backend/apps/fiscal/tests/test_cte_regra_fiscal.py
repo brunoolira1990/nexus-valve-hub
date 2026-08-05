@@ -91,7 +91,22 @@ class CteRegraFiscalTests(TestCase):
         cte = self._cte()
         cte.status_conferencia = CTeHistoricoImportado.StatusConferencia.CONFERIDO
         cte.apto_operacional = True
-        cte.save(update_fields=['status_conferencia', 'apto_operacional'])
+        cte.situacao_financeira_frete = CTeHistoricoImportado.SituacaoFinanceiraFrete.A_PAGAR
+        cte.save(update_fields=['status_conferencia', 'apto_operacional', 'situacao_financeira_frete'])
         with self.assertRaises(CteFinanceiroErro) as ctx:
             gerar_contas_pagar_de_cte(cte, usuario=self.user)
         self.assertIn(MSG_SEM_REGRA_CTE[:40], str(ctx.exception))
+
+    def test_pago_avista_nao_gera_cp(self):
+        garantir_regra_frete_cte(cfop=CFOP_CTE_TESTE)
+        cte = self._cte(chave='6' * 44)
+        conferir_cte_importado(cte, self.user, _payload_conferir())
+        from apps.fiscal.cte_financeiro import definir_situacao_financeira_frete, montar_flags_financeiro_cte
+
+        definir_situacao_financeira_frete(cte, situacao='PAGO_AVISTA', usuario=self.user)
+        cte.refresh_from_db()
+        flags = montar_flags_financeiro_cte(cte)
+        self.assertEqual(flags['situacao_financeira_frete'], 'PAGO_AVISTA')
+        self.assertFalse(flags['pode_gerar_contas_pagar'])
+        with self.assertRaises(CteFinanceiroErro):
+            gerar_contas_pagar_de_cte(cte, usuario=self.user)

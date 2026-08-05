@@ -1510,6 +1510,30 @@ class CTeHistoricoImportado(models.Model):
         related_name='ctes_historicos_rateados',
     )
 
+    class SituacaoFinanceiraFrete(models.TextChoices):
+        PENDENTE = 'PENDENTE', 'Pendente de definição'
+        A_PAGAR = 'A_PAGAR', 'A pagar (gerar CP)'
+        PAGO_AVISTA = 'PAGO_AVISTA', 'Pago à vista'
+        NAO_GERA_CP = 'NAO_GERA_CP', 'Não gera Contas a Pagar'
+        CP_GERADO = 'CP_GERADO', 'CP gerado'
+
+    situacao_financeira_frete = models.CharField(
+        max_length=16,
+        choices=SituacaoFinanceiraFrete.choices,
+        default=SituacaoFinanceiraFrete.PENDENTE,
+        db_index=True,
+        help_text='Disposição financeira do frete tomado (independente da apuração fiscal).',
+    )
+    situacao_financeira_em = models.DateTimeField(null=True, blank=True)
+    situacao_financeira_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ctes_historicos_situacao_financeira',
+    )
+    situacao_financeira_obs = models.CharField(max_length=500, blank=True)
+
     class Meta:
         ordering = ['-dh_emissao', '-id']
         verbose_name = 'CT-e importado (histórico)'

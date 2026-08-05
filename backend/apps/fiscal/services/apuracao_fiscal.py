@@ -1189,14 +1189,28 @@ def build_apuracao_fiscal(query_params: dict[str, Any]) -> dict[str, Any]:
             _process_nota_historica_entrada(ctx, nf, f)
 
     ctes_escaneados_reforma = 0
+    cte_qtd = 0
+    cte_valor_frete = Decimal('0')
+    cte_icms = Decimal('0')
     if _apuracao_escaneia_cte_reforma(f):
         qs_cte = CTeHistoricoImportado.objects.filter(dh_emissao__gte=em_ini, dh_emissao__lte=em_fim)
         qs_cte = filtrar_queryset_apuracao_cte(qs_cte)
         if not f.incluir_canceladas:
             qs_cte = qs_cte.filter(cancelado=False)
         qs_cte = _filtro_empresa_cte_historico(qs_cte, f)
-        for cte in qs_cte.only('id', 'imposto_json').iterator(chunk_size=200):
+        for cte in qs_cte.only(
+            'id',
+            'imposto_json',
+            'valor_receber',
+            'valor_total_servico',
+            'icms_valor',
+        ).iterator(chunk_size=200):
             ctes_escaneados_reforma += 1
+            cte_qtd += 1
+            receber = cte.valor_receber or Decimal('0')
+            servico = cte.valor_total_servico or Decimal('0')
+            cte_valor_frete += receber if receber > 0 else servico
+            cte_icms += cte.icms_valor or Decimal('0')
             ctot, _cal, cstats = processar_reforma_cte_imposto(cte.imposto_json)
             merge_totais_reforma(ctx.reforma, ctot)
             merge_totais_reforma(ctx.reforma_cte, ctot)
@@ -1390,6 +1404,9 @@ def build_apuracao_fiscal(query_params: dict[str, Any]) -> dict[str, Any]:
         'base_cbs_entrada': _money_float(ctx.reforma_entrada.base_cbs),
         'base_cbs_saida': _money_float(ctx.reforma_saida.base_cbs),
         'base_cbs_cte': _money_float(ctx.reforma_cte.base_cbs),
+        'ctes': cte_qtd,
+        'valor_fretes_cte': _money_float(cte_valor_frete),
+        'icms_cte': _money_float(cte_icms),
         'alertas': len(ctx.alertas),
         'eventos_pendentes': eventos_cancel_pendentes,
     }
@@ -1462,6 +1479,15 @@ def build_apuracao_fiscal(query_params: dict[str, Any]) -> dict[str, Any]:
         'resumo': {
             'entrada': _serialize_acumulo(ctx.entrada),
             'saida': _serialize_acumulo(ctx.saida),
+            'cte': {
+                'quantidade_documentos': cte_qtd,
+                'valor_frete': _money_float(cte_valor_frete),
+                'valor_icms': _money_float(cte_icms),
+                'valor_cbs': _money_float(ctx.reforma_cte.valor_cbs),
+                'valor_ibs_total': _money_float(
+                    ctx.reforma_cte.valor_ibs_uf + ctx.reforma_cte.valor_ibs_municipio
+                ),
+            },
             'saldo_gerencial_saida_menos_entrada': _saldo_gerencial(ctx.entrada, ctx.saida),
         },
         'icms_ipi': {

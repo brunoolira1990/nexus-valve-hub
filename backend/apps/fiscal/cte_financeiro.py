@@ -46,6 +46,28 @@ MSG_TITULO_CANCELADO = (
 MSG_RATEIO_SOMA = 'A soma do rateio não confere com o valor-base do frete.'
 MSG_RATEIO_VAZIO = 'Informe ao menos uma linha de rateio.'
 MSG_SEM_NFE = 'Nenhuma NF-e referenciada no XML para ratear o frete.'
+MSG_SITUACAO_PENDENTE = (
+    'Defina a situação financeira do frete: «A pagar», «Pago à vista» ou «Não gera CP».'
+)
+MSG_SITUACAO_NAO_PAGA = (
+    'Este CT-e está marcado como pago à vista ou sem Contas a Pagar — não gera CP.'
+)
+MSG_SITUACAO_INVALIDA = 'Situação financeira do frete inválida.'
+
+SITUACOES_SEM_CP = frozenset(
+    {
+        CTeHistoricoImportado.SituacaoFinanceiraFrete.PAGO_AVISTA,
+        CTeHistoricoImportado.SituacaoFinanceiraFrete.NAO_GERA_CP,
+    }
+)
+SITUACOES_DEFINIVEIS = frozenset(
+    {
+        CTeHistoricoImportado.SituacaoFinanceiraFrete.A_PAGAR,
+        CTeHistoricoImportado.SituacaoFinanceiraFrete.PAGO_AVISTA,
+        CTeHistoricoImportado.SituacaoFinanceiraFrete.NAO_GERA_CP,
+        CTeHistoricoImportado.SituacaoFinanceiraFrete.PENDENTE,
+    }
+)
 
 
 class CteFinanceiroErro(ValueError):
@@ -270,9 +292,46 @@ def salvar_rateio_frete_cte(
     return cte
 
 
+def situacao_financeira_efetiva(cte: CTeHistoricoImportado) -> str:
+    """Normaliza situação: títulos existentes → CP_GERADO."""
+    if titulos_vinculados_cte(cte):
+        return CTeHistoricoImportado.SituacaoFinanceiraFrete.CP_GERADO
+    return (cte.situacao_financeira_frete or CTeHistoricoImportado.SituacaoFinanceiraFrete.PENDENTE).strip()
+
+
+def definir_situacao_financeira_frete(
+    cte: CTeHistoricoImportado,
+    *,
+    situacao: str,
+    observacao: str = '',
+    usuario=None,
+) -> CTeHistoricoImportado:
+    """Define disposição financeira do frete (sem gerar título)."""
+    _cte_apto_financeiro(cte)
+    sit = (situacao or '').strip().upper()
+    if sit not in SITUACOES_DEFINIVEIS:
+        raise CteFinanceiroErro(MSG_SITUACAO_INVALIDA)
+    if titulos_vinculados_cte(cte):
+        raise CteFinanceiroErro(MSG_JA_GERADO)
+    cte.situacao_financeira_frete = sit
+    cte.situacao_financeira_em = timezone.now()
+    cte.situacao_financeira_por = usuario if getattr(usuario, 'is_authenticated', False) else None
+    cte.situacao_financeira_obs = (observacao or '').strip()[:500]
+    cte.save(
+        update_fields=[
+            'situacao_financeira_frete',
+            'situacao_financeira_em',
+            'situacao_financeira_por',
+            'situacao_financeira_obs',
+        ]
+    )
+    return cte
+
+
 def montar_flags_financeiro_cte(cte: CTeHistoricoImportado) -> dict[str, Any]:
     titulos = titulos_vinculados_cte(cte)
     financeiro_gerado = bool(titulos)
+    situacao = situacao_financeira_efetiva(cte)
     motivo = ''
     try:
         _cte_apto_financeiro(cte)
@@ -283,6 +342,10 @@ def montar_flags_financeiro_cte(cte: CTeHistoricoImportado) -> dict[str, Any]:
             motivo = MSG_TITULO_CANCELADO
         else:
             motivo = MSG_JA_GERADO
+    if not motivo and situacao in SITUACOES_SEM_CP:
+        motivo = MSG_SITUACAO_NAO_PAGA
+    if not motivo and situacao == CTeHistoricoImportado.SituacaoFinanceiraFrete.PENDENTE:
+        motivo = MSG_SITUACAO_PENDENTE
     fornecedor = resolver_fornecedor_credor_cte(cte)
     if not motivo and not financeiro_gerado and not fornecedor:
         motivo = MSG_SEM_CREDOR
@@ -290,10 +353,18 @@ def montar_flags_financeiro_cte(cte: CTeHistoricoImportado) -> dict[str, Any]:
     if not motivo and not financeiro_gerado and base <= 0:
         motivo = MSG_VALOR_ZERO
     impostos = resumo_impostos_cte_operacional(cte)
+    pode_gerar = (
+        not financeiro_gerado
+        and not motivo
+        and situacao == CTeHistoricoImportado.SituacaoFinanceiraFrete.A_PAGAR
+    )
     return {
         'financeiro_gerado': financeiro_gerado,
-        'pode_gerar_contas_pagar': not financeiro_gerado and not motivo,
+        'pode_gerar_contas_pagar': pode_gerar,
         'motivo_bloqueio_financeiro': motivo,
+        'situacao_financeira_frete': situacao,
+        'situacao_financeira_obs': cte.situacao_financeira_obs or '',
+        'situacao_financeira_em': cte.situacao_financeira_em.isoformat() if cte.situacao_financeira_em else None,
         'valor_frete_base': str(base),
         'fornecedor_credor_id': fornecedor.id if fornecedor else None,
         'fornecedor_credor_nome': fornecedor.razao_social if fornecedor else '',
@@ -497,6 +568,11 @@ def gerar_contas_pagar_de_cte(
                     usuario=usuario,
                 )
             )
+
+    cte.situacao_financeira_frete = CTeHistoricoImportado.SituacaoFinanceiraFrete.CP_GERADO
+    cte.situacao_financeira_em = timezone.now()
+    cte.situacao_financeira_por = usuario if getattr(usuario, 'is_authenticated', False) else None
+    cte.save(update_fields=['situacao_financeira_frete', 'situacao_financeira_em', 'situacao_financeira_por'])
 
     return {
         'titulo_frete_id': titulo_frete.id,

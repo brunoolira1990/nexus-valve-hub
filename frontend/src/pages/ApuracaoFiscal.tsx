@@ -28,15 +28,18 @@ type TabId =
   | 'alertas'
   | 'info_tecnica';
 
-const TABS: { id: TabId; label: string }[] = [
+const TABS_PRINCIPAIS: { id: TabId; label: string }[] = [
   { id: 'resumo', label: 'Resumo' },
   { id: 'icms_ipi', label: 'ICMS/IPI' },
   { id: 'pis_cofins', label: 'PIS/COFINS' },
   { id: 'reforma', label: 'Reforma Tributária' },
+  { id: 'alertas', label: 'Alertas' },
+];
+
+const TABS_AVANCADOS: { id: TabId; label: string }[] = [
+  { id: 'agrupamentos', label: 'Agrupamentos' },
   { id: 'efd_icms', label: 'Base EFD ICMS/IPI' },
   { id: 'efd_contrib', label: 'Base EFD Contribuições' },
-  { id: 'agrupamentos', label: 'Agrupamentos' },
-  { id: 'alertas', label: 'Alertas' },
   { id: 'info_tecnica', label: 'Informações técnicas' },
 ];
 
@@ -1204,6 +1207,7 @@ const ApuracaoFiscalPage = () => {
   const [modelo, setModelo] = useState('');
   const [incluirCanceladas, setIncluirCanceladas] = useState(false);
   const [tab, setTab] = useState<TabId>('resumo');
+  const [mostrarAvancado, setMostrarAvancado] = useState(false);
   const [data, setData] = useState<ApuracaoFiscalPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1552,13 +1556,10 @@ const ApuracaoFiscalPage = () => {
     <div className="max-w-[1600px] mx-auto space-y-8 md:space-y-10 pb-12 px-2 sm:px-4 lg:px-6">
       <div>
         <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-foreground">Apuração Fiscal</h1>
-        <p className="text-xs font-mono text-muted-foreground/90 mt-2">
-          <span className="text-foreground/80">GET /api/fiscal/apuracao/</span>
-        </p>
         <p className="text-sm text-muted-foreground mt-3 max-w-3xl leading-relaxed">
-          Painel gerencial on-demand (pré-SPED). Tributos consolidados a partir de NF-e importada (XML). NF interna do ERP
-          entra quando filtrada (modelo INTERNA). Ajuste o período se as notas forem de outro mês; a consulta atualiza
-          após alterar filtros ou use <span className="font-medium text-foreground">Apurar</span>.
+          Painel gerencial on-demand (pré-SPED): consolida NF-e de entrada/saída e CT-e do período.
+          Homologação fica fora. Contas a pagar/receber do frete são financeiros e não entram nesta tela.
+          Use <span className="font-medium text-foreground">Apurar</span> após ajustar o período.
         </p>
       </div>
 
@@ -1912,33 +1913,57 @@ const ApuracaoFiscalPage = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 md:gap-6">
               <KpiCardHero titulo="Notas de entrada" valor={num(apuracaoCards?.notas_entrada)} sub="NF-es incluídas na apuração (lado entrada)" />
               <KpiCardHero titulo="Notas de saída" valor={num(apuracaoCards?.notas_saida)} sub="NF-es incluídas na apuração (lado saída)" />
-              <KpiCardHero
-                titulo="Itens fiscais"
-                valor={num(data.resumo?.entrada?.quantidade_itens) + num(data.resumo?.saida?.quantidade_itens)}
-                sub="Linhas de item somadas nos documentos"
-              />
+              <KpiCardHero titulo="CT-e (frete)" valor={num(apuracaoCards?.ctes)} sub="Documentos de transporte no período" />
+              <KpiCardHero titulo="Valor fretes CT-e" valor={fmtMoney(apuracaoCards?.valor_fretes_cte)} sub="Valor do serviço / a receber" />
+              <KpiCardHero titulo="ICMS CT-e" valor={fmtMoney(apuracaoCards?.icms_cte)} sub="ICMS destacado nos CT-e" />
               <KpiCardHero titulo="Valor total de entradas" valor={fmtMoney(apuracaoCards?.valor_entradas)} sub="Documentos no período" />
               <KpiCardHero titulo="Valor total de saídas" valor={fmtMoney(apuracaoCards?.valor_saidas)} sub="Documentos no período" />
-              <KpiCardHero titulo="Eventos pendentes" valor={apuracaoCards?.eventos_pendentes ?? 0} sub="Cancelamentos e eventos a tratar" />
               <KpiCardHero titulo="Alertas fiscais" valor={apuracaoCards?.alertas ?? 0} sub="Quantidade na aba Alertas" />
             </div>
           </div>
 
-          <div className="rounded-xl bg-muted/25 p-1.5 flex flex-wrap gap-1 border border-border/50 shadow-inner">
-            {TABS.map((t) => (
+          <div className="space-y-2">
+            <div className="rounded-xl bg-muted/25 p-1.5 flex flex-wrap gap-1 border border-border/50 shadow-inner">
+              {TABS_PRINCIPAIS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={`px-4 py-2.5 text-sm rounded-lg transition-colors ${
+                    tab === t.id
+                      ? 'bg-card text-foreground font-semibold shadow-sm ring-1 ring-border/60'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                  }`}
+                  onClick={() => setTab(t.id)}
+                >
+                  {t.label}
+                </button>
+              ))}
               <button
-                key={t.id}
                 type="button"
-                className={`px-4 py-2.5 text-sm rounded-lg transition-colors ${
-                  tab === t.id
-                    ? 'bg-card text-foreground font-semibold shadow-sm ring-1 ring-border/60'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                }`}
-                onClick={() => setTab(t.id)}
+                className="px-4 py-2.5 text-sm rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                onClick={() => setMostrarAvancado((v) => !v)}
               >
-                {t.label}
+                {mostrarAvancado ? 'Ocultar avançado' : 'Avançado…'}
               </button>
-            ))}
+            </div>
+            {mostrarAvancado ? (
+              <div className="rounded-xl bg-muted/15 p-1.5 flex flex-wrap gap-1 border border-dashed border-border/50">
+                {TABS_AVANCADOS.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className={`px-3 py-2 text-xs rounded-lg transition-colors ${
+                      tab === t.id
+                        ? 'bg-card text-foreground font-semibold shadow-sm ring-1 ring-border/60'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                    }`}
+                    onClick={() => setTab(t.id)}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
 
           <div className="rounded-2xl border border-border/60 bg-card shadow-md ring-1 ring-border/15 p-6 md:p-10">
@@ -1951,6 +1976,36 @@ const ApuracaoFiscalPage = () => {
                     <AcumuloTable titulo="Saídas" a={data.resumo?.saida} />
                   </div>
                 </div>
+                {data.resumo?.cte ? (
+                  <div className="rounded-xl border border-border/60 p-4 space-y-2">
+                    <h3 className="text-base font-semibold text-foreground">CT-e (frete tomado)</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Totais fiscais do período. Independente de Contas a Pagar (pago à vista ou a prazo).
+                    </p>
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3 text-sm">
+                      <div>
+                        <div className="text-xs text-muted-foreground">Documentos</div>
+                        <div className="font-mono tabular-nums font-medium">{num(data.resumo.cte.quantidade_documentos)}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">Valor frete</div>
+                        <div className="font-mono tabular-nums font-medium">{fmtMoney(data.resumo.cte.valor_frete)}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">ICMS</div>
+                        <div className="font-mono tabular-nums font-medium">{fmtMoney(data.resumo.cte.valor_icms)}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">CBS</div>
+                        <div className="font-mono tabular-nums font-medium">{fmtMoney(data.resumo.cte.valor_cbs)}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">IBS</div>
+                        <div className="font-mono tabular-nums font-medium">{fmtMoney(data.resumo.cte.valor_ibs_total)}</div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
                 <SaldoGerencialTable saldo={data.resumo?.saldo_gerencial_saida_menos_entrada} />
               </div>
             )}

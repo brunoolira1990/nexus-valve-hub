@@ -3119,6 +3119,13 @@ export interface ApuracaoFiscalPayload {
   resumo: {
     entrada: ApuracaoFiscalAcumulo;
     saida: ApuracaoFiscalAcumulo;
+    cte?: {
+      quantidade_documentos?: number;
+      valor_frete?: number;
+      valor_icms?: number;
+      valor_cbs?: number;
+      valor_ibs_total?: number;
+    };
     saldo_gerencial_saida_menos_entrada: Record<string, number>;
   };
   icms_ipi: { entrada: ApuracaoFiscalAcumulo; saida: ApuracaoFiscalAcumulo; comparativo_documento: { observacao: string } };

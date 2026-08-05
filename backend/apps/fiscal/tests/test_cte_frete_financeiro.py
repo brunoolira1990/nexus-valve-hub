@@ -102,6 +102,10 @@ class CteFreteFinanceiroTests(TestCase):
         cte = self._cte(chaves=[ch1, ch2])
         conferir_cte_importado(cte, self.user, _payload_conferir())
         cte.refresh_from_db()
+        from apps.fiscal.cte_financeiro import definir_situacao_financeira_frete
+
+        definir_situacao_financeira_frete(cte, situacao='A_PAGAR', usuario=self.user)
+        cte.refresh_from_db()
         self.assertEqual(valor_base_frete_cte(cte), Decimal('300.00'))
 
         sug = sugerir_rateio_frete_cte(cte)

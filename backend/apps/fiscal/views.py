@@ -3611,6 +3611,32 @@ class CTeHistoricoImportadoViewSet(AutocompleteOrPaginationMixin, viewsets.ReadO
         except CteFinanceiroErro as exc:
             return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=True, methods=['post'], url_path='financeiro/situacao-frete')
+    def definir_situacao_financeira_frete_cte(self, request, pk=None):
+        from apps.fiscal.cte_financeiro import (
+            CteFinanceiroErro,
+            definir_situacao_financeira_frete,
+            montar_flags_financeiro_cte,
+        )
+
+        data = request.data or {}
+        try:
+            cte = definir_situacao_financeira_frete(
+                self.get_object(),
+                situacao=str(data.get('situacao') or data.get('situacao_financeira_frete') or ''),
+                observacao=str(data.get('observacao') or data.get('situacao_financeira_obs') or ''),
+                usuario=request.user,
+            )
+        except CteFinanceiroErro as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return response.Response(
+            {
+                'id': cte.id,
+                'situacao_financeira_frete': cte.situacao_financeira_frete,
+                'financeiro': montar_flags_financeiro_cte(cte),
+            }
+        )
+
     @action(detail=True, methods=['post'], url_path='financeiro/gerar-contas-pagar')
     def gerar_contas_pagar_cte(self, request, pk=None):
         from apps.fiscal.cte_financeiro import CteFinanceiroErro, gerar_contas_pagar_de_cte
