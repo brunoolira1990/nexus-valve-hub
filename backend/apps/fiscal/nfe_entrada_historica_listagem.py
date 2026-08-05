@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from django.db.models import Case, F, IntegerField, Q, QuerySet, Value, When
+from django.db.models import F, Q, QuerySet
 from django.http import QueryDict
 
 from apps.fiscal.models import NFeEntradaHistoricaImportada
@@ -125,11 +125,7 @@ def aplicar_ordering_listagem_entrada_historica(
     """
     Ordenação operacional da base NF-e Entrada importada.
 
-    Padrão (fila + mais recentes primeiro):
-    1. Sem data_entrada na conferência (precisam regularização)
-    2. data_entrada decrescente (mais recente primeiro)
-    3. importado_em / emissão decrescentes (desempate — não A-Z)
-    4. id
+    Padrão: mais recentes primeiro (importação, depois emissão).
     """
     from nexus_erp.list_mixins import aplicar_ordering
 
@@ -147,18 +143,8 @@ def aplicar_ordering_listagem_entrada_historica(
             '-importado_em',
         )
 
-    return (
-        qs.annotate(
-            _sem_data_entrada=Case(
-                When(conferencia__data_entrada__isnull=True, then=Value(0)),
-                default=Value(1),
-                output_field=IntegerField(),
-            ),
-        ).order_by(
-            '_sem_data_entrada',
-            F('conferencia__data_entrada').desc(nulls_last=True),
-            F('importado_em').desc(nulls_last=True),
-            F('dh_emissao').desc(nulls_last=True),
-            '-id',
-        )
+    return qs.order_by(
+        F('importado_em').desc(nulls_last=True),
+        F('dh_emissao').desc(nulls_last=True),
+        '-id',
     )

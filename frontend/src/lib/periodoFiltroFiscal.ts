@@ -21,6 +21,19 @@ export function intervaloMesAtual(): { inicio: string; fim: string } {
   return intervaloMes(hoje.getFullYear(), hoje.getMonth() + 1);
 }
 
+/** `mm/aaaa` do mês atual (exibição do campo competência). */
+export function competenciaMesAtualMmAaaa(): string {
+  const hoje = new Date();
+  return `${pad2(hoje.getMonth() + 1)}/${hoje.getFullYear()}`;
+}
+
+/** `mm/aaaa` a partir de data ISO `yyyy-mm-dd`. */
+export function competenciaDeDataIso(isoDate: string): string {
+  const m = /^(\d{4})-(\d{2})/.exec((isoDate || '').trim());
+  if (!m) return '';
+  return `${m[2]}/${m[1]}`;
+}
+
 export function intervaloMesAnterior(): { inicio: string; fim: string } {
   const hoje = new Date();
   const mes = hoje.getMonth();

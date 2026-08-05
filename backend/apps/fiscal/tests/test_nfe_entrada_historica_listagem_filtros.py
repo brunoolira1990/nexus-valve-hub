@@ -170,51 +170,26 @@ class NFeEntradaHistoricaListagemFiltrosTest(TestCase):
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual(self._ids(resp), {self.nf_sem_conf.id, self.nf_finalizada.id})
 
-    def test_ordenacao_padrao_sem_data_entrada_primeiro(self) -> None:
-        """Notas sem data_entrada na conferência aparecem antes das demais."""
+    def test_ordenacao_padrao_mais_recentes_primeiro(self) -> None:
+        """Padrão: importado_em / emissão / id decrescentes (mais recente no topo)."""
         resp = self.client.get(self.url)
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         ids = [row['id'] for row in resp.data['results']]
-        self.assertEqual(ids[0], self.nf_sem_conf.id)
+        # Criados em sequência no setUp: sem_conf → pendente → finalizada → estoque
+        self.assertEqual(ids[0], self.nf_estoque.id)
+        self.assertEqual(ids[-1], self.nf_sem_conf.id)
 
-    def test_ordenacao_padrao_por_data_entrada_conferencia_nao_importacao(self) -> None:
-        """
-        Com data_entrada, ordena da mais recente para a mais antiga
-        (não pela importação/emissão).
-        """
-        nf_junho_recente = NFeEntradaHistoricaImportada.objects.create(
-            chave_acesso='5' * 44,
-            numero='500',
-            serie='1',
-            modelo='55',
-            dh_emissao=_dh(date(2026, 7, 7)),
-            tp_amb='1',
-            cstat='100',
-            valor_total_nf=Decimal('500'),
-            fornecedor_emitente=self.forn_b,
-            empresa_destinataria=self.emp,
-        )
-        NFeEntradaConferencia.objects.create(
-            nf_entrada_historica=nf_junho_recente,
-            status=NFeEntradaConferencia.Status.PENDENTE,
-            data_entrada=date(2026, 6, 30),
-        )
-
-        resp = self.client.get(self.url)
+    def test_ordenacao_explicita_por_data_entrada(self) -> None:
+        resp = self.client.get(self.url, {'ordering': 'data_entrada'})
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         ids = [row['id'] for row in resp.data['results']]
+        # Com ordering explícito crescente: pendente (03/05) antes de finalizada (04/25)
+        self.assertLess(ids.index(self.nf_pendente.id), ids.index(self.nf_finalizada.id))
 
-        self.assertEqual(ids[0], self.nf_sem_conf.id)
-        idx_pendente = ids.index(self.nf_pendente.id)
-        idx_finalizada = ids.index(self.nf_finalizada.id)
-        idx_junho = ids.index(nf_junho_recente.id)
-        # data_entrada DESC: 30/06 > 25/04 > 05/03
-        self.assertLess(idx_junho, idx_finalizada)
-        self.assertLess(idx_finalizada, idx_pendente)
-
-    def test_ordenacao_mesma_data_entrada_mais_recentes_primeiro(self) -> None:
-        """Com a mesma data_entrada, desempata por importado_em/emissão/id (mais recente primeiro)."""
-        nf_alpha_10 = NFeEntradaHistoricaImportada.objects.create(
+    def test_ordenacao_mesma_importacao_desempata_por_emissao(self) -> None:
+        """Com importado_em igual, emissão mais recente vem primeiro."""
+        base = timezone.now()
+        nf_antiga = NFeEntradaHistoricaImportada.objects.create(
             chave_acesso='6' * 44,
             numero='010',
             serie='1',
@@ -226,48 +201,21 @@ class NFeEntradaHistoricaListagemFiltrosTest(TestCase):
             fornecedor_emitente=self.forn_a,
             empresa_destinataria=self.emp,
         )
-        NFeEntradaConferencia.objects.create(
-            nf_entrada_historica=nf_alpha_10,
-            status=NFeEntradaConferencia.Status.PENDENTE,
-            data_entrada=date(2026, 6, 15),
-        )
-        nf_alpha_20 = NFeEntradaHistoricaImportada.objects.create(
+        NFeEntradaHistoricaImportada.objects.filter(pk=nf_antiga.pk).update(importado_em=base)
+        nf_nova = NFeEntradaHistoricaImportada.objects.create(
             chave_acesso='7' * 44,
             numero='020',
-            serie='1',
-            modelo='55',
-            dh_emissao=_dh(date(2026, 8, 2)),
-            tp_amb='1',
-            cstat='100',
-            valor_total_nf=Decimal('20'),
-            fornecedor_emitente=self.forn_a,
-            empresa_destinataria=self.emp,
-        )
-        NFeEntradaConferencia.objects.create(
-            nf_entrada_historica=nf_alpha_20,
-            status=NFeEntradaConferencia.Status.PENDENTE,
-            data_entrada=date(2026, 6, 15),
-        )
-        nf_beta_5 = NFeEntradaHistoricaImportada.objects.create(
-            chave_acesso='8' * 44,
-            numero='005',
             serie='1',
             modelo='55',
             dh_emissao=_dh(date(2026, 8, 3)),
             tp_amb='1',
             cstat='100',
-            valor_total_nf=Decimal('5'),
+            valor_total_nf=Decimal('20'),
             fornecedor_emitente=self.forn_b,
             empresa_destinataria=self.emp,
         )
-        NFeEntradaConferencia.objects.create(
-            nf_entrada_historica=nf_beta_5,
-            status=NFeEntradaConferencia.Status.PENDENTE,
-            data_entrada=date(2026, 6, 15),
-        )
+        NFeEntradaHistoricaImportada.objects.filter(pk=nf_nova.pk).update(importado_em=base)
 
         resp = self.client.get(self.url)
         ids = [row['id'] for row in resp.data['results']]
-        # Mais recente (maior id / importado_em) primeiro entre a mesma data_entrada
-        self.assertLess(ids.index(nf_beta_5.id), ids.index(nf_alpha_20.id))
-        self.assertLess(ids.index(nf_alpha_20.id), ids.index(nf_alpha_10.id))
+        self.assertLess(ids.index(nf_nova.id), ids.index(nf_antiga.id))

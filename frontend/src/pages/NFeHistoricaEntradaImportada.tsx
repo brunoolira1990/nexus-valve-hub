@@ -33,6 +33,8 @@ import { chaveNfeResumida } from '@/lib/chaveNfeResumida';
 import { openBlobInNewTab } from '@/lib/downloadBlobFile';
 import {
   aplicarCompetenciaMmAaaa,
+  competenciaDeDataIso,
+  competenciaMesAtualMmAaaa,
   intervaloMesAnterior,
   intervaloMesAtual,
   labelPeriodoFiltro,
@@ -61,8 +63,9 @@ function lerTipoDataPersistido(): 'emissao' | 'entrada' {
 const NFeHistoricaEntradaImportada = () => {
   const navigate = useNavigate();
   const tipoDataInicial = lerTipoDataPersistido();
+  const mesAtualInicial = intervaloMesAtual();
   const [tipoData, setTipoDataState] = useState<'emissao' | 'entrada'>(tipoDataInicial);
-  const [competencia, setCompetencia] = useState('');
+  const [competencia, setCompetencia] = useState(competenciaMesAtualMmAaaa);
   const [chaveFiltro, setChaveFiltro] = useState('');
   const {
     items,
@@ -82,7 +85,11 @@ const NFeHistoricaEntradaImportada = () => {
     reload,
   } = usePaginatedList<NFeEntradaHistoricaList>({
     fetchPage: nfeHistoricaEntradaImportadaService.listPaginated,
-    initialFilters: tipoDataInicial === 'entrada' ? { tipo_data: 'entrada' } : {},
+    initialFilters: {
+      data_inicio: mesAtualInicial.inicio,
+      data_fim: mesAtualInicial.fim,
+      ...(tipoDataInicial === 'entrada' ? { tipo_data: 'entrada' } : {}),
+    },
   });
   const empresaId = filters.empresa_destinataria_id || '';
   const fornecedorId = filters.fornecedor_id || '';
@@ -105,7 +112,7 @@ const NFeHistoricaEntradaImportada = () => {
 
   const aplicarPeriodo = useCallback(
     (inicio: string, fim: string) => {
-      setCompetencia('');
+      setCompetencia(competenciaDeDataIso(inicio) || '');
       setFilters((prev) => {
         const next = { ...prev };
         if (inicio) next.data_inicio = inicio;

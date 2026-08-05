@@ -1,23 +1,28 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, afterEach } from 'vitest';
+
 import {
-  aplicarCompetenciaMmAaaa,
-  intervaloMes,
-  labelPeriodoFiltro,
+  competenciaDeDataIso,
+  competenciaMesAtualMmAaaa,
+  intervaloMesAtual,
+  pad2,
 } from '@/lib/periodoFiltroFiscal';
 
-describe('periodoFiltroFiscal', () => {
-  it('monta intervalo do mês', () => {
-    expect(intervaloMes(2026, 6)).toEqual({ inicio: '2026-06-01', fim: '2026-06-30' });
+describe('periodoFiltroFiscal — competência', () => {
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
-  it('aplica competência mm/aaaa', () => {
-    expect(aplicarCompetenciaMmAaaa('06/2026')).toEqual({ inicio: '2026-06-01', fim: '2026-06-30' });
-    expect(aplicarCompetenciaMmAaaa('062026')).toEqual({ inicio: '2026-06-01', fim: '2026-06-30' });
-    expect(aplicarCompetenciaMmAaaa('13/2026')).toBeNull();
+  it('converte data ISO em mm/aaaa', () => {
+    expect(competenciaDeDataIso('2026-08-01')).toBe('08/2026');
+    expect(competenciaDeDataIso('2026-06-30')).toBe('06/2026');
   });
 
-  it('rotula período ativo', () => {
-    expect(labelPeriodoFiltro({ dataInicio: '2026-06-01', dataFim: '2026-06-30' })).toContain('2026-06-01');
-    expect(labelPeriodoFiltro({})).toMatch(/sem período/i);
+  it('competência do mês atual acompanha a data do sistema', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 4)); // ago/2026
+    expect(competenciaMesAtualMmAaaa()).toBe('08/2026');
+    const p = intervaloMesAtual();
+    expect(p.inicio).toBe('2026-08-01');
+    expect(p.fim).toBe(`2026-08-${pad2(31)}`);
   });
 });
