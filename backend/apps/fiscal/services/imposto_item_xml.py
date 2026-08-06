@@ -155,6 +155,22 @@ def extrair_tributos_item(
         for tag in ('pFCP', 'vFCP', 'pFCPST', 'vFCPST', 'vBCFCP', 'vBCFCPST')
     )
 
+    # ICMS-ST / FCP-ST (valores do XML — não misturar com vICMS próprio)
+    base_icms_st = dec(icms_blk.get('vBCST'))
+    valor_icms_st = dec(icms_blk.get('vICMSST'))
+    valor_fcp_st = dec(icms_blk.get('vFCPST'))
+    valor_fcp = dec(icms_blk.get('vFCP'))
+
+    # DIFAL — ICMSUFDest
+    uf_dest = imp.get('ICMSUFDest')
+    if isinstance(uf_dest, list):
+        uf_dest = uf_dest[0] if uf_dest else {}
+    uf_dest = _dictish(uf_dest)
+    base_uf_dest = dec(uf_dest.get('vBCUFDest'))
+    valor_icms_uf_dest = dec(uf_dest.get('vICMSUFDest'))
+    valor_icms_uf_remet = dec(uf_dest.get('vICMSUFRemet'))
+    valor_fcp_uf_dest = dec(uf_dest.get('vFCPUFDest'))
+
     return {
         'cst_icms': cst_icms,
         'cst_icms_detalhe': csosn if cst_icms and csosn else '',
@@ -173,6 +189,10 @@ def extrair_tributos_item(
         'aliquota_icms_st': _dec_opcional(icms_blk, 'pICMSST'),
         'mva_st': _dec_opcional(icms_blk, 'pMVAST'),
         'reducao_bc_st': _dec_opcional(icms_blk, 'pRedBCST'),
+        'base_icms_st': base_icms_st,
+        'valor_icms_st': valor_icms_st,
+        'valor_fcp_st': valor_fcp_st,
+        'valor_fcp': valor_fcp,
         'aliquota_fcp': _dec_opcional(icms_blk, 'pFCP'),
         'aliquota_fcp_st': _dec_opcional(icms_blk, 'pFCPST'),
         'reducao_bc_fcp': _dec_opcional(icms_blk, 'pRedBCFCP')
@@ -180,6 +200,10 @@ def extrair_tributos_item(
         'valor_fcp_unidade': _dec_opcional(icms_blk, 'vFCPUni')
         or _dec_opcional(icms_blk, 'vFCPSTUni'),
         'fcp_presente_nf': fcp_presente_nf,
+        'base_uf_dest': base_uf_dest,
+        'valor_icms_uf_dest': valor_icms_uf_dest,
+        'valor_icms_uf_remet': valor_icms_uf_remet,
+        'valor_fcp_uf_dest': valor_fcp_uf_dest,
         'base_ipi': dec(ipi.get('vBC')),
         'aliquota_ipi': dec(ipi.get('pIPI')) if ipi.get('pIPI') is not None else None,
         'valor_ipi': dec(ipi.get('vIPI')),

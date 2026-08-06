@@ -14,7 +14,7 @@ from nexus_erp.dashboard_views import (
 )
 from rest_framework.routers import DefaultRouter
 
-from apps.apuracao_fiscal.views import ApuracaoView
+from apps.apuracao_fiscal.views import ApuracaoFiscalPersistidaViewSet, ApuracaoView
 from apps.core.app_views import app_contexto, busca_global, minha_conta
 from apps.core.minha_conta_views import alterar_senha
 from apps.cadastros.colaborador_views import ColaboradorViewSet
@@ -201,6 +201,11 @@ router.register(r'financeiro/contas-receber', ContaReceberViewSet, basename='fin
 router.register(r'financeiro/contas-pagar', ContaPagarViewSet, basename='financeiro-conta-pagar')
 router.register(r'financeiro/baixas', BaixaFinanceiraViewSet, basename='financeiro-baixa')
 router.register(r'financeiro/creditos', CreditoFinanceiroViewSet, basename='financeiro-credito')
+router.register(
+    r'fiscal/apuracoes',
+    ApuracaoFiscalPersistidaViewSet,
+    basename='fiscal-apuracoes',
+)
 
 urlpatterns = [
     # Rotas explícitas: garantem endpoints críticos mesmo com runserver --noreload (Docker).

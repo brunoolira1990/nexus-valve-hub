@@ -36,6 +36,14 @@ from apps.fiscal.dfe_classificacao import (
 from apps.fiscal.nfe_historica_fiscal import extrair_totais_fiscais_documento
 
 from .imposto_item_xml import dec, extrair_produto_item, extrair_tributos_item
+from .pis_cofins_credito import (
+    CST_PIS_COFINS_CREDITO,
+    classificar_regime_tributario,
+    cst_pis_cofins_gera_credito,
+    cst_pis_cofins_gera_debito,
+    normalizar_cst_pis_cofins,
+    regime_permite_credito_pis_cofins,
+)
 from .reforma_tributaria import (
     TotaisReformaTributaria,
     coercer_imposto_item_json,
@@ -439,24 +447,47 @@ class AcumuloLado:
     valor_produtos: Decimal = Decimal('0')
     base_icms: Decimal = Decimal('0')
     valor_icms: Decimal = Decimal('0')
+    # ICMS-ST / FCP-ST: débito próprio ou destacado — NÃO entra no saldo ICMS próprio como crédito
+    base_icms_st: Decimal = Decimal('0')
+    valor_icms_st: Decimal = Decimal('0')
+    valor_fcp_st: Decimal = Decimal('0')
+    valor_fcp: Decimal = Decimal('0')
+    # DIFAL
+    base_uf_dest: Decimal = Decimal('0')
+    valor_icms_uf_dest: Decimal = Decimal('0')
+    valor_icms_uf_remet: Decimal = Decimal('0')
+    valor_fcp_uf_dest: Decimal = Decimal('0')
     base_ipi: Decimal = Decimal('0')
     valor_ipi: Decimal = Decimal('0')
     base_pis: Decimal = Decimal('0')
     valor_pis: Decimal = Decimal('0')
     base_cofins: Decimal = Decimal('0')
     valor_cofins: Decimal = Decimal('0')
+    # PIS/COFINS após filtro CST + regime
+    valor_pis_credito: Decimal = Decimal('0')
+    valor_cofins_credito: Decimal = Decimal('0')
+    valor_pis_debito: Decimal = Decimal('0')
+    valor_cofins_debito: Decimal = Decimal('0')
 
     def add_item_tributos(self, trib: dict[str, Any], valor_prod: Decimal) -> None:
         self.quantidade_itens += 1
         self.valor_produtos += valor_prod
-        self.base_icms += trib['base_icms']
-        self.valor_icms += trib['valor_icms']
-        self.base_ipi += trib['base_ipi']
-        self.valor_ipi += trib['valor_ipi']
-        self.base_pis += trib['base_pis']
-        self.valor_pis += trib['valor_pis']
-        self.base_cofins += trib['base_cofins']
-        self.valor_cofins += trib['valor_cofins']
+        self.base_icms += trib.get('base_icms') or Decimal('0')
+        self.valor_icms += trib.get('valor_icms') or Decimal('0')
+        self.base_icms_st += trib.get('base_icms_st') or Decimal('0')
+        self.valor_icms_st += trib.get('valor_icms_st') or Decimal('0')
+        self.valor_fcp_st += trib.get('valor_fcp_st') or Decimal('0')
+        self.valor_fcp += trib.get('valor_fcp') or Decimal('0')
+        self.base_uf_dest += trib.get('base_uf_dest') or Decimal('0')
+        self.valor_icms_uf_dest += trib.get('valor_icms_uf_dest') or Decimal('0')
+        self.valor_icms_uf_remet += trib.get('valor_icms_uf_remet') or Decimal('0')
+        self.valor_fcp_uf_dest += trib.get('valor_fcp_uf_dest') or Decimal('0')
+        self.base_ipi += trib.get('base_ipi') or Decimal('0')
+        self.valor_ipi += trib.get('valor_ipi') or Decimal('0')
+        self.base_pis += trib.get('base_pis') or Decimal('0')
+        self.valor_pis += trib.get('valor_pis') or Decimal('0')
+        self.base_cofins += trib.get('base_cofins') or Decimal('0')
+        self.valor_cofins += trib.get('valor_cofins') or Decimal('0')
 
 
 @dataclass
@@ -490,6 +521,19 @@ class ContextoApuracao:
     itens_base_cofins: int = 0
     credito_entrada_itens: int = 0
     debito_saida_itens: int = 0
+    # Regime da empresa selecionada (filtro) — governa crédito PIS/COFINS
+    regime_tributario_raw: str = ''
+    regime_tributario_classificado: str = 'INDEFINIDO'
+    regime_permite_credito_pis_cofins: bool = False
+    valor_pis_credito_total: Decimal = Decimal('0')
+    valor_cofins_credito_total: Decimal = Decimal('0')
+    valor_pis_debito_total: Decimal = Decimal('0')
+    valor_cofins_debito_total: Decimal = Decimal('0')
+    # Itens com CST de crédito mas bloqueados pelo regime (Presumido/Simples/indefinido)
+    credito_pis_cofins_bloqueado_regime_itens: int = 0
+    # NF operacional sem tributos extraídos (F3)
+    notas_operacionais_sem_tributos: int = 0
+    valor_bruto_operacional_sem_tributos: Decimal = Decimal('0')
 
 
 def _alert(
@@ -630,10 +674,41 @@ def _process_item_historico(
         ctx.itens_base_pis += 1
     if trib['base_cofins'] > 0:
         ctx.itens_base_cofins += 1
-    if lado == 'ENTRADA' and (trib['valor_pis'] > 0 or trib['valor_cofins'] > 0):
-        ctx.credito_entrada_itens += 1
-    if lado == 'SAIDA' and (trib['valor_pis'] > 0 or trib['valor_cofins'] > 0):
-        ctx.debito_saida_itens += 1
+
+    # PIS/COFINS: crédito só com CST de crédito + Lucro Real; débito saída com CST 01–05
+    if lado == 'ENTRADA':
+        cst_p_n = normalizar_cst_pis_cofins(trib.get('cst_pis'))
+        cst_c_n = normalizar_cst_pis_cofins(trib.get('cst_cofins'))
+        cst_credito_xml = cst_p_n in CST_PIS_COFINS_CREDITO or cst_c_n in CST_PIS_COFINS_CREDITO
+        gera_cred_pis = cst_pis_cofins_gera_credito(
+            trib.get('cst_pis'),
+            regime_classificado=ctx.regime_tributario_classificado,  # type: ignore[arg-type]
+        )
+        gera_cred_cof = cst_pis_cofins_gera_credito(
+            trib.get('cst_cofins'),
+            regime_classificado=ctx.regime_tributario_classificado,  # type: ignore[arg-type]
+        )
+        if cst_credito_xml and not ctx.regime_permite_credito_pis_cofins:
+            ctx.credito_pis_cofins_bloqueado_regime_itens += 1
+        if gera_cred_pis and (trib.get('valor_pis') or 0) > 0:
+            ac.valor_pis_credito += trib['valor_pis']
+            ctx.valor_pis_credito_total += trib['valor_pis']
+            ctx.credito_entrada_itens += 1
+        if gera_cred_cof and (trib.get('valor_cofins') or 0) > 0:
+            ac.valor_cofins_credito += trib['valor_cofins']
+            ctx.valor_cofins_credito_total += trib['valor_cofins']
+            if not gera_cred_pis:
+                ctx.credito_entrada_itens += 1
+    elif lado == 'SAIDA':
+        if cst_pis_cofins_gera_debito(trib.get('cst_pis')) and (trib.get('valor_pis') or 0) > 0:
+            ac.valor_pis_debito += trib['valor_pis']
+            ctx.valor_pis_debito_total += trib['valor_pis']
+            ctx.debito_saida_itens += 1
+        if cst_pis_cofins_gera_debito(trib.get('cst_cofins')) and (trib.get('valor_cofins') or 0) > 0:
+            ac.valor_cofins_debito += trib['valor_cofins']
+            ctx.valor_cofins_debito_total += trib['valor_cofins']
+            if not cst_pis_cofins_gera_debito(trib.get('cst_pis')):
+                ctx.debito_saida_itens += 1
 
     extras = [k for k in ij.keys() if k not in IMPOSTO_KEYS_PADRAO]
     if extras:
@@ -859,6 +934,83 @@ def _process_nota_historica_entrada(ctx: ContextoApuracao, nf: NFeEntradaHistori
         )
 
 
+def _dec_snap(val: Any) -> Decimal:
+    if val in (None, ''):
+        return Decimal('0')
+    try:
+        return Decimal(str(val).replace(',', '.'))
+    except Exception:
+        return Decimal('0')
+
+
+def _tributos_de_snapshot_fiscal(snap: dict[str, Any] | None) -> dict[str, Decimal]:
+    """Lê ICMS/IPI/PIS/COFINS do snapshot_fiscal da NF operacional (quando existir)."""
+    from apps.fiscal.snapshot_fiscal_helpers import (
+        get_cofins_snapshot,
+        get_icms_snapshot,
+        get_ipi_snapshot,
+        get_pis_snapshot,
+    )
+
+    snap = snap if isinstance(snap, dict) else {}
+    icms = get_icms_snapshot(snap)
+    ipi = get_ipi_snapshot(snap)
+    pis = get_pis_snapshot(snap)
+    cof = get_cofins_snapshot(snap)
+    return {
+        'base_icms': _dec_snap(icms.get('base')),
+        'valor_icms': _dec_snap(icms.get('valor')),
+        'base_icms_st': _dec_snap(icms.get('base_icms_st')),
+        'valor_icms_st': _dec_snap(icms.get('valor_icms_st')),
+        'valor_fcp_st': Decimal('0'),
+        'base_uf_dest': Decimal('0'),
+        'valor_icms_uf_dest': Decimal('0'),
+        'valor_icms_uf_remet': Decimal('0'),
+        'valor_fcp_uf_dest': Decimal('0'),
+        'valor_fcp': _dec_snap(icms.get('fcp')),
+        'base_ipi': _dec_snap(ipi.get('base')),
+        'valor_ipi': _dec_snap(ipi.get('valor')),
+        'base_pis': _dec_snap(pis.get('base')),
+        'valor_pis': _dec_snap(pis.get('valor')),
+        'base_cofins': _dec_snap(cof.get('base')),
+        'valor_cofins': _dec_snap(cof.get('valor')),
+        'cst_icms': str(icms.get('cst_icms') or ''),
+        'cst_pis': str(pis.get('cst') or ''),
+        'cst_cofins': str(cof.get('cst') or ''),
+    }
+
+
+def _trib_operacional_vazio(trib: dict[str, Any]) -> bool:
+    keys = ('valor_icms', 'valor_ipi', 'valor_pis', 'valor_cofins', 'valor_icms_st')
+    return all((trib.get(k) or Decimal('0')) == 0 for k in keys)
+
+
+def _registrar_nf_operacional_sem_tributos(
+    ctx: ContextoApuracao,
+    *,
+    nf: Any,
+    documento_tipo: str,
+    valor_bruto: Decimal,
+    fonte: str,
+) -> None:
+    ctx.notas_operacionais_sem_tributos += 1
+    ctx.valor_bruto_operacional_sem_tributos += valor_bruto or Decimal('0')
+    sev = 'error' if fonte == 'OPERACIONAIS' else 'warning'
+    _alert(
+        ctx,
+        codigo='NF_OPERACIONAL_SEM_TRIBUTOS',
+        mensagem=(
+            f'{documento_tipo} #{nf.id}: tributos não extraídos (snapshot/XML ausente ou zerado). '
+            f'Valor bruto do documento R$ {(valor_bruto or 0):.2f} permanece no resumo; '
+            'ICMS/IPI/PIS/COFINS desta nota não entram no saldo fiscal.'
+        ),
+        documento_tipo=documento_tipo,
+        documento_id=nf.id,
+        severidade=sev,
+        acao_sugerida='Use fonte Históricos (XML) ou atualize impostos na NF operacional antes de fechar o período.',
+    )
+
+
 def _process_nfe_interna_saida(ctx: ContextoApuracao, nf: NFeSaida, f: FiltrosApuracao) -> None:
     if not pode_entrar_apuracao(nf, incluir_canceladas=f.incluir_canceladas):
         return
@@ -881,19 +1033,9 @@ def _process_nfe_interna_saida(ctx: ContextoApuracao, nf: NFeSaida, f: FiltrosAp
         return
 
     ctx.saida.quantidade_notas += 1
-    ctx.saida.valor_documentos += nf.valor_total or Decimal('0')
-    total = sum((it.valor or Decimal('0')) * (it.quantidade or Decimal('0')) for it in itens_filtrados)
-    ctx.saida.quantidade_itens += len(itens_filtrados)
-    ctx.saida.valor_produtos += total
-
-    _alert(
-        ctx,
-        codigo='NF_INTERNA_FISCAL',
-        mensagem='NF-e interna do ERP sem XML: tributos ICMS/IPI/PIS/COFINS não extraídos automaticamente.',
-        documento_tipo='NFeSaida',
-        documento_id=nf.id,
-        severidade='info',
-    )
+    valor_doc = nf.valor_total or Decimal('0')
+    ctx.saida.valor_documentos += valor_doc
+    # quantidade_itens / valor_produtos: via add_item_tributos por item (não pré-somar)
 
     if not itens_filtrados:
         _alert(ctx, codigo='NF_SEM_ITENS', mensagem='NF interna sem itens.', documento_tipo='NFeSaida', documento_id=nf.id)
@@ -906,44 +1048,59 @@ def _process_nfe_interna_saida(ctx: ContextoApuracao, nf: NFeSaida, f: FiltrosAp
 
     uf = (nf.cliente.uf or '').upper()[:2] if nf.cliente_id else ''
     cli_label = f'Cliente#{nf.cliente_id}'
-    if itens_filtrados:
+    fonte = f.fonte if f.fonte in {'TODOS', 'OPERACIONAIS', 'HISTORICOS'} else 'TODOS'
+    nf_sem_tributo = True
+    for it in itens_filtrados:
+        snap_p = it.snapshot_produto if isinstance(it.snapshot_produto, dict) else {}
+        snap_f = it.snapshot_fiscal if isinstance(getattr(it, 'snapshot_fiscal', None), dict) else {}
+        ncm_k = str(snap_p.get('ncm_codigo_snapshot') or '').strip() or '(sem NCM)'
+        val = (it.valor or Decimal('0')) * (it.quantidade or Decimal('0'))
+        if not str(snap_p.get('ncm_codigo_snapshot') or '').strip():
+            _alert(
+                ctx,
+                codigo='ITEM_SEM_NCM',
+                mensagem='Produto sem NCM efetivo no snapshot.',
+                documento_tipo='NFeSaida',
+                documento_id=nf.id,
+                item_id=it.id,
+            )
+        trib = _tributos_de_snapshot_fiscal(snap_f)
+        if not _trib_operacional_vazio(trib):
+            nf_sem_tributo = False
+        ctx.saida.add_item_tributos(trib, val)
+        from apps.fiscal.snapshot_fiscal_helpers import cfop_from_snapshot_fiscal
+
+        cfop_k = cfop_from_snapshot_fiscal(snap_f) or '(interna)'
+        _agrupa_item(
+            ctx,
+            cfop_k=cfop_k,
+            ncm_k=ncm_k,
+            cst_i=trib.get('cst_icms') or '(interna)',
+            cst_p=trib.get('cst_pis') or '(interna)',
+            cst_c=trib.get('cst_cofins') or '(interna)',
+            participante=cli_label,
+            prod_k=str(snap_p.get('codigo_completo_snapshot') or it.produto_id),
+            mod_k='INTERNA',
+            uf_k=uf or '(UF?)',
+            trib=trib,
+            valor_prod=val,
+        )
+    if nf_sem_tributo:
+        _registrar_nf_operacional_sem_tributos(
+            ctx,
+            nf=nf,
+            documento_tipo='NFeSaida',
+            valor_bruto=valor_doc,
+            fonte=fonte,
+        )
+    else:
         _alert(
             ctx,
-            codigo='ITEM_SEM_CFOP',
-            mensagem='NF interna não possui CFOP por item no modelo atual (conferência por XML/histórico quando aplicável).',
+            codigo='NF_INTERNA_FISCAL',
+            mensagem='NF-e operacional: tributos lidos do snapshot_fiscal (sem XML histórico).',
             documento_tipo='NFeSaida',
             documento_id=nf.id,
             severidade='info',
-        )
-    for it in itens_filtrados:
-        snap = it.snapshot_produto if isinstance(it.snapshot_produto, dict) else {}
-        ncm_k = str(snap.get('ncm_codigo_snapshot') or '').strip() or '(sem NCM)'
-        val = (it.valor or Decimal('0')) * (it.quantidade or Decimal('0'))
-        if not str(snap.get('ncm_codigo_snapshot') or '').strip():
-            _alert(ctx, codigo='ITEM_SEM_NCM', mensagem='Produto sem NCM efetivo no snapshot.', documento_tipo='NFeSaida', documento_id=nf.id, item_id=it.id)
-        zt = {
-            'base_icms': Decimal('0'),
-            'valor_icms': Decimal('0'),
-            'base_ipi': Decimal('0'),
-            'valor_ipi': Decimal('0'),
-            'base_pis': Decimal('0'),
-            'valor_pis': Decimal('0'),
-            'base_cofins': Decimal('0'),
-            'valor_cofins': Decimal('0'),
-        }
-        _agrupa_item(
-            ctx,
-            cfop_k='(interna)',
-            ncm_k=ncm_k,
-            cst_i='(interna)',
-            cst_p='(interna)',
-            cst_c='(interna)',
-            participante=cli_label,
-            prod_k=str(snap.get('codigo_completo_snapshot') or it.produto_id),
-            mod_k='INTERNA',
-            uf_k=uf or '(UF?)',
-            trib=zt,
-            valor_prod=val,
         )
 
 
@@ -964,19 +1121,9 @@ def _process_nfe_interna_entrada(ctx: ContextoApuracao, nf: NFeEntrada, f: Filtr
         return
 
     ctx.entrada.quantidade_notas += 1
-    ctx.entrada.valor_documentos += nf.valor_total or Decimal('0')
-    total = sum((it.valor or Decimal('0')) * (it.quantidade or Decimal('0')) for it in itens_filtrados)
-    ctx.entrada.quantidade_itens += len(itens_filtrados)
-    ctx.entrada.valor_produtos += total
-
-    _alert(
-        ctx,
-        codigo='NF_INTERNA_FISCAL',
-        mensagem='NF-e interna do ERP sem XML: tributos não extraídos automaticamente.',
-        documento_tipo='NFeEntrada',
-        documento_id=nf.id,
-        severidade='info',
-    )
+    valor_doc = nf.valor_total or Decimal('0')
+    ctx.entrada.valor_documentos += valor_doc
+    # quantidade_itens / valor_produtos: via add_item_tributos por item
 
     if nf.fornecedor_id:
         fo = nf.fornecedor
@@ -986,35 +1133,50 @@ def _process_nfe_interna_entrada(ctx: ContextoApuracao, nf: NFeEntrada, f: Filtr
 
     uf = (nf.fornecedor.uf or '').upper()[:2] if nf.fornecedor_id else ''
     forn_label = f'Fornecedor#{nf.fornecedor_id}'
-    zt = {
-        'base_icms': Decimal('0'),
-        'valor_icms': Decimal('0'),
-        'base_ipi': Decimal('0'),
-        'valor_ipi': Decimal('0'),
-        'base_pis': Decimal('0'),
-        'valor_pis': Decimal('0'),
-        'base_cofins': Decimal('0'),
-        'valor_cofins': Decimal('0'),
-    }
+    fonte = f.fonte if f.fonte in {'TODOS', 'OPERACIONAIS', 'HISTORICOS'} else 'TODOS'
+    nf_sem_tributo = True
     for it in itens_filtrados:
-        snap = it.snapshot_produto if isinstance(it.snapshot_produto, dict) else {}
-        ncm_k = str(snap.get('ncm_codigo_snapshot') or '').strip() or '(sem NCM)'
+        snap_p = it.snapshot_produto if isinstance(it.snapshot_produto, dict) else {}
+        snap_f = it.snapshot_fiscal if isinstance(getattr(it, 'snapshot_fiscal', None), dict) else {}
+        ncm_k = str(snap_p.get('ncm_codigo_snapshot') or '').strip() or '(sem NCM)'
         val = (it.valor or Decimal('0')) * (it.quantidade or Decimal('0'))
-        if not str(snap.get('ncm_codigo_snapshot') or '').strip():
-            _alert(ctx, codigo='ITEM_SEM_NCM', mensagem='Produto sem NCM efetivo no snapshot.', documento_tipo='NFeEntrada', documento_id=nf.id, item_id=it.id)
+        trib = _tributos_de_snapshot_fiscal(snap_f)
+        if not _trib_operacional_vazio(trib):
+            nf_sem_tributo = False
+        ctx.entrada.add_item_tributos(trib, val)
+        from apps.fiscal.snapshot_fiscal_helpers import cfop_from_snapshot_fiscal
+
+        cfop_k = cfop_from_snapshot_fiscal(snap_f) or '(interna)'
         _agrupa_item(
             ctx,
-            cfop_k='(interna)',
+            cfop_k=cfop_k,
             ncm_k=ncm_k,
-            cst_i='(interna)',
-            cst_p='(interna)',
-            cst_c='(interna)',
+            cst_i=trib.get('cst_icms') or '(interna)',
+            cst_p=trib.get('cst_pis') or '(interna)',
+            cst_c=trib.get('cst_cofins') or '(interna)',
             participante=forn_label,
-            prod_k=str(snap.get('codigo_completo_snapshot') or it.produto_id),
+            prod_k=str(snap_p.get('codigo_completo_snapshot') or getattr(it, 'produto_id', '')),
             mod_k='INTERNA',
             uf_k=uf or '(UF?)',
-            trib=zt,
+            trib=trib,
             valor_prod=val,
+        )
+    if nf_sem_tributo:
+        _registrar_nf_operacional_sem_tributos(
+            ctx,
+            nf=nf,
+            documento_tipo='NFeEntrada',
+            valor_bruto=valor_doc,
+            fonte=fonte,
+        )
+    else:
+        _alert(
+            ctx,
+            codigo='NF_INTERNA_FISCAL',
+            mensagem='NF-e operacional entrada: tributos lidos do snapshot_fiscal quando disponíveis.',
+            documento_tipo='NFeEntrada',
+            documento_id=nf.id,
+            severidade='info',
         )
 
 
@@ -1026,16 +1188,35 @@ def _serialize_acumulo(a: AcumuloLado) -> dict[str, Any]:
         'valor_produtos': _money_float(a.valor_produtos),
         'base_icms': _money_float(a.base_icms),
         'valor_icms': _money_float(a.valor_icms),
+        'base_icms_st': _money_float(a.base_icms_st),
+        'valor_icms_st': _money_float(a.valor_icms_st),
+        'valor_fcp_st': _money_float(a.valor_fcp_st),
+        'valor_fcp': _money_float(a.valor_fcp),
+        'base_uf_dest': _money_float(a.base_uf_dest),
+        'valor_icms_uf_dest': _money_float(a.valor_icms_uf_dest),
+        'valor_icms_uf_remet': _money_float(a.valor_icms_uf_remet),
+        'valor_fcp_uf_dest': _money_float(a.valor_fcp_uf_dest),
         'base_ipi': _money_float(a.base_ipi),
         'valor_ipi': _money_float(a.valor_ipi),
         'base_pis': _money_float(a.base_pis),
         'valor_pis': _money_float(a.valor_pis),
         'base_cofins': _money_float(a.base_cofins),
         'valor_cofins': _money_float(a.valor_cofins),
+        'valor_pis_credito': _money_float(a.valor_pis_credito),
+        'valor_cofins_credito': _money_float(a.valor_cofins_credito),
+        'valor_pis_debito': _money_float(a.valor_pis_debito),
+        'valor_cofins_debito': _money_float(a.valor_cofins_debito),
     }
 
 
 def _saldo_gerencial(e: AcumuloLado, s: AcumuloLado) -> dict[str, Any]:
+    """
+    Saldo gerencial = saída − entrada apenas sobre ICMS/IPI/PIS/COFINS próprios.
+
+    ICMS-ST e FCP-ST NÃO entram como crédito neste saldo: são reportados à parte
+    como débito próprio / destacado (ajuste futuro E111/E211).
+    DIFAL também fica segregado.
+    """
     return {
         'valor_documentos': _money_float(s.valor_documentos - e.valor_documentos),
         'valor_produtos': _money_float(s.valor_produtos - e.valor_produtos),
@@ -1047,6 +1228,23 @@ def _saldo_gerencial(e: AcumuloLado, s: AcumuloLado) -> dict[str, Any]:
         'valor_pis': _money_float(s.valor_pis - e.valor_pis),
         'base_cofins': _money_float(s.base_cofins - e.base_cofins),
         'valor_cofins': _money_float(s.valor_cofins - e.valor_cofins),
+        # ST: débitos próprios por lado (não neteiam no saldo ICMS)
+        'icms_st_debito_entrada': _money_float(e.valor_icms_st),
+        'icms_st_debito_saida': _money_float(s.valor_icms_st),
+        'fcp_st_debito_entrada': _money_float(e.valor_fcp_st),
+        'fcp_st_debito_saida': _money_float(s.valor_fcp_st),
+        'base_icms_st_entrada': _money_float(e.base_icms_st),
+        'base_icms_st_saida': _money_float(s.base_icms_st),
+        # DIFAL segregado
+        'difal_base_uf_dest': _money_float(s.base_uf_dest - e.base_uf_dest),
+        'difal_valor_icms_uf_dest': _money_float(s.valor_icms_uf_dest - e.valor_icms_uf_dest),
+        'difal_valor_icms_uf_remet': _money_float(s.valor_icms_uf_remet - e.valor_icms_uf_remet),
+        'difal_valor_fcp_uf_dest': _money_float(s.valor_fcp_uf_dest - e.valor_fcp_uf_dest),
+        'observacao_icms_st': (
+            'ICMS-ST e FCP-ST são tratados como débito próprio/destacado e NÃO reduzem o saldo '
+            'gerencial de ICMS próprio (não entram como crédito no net saída−entrada).'
+        ),
+        'observacao_difal': 'DIFAL (ICMSUFDest) é acumulado à parte do ICMS próprio.',
     }
 
 
@@ -1112,10 +1310,36 @@ def build_apuracao_fiscal(query_params: dict[str, Any]) -> dict[str, Any]:
     if f.empresa_id:
         try:
             emp = Empresa.objects.get(pk=f.empresa_id)
+            ctx.regime_tributario_raw = (emp.regime_tributario or '').strip()
+            ctx.regime_tributario_classificado = classificar_regime_tributario(ctx.regime_tributario_raw)
+            ctx.regime_permite_credito_pis_cofins = regime_permite_credito_pis_cofins(
+                ctx.regime_tributario_classificado  # type: ignore[arg-type]
+            )
             if not (emp.ie or '').strip():
                 _alert(ctx, codigo='EMPRESA_SEM_IE', mensagem=f'Empresa {emp.id} sem inscrição estadual cadastrada.', severidade='warning')
+            if not ctx.regime_permite_credito_pis_cofins:
+                _alert(
+                    ctx,
+                    codigo='REGIME_SEM_CREDITO_PIS_COFINS',
+                    mensagem=(
+                        f'Regime «{ctx.regime_tributario_raw or "não informado"}» '
+                        f'({ctx.regime_tributario_classificado}): crédito de PIS/COFINS '
+                        'não é liberado nesta apuração (somente Lucro Real).'
+                    ),
+                    severidade='info',
+                )
         except Empresa.DoesNotExist:
             _alert(ctx, codigo='EMPRESA_INVALIDA', mensagem='empresa_id não encontrado.', severidade='error')
+    else:
+        _alert(
+            ctx,
+            codigo='REGIME_EMPRESA_NAO_INFORMADA',
+            mensagem=(
+                'Sem empresa no filtro: crédito PIS/COFINS permanece bloqueado '
+                '(regime indefinido). Selecione a empresa para Lucro Real liberar crédito.'
+            ),
+            severidade='info',
+        )
 
     em_ini, em_fim = _range_datetime_emissao(f.data_inicio, f.data_fim)
     diag_saida = _diagnostico_fontes_saida_historica(f, em_ini, em_fim)
@@ -1371,10 +1595,45 @@ def build_apuracao_fiscal(query_params: dict[str, Any]) -> dict[str, Any]:
         creditos_entrada_possiveis=ctx.credito_entrada_itens,
         debitos_saida_possiveis=ctx.debito_saida_itens,
         alertas=[
-            'Créditos de entrada e débitos de saída são contagem gerencial por item com valor PIS/COFINS > 0.',
-            'Regime tributário e apropriação de crédito não parametrizados nesta versão.',
+            'Crédito PIS/COFINS: CST 50–56/60–67 e somente se regime da empresa = Lucro Real.',
+            'Débito PIS/COFINS (saída): CST 01–05 com valor > 0.',
+            f'Regime aplicado: {ctx.regime_tributario_classificado} '
+            f'(permite_credito={ctx.regime_permite_credito_pis_cofins}).',
+            (
+                f'{ctx.credito_pis_cofins_bloqueado_regime_itens} item(ns) com CST de crédito '
+                'ignorados por regime (não Lucro Real).'
+                if ctx.credito_pis_cofins_bloqueado_regime_itens
+                else 'Nenhum crédito bloqueado por regime neste período.'
+            ),
         ],
     )
+
+    if ctx.credito_pis_cofins_bloqueado_regime_itens:
+        _alert(
+            ctx,
+            codigo='CREDITO_PIS_COFINS_BLOQUEADO_REGIME',
+            mensagem=(
+                f'{ctx.credito_pis_cofins_bloqueado_regime_itens} item(ns) de entrada com CST de crédito '
+                f'(50–56/60–67), mas regime «{ctx.regime_tributario_raw or ctx.regime_tributario_classificado}» '
+                'não libera crédito PIS/COFINS (somente Lucro Real).'
+            ),
+            severidade='warning',
+            acao_sugerida='Confira Empresa.regime_tributario ou trate como não-cumulativo apenas se Lucro Real.',
+        )
+
+    if ctx.notas_operacionais_sem_tributos > 0:
+        sev = 'error' if fonte == 'OPERACIONAIS' else 'warning'
+        _alert(
+            ctx,
+            codigo='RESUMO_NF_OPERACIONAL_SEM_TRIBUTOS',
+            mensagem=(
+                f'{ctx.notas_operacionais_sem_tributos} NF-e operacional(is) sem tributos extraídos '
+                f'(valor bruto agregado R$ {ctx.valor_bruto_operacional_sem_tributos:.2f}). '
+                'Os valores brutos entram no resumo de documentos; impostos fiscais dessas notas não foram somados.'
+            ),
+            severidade=sev,
+            acao_sugerida='Prefira fonte Históricos (XML) para apuração fiscal completa, ou atualize snapshot_fiscal nas NFs.',
+        )
 
     cards = {
         'notas_entrada': ctx.entrada.quantidade_notas,
@@ -1383,12 +1642,22 @@ def build_apuracao_fiscal(query_params: dict[str, Any]) -> dict[str, Any]:
         'valor_saidas': _money_float(ctx.saida.valor_documentos),
         'icms_entrada': _money_float(ctx.entrada.valor_icms),
         'icms_saida': _money_float(ctx.saida.valor_icms),
+        'icms_st_debito_entrada': _money_float(ctx.entrada.valor_icms_st),
+        'icms_st_debito_saida': _money_float(ctx.saida.valor_icms_st),
+        'fcp_st_entrada': _money_float(ctx.entrada.valor_fcp_st),
+        'fcp_st_saida': _money_float(ctx.saida.valor_fcp_st),
+        'difal_icms_uf_dest': _money_float(ctx.saida.valor_icms_uf_dest + ctx.entrada.valor_icms_uf_dest),
         'ipi_entrada': _money_float(ctx.entrada.valor_ipi),
         'ipi_saida': _money_float(ctx.saida.valor_ipi),
         'pis_entrada': _money_float(ctx.entrada.valor_pis),
         'pis_saida': _money_float(ctx.saida.valor_pis),
+        'pis_credito': _money_float(ctx.valor_pis_credito_total),
+        'pis_debito': _money_float(ctx.valor_pis_debito_total),
         'cofins_entrada': _money_float(ctx.entrada.valor_cofins),
         'cofins_saida': _money_float(ctx.saida.valor_cofins),
+        'cofins_credito': _money_float(ctx.valor_cofins_credito_total),
+        'cofins_debito': _money_float(ctx.valor_cofins_debito_total),
+        'credito_pis_cofins_bloqueado_regime_itens': ctx.credito_pis_cofins_bloqueado_regime_itens,
         'cbs': _money_float(ctx.reforma.valor_cbs),
         'ibs_uf': _money_float(ctx.reforma.valor_ibs_uf),
         'ibs_municipio': _money_float(ctx.reforma.valor_ibs_municipio),
@@ -1409,6 +1678,8 @@ def build_apuracao_fiscal(query_params: dict[str, Any]) -> dict[str, Any]:
         'icms_cte': _money_float(cte_icms),
         'alertas': len(ctx.alertas),
         'eventos_pendentes': eventos_cancel_pendentes,
+        'notas_operacionais_sem_tributos': ctx.notas_operacionais_sem_tributos,
+        'valor_bruto_operacional_sem_tributos': _money_float(ctx.valor_bruto_operacional_sem_tributos),
     }
 
     fontes = {
@@ -1427,8 +1698,8 @@ def build_apuracao_fiscal(query_params: dict[str, Any]) -> dict[str, Any]:
             'NFeEntradaHistoricaImportada / ItemNFeEntradaHistoricaImportada (XML)',
             'NFeSaidaHistoricaImportada / ItemNFeSaidaHistoricaImportada (XML)',
             'CTeHistoricoImportado (XML; CBS/IBS somados no total consolidado e em por_documento.cte)',
-            'NFeEntrada / ItemNFeEntrada (operacional, sem tributos por item)',
-            'NFeSaida / ItemNFeSaida (operacional, sem tributos por item)',
+            'NFeEntrada / ItemNFeEntrada (operacional; tributos via snapshot_fiscal quando houver)',
+            'NFeSaida / ItemNFeSaida (operacional; tributos via snapshot_fiscal quando houver)',
             'Empresa (ie, regime_tributario parcial)',
         ],
         'campos_fiscais_xml': [
@@ -1446,12 +1717,14 @@ def build_apuracao_fiscal(query_params: dict[str, Any]) -> dict[str, Any]:
 
     return {
         'meta': {
-            'versao_api_apuracao': '2026.1',
+            'versao_api_apuracao': '2026.3-f3',
             'pre_validacao': True,
             'sped_txt_oficial': False,
             'calculo': 'on_demand',
             'parametros_fiscais_futuros': {
-                'regime_tributario': 'Cadastro Empresa.regime_tributario (texto livre; sem perfil SPED amarrado)',
+                'regime_tributario': ctx.regime_tributario_raw or None,
+                'regime_tributario_classificado': ctx.regime_tributario_classificado,
+                'permite_credito_pis_cofins': ctx.regime_permite_credito_pis_cofins,
                 'perfil_sped': None,
                 'indicador_tipo_atividade': None,
                 'indicador_apropriacao_credito': None,
@@ -1472,6 +1745,22 @@ def build_apuracao_fiscal(query_params: dict[str, Any]) -> dict[str, Any]:
             'ncm': f.ncm,
             'modelo_documento': f.modelo_documento,
             'incluir_canceladas': f.incluir_canceladas,
+        },
+        'regime_tributario': {
+            'raw': ctx.regime_tributario_raw or None,
+            'classificado': ctx.regime_tributario_classificado,
+            'permite_credito_pis_cofins': ctx.regime_permite_credito_pis_cofins,
+            'credito_pis_cofins_bloqueado_regime_itens': ctx.credito_pis_cofins_bloqueado_regime_itens,
+            'observacao': (
+                'Crédito PIS/COFINS só é liberado com CST 50–56/60–67 e regime Lucro Real. '
+                'ICMS-ST/FCP-ST são débito próprio/destacado e não reduzem o saldo de ICMS próprio.'
+            ),
+        },
+        'operacionais_sem_tributos': {
+            'quantidade_notas': ctx.notas_operacionais_sem_tributos,
+            'valor_bruto': _money_float(ctx.valor_bruto_operacional_sem_tributos),
+            'fonte_atual': fonte,
+            'destaque': fonte == 'OPERACIONAIS' and ctx.notas_operacionais_sem_tributos > 0,
         },
         'diagnostico_fontes': diagnostico_fontes,
         'fontes': fontes,

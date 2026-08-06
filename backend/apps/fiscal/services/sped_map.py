@@ -39,7 +39,11 @@ def montar_base_efd_icms_ipi(
         },
         'alertas': alertas,
         'txt_oficial': False,
-        'observacao': 'Pré-visualização gerencial; geração de TXT EFD ICMS/IPI não implementada nesta versão.',
+        'observacao': (
+            'Indicadores pré-SPED (legado sped_map). Geração de prévia TXT: '
+            'GET /api/fiscal/apuracoes/{id}/sped-efd-icms-ipi/ (apuração FECHADA). '
+            'Não substitui PVA/validador oficial.'
+        ),
     }
 
 

@@ -2951,13 +2951,40 @@ export interface ApuracaoFiscalAcumulo {
   valor_produtos: number;
   base_icms: number;
   valor_icms: number;
+  /** ICMS-ST destacado — débito próprio, não creditável no saldo ICMS */
+  base_icms_st?: number;
+  valor_icms_st?: number;
+  valor_fcp_st?: number;
+  valor_fcp?: number;
+  /** DIFAL (ICMSUFDest) */
+  base_uf_dest?: number;
+  valor_icms_uf_dest?: number;
+  valor_icms_uf_remet?: number;
+  valor_fcp_uf_dest?: number;
   base_ipi: number;
   valor_ipi: number;
   base_pis: number;
   valor_pis: number;
   base_cofins: number;
   valor_cofins: number;
+  /** Após filtro CST + regime (Lucro Real) */
+  valor_pis_credito?: number;
+  valor_cofins_credito?: number;
+  valor_pis_debito?: number;
+  valor_cofins_debito?: number;
 }
+
+export interface ApuracaoRegimeTributario {
+  raw?: string | null;
+  classificado?: string;
+  permite_credito_pis_cofins?: boolean;
+  credito_pis_cofins_bloqueado_regime_itens?: number;
+  observacao?: string;
+}
+
+/** Saldo gerencial: números + observações textuais (ST/DIFAL). */
+export type ApuracaoSaldoGerencial = Record<string, number | string>;
+
 
 export interface ApuracaoFiscalAlerta {
   codigo: string;
@@ -3116,6 +3143,13 @@ export interface ApuracaoFiscalPayload {
   diagnostico_fontes?: ApuracaoDiagnosticoFontes;
   diagnostico_reforma?: ApuracaoDiagnosticoReforma;
   cards: Record<string, number>;
+  regime_tributario?: ApuracaoRegimeTributario;
+  operacionais_sem_tributos?: {
+    quantidade_notas?: number;
+    valor_bruto?: number;
+    fonte_atual?: string;
+    destaque?: boolean;
+  };
   resumo: {
     entrada: ApuracaoFiscalAcumulo;
     saida: ApuracaoFiscalAcumulo;
@@ -3126,7 +3160,7 @@ export interface ApuracaoFiscalPayload {
       valor_cbs?: number;
       valor_ibs_total?: number;
     };
-    saldo_gerencial_saida_menos_entrada: Record<string, number>;
+    saldo_gerencial_saida_menos_entrada: ApuracaoSaldoGerencial;
   };
   icms_ipi: { entrada: ApuracaoFiscalAcumulo; saida: ApuracaoFiscalAcumulo; comparativo_documento: { observacao: string } };
   pis_cofins: { entrada: ApuracaoFiscalAcumulo; saida: ApuracaoFiscalAcumulo };

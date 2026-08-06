@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apuracaoService } from '@/services/api/outros';
+import {
+  apuracaoPersistidaService,
+  type ApuracaoAjusteManual,
+  type ApuracaoAjusteTipo,
+  type ApuracaoPeriodoStatus,
+  type ApuracaoPersistida,
+} from '@/services/api/apuracaoPersistida';
 import { empresasService } from '@/services/api/empresas';
 import { apiErrorMessage } from '@/services/api/config';
+import { useAppContexto } from '@/hooks/useAppContexto';
 import type {
   ApuracaoDiagnostico,
   ApuracaoDiagnosticoFontes,
@@ -44,7 +52,7 @@ const TABS_AVANCADOS: { id: TabId; label: string }[] = [
 ];
 
 const SPED_TXT_TOOLTIP =
-  'Disponível após validação da base fiscal e parametrização SPED. Em preparação nesta versão.';
+  'Prévia estrutural EFD ICMS/IPI — não é arquivo oficial. Validação no PVA/SEFAZ é responsabilidade do contador.';
 
 /** Exibe ISO yyyy-mm-dd como dd/mm/yyyy (apenas a parte da data). */
 function formatISODatePtBR(iso: string | undefined | null): string {
@@ -388,13 +396,21 @@ function AcumuloTable({ titulo, a }: { titulo: string; a: ApuracaoFiscalAcumulo 
     ['Valor dos documentos', a.valor_documentos, 'money'],
     ['Valor dos produtos', a.valor_produtos, 'money'],
     [`Base ICMS ${sufixo}`.trim(), a.base_icms, 'money'],
-    [`ICMS ${sufixo}`.trim(), a.valor_icms, 'money'],
+    [`ICMS próprio ${sufixo}`.trim(), a.valor_icms, 'money'],
+    [`Base ICMS-ST ${sufixo}`.trim(), a.base_icms_st ?? 0, 'money'],
+    [`ICMS-ST (débito próprio) ${sufixo}`.trim(), a.valor_icms_st ?? 0, 'money'],
+    [`FCP-ST ${sufixo}`.trim(), a.valor_fcp_st ?? 0, 'money'],
+    [`DIFAL ICMS UF dest. ${sufixo}`.trim(), a.valor_icms_uf_dest ?? 0, 'money'],
     [`Base IPI ${sufixo}`.trim(), a.base_ipi, 'money'],
     [`IPI ${sufixo}`.trim(), a.valor_ipi, 'money'],
     [`Base PIS ${sufixo}`.trim(), a.base_pis, 'money'],
-    [`PIS ${sufixo}`.trim(), a.valor_pis, 'money'],
+    [`PIS (destacado) ${sufixo}`.trim(), a.valor_pis, 'money'],
+    [`PIS crédito (CST+regime) ${sufixo}`.trim(), a.valor_pis_credito ?? 0, 'money'],
+    [`PIS débito (CST) ${sufixo}`.trim(), a.valor_pis_debito ?? 0, 'money'],
     [`Base COFINS ${sufixo}`.trim(), a.base_cofins, 'money'],
-    [`COFINS ${sufixo}`.trim(), a.valor_cofins, 'money'],
+    [`COFINS (destacado) ${sufixo}`.trim(), a.valor_cofins, 'money'],
+    [`COFINS crédito (CST+regime) ${sufixo}`.trim(), a.valor_cofins_credito ?? 0, 'money'],
+    [`COFINS débito (CST) ${sufixo}`.trim(), a.valor_cofins_debito ?? 0, 'money'],
   ];
   return (
     <div className="rounded-2xl border border-border/60 bg-card shadow-sm overflow-hidden flex flex-col">
@@ -425,25 +441,41 @@ function AcumuloTable({ titulo, a }: { titulo: string; a: ApuracaoFiscalAcumulo 
   );
 }
 
-function SaldoGerencialTable({ saldo }: { saldo: Record<string, number> | undefined }) {
+function SaldoGerencialTable({ saldo }: { saldo: Record<string, number | string> | undefined }) {
   if (!saldo || !Object.keys(saldo).length) return null;
   const labels: Record<string, string> = {
     valor_documentos: 'Valor total de documentos',
     valor_produtos: 'Valor total de produtos',
-    base_icms: 'Base ICMS',
-    valor_icms: 'Valor ICMS',
+    base_icms: 'Base ICMS próprio',
+    valor_icms: 'Valor ICMS próprio (saída − entrada)',
     base_ipi: 'Base IPI',
     valor_ipi: 'Valor IPI',
     base_pis: 'Base PIS',
-    valor_pis: 'Valor PIS',
+    valor_pis: 'Valor PIS (destacado)',
     base_cofins: 'Base COFINS',
-    valor_cofins: 'Valor COFINS',
+    valor_cofins: 'Valor COFINS (destacado)',
+    icms_st_debito_entrada: 'ICMS-ST débito (entrada)',
+    icms_st_debito_saida: 'ICMS-ST débito (saída)',
+    fcp_st_debito_entrada: 'FCP-ST débito (entrada)',
+    fcp_st_debito_saida: 'FCP-ST débito (saída)',
+    base_icms_st_entrada: 'Base ICMS-ST (entrada)',
+    base_icms_st_saida: 'Base ICMS-ST (saída)',
+    difal_base_uf_dest: 'DIFAL base UF dest.',
+    difal_valor_icms_uf_dest: 'DIFAL ICMS UF dest.',
+    difal_valor_icms_uf_remet: 'DIFAL ICMS UF remet.',
+    difal_valor_fcp_uf_dest: 'DIFAL FCP UF dest.',
+    observacao_icms_st: 'Obs. ICMS-ST',
+    observacao_difal: 'Obs. DIFAL',
   };
+  const numericKeys = Object.keys(saldo).filter((k) => typeof saldo[k] === 'number');
+  const textKeys = Object.keys(saldo).filter((k) => typeof saldo[k] === 'string');
   return (
     <div className="rounded-2xl border border-border/60 bg-card shadow-sm overflow-hidden">
       <div className="px-5 py-4 border-b border-border/60 bg-muted/25">
         <h3 className="text-base font-semibold text-foreground">Saldo gerencial (saídas − entradas)</h3>
-        <p className="text-xs text-muted-foreground mt-1">Valores positivos indicam débito líquido.</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          ICMS próprio neteia saída−entrada. ICMS-ST/FCP-ST ficam como débito próprio (não creditam o saldo).
+        </p>
       </div>
       <div className="overflow-auto max-h-[min(360px,45vh)]">
         <table className="w-full text-sm">
@@ -454,15 +486,25 @@ function SaldoGerencialTable({ saldo }: { saldo: Record<string, number> | undefi
             </tr>
           </thead>
           <tbody className="divide-y divide-border/50">
-            {Object.entries(saldo).map(([k, v]) => (
+            {numericKeys.map((k) => (
               <tr key={k} className="hover:bg-muted/15">
                 <td className="text-muted-foreground px-5 py-2.5">{labels[k] ?? k}</td>
-                <td className="text-right font-mono tabular-nums px-5 py-2.5">{fmtMoneyPlain(v)}</td>
+                <td className="text-right font-mono tabular-nums px-5 py-2.5">{fmtMoneyPlain(Number(saldo[k]))}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {textKeys.length ? (
+        <div className="px-5 py-3 border-t border-border/50 space-y-2 bg-muted/10">
+          {textKeys.map((k) => (
+            <p key={k} className="text-xs text-muted-foreground leading-relaxed">
+              <span className="font-medium text-foreground/80">{labels[k] ?? k}: </span>
+              {String(saldo[k])}
+            </p>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -547,8 +589,12 @@ function LadoFiscalReadonlyCard({
 
 function icmsIpiRows(a?: ApuracaoFiscalAcumulo) {
   return [
-    { label: 'Base ICMS', value: fmtMoney(a?.base_icms) },
-    { label: 'ICMS', value: fmtMoney(a?.valor_icms) },
+    { label: 'Base ICMS próprio', value: fmtMoney(a?.base_icms) },
+    { label: 'ICMS próprio', value: fmtMoney(a?.valor_icms) },
+    { label: 'Base ICMS-ST', value: fmtMoney(a?.base_icms_st) },
+    { label: 'ICMS-ST (débito próprio)', value: fmtMoney(a?.valor_icms_st) },
+    { label: 'FCP-ST', value: fmtMoney(a?.valor_fcp_st) },
+    { label: 'DIFAL ICMS UF dest.', value: fmtMoney(a?.valor_icms_uf_dest) },
     { label: 'Base IPI', value: fmtMoney(a?.base_ipi) },
     { label: 'IPI', value: fmtMoney(a?.valor_ipi) },
     { label: 'Valor dos documentos', value: fmtMoney(a?.valor_documentos) },
@@ -559,9 +605,13 @@ function icmsIpiRows(a?: ApuracaoFiscalAcumulo) {
 function pisCofinsRows(a?: ApuracaoFiscalAcumulo) {
   return [
     { label: 'Base PIS', value: fmtMoney(a?.base_pis) },
-    { label: 'PIS', value: fmtMoney(a?.valor_pis) },
+    { label: 'PIS destacado', value: fmtMoney(a?.valor_pis) },
+    { label: 'PIS crédito (CST+regime)', value: fmtMoney(a?.valor_pis_credito) },
+    { label: 'PIS débito (CST)', value: fmtMoney(a?.valor_pis_debito) },
     { label: 'Base COFINS', value: fmtMoney(a?.base_cofins) },
-    { label: 'COFINS', value: fmtMoney(a?.valor_cofins) },
+    { label: 'COFINS destacado', value: fmtMoney(a?.valor_cofins) },
+    { label: 'COFINS crédito (CST+regime)', value: fmtMoney(a?.valor_cofins_credito) },
+    { label: 'COFINS débito (CST)', value: fmtMoney(a?.valor_cofins_debito) },
   ];
 }
 
@@ -1176,6 +1226,293 @@ function isApuracaoAbortError(e: unknown): boolean {
   return o.code === 'ERR_CANCELED' || o.name === 'CanceledError' || o.message === 'canceled';
 }
 
+function StatusBadgeApuracao({ status }: { status: 'RASCUNHO' | 'FECHADO' | 'SEM_REGISTRO' }) {
+  if (status === 'FECHADO') {
+    return (
+      <span className="inline-flex items-center rounded-md border border-emerald-300/80 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-900 tracking-wide">
+        FECHADO
+      </span>
+    );
+  }
+  if (status === 'RASCUNHO') {
+    return (
+      <span className="inline-flex items-center rounded-md border border-amber-300/80 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-950 tracking-wide">
+        RASCUNHO
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center rounded-md border border-border/70 bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground tracking-wide">
+      SEM REGISTRO
+    </span>
+  );
+}
+
+function PeriodoPersistenciaPainel({
+  periodoStatus,
+  persistLoading,
+  empresaObrigatoria,
+  onCriarRascunho,
+  onFechar,
+  onReabrir,
+}: {
+  periodoStatus: ApuracaoPeriodoStatus | null;
+  persistLoading: boolean;
+  empresaObrigatoria: boolean;
+  onCriarRascunho: () => void;
+  onFechar: () => void;
+  onReabrir: () => void;
+}) {
+  const ap = periodoStatus?.apuracao ?? null;
+  const statusBadge: 'RASCUNHO' | 'FECHADO' | 'SEM_REGISTRO' = ap?.status
+    ? ap.status
+    : 'SEM_REGISTRO';
+  const fechado = periodoStatus?.periodo_fechado || ap?.status === 'FECHADO';
+  const podeReabrir = Boolean(periodoStatus?.pode_reabrir);
+
+  return (
+    <div className="rounded-xl border border-border/60 bg-muted/15 px-4 py-3 md:px-5 md:py-4 space-y-3">
+      <div className="flex flex-wrap items-center gap-3 justify-between">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <span className="text-sm font-semibold text-foreground">Período persistido</span>
+          <StatusBadgeApuracao status={statusBadge} />
+          {ap?.id ? (
+            <span className="text-xs text-muted-foreground font-mono">#{ap.id}</span>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="erp-btn-outline text-sm"
+            disabled={persistLoading || empresaObrigatoria || fechado}
+            title={
+              empresaObrigatoria
+                ? 'Selecione a empresa'
+                : fechado
+                  ? 'Período fechado — reabra (admin) para atualizar o rascunho'
+                  : 'Grava rascunho com o snapshot do cálculo atual'
+            }
+            onClick={onCriarRascunho}
+          >
+            {ap?.status === 'RASCUNHO' ? 'Atualizar rascunho' : 'Criar rascunho'}
+          </button>
+          <button
+            type="button"
+            className="erp-btn-primary text-sm"
+            disabled={persistLoading || empresaObrigatoria || fechado || !ap}
+            title={!ap ? 'Crie um rascunho antes de fechar' : 'Fecha o período e trava alterações'}
+            onClick={onFechar}
+          >
+            Fechar período
+          </button>
+          {fechado ? (
+            <button
+              type="button"
+              className="erp-btn-outline text-sm"
+              disabled={persistLoading || !podeReabrir || !ap}
+              title={
+                podeReabrir
+                  ? 'Reabre o período (somente admin)'
+                  : 'Somente administrador pode reabrir'
+              }
+              onClick={onReabrir}
+            >
+              Reabrir
+            </button>
+          ) : null}
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground leading-relaxed">
+        O cálculo on-demand (Apurar) continua livre. Fechar grava snapshot e impede novo rascunho no mesmo
+        período até reabertura administrativa.
+        {ap?.fechado_em ? (
+          <>
+            {' '}
+            Fechado em {new Date(ap.fechado_em).toLocaleString('pt-BR')}
+            {ap.fechado_por_username ? ` por ${ap.fechado_por_username}` : ''}.
+          </>
+        ) : null}
+      </p>
+      {ap?.logs && ap.logs.length > 0 ? (
+        <details className="text-xs">
+          <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+            Histórico de auditoria ({ap.logs.length})
+          </summary>
+          <ul className="mt-2 space-y-1 max-h-32 overflow-auto">
+            {ap.logs.slice(0, 12).map((l) => (
+              <li key={l.id} className="font-mono text-[11px] text-muted-foreground">
+                {new Date(l.timestamp).toLocaleString('pt-BR')} · {l.acao}
+                {l.usuario_username ? ` · ${l.usuario_username}` : ''}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+function numMoney(v: unknown): number {
+  const x = Number(v);
+  return Number.isFinite(x) ? x : 0;
+}
+
+function AjustesFiscaisManuaisPainel({
+  apuracaoId,
+  saldoSnapshot,
+  ajustes,
+  ajustesLiquido,
+  saldoFinal,
+  loading,
+  onAdicionar,
+  onRemover,
+}: {
+  apuracaoId: number;
+  saldoSnapshot: number;
+  ajustes: ApuracaoAjusteManual[];
+  ajustesLiquido: number;
+  saldoFinal: number;
+  loading: boolean;
+  onAdicionar: (tipo: ApuracaoAjusteTipo, valor: number, motivo: string) => Promise<void>;
+  onRemover: (ajusteId: number) => Promise<void>;
+}) {
+  const [tipo, setTipo] = useState<ApuracaoAjusteTipo>('DEBITO');
+  const [valor, setValor] = useState('');
+  const [motivo, setMotivo] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const submit = async () => {
+    setFormError(null);
+    const v = Number(String(valor).replace(',', '.'));
+    if (!Number.isFinite(v) || v <= 0) {
+      setFormError('Informe um valor maior que zero.');
+      return;
+    }
+    if (motivo.trim().length < 5) {
+      setFormError('Motivo obrigatório (mínimo 5 caracteres).');
+      return;
+    }
+    try {
+      await onAdicionar(tipo, v, motivo.trim());
+      setValor('');
+      setMotivo('');
+    } catch (e) {
+      setFormError(apiErrorMessage(e));
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-amber-200/80 bg-amber-50/40 px-4 py-4 md:px-5 md:py-5 space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-foreground">Ajustes Fiscais Manuais</h3>
+          <p className="text-xs text-muted-foreground mt-1 max-w-2xl leading-relaxed">
+            Disponíveis apenas em rascunho (apuração #{apuracaoId}). Débito soma ao saldo; crédito e estorno
+            reduzem. O saldo final atualiza na hora, sem recarregar a página.
+          </p>
+        </div>
+        <div className="rounded-lg border border-border/60 bg-card px-4 py-3 min-w-[200px] shadow-sm">
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-semibold">Saldo final</div>
+          <div className="text-lg font-mono font-semibold tabular-nums text-foreground mt-0.5">
+            {fmtMoney(saldoFinal)}
+          </div>
+          <div className="text-[11px] text-muted-foreground mt-1 space-y-0.5">
+            <div>Snapshot: {fmtMoney(saldoSnapshot)}</div>
+            <div>Ajustes: {fmtMoney(ajustesLiquido)}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
+        <div>
+          <label className="erp-label">Tipo</label>
+          <select
+            className="erp-select mt-1 w-full"
+            value={tipo}
+            disabled={loading}
+            onChange={(e) => setTipo(e.target.value as ApuracaoAjusteTipo)}
+          >
+            <option value="DEBITO">Débito</option>
+            <option value="CREDITO">Crédito</option>
+            <option value="ESTORNO">Estorno</option>
+          </select>
+        </div>
+        <div>
+          <label className="erp-label">Valor</label>
+          <input
+            className="erp-input mt-1 w-full"
+            inputMode="decimal"
+            placeholder="0,00"
+            value={valor}
+            disabled={loading}
+            onChange={(e) => setValor(e.target.value)}
+          />
+        </div>
+        <div className="sm:col-span-2 lg:col-span-1">
+          <label className="erp-label">Motivo</label>
+          <input
+            className="erp-input mt-1 w-full"
+            placeholder="Mín. 5 caracteres"
+            value={motivo}
+            disabled={loading}
+            onChange={(e) => setMotivo(e.target.value)}
+          />
+        </div>
+        <div>
+          <button type="button" className="erp-btn-primary w-full" disabled={loading} onClick={() => void submit()}>
+            Adicionar ajuste
+          </button>
+        </div>
+      </div>
+      {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
+
+      {ajustes.length === 0 ? (
+        <p className="text-xs text-muted-foreground">Nenhum ajuste neste rascunho.</p>
+      ) : (
+        <div className="overflow-auto max-h-56 rounded-lg border border-border/50 bg-card">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40 border-b border-border/50">
+              <tr>
+                <th className="text-left px-3 py-2 font-medium">Tipo</th>
+                <th className="text-right px-3 py-2 font-medium">Valor</th>
+                <th className="text-right px-3 py-2 font-medium">Impacto</th>
+                <th className="text-left px-3 py-2 font-medium">Motivo</th>
+                <th className="text-right px-3 py-2 font-medium w-[90px]" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/40">
+              {ajustes.map((a) => (
+                <tr key={a.id} className="hover:bg-muted/15">
+                  <td className="px-3 py-2 font-mono text-xs">{a.tipo}</td>
+                  <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtMoney(numMoney(a.valor))}</td>
+                  <td className="px-3 py-2 text-right font-mono tabular-nums">
+                    {fmtMoney(a.impacto ?? numMoney(a.valor) * (a.tipo === 'DEBITO' ? 1 : -1))}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground max-w-[280px] truncate" title={a.motivo}>
+                    {a.motivo}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <button
+                      type="button"
+                      className="text-xs text-destructive hover:underline disabled:opacity-50"
+                      disabled={loading}
+                      onClick={() => {
+                        if (window.confirm('Remover este ajuste?')) void onRemover(a.id);
+                      }}
+                    >
+                      Remover
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const ApuracaoFiscalPage = () => {
   const today = useMemo(() => new Date(), []);
   const anoCorrente = today.getFullYear();
@@ -1211,6 +1548,15 @@ const ApuracaoFiscalPage = () => {
   const [data, setData] = useState<ApuracaoFiscalPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [periodoStatus, setPeriodoStatus] = useState<ApuracaoPeriodoStatus | null>(null);
+  const [persistLoading, setPersistLoading] = useState(false);
+  const [persistMsg, setPersistMsg] = useState<string | null>(null);
+  const [ajustesLista, setAjustesLista] = useState<ApuracaoAjusteManual[]>([]);
+  const [ajustesLiquido, setAjustesLiquido] = useState(0);
+  const [saldoFinalUi, setSaldoFinalUi] = useState(0);
+  const [saldoSnapshotUi, setSaldoSnapshotUi] = useState(0);
+  const [ajustesLoading, setAjustesLoading] = useState(false);
+  const { contexto: appCtx } = useAppContexto();
 
   useEffect(() => {
     empresasService.getAll().then(setEmpresas).catch(() => setEmpresas([]));
@@ -1299,6 +1645,240 @@ const ApuracaoFiscalPage = () => {
     ncm,
     modelo,
   ]);
+
+  const carregarPeriodoPersistido = useCallback(async () => {
+    if (!empresaId) {
+      setPeriodoStatus(null);
+      return;
+    }
+    const p = buildParams();
+    const di = String(p.data_inicio || '');
+    const df = String(p.data_fim || '');
+    if (!di || !df) {
+      setPeriodoStatus(null);
+      return;
+    }
+    try {
+      const st = await apuracaoPersistidaService.periodo({
+        empresa_id: Number(empresaId),
+        data_inicio: di,
+        data_fim: df,
+      });
+      setPeriodoStatus(st);
+    } catch {
+      setPeriodoStatus(null);
+    }
+  }, [empresaId, buildParams]);
+
+  useEffect(() => {
+    void carregarPeriodoPersistido();
+  }, [carregarPeriodoPersistido]);
+
+  const aplicarPersistida = useCallback((ap: ApuracaoPersistida) => {
+    setPeriodoStatus((prev) => ({
+      empresa_id: ap.empresa,
+      data_inicio: ap.data_inicio,
+      data_fim: ap.data_fim,
+      periodo_fechado: ap.status === 'FECHADO',
+      pode_reabrir:
+        prev?.pode_reabrir ??
+        Boolean(appCtx?.usuario?.is_admin || appCtx?.usuario?.is_staff || appCtx?.usuario?.is_superuser),
+      apuracao: ap,
+    }));
+    const snap = numMoney(ap.saldo_icms);
+    const liq = numMoney(ap.ajustes_liquido);
+    const fin = ap.saldo_final != null ? numMoney(ap.saldo_final) : snap + liq;
+    setSaldoSnapshotUi(snap);
+    setAjustesLiquido(liq);
+    setSaldoFinalUi(fin);
+  }, [appCtx?.usuario?.is_admin, appCtx?.usuario?.is_staff, appCtx?.usuario?.is_superuser]);
+
+  const carregarAjustes = useCallback(async (apuracaoId: number) => {
+    setAjustesLoading(true);
+    try {
+      const res = await apuracaoPersistidaService.listarAjustes(apuracaoId);
+      setAjustesLista(res.ajustes || []);
+      setAjustesLiquido(numMoney(res.ajustes_liquido));
+      setSaldoSnapshotUi(numMoney(res.saldo_icms_snapshot));
+      setSaldoFinalUi(numMoney(res.saldo_final));
+      setPeriodoStatus((prev) => {
+        if (!prev?.apuracao || prev.apuracao.id !== apuracaoId) return prev;
+        return {
+          ...prev,
+          apuracao: {
+            ...prev.apuracao,
+            ajustes_liquido: res.ajustes_liquido,
+            saldo_final: res.saldo_final,
+            quantidade_ajustes: res.quantidade,
+          },
+        };
+      });
+    } catch {
+      setAjustesLista([]);
+    } finally {
+      setAjustesLoading(false);
+    }
+  }, []);
+
+  const rascunhoAtivoId =
+    periodoStatus?.apuracao?.status === 'RASCUNHO' ? periodoStatus.apuracao.id : null;
+
+  useEffect(() => {
+    if (rascunhoAtivoId) {
+      void carregarAjustes(rascunhoAtivoId);
+    } else {
+      setAjustesLista([]);
+      setAjustesLiquido(0);
+      if (periodoStatus?.apuracao) {
+        const snap = numMoney(periodoStatus.apuracao.saldo_icms);
+        setSaldoSnapshotUi(snap);
+        setSaldoFinalUi(numMoney(periodoStatus.apuracao.saldo_final ?? snap));
+      } else {
+        setSaldoSnapshotUi(0);
+        setSaldoFinalUi(0);
+      }
+    }
+  }, [rascunhoAtivoId, carregarAjustes, periodoStatus?.apuracao?.id, periodoStatus?.apuracao?.status]);
+
+  const handleAdicionarAjuste = useCallback(
+    async (tipo: ApuracaoAjusteTipo, valor: number, motivo: string) => {
+      if (!rascunhoAtivoId) return;
+      setAjustesLoading(true);
+      try {
+        const res = await apuracaoPersistidaService.criarAjuste(rascunhoAtivoId, { tipo, valor, motivo });
+        if (res.ajuste) {
+          setAjustesLista((prev) => [res.ajuste!, ...prev]);
+        } else {
+          await carregarAjustes(rascunhoAtivoId);
+        }
+        setAjustesLiquido(numMoney(res.ajustes_liquido));
+        setSaldoSnapshotUi(numMoney(res.saldo_icms_snapshot));
+        setSaldoFinalUi(numMoney(res.saldo_final));
+        setPeriodoStatus((prev) => {
+          if (!prev?.apuracao) return prev;
+          return {
+            ...prev,
+            apuracao: {
+              ...prev.apuracao,
+              ajustes_liquido: res.ajustes_liquido,
+              saldo_final: res.saldo_final,
+              quantidade_ajustes: (prev.apuracao.quantidade_ajustes ?? 0) + 1,
+            },
+          };
+        });
+        setPersistMsg(`Ajuste ${tipo} de ${fmtMoney(valor)} registrado. Saldo final: ${fmtMoney(res.saldo_final)}.`);
+      } finally {
+        setAjustesLoading(false);
+      }
+    },
+    [rascunhoAtivoId, carregarAjustes],
+  );
+
+  const handleRemoverAjuste = useCallback(
+    async (ajusteId: number) => {
+      if (!rascunhoAtivoId) return;
+      setAjustesLoading(true);
+      try {
+        const res = await apuracaoPersistidaService.removerAjuste(rascunhoAtivoId, ajusteId);
+        setAjustesLista((prev) => prev.filter((a) => a.id !== ajusteId));
+        setAjustesLiquido(numMoney(res.ajustes_liquido));
+        setSaldoSnapshotUi(numMoney(res.saldo_icms_snapshot));
+        setSaldoFinalUi(numMoney(res.saldo_final));
+        setPeriodoStatus((prev) => {
+          if (!prev?.apuracao) return prev;
+          return {
+            ...prev,
+            apuracao: {
+              ...prev.apuracao,
+              ajustes_liquido: res.ajustes_liquido,
+              saldo_final: res.saldo_final,
+              quantidade_ajustes: Math.max(0, (prev.apuracao.quantidade_ajustes ?? 1) - 1),
+            },
+          };
+        });
+        setPersistMsg(`Ajuste removido. Saldo final: ${fmtMoney(res.saldo_final)}.`);
+      } catch (e) {
+        setPersistMsg(apiErrorMessage(e));
+      } finally {
+        setAjustesLoading(false);
+      }
+    },
+    [rascunhoAtivoId],
+  );
+
+  const handleCriarRascunho = useCallback(async () => {
+    if (!empresaId) {
+      setPersistMsg('Selecione a empresa para gravar o rascunho.');
+      return;
+    }
+    setPersistLoading(true);
+    setPersistMsg(null);
+    try {
+      const p = buildParams();
+      const ap = await apuracaoPersistidaService.criarRascunho({
+        empresa_id: Number(empresaId),
+        data_inicio: String(p.data_inicio),
+        data_fim: String(p.data_fim),
+        tipo: String(p.tipo || 'AMBOS'),
+        fonte: String(p.fonte || 'TODOS'),
+        status: p.status ? String(p.status) : '',
+        cfop: p.cfop ? String(p.cfop) : '',
+        ncm: p.ncm ? String(p.ncm) : '',
+        modelo_documento: p.modelo_documento ? String(p.modelo_documento) : '',
+        incluir_canceladas: Boolean(p.incluir_canceladas),
+      });
+      aplicarPersistida(ap);
+      setPersistMsg(`Rascunho #${ap.id} gravado com snapshot do cálculo atual.`);
+    } catch (e) {
+      setPersistMsg(apiErrorMessage(e));
+    } finally {
+      setPersistLoading(false);
+    }
+  }, [empresaId, buildParams, aplicarPersistida]);
+
+  const handleFecharPeriodo = useCallback(async () => {
+    const id = periodoStatus?.apuracao?.id;
+    if (!id) {
+      setPersistMsg('Crie um rascunho antes de fechar o período.');
+      return;
+    }
+    if (
+      !window.confirm(
+        'Fechar o período grava o snapshot atual e impede alterações até reabertura (admin). Continuar?',
+      )
+    ) {
+      return;
+    }
+    setPersistLoading(true);
+    setPersistMsg(null);
+    try {
+      const ap = await apuracaoPersistidaService.fechar(id);
+      aplicarPersistida(ap);
+      setPersistMsg(`Período fechado (apuração #${ap.id}).`);
+    } catch (e) {
+      setPersistMsg(apiErrorMessage(e));
+    } finally {
+      setPersistLoading(false);
+    }
+  }, [periodoStatus?.apuracao?.id, aplicarPersistida]);
+
+  const handleReabrirPeriodo = useCallback(async () => {
+    const id = periodoStatus?.apuracao?.id;
+    if (!id) return;
+    const motivo = window.prompt('Motivo da reabertura (mín. 5 caracteres):');
+    if (motivo == null) return;
+    setPersistLoading(true);
+    setPersistMsg(null);
+    try {
+      const ap = await apuracaoPersistidaService.reabrir(id, motivo);
+      aplicarPersistida(ap);
+      setPersistMsg(`Período reaberto (apuração #${ap.id}).`);
+    } catch (e) {
+      setPersistMsg(apiErrorMessage(e));
+    } finally {
+      setPersistLoading(false);
+    }
+  }, [periodoStatus?.apuracao?.id, aplicarPersistida]);
 
   /** Qualquer mudança de filtro dispara nova apuração (debounce). Evita ficar zerado ao mudar só as datas sem clicar em Apurar. */
   const apuracaoQueryKey = useMemo(
@@ -1624,13 +2204,64 @@ const ApuracaoFiscalPage = () => {
             >
               Exportar CSV dos alertas
             </button>
-            <button type="button" className="erp-btn-outline opacity-60 cursor-not-allowed" disabled title={SPED_TXT_TOOLTIP}>
-              Gerar TXT EFD ICMS/IPI — em preparação
+            <button
+              type="button"
+              className="erp-btn-outline"
+              disabled={
+                loading ||
+                persistLoading ||
+                periodoStatus?.apuracao?.status !== 'FECHADO' ||
+                !periodoStatus?.apuracao?.id
+              }
+              title={
+                periodoStatus?.apuracao?.status === 'FECHADO'
+                  ? SPED_TXT_TOOLTIP
+                  : 'Feche o período para baixar a prévia SPED'
+              }
+              onClick={() => {
+                const id = periodoStatus?.apuracao?.id;
+                if (!id) return;
+                void apuracaoPersistidaService.baixarSpedEfdIcmsIpi(id).catch((e) => {
+                  setPersistMsg(apiErrorMessage(e));
+                });
+              }}
+            >
+              Baixar SPED (Prévia)
             </button>
-            <button type="button" className="erp-btn-outline opacity-60 cursor-not-allowed" disabled title={SPED_TXT_TOOLTIP}>
+            <button type="button" className="erp-btn-outline opacity-60 cursor-not-allowed" disabled title="EFD Contribuições ainda não gerada nesta versão">
               Gerar TXT EFD Contribuições — em preparação
             </button>
           </div>
+          {periodoStatus?.apuracao?.status === 'FECHADO' ? (
+            <p className="text-xs text-amber-900/90 bg-amber-50/80 border border-amber-200/80 rounded-lg px-3 py-2 leading-relaxed">
+              O botão <span className="font-medium">Baixar SPED (Prévia)</span> gera um TXT estrutural (blocos 0000,
+              C100, C170, C190, E110, E111). <span className="font-medium">Não é arquivo oficial</span> para entrega —
+              a validação no PVA da SEFAZ é de responsabilidade do contador.
+            </p>
+          ) : null}
+          <PeriodoPersistenciaPainel
+            periodoStatus={periodoStatus}
+            persistLoading={persistLoading}
+            empresaObrigatoria={!empresaId}
+            onCriarRascunho={() => void handleCriarRascunho()}
+            onFechar={() => void handleFecharPeriodo()}
+            onReabrir={() => void handleReabrirPeriodo()}
+          />
+          {rascunhoAtivoId ? (
+            <AjustesFiscaisManuaisPainel
+              apuracaoId={rascunhoAtivoId}
+              saldoSnapshot={saldoSnapshotUi}
+              ajustes={ajustesLista}
+              ajustesLiquido={ajustesLiquido}
+              saldoFinal={saldoFinalUi}
+              loading={ajustesLoading || persistLoading}
+              onAdicionar={handleAdicionarAjuste}
+              onRemover={handleRemoverAjuste}
+            />
+          ) : null}
+          {persistMsg ? (
+            <p className="text-sm text-foreground/90 border-l-4 border-sky-400/80 pl-3 py-1">{persistMsg}</p>
+          ) : null}
         </div>
 
         <div className="border-t border-border/50 pt-6 space-y-5">
@@ -1907,9 +2538,57 @@ const ApuracaoFiscalPage = () => {
               em especial o aviso quando a empresa selecionada exclui todas as NF-e do XML.
             </div>
           ) : null}
+          {data?.operacionais_sem_tributos &&
+          (data.operacionais_sem_tributos.quantidade_notas ?? 0) > 0 ? (
+            <div
+              className={`rounded-md border px-4 py-3 text-sm ${
+                data.operacionais_sem_tributos.destaque
+                  ? 'border-red-300 bg-red-50 text-red-950'
+                  : 'border-amber-300 bg-amber-50 text-amber-950'
+              }`}
+            >
+              <p className="font-semibold">
+                {data.operacionais_sem_tributos.quantidade_notas} NF-e operacional(is) sem tributos
+                extraídos
+              </p>
+              <p className="mt-1.5 leading-relaxed">
+                Valor bruto agregado R${' '}
+                {fmtMoney(data.operacionais_sem_tributos.valor_bruto)} permanece no resumo de documentos; ICMS/IPI/PIS/COFINS
+                dessas notas não entraram no saldo fiscal. Prefira fonte <strong>Históricos</strong> (XML) ou atualize o
+                snapshot fiscal nas NFs antes de fechar o período.
+              </p>
+            </div>
+          ) : null}
 
           <div className="space-y-6">
             <h2 className="text-xl font-semibold text-foreground tracking-tight">Visão geral</h2>
+            {data.regime_tributario ? (
+              <div
+                className={`rounded-xl border px-5 py-4 text-sm ${
+                  data.regime_tributario.permite_credito_pis_cofins
+                    ? 'border-emerald-200/90 bg-emerald-50/80 text-emerald-950'
+                    : 'border-amber-200/90 bg-amber-50/90 text-amber-950'
+                }`}
+              >
+                <p className="font-medium">
+                  Regime: {data.regime_tributario.classificado ?? 'INDEFINIDO'}
+                  {data.regime_tributario.raw ? (
+                    <span className="font-normal text-muted-foreground">
+                      {' '}
+                      (cadastro: {data.regime_tributario.raw})
+                    </span>
+                  ) : null}
+                </p>
+                <p className="mt-1.5 text-xs leading-relaxed opacity-90">
+                  {data.regime_tributario.permite_credito_pis_cofins
+                    ? 'Lucro Real: crédito PIS/COFINS liberado quando CST 50–56/60–67.'
+                    : 'Crédito PIS/COFINS bloqueado (somente Lucro Real libera). ICMS-ST não credita o saldo de ICMS próprio.'}
+                  {data.regime_tributario.credito_pis_cofins_bloqueado_regime_itens
+                    ? ` ${data.regime_tributario.credito_pis_cofins_bloqueado_regime_itens} item(ns) com CST de crédito ignorados.`
+                    : null}
+                </p>
+              </div>
+            ) : null}
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 md:gap-6">
               <KpiCardHero titulo="Notas de entrada" valor={num(apuracaoCards?.notas_entrada)} sub="NF-es incluídas na apuração (lado entrada)" />
               <KpiCardHero titulo="Notas de saída" valor={num(apuracaoCards?.notas_saida)} sub="NF-es incluídas na apuração (lado saída)" />
@@ -1918,6 +2597,20 @@ const ApuracaoFiscalPage = () => {
               <KpiCardHero titulo="ICMS CT-e" valor={fmtMoney(apuracaoCards?.icms_cte)} sub="ICMS destacado nos CT-e" />
               <KpiCardHero titulo="Valor total de entradas" valor={fmtMoney(apuracaoCards?.valor_entradas)} sub="Documentos no período" />
               <KpiCardHero titulo="Valor total de saídas" valor={fmtMoney(apuracaoCards?.valor_saidas)} sub="Documentos no período" />
+              <KpiCardHero
+                titulo="ICMS-ST débito (E+S)"
+                valor={fmtMoney(num(apuracaoCards?.icms_st_debito_entrada) + num(apuracaoCards?.icms_st_debito_saida))}
+                sub="Não reduz saldo de ICMS próprio"
+              />
+              <KpiCardHero titulo="PIS crédito (filtrado)" valor={fmtMoney(apuracaoCards?.pis_credito)} sub="CST + Lucro Real" />
+              <KpiCardHero titulo="COFINS crédito (filtrado)" valor={fmtMoney(apuracaoCards?.cofins_credito)} sub="CST + Lucro Real" />
+              {periodoStatus?.apuracao ? (
+                <KpiCardHero
+                  titulo="Saldo final (persistido)"
+                  valor={fmtMoney(saldoFinalUi)}
+                  sub={`Snapshot ${fmtMoney(saldoSnapshotUi)} + ajustes ${fmtMoney(ajustesLiquido)}`}
+                />
+              ) : null}
               <KpiCardHero titulo="Alertas fiscais" valor={apuracaoCards?.alertas ?? 0} sub="Quantidade na aba Alertas" />
             </div>
           </div>
@@ -2015,8 +2708,9 @@ const ApuracaoFiscalPage = () => {
                 <div>
                   <h3 className="text-lg font-semibold text-foreground mb-2">ICMS / IPI</h3>
                   <p className="text-sm text-muted-foreground max-w-3xl mb-6">
-                    Conferência lado a lado. O saldo é <span className="font-medium text-foreground">saída menos entrada</span> nos
-                    totais do item.
+                    Conferência lado a lado. O saldo de ICMS próprio é{' '}
+                    <span className="font-medium text-foreground">saída menos entrada</span>. ICMS-ST e DIFAL ficam
+                    segregados (débito próprio / ajuste — não creditam o saldo).
                   </p>
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
                     <LadoFiscalReadonlyCard titulo="Entrada" rows={icmsIpiRows(data.icms_ipi?.entrada)} />
@@ -2024,12 +2718,26 @@ const ApuracaoFiscalPage = () => {
                       titulo="Saldo"
                       rows={[
                         {
-                          label: 'Base ICMS',
+                          label: 'Base ICMS próprio',
                           value: fmtMoney(saldoSaidaMenosEntrada(data.icms_ipi?.entrada, data.icms_ipi?.saida, 'base_icms')),
                         },
                         {
-                          label: 'ICMS',
+                          label: 'ICMS próprio',
                           value: fmtMoney(saldoSaidaMenosEntrada(data.icms_ipi?.entrada, data.icms_ipi?.saida, 'valor_icms')),
+                        },
+                        {
+                          label: 'ICMS-ST débito entrada',
+                          value: fmtMoney(data.icms_ipi?.entrada?.valor_icms_st),
+                        },
+                        {
+                          label: 'ICMS-ST débito saída',
+                          value: fmtMoney(data.icms_ipi?.saida?.valor_icms_st),
+                        },
+                        {
+                          label: 'DIFAL UF dest. (E+S)',
+                          value: fmtMoney(
+                            (data.icms_ipi?.entrada?.valor_icms_uf_dest ?? 0) + (data.icms_ipi?.saida?.valor_icms_uf_dest ?? 0),
+                          ),
                         },
                         {
                           label: 'Base IPI',
@@ -2048,7 +2756,7 @@ const ApuracaoFiscalPage = () => {
                           value: fmtMoney(saldoSaidaMenosEntrada(data.icms_ipi?.entrada, data.icms_ipi?.saida, 'valor_produtos')),
                         },
                       ]}
-                      footer="Saldo gerencial: saída menos entrada."
+                      footer="ICMS-ST não entra no net do ICMS próprio."
                     />
                     <LadoFiscalReadonlyCard titulo="Saída" rows={icmsIpiRows(data.icms_ipi?.saida)} />
                   </div>
@@ -2073,14 +2781,14 @@ const ApuracaoFiscalPage = () => {
                 <div>
                   <h3 className="text-lg font-semibold text-foreground mb-2">PIS / COFINS</h3>
                   <p className="text-sm text-muted-foreground max-w-3xl mb-6">
-                    Entrada costuma concentrar bases de crédito; saída, de débito. O saldo segue a mesma lógica de saída menos
-                    entrada.
+                    Crédito na entrada exige CST 50–56/60–67 <span className="font-medium text-foreground">e</span> regime Lucro
+                    Real. Débito na saída usa CST 01–05. Valores “destacados” são o XML bruto; “crédito/débito” já filtrados.
                   </p>
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
                     <LadoFiscalReadonlyCard
                       titulo="Entrada"
                       rows={pisCofinsRows(data.pis_cofins?.entrada)}
-                      footer="Possíveis créditos conforme movimento de entrada."
+                      footer="Crédito só se Lucro Real + CST de crédito."
                     />
                     <LadoFiscalReadonlyCard
                       titulo="Saldo"
@@ -2089,22 +2797,41 @@ const ApuracaoFiscalPage = () => {
                           label: 'Base PIS',
                           value: fmtMoney(saldoSaidaMenosEntrada(data.pis_cofins?.entrada, data.pis_cofins?.saida, 'base_pis')),
                         },
-                        { label: 'PIS', value: fmtMoney(saldoSaidaMenosEntrada(data.pis_cofins?.entrada, data.pis_cofins?.saida, 'valor_pis')) },
+                        {
+                          label: 'PIS destacado',
+                          value: fmtMoney(saldoSaidaMenosEntrada(data.pis_cofins?.entrada, data.pis_cofins?.saida, 'valor_pis')),
+                        },
+                        {
+                          label: 'PIS crédito (filtrado)',
+                          value: fmtMoney(data.pis_cofins?.entrada?.valor_pis_credito),
+                        },
+                        {
+                          label: 'PIS débito (filtrado)',
+                          value: fmtMoney(data.pis_cofins?.saida?.valor_pis_debito),
+                        },
                         {
                           label: 'Base COFINS',
                           value: fmtMoney(saldoSaidaMenosEntrada(data.pis_cofins?.entrada, data.pis_cofins?.saida, 'base_cofins')),
                         },
                         {
-                          label: 'COFINS',
+                          label: 'COFINS destacado',
                           value: fmtMoney(saldoSaidaMenosEntrada(data.pis_cofins?.entrada, data.pis_cofins?.saida, 'valor_cofins')),
                         },
+                        {
+                          label: 'COFINS crédito (filtrado)',
+                          value: fmtMoney(data.pis_cofins?.entrada?.valor_cofins_credito),
+                        },
+                        {
+                          label: 'COFINS débito (filtrado)',
+                          value: fmtMoney(data.pis_cofins?.saida?.valor_cofins_debito),
+                        },
                       ]}
-                      footer="Saldo gerencial: saída menos entrada."
+                      footer="Saldo gerencial de valores destacados: saída − entrada."
                     />
                     <LadoFiscalReadonlyCard
                       titulo="Saída"
                       rows={pisCofinsRows(data.pis_cofins?.saida)}
-                      footer="Possíveis débitos conforme movimento de saída."
+                      footer="Débito conforme CST 01–05 na saída."
                     />
                   </div>
                 </div>
