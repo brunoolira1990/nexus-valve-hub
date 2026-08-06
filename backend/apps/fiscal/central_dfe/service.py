@@ -616,11 +616,7 @@ def _coletar_cte_recebido(filtros: FiltrosCentralDfe, empresa: Empresa) -> list[
         'empresa_destinataria',
         'empresa_recebedora',
     )
-    qs = qs.filter(
-        Q(empresa_tomadora_id=empresa.pk)
-        | Q(empresa_destinataria_id=empresa.pk)
-        | Q(empresa_recebedora_id=empresa.pk),
-    )
+    qs = qs.filter(empresa_tomadora_id=empresa.pk)
     qs = _filtrar_queryset_fila_dfe_cte(qs)
     qs = _aplica_filtro_data_emissao(qs, 'dh_emissao', filtros)
     qs = _aplica_filtro_data_importacao(qs, filtros)

@@ -65,12 +65,7 @@ def _empresa_or_raise(empresa_id: int) -> Empresa:
 
 
 def _cte_pertence_empresa(cte: CTeHistoricoImportado, empresa: Empresa) -> bool:
-    emp_id = empresa.pk
-    return emp_id in {
-        cte.empresa_tomadora_id,
-        cte.empresa_destinataria_id,
-        cte.empresa_recebedora_id,
-    }
+    return cte.empresa_tomadora_id == empresa.pk
 
 
 def _normalizar_chave(chave: str | None) -> str:

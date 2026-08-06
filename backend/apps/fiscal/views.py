@@ -3408,7 +3408,7 @@ class CTeHistoricoImportadoViewSet(AutocompleteOrPaginationMixin, viewsets.ReadO
     pagination_class = NexusPageNumberPagination
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        qs = super().get_queryset().filter(empresa_tomadora__isnull=False)
         incluir_cancelados = str(self.request.query_params.get('incluir_cancelados', '')).lower() in {'1', 'true', 'sim'}
         if not incluir_cancelados:
             qs = qs.filter(cancelado=False)

@@ -102,16 +102,23 @@ def importar_arquivos_cte(arquivos: list[tuple[str, bytes]]) -> dict[str, Any]:
         try:
             with transaction.atomic():
                 empresa_tomadora = _resolve_empresa_tomadora(parsed.tomador_json)
+                if not empresa_tomadora:
+                    erros.append(
+                        {
+                            'arquivo': nome,
+                            'chave_acesso': parsed.chave_acesso,
+                            'mensagem': (
+                                'CT-e não importado: nenhuma Empresa do ERP é tomadora deste frete. '
+                                'Só entram CT-e em que você é o tomador.'
+                            ),
+                        },
+                    )
+                    continue
+
                 empresa_destinataria = _resolve_empresa_from_party(parsed.dest_json)
                 empresa_recebedora = _resolve_empresa_from_party(parsed.receb_json)
                 fornecedor_remetente = _resolve_fornecedor_from_party(parsed.rem_json)
-                papel_empresa = ''
-                if empresa_tomadora:
-                    papel_empresa = 'tomador'
-                elif empresa_destinataria:
-                    papel_empresa = 'destinatario'
-                elif empresa_recebedora:
-                    papel_empresa = 'recebedor'
+                papel_empresa = 'tomador'
 
                 st_conf = _status_inicial_importacao(
                     cancelado=bool(parsed.cancelado),
