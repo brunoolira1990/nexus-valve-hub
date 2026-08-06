@@ -122,17 +122,12 @@ def _cte_elegivel_captura(xml_bytes: bytes, cnpj_empresa: str) -> tuple[bool, st
     if emit_doc == cnpj_empresa:
         return False, 'Emitente é a própria empresa'
 
-    parties = [
-        parsed.tomador_json,
-        parsed.dest_json,
-        parsed.receb_json,
-    ]
-    participa = any(
-        norm_digits(str((p or {}).get('CNPJ') or (p or {}).get('CPF') or '')) == cnpj_empresa
-        for p in parties
-    )
-    if not participa:
-        return False, 'Empresa não é tomadora/destinatária/recebedora'
+    # Frete / apuração: só importa CT-e em que a empresa do ERP é a tomadora do serviço.
+    # Destinatário/recebedor sem ser tomador não deve entrar pela captura SEFAZ.
+    tomador = parsed.tomador_json if isinstance(parsed.tomador_json, dict) else {}
+    tomador_doc = norm_digits(str(tomador.get('CNPJ') or tomador.get('CPF') or ''))
+    if tomador_doc != cnpj_empresa:
+        return False, 'Empresa não é tomadora do CT-e'
 
     cstat = (parsed.cstat or '').strip()
     if cstat and cstat not in CSTAT_AUTORIZADO and not parsed.cancelado:

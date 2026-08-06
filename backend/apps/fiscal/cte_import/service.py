@@ -108,6 +108,10 @@ def importar_arquivos_cte(arquivos: list[tuple[str, bytes]]) -> dict[str, Any]:
                 papel_empresa = ''
                 if empresa_tomadora:
                     papel_empresa = 'tomador'
+                elif empresa_destinataria:
+                    papel_empresa = 'destinatario'
+                elif empresa_recebedora:
+                    papel_empresa = 'recebedor'
 
                 st_conf = _status_inicial_importacao(
                     cancelado=bool(parsed.cancelado),

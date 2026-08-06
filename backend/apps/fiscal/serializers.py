@@ -2680,6 +2680,14 @@ def _cte_status_visual(obj: CTeHistoricoImportado) -> dict[str, Any]:
     return {'status_visual': obj.status_documento or 'pendente', 'cstat_visual': '', 'motivo_visual': obj.xmotivo or ''}
 
 
+def _cte_tomador_nome_display(obj: CTeHistoricoImportado) -> str:
+    """Nome do tomador fiscal: Empresa do ERP ou xNome do XML (tomador externo)."""
+    if obj.empresa_tomadora_id:
+        return obj.empresa_tomadora.razao_social
+    tom = obj.tomador_json if isinstance(obj.tomador_json, dict) else {}
+    return str(tom.get('xNome') or tom.get('xFant') or '').strip()
+
+
 class EventoCTeHistoricoImportadoSerializer(serializers.ModelSerializer):
     class Meta:
         model = EventoCTeHistoricoImportado
@@ -2781,7 +2789,7 @@ class CTeHistoricoImportadoListSerializer(serializers.ModelSerializer):
         )
 
     def get_empresa_tomadora_nome(self, obj):
-        return obj.empresa_tomadora.razao_social if obj.empresa_tomadora_id else ''
+        return _cte_tomador_nome_display(obj)
 
     def get_status_visual(self, obj):
         return _cte_status_visual(obj)['status_visual']
@@ -2973,7 +2981,7 @@ class CTeHistoricoImportadoSerializer(serializers.ModelSerializer):
         return u.get_full_name() or u.username
 
     def get_empresa_tomadora_nome(self, obj):
-        return obj.empresa_tomadora.razao_social if obj.empresa_tomadora_id else ''
+        return _cte_tomador_nome_display(obj)
 
     def get_status_visual(self, obj):
         return _cte_status_visual(obj)['status_visual']
