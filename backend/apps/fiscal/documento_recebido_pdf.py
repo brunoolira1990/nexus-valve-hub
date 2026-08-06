@@ -48,10 +48,31 @@ def _sanitizar_xml_texto(xml: str) -> str:
     return texto
 
 
+_CTE_NS = 'http://www.portalfiscal.inf.br/cte'
+
+
+def _localizar_inf_cte(root: ET.Element) -> ET.Element | None:
+    root_name = _local_tag(root.tag)
+    if root_name == 'infCte':
+        return root
+    if root_name == 'CTe':
+        return _find_child(root, 'infCte')
+    if root_name == 'cteProc':
+        cte = _find_child(root, 'CTe')
+        return _find_child(cte, 'infCte') if cte is not None else None
+    for el in root.iter():
+        if _local_tag(el.tag) == 'infCte':
+            return el
+    return None
+
+
 def _normalizar_xml_cte_para_dacte(xml: str) -> str:
     """
-    BrazilFiscalReport Dacte espera o elemento infCte como raiz do XML informado.
-    Aceita XML armazenado como infCte, CTe ou cteProc.
+    Prepara o XML para BrazilFiscalReport Dacte.
+
+    O BFR localiza nós com ``.//{ns}infCte`` (descendente). Se a raiz for o próprio
+    ``infCte``, ``find`` retorna None e a geração quebra com AttributeError.
+    Por isso preferimos ``cteProc`` / ``CTe`` intactos; só embrulhamos ``infCte`` solto.
     """
     xml_limpo = _sanitizar_xml_texto(xml)
     try:
@@ -59,23 +80,22 @@ def _normalizar_xml_cte_para_dacte(xml: str) -> str:
     except ET.ParseError as exc:
         raise DocumentoRecebidoPdfError('XML de CT-e inválido ou malformado.') from exc
 
-    root_name = _local_tag(root.tag)
-    inf_cte: ET.Element | None
-    if root_name == 'infCte':
-        inf_cte = root
-    elif root_name == 'CTe':
-        inf_cte = _find_child(root, 'infCte')
-    elif root_name == 'cteProc':
-        cte = _find_child(root, 'CTe')
-        inf_cte = _find_child(cte, 'infCte') if cte is not None else None
-    else:
-        inf_cte = None
-
+    inf_cte = _localizar_inf_cte(root)
     if inf_cte is None:
         raise DocumentoRecebidoPdfError(
             'XML de CT-e incompleto: não foi possível localizar o bloco infCte.',
         )
-    return ET.tostring(inf_cte, encoding='unicode')
+
+    root_name = _local_tag(root.tag)
+    if root_name in {'cteProc', 'CTe'}:
+        return xml_limpo
+    if root_name == 'infCte':
+        return (
+            f'<CTe xmlns="{_CTE_NS}">'
+            f'{ET.tostring(inf_cte, encoding="unicode")}'
+            f'</CTe>'
+        )
+    return xml_limpo
 
 
 def _importar_dacte():
@@ -109,9 +129,9 @@ def gerar_danfe_nfe_entrada_historica(xml: str) -> bytes:
 def gerar_dacte_cte_historico(xml: str) -> bytes:
     """Gera DACTE a partir do XML armazenado em CTeHistoricoImportado."""
     Dacte, DacteConfig = _importar_dacte()
-    xml_inf_cte = _normalizar_xml_cte_para_dacte(xml)
+    xml_para_dacte = _normalizar_xml_cte_para_dacte(xml)
     try:
-        dacte = Dacte(xml=xml_inf_cte, config=DacteConfig())
+        dacte = Dacte(xml=xml_para_dacte, config=DacteConfig())
         buffer = BytesIO()
         dacte.output(buffer)
         pdf = buffer.getvalue()
