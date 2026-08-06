@@ -109,6 +109,18 @@ def _importar_dacte():
     return Dacte, DacteConfig
 
 
+def _classe_dacte_nexus(Dacte):
+    """Subclasse BFR que corrige sobreposição do nome do emitente com o CNPJ."""
+
+    from apps.fiscal.dacte_bfr_emit import patch_draw_header_emitente
+
+    class DacteNexus(Dacte):
+        def _draw_header(self):
+            patch_draw_header_emitente(self, lambda d: Dacte._draw_header(d))
+
+    return DacteNexus
+
+
 def gerar_danfe_nfe_entrada_historica(xml: str) -> bytes:
     """Gera DANFE a partir do XML armazenado em NFeEntradaHistoricaImportada."""
     xml_limpo = _sanitizar_xml_texto(xml)
@@ -129,9 +141,10 @@ def gerar_danfe_nfe_entrada_historica(xml: str) -> bytes:
 def gerar_dacte_cte_historico(xml: str) -> bytes:
     """Gera DACTE a partir do XML armazenado em CTeHistoricoImportado."""
     Dacte, DacteConfig = _importar_dacte()
+    DacteNexus = _classe_dacte_nexus(Dacte)
     xml_para_dacte = _normalizar_xml_cte_para_dacte(xml)
     try:
-        dacte = Dacte(xml=xml_para_dacte, config=DacteConfig())
+        dacte = DacteNexus(xml=xml_para_dacte, config=DacteConfig())
         buffer = BytesIO()
         dacte.output(buffer)
         pdf = buffer.getvalue()

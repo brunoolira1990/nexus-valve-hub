@@ -61,6 +61,57 @@ class NormalizarXmlCteParaDacteTests(SimpleTestCase):
             _normalizar_xml_cte_para_dacte(f'<cteProc xmlns="{NS}"><foo/></cteProc>')
 
 
+class PatchDrawHeaderEmitenteTests(SimpleTestCase):
+    def test_endereco_fica_abaixo_do_nome_quebrado(self):
+        from apps.fiscal.dacte_bfr_emit import patch_draw_header_emitente
+
+        class FakePdf:
+            def __init__(self):
+                self.emit_name = 'RODOMAC DE MACAE RODOVIARIO LTDA'
+                self._y = 10.0
+                self.calls: list[tuple] = []
+
+            def get_y(self):
+                return self._y
+
+            def set_xy(self, x=0, y=0):
+                self.calls.append(('xy', x, y))
+                self._y = y
+
+            def multi_cell(self, w, h=None, text='', border=0, align='J', **kwargs):
+                if 'text' in kwargs:
+                    text = kwargs['text']
+                self.calls.append(('cell', text))
+                # simula quebra de nome em 2 linhas
+                if text == self.emit_name:
+                    self._y += 10
+                else:
+                    self._y += 3 * max(1, text.count('\n') + 1)
+
+        pdf = FakePdf()
+
+        def fake_header(d):
+            d.set_xy(x=1, y=10)
+            d.multi_cell(w=50, h=5, text=d.emit_name, border=0, align='C')
+            d.set_xy(x=1, y=16)  # BFR: y_text+6 sobrepõe a 2ª linha do nome
+            d.multi_cell(
+                w=60,
+                h=3,
+                text='CNPJ: 36.578.458/0003-31 IE: 113786676117\nRUA A, 1',
+                border=0,
+                align='C',
+            )
+
+        patch_draw_header_emitente(pdf, fake_header)
+        xy_calls = [c for c in pdf.calls if c[0] == 'xy']
+        cell_calls = [c for c in pdf.calls if c[0] == 'cell']
+        # 2º set_xy (endereço) deve usar get_y() pós-nome (~20.5), não 16
+        self.assertGreater(xy_calls[1][2], 16)
+        addr = cell_calls[1][1]
+        self.assertIn('CNPJ: 36.578.458/0003-31\nIE: ', addr)
+        self.assertNotIn('CNPJ: 36.578.458/0003-31 IE: ', addr)
+
+
 class GerarDacteCteHistoricoTests(SimpleTestCase):
     @patch('apps.fiscal.documento_recebido_pdf._importar_dacte')
     def test_gera_pdf_com_cte_proc_sem_reduzir_a_inf_cte(self, mock_import):
@@ -80,7 +131,10 @@ class GerarDacteCteHistoricoTests(SimpleTestCase):
                 buffer.write(b'%PDF-1.4 fake-dacte')
 
         mock_import.return_value = (FakeDacte, MagicMock())
-        pdf = gerar_dacte_cte_historico(_cte_proc_minimo())
+        # DacteNexus wraps the class; FakeDacte must work as base for subclassing.
+        # Bypass subclass path by patching _classe_dacte_nexus to identity.
+        with patch('apps.fiscal.documento_recebido_pdf._classe_dacte_nexus', side_effect=lambda C: C):
+            pdf = gerar_dacte_cte_historico(_cte_proc_minimo())
         self.assertTrue(pdf.startswith(b'%PDF'))
         self.assertEqual(len(xml_passado), 1)
         self.assertEqual(ET.fromstring(xml_passado[0]).tag.split('}')[-1], 'cteProc')
