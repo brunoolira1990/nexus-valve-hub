@@ -34,6 +34,7 @@ import {
   statusXmlExibicao,
 } from '@/lib/manifestacaoDestinatarioUi';
 import type { CentralDfeDocumento } from '@/services/api/centralDfe';
+import {formatMoneyBRL} from '@/lib/numberFields';
 import {
   DESCRICAO_EVENTO_MANIFESTACAO,
   LABEL_EVENTO_MANIFESTACAO,
@@ -52,7 +53,7 @@ const fmtData = (v: string | null | undefined): string => {
 
 const fmtMoney = (v: string | number | null | undefined): string => {
   const n = Number(String(v ?? '0').replace(',', '.'));
-  return `R$ ${Number.isFinite(n) ? n.toFixed(2) : '0.00'}`;
+  return `formatMoneyBRL(n)`;
 };
 
 type ManifestacaoEventoFormProps = {

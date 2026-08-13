@@ -21,12 +21,13 @@ import {
   labelStatusFiscalEntrada,
 } from '@/lib/conferenciaNfeLabels';
 import { buildCriarRegraFiscalCteUrl } from '@/lib/regrasFiscaisEntradaHelpers';
+import {formatMoneyBRL} from '@/lib/numberFields';
 
 type Aba = 'resumo' | 'participantes' | 'totais' | 'docs' | 'frete' | 'eventos' | 'conferencia' | 'tecnico';
 
 const fmtMoney = (v: unknown): string => {
   const n = Number(String(v ?? 0).replace(',', '.'));
-  return `R$ ${(Number.isFinite(n) ? n : 0).toFixed(2)}`;
+  return `formatMoneyBRL(n)`;
 };
 
 type Props = {

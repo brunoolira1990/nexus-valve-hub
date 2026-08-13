@@ -4919,3 +4919,39 @@ class NFeNumeracaoConfiguracaoViewSet(viewsets.ModelViewSet):
             )
         code = status.HTTP_200_OK if payload.get('ok') else status.HTTP_422_UNPROCESSABLE_ENTITY
         return response.Response(payload, status=code)
+
+
+# Contingência SEFAZ (NF-e) — ações anexadas à NFeSaidaViewSet.
+from apps.fiscal.contingencia_views import (
+    ativar_contingencia,
+    emitir_contingencia,
+    encerrar_contingencia,
+    status_contingencia,
+    transmitir_pendentes_contingencia,
+)
+
+setattr(
+    NFeSaidaViewSet,
+    'status_contingencia',
+    action(detail=False, methods=['get'], url_path='contingencia/status')(status_contingencia),
+)
+setattr(
+    NFeSaidaViewSet,
+    'ativar_contingencia',
+    action(detail=False, methods=['post'], url_path='contingencia/ativar')(ativar_contingencia),
+)
+setattr(
+    NFeSaidaViewSet,
+    'encerrar_contingencia',
+    action(detail=False, methods=['post'], url_path='contingencia/encerrar')(encerrar_contingencia),
+)
+setattr(
+    NFeSaidaViewSet,
+    'transmitir_pendentes_contingencia',
+    action(detail=False, methods=['post'], url_path='contingencia/transmitir-pendentes')(transmitir_pendentes_contingencia),
+)
+setattr(
+    NFeSaidaViewSet,
+    'emitir_contingencia',
+    action(detail=True, methods=['post'], url_path='emitir-contingencia')(emitir_contingencia),
+)

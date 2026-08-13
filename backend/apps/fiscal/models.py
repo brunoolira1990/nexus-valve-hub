@@ -472,6 +472,19 @@ class NFeSaida(models.Model):
         help_text='XML enviNFe enviado à SEFAZ.',
     )
 
+    tipo_emissao = models.CharField(
+        max_length=1,
+        default='1',
+        blank=True,
+        choices=(
+            ('1', 'Emissão normal'),
+            ('2', 'EPEC — Contingência'),
+            ('6', 'SVC-RS — Contingência'),
+            ('7', 'SVC-AN — Contingência'),
+        ),
+        help_text='tpEmis do XML oficial: 1 normal, 2 EPEC, 6 SVC-RS, 7 SVC-AN.',
+    )
+
     class Meta:
         ordering = ['-data', 'numero']
         verbose_name = 'NF saída'
@@ -521,6 +534,9 @@ class NFeSaidaEvento(models.Model):
         CARTA_CORRECAO_EMITIDA = 'CARTA_CORRECAO_EMITIDA', 'Carta de Correção emitida'
         CANCELAMENTO_SEFAZ_EMITIDO = 'CANCELAMENTO_SEFAZ_EMITIDO', 'Cancelamento SEFAZ emitido'
         INUTILIZACAO_SEFAZ_EMITIDA = 'INUTILIZACAO_SEFAZ_EMITIDA', 'Inutilização SEFAZ emitida'
+        CONTINGENCIA_ATIVADA = 'CONTINGENCIA_ATIVADA', 'Contingência SEFAZ ativada'
+        CONTINGENCIA_EPEC_ATIVADA = 'CONTINGENCIA_EPEC_ATIVADA', 'NF-e emitida em contingência (EPEC)'
+        CONTINGENCIA_TRANSMITIDA = 'CONTINGENCIA_TRANSMITIDA', 'NF-e de contingência transmitida'
 
     nfe_saida = models.ForeignKey(
         NFeSaida,
@@ -2222,3 +2238,47 @@ class NFeDestinadaManifestacaoEvento(models.Model):
     def __str__(self) -> str:
         return f'{self.tipo_acao} doc={self.documento_id} {self.criado_em:%Y-%m-%d %H:%M}'
 
+
+
+class ContingenciaSefaz(models.Model):
+    """Registro de contingência SEFAZ por empresa (NF-e).
+
+    Ativa o modo de emissão alternativo quando a SEFAZ estadual e as virtuais
+    (SVC-AN/SVC-RS) ficam indisponíveis. O modo é definido por tp_emis conforme
+    o Manual de Operações (MOC) Anexo III: 2 (EPEC), 6 (SVC-RS) ou 7 (SVC-AN).
+    """
+
+    class TpEmisContingencia(models.TextChoices):
+        NORMAL = '1', 'Normal'
+        EPEC = '2', 'EPEC'
+        SVC_RS = '6', 'SVC-RS'
+        SVC_AN = '7', 'SVC-AN'
+
+    empresa = models.ForeignKey(
+        'cadastros.Empresa',
+        on_delete=models.CASCADE,
+        related_name='contingencias_sefaz',
+    )
+    tp_emis = models.CharField(max_length=1, choices=TpEmisContingencia.choices)
+    motivo = models.TextField(blank=True, max_length=500)
+    inicio = models.DateTimeField()
+    encerrada_em = models.DateTimeField(null=True, blank=True)
+    ativa = models.BooleanField(default=True)
+    criado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='contingencias_sefaz_criadas',
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-inicio']
+        verbose_name = 'Contingência SEFAZ'
+        verbose_name_plural = 'Contingências SEFAZ'
+
+    def __str__(self) -> str:
+        estado = 'ativa' if self.ativa else 'encerrada'
+        return f'Contingência {self.get_tp_emis_display()} {self.empresa} ({estado})'

@@ -1326,6 +1326,63 @@ export const nfeSaidasService = {
     });
     return res.data;
   },
+  contingenciaStatus: async (empresaId: number) =>
+    (await api.get<NFeContingenciaStatus>(`${nfSai}contingencia/status/`, { params: { empresa_id: empresaId } })).data,
+  contingenciaAtivar: async (payload: { empresa_id: number; motivo: string; tp_emis: string }) => {
+    const res = await api.post<NFeContingenciaStatus>(`${nfSai}contingencia/ativar/`, payload, {
+      validateStatus: (s) => s >= 200 && s < 500,
+    });
+    return res.data;
+  },
+  contingenciaEncerrar: async (empresaId: number) => {
+    const res = await api.post<NFeContingenciaStatus>(`${nfSai}contingencia/encerrar/`, { empresa_id: empresaId }, {
+      validateStatus: (s) => s >= 200 && s < 500,
+    });
+    return res.data;
+  },
+  contingenciaTransmitirPendentes: async (empresaId: number) => {
+    const res = await api.post<NFeContingenciaTransmissaoResponse>(
+      `${nfSai}contingencia/transmitir-pendentes/`,
+      { empresa_id: empresaId },
+      { timeout: 120_000, validateStatus: (s) => s >= 200 && s < 500 },
+    );
+    return res.data;
+  },
+  emitirContingencia: async (id: number) => {
+    const res = await api.post<NFeEmissaoContingenciaResponse>(`${nfSai}${id}/emitir-contingencia/`, {}, {
+      timeout: 120_000,
+      validateStatus: (s) => s >= 200 && s < 500,
+    });
+    return res.data;
+  },
+};
+
+export type NFeContingenciaStatus = {
+  ativa: boolean;
+  empresa_id: number;
+  tp_emis: string;
+  tp_emis_label?: string;
+  motivo: string;
+  inicio: string | null;
+  tempo_ativo_horas: number | null;
+  nfe_pendentes: number;
+  prazo_limite?: string | null;
+};
+
+export type NFeContingenciaTransmissaoResponse = {
+  empresa_id: number;
+  total: number;
+  sucesso: Array<{ nfe_id: number; numero?: string; sucesso: boolean }>;
+  falhas: Array<{ nfe_id: number; numero?: string; sucesso: boolean; erro?: string }>;
+  contingencia_encerrada: boolean;
+};
+
+export type NFeEmissaoContingenciaResponse = {
+  nfe_id: number;
+  tp_emis: string;
+  tp_emis_label?: string;
+  chave_acesso: string;
+  prazo_horas?: number;
 };
 
 export type NFeEnvioEmailHistorico = {

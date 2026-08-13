@@ -66,7 +66,14 @@ const FornecedorFormPage = () => {
 
   return (
     <div>
-      <PageHeader title={isEdit ? 'Editar fornecedor' : 'Novo fornecedor'} />
+      <PageHeader
+        title={isEdit ? 'Editar fornecedor' : 'Novo fornecedor'}
+        breadcrumbs={[
+          { label: 'Cadastros', path: '/fornecedores' },
+          { label: 'Fornecedores', path: '/fornecedores' },
+          { label: isEdit ? 'Editar' : 'Novo' },
+        ]}
+      />
       {error && !loading && (
         <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}

@@ -8,6 +8,7 @@ import {
   type NFeSefazStatusConsulta,
 } from '@/services/api/nfeSefaz';
 import { apiErrorMessage } from '@/services/api/config';
+import { nfeSaidasService, type NFeContingenciaStatus } from '@/services/api/fiscal';
 import {
   ambienteLabel,
   cStatExibicao,
@@ -40,6 +41,16 @@ const NFeSefazIntegracao = () => {
   const [certInfo, setCertInfo] = useState<CertificadoNfeValidacao | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [mostrarErroTecnico, setMostrarErroTecnico] = useState(false);
+  const [contingencia, setContingencia] = useState<NFeContingenciaStatus | null>(null);
+  const [contingenciaLoading, setContingenciaLoading] = useState(false);
+  const [contingenciaAtivando, setContingenciaAtivando] = useState(false);
+  const [contingenciaEncerrando, setContingenciaEncerrando] = useState(false);
+  const [contingenciaTransmitindo, setContingenciaTransmitindo] = useState(false);
+  const [contingenciaMsg, setContingenciaMsg] = useState<string | null>(null);
+  const [ativarOpen, setAtivarOpen] = useState(false);
+  const [ativarMotivo, setAtivarMotivo] = useState('');
+  const [ativarTpEmis, setAtivarTpEmis] = useState('2');
+  const [encerrarConfirmOpen, setEncerrarConfirmOpen] = useState(false);
 
   const load = async () => {
     const [emps, hist] = await Promise.all([
@@ -54,6 +65,28 @@ const NFeSefazIntegracao = () => {
   useEffect(() => {
     load().catch((e) => setErro(apiErrorMessage(e)));
   }, []);
+
+  const carregarContingencia = async (empId: number) => {
+    try {
+      setContingenciaLoading(true);
+      const st = await nfeSaidasService.contingenciaStatus(empId);
+      setContingencia(st);
+    } catch (e) {
+      // Falha de leitura não bloqueia a tela; o card exibe estado neutro.
+      setContingencia(null);
+    } finally {
+      setContingenciaLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (empresaId) {
+      void carregarContingencia(Number(empresaId));
+    } else {
+      setContingencia(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [empresaId]);
 
   const empresaSelecionada = empresas.find((e) => e.id === empresaId);
   const empresaFixture = empresaSelecionada ? empresaPareceFixture(empresaSelecionada) : false;
@@ -80,6 +113,7 @@ const NFeSefazIntegracao = () => {
 
   const handleConsultar = async () => {
     if (!empresaId) return;
+    void carregarContingencia(Number(empresaId));
     if (empresaFixture) {
       setErro(mensagemEmpresaBloqueada({ tipo_erro: 'EMPRESA_BLOQUEADA' }));
       return;
@@ -111,6 +145,79 @@ const NFeSefazIntegracao = () => {
       setErro(apiErrorMessage(e));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAtivarContingencia = async () => {
+    if (!empresaId) return;
+    const motivo = ativarMotivo.trim();
+    if (motivo.length < 10) {
+      setContingenciaMsg('Informe um motivo com ao menos 10 caracteres (ex.: "SEFAZ-SP indisponível desde as 14h").');
+      return;
+    }
+    setContingenciaAtivando(true);
+    setContingenciaMsg(null);
+    try {
+      const st = await nfeSaidasService.contingenciaAtivar({
+        empresa_id: Number(empresaId),
+        motivo,
+        tp_emis: ativarTpEmis,
+      });
+      setContingencia(st);
+      setAtivarOpen(false);
+      setAtivarMotivo('');
+      setContingenciaMsg(`Contingência ativada em ${st.tp_emis_label || `tpEmis ${st.tp_emis}`} — inicie a emissão em contingência nas NFs com erro de transmissão.`);
+    } catch (e) {
+      setContingenciaMsg(apiErrorMessage(e));
+    } finally {
+      setContingenciaAtivando(false);
+    }
+  };
+
+  const handleEncerrarContingencia = async () => {
+    if (!empresaId) return;
+    setEncerrarConfirmOpen(false);
+    setContingenciaEncerrando(true);
+    setContingenciaMsg(null);
+    try {
+      await nfeSaidasService.contingenciaEncerrar(Number(empresaId));
+      setContingencia(null);
+      await carregarContingencia(Number(empresaId));
+      setContingenciaMsg('Contingência encerrada. As NFs emitidas em contingência seguem pendentes de transmissão.');
+    } catch (e) {
+      setContingenciaMsg(apiErrorMessage(e));
+    } finally {
+      setContingenciaEncerrando(false);
+    }
+  };
+
+  const handleTransmitirPendentes = async () => {
+    if (!empresaId) return;
+    setContingenciaTransmitindo(true);
+    setContingenciaMsg(null);
+    try {
+      const res = await nfeSaidasService.contingenciaTransmitirPendentes(Number(empresaId));
+      const total = res.total ?? 0;
+      const sucesso = Array.isArray(res.sucesso) ? res.sucesso.length : 0;
+      const falhas = Array.isArray(res.falhas) ? res.falhas.length : 0;
+      if (total === 0) {
+        setContingenciaMsg('Não há NFs emitidas em contingência pendentes de transmissão.');
+      } else {
+        const linhas = [
+          `Transmissão concluída: ${sucesso} de ${total} NFs transmitidas com sucesso.`,
+          ...(falhas > 0
+            ? [`Atenção: ${falhas} NF(s) ainda pendentes — ${res.falhas.slice(0, 3).map((f) => `NF ${f.numero || f.nfe_id}`)}. Verifique a SEFAZ e tente novamente.`]
+            : []),
+          res.contingencia_encerrada ? 'Contingência encerrada automaticamente (não havia NFs pendentes).' : '',
+        ].filter(Boolean);
+        setContingenciaMsg(linhas.join(' '));
+      }
+      await carregarContingencia(Number(empresaId));
+      await load();
+    } catch (e) {
+      setContingenciaMsg(apiErrorMessage(e));
+    } finally {
+      setContingenciaTransmitindo(false);
     }
   };
 
@@ -235,6 +342,162 @@ const NFeSefazIntegracao = () => {
             ))}
           </div>
         ) : null}
+      </section>
+
+      <section className="erp-card p-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold">Contingência SEFAZ (NF-e)</h2>
+          {contingenciaLoading ? (
+            <span className="text-xs text-muted-foreground">Carregando…</span>
+          ) : contingencia ? (
+            <span className={contingencia.ativa ? 'erp-badge-danger' : 'erp-badge-success'}>
+              {contingencia.ativa ? `Em contingência — ${contingencia.tp_emis_label || `tpEmis ${contingencia.tp_emis}`}` : 'Emissão normal'}
+            </span>
+          ) : null}
+        </div>
+        {contingenciaMsg ? (
+          <div
+            className={`text-sm rounded-md border p-3 ${
+              contingenciaMsg.toLowerCase().includes('atenção') ||
+              contingenciaMsg.toLowerCase().includes('erro') ||
+              contingenciaMsg.toLowerCase().includes('falha') ||
+              contingenciaMsg.toLowerCase().includes('ainda pendente')
+                ? 'border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100'
+                : 'border-border bg-muted/20'
+            }`}
+          >
+            {contingenciaMsg}
+          </div>
+        ) : null}
+        {contingencia?.ativa ? (
+          <div className="text-sm space-y-2">
+            <p>
+              <span className="font-medium">Modo:</span> {contingencia.tp_emis_label || `tpEmis ${contingencia.tp_emis}`}
+            </p>
+            <p>
+              <span className="font-medium">Motivo:</span> {contingencia.motivo || '—'}
+            </p>
+            {contingencia.inicio ? (
+              <p>
+                <span className="font-medium">Início:</span>{' '}
+                {new Date(contingencia.inicio).toLocaleString('pt-BR')}
+                {contingencia.tempo_ativo_horas != null ? ` (${Number(contingencia.tempo_ativo_horas).toFixed(1)}h ativas)` : ''}
+              </p>
+            ) : null}
+            <p>
+              <span className="font-medium">NFs pendentes de transmissão:</span>{' '}
+              {contingencia.nfe_pendentes}
+            </p>
+            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-100">
+              A NF-e emitida em contingência (EPEC — tpEmis 2) deve ser transmitida à SEFAZ em até 168h
+              (7 dias) após o restabelecimento do serviço. Enquanto a contingência estiver ativa, use o
+              botão «Emitir em contingência» no modal de conferência das NFs com erro de transmissão.
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="erp-btn-outline"
+                disabled={contingenciaTransmitindo}
+                onClick={() => void handleTransmitirPendentes()}
+              >
+                {contingenciaTransmitindo ? 'Transmitindo pendentes…' : `Transmitir pendentes em contingência (${contingencia.nfe_pendentes})`}
+              </button>
+              <button
+                type="button"
+                className="erp-btn-outline border-destructive/50 text-destructive hover:bg-destructive/10"
+                disabled={contingenciaEncerrando}
+                onClick={() => setEncerrarConfirmOpen(true)}
+              >
+                {contingenciaEncerrando ? 'Encerrando…' : 'Encerrar contingência'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="text-sm space-y-2">
+            <p className="text-muted-foreground">
+              Nenhum modo de contingência ativo para a empresa selecionada. Ative apenas quando a SEFAZ
+              de origem (e as SVCs) estiverem indisponíveis — usar contingência com a SEFAZ operando é irregular.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="erp-btn-outline" disabled={!empresaId} onClick={() => setAtivarOpen(true)}>
+                Ativar contingência SEFAZ
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-2">
+          {ativarOpen ? (
+            <div className="w-full rounded-md border border-border bg-muted/10 p-4 space-y-3">
+              <h3 className="text-sm font-semibold">Ativar contingência SEFAZ</h3>
+              <p className="text-xs text-muted-foreground">
+                Informe o motivo técnico (obrigatório, mínimo 10 caracteres). O modo EPEC (tpEmis 2) é o
+                recomendado para indisponibilidade da SEFAZ de origem e das SVCs.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="erp-label">Motivo da contingência</label>
+                  <input
+                    className="erp-input mt-1 w-full"
+                    placeholder="Ex.: SEFAZ-SP indisponível desde as 14h"
+                    value={ativarMotivo}
+                    maxLength={200}
+                    onChange={(e) => setAtivarMotivo(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="erp-label">Modo (tpEmis)</label>
+                  <select
+                    className="erp-select mt-1 w-full"
+                    value={ativarTpEmis}
+                    onChange={(e) => setAtivarTpEmis(e.target.value)}
+                  >
+                    <option value="2">EPEC — tpEmis 2 (recomendado)</option>
+                    <option value="6">SVC-RS — tpEmis 6 (requer habilitação da UF)</option>
+                    <option value="7">SVC-AN — tpEmis 7 (requer habilitação da UF)</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="erp-btn-primary"
+                  disabled={contingenciaAtivando}
+                  onClick={() => void handleAtivarContingencia()}
+                >
+                  {contingenciaAtivando ? 'Ativando…' : 'Confirmar ativação'}
+                </button>
+                <button type="button" className="erp-btn-outline" onClick={() => setAtivarOpen(false)}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {encerrarConfirmOpen ? (
+            <div className="w-full rounded-md border border-amber-500/40 bg-amber-500/10 p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-100">Encerrar contingência?</h3>
+              <p className="text-sm">
+                Ao encerrar, a emissão volta ao modo normal. As NFs emitidas em contingência ficam pendentes
+                de transmissão — use «Transmitir pendentes em contingência» antes de encerrar, ou depois que
+                a SEFAZ estiver estável.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="erp-btn-primary"
+                  disabled={contingenciaEncerrando}
+                  onClick={() => void handleEncerrarContingencia()}
+                >
+                  {contingenciaEncerrando ? 'Encerrando…' : 'Confirmar encerramento'}
+                </button>
+                <button type="button" className="erp-btn-outline" onClick={() => setEncerrarConfirmOpen(false)}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
       </section>
 
       {ultimo ? (

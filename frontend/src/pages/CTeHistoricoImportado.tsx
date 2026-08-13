@@ -25,6 +25,7 @@ import { NexusCard } from '@/components/nexus/NexusCard';
 import { TableSkeleton } from '@/components/nexus/Skeleton';
 import { chaveNfeResumida } from '@/lib/chaveNfeResumida';
 import { openBlobInNewTab } from '@/lib/downloadBlobFile';
+import {formatMoneyBRL} from '@/lib/numberFields';
 
 type PeriodoTipo = 'mes' | 'trimestre' | 'intervalo';
 
@@ -73,7 +74,7 @@ const toNum = (v: unknown): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
-const fmtMoney = (v: unknown): string => `R$ ${toNum(v).toFixed(2)}`;
+const fmtMoney = (v: unknown): string => formatMoneyBRL(v);
 
 function statusCteHistorico(statusVisual: string): string {
   const s = (statusVisual || 'autorizado').toLowerCase();

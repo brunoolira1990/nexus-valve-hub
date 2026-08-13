@@ -60,6 +60,7 @@ import { PaginationControls } from '@/components/list/PaginationControls';
 import { FilterBar } from '@/components/list/FilterBar';
 import { EmptyState, ErrorState, LoadingState } from '@/components/list/ListStates';
 import { NFE_SAIDA_FILTRO_A_PRAZO_SEM_CR } from '@/lib/nfeSaidaListFilters';
+import {formatMoneyBRL} from '@/lib/numberFields';
 
 type NFeSaidaFormState = {
   numero: string;
@@ -855,7 +856,7 @@ const NFeSaida = () => {
                   </div>
                 ))
               )}
-              <div className="text-right mt-3 pt-3 border-t border-border font-bold">Total: R$ {total.toFixed(2)}</div>
+              <div className="text-right mt-3 pt-3 border-t border-border font-bold">Total: {formatMoneyBRL(total)}</div>
             </div>
             {complementosEditaveis || editing?.transportadora_id || form.observacoes_nfe ? (
               <div className="mt-4 border border-border rounded-md p-3 space-y-3">
@@ -1137,7 +1138,7 @@ const NFeSaida = () => {
                           <td>{t.parcela}</td>
                           <td>{t.dias}</td>
                           <td>{t.vencimento}</td>
-                          <td>R$ {Number(t.valor).toFixed(2)}</td>
+                          <td>{formatMoneyBRL(t.valor)}</td>
                           <td>{t.status}</td>
                         </tr>
                       ))}

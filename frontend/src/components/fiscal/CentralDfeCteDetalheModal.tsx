@@ -6,10 +6,11 @@ import {
 } from '@/lib/centralDfeUi';
 import { chaveNfeResumida } from '@/lib/chaveNfeResumida';
 import type { CentralDfeDocumento } from '@/services/api/centralDfe';
+import {formatMoneyBRL} from '@/lib/numberFields';
 
 const fmtMoney = (v: string | number | null | undefined): string => {
   const n = Number(String(v ?? '0').replace(',', '.'));
-  return `R$ ${Number.isFinite(n) ? n.toFixed(2) : '0.00'}`;
+  return `formatMoneyBRL(n)`;
 };
 
 const fmtData = (v: string | null | undefined): string => {

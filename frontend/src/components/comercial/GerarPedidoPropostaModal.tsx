@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { Modal } from '@/components/Modal';
+import { Modal, ModalFooterActions } from '@/components/Modal';
 import { ProdutoComercialField } from '@/components/comercial/ProdutoComercialField';
 import { formatMoneyBr } from '@/lib/numberFormat';
 import { formatPrecoUnitarioBRL } from '@/lib/pedidoVendaValorUnitario';
@@ -174,7 +174,31 @@ export function GerarPedidoPropostaModal({
       isOpen={open}
       onClose={onClose}
       title="Gerar Pedido de Venda a partir da Proposta"
+      subtitle={proposta?.numero ? `Proposta ${proposta.numero}` : undefined}
       size={regularizarItemId != null ? 'xl' : 'lg'}
+      footer={
+        !proposta ? null : (
+          <>
+            <span className="mr-auto text-sm text-muted-foreground">
+              Selecionados: {selecionados.length}/{itens.length} · Total:{' '}
+              <strong className="text-primary">{formatMoneyBr(totalSelecionado)}</strong>
+            </span>
+            <ModalFooterActions
+              cancelLabel="Cancelar"
+              saveLabel={loading ? 'Gerando…' : 'Gerar Pedido de Venda'}
+              saving={bloqueado}
+              onCancel={onClose}
+              onSave={() =>
+                onConfirm({
+                  itens: selecionados.map((id) => ({ proposta_item_id: id })),
+                  acao_itens_nao_selecionados: acao,
+                  observacao: observacao.trim(),
+                })
+              }
+            />
+          </>
+        )
+      }
     >
       {!proposta ? null : (
         <div className="space-y-4">
@@ -353,28 +377,6 @@ export function GerarPedidoPropostaModal({
               onChange={(e) => setObservacao(e.target.value)}
               placeholder="Ex.: Cliente aprovou apenas o item X para compra imediata"
             />
-          </div>
-          <p className="text-sm">
-            Total selecionado: <strong>{formatMoneyBr(totalSelecionado)}</strong>
-          </p>
-          <div className="flex justify-end gap-2 pt-2 border-t border-border">
-            <button type="button" className="erp-btn-outline" disabled={bloqueado} onClick={onClose}>
-              Cancelar
-            </button>
-            <button
-              type="button"
-              className="erp-btn-primary"
-              disabled={bloqueado || selecionados.length === 0}
-              onClick={() =>
-                onConfirm({
-                  itens: selecionados.map((id) => ({ proposta_item_id: id })),
-                  acao_itens_nao_selecionados: acao,
-                  observacao: observacao.trim(),
-                })
-              }
-            >
-              {loading ? 'Gerando…' : 'Gerar Pedido de Venda'}
-            </button>
           </div>
         </div>
       )}

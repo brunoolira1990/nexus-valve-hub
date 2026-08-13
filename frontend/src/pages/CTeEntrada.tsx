@@ -14,12 +14,13 @@ import { ErrorState } from '@/components/list/ListStates';
 import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
 import { TableSkeleton } from '@/components/nexus/Skeleton';
 import { formatDateBr } from '@/lib/dateBr';
+import {formatMoneyBRL} from '@/lib/numberFields';
 
 const BASE_CTE_IMPORTADA_PATH = '/cte-historico-importado';
 
 const fmtMoney = (v: unknown): string => {
   const n = Number(v ?? 0);
-  return `R$ ${(Number.isFinite(n) ? n : 0).toFixed(2)}`;
+  return `formatMoneyBRL(n)`;
 };
 
 const CTeEntrada = () => {

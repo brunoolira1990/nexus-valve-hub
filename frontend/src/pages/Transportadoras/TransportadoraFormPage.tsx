@@ -60,7 +60,14 @@ const TransportadoraFormPage = () => {
 
   return (
     <div>
-      <PageHeader title={isEdit ? 'Editar transportadora' : 'Nova transportadora'} />
+      <PageHeader
+        title={isEdit ? 'Editar transportadora' : 'Nova transportadora'}
+        breadcrumbs={[
+          { label: 'Cadastros', path: '/transportadoras' },
+          { label: 'Transportadoras', path: '/transportadoras' },
+          { label: isEdit ? 'Editar' : 'Nova' },
+        ]}
+      />
       {error && !loading && (
         <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}

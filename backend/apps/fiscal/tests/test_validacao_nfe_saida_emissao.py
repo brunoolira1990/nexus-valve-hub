@@ -25,6 +25,36 @@ from apps.fiscal.validacao_nfe_saida import (
     validar_nfe_saida_para_emissao,
 )
 from apps.produtos.models import FamiliaProduto, Produto
+from apps.regras_fiscais.cenario_fiscal_saida import garantir_cenario_saida_padrao
+from apps.regras_fiscais.models import CenarioFiscalSaidaEscopo, RegraFiscalSaida
+
+
+def _regra_vigente_84818200():
+    """Cria regra vigente do cenário (NCM 84818200, SP->RJ) para os testes de validação."""
+    cenario = garantir_cenario_saida_padrao()
+    escopo, _ = CenarioFiscalSaidaEscopo.objects.get_or_create(
+        cenario=cenario,
+        tipo_escopo=CenarioFiscalSaidaEscopo.TipoEscopo.NCM,
+        ncm='84818200',
+    )
+    regra, _ = RegraFiscalSaida.objects.update_or_create(
+        escopo=escopo,
+        cenario=cenario,
+        uf_origem='SP',
+        uf_destino='RJ',
+        destinatario_contribuinte=RegraFiscalSaida.DestinatarioContribuinte.QUALQUER,
+        defaults={
+            'nome': 'Venda SP-RJ NCM 84818200',
+            'cfop_venda': '5102',
+            'cst_icms': '00',
+            'aliquota_icms': Decimal('18'),
+            'cst_pis': '01',
+            'aliquota_pis': Decimal('1.65'),
+            'cst_cofins': '01',
+            'aliquota_cofins': Decimal('7.6'),
+        },
+    )
+    return regra
 
 
 def _cnpj() -> str:
@@ -72,7 +102,9 @@ def _produto() -> Produto:
     )
 
 
-def _pedido_item(*, qtd=Decimal('2'), preco=Decimal('50')) -> tuple[PedidoVenda, ItemPedidoVenda]:
+def _pedido_item(*, qtd=Decimal('2'), preco=Decimal('50'), cenario_vigente=True) -> tuple[PedidoVenda, ItemPedidoVenda]:
+    if cenario_vigente:
+        _regra_vigente_84818200()
     emp = _empresa_completa()
     cli = _cliente_completo()
     pedido = PedidoVenda.objects.create(
@@ -94,8 +126,9 @@ def _pedido_item(*, qtd=Decimal('2'), preco=Decimal('50')) -> tuple[PedidoVenda,
         snapshot_fiscal={
             'origem_regra_fiscal_saida': 'LEGADO',
             'ncm': '84818200',
-            'cfop': '6102',
-            'icms_saida_percentual': '12',
+            'cfop': '5102',
+            'cst_icms': '00',
+            'icms_saida_percentual': '18',
         },
     )
     return pedido, item
@@ -107,9 +140,12 @@ def _nf_faturamento() -> NFeSaida:
     confirmar_faturamento_pedido(pedido, criado['faturamento_id'])
     fat = FaturamentoPedidoVenda.objects.get(pk=criado['faturamento_id'])
     r = gerar_nfe_saida_from_faturamento(pedido, fat.pk)
-    return NFeSaida.objects.prefetch_related('itens__produto').select_related(
+    nf_criada = NFeSaida.objects.prefetch_related('itens__produto').select_related(
         'cliente', 'pedido_venda__empresa_emitente', 'faturamento_pedido_venda'
     ).get(pk=r['nfe_saida_id'])
+    nf_criada.indicadores_fiscais_confirmados = True
+    nf_criada.save(update_fields=['indicadores_fiscais_confirmados'])
+    return nf_criada
 
 
 class ValidacaoNFeSaidaEmissaoTests(TestCase):
@@ -210,9 +246,11 @@ class ValidacaoNFeSaidaEmissaoTests(TestCase):
             produto=item.produto,
             quantidade=Decimal('1'),
             valor=Decimal('10'),
-            snapshot_fiscal={'ncm': '84818200', 'cfop': '5102'},
+            snapshot_fiscal={'ncm': '84818200', 'cfop': '5102', 'cst_icms': '00'},
             snapshot_produto={'descricao_produto_snapshot': 'X', 'unidade_snapshot': 'PC'},
         )
+        nf.indicadores_fiscais_confirmados = True
+        nf.save(update_fields=['indicadores_fiscais_confirmados'])
         nf = NFeSaida.objects.select_related('cliente', 'pedido_venda__empresa_emitente').get(pk=nf.pk)
         data = validar_nfe_saida_para_emissao(nf)
         self.assertTrue(

@@ -29,6 +29,18 @@ interface PageHeaderProps {
   searchPlaceholder?: string;
 }
 
+/**
+ * Cabeçalho de página padronizado do Nexus ERP.
+ *
+ * Anatomia consistente:
+ * 1. Breadcrumb (quando fornecido) — contexto de navegação.
+ * 2. Bloco de título: título + badges de contexto (ex.: ambiente fiscal),
+ *    descrição e meta, no mesmo fluxo visual.
+ * 3. Barra de ações (busca + botão primário) alinhada à direita em desktop,
+ *    ancorada na linha do título em vez de flutuar isolada.
+ * 4. `children` — área reservada para filtros de listagem integrados abaixo
+ *    do título (padrão recomendado em vez de selects soltos no topo).
+ */
 export const PageHeader = ({
   title,
   description,
@@ -68,6 +80,8 @@ export const PageHeader = ({
     </>
   );
 
+  const hasToolbar = !!(actions ?? (onSearch || onAdd));
+
   return (
     <header className={cn('mb-[var(--section-gap)] space-y-3', className)}>
       {breadcrumbs?.length ? (
@@ -86,7 +100,9 @@ export const PageHeader = ({
           ))}
         </nav>
       ) : null}
-      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+
+      {/* Bloco de título com ações ancoradas na mesma linha (desktop) */}
+      <div className={cn('flex flex-col gap-4', hasToolbar ? 'lg:flex-row lg:items-center lg:justify-between' : '')}>
         <div className="space-y-1.5 min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="nexus-heading-lg">{title}</h1>
@@ -95,16 +111,21 @@ export const PageHeader = ({
           {description ? <p className="text-sm text-muted-foreground max-w-3xl">{description}</p> : null}
           {meta ? <div className="text-xs text-muted-foreground">{meta}</div> : null}
         </div>
-        <div
-          className={cn(
-            'flex flex-wrap items-center gap-2',
-            'w-full lg:w-auto lg:max-w-[min(100%,28rem)] xl:max-w-none',
-            'lg:justify-end lg:shrink-0',
-          )}
-        >
-          {actions ?? defaultActions}
-        </div>
+
+        {hasToolbar ? (
+          <div
+            className={cn(
+              'flex flex-wrap items-center gap-2',
+              'w-full lg:w-auto lg:max-w-[min(100%,28rem)] xl:max-w-none',
+              'lg:justify-end lg:shrink-0',
+            )}
+          >
+            {actions ?? defaultActions}
+          </div>
+        ) : null}
       </div>
+
+      {/* Filtros integrados abaixo do título — fluxo natural da página */}
       {children}
     </header>
   );

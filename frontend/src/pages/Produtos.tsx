@@ -72,6 +72,7 @@ import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import { PolegadaAutocomplete } from '@/components/produtos/PolegadaAutocomplete';
 import type { TipoControleUnidade, TipoFisicoProduto } from '@/types';
 import type { AxiosError } from 'axios';
+import {formatMoneyBRL} from '@/lib/numberFields';
 
 type FormState = Omit<Produto, 'id'> & { id?: number };
 
@@ -1640,7 +1641,7 @@ const Produtos = () => {
                     <td className="text-xs text-muted-foreground">{e.modo_codigo || 'LEGADO'}</td>
                     <td>{formatProdutoMaterial(e)}</td>
                     <td>{e.ncm_efetivo?.codigo || e.ncm || '—'}</td>
-                    <td>R$ {e.preco_venda.toFixed(2)}</td>
+                    <td>{formatMoneyBRL(e.preco_venda)}</td>
                     <td>
                       <div className="flex gap-1">
                         <button type="button" onClick={() => openEdit(e)} className="erp-btn-ghost erp-btn-sm">

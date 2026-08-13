@@ -125,9 +125,9 @@ export function equivalentesPreco(
   const un = (item.unidade_negociada || '').toUpperCase();
   const pm = Number(item.preco_por_metro ?? 0);
   const pkg = Number(item.preco_por_kg ?? 0);
-  if (Number.isFinite(base) && base > 0 && un) rows.push(`R$ ${base.toFixed(4)} / ${un}`);
-  if (Number.isFinite(pm) && pm > 0 && un !== 'M') rows.push(`Equiv.: R$ ${pm.toFixed(4)} / M`);
-  if (Number.isFinite(pkg) && pkg > 0 && un !== 'KG') rows.push(`Equiv.: R$ ${pkg.toFixed(4)} / KG`);
+  if (Number.isFinite(base) && base > 0 && un) rows.push(`R$ ${base.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })} / ${un}`);
+  if (Number.isFinite(pm) && pm > 0 && un !== 'M') rows.push(`Equiv.: R$ ${pm.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })} / M`);
+  if (Number.isFinite(pkg) && pkg > 0 && un !== 'KG') rows.push(`Equiv.: R$ ${pkg.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })} / KG`);
   return rows;
 }
 

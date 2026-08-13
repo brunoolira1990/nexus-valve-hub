@@ -418,6 +418,66 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
     }
   }
 
+  const [emitirContingenciaLoading, setEmitirContingenciaLoading] = useState(false);
+  const [emitirContingenciaConfirmOpen, setEmitirContingenciaConfirmOpen] = useState(false);
+  const [contingenciaAtiva, setContingenciaAtiva] = useState(false);
+  const [contingenciaLabel, setContingenciaLabel] = useState<string>('');
+
+  // Modo de contingência ativo (usado pelo botão "Emitir em contingência").
+  const empresaEmitenteId = Number(
+    (conf?.nfe?.empresa_emitente_id as number | undefined) ??
+    (conf?.nfe?.empresa_id as number | undefined),
+  );
+  useEffect(() => {
+    if (!empresaEmitenteId || !emissaoErroTransmissao) {
+      setContingenciaAtiva(false);
+      return;
+    }
+    nfeSaidasService
+      .contingenciaStatus(empresaEmitenteId)
+      .then((st) => {
+        setContingenciaAtiva(Boolean(st?.ativa));
+        setContingenciaLabel(st?.tp_emis_label || '');
+      })
+      .catch(() => {
+        setContingenciaAtiva(false);
+      });
+  }, [empresaEmitenteId, emissaoErroTransmissao]);
+
+  async function executarEmitirContingencia() {
+    setEmitirContingenciaConfirmOpen(false);
+    setEmitirContingenciaLoading(true);
+    setEmissaoMsg(null);
+    try {
+      const res = await nfeSaidasService.emitirContingencia(nfeId);
+      const chaveFmt = (res.chave_acesso || '').match(/.{1,4}/g)?.join(' ') || res.chave_acesso;
+      toast.success(
+        `NF-e emitida em contingência (${res.tp_emis_label || `tpEmis ${res.tp_emis}`}) — ` +
+          `chave ${chaveFmt || '—'}. Transmita em até ${res.prazo_horas ?? 168}h após a SEFAZ voltar.`,
+      );
+      setEmissaoMsg(
+        `Emitida em contingência ${res.tp_emis_label || ''}. Chave: ${chaveFmt || '—'}. ` +
+          `Transmitir em até ${res.prazo_horas ?? 168}h.`,
+      );
+      await load();
+      setHistoricoRefreshKey((k) => k + 1);
+      onSaved();
+    } catch (err) {
+      const ax = err as { response?: { data?: { detail?: string }; status?: number } };
+      const detalhe = ax.response?.data?.detail;
+      toast.error(
+        detalhe ||
+          apiErrorMessage(err, {
+            fallback:
+              'Falha ao emitir em contingência. Verifique se a contingência SEFAZ está ativa e se a NF está com erro de transmissão.',
+          }),
+      );
+      setEmissaoMsg(detalhe || apiErrorMessage(err));
+    } finally {
+      setEmitirContingenciaLoading(false);
+    }
+  }
+
   if (loading) {
     return (
       <Modal isOpen onClose={onClose} title="Conferência NF-e Saída" size="2xl">
@@ -728,8 +788,8 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
   };
 
   const footer = (
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-4">
-      {saveError ? <p className="text-sm text-destructive sm:mr-auto">{saveError}</p> : <span className="flex-1" />}
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      {saveError ? <p className="text-sm text-destructive mr-auto max-w-[60%] leading-snug">{saveError}</p> : <span className="flex-1" />}
       <div className="flex flex-wrap justify-end gap-2 shrink-0">
         <button type="button" className="erp-btn-outline" onClick={onClose}>
           Fechar
@@ -828,6 +888,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
       isOpen
       onClose={onClose}
       title={apresentacao?.titulo_exibicao || `Conferência NF-e ${nfe.numero}`}
+      subtitle={nfe.numero ? `NF-e ${nfe.numero}${nfe.serie ? ` · Série ${nfe.serie}` : ''}` : undefined}
       size="2xl"
       footer={footer}
     >
@@ -880,6 +941,13 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
             onApplied={handleImpostosAtualizados}
           />
         </div>
+        {emissaoErroTransmissao && contingenciaAtiva ? (
+          <p className="text-xs text-amber-800 dark:text-amber-200 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 mb-2">
+            Contingência SEFAZ ativa ({contingenciaLabel || 'tpEmis 2 — EPEC'}) para a empresa emitente.
+            Esta NF-e está com erro de transmissão — use «Emitir em contingência» para gerar o XML assinado
+            em modo de contingência e transmita em até 168h após a SEFAZ voltar.
+          </p>
+        ) : null}
         {(apresentacao?.linhas_subtitulo?.length ?? 0) > 0 ? (
           <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
             {apresentacao!.linhas_subtitulo!.map((linha) => (
@@ -1078,6 +1146,37 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                                 <span className="text-muted-foreground">Reforma</span>
                                 <p>{badgeStatusConferencia(it.status_reforma).label}</p>
                               </div>
+                              {(() => {
+                                const c = (conf as { cenario_fiscal?: { por_item?: Array<{ item_id: number; regra_encontrada?: boolean; divergente?: boolean; origem_regra?: string; regra_nome?: string; cenario_nome?: string; cfop_atual?: string; cfop_vigente?: string; cst_vigente?: string }> } }).cenario_fiscal?.por_item?.find((x) => x.item_id === it.item_id);
+                                if (!c) return null;
+                                if (c.divergente) {
+                                  return (
+                                    <div>
+                                      <span className="text-muted-foreground">Cenário fiscal</span>
+                                      <p className="text-amber-700 dark:text-amber-300 font-medium">
+                                        Divergente: CFOP {c.cfop_atual || '—'} ≠ vigente {c.cfop_vigente || '—'}
+                                      </p>
+                                    </div>
+                                  );
+                                }
+                                if (!c.regra_encontrada) {
+                                  return (
+                                    <div>
+                                      <span className="text-muted-foreground">Cenário fiscal</span>
+                                      <p className="text-red-700 dark:text-red-300 font-medium">Sem cobertura no cenário</p>
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <div>
+                                    <span className="text-muted-foreground">Cenário fiscal</span>
+                                    <p className="text-emerald-700 dark:text-emerald-300">
+                                      Alinhado · CFOP {c.cfop_vigente || c.cfop_atual || '—'}
+                                      {c.cst_vigente ? ` · CST ${c.cst_vigente}` : ''}
+                                    </p>
+                                  </div>
+                                );
+                              })()}
                             </div>
                             {complementosEditaveis ? (
                               <div className="grid grid-cols-2 gap-2 mt-2">
@@ -1123,6 +1222,55 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                 ))}
               </ul>
             ) : null}
+            {(() => {
+              const cenarioFiscal = (conf as { cenario_fiscal?: { resumo?: { itens_verificados?: number; itens_com_regra_vigente?: number; itens_sem_cobertura?: number; itens_divergentes?: number }; por_item?: Array<{ item_id: number; regra_encontrada?: boolean; divergente?: boolean; origem_regra?: string; regra_nome?: string; cenario_nome?: string; cfop_atual?: string; cfop_vigente?: string; cst_vigente?: string }> } }).cenario_fiscal;
+              const resumoC = cenarioFiscal?.resumo;
+              if (!resumoC || !resumoC.itens_verificados) return null;
+              return (
+                <>
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <span className="rounded-md border border-border px-2 py-0.5">Cenário fiscal: {resumoC.itens_com_regra_vigente ?? 0} alinhado(s)</span>
+                    {resumoC.itens_divergentes ? (
+                      <span className="erp-badge-warning">{resumoC.itens_divergentes} divergente(s) — use "Atualizar impostos"</span>
+                    ) : null}
+                    {resumoC.itens_sem_cobertura ? (
+                      <span className="erp-badge-danger">{resumoC.itens_sem_cobertura} sem cobertura no cenário</span>
+                    ) : null}
+                  </div>
+                  <div className="space-y-2">
+                    {(cenarioFiscal?.por_item || []).map((row) => (
+                      <div key={row.item_id} className="border border-border rounded-md p-2 text-sm">
+                        <p className="font-medium truncate">{row.descricao}</p>
+                        <p className="text-xs text-muted-foreground">
+                          NCM {row.ncm || '—'} · origem: {row.origem_regra || '—'}
+                        </p>
+                        {row.regra_encontrada ? (
+                          <p className="text-xs mt-1">
+                            Regra: {row.regra_nome || '—'}
+                            {row.cenario_nome ? ` (${row.cenario_nome})` : ''}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-red-700 dark:text-red-300 mt-1 font-medium">
+                            Nenhuma regra do cenário cobre NCM {row.ncm || '—'} nesta rota. Cadastre a regra no Cenário Fiscal de Saída ou execute "Atualizar impostos".
+                          </p>
+                        )}
+                        {row.divergente ? (
+                          <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                            Snapshot desatualizado: CFOP {row.cfop_atual || '—'} difere do vigente {row.cfop_vigente || '—'}
+                            {row.cst_vigente ? ` · CST vigente ${row.cst_vigente}` : ''}. Execute "Atualizar impostos" para alinhar.
+                          </p>
+                        ) : row.regra_encontrada ? (
+                          <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-1">
+                            Alinhado à regra vigente: CFOP {row.cfop_vigente || row.cfop_atual || '—'}
+                            {row.cst_vigente ? ` · CST ${row.cst_vigente}` : ''}
+                          </p>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              );
+            })()}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               {Object.entries(conf.fiscal_atual.totais).map(([k, v]) => (
                 <div key={k} className="rounded-md border border-border p-2 text-sm">
@@ -1575,6 +1723,19 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
               {emissaoMsg ? (
                 <div className="w-full rounded-md border border-border bg-muted/20 p-3 text-xs">{emissaoMsg}</div>
               ) : null}
+              {emissaoErroTransmissao && contingenciaAtiva ? (
+                <button
+                  type="button"
+                  className="erp-btn-outline erp-btn-sm"
+                  disabled={emitirContingenciaLoading}
+                  onClick={() => setEmitirContingenciaConfirmOpen(true)}
+                >
+                  {emitirContingenciaLoading ? (
+                    <Loader2 className="h-3 w-3 animate-spin inline mr-1" />
+                  ) : null}
+                  Emitir em contingência ({contingenciaLabel || 'tpEmis 2'})
+                </button>
+              ) : null}
               {podeTentarEmitirHomolog && !podeEmitirHomolog && motivoEmitirHomologBloqueado && !isAmbienteProducaoNfe ? (
                 <div className="w-full rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-100">
                   {motivoEmitirHomologBloqueado}
@@ -1956,6 +2117,31 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
             <AlertDialogCancel disabled={emissaoLoading}>Cancelar</AlertDialogCancel>
             <AlertDialogAction disabled={emissaoLoading} onClick={() => void executarEmitirHomologacao()}>
               {retryEmissaoHomolog ? 'Confirmar nova tentativa' : 'Confirmar emissão em homologação'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={emitirContingenciaConfirmOpen} onOpenChange={setEmitirContingenciaConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Emitir NF-e em contingência ({contingenciaLabel || 'tpEmis 2 — EPEC'})</AlertDialogTitle>
+            <AlertDialogDescription>
+              A NF-e será emitida em modo de contingência: o XML será assinado localmente com a nova chave de
+              acesso (recalculada para o tpEmis de contingência), sem transmissão à SEFAZ. A emissão fica
+              pendente — a NF completa deve ser transmitida em até 168 horas (7 dias) após o
+              restabelecimento da SEFAZ, pelo painel de contingência da empresa emitente. A numeração e a
+              série fiscais não são alteradas. Nenhum efeito de estoque ou financeiro é aplicado neste passo.
+              Deseja continuar?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={emitirContingenciaLoading}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={emitirContingenciaLoading}
+              onClick={() => void executarEmitirContingencia()}
+            >
+              {emitirContingenciaLoading ? 'Emitindo…' : 'Confirmar emissão em contingência'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

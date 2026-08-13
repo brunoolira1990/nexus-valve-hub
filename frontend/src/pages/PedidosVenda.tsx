@@ -47,6 +47,7 @@ import { EmptyState, ErrorState, LoadingState } from '@/components/list/ListStat
 import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
 import { StatusBadge } from '@/components/nexus/StatusBadge';
 import { AtendimentoOperacionalInline } from '@/components/comercial/AtendimentoOperacionalInline';
+import {formatMoneyBRL} from '@/lib/numberFields';
 const PedidosVenda = () => {
   const [searchParams] = useSearchParams();
   const statusUrl = searchParams.get('status') || '';
@@ -582,7 +583,7 @@ const PedidosVenda = () => {
                     maxBadges={2}
                   />
                 </td>
-                <td>R$ {Number(e.valor_total ?? 0).toFixed(2)}</td>
+                <td>{formatMoneyBRL(e.valor_total ?? 0)}</td>
                 <td className="text-right">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>

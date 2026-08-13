@@ -49,6 +49,7 @@ import {
 } from '@/lib/conferenciaEquivalencia';
 import { AtenderVendasPendentesBlock } from '@/components/AtenderVendasPendentesBlock';
 import { AlocarEntradaParaVendaBlock } from '@/components/fiscal/AlocarEntradaParaVendaBlock';
+import {formatMoneyBRL, formatQuantityBR} from '@/lib/numberFields';
 import {
   deveExibirBlocoAlocarEntradaVenda,
   deveOrientarVincularProdutoParaAlocacao,
@@ -493,7 +494,7 @@ export function NFeEntradaConferenciaPanel({
               Data em que a mercadoria entrou. Pode ser diferente da emissão (ex.: virada de mês).
             </p>
           </div>
-          <div><div className="text-muted-foreground text-xs">Valor total</div><div>R$ {Number(dados.valor_total || 0).toFixed(2)}</div></div>
+          <div><div className="text-muted-foreground text-xs">Valor total</div><div>{formatMoneyBRL(dados.valor_total || 0)}</div></div>
           <div className="md:col-span-2">
             <div className="text-muted-foreground text-xs">Pedido de compra vinculado</div>
             <select
@@ -594,7 +595,7 @@ export function NFeEntradaConferenciaPanel({
                       {dados.resumo_pedido.itens_pedido_sem_nf.map((row) => (
                         <li key={row.id}>
                           {row.produto_codigo || '—'} · {row.descricao || '—'} · {Number(row.quantidade).toFixed(3)}{' '}
-                          {row.unidade} · R$ {Number(row.valor_unitario).toFixed(2)}
+                          {row.unidade} · {formatMoneyBRL(row.valor_unitario)}
                         </li>
                       ))}
                     </ul>
@@ -609,7 +610,7 @@ export function NFeEntradaConferenciaPanel({
                       {dados.resumo_pedido.itens_nf_sem_pedido.map((row) => (
                         <li key={row.id}>
                           Item {row.n_item} · {row.codigo_fornecedor || '—'} · {row.descricao_fornecedor || '—'} ·{' '}
-                          {Number(row.quantidade).toFixed(3)} {row.unidade} · R$ {Number(row.valor_unitario).toFixed(2)}
+                          {Number(row.quantidade).toFixed(3)} {row.unidade} · {formatMoneyBRL(row.valor_unitario)}
                         </li>
                       ))}
                     </ul>
@@ -625,9 +626,9 @@ export function NFeEntradaConferenciaPanel({
                             {row.produto_codigo || '—'} · {row.descricao || '—'}
                           </div>
                           <div className="text-muted-foreground grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-0.5">
-                            <span>Pedido: {Number(row.quantidade_pedido).toFixed(3)}</span>
-                            <span>NF vinculada: {Number(row.quantidade_nf_vinculada).toFixed(3)}</span>
-                            <span>Saldo: {Number(row.saldo_na_nf).toFixed(3)}</span>
+                            <span>Pedido: {formatQuantityBR(Number(row.quantidade_pedido), row.unidade)}</span>
+                            <span>NF vinculada: {formatQuantityBR(Number(row.quantidade_nf_vinculada), row.unidade)}</span>
+                            <span>Saldo: {formatQuantityBR(Number(row.saldo_na_nf), row.unidade)}</span>
                             <span>
                               Status:{' '}
                               <span
@@ -699,9 +700,9 @@ export function NFeEntradaConferenciaPanel({
                               {row.produto_codigo || '—'} · {row.descricao || '—'}
                             </div>
                             <div className="text-muted-foreground grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-0.5">
-                              <span>Pedido: {Number(row.quantidade_pedido).toFixed(3)}</span>
-                              <span>Esta NF: {Number(row.quantidade_nf_atual).toFixed(3)}</span>
-                              <span>Outras NFs: {Number(row.quantidade_outras_nfs).toFixed(3)}</span>
+                              <span>Pedido: {formatQuantityBR(Number(row.quantidade_pedido), row.unidade)}</span>
+                              <span>Esta NF: {formatQuantityBR(Number(row.quantidade_nf_atual), row.unidade)}</span>
+                              <span>Outras NFs: {formatQuantityBR(Number(row.quantidade_outras_nfs), row.unidade)}</span>
                               <span>Total conferido: {Number(row.quantidade_total_conferida).toFixed(3)}</span>
                               <span>Saldo: {Number(row.saldo_pedido).toFixed(3)}</span>
                               <span>

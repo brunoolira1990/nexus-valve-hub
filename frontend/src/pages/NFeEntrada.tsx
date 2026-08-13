@@ -679,7 +679,7 @@ const NFeEntrada = () => {
             Impostos padrão NT (ICMS CST 41 / PIS-COFINS 07). Ajuste via API se necessário.
           </p>
           <div className="text-right mt-3 pt-3 border-t border-border font-bold">
-            Total: R$ {total.toFixed(2)}
+            Total: {formatMoneyBRL(total)}
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">

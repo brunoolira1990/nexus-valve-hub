@@ -902,6 +902,29 @@ def validar_nfe_saida_para_emissao(
                 item_id=item.pk,
             )
 
+    # --- Cenário fiscal de saída (cobertura CFOP/CST por produto e rota) ---
+    cenario_fiscal_resultado = {}
+    if itens and uf_origem and uf_destino and len(uf_origem) == 2 and len(uf_destino) == 2:
+        from apps.fiscal.validacao_cenario_fiscal import validar_itens_contra_cenario_fiscal
+
+        def _hook_cenario(grupo: str, codigo: str, mensagem: str, item_id: int | None) -> None:
+            _add(
+                grupos,
+                tipo=TIPO_PENDENCIA if codigo == 'ITENS_CENARIO_SEM_COBERTURA' else TIPO_ALERTA,
+                codigo=codigo,
+                grupo=grupo,
+                mensagem=mensagem,
+                item_id=item_id,
+            )
+
+        cenario_fiscal_resultado = validar_itens_contra_cenario_fiscal(
+            nf,
+            itens,
+            uf_origem=uf_origem,
+            uf_destino=uf_destino,
+            alertas_hook=_hook_cenario,
+        )
+
     # --- Valores NF ---
     total_nf = _dec(nf.valor_total)
     if total_nf <= 0 and itens:
@@ -1152,10 +1175,13 @@ def validar_nfe_saida_para_emissao(
             'NF-e rascunho sem pendências bloqueantes. A transmissão será implementada em etapa posterior.',
         ]
 
-    return _montar_resultado(
+    resultado = _montar_resultado(
         nf,
         grupos,
         status_prontidao=status_prontidao,
         pode_emitir=pode_emitir,
         mensagens=mensagens,
     )
+    if cenario_fiscal_resultado:
+        resultado['cenario_fiscal'] = cenario_fiscal_resultado
+    return resultado

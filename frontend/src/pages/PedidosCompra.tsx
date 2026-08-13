@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Pencil, Trash2, Plus, MoreVertical, FileDown, Download } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
-import { Modal } from '@/components/Modal';
+import { Modal, ModalFooterActions } from '@/components/Modal';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,6 +32,7 @@ import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
 import { StatusBadge } from '@/components/nexus/StatusBadge';
 import { TableSkeleton } from '@/components/nexus/Skeleton';
 import { toast } from 'sonner';
+import {formatMoneyBRL} from '@/lib/numberFields';
 import {
   DiscountInput,
   MoneyDisplay,
@@ -78,11 +79,11 @@ function temImpostosOuAdicionais(it: ItemPedido): boolean {
 
 function resumoImpostosUmaLinha(it: ItemPedido, fin: ReturnType<typeof calcularFinanceiroItemPedidoCompra>): string {
   const parts: string[] = [];
-  if (fin.valorIpi > 0) parts.push(`IPI R$ ${fin.valorIpi.toFixed(2)}`);
-  if (fin.valorIcmsSt > 0) parts.push(`ST R$ ${fin.valorIcmsSt.toFixed(2)}`);
-  if (fin.desconto > 0) parts.push(`Desc. R$ ${fin.desconto.toFixed(2)}`);
-  if (fin.frete > 0) parts.push(`Frete R$ ${fin.frete.toFixed(2)}`);
-  if (fin.outras > 0) parts.push(`Outras R$ ${fin.outras.toFixed(2)}`);
+  if (fin.valorIpi > 0) parts.push(`IPI ${formatMoneyBRL(fin.valorIpi)}`);
+  if (fin.valorIcmsSt > 0) parts.push(`ST ${formatMoneyBRL(fin.valorIcmsSt)}`);
+  if (fin.desconto > 0) parts.push(`Desc. ${formatMoneyBRL(fin.desconto)}`);
+  if (fin.frete > 0) parts.push(`Frete ${formatMoneyBRL(fin.frete)}`);
+  if (fin.outras > 0) parts.push(`Outras ${formatMoneyBRL(fin.outras)}`);
   return parts.join(' · ');
 }
 
@@ -669,6 +670,7 @@ const PedidosCompra = () => {
     return { erros, itemIdDestacar };
   };
 
+  const [saving, setSaving] = useState(false);
   const handleSave = async () => {
     const { erros, itemIdDestacar } = validarPedido();
     if (erros.length) {
@@ -708,12 +710,15 @@ const PedidosCompra = () => {
       vencimentos_previstos: vencimentos,
     };
     try {
+      setSaving(true);
       if (editing) await pedidosCompraService.update(editing.id, payload as Partial<PedidoCompra>);
       else await pedidosCompraService.create(payload as Omit<PedidoCompra, 'id'>);
       setModalOpen(false);
       void reloadList();
     } catch (e: unknown) {
       toast.error(alertMessageFromApiError(e));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -763,7 +768,7 @@ const PedidosCompra = () => {
                 <td>
                   <StatusBadge status={pedido.status ?? ''} />
                 </td>
-                <td>R$ {numSeguro(pedido.valor_total).toFixed(2)}</td>
+                <td>{formatMoneyBRL(numSeguro(pedido.valor_total))}</td>
                 <td className="text-right">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -828,52 +833,26 @@ const PedidosCompra = () => {
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         title={editing ? 'Editar Pedido de Compra' : 'Novo Pedido de Compra'}
+        subtitle={editing && form.numero ? `Nº ${form.numero}` : undefined}
         size="xl"
         footer={
-          <div className="space-y-3 p-4 pt-3">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Resumo financeiro</div>
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs sm:grid-cols-3 lg:grid-cols-4">
-              <div className="flex justify-between gap-2 tabular-nums">
-                <span className="text-muted-foreground">Subtotal produtos</span>
-                <span className="font-medium">R$ {resumoFinanceiroPedido.subtotal_produtos.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between gap-2 tabular-nums">
-                <span className="text-muted-foreground">Total IPI</span>
-                <span className="font-medium">R$ {resumoFinanceiroPedido.total_ipi.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between gap-2 tabular-nums">
-                <span className="text-muted-foreground">Total ICMS ST</span>
-                <span className="font-medium">R$ {resumoFinanceiroPedido.total_icms_st.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between gap-2 tabular-nums">
-                <span className="text-muted-foreground">Descontos</span>
-                <span className="font-medium">R$ {resumoFinanceiroPedido.total_descontos.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between gap-2 tabular-nums">
-                <span className="text-muted-foreground">Frete</span>
-                <span className="font-medium">R$ {resumoFinanceiroPedido.total_frete.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between gap-2 tabular-nums">
-                <span className="text-muted-foreground">Outras despesas</span>
-                <span className="font-medium">R$ {resumoFinanceiroPedido.total_outras_despesas.toFixed(2)}</span>
-              </div>
+          <>
+            <div className="mr-auto grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs tabular-nums sm:grid-cols-3 xl:grid-cols-4 xl:gap-x-5">
+              <span className="text-muted-foreground">Subtotal:{' '}<strong>{formatMoneyBRL(resumoFinanceiroPedido.subtotal_produtos)}</strong></span>
+              <span className="text-muted-foreground">IPI:{' '}<strong>{formatMoneyBRL(resumoFinanceiroPedido.total_ipi)}</strong></span>
+              <span className="text-muted-foreground">ICMS ST:{' '}<strong>{formatMoneyBRL(resumoFinanceiroPedido.total_icms_st)}</strong></span>
+              <span className="text-muted-foreground">Descontos:{' '}<strong>{formatMoneyBRL(resumoFinanceiroPedido.total_descontos)}</strong></span>
+              <span className="text-muted-foreground">Frete:{' '}<strong>{formatMoneyBRL(resumoFinanceiroPedido.total_frete)}</strong></span>
+              <span className="text-muted-foreground">Outras:{' '}<strong>{formatMoneyBRL(resumoFinanceiroPedido.total_outras_despesas)}</strong></span>
             </div>
-            <div className="flex justify-between gap-3 border-t border-border pt-2 text-base font-bold tabular-nums">
-              <span>Valor total do pedido</span>
-              <span className="text-primary">R$ {resumoFinanceiroPedido.valor_total_pedido.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-end gap-2 border-t border-border pt-3">
-              <button type="button" onClick={() => setModalOpen(false)} className="erp-btn-outline">
-                Cancelar
-              </button>
-              <button type="button" onClick={() => void handleSave()} className="erp-btn-primary">
-                Salvar
-              </button>
-            </div>
-          </div>
+            <span className="text-sm font-semibold tabular-nums">
+              Total: <span className="text-primary">{formatMoneyBRL(resumoFinanceiroPedido.valor_total_pedido)}</span>
+            </span>
+            <ModalFooterActions onCancel={() => setModalOpen(false)} onSave={() => void handleSave()} saving={saving} />
+          </>
         }
       >
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="erp-label">Número</label>
             {editing ? (
@@ -1066,7 +1045,7 @@ const PedidosCompra = () => {
                     </div>
                     <div className="line-clamp-2 text-sm font-medium leading-snug text-foreground">{tituloResumo}</div>
                     <div className="mt-0.5 text-xs text-muted-foreground tabular-nums">
-                      {q} {un} · Unit. R$ {pu.toFixed(2)} · Total R$ {fin.valorTotalItem.toFixed(2)}
+                      {q} {un} · Unit. ${formatMoneyBRL(pu)} · Total ${formatMoneyBRL(fin.valorTotalItem)}
                     </div>
                     {impLinha ? <div className="mt-0.5 text-xs text-foreground/85">{impLinha}</div> : null}
                     {pendenteConv ? (
@@ -1216,7 +1195,7 @@ const PedidosCompra = () => {
                       </div>
                       <div>
                         <label className="text-xs text-muted-foreground">Valor produtos</label>
-                        <ReadonlyCalculatedField value={`R$ ${fin.valorProdutos.toFixed(2)}`} className="erp-input mt-1 flex h-10 items-center justify-end tabular-nums" />
+                        <ReadonlyCalculatedField value={`${formatMoneyBRL(fin.valorProdutos)}`} className="erp-input mt-1 flex h-10 items-center justify-end tabular-nums" />
                       </div>
                     </div>
                     <details

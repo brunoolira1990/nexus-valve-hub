@@ -30,8 +30,10 @@ export function inputNumberValue(value: unknown, fallback = 0): number | '' {
 
 export function formatMoneyBr(value: unknown, digits = 2): string {
   const n = toNumber(value);
-  const fixed = n.toFixed(digits);
-  const [intPart, decPart] = fixed.split('.');
-  const intFmt = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-  return `R$ ${intFmt},${decPart}`;
+  return n.toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
 }

@@ -27,7 +27,7 @@ import {
   type CampoSugestaoCnpj,
 } from '@/lib/consultaCnpjCadastro';
 import { isValidCnpj, normalizeCnpj } from '@/lib/cnpj';
-import { digitsOnly } from '@/lib/masks';
+import { digitsOnly, formatCnpj, formatCep, formatPhone } from '@/lib/masks';
 import type { Transportadora } from '@/types';
 import { REGIMES_CADASTRO, TIPOS_CONTA, UFS } from '@/types';
 
@@ -328,7 +328,7 @@ export function TransportadoraForm({ defaultValues, onSubmit, onCancel, saving }
           <InputField label="Razão Social *" operationalUpper {...register('razao_social')} error={errors.razao_social?.message} />
           <InputField label="Nome Fantasia" operationalUpper {...register('nome_fantasia')} />
           <div className="md:col-span-2 flex flex-col gap-2">
-            <InputField label="CNPJ *" {...register('cnpj')} onBlur={onCnpjBlur} error={errors.cnpj?.message} />
+            <InputField label="CNPJ *" {...register('cnpj')} onBlur={onCnpjBlur} error={errors.cnpj?.message} onChange={(e) => setValue('cnpj', formatCnpj(e.target.value))} />
             <div className="flex flex-wrap items-center gap-3 text-xs">
               <span className="text-muted-foreground">
                 {cnpjLookupLoading
@@ -352,7 +352,7 @@ export function TransportadoraForm({ defaultValues, onSubmit, onCancel, saving }
         <>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <div className="flex-1">
-              <InputField label="CEP" {...register('cep')} onBlur={onCepBlur} />
+              <InputField label="CEP" {...register('cep')} onBlur={onCepBlur} onChange={(e) => setValue('cep', formatCep(e.target.value))} />
             </div>
             <CadastroButton type="button" variant="outline" className="shrink-0" onClick={() => void runCepLookup()}>
               Pesquisar CEP
@@ -372,8 +372,8 @@ export function TransportadoraForm({ defaultValues, onSubmit, onCancel, saving }
       {tab === 'telefones' && (
         <>
           <InputField label="DDD" {...register('ddd')} maxLength={4} />
-          <InputField label="Telefone" {...register('telefone')} />
-          <InputField label="Celular" {...register('celular')} />
+          <InputField label="Telefone" {...register('telefone')} onChange={(e) => setValue('telefone', formatPhone(e.target.value))} />
+          <InputField label="Celular" {...register('celular')} onChange={(e) => setValue('celular', formatPhone(e.target.value))} />
           <InputField label="E-mail" type="email" {...register('email')} error={errors.email?.message} />
           <InputField
             label="E-mail NF"

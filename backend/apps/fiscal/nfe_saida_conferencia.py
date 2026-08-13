@@ -93,6 +93,79 @@ def _pedido_cliente_efetivo_item(nf: NFeSaida, item: ItemNFeSaida) -> tuple[str,
     return num, linha
 
 
+def _only_digits(value: str) -> str:
+    return ''.join(c for c in (value or '') if c.isdigit())
+
+
+def _uf_conferencia(nf: NFeSaida) -> tuple[str, str]:
+    """Resolve UF origem (emitente) e destino (cliente) do mesmo modo do\n    fluxo de atualização de impostos da NF-e."""
+    pedido = getattr(nf, 'pedido_venda', None)
+    emp = None
+    if pedido and getattr(pedido, 'empresa_emitente_id', None) and getattr(pedido, 'empresa_emitente', None):
+        emp = pedido.empresa_emitente
+    if emp is None:
+        from apps.cadastros.models import Empresa
+
+        emp = Empresa.objects.order_by('pk').first()
+    uf_origem = _text(getattr(emp, 'uf', None) if emp else '')
+    uf_destino = ''
+    cliente = getattr(nf, 'cliente', None)
+    if cliente is not None:
+        from apps.cadastros.endereco_fiscal import validar_endereco_fiscal
+
+        end = validar_endereco_fiscal(cliente, consultar_cep=False, exigir_endereco_completo=False)
+        if end.consistente and not end.bloqueio_fiscal:
+            uf_destino = end.uf_destino or _text(getattr(cliente, 'uf', None))
+        else:
+            uf_destino = _text(getattr(cliente, 'uf', None))
+    return uf_origem[:2], uf_destino[:2]
+
+
+def _regra_vigente_cenario_item(nf: NFeSaida, item: ItemNFeSaida) -> dict[str, Any]:
+    """Regra vigente do cenário fiscal para o item (produto + rota UF + finalidade)."""
+    sem_regra: dict[str, Any] = {'regra_id': None, 'regra_nome': '', 'cenario_nome': '', 'cfop_vigente': '', 'cst_vigente': '', 'encontrada': False}
+    uf_origem, uf_destino = _uf_conferencia(nf)
+    if not uf_origem or not uf_destino:
+        return sem_regra
+    from apps.fiscal.snapshot_fiscal_helpers import get_ncm_snapshot
+
+    ncm_item = _text(get_ncm_snapshot(item.snapshot_fiscal))
+    if not ncm_item and item.produto_id and item.produto:
+        ncm_item = _text(
+            getattr(item.produto, 'get_ncm_efetivo_codigo', lambda: None)()
+            or getattr(item.produto, 'ncm', '')
+        )
+    if not ncm_item:
+        ncm_item = _text((item.snapshot_produto or {}).get('ncm'))
+    if not ncm_item or len(_only_digits(ncm_item)) < 8:
+        return sem_regra
+    from apps.fiscal.nfe_destinatario_fiscal import resolver_perfil_destinatario_nf
+    from apps.regras_fiscais.saida_fiscal import buscar_regra_fiscal_nfe_saida_rascunho
+
+    perfil = resolver_perfil_destinatario_nf(nf)
+    busca, regra, _filtros = buscar_regra_fiscal_nfe_saida_rascunho(
+        produto_id=item.produto_id,
+        ncm=ncm_item.strip(),
+        uf_origem=uf_origem,
+        uf_destino=uf_destino,
+        cenario_id=(item.snapshot_fiscal or {}).get('cenario_fiscal_saida_id'),
+        produto=item.produto if item.produto_id else None,
+        destinatario_contribuinte=perfil.destinatario_contribuinte,
+        consumidor_final=perfil.consumidor_final,
+        tipo_operacao='VENDA',
+    )
+    if regra is None or busca.get('origem') == 'NAO_ENCONTRADA':
+        return sem_regra
+    return {
+        'regra_id': regra.pk,
+        'regra_nome': _text(regra.nome) or _text(regra.descricao_cenario) or f'Regra #{regra.pk}',
+        'cenario_nome': _text(regra.cenario.nome) if regra.cenario else '',
+        'cfop_vigente': _only_digits(regra.cfop_venda),
+        'cst_vigente': _text(regra.cst_icms or regra.csosn),
+        'encontrada': True,
+    }
+
+
 def _montar_item_conferencia(nf: NFeSaida, item: ItemNFeSaida, idx: int) -> dict[str, Any]:
     snap_f = item.snapshot_fiscal or {}
     snap_c = item.snapshot_comercial or {}
@@ -125,6 +198,7 @@ def _montar_item_conferencia(nf: NFeSaida, item: ItemNFeSaida, idx: int) -> dict
         'snapshot_fiscal': snap_f,
     }
     pc_num, pc_item = _pedido_cliente_efetivo_item(nf, item)
+    regra_vigente = _regra_vigente_cenario_item(nf, item)
     return {
         'n_item': idx,
         'item_id': item.pk,
@@ -146,6 +220,7 @@ def _montar_item_conferencia(nf: NFeSaida, item: ItemNFeSaida, idx: int) -> dict
         'observacao_item': item.observacao_item,
         'informacao_adicional_item': item.informacao_adicional_item,
         'status_fiscal': 'COM_SNAPSHOT' if snap_f else 'SEM_SNAPSHOT',
+        'cenario_vigente': regra_vigente,
         'status_reforma': status_reforma_item(reforma_raw),
         'comercial': {
             'codigo': _text((item.snapshot_produto or {}).get('codigo_completo')),
@@ -458,6 +533,44 @@ def _montar_higienizacao_xml_conferencia(nf: NFeSaida) -> dict[str, Any]:
     return montar_resumo_higienizacao_xml(nf, None)
 
 
+def _resumo_cenario_fiscal_conferencia(itens_rows: list[dict]) -> dict[str, Any]:
+    """Resumo da verificação de cada item contra a regra vigente do cenário fiscal."""
+    linhas: list[dict[str, Any]] = []
+    for i in itens_rows:
+        reg = i.get('cenario_vigente') or {}
+        fa = i.get('fiscal_atual') or {}
+        snap = fa.get('snapshot_fiscal') or {}
+        origem = _text(fa.get('origem_regra') or '') or 'SEM_SNAPSHOT'
+        cfop_atual = _only_digits(cfop_from_snapshot_fiscal(snap)) if snap else ''
+        linhas.append(
+            {
+                'item_id': i['item_id'],
+                'descricao': i['descricao'],
+                'ncm': i['ncm'],
+                'origem_regra': origem,
+                'regra_nome': reg.get('regra_nome') or '',
+                'cenario_nome': reg.get('cenario_nome') or '',
+                'cfop_atual': cfop_atual,
+                'cfop_vigente': reg.get('cfop_vigente') or '',
+                'cst_vigente': reg.get('cst_vigente') or '',
+                'regra_encontrada': bool(reg.get('encontrada')),
+                'divergente': bool(reg.get('divergente')),
+            }
+        )
+    com_cobertura = sum(1 for l in linhas if l['regra_encontrada'])
+    divergentes = [l for l in linhas if l['divergente']]
+    sem_cobertura = [l for l in linhas if not l['regra_encontrada']]
+    return {
+        'por_item': linhas,
+        'resumo': {
+            'itens_verificados': len(linhas),
+            'itens_com_regra_vigente': com_cobertura,
+            'itens_sem_cobertura': len(sem_cobertura),
+            'itens_divergentes': len(divergentes),
+        },
+    }
+
+
 def montar_conferencia_nfe_saida(
     nf: NFeSaida,
     *,
@@ -594,6 +707,7 @@ def montar_conferencia_nfe_saida(
                 'totais': totais_fiscais,
                 'alertas_gerais': alertas_fiscal_gerais(totais_fiscais),
             },
+            'cenario_fiscal': _resumo_cenario_fiscal_conferencia(itens_rows),
             'reforma_tributaria': {
                 'resumo': _resumo_reforma_geral(itens_rows),
                 'totais': {

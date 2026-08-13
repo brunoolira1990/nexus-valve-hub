@@ -127,7 +127,14 @@ const ClienteFormPage = () => {
 
   return (
     <div>
-      <PageHeader title={isEdit ? 'Editar cliente' : 'Novo cliente'} />
+      <PageHeader
+        title={isEdit ? 'Editar cliente' : 'Novo cliente'}
+        breadcrumbs={[
+          { label: 'Cadastros', path: '/clientes' },
+          { label: 'Clientes', path: '/clientes' },
+          { label: isEdit ? 'Editar' : 'Novo' },
+        ]}
+      />
       {error && !loading && (
         <div
           className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"

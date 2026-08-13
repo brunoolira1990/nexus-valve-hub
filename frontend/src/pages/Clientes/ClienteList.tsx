@@ -5,6 +5,7 @@ import { clientesService } from '@/services/api/clientes';
 import { apiErrorMessage } from '@/services/api/config';
 import type { Cliente } from '@/types';
 import { usePaginatedList } from '@/hooks/usePaginatedList';
+import { formatCnpj, formatTelefone } from '@/components/masks';
 import { PaginationControls } from '@/components/list/PaginationControls';
 import { EmptyState, ErrorState, LoadingState } from '@/components/list/ListStates';
 import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
@@ -75,9 +76,9 @@ const ClienteList = () => {
                 items.map((e) => (
                   <tr key={e.id}>
                     <td className="font-medium">{e.razao_social}</td>
-                    <td>{e.cnpj}</td>
-                    <td>{e.telefone}</td>
-                    <td>{e.contato_responsavel}</td>
+                    <td className="tabular-nums">{formatCnpj(e.cnpj) || '—'}</td>
+                    <td className="tabular-nums">{formatTelefone(e.telefone) || '—'}</td>
+                    <td>{e.contato_responsavel || '—'}</td>
                     <td>
                       <div className="flex gap-1">
                         <button

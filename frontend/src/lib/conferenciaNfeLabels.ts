@@ -223,6 +223,6 @@ export function labelItemPedidoCompraOption(
   const codigo = codigoProduto || `ID ${item.produto_id}`;
   const qtd = item.quantidade_negociada ?? item.quantidade;
   const un = item.unidade_negociada || '—';
-  const valor = Number(item.valor_unitario || 0).toFixed(2);
-  return `${codigo} · ${item.produto_nome} · ${Number(qtd).toFixed(3)} ${un} · R$ ${valor}`;
+  const valor = Number(item.valor_unitario || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  return `${codigo} · ${item.produto_nome} · ${Number(qtd).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 3 })} ${un} · R$ ${valor}`;
 }

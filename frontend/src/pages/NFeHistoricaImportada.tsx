@@ -16,6 +16,7 @@ import {
   type NFeSaidaHistoricaList,
 } from '@/services/api/nfeHistoricaImportada';
 import type { Cliente, Empresa } from '@/types';
+import {formatMoneyBRL} from '@/lib/numberFields';
 import {
   copiarTextoParaAreaDeTransferencia,
   montarTextoDiagnosticoNfeSaidaXml,
@@ -71,7 +72,7 @@ const toNum = (v: unknown): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
-const fmtMoney = (v: unknown): string => `R$ ${toNum(v).toFixed(2)}`;
+const fmtMoney = (v: unknown): string => formatMoneyBRL(v);
 
 const getIcmsTot = (totaisJson: Record<string, unknown> | undefined) => {
   const raw = totaisJson?.ICMSTot;

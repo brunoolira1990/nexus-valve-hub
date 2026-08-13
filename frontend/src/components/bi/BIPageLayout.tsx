@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { CalendarRange } from 'lucide-react';
 import { formatPeriodoLabel } from './dashboardBiConfig';
 import type { DashboardPeriodo } from '@/services/api/dashboard';
 
@@ -31,12 +32,17 @@ export function BIPageLayout({
             <h1 className="nexus-heading-xl">{title}</h1>
             {subtitle ? <p className="mt-1.5 text-sm text-muted-foreground max-w-2xl">{subtitle}</p> : null}
             {label ? (
-              <p className="mt-3 inline-flex items-center rounded-md bg-muted px-3 py-1 text-sm font-medium text-foreground">
-                Período: {label}
+              <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                <CalendarRange className="h-3.5 w-3.5" aria-hidden />
+                {label}
               </p>
             ) : null}
           </div>
-          {filters ? <div className="shrink-0 w-full xl:w-auto xl:min-w-[320px]">{filters}</div> : null}
+          {filters ? (
+            <div className="shrink-0 w-full xl:w-auto xl:min-w-[320px] lg:mb-0">
+              {filters}
+            </div>
+          ) : null}
         </div>
         {nav}
       </header>

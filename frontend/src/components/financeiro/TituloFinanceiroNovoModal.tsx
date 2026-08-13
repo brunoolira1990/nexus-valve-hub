@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Modal } from '@/components/Modal';
+import { Modal, ModalFooterActions } from '@/components/Modal';
 import { ClienteSearchSelect } from '@/components/financeiro/ClienteSearchSelect';
 import { todayIso } from '@/lib/dateBr';
 import {
@@ -132,7 +132,8 @@ export function TituloFinanceiroNovoModal({ open, onClose, modo, onCreated }: Pr
   if (modo !== 'RECEBER') return null;
 
   return (
-    <Modal isOpen={open} onClose={onClose} title={FINANCEIRO_ACTION_LABELS.novaContaReceber} size="lg">
+    <Modal isOpen={open} onClose={onClose} title={FINANCEIRO_ACTION_LABELS.novaContaReceber} size="lg"
+      footer={<ModalFooterActions onCancel={onClose} onSave={() => void salvar()} saving={loading} />}>
       <div className="space-y-4">
         {erro ? <p className="text-sm text-destructive">{erro}</p> : null}
         <div>
@@ -295,14 +296,7 @@ export function TituloFinanceiroNovoModal({ open, onClose, modo, onCreated }: Pr
             onChange={(e) => setForm((p) => ({ ...p, observacoes: e.target.value }))}
           />
         </div>
-        <div className="flex justify-end gap-2">
-          <button type="button" className="erp-btn-outline" onClick={onClose} disabled={loading}>
-            Cancelar
-          </button>
-          <button type="button" className="erp-btn-primary" onClick={() => void salvar()} disabled={loading}>
-            {loading ? 'Salvando…' : 'Salvar'}
-          </button>
-        </div>
+
       </div>
     </Modal>
   );
