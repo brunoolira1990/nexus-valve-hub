@@ -24,8 +24,8 @@ export const Header = ({ onToggleSidebar, breadcrumbs = [] }: HeaderProps) => {
   };
 
   return (
-    <header className="h-14 bg-card/95 backdrop-blur-sm border-b border-border flex items-center gap-2 px-4 lg:px-6 shrink-0 shadow-sm">
-      <div className="flex items-center gap-2 min-w-0 shrink">
+    <header className="min-h-14 bg-card/95 backdrop-blur-sm border-b border-border flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-0 lg:px-6 shrink-0 shadow-sm">
+      <div className="flex flex-1 items-center gap-2 min-w-0">
         <NexusButton type="button" variant="ghost" size="icon" className="lg:hidden shrink-0" onClick={onToggleSidebar}>
           <Menu className="h-5 w-5" />
         </NexusButton>
@@ -48,7 +48,7 @@ export const Header = ({ onToggleSidebar, breadcrumbs = [] }: HeaderProps) => {
         </nav>
       </div>
 
-      <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 justify-end">
+      <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 shrink-0 justify-end">
         <div className="min-w-0 flex-shrink">
           <EmpresaAtualBadge empresa={contexto.empresa} />
         </div>
@@ -65,7 +65,7 @@ export const Header = ({ onToggleSidebar, breadcrumbs = [] }: HeaderProps) => {
           <LogOut className="h-4 w-4" />
           <span className="hidden sm:inline">Sair</span>
         </NexusButton>
-        <div className="min-w-0 w-8 sm:w-auto sm:max-w-[200px] lg:max-w-xs flex-shrink">
+        <div className="min-w-0 w-8 sm:w-auto sm:max-w-[200px] lg:max-w-xs shrink-0">
           <GlobalSearch compact />
         </div>
       </div>

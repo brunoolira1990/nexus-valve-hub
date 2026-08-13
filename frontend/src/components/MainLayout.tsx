@@ -107,7 +107,7 @@ export const MainLayout = () => {
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <Header onToggleSidebar={() => setSidebarOpen(true)} breadcrumbs={breadcrumbs} />
-        <main className="flex-1 overflow-auto px-4 py-5 lg:px-6 lg:py-6">
+        <main className="flex-1 min-w-0 overflow-auto px-3 py-4 sm:px-4 sm:py-5 lg:px-6 lg:py-6">
           <PageContainer>
             <Outlet />
           </PageContainer>

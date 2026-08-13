@@ -72,6 +72,16 @@
   }
 }
 
+@media (max-width: 639px) {
+  :root {
+    --page-padding: 0.75rem;
+    --card-padding: 1rem;
+    --section-gap: 1rem;
+    --form-gap: 0.75rem;
+    --table-row-py: 0.625rem;
+  }
+}
+
 @layer base {
   * {
     @apply border-border;

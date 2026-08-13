@@ -7,7 +7,7 @@ interface DataTableProps {
 }
 
 export function DataTableShell({ children, className }: DataTableProps) {
-  return <div className={cn('nexus-card overflow-x-auto', className)}>{children}</div>;
+  return <div className={cn('nexus-card max-w-full overflow-x-auto overscroll-x-contain', className)}>{children}</div>;
 }
 
 export function DataTable({ children, className }: DataTableProps) {
@@ -16,14 +16,14 @@ export function DataTable({ children, className }: DataTableProps) {
 
 export function TableToolbar({ children, className }: DataTableProps) {
   return (
-    <div className={cn('flex flex-wrap items-center justify-between gap-3 mb-3', className)}>
+    <div className={cn('flex flex-col gap-3 mb-3 sm:flex-row sm:items-center sm:justify-between', className)}>
       {children}
     </div>
   );
 }
 
 export function TableActions({ children, className }: DataTableProps) {
-  return <div className={cn('flex items-center gap-1', className)}>{children}</div>;
+  return <div className={cn('flex flex-wrap items-center gap-1 sm:flex-nowrap', className)}>{children}</div>;
 }
 
 export function TableEmptyState({ children }: { children: ReactNode }) {

@@ -108,7 +108,7 @@ export function UserMenu({ usuario }: Props) {
         type="button"
         className={cn(
           'flex items-center gap-1.5 text-sm pl-2 pr-1 py-1.5 rounded-md border-l border-border',
-          'hover:text-primary hover:bg-muted/50 transition-colors min-w-0 max-w-[160px] md:max-w-[220px]',
+          'hover:text-primary hover:bg-muted/50 transition-colors min-w-0 max-w-[120px] sm:max-w-[160px] md:max-w-[220px]',
           'outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
           open && 'bg-muted/50 text-primary',
         )}
