@@ -97,6 +97,8 @@ def _limpar_xml_emissao_para_reaplicar_fiscal(nf: NFeSaida) -> list[str]:
     return update_fields
 
 _CAMPOS_COMPARACAO: list[tuple[str, str]] = [
+    ('cenario_fiscal_saida_id', 'Cenário fiscal de saída'),
+    ('regra_fiscal_saida_id', 'Regra fiscal de saída'),
     ('cfop', 'CFOP'),
     ('cst_icms', 'CST ICMS'),
     ('modalidade_bc_icms', 'Modalidade BC ICMS'),
@@ -241,7 +243,14 @@ def _montar_contexto_fiscal_nf(
     }
 
 
-def _resolver_cenario_id_nf(nf: NFeSaida, item: ItemNFeSaida) -> int | None:
+def resolver_cenario_fiscal_saida_vigente(nf: NFeSaida) -> int | None:
+    """Resolve o cenário comercial vinculado ao documento ou o padrão vigente.
+
+    O snapshot fiscal do item é evidência histórica do que já foi calculado e
+    não pode escolher a regra da próxima atualização. Caso contrário, uma NF-e
+    continuaria sendo comparada a um cenário antigo mesmo após o cenário padrão
+    ter sido alterado.
+    """
     pedido = nf.pedido_venda
     if pedido and pedido.proposta_id and pedido.proposta:
         prop = pedido.proposta
@@ -254,23 +263,24 @@ def _resolver_cenario_id_nf(nf: NFeSaida, item: ItemNFeSaida) -> int | None:
             return int(raw)
         except (TypeError, ValueError):
             pass
-    snap_f = item.snapshot_fiscal or {}
-    raw2 = snap_f.get('cenario_fiscal_saida_id')
-    if raw2:
-        try:
-            return int(raw2)
-        except (TypeError, ValueError):
-            pass
     from apps.regras_fiscais.cenario_fiscal_saida import garantir_cenario_saida_padrao
 
     cenario = garantir_cenario_saida_padrao()
     return cenario.pk if cenario else None
 
 
+def _resolver_cenario_id_nf(nf: NFeSaida, item: ItemNFeSaida) -> int | None:
+    """Compatibilidade interna para as buscas de regra por item."""
+    _ = item
+    return resolver_cenario_fiscal_saida_vigente(nf)
+
+
 def _flatten_compare(snap: dict | None) -> dict[str, str]:
     snap = snap or {}
     full_ref = get_reforma_tributaria_snapshot(snap) or {}
     out = {
+        'cenario_fiscal_saida_id': _text(snap.get('cenario_fiscal_saida_id')),
+        'regra_fiscal_saida_id': _text(snap.get('regra_fiscal_saida_id')),
         'cfop': cfop_from_snapshot_fiscal(snap),
         'cst_icms': _text(snap.get('cst_icms') or snap.get('CSOSN') or snap.get('csosn')),
         'modalidade_bc_icms': _text(snap.get('modalidade_bc_icms') or snap.get('mod_bc_icms')),
@@ -747,6 +757,48 @@ def preparar_atualizacao_impostos_nfe(nf: NFeSaida, *, usuario=None) -> dict[str
             for row in itens_rows
             if row.get('diagnostico')
         ],
+    }
+
+
+def sincronizar_cenario_fiscal_para_prontidao(nf: NFeSaida, *, usuario=None) -> dict[str, Any]:
+    """Alinha snapshots ao cenário vigente antes da confirmação de emissão.
+
+    A sincronização só é aplicada em NF-e rascunho, não modifica dados
+    comerciais e não permite atualização parcial: se algum item não possuir
+    cobertura fiscal, nada é gravado e a conferência continua bloqueada.
+    """
+    preview = preparar_atualizacao_impostos_nfe(nf, usuario=usuario)
+    if preview.get('bloqueado'):
+        raise ValueError(preview.get('mensagem') or MSG_BLOQUEIO_STATUS)
+
+    resumo = preview.get('resumo') or {}
+    itens_sem_regra = int(resumo.get('itens_sem_regra') or 0)
+    if itens_sem_regra:
+        raise ValueError(
+            'Não foi possível sincronizar o cenário fiscal: '
+            f'{itens_sem_regra} item(ns) sem regra aplicável. Corrija a cobertura fiscal antes de marcar a NF-e como pronta.',
+        )
+
+    if not preview.get('pode_aplicar'):
+        return {
+            'aplicado': False,
+            'itens_atualizados': 0,
+            'preview': preview,
+            'mensagem': 'Snapshots fiscais já estão alinhados ao cenário vigente.',
+        }
+
+    resultado = aplicar_atualizacao_impostos_nfe(
+        nf,
+        usuario=usuario,
+        motivo='Sincronização automática com o cenário fiscal vigente antes de marcar a NF-e como pronta para emissão.',
+    )
+    return {
+        **resultado,
+        'aplicado': True,
+        'mensagem': (
+            'Cenário fiscal vigente aplicado antes da confirmação de prontidão. '
+            'Os dados comerciais foram preservados.'
+        ),
     }
 
 

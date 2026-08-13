@@ -8,14 +8,18 @@ Gera:
   bloqueada até a cobertura ser criada ou o item corrigido.
 - Alerta: snapshot divergente da regra vigente (CFOP/CST/alíquota mudaram
   desde a última atualização de impostos) — recomenda "Atualizar impostos".
+- Pendência estrita: a mesma divergência quando a validação é executada no
+  fluxo de emissão, impedindo transmitir XML com snapshot desatualizado.
 - Info: regra vigente aplicada com identificação do cenário (fonte
   CENARIO_SAIDA), para auditoria da conferência.
 """
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from apps.fiscal.nfe_destinatario_fiscal import resolver_perfil_destinatario_nf
+from apps.fiscal.nfe_saida_atualizar_impostos import resolver_cenario_fiscal_saida_vigente
 
 
 def _only_digits_cfop(value: str | None) -> str:
@@ -27,7 +31,29 @@ def _norm_uf(value: str | None) -> str:
 
 
 def _texto(valor: Any) -> str:
-    return (valor or '').strip() if isinstance(valor, (str, bytes)) else ''
+    if valor is None:
+        return ''
+    if isinstance(valor, bytes):
+        return valor.decode(errors='ignore').strip()
+    return str(valor).strip()
+
+
+def _numero_normalizado(valor: Any) -> str:
+    texto = _texto(valor).replace(',', '.')
+    if not texto:
+        return ''
+    try:
+        return format(Decimal(texto).normalize(), 'f').rstrip('0').rstrip('.') or '0'
+    except (InvalidOperation, ValueError):
+        return texto
+
+
+def _valor_snapshot(snapshot: dict[str, Any], *campos: str) -> str:
+    for campo in campos:
+        valor = snapshot.get(campo)
+        if valor not in (None, ''):
+            return _texto(valor)
+    return ''
 
 
 def validar_itens_contra_cenario_fiscal(
@@ -37,6 +63,7 @@ def validar_itens_contra_cenario_fiscal(
     uf_origem: str,
     uf_destino: str,
     alertas_hook=None,
+    divergencia_bloqueante: bool = False,
 ) -> dict[str, list[dict[str, Any]]]:
     """Valida cada item da NF-e contra a regra vigente do cenário fiscal.
 
@@ -53,6 +80,7 @@ def validar_itens_contra_cenario_fiscal(
     por_item: list[dict[str, Any]] = []
     perfil_nf = resolver_perfil_destinatario_nf(nf)
     regras_sem_cobertura: list[str] = []
+    cenario_vigente_id = resolver_cenario_fiscal_saida_vigente(nf)
 
     for item in itens:
         from apps.fiscal.snapshot_fiscal_helpers import get_ncm_snapshot
@@ -117,7 +145,7 @@ def validar_itens_contra_cenario_fiscal(
             ncm=ncm_item.strip(),
             uf_origem=uf_origem,
             uf_destino=uf_destino,
-            cenario_id=snapshot.get('cenario_fiscal_saida_id'),
+            cenario_id=cenario_vigente_id,
             produto=produto,
             destinatario_contribuinte=perfil_nf.destinatario_contribuinte,
             consumidor_final=perfil_nf.consumidor_final,
@@ -135,18 +163,49 @@ def validar_itens_contra_cenario_fiscal(
             entrada['cst_vigente'] = _texto(regra.cst_icms or regra.csosn)
 
             divergencias: list[str] = []
-            if entrada['cfop_atual'] and entrada['cfop_vigente'] and entrada['cfop_atual'] != entrada['cfop_vigente']:
-                divergencias.append(f"CFOP {entrada['cfop_atual']} difere do vigente {entrada['cfop_vigente']}")
-            if entrada['cst_atual'] and entrada['cst_vigente'] and entrada['cst_atual'] != entrada['cst_vigente']:
-                divergencias.append(f"CST {entrada['cst_atual']} difere do vigente {entrada['cst_vigente']}")
+            if entrada['cfop_atual'] != entrada['cfop_vigente']:
+                divergencias.append(f"CFOP {entrada['cfop_atual'] or '—'} difere do vigente {entrada['cfop_vigente'] or '—'}")
+            if entrada['cst_atual'] != entrada['cst_vigente']:
+                divergencias.append(f"CST {entrada['cst_atual'] or '—'} difere do vigente {entrada['cst_vigente'] or '—'}")
+
+            comparacoes = (
+                ('Alíquota ICMS', _valor_snapshot(snapshot, 'aliquota_icms', 'icms_saida_percentual'), busca.get('aliquota_icms')),
+                ('CST IPI', _valor_snapshot(snapshot, 'cst_ipi'), busca.get('cst_ipi')),
+                ('Alíquota IPI', _valor_snapshot(snapshot, 'aliquota_ipi', 'ipi_saida_percentual'), busca.get('aliquota_ipi')),
+                ('CST PIS', _valor_snapshot(snapshot, 'cst_pis'), busca.get('cst_pis')),
+                ('Alíquota PIS', _valor_snapshot(snapshot, 'aliquota_pis', 'pis_saida_percentual'), busca.get('aliquota_pis')),
+                ('CST COFINS', _valor_snapshot(snapshot, 'cst_cofins'), busca.get('cst_cofins')),
+                ('Alíquota COFINS', _valor_snapshot(snapshot, 'aliquota_cofins', 'cofins_saida_percentual'), busca.get('aliquota_cofins')),
+                ('Redução BC ICMS', _valor_snapshot(snapshot, 'reducao_bc_icms', 'p_red_bc'), busca.get('reducao_bc_icms')),
+                ('Modalidade BC ICMS', _valor_snapshot(snapshot, 'modalidade_bc_icms', 'mod_bc_icms'), busca.get('modalidade_bc_icms')),
+            )
+            for rotulo, atual, vigente in comparacoes:
+                atual_norm = _numero_normalizado(atual)
+                vigente_norm = _numero_normalizado(vigente)
+                # Snapshots legados podem omitir campos cujo valor efetivo é zero.
+                # Essa omissão não deve exigir uma atualização fiscal sem efeito.
+                if not atual_norm and vigente_norm in {'', '0'}:
+                    continue
+                if atual_norm != vigente_norm:
+                    divergencias.append(f'{rotulo} {atual or "—"} difere do vigente {vigente or "—"}')
+
+            if snapshot.get('regra_fiscal_saida_id') != regra.pk:
+                divergencias.append('Regra fiscal registrada no snapshot difere da regra vigente.')
+            if snapshot.get('cenario_fiscal_saida_id') != cenario_vigente_id:
+                divergencias.append('Cenário fiscal registrado no snapshot difere do cenário vigente.')
 
             if divergencias:
                 entrada['divergente'] = True
+                entrada['mensagens'].extend(divergencias)
                 if alertas_hook is not None:
                     alertas_hook(
                         'fiscal',
-                        'ITENS_CENARIO_SNAPSHOT_DESATUALIZADO',
-                        f'{divergencias[0]}. Execute "Atualizar impostos" para alinhar a NF-e ao cenário fiscal vigente.',
+                        (
+                            'ITENS_CENARIO_SNAPSHOT_DESATUALIZADO_BLOQUEANTE'
+                            if divergencia_bloqueante
+                            else 'ITENS_CENARIO_SNAPSHOT_DESATUALIZADO'
+                        ),
+                        f'{divergencias[0]}. Atualize os impostos e valide novamente a conferência antes de emitir.',
                         item.pk,
                     )
             else:

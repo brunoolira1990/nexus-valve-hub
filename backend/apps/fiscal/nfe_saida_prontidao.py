@@ -271,6 +271,15 @@ def marcar_nfe_pronta_para_emissao(nf: NFeSaida, *, usuario=None) -> dict[str, A
         raise ValueError(MSG_MARCAR_PRONTA_STATUS)
     if not nf.itens.exists():
         raise ValueError('NF-e sem itens não pode ser marcada como pronta.')
+
+    from apps.fiscal.nfe_saida_atualizar_impostos import sincronizar_cenario_fiscal_para_prontidao
+
+    sincronizacao_cenario = sincronizar_cenario_fiscal_para_prontidao(nf, usuario=usuario)
+    if sincronizacao_cenario.get('aplicado'):
+        # A aplicação reabre a conferência para registrar a alteração fiscal.
+        # Recarrega a instância antes de persistir a nova confirmação humana.
+        nf.refresh_from_db()
+
     validacao = validar_nfe_saida_para_emissao(nf)
     if tem_pendencias_bloqueantes(validacao):
         raise ValueError(MSG_MARCAR_PRONTA_PENDENCIAS)
@@ -323,5 +332,14 @@ def marcar_nfe_pronta_para_emissao(nf: NFeSaida, *, usuario=None) -> dict[str, A
             incluir_checklist=True,
             usuario=usuario,
         ),
-        'mensagem': 'NF-e marcada como pronta para emissão futura.',
+        'mensagem': (
+            'Cenário fiscal sincronizado e NF-e marcada como pronta para emissão futura.'
+            if sincronizacao_cenario.get('aplicado')
+            else 'NF-e marcada como pronta para emissão futura.'
+        ),
+        'sincronizacao_cenario': {
+            'aplicado': bool(sincronizacao_cenario.get('aplicado')),
+            'itens_atualizados': int(sincronizacao_cenario.get('itens_atualizados') or 0),
+            'mensagem': sincronizacao_cenario.get('mensagem') or '',
+        },
     }

@@ -76,6 +76,10 @@ class ValidacaoCenarioFiscalItemTests(TestCase):
             'cfop': '5102',
             'cst_icms': '00',
             'aliquota_icms': '18',
+            'cst_pis': '01',
+            'aliquota_pis': '1.65',
+            'cst_cofins': '01',
+            'aliquota_cofins': '7.6',
         }
         self.item.save(update_fields=['snapshot_fiscal'])
 
@@ -83,7 +87,7 @@ class ValidacaoCenarioFiscalItemTests(TestCase):
         cf = resultado.get('cenario_fiscal') or {}
         por_item = cf.get('por_item', [])
         self.assertEqual(len(por_item), 1)
-        self.assertFalse(por_item[0]['divergente'])
+        self.assertFalse(por_item[0]['divergente'], por_item[0]['mensagens'])
         self.assertEqual(por_item[0]['cfop_vigente'], '5102')
         self.assertEqual(por_item[0]['cst_vigente'], '00')
         self.assertTrue(por_item[0]['regra_nome'])
@@ -112,6 +116,37 @@ class ValidacaoCenarioFiscalItemTests(TestCase):
             if m.get('item_id') == self.item.pk and m['codigo'] == 'ITENS_CENARIO_SNAPSHOT_DESATUALIZADO'
         ]
         self.assertTrue(alertas_divergentes)
+
+    def test_divergencia_bloqueia_no_modo_estrito_de_emissao(self):
+        regra = _regra_vigente_sp_rj(cfop='5102', cst_icms='00')
+        self.item.snapshot_fiscal = {
+            'origem_regra_fiscal_saida': 'CENARIO_SAIDA',
+            'regra_fiscal_saida_id': regra.pk,
+            'cenario_fiscal_saida_id': regra.cenario_id,
+            'ncm': '84818200',
+            'cfop': '5101',
+            'cst_icms': '00',
+            'aliquota_icms': '18',
+            'cst_pis': '01',
+            'aliquota_pis': '1.65',
+            'cst_cofins': '01',
+            'aliquota_cofins': '7.6',
+        }
+        self.item.save(update_fields=['snapshot_fiscal'])
+
+        resultado = validar_nfe_saida_para_emissao(
+            self.nf,
+            modo='leve',
+            bloquear_divergencia_cenario=True,
+        )
+        pendencias = [
+            m for m in resultado['grupos'].get('fiscal', [])
+            if m.get('item_id') == self.item.pk
+            and m['codigo'] == 'ITENS_CENARIO_SNAPSHOT_DESATUALIZADO_BLOQUEANTE'
+            and m['tipo'] == 'PENDENCIA'
+        ]
+        self.assertTrue(pendencias)
+        self.assertFalse(resultado['pode_emitir'])
 
     def test_ncm_sem_cobertura_no_cenario(self):
         _regra_vigente_sp_rj(cfop='5102', cst_icms='00', ncm='84818200')

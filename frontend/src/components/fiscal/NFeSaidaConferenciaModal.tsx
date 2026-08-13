@@ -606,6 +606,11 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
     try {
       const res = await nfeSaidasService.marcarPronta(nfeId);
       aplicarRespostaProntidao(res);
+      toast.success(
+        res.sincronizacao_cenario?.aplicado
+          ? res.sincronizacao_cenario.mensagem || 'Cenário fiscal vigente aplicado antes da emissão.'
+          : res.mensagem || 'NF-e marcada como pronta para emissão futura.',
+      );
     } catch (err) {
       setSaveError(apiErrorMessage(err));
     } finally {

@@ -69,7 +69,7 @@ def validar_pre_emissao_homologacao(nfe_saida: NFeSaida) -> dict[str, Any]:
     if conf != NFeSaida.StatusConferencia.PRONTA_PARA_EMISSAO:
         erros.append('NF-e deve estar com status «Pronta para emissão» na conferência.')
 
-    val = validar_nfe_saida_para_emissao(nfe_saida)
+    val = validar_nfe_saida_para_emissao(nfe_saida, bloquear_divergencia_cenario=True)
     erros.extend(extrair_mensagens_pendencias_validacao(val))
 
     try:

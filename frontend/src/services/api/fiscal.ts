@@ -440,6 +440,11 @@ export type ValidarConferenciaResponse = {
   validacao: ValidacaoNFeSaidaResponse;
   conferencia: NFeSaidaConferenciaPayload;
   mensagem: string;
+  sincronizacao_cenario?: {
+    aplicado: boolean;
+    itens_atualizados: number;
+    mensagem: string;
+  };
 };
 
 export type NFeSaidaConferenciaPayload = {

@@ -75,7 +75,7 @@ def montar_validacao_emissao_producao(nfe_saida: NFeSaida) -> dict[str, Any]:
             ),
         )
 
-    val = validar_nfe_saida_para_emissao(nfe_saida)
+    val = validar_nfe_saida_para_emissao(nfe_saida, bloquear_divergencia_cenario=True)
     for msg in extrair_mensagens_pendencias_validacao(val):
         pendencias.append(_pendencia('validacao_fiscal', msg))
 

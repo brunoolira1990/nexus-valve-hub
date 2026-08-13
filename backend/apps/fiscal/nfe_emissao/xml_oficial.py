@@ -225,7 +225,11 @@ def gerar_xml_oficial_emissao(nfe_saida: NFeSaida) -> bytes:
             'Confirme consumidor final (indFinal) e indicador de presença (indPres) antes de gerar o XML de transmissão.',
         )
 
-    validacao = validar_nfe_saida_para_emissao(nfe_saida, incluir_higienizacao_xml=False)
+    validacao = validar_nfe_saida_para_emissao(
+        nfe_saida,
+        incluir_higienizacao_xml=False,
+        bloquear_divergencia_cenario=True,
+    )
     if not validacao.get('pode_emitir'):
         from apps.fiscal.nfe_emissao.validacao_util import extrair_mensagens_pendencias_validacao
 

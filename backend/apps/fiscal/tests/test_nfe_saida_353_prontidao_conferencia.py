@@ -56,7 +56,10 @@ def _regra_84818200_sp_rj() -> RegraFiscalSaida:
     return regra
 
 
-@override_settings(USE_CENARIO_FISCAL_SAIDA_FOR_PROPOSTAS=True)
+@override_settings(
+    USE_CENARIO_FISCAL_SAIDA_FOR_PROPOSTAS=True,
+    DANFE_BLOCK_EMISSION_IF_BFR_FAILS=False,
+)
 class NFeSaida353ProntidaoConferenciaTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user('nfe353', 'nfe353@test.com', 'x')
@@ -70,7 +73,10 @@ class NFeSaida353ProntidaoConferenciaTests(TestCase):
         item.save(update_fields=['snapshot_fiscal'])
         fat = _faturamento_pronto(pedido, item)
         r = gerar_nfe_saida_from_faturamento(pedido, fat.pk)
-        return NFeSaida.objects.prefetch_related('itens__produto').get(pk=r['nfe_saida_id'])
+        nf = NFeSaida.objects.get(pk=r['nfe_saida_id'])
+        nf.indicadores_fiscais_confirmados = True
+        nf.save(update_fields=['indicadores_fiscais_confirmados'])
+        return NFeSaida.objects.prefetch_related('itens__produto').get(pk=nf.pk)
 
     def test_nova_nf_inicia_em_conferencia(self):
         nf = self._nf_rascunho()
@@ -131,12 +137,38 @@ class NFeSaida353ProntidaoConferenciaTests(TestCase):
         )
         self.assertEqual(evt.resumo.get('status_conferencia_novo'), 'PRONTA_PARA_EMISSAO')
 
+    def test_marcar_pronta_sincroniza_cenario_fiscal_vigente(self):
+        nf = self._nf_rascunho()
+        item = nf.itens.first()
+        self.assertNotIn('regra_fiscal_saida_id', item.snapshot_fiscal)
+
+        res = self.client.post(f'/api/nf-saidas/{nf.pk}/marcar-pronta/')
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        data = res.json()
+        self.assertTrue(data['sincronizacao_cenario']['aplicado'])
+        self.assertGreaterEqual(data['sincronizacao_cenario']['itens_atualizados'], 1)
+        item.refresh_from_db()
+        self.assertEqual(item.snapshot_fiscal['cfop'], '5102')
+        self.assertTrue(item.snapshot_fiscal.get('regra_fiscal_saida_id'))
+        self.assertTrue(item.snapshot_fiscal.get('cenario_fiscal_saida_id'))
+        nf.refresh_from_db()
+        self.assertEqual(nf.status_conferencia, NFeSaida.StatusConferencia.PRONTA_PARA_EMISSAO)
+        self.assertTrue(
+            NFeSaidaEvento.objects.filter(
+                nfe_saida=nf,
+                tipo_evento=NFeSaidaEvento.TipoEvento.IMPOSTOS_ATUALIZADOS,
+            ).exists(),
+        )
+
     def test_marcar_pronta_com_pendencias_retorna_400(self):
         nf = self._nf_rascunho()
         nf.itens.update(snapshot_fiscal={})
+        # Sem regra vigente, a sincronização automática não pode reparar o item.
+        RegraFiscalSaida.objects.all().delete()
         res = self.client.post(f'/api/nf-saidas/{nf.pk}/marcar-pronta/')
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn(MSG_MARCAR_PRONTA_PENDENCIAS, res.json()['mensagem'])
+        self.assertIn('sem regra aplicável', res.json()['mensagem'])
 
     def test_marcar_pronta_autorizada_interna_bloqueia(self):
         nf = self._nf_rascunho()

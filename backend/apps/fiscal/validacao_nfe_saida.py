@@ -206,12 +206,15 @@ def validar_nfe_saida_para_emissao(
     *,
     modo: ModoValidacaoNFe = MODO_VALIDACAO_COMPLETO,
     incluir_higienizacao_xml: bool = True,
+    bloquear_divergencia_cenario: bool = False,
 ) -> dict[str, Any]:
     """
     Valida NF-e Saída para futura emissão. Não altera banco, estoque, financeiro nem SEFAZ.
 
     modo='leve': checklist operacional rápido (sem ViaCEP remoto nem montagem XML Reforma).
     modo='completo': validação pré-transmissão com checagens pesadas.
+    bloquear_divergencia_cenario=True: impede emissão quando o snapshot não
+    corresponde à regra do cenário fiscal vigente.
     """
     modo_leve = (modo or MODO_VALIDACAO_COMPLETO).strip().lower() == MODO_VALIDACAO_LEVE
     consultar_cep = not modo_leve
@@ -910,7 +913,14 @@ def validar_nfe_saida_para_emissao(
         def _hook_cenario(grupo: str, codigo: str, mensagem: str, item_id: int | None) -> None:
             _add(
                 grupos,
-                tipo=TIPO_PENDENCIA if codigo == 'ITENS_CENARIO_SEM_COBERTURA' else TIPO_ALERTA,
+                tipo=(
+                    TIPO_PENDENCIA
+                    if codigo in {
+                        'ITENS_CENARIO_SEM_COBERTURA',
+                        'ITENS_CENARIO_SNAPSHOT_DESATUALIZADO_BLOQUEANTE',
+                    }
+                    else TIPO_ALERTA
+                ),
                 codigo=codigo,
                 grupo=grupo,
                 mensagem=mensagem,
@@ -923,6 +933,7 @@ def validar_nfe_saida_para_emissao(
             uf_origem=uf_origem,
             uf_destino=uf_destino,
             alertas_hook=_hook_cenario,
+            divergencia_bloqueante=bloquear_divergencia_cenario,
         )
 
     # --- Valores NF ---
