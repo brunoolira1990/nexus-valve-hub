@@ -9,12 +9,13 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
 from django.db import connection
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from apps.cadastros.models import Cliente, Fornecedor
-from apps.comercial.models import ItemPedidoVenda, PedidoVenda
+from apps.cadastros.models import Cliente, Fornecedor, Transportadora
+from apps.comercial.models import ItemPedidoCompra, ItemPedidoVenda, PedidoCompra, PedidoVenda
 from apps.comercial.services.alocacao_atendimento_service import criar_alocacao_atendimento
 from apps.fiscal.modelo_operacional import (
     DestinoFisico,
@@ -22,7 +23,14 @@ from apps.fiscal.modelo_operacional import (
     StatusEntradaFiscal,
     TipoAtendimentoItem,
 )
-from apps.fiscal.models import AlocacaoAtendimento, AtendimentoEstoque, EstoqueCorrida
+from apps.fiscal.models import (
+    AlocacaoAtendimento,
+    AtendimentoEstoque,
+    CTeHistoricoImportado,
+    EstoqueCorrida,
+    ItemNFeEntradaHistoricaImportada,
+    NFeEntradaHistoricaImportada,
+)
 from apps.produtos.models import FamiliaProduto, Produto
 
 
@@ -96,6 +104,95 @@ class AtendimentosOperacionais40131Tests(TestCase):
         self.assertEqual(row['pedido_venda']['numero'], 'PV-20260521-0002')
         self.assertEqual(row['cliente']['nome'], 'DYNATECH INDUSTRIAS QUIMICAS LTDA')
         self.assertEqual(row['produto']['codigo'], self.produto.codigo_completo)
+
+    def test_pendencias_estruturadas_explicitam_a_alocacao_pendente(self):
+        estoque_antes = EstoqueCorrida.objects.count()
+        r = self.client.get('/api/atendimentos-operacionais/')
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        row = next(x for x in r.json()['results'] if x['id'] == self.aloc.pk)
+
+        self.assertIn('alertas', row)  # contrato anterior preservado
+        self.assertIn('pendencias', row)
+        pendencias = {item['codigo']: item for item in row['pendencias']}
+        self.assertTrue(
+            {
+                'ENTRADA_FISCAL_PENDENTE',
+                'SEM_PEDIDO_COMPRA',
+                'SEM_NFE_ENTRADA',
+                'CTE_NAO_VINCULADO',
+                'QUANTIDADE_PENDENTE',
+            }.issubset(pendencias),
+        )
+        self.assertEqual(pendencias['ENTRADA_FISCAL_PENDENTE']['acao'], 'CONSULTAR_NFE_ENTRADA')
+        self.assertEqual(pendencias['SEM_PEDIDO_COMPRA']['acao'], 'CONSULTAR_COMPRAS')
+        self.assertEqual(pendencias['CTE_NAO_VINCULADO']['acao'], 'CONSULTAR_CTE_ENTRADA')
+        self.assertEqual(pendencias['QUANTIDADE_PENDENTE']['acao'], 'REVISAR_ATENDIMENTO')
+        self.assertEqual(EstoqueCorrida.objects.count(), estoque_antes)
+
+    def test_atendimento_conciliado_sem_pendencias_explicativas(self):
+        pedido_compra = PedidoCompra.objects.create(
+            numero='PC-40131-CONC',
+            fornecedor=self.fornecedor,
+            data=date(2026, 5, 22),
+            valor_total=Decimal('1000'),
+        )
+        item_compra = ItemPedidoCompra.objects.create(
+            pedido=pedido_compra,
+            produto=self.produto,
+            quantidade=Decimal('10'),
+            valor_unitario=Decimal('100'),
+        )
+        nf_entrada = NFeEntradaHistoricaImportada.objects.create(
+            chave_acesso=('35' + uuid.uuid4().hex.replace('-', ''))[:44].ljust(44, '0'),
+            numero='NE-40131-CONC',
+            serie='1',
+            dh_emissao=timezone.now(),
+            tp_amb='1',
+            cstat='100',
+            valor_total_nf=Decimal('1000'),
+            fornecedor_emitente=self.fornecedor,
+        )
+        item_nf_entrada = ItemNFeEntradaHistoricaImportada.objects.create(
+            nf=nf_entrada,
+            n_item=1,
+            prod_json={'qCom': '10', 'uCom': 'PC'},
+        )
+        transportadora = Transportadora.objects.create(
+            razao_social='TRANSPORTADORA TESTE 40131',
+            cnpj='33.333.333/0001-33',
+        )
+        cte = CTeHistoricoImportado.objects.create(
+            chave_acesso=('57' + uuid.uuid4().hex.replace('-', ''))[:44].ljust(44, '0'),
+            numero='CTE-40131-CONC',
+            serie='1',
+            dh_emissao=timezone.now(),
+            tp_amb='1',
+            cstat='100',
+            valor_total_servico=Decimal('100'),
+            transportadora=transportadora,
+            status_conferencia=CTeHistoricoImportado.StatusConferencia.CONFERIDO,
+        )
+        conciliado = AlocacaoAtendimento.objects.create(
+            pedido_venda_item=self.item_pv,
+            produto=self.produto,
+            quantidade_necessaria=Decimal('10'),
+            quantidade_atendida=Decimal('10'),
+            quantidade_pendente=Decimal('0'),
+            tipo_atendimento=TipoAtendimentoItem.COMPRA_VINCULADA,
+            status_entrada_fiscal=StatusEntradaFiscal.CONCILIADA,
+            origem_fisica=OrigemFisica.FORNECEDOR,
+            destino_fisico=DestinoFisico.CLIENTE,
+            fornecedor=self.fornecedor,
+            pedido_compra_item=item_compra,
+            nf_entrada_historica_item=item_nf_entrada,
+            cte_historico_importado=cte,
+        )
+
+        r = self.client.get('/api/atendimentos-operacionais/')
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        row = next(x for x in r.json()['results'] if x['id'] == conciliado.pk)
+        self.assertIn('alertas', row)
+        self.assertEqual(row['pendencias'], [])
 
     def test_search_pv(self):
         r = self.client.get('/api/atendimentos-operacionais/', {'search': 'PV-20260521'})

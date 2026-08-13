@@ -11,6 +11,7 @@ import { atendimentosOperacionaisService } from '@/services/api/atendimentosOper
 import { alocacaoAtendimentoService } from '@/services/api/alocacaoAtendimento';
 import type {
   AtendimentoOperacionalItem,
+  PendenciaAtendimentoOperacional,
   AtendimentosOperacionaisKpis,
   ConciliacaoEntradaQuantitativaKpis,
 } from '@/types/atendimentosOperacionais';
@@ -30,6 +31,45 @@ function fmtQty(v?: string | null): string {
   const n = Number(v);
   if (Number.isNaN(n)) return v;
   return n.toLocaleString('pt-BR', { maximumFractionDigits: 3 });
+}
+
+const ROTAS_ACAO_PENDENCIA: Record<string, string> = {
+  CONSULTAR_NFE_ENTRADA: '/nfe-entrada',
+  CONSULTAR_COMPRAS: '/pedidos-compra',
+  CONSULTAR_CTE_ENTRADA: '/cte-entrada',
+};
+
+function AcaoPrioritariaPendencia({
+  pendencia,
+  onRevisar,
+}: {
+  pendencia?: PendenciaAtendimentoOperacional;
+  onRevisar: () => void;
+}) {
+  if (!pendencia?.acao) return null;
+
+  if (pendencia.acao === 'REVISAR_ATENDIMENTO') {
+    return (
+      <button
+        type="button"
+        className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1 justify-center"
+        onClick={onRevisar}
+      >
+        <Pencil className="h-3 w-3" />
+        {pendencia.acao_label || 'Revisar atendimento'}
+      </button>
+    );
+  }
+
+  const destino = ROTAS_ACAO_PENDENCIA[pendencia.acao];
+  if (!destino) return null;
+
+  return (
+    <Link to={destino} className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1 justify-center">
+      <ExternalLink className="h-3 w-3" />
+      {pendencia.acao_label || 'Consultar'}
+    </Link>
+  );
 }
 
 /** Documentais (status_entrada_fiscal). Preferir bloco quantitativo para conciliação. */
@@ -407,7 +447,7 @@ const AtendimentosEstoque = () => {
                 <th>Quantidades</th>
                 <th>Atendimento</th>
                 <th>Vínculos</th>
-                <th>Alertas</th>
+                <th>Pendências</th>
                 <th className="w-36">Ações</th>
               </tr>
             </thead>
@@ -481,20 +521,37 @@ const AtendimentosEstoque = () => {
                       ) : null}
                       {!row.fornecedor && !row.pedido_compra && !row.nfe_entrada && !row.cte ? '—' : null}
                     </td>
-                    <td>
-                      {(row.alertas ?? []).length > 0 ? (
-                        <span
-                          className="inline-flex items-center rounded-full bg-amber-500/15 text-amber-900 dark:text-amber-100 px-2 py-0.5 text-[10px] font-medium"
-                          title={(row.alertas ?? []).join('\n')}
-                        >
-                          {(row.alertas ?? []).length} alerta(s)
-                        </span>
+                    <td className="min-w-[260px]">
+                      {(row.pendencias ?? []).length > 0 ? (
+                        <div className="space-y-1">
+                          {(row.pendencias ?? []).slice(0, 2).map((pendencia) => (
+                            <p
+                              key={`${row.id}-${pendencia.codigo}`}
+                              className="text-xs leading-snug text-amber-900 dark:text-amber-100"
+                              title={pendencia.descricao}
+                            >
+                              {pendencia.descricao}
+                            </p>
+                          ))}
+                          {(row.pendencias ?? []).length > 2 ? (
+                            <span
+                              className="inline-flex items-center rounded-full bg-amber-500/15 text-amber-900 dark:text-amber-100 px-2 py-0.5 text-[10px] font-medium"
+                              title={(row.pendencias ?? []).slice(2).map((p) => p.descricao).join('\n')}
+                            >
+                              +{(row.pendencias ?? []).length - 2} pendência(s)
+                            </span>
+                          ) : null}
+                        </div>
                       ) : (
-                        '—'
+                        <span className="text-xs text-muted-foreground">Sem pendências</span>
                       )}
                     </td>
                     <td>
                       <div className="flex flex-col gap-1">
+                        <AcaoPrioritariaPendencia
+                          pendencia={row.pendencias?.[0]}
+                          onRevisar={() => setEditId(row.id)}
+                        />
                         <button
                           type="button"
                           className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1"

@@ -206,6 +206,71 @@ def _alertas_linha(alocacao: AlocacaoAtendimento) -> list[str]:
     return alertas
 
 
+def _pendencias_linha(alocacao: AlocacaoAtendimento) -> list[dict[str, str]]:
+    """Explicações somente de leitura para orientar o tratamento da alocação.
+
+    Os códigos são estáveis para a interface, mas não executam conciliação,
+    vínculo documental, estoque ou financeiro.
+    """
+    pendencias: list[dict[str, str]] = []
+
+    def adicionar(codigo: str, descricao: str, acao: str, acao_label: str) -> None:
+        if any(item['codigo'] == codigo for item in pendencias):
+            return
+        pendencias.append(
+            {
+                'codigo': codigo,
+                'descricao': descricao,
+                'acao': acao,
+                'acao_label': acao_label,
+            },
+        )
+
+    if alocacao.status_entrada_fiscal == StatusEntradaFiscal.PENDENTE:
+        adicionar(
+            'ENTRADA_FISCAL_PENDENTE',
+            'A entrada fiscal deste atendimento ainda está pendente.',
+            'CONSULTAR_NFE_ENTRADA',
+            'Consultar NF-e entrada',
+        )
+    if not alocacao.pedido_compra_item_id:
+        adicionar(
+            'SEM_PEDIDO_COMPRA',
+            'Não há pedido de compra vinculado ao atendimento.',
+            'CONSULTAR_COMPRAS',
+            'Consultar compras',
+        )
+    if not (alocacao.nf_entrada_historica_item_id or alocacao.nf_entrada_item_id):
+        if alocacao.status_entrada_fiscal in (
+            StatusEntradaFiscal.PENDENTE,
+            StatusEntradaFiscal.RECEBIDA,
+        ):
+            adicionar(
+                'SEM_NFE_ENTRADA',
+                'Não há NF-e de entrada vinculada ao atendimento.',
+                'CONSULTAR_NFE_ENTRADA',
+                'Consultar NF-e entrada',
+            )
+    if not alocacao.cte_historico_importado_id and (
+        alocacao.nf_entrada_historica_item_id
+        or alocacao.status_entrada_fiscal == StatusEntradaFiscal.PENDENTE
+    ):
+        adicionar(
+            'CTE_NAO_VINCULADO',
+            'Não há CT-e vinculado para este atendimento.',
+            'CONSULTAR_CTE_ENTRADA',
+            'Consultar CT-e',
+        )
+    if (alocacao.quantidade_pendente or Decimal('0')) > Decimal('0'):
+        adicionar(
+            'QUANTIDADE_PENDENTE',
+            f"Há {_fmt_decimal(alocacao.quantidade_pendente)} unidade(s) pendente(s) de atendimento.",
+            'REVISAR_ATENDIMENTO',
+            'Revisar atendimento',
+        )
+    return pendencias
+
+
 def serializar_atendimento_operacional(alocacao: AlocacaoAtendimento) -> dict[str, Any]:
     from apps.comercial.services.resumo_atendimento_operacional import _montar_resumo_from_alocacoes
 
@@ -317,7 +382,10 @@ def serializar_atendimento_operacional(alocacao: AlocacaoAtendimento) -> dict[st
         'nfe_entrada': nfe_entrada,
         'cte': cte,
         'badges': resumo.get('badges', []),
+        # Mantido por compatibilidade com os consumidores existentes.
         'alertas': _alertas_linha(alocacao),
+        # Campo aditivo, apenas informativo e de navegação para a central.
+        'pendencias': _pendencias_linha(alocacao),
         'observacao_operacional': alocacao.observacao_operacional or '',
         'criado_em': alocacao.criado_em.isoformat() if alocacao.criado_em else None,
     }

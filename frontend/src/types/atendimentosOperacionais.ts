@@ -11,6 +11,13 @@ export interface AtendimentoOperacionalRef {
   status_conferencia?: string;
 }
 
+export interface PendenciaAtendimentoOperacional {
+  codigo: string;
+  descricao: string;
+  acao?: string;
+  acao_label?: string;
+}
+
 export interface AtendimentoOperacionalItem {
   id: number;
   pedido_venda: { id: number; numero: string } | null;
@@ -35,6 +42,8 @@ export interface AtendimentoOperacionalItem {
   cte: { id: number; numero: string; status_conferencia?: string } | null;
   badges: ResumoAtendimentoOperacional['badges'];
   alertas: string[];
+  /** Campo aditivo de orientação; não executa alterações automáticas. */
+  pendencias?: PendenciaAtendimentoOperacional[];
   observacao_operacional: string;
   criado_em?: string | null;
 }
