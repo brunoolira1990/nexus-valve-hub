@@ -547,7 +547,7 @@ const PedidosVenda = () => {
       <DataTableShell>
         {loadingList ? <LoadingState message="Carregando pedidos de venda…" /> : null}
         {!loadingList && !loadError ? (
-        <DataTable>
+        <DataTable mobileMode="cards">
           <thead>
             <tr>
               <th>Número</th>
@@ -570,21 +570,21 @@ const PedidosVenda = () => {
             {!loadingList &&
               items.map((e) => (
               <tr key={resolvePedidoVendaId(e) ?? e.numero}>
-                <td className="font-medium">{e.numero || '—'}</td>
-                <td>{e.cliente_nome || '—'}</td>
-                <td>{formatDateBr(e.data)}</td>
-                <td>
+                <td data-label="Número" className="font-medium">{e.numero || '—'}</td>
+                <td data-label="Cliente">{e.cliente_nome || '—'}</td>
+                <td data-label="Data">{formatDateBr(e.data)}</td>
+                <td data-label="Status">
                   <StatusBadge status={e.status} />
                 </td>
-                <td>
+                <td data-label="Atendimento">
                   <AtendimentoOperacionalInline
                     resumo={e.resumo_atendimento_operacional}
                     apenasComAlocacao={false}
                     maxBadges={2}
                   />
                 </td>
-                <td>{formatMoneyBRL(e.valor_total ?? 0)}</td>
-                <td className="text-right">
+                <td data-label="Valor total">{formatMoneyBRL(e.valor_total ?? 0)}</td>
+                <td data-label="Ações" className="text-right">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button type="button" className="erp-btn-ghost erp-btn-sm" aria-label="Ações do pedido">

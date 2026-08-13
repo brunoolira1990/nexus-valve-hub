@@ -229,3 +229,60 @@
     box-shadow: var(--shadow-modal);
   }
 }
+
+@media (max-width: 639px) {
+  .nexus-table[data-mobile-mode='cards'] {
+    min-width: 0;
+  }
+  .nexus-table[data-mobile-mode='cards'] thead {
+    display: none;
+  }
+  .nexus-table[data-mobile-mode='cards'],
+  .nexus-table[data-mobile-mode='cards'] tbody,
+  .nexus-table[data-mobile-mode='cards'] tr,
+  .nexus-table[data-mobile-mode='cards'] td {
+    display: block;
+    width: 100%;
+  }
+  .nexus-table[data-mobile-mode='cards'] tbody tr {
+    padding: 0.875rem 1rem;
+    border-bottom: 1px solid hsl(var(--border));
+  }
+  .nexus-table[data-mobile-mode='cards'] tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .nexus-table[data-mobile-mode='cards'] td {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.5rem 0;
+    border: 0;
+    text-align: right;
+  }
+  .nexus-table[data-mobile-mode='cards'] td::before {
+    content: attr(data-label);
+    flex: 0 0 42%;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.25rem;
+    text-align: left;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .nexus-table[data-mobile-mode='cards'] td[data-label='Ações'] {
+    align-items: center;
+    padding-top: 0.75rem;
+    margin-top: 0.25rem;
+    border-top: 1px solid hsl(var(--border));
+  }
+  .nexus-table[data-mobile-mode='cards'] td[colspan] {
+    display: block;
+    padding: 1.25rem 0;
+    text-align: left;
+  }
+  .nexus-table[data-mobile-mode='cards'] td[colspan]::before {
+    display: none;
+  }
+}

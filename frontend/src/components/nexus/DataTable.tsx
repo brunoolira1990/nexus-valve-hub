@@ -6,12 +6,23 @@ interface DataTableProps {
   className?: string;
 }
 
+interface DataTableComponentProps extends DataTableProps {
+  mobileMode?: 'scroll' | 'cards';
+}
+
 export function DataTableShell({ children, className }: DataTableProps) {
   return <div className={cn('nexus-card max-w-full overflow-x-auto overscroll-x-contain', className)}>{children}</div>;
 }
 
-export function DataTable({ children, className }: DataTableProps) {
-  return <table className={cn('nexus-table erp-table', className)}>{children}</table>;
+export function DataTable({ children, className, mobileMode = 'scroll' }: DataTableComponentProps) {
+  return (
+    <table
+      className={cn('nexus-table erp-table', className)}
+      data-mobile-mode={mobileMode}
+    >
+      {children}
+    </table>
+  );
 }
 
 export function TableToolbar({ children, className }: DataTableProps) {

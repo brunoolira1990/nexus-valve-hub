@@ -324,9 +324,10 @@ export function PedidoVendaEditModal({
   };
 
   const footer = (
-    <div className="flex flex-wrap justify-end gap-2 p-4">
+    <div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
       {footerConfig.primaryKind === 'save' ? (
-        <button type="button" onClick={onClose} className="erp-btn-outline">
+        <button type="button" onClick={onClose} className="erp-btn-outline w-full sm:w-auto"
+>
           Cancelar
         </button>
       ) : null}
@@ -334,7 +335,7 @@ export function PedidoVendaEditModal({
         <>
           <button
             type="button"
-            className="erp-btn-outline inline-flex items-center gap-1"
+            className="erp-btn-outline inline-flex w-full items-center gap-1 sm:w-auto"
             onClick={() => void handleVisualizarPdf()}
           >
             <FileDown className="h-4 w-4" />
@@ -342,7 +343,7 @@ export function PedidoVendaEditModal({
           </button>
           <button
             type="button"
-            className="erp-btn-outline inline-flex items-center gap-1"
+            className="erp-btn-outline inline-flex w-full items-center gap-1 sm:w-auto"
             onClick={() => void handleBaixarPdf()}
           >
             <Download className="h-4 w-4" />
@@ -355,7 +356,7 @@ export function PedidoVendaEditModal({
       <button
         type="button"
         onClick={footerConfig.primaryKind === 'close' ? onClose : onSave}
-        className="erp-btn-primary"
+        className="erp-btn-primary w-full sm:w-auto"
       >
         {footerConfig.primaryLabel}
       </button>
@@ -370,7 +371,7 @@ export function PedidoVendaEditModal({
       size="2xl"
       footer={footer}
     >
-      <div className="rounded-lg border border-border bg-muted/15 px-4 py-3 mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+      <div className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-border bg-muted/15 px-3 py-3 text-sm sm:grid-cols-2 sm:px-4 lg:grid-cols-4">
         <div>
           <span className="text-xs text-muted-foreground block">Pedido</span>
           <span className="font-semibold text-foreground">{numeroExib}</span>
@@ -400,7 +401,7 @@ export function PedidoVendaEditModal({
       ) : null}
 
       <Tabs value={modalTab} onValueChange={setModalTab} className="flex flex-col min-h-0">
-        <TabsList className="w-full flex flex-wrap h-auto gap-1 mb-2">
+        <TabsList className="mb-2 h-auto w-full justify-start gap-1 overflow-x-auto whitespace-nowrap">
           <TabsTrigger value="resumo">Resumo</TabsTrigger>
           <TabsTrigger value="itens">Itens</TabsTrigger>
           {pedidoId ? <TabsTrigger value="faturamento">Faturamento</TabsTrigger> : null}
@@ -413,7 +414,7 @@ export function PedidoVendaEditModal({
           {pedidoId && faturamentoLoading ? (
             <p className="text-xs text-muted-foreground">Carregando resumo de faturamento…</p>
           ) : null}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
             {[
               { label: 'Número', value: numeroExib },
               { label: 'Status', value: labelStatusPedidoVenda(statusExib) },
@@ -581,9 +582,9 @@ export function PedidoVendaEditModal({
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-3 items-end">
+          <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-end">
             {empresas.length > 1 ? (
-              <div className="flex-1 min-w-[14rem]">
+              <div className="w-full min-w-0 sm:min-w-[14rem] sm:flex-1">
                 <label className="erp-label">Empresa emitente</label>
                 <select
                   className="erp-select mt-1 w-full"

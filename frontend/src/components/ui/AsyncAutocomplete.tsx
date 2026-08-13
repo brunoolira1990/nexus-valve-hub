@@ -89,7 +89,7 @@ export function AsyncAutocomplete<T>({
 
   return (
     <div className={cn('min-w-0', wrapClassName)}>
-      <div className="flex gap-2 items-start">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
         <div className="relative min-w-0 flex-1">
           <input
             className={cn(
@@ -114,7 +114,7 @@ export function AsyncAutocomplete<T>({
             <div
               className={
                 listBoxClassName ??
-                'absolute z-50 mt-1 max-h-64 w-full min-w-[16rem] overflow-auto rounded-md border border-border bg-background shadow'
+                'absolute z-50 mt-1 max-h-64 w-full min-w-0 overflow-auto rounded-md border border-border bg-background shadow sm:min-w-[16rem]'
               }
             >
               {term.trim().length < minChars ? (
@@ -133,7 +133,7 @@ export function AsyncAutocomplete<T>({
                       <li key={String(key)}>
                         <button
                           type="button"
-                          className="w-full px-3 py-2 text-left text-sm hover:bg-muted whitespace-normal"
+                          className="min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-muted whitespace-normal"
                           onClick={() => {
                             onChange(key, opt);
                             setOpen(false);
@@ -159,7 +159,7 @@ export function AsyncAutocomplete<T>({
         {value != null ? (
           <button
             type="button"
-            className="erp-btn-outline erp-btn-sm shrink-0 mt-1 h-10 px-2"
+            className="erp-btn-outline erp-btn-sm mt-1 h-10 w-full shrink-0 px-2 sm:w-auto"
             onClick={() => {
               onChange(null, null);
               setTerm('');

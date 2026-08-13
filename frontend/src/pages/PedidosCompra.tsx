@@ -737,7 +737,7 @@ const PedidosCompra = () => {
       {loadingList ? <TableSkeleton rows={6} cols={6} /> : null}
       {!loadingList && !loadError ? (
         <DataTableShell>
-        <DataTable>
+        <DataTable mobileMode="cards">
           <thead>
             <tr>
               <th>Número</th>
@@ -762,14 +762,14 @@ const PedidosCompra = () => {
             ) : (
             items.map((pedido) => (
               <tr key={pedido.id}>
-                <td className="font-medium">{pedido.numero ?? '—'}</td>
-                <td>{pedido.fornecedor_nome ?? '—'}</td>
-                <td>{pedido.data ?? ''}</td>
-                <td>
+                <td data-label="Número" className="font-medium">{pedido.numero ?? '—'}</td>
+                <td data-label="Fornecedor">{pedido.fornecedor_nome ?? '—'}</td>
+                <td data-label="Data">{pedido.data ?? ''}</td>
+                <td data-label="Status">
                   <StatusBadge status={pedido.status ?? ''} />
                 </td>
-                <td>{formatMoneyBRL(numSeguro(pedido.valor_total))}</td>
-                <td className="text-right">
+                <td data-label="Valor total">{formatMoneyBRL(numSeguro(pedido.valor_total))}</td>
+                <td data-label="Ações" className="text-right">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button type="button" className="erp-btn-ghost erp-btn-sm" aria-label="Ações do pedido">
@@ -837,7 +837,7 @@ const PedidosCompra = () => {
         size="xl"
         footer={
           <>
-            <div className="mr-auto grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs tabular-nums sm:grid-cols-3 xl:grid-cols-4 xl:gap-x-5">
+            <div className="grid w-full grid-cols-1 gap-x-3 gap-y-1 text-xs tabular-nums sm:mr-auto sm:w-auto sm:grid-cols-3 sm:gap-y-0.5 xl:grid-cols-4 xl:gap-x-5">
               <span className="text-muted-foreground">Subtotal:{' '}<strong>{formatMoneyBRL(resumoFinanceiroPedido.subtotal_produtos)}</strong></span>
               <span className="text-muted-foreground">IPI:{' '}<strong>{formatMoneyBRL(resumoFinanceiroPedido.total_ipi)}</strong></span>
               <span className="text-muted-foreground">ICMS ST:{' '}<strong>{formatMoneyBRL(resumoFinanceiroPedido.total_icms_st)}</strong></span>
@@ -845,7 +845,7 @@ const PedidosCompra = () => {
               <span className="text-muted-foreground">Frete:{' '}<strong>{formatMoneyBRL(resumoFinanceiroPedido.total_frete)}</strong></span>
               <span className="text-muted-foreground">Outras:{' '}<strong>{formatMoneyBRL(resumoFinanceiroPedido.total_outras_despesas)}</strong></span>
             </div>
-            <span className="text-sm font-semibold tabular-nums">
+            <span className="w-full text-sm font-semibold tabular-nums sm:w-auto">
               Total: <span className="text-primary">{formatMoneyBRL(resumoFinanceiroPedido.valor_total_pedido)}</span>
             </span>
             <ModalFooterActions onCancel={() => setModalOpen(false)} onSave={() => void handleSave()} saving={saving} />
@@ -918,7 +918,7 @@ const PedidosCompra = () => {
           </div>
           <div>
             <label className="erp-label">Status</label>
-            <select className="erp-select mt-1" value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}>
+            <select className="erp-select mt-1 w-full" value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}>
               <option>Pendente</option>
               <option>Aprovado</option>
               <option>Recebido</option>
@@ -1004,9 +1004,9 @@ const PedidosCompra = () => {
           </div>
         </div>
         <div className="border border-border rounded-md p-3">
-          <div className="flex justify-between items-center mb-3">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h3 className="font-medium text-sm">Itens</h3>
-            <button type="button" onClick={addItem} className="erp-btn-outline erp-btn-sm">
+            <button type="button" onClick={addItem} className="erp-btn-outline erp-btn-sm shrink-0">
               <Plus className="h-3 w-3" /> Item
             </button>
           </div>
