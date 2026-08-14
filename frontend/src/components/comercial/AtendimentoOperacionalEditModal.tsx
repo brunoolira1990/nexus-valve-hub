@@ -147,7 +147,7 @@ export function AtendimentoOperacionalEditModal({ alocacaoId, open, onClose, onS
       {loading || !form || !alocacao ? (
         <p className="text-sm text-muted-foreground py-4">Carregando…</p>
       ) : (
-        <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+        <div className="max-h-[calc(100dvh-10rem)] space-y-4 overflow-y-auto pr-1 sm:max-h-[70vh]">
           <p className="text-xs text-muted-foreground border-b border-border pb-2">{AVISO_SEGURANCA_ALOCACAO}</p>
           <p className="text-sm">
             <span className="font-medium">{alocacao.produto_codigo}</span>
@@ -158,7 +158,7 @@ export function AtendimentoOperacionalEditModal({ alocacaoId, open, onClose, onS
             ) : null}
           </p>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>
               <label className="erp-label">Qtd necessária</label>
               <input
@@ -271,11 +271,11 @@ export function AtendimentoOperacionalEditModal({ alocacaoId, open, onClose, onS
             />
           </div>
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-border">
-            <button type="button" className="erp-btn-outline" onClick={onClose}>
+          <div className="sticky bottom-0 -mx-1 flex flex-col gap-2 border-t border-border bg-background px-1 pt-3 sm:mx-0 sm:flex-row sm:justify-end sm:px-0">
+            <button type="button" className="erp-btn-outline w-full sm:w-auto" onClick={onClose}>
               Cancelar
             </button>
-            <button type="button" className="erp-btn-primary" disabled={saving} onClick={() => void handleSave()}>
+            <button type="button" className="erp-btn-primary w-full sm:w-auto" disabled={saving} onClick={() => void handleSave()}>
               {saving ? 'Salvando…' : 'Salvar'}
             </button>
           </div>

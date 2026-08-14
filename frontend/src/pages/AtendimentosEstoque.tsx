@@ -52,7 +52,7 @@ function AcaoPrioritariaPendencia({
     return (
       <button
         type="button"
-        className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1 justify-center"
+        className="erp-btn-outline erp-btn-sm inline-flex w-full items-center justify-center gap-1 sm:w-auto"
         onClick={onRevisar}
       >
         <Pencil className="h-3 w-3" />
@@ -65,7 +65,7 @@ function AcaoPrioritariaPendencia({
   if (!destino) return null;
 
   return (
-    <Link to={destino} className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1 justify-center">
+    <Link to={destino} className="erp-btn-outline erp-btn-sm inline-flex w-full items-center justify-center gap-1 sm:w-auto">
       <ExternalLink className="h-3 w-3" />
       {pendencia.acao_label || 'Consultar'}
     </Link>
@@ -398,7 +398,7 @@ const AtendimentosEstoque = () => {
             />
           </div>
         </div>
-        <div className="flex flex-wrap gap-4 text-sm">
+        <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 xl:flex xl:flex-wrap xl:gap-4">
           <label className="inline-flex items-center gap-2">
             <input
               type="checkbox"
@@ -438,7 +438,7 @@ const AtendimentosEstoque = () => {
       {loading ? <TableSkeleton rows={6} cols={8} /> : null}
       {!loading && !error ? (
         <DataTableShell>
-          <DataTable>
+          <DataTable mobileMode="cards">
             <thead>
               <tr>
                 <th>Documento</th>
@@ -471,7 +471,7 @@ const AtendimentosEstoque = () => {
               ) : (
                 items.map((row) => (
                   <tr key={row.id}>
-                    <td className="text-sm">
+                    <td data-label="Documento" className="text-sm">
                       {row.pedido_venda ? (
                         <div className="font-medium">{row.pedido_venda.numero}</div>
                       ) : (
@@ -483,26 +483,26 @@ const AtendimentosEstoque = () => {
                         </div>
                       )}
                     </td>
-                    <td>{row.cliente?.nome || '—'}</td>
-                    <td>
+                    <td data-label="Cliente">{row.cliente?.nome || '—'}</td>
+                    <td data-label="Produto">
                       <div className="font-medium">{row.produto.codigo}</div>
                       <div className="text-xs text-muted-foreground truncate max-w-[200px]" title={row.produto.descricao}>
                         {row.produto.descricao}
                       </div>
                     </td>
-                    <td className="text-xs tabular-nums whitespace-nowrap">
+                    <td data-label="Quantidades" className="text-xs tabular-nums whitespace-nowrap">
                       <div>Nec.: {fmtQty(row.quantidade_necessaria)}</div>
                       <div>Atend.: {fmtQty(row.quantidade_atendida)}</div>
                       <div>Pend.: {fmtQty(row.quantidade_pendente)}</div>
                     </td>
-                    <td>
-                      <div className="flex flex-wrap gap-1 max-w-[200px]">
+                    <td data-label="Atendimento">
+                      <div className="flex max-w-[200px] flex-wrap justify-end gap-1 sm:justify-start">
                         {(row.badges ?? []).slice(0, 4).map((b) => (
                           <AtendimentoOperacionalBadge key={`${row.id}-${b.status}`} badge={b} />
                         ))}
                       </div>
                     </td>
-                    <td className="text-xs text-muted-foreground space-y-0.5">
+                    <td data-label="Vínculos" className="space-y-0.5 text-xs text-muted-foreground">
                       {row.fornecedor?.nome ? <div>Forn.: {row.fornecedor.nome}</div> : null}
                       {row.pedido_compra?.numero ? <div>PC: {row.pedido_compra.numero}</div> : null}
                       {row.nfe_entrada?.numero ? (
@@ -521,7 +521,7 @@ const AtendimentosEstoque = () => {
                       ) : null}
                       {!row.fornecedor && !row.pedido_compra && !row.nfe_entrada && !row.cte ? '—' : null}
                     </td>
-                    <td className="min-w-[260px]">
+                    <td data-label="Pendências" className="min-w-[260px]">
                       {(row.pendencias ?? []).length > 0 ? (
                         <div className="space-y-1">
                           {(row.pendencias ?? []).slice(0, 2).map((pendencia) => (
@@ -546,15 +546,15 @@ const AtendimentosEstoque = () => {
                         <span className="text-xs text-muted-foreground">Sem pendências</span>
                       )}
                     </td>
-                    <td>
-                      <div className="flex flex-col gap-1">
+                    <td data-label="Ações">
+                      <div className="flex w-full flex-col gap-2 sm:w-auto sm:gap-1">
                         <AcaoPrioritariaPendencia
                           pendencia={row.pendencias?.[0]}
                           onRevisar={() => setEditId(row.id)}
                         />
                         <button
                           type="button"
-                          className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1"
+                          className="erp-btn-outline erp-btn-sm inline-flex w-full items-center justify-center gap-1 sm:w-auto"
                           onClick={() => setEditId(row.id)}
                         >
                           <Pencil className="h-3 w-3" />
@@ -563,7 +563,7 @@ const AtendimentosEstoque = () => {
                         {row.pedido_venda ? (
                           <Link
                             to="/pedidos-venda"
-                            className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1 justify-center"
+                            className="erp-btn-outline erp-btn-sm inline-flex w-full items-center justify-center gap-1 sm:w-auto"
                           >
                             <ExternalLink className="h-3 w-3" />
                             PV
@@ -572,7 +572,7 @@ const AtendimentosEstoque = () => {
                         {row.nfe_saida ? (
                           <Link
                             to="/nfe-saida"
-                            className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1 justify-center"
+                            className="erp-btn-outline erp-btn-sm inline-flex w-full items-center justify-center gap-1 sm:w-auto"
                           >
                             <ExternalLink className="h-3 w-3" />
                             NF-e
