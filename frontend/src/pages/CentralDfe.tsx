@@ -990,13 +990,13 @@ const CentralDfe = () => {
         icon={Inbox}
       />
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4 -mt-2 text-sm">
+      <div className="flex flex-col gap-3 mb-4 -mt-2 text-sm sm:flex-row sm:items-center sm:justify-between">
         <p className="text-muted-foreground">
           Documentos emitidos contra <strong>{empresaLabel}</strong>
           {empresaInfo?.cnpj ? ` (${fmtCnpj(empresaInfo.cnpj)})` : ''}.
           Marque &quot;Incluir já tratados&quot; para ver conferidos, divergentes, ignorados ou já lançados.
         </p>
-        <div className="flex flex-wrap items-center gap-3 ml-auto">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
           {atualizandoDfe && (
             <span className="inline-flex items-center gap-2 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -1021,7 +1021,7 @@ const CentralDfe = () => {
           )}
           <button
             type="button"
-            className="erp-btn-ghost erp-btn-sm inline-flex items-center gap-1.5"
+            className="erp-btn-ghost erp-btn-sm inline-flex w-full items-center justify-center gap-1.5 sm:w-auto"
             disabled={!empresaId || atualizandoDfe}
             onClick={() => void sincronizarDfe(true)}
           >
@@ -1039,7 +1039,7 @@ const CentralDfe = () => {
           <p className="text-xs text-muted-foreground">
             NF-e exige manifestação quando aplicável; NF-e e CT-e precisam de XML armazenado na base importada.
           </p>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-1 min-[420px]:grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
             <KpiCard label="NF-e XML armazenados" value={fechamento.nfe_xml_armazenados ?? fechamento.xml_baixados} />
             <KpiCard label="CT-e XML armazenados" value={fechamento.cte_xml_armazenados ?? 0} />
             <KpiCard label="NF-e sem manifestação" value={fechamento.sem_manifestacao} />
@@ -1051,7 +1051,7 @@ const CentralDfe = () => {
       )}
 
       {resumo && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+        <div className="grid grid-cols-1 min-[420px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
           <KpiCard label="Pendentes de entrada" value={resumo.pendentes_entrada} />
           <KpiCard label="NF-e fornecedores" value={resumo.nfe_fornecedores} />
           <KpiCard label="CT-e transportadoras" value={resumo.cte_transportadoras} />
@@ -1062,7 +1062,7 @@ const CentralDfe = () => {
       )}
 
       <NexusCard className="p-4 mb-4">
-        <div className="flex flex-wrap gap-3 items-end">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end">
           <div>
             <label className="erp-label">Emissão de</label>
             <input
@@ -1133,7 +1133,7 @@ const CentralDfe = () => {
               Limpar período
             </button>
           </div>
-          <div className="min-w-[220px]">
+          <div className="min-w-0 sm:min-w-[220px]">
             <label className="erp-label">Chave de acesso</label>
             <input
               className="erp-input mt-1 w-full font-mono text-sm"
@@ -1142,7 +1142,7 @@ const CentralDfe = () => {
               placeholder="44 dígitos"
             />
           </div>
-          <div className="flex-1 min-w-[200px]">
+          <div className="min-w-0 sm:flex-1 sm:min-w-[200px]">
             <label className="erp-label">Busca</label>
             <input
               className="erp-input mt-1 w-full"
@@ -1176,7 +1176,7 @@ const CentralDfe = () => {
             <p className="text-xs text-muted-foreground px-4 py-2 border-b border-border bg-muted/30">
               Role horizontalmente para ver todas as colunas. XML e Ações permanecem fixos à direita.
             </p>
-            <DataTable className="min-w-[62rem] w-max [&_th]:px-3 [&_td]:px-3">
+            <DataTable mobileMode="scroll" className="min-w-[62rem] w-max [&_th]:px-3 [&_td]:px-3">
               <thead>
                 <tr>
                   <th className="whitespace-nowrap w-[4.5rem]">Tipo</th>

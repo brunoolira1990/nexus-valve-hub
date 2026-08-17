@@ -195,7 +195,7 @@ export function CentralDfeWorkspaceSheet({
   return (
     <Sheet open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
       <SheetContent side="right" className="w-full sm:max-w-4xl overflow-y-auto p-0 flex flex-col">
-        <div className="sticky top-0 z-10 bg-background border-b px-6 py-4 space-y-3">
+        <div className="sticky top-0 z-10 bg-background border-b px-4 py-4 sm:px-6 space-y-3">
           <SheetHeader className="text-left space-y-2">
             <SheetTitle className="text-lg">{tituloDocumento}</SheetTitle>
             <SheetDescription className="font-mono text-xs">
@@ -240,7 +240,7 @@ export function CentralDfeWorkspaceSheet({
           ) : null}
         </div>
 
-        <div className="flex-1 px-6 py-4 min-h-0">
+        <div className="flex-1 px-4 py-4 sm:px-6 min-h-0">
           {!row ? (
             <p className="text-sm text-muted-foreground">Nenhum documento selecionado.</p>
           ) : conteudo === 'manifestacao' ? (
@@ -312,7 +312,7 @@ export function CentralDfeWorkspaceSheet({
               ) : null}
 
               {(row.xml_armazenado || nfHistoricaId) && isNfeFornecedor(row) ? (
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap [&>button]:w-full sm:[&>button]:w-auto [&>a]:w-full sm:[&>a]:w-auto">
                   <Button type="button" onClick={() => setForcarConferencia(true)}>
                     Iniciar conferência
                   </Button>
@@ -338,7 +338,7 @@ export function CentralDfeWorkspaceSheet({
                 <div className="flex flex-wrap items-center gap-2 px-1">
                   <button
                     type="button"
-                    className="erp-btn-outline erp-btn-sm"
+                    className="erp-btn-outline erp-btn-sm w-full sm:w-auto"
                     onClick={() => setForcarConferencia(false)}
                   >
                     Voltar ao resumo
@@ -405,10 +405,10 @@ export function CentralDfeWorkspaceSheet({
               ) : null}
 
               {nfHistoricaId && isNfeFornecedor(row) ? (
-                <div className="flex flex-wrap gap-2 items-center">
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center [&>button]:w-full sm:[&>button]:w-auto [&>a]:w-full sm:[&>a]:w-auto">
                   <button
                     type="button"
-                    className="erp-btn-outline erp-btn-sm"
+                    className="erp-btn-outline erp-btn-sm w-full sm:w-auto"
                     onClick={() => setReabrirOpen(true)}
                   >
                     Reabrir entrada para correção
@@ -422,7 +422,7 @@ export function CentralDfeWorkspaceSheet({
                   {resumoConferencia?.financeiro?.contas_pagar_vinculadas?.[0]?.id ? (
                     <Link
                       to={`/financeiro/contas-pagar?titulo=${resumoConferencia.financeiro.contas_pagar_vinculadas[0].id}`}
-                      className="erp-btn-outline erp-btn-sm"
+                      className="erp-btn-outline erp-btn-sm w-full sm:w-auto"
                     >
                       Abrir contas a pagar
                     </Link>
@@ -437,10 +437,10 @@ export function CentralDfeWorkspaceSheet({
                     Notas com estoque já aplicado continuam disponíveis para a alocação operacional
                     (sem movimentar estoque nem financeiro). Abra a conferência para vincular itens.
                   </p>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap [&>button]:w-full sm:[&>button]:w-auto [&>a]:w-full sm:[&>a]:w-auto">
                     <button
                       type="button"
-                      className="erp-btn-primary erp-btn-sm"
+                      className="erp-btn-primary erp-btn-sm w-full sm:w-auto"
                       onClick={() => setForcarConferencia(true)}
                     >
                       Abrir conferência / Alocar para venda
@@ -456,7 +456,7 @@ export function CentralDfeWorkspaceSheet({
               ) : null}
 
               {row.detalhe_rota ? (
-                <Link to={rotaAbrirBaseImportada(row)} className="erp-btn-ghost erp-btn-sm inline-flex">
+                <Link to={rotaAbrirBaseImportada(row)} className="erp-btn-ghost erp-btn-sm inline-flex w-full sm:w-auto">
                   {labelAbrirBaseImportada(row)}
                 </Link>
               ) : null}
