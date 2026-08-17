@@ -231,27 +231,63 @@
 }
 
 @media (max-width: 639px) {
-  .nexus-table[data-mobile-mode='cards'] {
+  :is(
+    .nexus-table[data-mobile-mode='auto'],
+    .nexus-table[data-mobile-mode='cards'],
+    table[data-mobile-table-mode='cards']
+  ) {
     min-width: 0;
   }
-  .nexus-table[data-mobile-mode='cards'] thead {
+  :is(
+    .nexus-table[data-mobile-mode='auto'],
+    .nexus-table[data-mobile-mode='cards'],
+    table[data-mobile-table-mode='cards']
+  ) thead {
     display: none;
   }
-  .nexus-table[data-mobile-mode='cards'],
-  .nexus-table[data-mobile-mode='cards'] tbody,
-  .nexus-table[data-mobile-mode='cards'] tr,
-  .nexus-table[data-mobile-mode='cards'] td {
+  :is(
+    .nexus-table[data-mobile-mode='auto'],
+    .nexus-table[data-mobile-mode='cards'],
+    table[data-mobile-table-mode='cards']
+  ),
+  :is(
+    .nexus-table[data-mobile-mode='auto'],
+    .nexus-table[data-mobile-mode='cards'],
+    table[data-mobile-table-mode='cards']
+  ) tbody,
+  :is(
+    .nexus-table[data-mobile-mode='auto'],
+    .nexus-table[data-mobile-mode='cards'],
+    table[data-mobile-table-mode='cards']
+  ) tr,
+  :is(
+    .nexus-table[data-mobile-mode='auto'],
+    .nexus-table[data-mobile-mode='cards'],
+    table[data-mobile-table-mode='cards']
+  ) td {
     display: block;
     width: 100%;
   }
-  .nexus-table[data-mobile-mode='cards'] tbody tr {
+  :is(
+    .nexus-table[data-mobile-mode='auto'],
+    .nexus-table[data-mobile-mode='cards'],
+    table[data-mobile-table-mode='cards']
+  ) tbody tr {
     padding: 0.875rem 1rem;
     border-bottom: 1px solid hsl(var(--border));
   }
-  .nexus-table[data-mobile-mode='cards'] tbody tr:last-child {
+  :is(
+    .nexus-table[data-mobile-mode='auto'],
+    .nexus-table[data-mobile-mode='cards'],
+    table[data-mobile-table-mode='cards']
+  ) tbody tr:last-child {
     border-bottom: 0;
   }
-  .nexus-table[data-mobile-mode='cards'] td {
+  :is(
+    .nexus-table[data-mobile-mode='auto'],
+    .nexus-table[data-mobile-mode='cards'],
+    table[data-mobile-table-mode='cards']
+  ) td {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
@@ -260,7 +296,11 @@
     border: 0;
     text-align: right;
   }
-  .nexus-table[data-mobile-mode='cards'] td::before {
+  :is(
+    .nexus-table[data-mobile-mode='auto'],
+    .nexus-table[data-mobile-mode='cards'],
+    table[data-mobile-table-mode='cards']
+  ) td::before {
     content: attr(data-label);
     flex: 0 0 42%;
     color: hsl(var(--muted-foreground));
@@ -271,18 +311,30 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
-  .nexus-table[data-mobile-mode='cards'] td[data-label='Ações'] {
+  :is(
+    .nexus-table[data-mobile-mode='auto'],
+    .nexus-table[data-mobile-mode='cards'],
+    table[data-mobile-table-mode='cards']
+  ) td[data-label='Ações'] {
     align-items: center;
     padding-top: 0.75rem;
     margin-top: 0.25rem;
     border-top: 1px solid hsl(var(--border));
   }
-  .nexus-table[data-mobile-mode='cards'] td[colspan] {
+  :is(
+    .nexus-table[data-mobile-mode='auto'],
+    .nexus-table[data-mobile-mode='cards'],
+    table[data-mobile-table-mode='cards']
+  ) td[colspan] {
     display: block;
     padding: 1.25rem 0;
     text-align: left;
   }
-  .nexus-table[data-mobile-mode='cards'] td[colspan]::before {
+  :is(
+    .nexus-table[data-mobile-mode='auto'],
+    .nexus-table[data-mobile-mode='cards'],
+    table[data-mobile-table-mode='cards']
+  ) td[colspan]::before {
     display: none;
   }
 }

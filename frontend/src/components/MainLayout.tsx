@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
+import { MobileTableEnhancer } from '@/components/nexus/MobileTableEnhancer';
 import { PageContainer } from '@/components/nexus/PageContainer';
 
 const DASHBOARD_MODULO_LABELS: Record<string, string> = {
@@ -106,6 +107,7 @@ export const MainLayout = () => {
     <div className="flex h-screen w-full overflow-hidden bg-background">
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <MobileTableEnhancer />
         <Header onToggleSidebar={() => setSidebarOpen(true)} breadcrumbs={breadcrumbs} />
         <main className="flex-1 min-w-0 overflow-auto px-3 py-4 sm:px-4 sm:py-5 lg:px-6 lg:py-6">
           <PageContainer>
