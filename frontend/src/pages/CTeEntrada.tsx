@@ -50,7 +50,7 @@ const CTeEntrada = () => {
         onSearch={setSearch}
         searchPlaceholder="Digite parte do número do CT-e."
         actions={
-          <NexusButton type="button" variant="outline" onClick={() => navigate(BASE_CTE_IMPORTADA_PATH)}>
+          <NexusButton type="button" variant="outline" className="w-full sm:w-auto" onClick={() => navigate(BASE_CTE_IMPORTADA_PATH)}>
             <ExternalLink className="h-4 w-4" />
             Ir para Base CT-e Importada
           </NexusButton>
@@ -60,7 +60,7 @@ const CTeEntrada = () => {
       {loading ? <TableSkeleton rows={6} cols={9} /> : null}
       {!loading && !error ? (
         <DataTableShell>
-          <DataTable>
+          <DataTable mobileMode="cards">
             <thead>
               <tr>
                 <th>Número</th>
@@ -132,7 +132,7 @@ const CTeEntrada = () => {
                       <NexusButton
                         type="button"
                         variant="outline"
-                        className="erp-btn-sm"
+                        className="erp-btn-sm w-full sm:w-auto"
                         onClick={() => setDetalheId(e.cte_historico_id ?? e.id)}
                       >
                         Detalhes

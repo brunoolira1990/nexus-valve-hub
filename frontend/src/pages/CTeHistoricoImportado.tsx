@@ -415,10 +415,10 @@ const CTeHistoricoImportado = () => {
           </span>
         </p>
 
-        <div className="flex flex-wrap gap-3 items-end mt-4">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3 items-stretch sm:items-end mt-4">
           <div>
             <label className="erp-label">Período</label>
-            <select className="erp-select mt-1 min-w-[160px]" value={periodoTipo} onChange={(e) => setPeriodoTipo(e.target.value as PeriodoTipo)}>
+            <select className="erp-select mt-1 w-full sm:w-auto min-w-0 sm:min-w-[160px]" value={periodoTipo} onChange={(e) => setPeriodoTipo(e.target.value as PeriodoTipo)}>
               <option value="mes">Mês</option>
               <option value="trimestre">Trimestre</option>
               <option value="intervalo">Data inicial / final</option>
@@ -427,18 +427,18 @@ const CTeHistoricoImportado = () => {
           {periodoTipo === 'mes' && (
             <div>
               <label className="erp-label">Mês</label>
-              <input type="month" className="erp-input mt-1" value={mes} onChange={(e) => setMes(e.target.value)} />
+              <input type="month" className="erp-input mt-1 w-full sm:w-auto" value={mes} onChange={(e) => setMes(e.target.value)} />
             </div>
           )}
           {periodoTipo === 'trimestre' && (
             <>
               <div>
                 <label className="erp-label">Ano</label>
-                <input type="number" className="erp-input mt-1 w-28" value={anoTri} onChange={(e) => setAnoTri(Number(e.target.value))} min={2000} max={2100} />
+                <input type="number" className="erp-input mt-1 w-full sm:w-28" value={anoTri} onChange={(e) => setAnoTri(Number(e.target.value))} min={2000} max={2100} />
               </div>
               <div>
                 <label className="erp-label">Trimestre</label>
-                <select className="erp-select mt-1" value={numTri} onChange={(e) => setNumTri(Number(e.target.value) as 1 | 2 | 3 | 4)}>
+                <select className="erp-select mt-1 w-full sm:w-auto" value={numTri} onChange={(e) => setNumTri(Number(e.target.value) as 1 | 2 | 3 | 4)}>
                   <option value={1}>Q1</option>
                   <option value={2}>Q2</option>
                   <option value={3}>Q3</option>
@@ -451,17 +451,17 @@ const CTeHistoricoImportado = () => {
             <>
               <div>
                 <label className="erp-label">Início</label>
-                <input type="date" className="erp-input mt-1" value={di} onChange={(e) => setDi(e.target.value)} />
+                <input type="date" className="erp-input mt-1 w-full sm:w-auto" value={di} onChange={(e) => setDi(e.target.value)} />
               </div>
               <div>
                 <label className="erp-label">Fim</label>
-                <input type="date" className="erp-input mt-1" value={df} onChange={(e) => setDf(e.target.value)} />
+                <input type="date" className="erp-input mt-1 w-full sm:w-auto" value={df} onChange={(e) => setDf(e.target.value)} />
               </div>
             </>
           )}
           <div>
             <label className="erp-label">Transportadora</label>
-            <select className="erp-select mt-1 min-w-[220px]" value={transportadoraId} onChange={(e) => setTransportadoraId(e.target.value)}>
+            <select className="erp-select mt-1 w-full sm:w-auto min-w-0 sm:min-w-[220px]" value={transportadoraId} onChange={(e) => setTransportadoraId(e.target.value)}>
               <option value="">Todas</option>
               {transportadoras.map((t) => (
                 <option key={t.id} value={t.id}>
@@ -472,7 +472,7 @@ const CTeHistoricoImportado = () => {
           </div>
           <div>
             <label className="erp-label">Empresa tomadora</label>
-            <select className="erp-select mt-1 min-w-[220px]" value={empresaTomadoraId} onChange={(e) => setEmpresaTomadoraId(e.target.value)}>
+            <select className="erp-select mt-1 w-full sm:w-auto min-w-0 sm:min-w-[220px]" value={empresaTomadoraId} onChange={(e) => setEmpresaTomadoraId(e.target.value)}>
               <option value="">Todas</option>
               {empresas.map((e) => (
                 <option key={e.id} value={e.id}>
@@ -483,17 +483,17 @@ const CTeHistoricoImportado = () => {
           </div>
           <div>
             <label className="erp-label">Modal</label>
-            <input className="erp-input mt-1 min-w-[100px]" placeholder="Ex.: 01" value={modalFiltro} onChange={(e) => setModalFiltro(e.target.value)} />
+            <input className="erp-input mt-1 w-full sm:w-auto min-w-0 sm:min-w-[100px]" placeholder="Ex.: 01" value={modalFiltro} onChange={(e) => setModalFiltro(e.target.value)} />
           </div>
           <div>
             <label className="erp-label">Tipo serviço</label>
-            <input className="erp-input mt-1 min-w-[100px]" placeholder="Ex.: 0" value={tipoServicoFiltro} onChange={(e) => setTipoServicoFiltro(e.target.value)} />
+            <input className="erp-input mt-1 w-full sm:w-auto min-w-0 sm:min-w-[100px]" placeholder="Ex.: 0" value={tipoServicoFiltro} onChange={(e) => setTipoServicoFiltro(e.target.value)} />
           </div>
-          <label className="inline-flex items-center gap-2 mt-5 text-sm text-muted-foreground">
+          <label className="inline-flex items-center gap-2 mt-2 sm:mt-5 text-sm text-muted-foreground">
             <input type="checkbox" checked={incluirCancelados} onChange={(e) => setIncluirCancelados(e.target.checked)} />
             Incluir cancelados
           </label>
-          <button type="button" className="erp-btn-primary mt-5" onClick={() => void refreshHistorico()} disabled={loadingHistorico || loadingList}>
+          <button type="button" className="erp-btn-primary w-full sm:w-auto mt-1 sm:mt-5" onClick={() => void refreshHistorico()} disabled={loadingHistorico || loadingList}>
             <RefreshCw className={`h-4 w-4 mr-1 inline ${loadingHistorico ? 'animate-spin' : ''}`} />
             Atualizar
           </button>
@@ -502,7 +502,7 @@ const CTeHistoricoImportado = () => {
       </NexusCard>
 
       {resumoGerencial && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
           <div className="erp-card p-3"><div className="text-xs text-muted-foreground">Fretes no período</div><div className="font-semibold">{fmtMoney(resumoGerencial.totais.valor_total_fretes)}</div></div>
           <div className="erp-card p-3"><div className="text-xs text-muted-foreground">CT-es válidos</div><div className="font-semibold">{resumoGerencial.totais.quantidade_ctes}</div></div>
           <div className="erp-card p-3"><div className="text-xs text-muted-foreground">Frete médio</div><div className="font-semibold">{fmtMoney(resumoGerencial.totais.frete_medio)}</div></div>
@@ -515,7 +515,7 @@ const CTeHistoricoImportado = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
         <div className="erp-card overflow-x-auto">
           <h3 className="font-medium text-sm p-4 pb-1">Fretes por transportadora</h3>
-          <table className="erp-table text-sm">
+          <table className="erp-table text-sm" data-mobile-table-mode="cards">
             <thead><tr><th>Transportadora</th><th>CT-es</th><th>Total</th><th>Médio</th><th>Part. %</th></tr></thead>
             <tbody>
               {transportadorasGerencial.map((row) => (
@@ -532,14 +532,14 @@ const CTeHistoricoImportado = () => {
         </div>
 
         <div className="erp-card overflow-x-auto">
-          <div className="flex items-center justify-between p-4 pb-1">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 p-4 pb-1">
             <h3 className="font-medium text-sm">Série de fretes</h3>
-            <select className="erp-select" value={serieTipo} onChange={(e) => setSerieTipo(e.target.value as 'mensal' | 'trimestral')}>
+            <select className="erp-select w-full sm:w-auto" value={serieTipo} onChange={(e) => setSerieTipo(e.target.value as 'mensal' | 'trimestral')}>
               <option value="mensal">Mensal</option>
               <option value="trimestral">Trimestral</option>
             </select>
           </div>
-          <table className="erp-table text-sm">
+          <table className="erp-table text-sm" data-mobile-table-mode="cards">
             <thead><tr><th>Período</th><th>Fretes</th><th>CT-es</th><th>Médio</th><th>Peso/Fat.</th></tr></thead>
             <tbody>
               {serieGerencial.map((row, idx) => (
@@ -573,7 +573,7 @@ const CTeHistoricoImportado = () => {
       {loadingList ? <TableSkeleton rows={6} cols={8} /> : null}
       {!loadingList && !loadError ? (
         <DataTableShell>
-          <DataTable>
+          <DataTable mobileMode="cards">
           <thead>
             <tr>
               <th>Emissão</th>

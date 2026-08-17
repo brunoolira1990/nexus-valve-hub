@@ -210,12 +210,12 @@ export function CTeHistoricoDetalheModal({
             </span>
           </div>
 
-          <div className="flex flex-wrap gap-2 border-b border-border pb-3">
+          <div className="flex flex-nowrap gap-2 overflow-x-auto border-b border-border pb-3">
             {(['resumo', 'participantes', 'totais', 'docs', 'frete', 'eventos', 'conferencia', 'tecnico'] as Aba[]).map((t) => (
               <button
                 key={t}
                 type="button"
-                className={`erp-btn-sm ${aba === t ? 'erp-btn-primary' : 'erp-btn-outline'}`}
+                className={`erp-btn-sm shrink-0 ${aba === t ? 'erp-btn-primary' : 'erp-btn-outline'}`}
                 onClick={() => setAba(t)}
               >
                 {t === 'resumo' && 'Resumo'}
@@ -233,7 +233,7 @@ export function CTeHistoricoDetalheModal({
           {aba === 'resumo' && (
             <div className="space-y-3">
               {blocoRegraFiscal}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
               <div><span className="text-muted-foreground">Transportadora</span><p>{detalhe.transportadora_nome || '—'}</p></div>
               <div><span className="text-muted-foreground">Tomador</span><p>{detalhe.empresa_tomadora_nome || '—'}</p></div>
               <div><span className="text-muted-foreground">CFOP</span><p className="font-mono">{detalhe.cfop || '—'}</p></div>
@@ -370,7 +370,7 @@ export function CTeHistoricoDetalheModal({
               </p>
               {rateio ? (
                 <div className="space-y-2">
-                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 text-xs">
                     <span className="font-medium">Rateio</span>
                     <span className="text-muted-foreground">
                       Base {fmtMoney(rateio.valor_base)} · método {rateio.metodo}
@@ -405,7 +405,7 @@ export function CTeHistoricoDetalheModal({
                         </span>
                         <span className="text-muted-foreground">{linha.percentual}%</span>
                         <input
-                          className="erp-input h-7 w-28 text-xs"
+                          className="erp-input h-7 w-full sm:w-28 text-xs"
                           value={linha.valor_frete}
                           onChange={(e) => {
                             const v = e.target.value;
@@ -428,7 +428,7 @@ export function CTeHistoricoDetalheModal({
                   Frete tomado não gera CP automaticamente. Marque «Pago à vista» ou «Não gera CP» quando já quitado;
                   só «A pagar» habilita Contas a Pagar. Isso não altera a apuração fiscal.
                 </p>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2">
                   {(
                     [
                       ['A_PAGAR', 'A pagar'],
@@ -505,10 +505,10 @@ export function CTeHistoricoDetalheModal({
                       />
                       Gerar impostos separados (ICMS / CBS / IBS)
                     </label>
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
                       <input
                         type="date"
-                        className="erp-input h-8 text-xs"
+                        className="erp-input h-8 w-full sm:w-auto text-xs"
                         value={vencimentoCp}
                         onChange={(e) => setVencimentoCp(e.target.value)}
                       />
