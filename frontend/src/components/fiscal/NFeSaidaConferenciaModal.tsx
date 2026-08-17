@@ -793,9 +793,9 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
   };
 
   const footer = (
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-      {saveError ? <p className="text-sm text-destructive mr-auto max-w-[60%] leading-snug">{saveError}</p> : <span className="flex-1" />}
-      <div className="flex flex-wrap justify-end gap-2 shrink-0">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center justify-between">
+      {saveError ? <p className="text-sm text-destructive mr-auto max-w-none sm:max-w-[60%] leading-snug">{saveError}</p> : <span className="flex-1" />}
+      <div className="flex flex-col w-full sm:w-auto sm:flex-row sm:flex-wrap justify-end gap-2 shrink-0">
         <button type="button" className="erp-btn-outline" onClick={onClose}>
           Fechar
         </button>
@@ -897,13 +897,13 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
       size="2xl"
       footer={footer}
     >
-      <div className="sticky top-0 z-10 -mx-4 px-4 py-3 mb-2 bg-card border-b border-border">
+      <div className="sticky top-0 z-10 -mx-4 px-4 py-3 mb-2 bg-card border-b border-border overflow-x-hidden">
         {alteracoesNaoSalvas ? (
           <p className="text-xs text-amber-800 dark:text-amber-200 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 mb-2">
             Há alterações não salvas nesta conferência. Salve antes de validar os dados persistidos ou marcar pronta.
           </p>
         ) : null}
-        <div className="flex flex-wrap gap-2 items-center text-sm">
+        <div className="flex flex-wrap gap-2 items-center text-sm min-w-0">
           {autorizadaHomolog ? (
             <>
               <span className={statusBadge.className}>{statusBadge.label}</span>
@@ -934,7 +934,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
           {!autorizadaHomolog && nfe.pedido_venda_numero ? (
             <span className="text-muted-foreground">PV {nfe.pedido_venda_numero}</span>
           ) : null}
-          <span className="font-semibold ml-auto">{fmtMoeda(nfe.valor_total)}</span>
+          <span className="font-semibold sm:ml-auto">{fmtMoeda(nfe.valor_total)}</span>
           <span className={reformaBadge.className}>Reforma: {reformaBadge.label}</span>
           <BotaoAtualizarImpostosNFe
             nfeId={nfeId}
@@ -981,7 +981,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
       </div>
 
       <Tabs defaultValue="resumo" className="w-full">
-        <TabsList className="sticky top-[4.5rem] z-10 flex flex-wrap h-auto gap-1 mb-3 bg-card/95 backdrop-blur px-1 py-1">
+        <TabsList className="sticky top-[4.5rem] z-10 flex w-full flex-nowrap overflow-x-auto sm:flex-wrap sm:overflow-visible h-auto gap-1 mb-3 bg-card/95 backdrop-blur px-1 py-1">
           <TabsTrigger value="resumo">Resumo</TabsTrigger>
           <TabsTrigger value="itens">Itens</TabsTrigger>
           <TabsTrigger value="fiscal">Fiscal atual</TabsTrigger>
@@ -1112,7 +1112,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
 
           <TabsContent value="itens" className="mt-0">
             <div className="overflow-x-auto border border-border rounded-md">
-              <table className="erp-table text-sm">
+              <table className="erp-table text-sm" data-mobile-table-mode="cards">
                 <thead>
                   <tr>
                     <th>Produto</th>
@@ -1142,7 +1142,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                       {expandedItem === it.item_id ? (
                         <tr>
                           <td colSpan={7} className="bg-muted/10 p-3">
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
                               <div>
                                 <span className="text-muted-foreground">CST ICMS</span>
                                 <p>{(it.fiscal_atual as { icms?: { cst_icms?: string } }).icms?.cst_icms || '—'}</p>
@@ -1184,7 +1184,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                               })()}
                             </div>
                             {complementosEditaveis ? (
-                              <div className="grid grid-cols-2 gap-2 mt-2">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                                 <input
                                   className="erp-input h-8 text-sm"
                                   placeholder="Item pedido cliente"
@@ -1276,7 +1276,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                 </>
               );
             })()}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
               {Object.entries(conf.fiscal_atual.totais).map(([k, v]) => (
                 <div key={k} className="rounded-md border border-border p-2 text-sm">
                   <span className="text-muted-foreground block text-xs capitalize">{k.replace(/_/g, ' ')}</span>

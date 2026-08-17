@@ -287,10 +287,10 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
     <>
     <Drawer open={open} onOpenChange={(v) => !v && onClose()}>
       <DrawerContent className="inset-y-0 right-0 left-auto top-0 mt-0 h-full w-full max-w-lg rounded-none rounded-l-lg border-l flex flex-col max-h-[100vh]">
-        <DrawerHeader className="text-left border-b border-border shrink-0">
+        <DrawerHeader className="text-left border-b border-border shrink-0 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div>
-              <DrawerTitle className="text-base">{drawerTitulo}</DrawerTitle>
+              <DrawerTitle className="text-base truncate">{drawerTitulo}</DrawerTitle>
               {drawerSubtitulo ? (
                 <p className="text-xs text-muted-foreground mt-1">{drawerSubtitulo}</p>
               ) : null}
@@ -328,7 +328,7 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
                 <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Identidade fiscal
                 </h3>
-                <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1 text-xs">
                   <dt className="text-muted-foreground">Número fiscal</dt>
                   <dd>{ap?.numero_fiscal || '—'}</dd>
                   <dt className="text-muted-foreground">Série</dt>
@@ -340,7 +340,7 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
                   <dt className="text-muted-foreground">cStat</dt>
                   <dd>{sefaz?.nfe?.cstat || nfe.resumo_emissao_sefaz?.cstat_autorizacao || '—'}</dd>
                   <dt className="text-muted-foreground">Chave</dt>
-                  <dd className="col-span-2 font-mono text-[10px] break-all">
+                  <dd className="col-span-1 sm:col-span-2 font-mono text-[10px] break-all">
                     {ap?.chave_acesso || '—'}
                   </dd>
                   <dt className="text-muted-foreground">Protocolo</dt>
@@ -359,9 +359,9 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
 
               <section className="space-y-2">
                 <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Comercial</h3>
-                <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1 text-xs">
                   <dt className="text-muted-foreground">Cliente</dt>
-                  <dd className="col-span-2">{nfe.cliente_nome}</dd>
+                  <dd className="col-span-1 sm:col-span-2">{nfe.cliente_nome}</dd>
                   <dt className="text-muted-foreground">Pedido</dt>
                   <dd>{nfe.pedido_venda_numero || (nfe.pedido_venda_id ? `#${nfe.pedido_venda_id}` : '—')}</dd>
                   <dt className="text-muted-foreground">Faturamento</dt>
@@ -385,7 +385,7 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
                   receber automaticamente.
                 </p>
                 {(nfe.duplicatas_nfe?.length ?? 0) > 0 ? (
-                  <table className="w-full text-xs">
+                  <table className="w-full text-xs" data-mobile-table-mode="cards">
                     <thead>
                       <tr className="text-muted-foreground border-b">
                         <th className="text-left py-1">Nº</th>
@@ -425,7 +425,7 @@ export function NFeSaidaDetalheDrawer({ nfeId, open, onClose, onOpenConferencia 
           ) : null}
         </div>
 
-        <DrawerFooter className="border-t border-border shrink-0">
+        <DrawerFooter className="border-t border-border shrink-0 max-h-[45vh] overflow-y-auto sm:max-h-none sm:overflow-visible">
           {nfe ? (
             <NFeSaidaAcoesGruposPanel
               compact

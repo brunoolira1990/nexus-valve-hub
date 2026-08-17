@@ -537,7 +537,7 @@ const NFeSaida = () => {
       <div className="erp-card overflow-x-auto">
         {listLoading ? <LoadingState /> : null}
         {!listLoading && !listError ? (
-        <table className="erp-table">
+        <table className="erp-table" data-mobile-table-mode="cards">
           <thead>
             <tr>
               <th>NF-e</th>
@@ -610,7 +610,7 @@ const NFeSaida = () => {
                     </td>
                     <td className="whitespace-nowrap">{formatNfeValorListagem(e.valor_total)}</td>
                     <td>
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex flex-col sm:flex-row sm:flex-wrap gap-1">
                         <button
                           type="button"
                           className="erp-btn-ghost erp-btn-sm text-xs"
@@ -726,7 +726,7 @@ const NFeSaida = () => {
                 ) : null}
               </div>
             ) : null}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
               <div><label className="erp-label">Número</label><input className="erp-input mt-1" value={form.numero} onChange={e => setForm(p => ({...p,numero:e.target.value}))} /></div>
               <div>
                 <label className="erp-label">Cliente</label>
@@ -861,7 +861,7 @@ const NFeSaida = () => {
             {complementosEditaveis || editing?.transportadora_id || form.observacoes_nfe ? (
               <div className="mt-4 border border-border rounded-md p-3 space-y-3">
                 <h3 className="font-medium text-sm">Transporte e dados complementares</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="erp-label">Modalidade do frete</label>
                     <select
@@ -1060,7 +1060,7 @@ const NFeSaida = () => {
                         etapa posterior.
                       </p>
                     ) : null}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {(['pendencias', 'alertas'] as const).map((bloco) => {
                         const tipoFiltro = bloco === 'pendencias' ? 'PENDENCIA' : 'ALERTA';
                         const titulo = bloco === 'pendencias' ? 'Pendências' : 'Alertas';
@@ -1122,7 +1122,7 @@ const NFeSaida = () => {
               <div className="mt-4 border border-border rounded-md p-3">
                 <h3 className="font-medium text-sm mb-2">Títulos financeiros gerados</h3>
                 <div className="overflow-x-auto">
-                  <table className="erp-table">
+                  <table className="erp-table" data-mobile-table-mode="cards">
                     <thead>
                       <tr>
                         <th>Parcela</th>
@@ -1152,7 +1152,7 @@ const NFeSaida = () => {
                 {saveError}
               </p>
             ) : null}
-            <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 mt-6 pt-4 border-t border-border">
               <button onClick={() => setModalOpen(false)} className="erp-btn-outline">Cancelar</button>
               {podeSalvarRascunho ? (
                 <button
