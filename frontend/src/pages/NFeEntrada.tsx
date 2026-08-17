@@ -299,7 +299,7 @@ const NFeEntrada = () => {
       {loading ? <TableSkeleton rows={6} cols={9} /> : null}
       {!loading && !error ? (
         <DataTableShell>
-          <DataTable>
+          <DataTable mobileMode="cards">
             <thead>
               <tr>
                 <th>Emitente / Destinatário</th>
@@ -343,11 +343,12 @@ const NFeEntrada = () => {
                     </td>
                     <td className="nexus-numeric whitespace-nowrap">{formatMoneyBRL(e.valor_total)}</td>
                     <td>
-                      <div className="flex flex-wrap gap-1">
+                                                <div className="flex flex-col sm:flex-row flex-wrap gap-1">
+
                         {exibirAcaoRevisarDados(e) ? (
                           <button
                             type="button"
-                            className="erp-btn-ghost erp-btn-sm text-xs"
+                            className="erp-btn-ghost erp-btn-sm text-xs w-full sm:w-auto justify-center"
                             title="Revisar dados importados (somente leitura)"
                             aria-label="Revisar dados da NF-e"
                             onClick={() => abrirRevisao(e.id)}
@@ -406,7 +407,7 @@ const NFeEntrada = () => {
           XML de NF-e de entrada própria já emitida pela empresa (ex.: devolução ou recusa de cliente). Não gera
           financeiro, estoque ou transmissão SEFAZ.
         </p>
-        <label className="flex flex-col items-center justify-center gap-2 border border-dashed border-border rounded-lg p-8 cursor-pointer hover:bg-muted/40">
+        <label className="flex flex-col items-center justify-center gap-2 border border-dashed border-border rounded-lg p-4 sm:p-8 cursor-pointer hover:bg-muted/40 text-center">
           <FileUp className="h-8 w-8 text-muted-foreground" />
           <span className="text-sm font-medium">Selecionar XMLs</span>
           <input
@@ -468,7 +469,8 @@ const NFeEntrada = () => {
           Cria rascunho <strong>ENTRADA_PROPRIA_EMITIDA</strong> (sem estoque). Após salvar, use
           <strong> Ver detalhes</strong> para validar, numerar e transmitir à SEFAZ.
         </p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+
           <div>
             <label className="erp-label">Número interno</label>
             <input
@@ -587,7 +589,7 @@ const NFeEntrada = () => {
             </button>
           </div>
           {itens.map((item, idx) => (
-            <div key={item.id} className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-3 items-end border-b border-border pb-3">
+            <div key={item.id} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 mb-3 items-end border-b border-border pb-3">
               <div>
                 <label className="text-xs text-muted-foreground">Produto ID</label>
                 <input
@@ -650,7 +652,7 @@ const NFeEntrada = () => {
                   }}
                 />
               </div>
-              <div className="flex gap-1 items-end">
+              <div className="flex gap-1 items-end sm:col-span-2 lg:col-span-1">
                 <div className="flex-1">
                   <label className="text-xs text-muted-foreground">Valor unit.</label>
                   <input
@@ -682,15 +684,15 @@ const NFeEntrada = () => {
             Total: {formatMoneyBRL(total)}
           </div>
         </div>
-        <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
-          <button type="button" onClick={() => setModalOpen(false)} className="erp-btn-outline">
+        <div className="flex flex-col-reverse sm:flex-row justify-end items-stretch sm:items-center gap-2 mt-6 pt-4 border-t border-border">
+          <button type="button" onClick={() => setModalOpen(false)} className="erp-btn-outline w-full sm:w-auto justify-center">
             Cancelar
           </button>
           <button
             type="button"
             disabled={saveBusy}
             onClick={() => void handleSave()}
-            className="erp-btn-primary"
+            className="erp-btn-primary w-full sm:w-auto justify-center"
           >
             {saveBusy ? 'Salvando…' : 'Salvar rascunho'}
           </button>

@@ -464,7 +464,7 @@ export function NFeEntradaConferenciaPanel({
         </div>
       ) : null}
       {dados && (
-        <div className="erp-card p-4 mb-4 grid md:grid-cols-4 gap-3 text-sm">
+        <div className="erp-card p-4 mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
           <div><div className="text-muted-foreground text-xs">Fornecedor</div><div>{dados.fornecedor_nome}</div></div>
           <div><div className="text-muted-foreground text-xs">CNPJ</div><div>{dados.fornecedor_cnpj || '—'}</div></div>
           <div><div className="text-muted-foreground text-xs">Nota</div><div>{dados.numero}/{dados.serie}</div></div>
@@ -1046,7 +1046,10 @@ export function NFeEntradaConferenciaPanel({
         </div>
       ) : null}
       <div className="erp-card overflow-x-auto">
-        <table className="erp-table text-sm [&_td]:py-2 [&_th]:py-2">
+        <table
+          className="erp-table text-sm [&_td]:py-2 [&_th]:py-2"
+          data-mobile-table-mode="cards"
+        >
           <thead>
             <tr>
               <th>Item</th>
@@ -1220,7 +1223,7 @@ export function NFeEntradaConferenciaPanel({
                 </td>
                 <td>
                   {dados?.pedido_compra_id && pedidoSelecionado ? (
-                    <div className="space-y-1 min-w-[280px]">
+                    <div className="space-y-1 min-w-0 sm:min-w-[280px] w-full">
                       {(() => {
                         const melhor = (it.sugestoes_item_pedido || [])[0];
                         const podeSugerir =
@@ -1272,7 +1275,7 @@ export function NFeEntradaConferenciaPanel({
                     <span className="erp-badge-warning text-[10px]">Sem pedido</span>
                   )}
                 </td>
-                <td className="min-w-[260px]">
+                <td className="min-w-0 sm:min-w-[260px]">
                   <div className="space-y-1 [&_input]:mt-0 [&_input]:h-8 [&_input]:text-xs [&_.erp-btn-outline]:text-[10px] [&_.erp-btn-outline]:py-0.5 [&_.erp-btn-outline]:mt-1">
                     {it.produto_sugerido && !it.produto_id && !sugestoesCorrelacaoIgnoradas.has(it.id) ? (
                       <div className="rounded border border-amber-300/80 bg-amber-50 px-2 py-1.5 text-[10px] text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100">
@@ -1398,7 +1401,7 @@ export function NFeEntradaConferenciaPanel({
                       ) : null}
                     </div>
                   ) : (
-                    <div className="space-y-1 min-w-[9rem]">
+                    <div className="space-y-1 min-w-0 sm:min-w-[9rem]">
                       <div className="grid grid-cols-2 gap-1">
                         <input
                           className="erp-input h-8 text-xs"
@@ -1548,7 +1551,7 @@ export function NFeEntradaConferenciaPanel({
                   ) : null}
                   {it.alertas?.length ? <div className="text-xs text-destructive">{it.alertas.join(', ')}</div> : null}
                 </td>
-                <td className="min-w-[9.5rem]">
+                <td className="min-w-0 sm:min-w-[9.5rem]">
                   <span className={`${badgeClassStatusConferencia(it.status)} text-[10px] mb-1 inline-block`}>
                     {labelStatusConferenciaItem(it.status)}
                   </span>
@@ -1594,7 +1597,7 @@ export function NFeEntradaConferenciaPanel({
           Aceitar diferenças com o pedido
         </label>
         <textarea
-          className="erp-input min-h-[88px]"
+          className="erp-input w-full min-h-[88px]"
           placeholder="Observação das diferenças (se houver)"
           value={dados?.observacao_divergencias || ''}
           onChange={(e) =>
@@ -1602,31 +1605,31 @@ export function NFeEntradaConferenciaPanel({
           }
         />
       </div>
-      <div className="flex justify-end gap-2 mt-4 flex-wrap">
+      <div className="flex flex-col-reverse sm:flex-row justify-end items-stretch sm:items-center gap-2 mt-4">
         {!embedded ? (
-          <button type="button" className="erp-btn-outline" onClick={() => navigate('/nfe-entrada-historica-importada')}>
+          <button type="button" className="erp-btn-outline w-full sm:w-auto justify-center" onClick={() => navigate('/nfe-entrada-historica-importada')}>
             Voltar
           </button>
         ) : onClose ? (
-          <button type="button" className="erp-btn-outline" onClick={onClose}>
+          <button type="button" className="erp-btn-outline w-full sm:w-auto justify-center" onClick={onClose}>
             Fechar
           </button>
         ) : null}
-        <button type="button" className="erp-btn-outline" onClick={() => setReabrirOpen(true)} disabled={busy}>
+        <button type="button" className="erp-btn-outline w-full sm:w-auto justify-center" onClick={() => setReabrirOpen(true)} disabled={busy}>
           Reabrir para correção
         </button>
-        <button type="button" className="erp-btn-outline" onClick={() => void salvar()} disabled={busy}>
+        <button type="button" className="erp-btn-outline w-full sm:w-auto justify-center" onClick={() => void salvar()} disabled={busy}>
           {dados?.financeiro?.possui_pendencias_operacionais
             ? 'Salvar com pendências'
             : 'Salvar'}
         </button>
-        <button type="button" className="erp-btn-primary" onClick={() => void preparar()} disabled={busy}>
+        <button type="button" className="erp-btn-primary w-full sm:w-auto justify-center" onClick={() => void preparar()} disabled={busy}>
           Finalizar
         </button>
         {podeAplicarEstoque ? (
           <button
             type="button"
-            className="erp-btn-primary bg-emerald-700 hover:bg-emerald-800"
+            className="erp-btn-primary w-full sm:w-auto justify-center bg-emerald-700 hover:bg-emerald-800"
             onClick={() => void abrirModalAplicar()}
             disabled={busy}
           >
@@ -1646,7 +1649,7 @@ export function NFeEntradaConferenciaPanel({
       )}
       {modalAplicarOpen && previewAplicar ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="erp-card max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-4">
+          <div className="erp-card max-w-3xl w-full max-h-[90vh] overflow-y-auto p-4 sm:p-6 space-y-4">
             <h2 className="text-lg font-semibold">Aplicar estoque físico</h2>
             <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded p-3">
               Esta ação incrementa o estoque físico em EstoqueCorrida e não deve ser executada duas vezes.
@@ -1724,10 +1727,10 @@ export function NFeEntradaConferenciaPanel({
                 onChange={(e) => setObsAplicar(e.target.value)}
               />
             </label>
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-col-reverse sm:flex-row justify-end items-stretch sm:items-center gap-2">
               <button
                 type="button"
-                className="erp-btn-outline"
+                className="erp-btn-outline w-full sm:w-auto justify-center"
                 onClick={() => {
                   setModalAplicarOpen(false);
                   setPreviewAplicar(null);
@@ -1739,7 +1742,7 @@ export function NFeEntradaConferenciaPanel({
               </button>
               <button
                 type="button"
-                className="erp-btn-primary bg-emerald-700 hover:bg-emerald-800"
+                className="erp-btn-primary w-full sm:w-auto justify-center bg-emerald-700 hover:bg-emerald-800"
                 onClick={() => void confirmarAplicarEstoque()}
                 disabled={
                   busy ||
