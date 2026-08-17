@@ -160,7 +160,7 @@ const Expedicao = () => {
       />
 
       {resumo ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2 mb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 mb-4">
           {KPI_CARDS.map((card) => (
             <button
               key={card.key}
@@ -176,7 +176,7 @@ const Expedicao = () => {
       ) : null}
 
       <NexusCard className="p-4 mb-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="erp-label">Status</label>
             <select
@@ -215,7 +215,7 @@ const Expedicao = () => {
 
       {!loading && !error ? (
         <DataTableShell>
-          <DataTable>
+          <DataTable mobileMode="cards">
             <thead>
               <tr>
                 <th>Código</th>
@@ -260,7 +260,7 @@ const Expedicao = () => {
                       {vinculosResumo(item)}
                     </td>
                     <td>
-                      <div className="flex gap-1">
+                      <div className="flex flex-wrap gap-1">
                         <button type="button" className="erp-btn-ghost erp-btn-sm" title="Editar" onClick={() => openEdit(item)}>
                           <Pencil className="h-4 w-4" />
                         </button>
@@ -327,7 +327,7 @@ const Expedicao = () => {
         title={statusModal ? `Alterar status — ${statusModal.codigo}` : 'Alterar status'}
         size="sm"
         footer={
-          <div className="flex justify-end gap-2 p-4">
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 p-4">
             <button type="button" className="erp-btn-secondary" onClick={() => setStatusModal(null)} disabled={actionLoading}>
               Fechar
             </button>
@@ -376,7 +376,7 @@ const Expedicao = () => {
         title={cancelModal ? `Cancelar — ${cancelModal.codigo}` : 'Cancelar expedição'}
         size="sm"
         footer={
-          <div className="flex justify-end gap-2 p-4">
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 p-4">
             <button type="button" className="erp-btn-secondary" onClick={() => setCancelModal(null)} disabled={actionLoading}>
               Voltar
             </button>

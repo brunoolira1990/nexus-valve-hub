@@ -1382,7 +1382,7 @@ const Propostas = () => {
       {loadingList ? <TableSkeleton rows={6} cols={8} /> : null}
       {!loadingList && !loadError ? (
         <DataTableShell>
-        <DataTable>
+        <DataTable mobileMode="cards">
           <thead><tr><th>Número</th><th>Cliente</th><th>Data</th><th>Validade</th><th>Vendedor</th><th>Status</th><th>Valor Total</th><th className="w-36 text-right">Ações</th></tr></thead>
           <tbody>
             {items.length === 0 ? (
@@ -1487,7 +1487,7 @@ const Propostas = () => {
         <div className="space-y-4 mb-4">
           <ComercialModalSection title="Cabeçalho" description="Dados principais da proposta comercial.">
             <div className="space-y-4">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                   <label className="erp-label">Número</label>
                   <input
@@ -1655,7 +1655,7 @@ const Propostas = () => {
             title="Condições comerciais"
             description="Condição de pagamento em texto comercial livre (ex.: 30 DDL, 30/45 DDL, À vista, A combinar)."
           >
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="erp-label">Condição de pagamento</label>
                 <input
@@ -1807,9 +1807,9 @@ const Propostas = () => {
 
         <ComercialModalSection title="Itens" className="mb-4">
         <div className="border border-border rounded-md p-3 -mx-0">
-          <div className="flex justify-between items-center mb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
             <h3 className="font-medium text-sm">Itens</h3>
-            <button onClick={addItem} className="erp-btn-outline erp-btn-sm"><Plus className="h-3 w-3" /> Adicionar Item</button>
+            <button onClick={addItem} className="erp-btn-outline erp-btn-sm w-full sm:w-auto justify-center"><Plus className="h-3 w-3" /> Adicionar Item</button>
           </div>
           {existeAvulsoSemNcm ? (
             <div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100">
@@ -1892,7 +1892,7 @@ const Propostas = () => {
                   </button>
                 </div>
                 {itemAvulso ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-w-3xl">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-3xl">
                     <div>
                       <label className="text-xs text-muted-foreground">Descrição (item avulso)</label>
                       <input
@@ -2006,7 +2006,7 @@ const Propostas = () => {
                   <div className="p-3 pt-0 space-y-3">
                 <div className="space-y-2">
                   <p className="text-[11px] font-medium text-muted-foreground">Custo de entrada</p>
-                  <div className="grid grid-cols-2 md:grid-cols-6 gap-2 items-end">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 items-end">
                     <div>
                       <label className="text-xs text-muted-foreground">Custo do produto</label>
                       <input
@@ -2107,7 +2107,7 @@ const Propostas = () => {
                     ICMS, PIS, COFINS e IPI de saída vêm da regra cadastrada (NCM {ncmBusca || '—'} + UF origem {ufO || '—'} + UF destino{' '}
                     {ufD || '—'} + saída). Campos somente leitura.
                   </p>
-                  <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2">
                     <div>
                       <label className="text-xs text-muted-foreground">ICMS saída %</label>
                       <div className="erp-input h-8 text-sm flex items-center bg-muted/40">{formatPercent(item.icms_saida_percentual)}</div>
@@ -2200,7 +2200,7 @@ const Propostas = () => {
                 </details>
 
                   <p className="text-[11px] font-medium text-muted-foreground pt-1">Camada gerencial (estimativa de margem — não vem da Regra Fiscal)</p>
-                  <div className="grid grid-cols-2 md:grid-cols-6 gap-2 items-end">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 items-end">
                     <div>
                       <label className="text-xs text-muted-foreground">IRPJ estimado %</label>
                       <input
@@ -2264,7 +2264,7 @@ const Propostas = () => {
 
                 <div className="space-y-2">
                   <p className="text-[11px] font-medium text-muted-foreground">Resultado do item</p>
-                  <div className="grid grid-cols-2 md:grid-cols-6 gap-2 items-end">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 items-end">
                     <div>
                       <label className="text-xs text-muted-foreground">Preço base (custo ÷ 0,60)</label>
                       <div className="erp-input h-8 text-sm flex items-center font-medium">{formatMoneyBr(item.preco_sugerido)}</div>
@@ -2321,7 +2321,7 @@ const Propostas = () => {
 
         <ComercialModalSection title="Totais" className="mb-4">
           <div className="text-right text-2xl font-bold text-foreground">Total da proposta: {formatMoneyBr(total)}</div>
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-5 gap-3">
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             <div className="rounded-md border border-border bg-muted/20 p-3">
               <p className="text-xs text-muted-foreground">Custo total</p>
               <p className="text-lg font-semibold">{formatMoneyBr(custoTotal)}</p>
@@ -2356,7 +2356,7 @@ const Propostas = () => {
                 Sem base histórica de frete no período selecionado. Os indicadores abaixo podem aparecer vazios.
               </p>
             )}
-            <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-sm">
               <div>
                 <div className="text-xs text-muted-foreground">Frete médio observado</div>
                 <div className="font-medium">
@@ -2418,7 +2418,7 @@ const Propostas = () => {
                   Não há base histórica fiscal suficiente no período para este produto ou NCM. Use apenas como orientação gerencial.
                 </p>
               )}
-              <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-sm">
                 <div>
                   <div className="text-xs text-muted-foreground">Custo médio observado</div>
                   <div className="font-medium">
@@ -2594,13 +2594,13 @@ const Propostas = () => {
           </div>
         ) : null}
 
-        <div className="flex flex-wrap justify-end gap-2 mt-6 pt-4 border-t border-border">
-          <button onClick={() => setModalOpen(false)} className="erp-btn-outline">Cancelar</button>
+        <div className="flex flex-col-reverse sm:flex-row sm:flex-wrap sm:justify-end gap-2 mt-6 pt-4 border-t border-border">
+          <button onClick={() => setModalOpen(false)} className="erp-btn-outline w-full sm:w-auto">Cancelar</button>
           {editing?.id ? (
             <>
               <button
                 type="button"
-                className="erp-btn-outline inline-flex items-center gap-1"
+                className="erp-btn-outline inline-flex items-center justify-center gap-1 w-full sm:w-auto"
                 onClick={() => void handleVisualizarPdf(editing)}
               >
                 <FileDown className="h-4 w-4" />
@@ -2608,7 +2608,7 @@ const Propostas = () => {
               </button>
               <button
                 type="button"
-                className="erp-btn-outline inline-flex items-center gap-1"
+                className="erp-btn-outline inline-flex items-center justify-center gap-1 w-full sm:w-auto"
                 onClick={() => void handleBaixarPdf(editing)}
               >
                 <Download className="h-4 w-4" />
@@ -2618,7 +2618,7 @@ const Propostas = () => {
           ) : (
             <span className="text-xs text-muted-foreground self-center mr-2">{MSG_SALVE_ANTES_PDF}</span>
           )}
-          <button onClick={handleSave} className="erp-btn-primary">Salvar</button>
+          <button onClick={handleSave} className="erp-btn-primary w-full sm:w-auto">Salvar</button>
         </div>
       </Modal>
 
@@ -2634,14 +2634,14 @@ const Propostas = () => {
             {wizardLoading && !wizardProposta ? <p className="text-sm text-muted-foreground">Carregando dados da proposta...</p> : null}
         {wizardProposta ? (
           <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {[1, 2, 3].map((step) => (
                 <button
                   key={step}
                   type="button"
                   disabled={wizardLoading}
                   onClick={() => setWizardStep(step as 1 | 2 | 3)}
-                  className={`rounded-md border px-3 py-2 text-sm ${wizardStep === step ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground'}`}
+                  className={`rounded-md border px-3 py-2 text-sm text-left sm:text-center ${wizardStep === step ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground'}`}
                 >
                   {step === 1 ? '1. Cliente' : step === 2 ? '2. Itens' : '3. Validação final'}
                 </button>
@@ -2683,14 +2683,14 @@ const Propostas = () => {
                         onSelect={(c) => setWizardClienteId(c.id)}
                         onClear={() => setWizardClienteId(null)}
                       />
-                      <button type="button" className="erp-btn-outline" disabled={!wizardClienteId || wizardLoading} onClick={vincularClienteExistente}>
+                      <button type="button" className="erp-btn-outline w-full sm:w-auto" disabled={!wizardClienteId || wizardLoading} onClick={vincularClienteExistente}>
                         Vincular
                       </button>
                     </div>
 
                     <div className="rounded-md border border-border p-3">
                       <p className="mb-2 text-sm font-medium">Criar novo cliente a partir da proposta</p>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <input
                           className="erp-input"
                           placeholder="Razão social"
@@ -2704,7 +2704,7 @@ const Propostas = () => {
                           onChange={(e) => setNovoClienteCnpj(e.target.value)}
                         />
                       </div>
-                      <button type="button" className="erp-btn-outline mt-2" disabled={wizardLoading} onClick={criarClienteDaProposta}>
+                      <button type="button" className="erp-btn-outline w-full sm:w-auto mt-2" disabled={wizardLoading} onClick={criarClienteDaProposta}>
                         Criar cliente e vincular
                       </button>
                     </div>
@@ -2752,7 +2752,7 @@ const Propostas = () => {
                       </div>
                     </div>
                     {!item.produto_id ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <div className="md:col-span-2">
                           <ProdutoComercialField
                             compact
@@ -2768,7 +2768,7 @@ const Propostas = () => {
                             onClear={() => setItemLinks((prev) => ({ ...prev, [item.id]: null }))}
                           />
                         </div>
-                        <button type="button" className="erp-btn-outline" disabled={!itemLinks[item.id] || wizardLoading} onClick={() => vincularItemExistente(item.id)}>
+                        <button type="button" className="erp-btn-outline w-full sm:w-auto" disabled={!itemLinks[item.id] || wizardLoading} onClick={() => vincularItemExistente(item.id)}>
                           Vincular produto
                         </button>
                         <input
@@ -2777,7 +2777,7 @@ const Propostas = () => {
                           value={novoProdutoDescricao[item.id] ?? ''}
                           onChange={(e) => setNovoProdutoDescricao((prev) => ({ ...prev, [item.id]: e.target.value }))}
                         />
-                        <button type="button" className="erp-btn-outline" disabled={wizardLoading} onClick={() => criarProdutoParaItem(item.id)}>
+                        <button type="button" className="erp-btn-outline w-full sm:w-auto" disabled={wizardLoading} onClick={() => criarProdutoParaItem(item.id)}>
                           Criar produto
                         </button>
                       </div>
@@ -2809,25 +2809,25 @@ const Propostas = () => {
               </div>
             ) : null}
 
-            <div className="flex justify-between border-t border-border pt-4">
-              <button type="button" className="erp-btn-outline" onClick={() => setWizardOpen(false)} disabled={wizardLoading}>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-border pt-4">
+              <button type="button" className="erp-btn-outline w-full sm:w-auto" onClick={() => setWizardOpen(false)} disabled={wizardLoading}>
                 Fechar
               </button>
-              <div className="flex gap-2">
-                <button type="button" className="erp-btn-outline" disabled={wizardStep === 1 || wizardLoading} onClick={() => setWizardStep((s) => (s > 1 ? (s - 1) as 1 | 2 | 3 : s))}>
+              <div className="flex flex-col-reverse sm:flex-row gap-2">
+                <button type="button" className="erp-btn-outline w-full sm:w-auto" disabled={wizardStep === 1 || wizardLoading} onClick={() => setWizardStep((s) => (s > 1 ? (s - 1) as 1 | 2 | 3 : s))}>
                   Voltar
                 </button>
                 {wizardStep < 3 ? (
                   <button
                     type="button"
-                    className="erp-btn-primary"
+                    className="erp-btn-primary w-full sm:w-auto"
                     disabled={wizardLoading || (wizardStep === 1 && !clienteResolvido) || (wizardStep === 2 && !wizardSelecaoValida)}
                     onClick={() => setWizardStep((s) => (s < 3 ? (s + 1) as 1 | 2 | 3 : s))}
                   >
                     Próximo
                   </button>
                 ) : (
-                  <button type="button" className="erp-btn-primary" disabled={!podeConverter || wizardLoading} onClick={concluirConversao}>
+                  <button type="button" className="erp-btn-primary w-full sm:w-auto" disabled={!podeConverter || wizardLoading} onClick={concluirConversao}>
                     Converter em pedido
                   </button>
                 )}

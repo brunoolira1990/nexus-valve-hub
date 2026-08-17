@@ -265,7 +265,7 @@ export function ExpedicaoFormModal({ expedicaoId, open, onClose, onSaved }: Prop
       title={isEdit ? `Editar expedição ${codigo}` : 'Nova expedição'}
       size="xl"
       footer={
-        <div className="flex justify-end gap-2 p-4">
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 p-4">
           <button type="button" className="erp-btn-secondary" onClick={onClose} disabled={saving}>
             Cancelar
           </button>
@@ -280,7 +280,7 @@ export function ExpedicaoFormModal({ expedicaoId, open, onClose, onSaved }: Prop
         <div className="space-y-6">
           <section className="space-y-3">
             <h3 className="text-sm font-semibold">Operação</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="erp-label">Tipo de operação</label>
                 <select
@@ -316,7 +316,7 @@ export function ExpedicaoFormModal({ expedicaoId, open, onClose, onSaved }: Prop
 
           <section className="space-y-3">
             <h3 className="text-sm font-semibold">Partes envolvidas</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div>
                 <label className="erp-label">Cliente</label>
                 <ClienteComercialField
@@ -362,7 +362,7 @@ export function ExpedicaoFormModal({ expedicaoId, open, onClose, onSaved }: Prop
 
           <section className="space-y-3">
             <h3 className="text-sm font-semibold">Motorista / veículo</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label className="erp-label">Nome motorista</label>
                 <input className="erp-input mt-1 w-full" value={form.motorista_nome} disabled={readOnly} onChange={(e) => setField('motorista_nome', e.target.value)} />
@@ -384,7 +384,7 @@ export function ExpedicaoFormModal({ expedicaoId, open, onClose, onSaved }: Prop
 
           <section className="space-y-3">
             <h3 className="text-sm font-semibold">Volumes e pesos</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div>
                 <label className="erp-label">Volumes</label>
                 <input type="number" min={0} className="erp-input mt-1 w-full" value={form.volumes} disabled={readOnly} onChange={(e) => setField('volumes', e.target.value)} />
@@ -402,7 +402,7 @@ export function ExpedicaoFormModal({ expedicaoId, open, onClose, onSaved }: Prop
 
           <section className="space-y-3">
             <h3 className="text-sm font-semibold">Datas</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label className="erp-label">Prev. retirada</label>
                 <input type="date" className="erp-input mt-1 w-full" value={form.data_prevista_retirada} disabled={readOnly} onChange={(e) => setField('data_prevista_retirada', e.target.value)} />

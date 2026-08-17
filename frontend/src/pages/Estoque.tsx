@@ -93,7 +93,7 @@ const Estoque = () => {
       />
 
       <NexusCard className="mb-4 p-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
             <label className="erp-label">Corrida</label>
             <input className="erp-input mt-1" placeholder="Ex.: ABC123" value={corrida} onChange={(e) => setCorrida(e.target.value)} />
@@ -102,7 +102,7 @@ const Estoque = () => {
             <label className="erp-label">Tipo físico</label>
             <input className="erp-input mt-1" placeholder="Ex.: TUBO" value={tipoFisico} onChange={(e) => setTipoFisico(e.target.value)} />
           </div>
-          <div className="flex flex-col justify-end gap-2 md:col-span-2">
+          <div className="flex flex-col justify-end gap-2 sm:col-span-2 lg:col-span-2">
             <label className="inline-flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -135,7 +135,7 @@ const Estoque = () => {
       {loading ? <TableSkeleton rows={6} cols={6} /> : null}
       {!loading && !error ? (
         <DataTableShell>
-          <DataTable>
+          <DataTable mobileMode="cards">
             <thead>
               <tr>
                 <th>Código</th>
