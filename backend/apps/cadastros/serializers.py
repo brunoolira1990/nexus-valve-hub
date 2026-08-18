@@ -12,6 +12,8 @@ from apps.auditoria.servico import (
 from apps.comercial.payment_terms import parse_payment_condition
 from apps.text_normalize import normalize_operational_fields
 
+from .utils import normalizar_cnpj
+
 from .colaborador_acesso import montar_acesso_colaborador, PERFIS_DISPONIVEIS
 from .colaborador_senha import email_operacional_valido, usuario_eh_admin
 from .colaborador_sync import sincronizar_vendedor_colaborador, vendedor_id_colaborador
@@ -37,7 +39,12 @@ from .models import (
 )
 
 
-class EmpresaSerializer(serializers.ModelSerializer):
+class CnpjNormalizadoMixin:
+    def validate_cnpj(self, value):
+        return normalizar_cnpj(value)
+
+
+class EmpresaSerializer(CnpjNormalizadoMixin, serializers.ModelSerializer):
     empresa_pai_id = serializers.PrimaryKeyRelatedField(
         queryset=Empresa.objects.all(),
         source='empresa_pai',
@@ -208,7 +215,7 @@ class ContatoClienteSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class ClienteSerializer(serializers.ModelSerializer):
+class ClienteSerializer(CnpjNormalizadoMixin, serializers.ModelSerializer):
     transportadora_padrao_id = serializers.PrimaryKeyRelatedField(
         queryset=Transportadora.objects.all(),
         source='transportadora_padrao',
@@ -399,7 +406,7 @@ class ClienteSerializer(serializers.ModelSerializer):
         return data
 
 
-class FornecedorSerializer(serializers.ModelSerializer):
+class FornecedorSerializer(CnpjNormalizadoMixin, serializers.ModelSerializer):
     transportadora_padrao_id = serializers.PrimaryKeyRelatedField(
         queryset=Transportadora.objects.all(),
         source='transportadora_padrao',
@@ -454,7 +461,7 @@ class FornecedorSerializer(serializers.ModelSerializer):
         return data
 
 
-class TransportadoraSerializer(serializers.ModelSerializer):
+class TransportadoraSerializer(CnpjNormalizadoMixin, serializers.ModelSerializer):
     class Meta:
         model = Transportadora
         fields = '__all__'

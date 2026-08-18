@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from apps.cadastros.utils import normalizar_cnpj
+
 
 def cnpj_apenas_digitos(cnpj: str | None) -> str:
-    return ''.join(c for c in (cnpj or '') if c.isdigit())
+    """Retorna o CNPJ canônico; o nome é mantido por compatibilidade legada."""
+    return normalizar_cnpj(cnpj)
 
 
 def cnpj_raiz(cnpj: str | None) -> str:
-    digits = cnpj_apenas_digitos(cnpj)
-    return digits[:8] if len(digits) >= 8 else digits
+    """Retorna os oito caracteres-base, numéricos ou alfanuméricos."""
+    canonico = normalizar_cnpj(cnpj)
+    return canonico[:8] if len(canonico) >= 8 else canonico

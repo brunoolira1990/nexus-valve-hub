@@ -7,6 +7,7 @@ from apps.cadastros.consulta_cnpj import consultar_cnpj_cadastral
 from apps.cadastros.consulta_ie import ConsultaIeError, consultar_inscricao_estadual
 from apps.cadastros.consulta_externa import consultar_cep_viacep, normalizar_cep_digitos
 from .models import Cliente, Empresa, Fornecedor, Transportadora
+from .utils import normalizar_cnpj
 from .serializers import (
     ClienteSerializer,
     EmpresaSerializer,
@@ -22,6 +23,10 @@ from nexus_erp.view_mixins import FriendlyDestroyMixin
 
 def _digits_only(s: str) -> str:
     return ''.join(ch for ch in (s or '') if ch.isdigit())
+
+
+def _cnpj_search_token(s: str) -> str:
+    return normalizar_cnpj(s)
 
 
 class EmpresaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
@@ -58,11 +63,13 @@ class EmpresaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         qs = super().get_queryset()
         search = (self.request.query_params.get('search') or '').strip()
         if search:
+            cnpj_token = _cnpj_search_token(search)
             qs = qs.filter(
                 Q(razao_social__icontains=search)
                 | Q(nome_fantasia__icontains=search)
                 | Q(cnpj__icontains=search)
-                | Q(cidade__icontains=search),
+                | Q(cidade__icontains=search)
+                | Q(cnpj__icontains=cnpj_token),
             )
         return aplicar_ordering(
             qs,
@@ -83,7 +90,7 @@ class ClienteViewSet(FriendlyDestroyMixin, AutocompleteOrPaginationMixin, viewse
         qs = super().get_queryset()
         search = (self.request.query_params.get('search') or '').strip()
         if search:
-            digits = _digits_only(search)
+            cnpj_token = _cnpj_search_token(search)
             q = (
                 Q(razao_social__icontains=search)
                 | Q(nome_fantasia__icontains=search)
@@ -91,8 +98,8 @@ class ClienteViewSet(FriendlyDestroyMixin, AutocompleteOrPaginationMixin, viewse
                 | Q(cidade__icontains=search)
                 | Q(ie__icontains=search)
             )
-            if digits:
-                q |= Q(cnpj__icontains=digits)
+            if cnpj_token:
+                q |= Q(cnpj__icontains=cnpj_token)
             qs = qs.filter(q)
         return aplicar_ordering(
             qs,
@@ -112,7 +119,7 @@ class FornecedorViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
     def _ranked_search(qs, search: str, limit: int):
         s = search.strip()
         s_lower = s.lower()
-        digits = _digits_only(s)
+        cnpj_token = _cnpj_search_token(s)
         q = (
             Q(razao_social__icontains=s)
             | Q(nome_fantasia__icontains=s)
@@ -123,17 +130,17 @@ class FornecedorViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
             | Q(telefone__icontains=s)
             | Q(email__icontains=s)
         )
-        if digits:
-            q |= Q(cnpj__icontains=digits)
+        if cnpj_token:
+            q |= Q(cnpj__icontains=cnpj_token)
         if len(s) == 2 and s.isalpha():
             q |= Q(uf__iexact=s.upper())
         matched = list(qs.filter(q).distinct()[:250])
 
         def sort_key(f: Fornecedor):
-            cnpj_d = _digits_only(f.cnpj or '')
+            cnpj_d = normalizar_cnpj(f.cnpj or '')
             rz = (f.razao_social or '').lower()
             nf = (f.nome_fantasia or '').lower()
-            if len(digits) == 14 and cnpj_d == digits:
+            if len(cnpj_token) == 14 and cnpj_d == cnpj_token:
                 return (0, rz)
             if rz.startswith(s_lower):
                 return (1, rz)
@@ -143,7 +150,7 @@ class FornecedorViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
                 return (3, rz)
             if s_lower in nf:
                 return (4, rz)
-            if digits and digits in cnpj_d:
+            if cnpj_token and cnpj_token in cnpj_d:
                 return (5, rz)
             return (6, rz)
 
@@ -165,7 +172,7 @@ class FornecedorViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
             (self.request.query_params.get('limit') or '').strip()
             and not (self.request.query_params.get('page') or '').strip()
         ):
-            digits = _digits_only(search)
+            cnpj_token = _cnpj_search_token(search)
             q = (
                 Q(razao_social__icontains=search)
                 | Q(nome_fantasia__icontains=search)
@@ -173,8 +180,8 @@ class FornecedorViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
                 | Q(cidade__icontains=search)
                 | Q(telefone__icontains=search)
             )
-            if digits:
-                q |= Q(cnpj__icontains=digits)
+            if cnpj_token:
+                q |= Q(cnpj__icontains=cnpj_token)
             qs = qs.filter(q)
         return aplicar_ordering(
             qs,
@@ -214,7 +221,7 @@ class TransportadoraViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet
         qs = super().get_queryset()
         search = (self.request.query_params.get('search') or '').strip()
         if search:
-            digits = _digits_only(search)
+            cnpj_token = _cnpj_search_token(search)
             q = (
                 Q(razao_social__icontains=search)
                 | Q(nome_fantasia__icontains=search)
@@ -223,8 +230,8 @@ class TransportadoraViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet
                 | Q(placa_padrao__icontains=search)
                 | Q(ie__icontains=search)
             )
-            if digits:
-                q |= Q(cnpj__icontains=digits)
+            if cnpj_token:
+                q |= Q(cnpj__icontains=cnpj_token)
             if search.isdigit():
                 q |= Q(pk=int(search))
             qs = qs.filter(q)

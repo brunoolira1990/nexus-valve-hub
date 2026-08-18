@@ -13,12 +13,12 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from apps.cadastros.models import Cliente, Empresa, Fornecedor, Transportadora
+from apps.cadastros.utils import normalizar_cnpj
 
 
-def _digits(cnpj: str) -> str:
-    if not cnpj:
-        return ''
-    return ''.join(c for c in str(cnpj) if c.isdigit())
+def _canonical_cnpj(cnpj: str) -> str:
+    """Retorna a chave canônica sem separadores, para CNPJ numérico ou alfanumérico."""
+    return normalizar_cnpj(cnpj)
 
 
 class Command(BaseCommand):
@@ -48,10 +48,10 @@ class Command(BaseCommand):
     def _groups(self, qs, model_name: str):
         by_key = defaultdict(list)
         for obj in qs.only('id', 'cnpj'):
-            d = _digits(obj.cnpj)
-            if not d:
+            chave = _canonical_cnpj(obj.cnpj)
+            if not chave:
                 continue
-            by_key[d].append(obj.id)
+            by_key[chave].append(obj.id)
         dupes = {k: sorted(ids) for k, ids in by_key.items() if len(ids) > 1}
         if dupes:
             self.stdout.write(f'[{model_name}] CNPJs duplicados: {len(dupes)} grupos')

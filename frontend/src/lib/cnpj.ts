@@ -1,26 +1,27 @@
-/** Remove não-dígitos e limita a 14 caracteres. */
+/** Remove separadores e converte para maiúsculas; a validação verifica as 14 posições. */
 export function normalizeCnpj(value: string): string {
-  return value.replace(/\D/g, '').slice(0, 14);
+  return value.replace(/[^0-9A-Za-z]/g, '').toUpperCase();
 }
 
-/** Formata CNPJ para exibição (14 dígitos); caso incompleto, devolve o texto trimado. */
+/** Formata CNPJ numérico ou alfanumérico no padrão XX.XXX.XXX/XXXX-DV. */
 export function formatCnpjDisplay(value: string): string {
   const c = normalizeCnpj(value);
   if (c.length !== 14) return (value || '').trim() || '—';
   return `${c.slice(0, 2)}.${c.slice(2, 5)}.${c.slice(5, 8)}/${c.slice(8, 12)}-${c.slice(12)}`;
 }
 
-/** Valida dígitos verificadores do CNPJ (após normalização). */
+/** Valida CNPJ numérico ou alfanumérico conforme o módulo 11 oficial. */
 export function isValidCnpj(value: string): boolean {
   const c = normalizeCnpj(value);
-  if (c.length !== 14) return false;
-  if (/^(\d)\1{13}$/.test(c)) return false;
+  if (c.length !== 14 || !/^[0-9A-Z]{12}[0-9]{2}$/.test(c)) return false;
+  if (new Set(c).size === 1) return false;
 
+  const valorCaractere = (char: string): number => char.charCodeAt(0) - 48;
   const calc = (base: string, length: number): number => {
     let sum = 0;
     let pos = length - 7;
     for (let i = length; i >= 1; i--) {
-      sum += Number(base.charAt(length - i)) * pos--;
+      sum += valorCaractere(base.charAt(length - i)) * pos--;
       if (pos < 2) pos = 9;
     }
     const r = sum % 11;

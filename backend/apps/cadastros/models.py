@@ -5,7 +5,7 @@ from django.contrib.postgres.fields import ArrayField
 from django.core.exceptions import ValidationError
 from django.db import models
 
-from .utils import validar_cnpj_django
+from .utils import normalizar_cnpj, validar_cnpj_django
 
 
 def _default_dias_parcelas():
@@ -13,9 +13,7 @@ def _default_dias_parcelas():
 
 
 def _norm_cnpj(val: str) -> str:
-    if val is None:
-        return ''
-    return ''.join(c for c in str(val) if c.isdigit())
+    return normalizar_cnpj(val)
 
 
 class Empresa(models.Model):
@@ -71,6 +69,7 @@ class Empresa(models.Model):
             raise ValidationError({'cnpj': 'Informe um CNPJ válido ou deixe em branco.'})
 
     def save(self, *args, **kwargs):
+        self.cnpj = normalizar_cnpj(self.cnpj)
         if self.certificado_arquivo and self.senha_certificado:
             self._validar_certificado()
         super().save(*args, **kwargs)
@@ -166,6 +165,10 @@ class Cliente(models.Model):
         super().clean()
         if self.cnpj and _norm_cnpj(self.cnpj) == '':
             raise ValidationError({'cnpj': 'Informe um CNPJ válido ou deixe em branco.'})
+
+    def save(self, *args, **kwargs):
+        self.cnpj = normalizar_cnpj(self.cnpj)
+        super().save(*args, **kwargs)
 
 
 class EnderecoEntregaCliente(models.Model):
@@ -301,6 +304,10 @@ class Fornecedor(models.Model):
         if self.cnpj and _norm_cnpj(self.cnpj) == '':
             raise ValidationError({'cnpj': 'Informe um CNPJ válido ou deixe em branco.'})
 
+    def save(self, *args, **kwargs):
+        self.cnpj = normalizar_cnpj(self.cnpj)
+        super().save(*args, **kwargs)
+
 
 class Colaborador(models.Model):
     """Pessoa interna do ERP (vendedor, comprador, responsáveis por área)."""
@@ -348,7 +355,7 @@ class Colaborador(models.Model):
 class Transportadora(models.Model):
     razao_social = models.CharField(max_length=255)
     nome_fantasia = models.CharField(max_length=255, blank=True)
-    cnpj = models.CharField(max_length=20, unique=True)
+    cnpj = models.CharField(max_length=20, unique=True, validators=[validar_cnpj_django])
     ie = models.CharField(max_length=32, blank=True)
     inscricao_municipal = models.CharField(max_length=20, blank=True)
     logradouro = models.CharField(max_length=255, blank=True)
@@ -388,3 +395,7 @@ class Transportadora(models.Model):
         super().clean()
         if self.cnpj and _norm_cnpj(self.cnpj) == '':
             raise ValidationError({'cnpj': 'Informe um CNPJ válido ou deixe em branco.'})
+
+    def save(self, *args, **kwargs):
+        self.cnpj = normalizar_cnpj(self.cnpj)
+        super().save(*args, **kwargs)

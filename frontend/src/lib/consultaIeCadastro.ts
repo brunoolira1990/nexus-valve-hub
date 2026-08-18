@@ -1,5 +1,7 @@
 import type { ConsultaIeResponse, InscricaoEstadualSefazItem } from '@/services/api/consulta';
 
+import { isValidCnpj, normalizeCnpj } from './cnpj';
+
 export type SugestaoIeCampo = {
   campo: 'ie';
   label: string;
@@ -27,10 +29,13 @@ export function montarSugestaoIe(
 }
 
 export const MENSAGEM_UF_PENDENTE_IE = 'Informe a UF no endereço para consultar IE na SEFAZ.';
+export const MENSAGEM_CNPJ_ALFANUMERICO_IE =
+  'A consulta de Inscrição Estadual via SEFAZ ainda aceita apenas CNPJ numérico.';
 
 export function podeConsultarIeSefaz(cnpj: string, uf: string): string | null {
-  const cnpjDigits = (cnpj || '').replace(/\D/g, '');
-  if (cnpjDigits.length !== 14) return 'Informe um CNPJ válido para consultar a IE na SEFAZ.';
+  const cnpjCanonico = normalizeCnpj(cnpj || '');
+  if (/[A-Z]/.test(cnpjCanonico)) return MENSAGEM_CNPJ_ALFANUMERICO_IE;
+  if (!isValidCnpj(cnpjCanonico)) return 'Informe um CNPJ válido para consultar a IE na SEFAZ.';
   if (!(uf || '').trim()) return MENSAGEM_UF_PENDENTE_IE;
   return null;
 }
@@ -94,9 +99,9 @@ export function labelAcaoSecundariaConsultaIe(estado: EstadoUiConsultaIe): strin
 }
 
 export function montarChaveConsultaIe(cnpj: string, uf: string): string {
-  const cnpjDigits = (cnpj || '').replace(/\D/g, '');
+  const cnpjCanonico = normalizeCnpj(cnpj || '');
   const ufNorm = (uf || '').trim().toUpperCase();
-  return `${cnpjDigits}|${ufNorm}`;
+  return `${cnpjCanonico}|${ufNorm}`;
 }
 
 /** Evita consulta IE automática repetida para o mesmo CNPJ + UF na sessão do formulário. */

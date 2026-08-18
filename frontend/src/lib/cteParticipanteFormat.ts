@@ -1,3 +1,5 @@
+import { formatCnpjDisplay, normalizeCnpj } from './cnpj';
+
 export type ParticipanteCteCard = {
   papel: string;
   razaoSocial: string;
@@ -12,8 +14,8 @@ function normDigits(v: unknown): string {
 }
 
 function docLabel(json: Record<string, unknown>): string {
-  const cnpj = normDigits(json.CNPJ);
-  if (cnpj.length === 14) return cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+  const cnpj = normalizeCnpj(String(json.CNPJ ?? ''));
+  if (cnpj.length === 14 && /^[0-9A-Z]{14}$/.test(cnpj)) return formatCnpjDisplay(cnpj);
   const cpf = normDigits(json.CPF);
   if (cpf.length === 11) return cpf.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
   return '—';

@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from apps.cadastros.consulta_externa import _get_json, format_cep_br
-from apps.cadastros.utils import validar_cnpj
+from apps.cadastros.utils import normalizar_cnpj, validar_cnpj
 
 AVISO_IE_FONTE_ATUAL = (
     'A fonte atual não retorna Inscrição Estadual para este CNPJ/UF.'
@@ -62,14 +62,19 @@ def consultar_cnpj_cadastral(cnpj: str | None) -> tuple[dict[str, Any] | None, s
     Consulta dados cadastrais básicos por CNPJ (ReceitaWS).
     Não retorna Inscrição Estadual — use futuro serviço dedicado de IE.
   """
-    cnpj_digitos = normalizar_cnpj_digitos(cnpj)
-    if len(cnpj_digitos) != 14:
-        return None, 'CNPJ inválido. Informe 14 dígitos.'
-    if not validar_cnpj(cnpj_digitos):
+    cnpj_canonico = normalizar_cnpj(cnpj)
+    if len(cnpj_canonico) != 14:
+        return None, 'CNPJ inválido. Informe 14 caracteres alfanuméricos.'
+    if not validar_cnpj(cnpj_canonico):
         return None, 'CNPJ inválido. Verifique os dígitos verificadores.'
+    if not cnpj_canonico.isdigit():
+        return None, (
+            'A consulta cadastral externa atual aceita apenas CNPJ numérico. '
+            'Para CNPJ alfanumérico, informe os dados cadastrais manualmente.'
+        )
 
     try:
-        payload_rw = _get_json(f'https://receitaws.com.br/v1/cnpj/{cnpj_digitos}', timeout=10.0)
+        payload_rw = _get_json(f'https://receitaws.com.br/v1/cnpj/{cnpj_canonico}', timeout=10.0)
     except Exception:
         return None, 'Não foi possível consultar o CNPJ agora. Você pode preencher os dados manualmente.'
 

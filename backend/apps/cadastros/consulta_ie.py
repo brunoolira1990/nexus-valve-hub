@@ -9,7 +9,7 @@ from django.conf import settings
 
 from apps.cadastros.consulta_cnpj import normalizar_cnpj_digitos
 from apps.cadastros.models import Empresa
-from apps.cadastros.utils import validar_cnpj
+from apps.cadastros.utils import normalizar_cnpj, validar_cnpj
 from apps.fiscal.nfe_integracao.adapters.certificado_a1 import carregar_certificado_empresa
 from apps.fiscal.nfe_integracao.adapters.consulta_cadastro_parser import parse_consulta_cadastro_response
 from apps.fiscal.nfe_integracao.adapters.exceptions import CertificadoA1Error, PyNFeComunicacaoError
@@ -106,6 +106,7 @@ def consultar_inscricao_estadual(
     Consulta IE na SEFAZ (NFeConsultaCadastro) usando certificado A1 da empresa.
     Não persiste resultado — apenas retorna payload normalizado.
     """
+    cnpj_canonico = normalizar_cnpj(cnpj)
     cnpj_digitos = normalizar_cnpj_digitos(cnpj)
     uf_norm = (uf or '').strip().upper()
 
@@ -119,10 +120,15 @@ def consultar_inscricao_estadual(
             'Consulta cadastral SEFAZ não configurada para esta UF.',
             'UF_NAO_SUPORTADA',
         )
-    if len(cnpj_digitos) != 14:
+    if len(cnpj_canonico) != 14:
+        raise ConsultaIeError('CNPJ inválido. Informe 14 caracteres alfanuméricos.', 'CNPJ_INVALIDO')
+    if not validar_cnpj(cnpj_canonico):
         raise ConsultaIeError('CNPJ inválido.', 'CNPJ_INVALIDO')
-    if not validar_cnpj(cnpj_digitos):
-        raise ConsultaIeError('CNPJ inválido.', 'CNPJ_INVALIDO')
+    if not cnpj_canonico.isdigit():
+        raise ConsultaIeError(
+            'A consulta de Inscrição Estadual via SEFAZ ainda aceita apenas CNPJ numérico.',
+            'CNPJ_ALFANUMERICO_NAO_SUPORTADO',
+        )
 
     empresa = _resolver_empresa(empresa_id)
     ambiente, homologacao = _ambiente_empresa(empresa)
@@ -157,7 +163,7 @@ def consultar_inscricao_estadual(
         )
         resposta = consulta_cadastro_contribuinte(
             comunicacao,
-            cnpj_digitos,
+            cnpj_canonico,
             uf=uf_norm,
         )
     except PyNFeComunicacaoError as exc:
@@ -169,7 +175,7 @@ def consultar_inscricao_estadual(
         else:
             msg_usuario = 'Consulta SEFAZ indisponível no momento.'
         return _payload_erro(
-            cnpj=cnpj_digitos,
+            cnpj=cnpj_canonico,
             uf=uf_norm,
             ambiente=ambiente,
             mensagem=msg_usuario,
@@ -177,7 +183,7 @@ def consultar_inscricao_estadual(
             erro_tecnico=msg,
         )
 
-    parsed = parse_consulta_cadastro_response(resposta, cnpj=cnpj_digitos, uf=uf_norm)
+    parsed = parse_consulta_cadastro_response(resposta, cnpj=cnpj_canonico, uf=uf_norm)
     payload = parsed.to_dict()
     payload['ambiente'] = ambiente
     if not payload.get('mensagem_usuario'):
