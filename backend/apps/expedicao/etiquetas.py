@@ -9,6 +9,7 @@ from reportlab.graphics.barcode import code128
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import portrait
 from reportlab.lib.units import mm
+from PIL import Image, ImageOps
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
@@ -73,7 +74,12 @@ def _imagem_logo(empresa: Any) -> ImageReader | None:
     if not dados:
         return None
     try:
-        return ImageReader(BytesIO(dados))
+        imagem = Image.open(BytesIO(dados))
+        alpha = imagem.getchannel('A') if 'A' in imagem.getbands() else None
+        imagem = ImageOps.grayscale(imagem.convert('RGB'))
+        if alpha is not None:
+            imagem.putalpha(alpha)
+        return ImageReader(imagem)
     except (OSError, ValueError, TypeError):
         return None
 
@@ -101,7 +107,7 @@ def _desenhar_logo(c: canvas.Canvas, empresa: Any, altura: float) -> None:
 
 def _desenhar_linha(c: canvas.Canvas, rotulo: str, valor: str, y: float) -> float:
     c.setFont('Helvetica-Bold', 8.5)
-    c.setFillColor(colors.HexColor('#374151'))
+    c.setFillColor(colors.black)
     c.drawString(5 * mm, y, f'{rotulo}:')
     c.setFont('Helvetica', 8.5)
     c.setFillColor(colors.black)
@@ -129,22 +135,27 @@ def _renderizar_etiquetas(expedicao: Expedicao, quantidade: int) -> bytes:
     nfe_numeracao_volumes = getattr(nfe, 'numeracao_volumes', '') if nfe else ''
 
     for indice in range(1, quantidade + 1):
-        pdf.setFillColor(colors.HexColor('#0f172a'))
+        pdf.setFillColor(colors.white)
         pdf.rect(0, altura - 27 * mm, largura, 27 * mm, fill=1, stroke=0)
         _desenhar_logo(pdf, empresa, altura)
-        pdf.setFillColor(colors.white)
+        pdf.setFillColor(colors.black)
         pdf.setFont('Helvetica-Bold', 5.8)
         pdf.drawString(23 * mm, altura - 6 * mm, _texto(empresa_nome, limite=31))
+        pdf.setFillColor(colors.black)
         pdf.setFont('Helvetica', 5.4)
         pdf.drawString(
             23 * mm,
             altura - 10 * mm,
             _texto(f'CNPJ {empresa_cnpj}', limite=31) if empresa_cnpj else 'OPERAÇÃO LOGÍSTICA',
         )
+        pdf.setFillColor(colors.black)
         pdf.setFont('Helvetica-Bold', 7.8)
         pdf.drawCentredString(largura / 2, altura - 21.5 * mm, _texto(expedicao.codigo, limite=23))
+        pdf.setStrokeColor(colors.black)
+        pdf.setLineWidth(1.2)
+        pdf.line(5 * mm, altura - 27 * mm, largura - 5 * mm, altura - 27 * mm)
 
-        pdf.setFillColor(colors.HexColor('#111827'))
+        pdf.setFillColor(colors.black)
         pdf.setFont('Helvetica-Bold', 9.5)
         pdf.drawString(5 * mm, altura - 33 * mm, f'VOLUME {indice}/{quantidade}')
 
@@ -166,15 +177,6 @@ def _renderizar_etiquetas(expedicao: Expedicao, quantidade: int) -> bytes:
         y = _desenhar_linha(pdf, 'Peso bruto', f'{expedicao.peso_bruto or "—"} kg', y)
         y = _desenhar_linha(pdf, 'Peso líquido', f'{expedicao.peso_liquido or "—"} kg', y)
 
-        pdf.setStrokeColor(colors.HexColor('#cbd5e1'))
-        pdf.line(5 * mm, 8 * mm, largura - 5 * mm, 8 * mm)
-        pdf.setFillColor(colors.HexColor('#475569'))
-        pdf.setFont('Helvetica', 5.8)
-        pdf.drawCentredString(
-            largura / 2,
-            4 * mm,
-            'Identificação operacional — reimpressão permitida',
-        )
         pdf.showPage()
 
     pdf.save()
