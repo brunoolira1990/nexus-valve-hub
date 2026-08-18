@@ -202,11 +202,8 @@ def sincronizar_numeracao_nfe(expedicao: Expedicao) -> None:
     nfe = NFeSaida.objects.select_for_update().get(pk=expedicao.nfe_saida_id)
     atual = (nfe.numeracao_volumes or '').strip()
     if _nfe_autorizada(nfe):
-        if atual != expedicao.codigo:
-            raise ExpedicaoErro(
-                'A NF-e já está autorizada com outra numeração de volumes; '
-                'a expedição não pode sobrescrever o documento fiscal.'
-            )
+        # NF-e transmitida/autorizada é imutável: a Expedição somente mantém o vínculo.
+        # O código EXP é operacional e não deve ser comparado nem gravado em numeracao_volumes.
         return
     if atual != expedicao.codigo:
         nfe.numeracao_volumes = expedicao.codigo

@@ -114,23 +114,29 @@ class ExpedicaoFase1aTests(TestCase):
         self.assertEqual(AtendimentoEstoque.objects.count(), antes_ae)
 
     def test_nao_altera_nfe(self):
+        numeracao_antes = 'NF-E-VOLUME-01'
         nf = NFeSaida.objects.create(
             numero='999001',
             data=date(2026, 6, 1),
             cliente=self.cliente,
             status='AUTORIZADA',
+            status_emissao_sefaz=NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO,
+            numeracao_volumes=numeracao_antes,
         )
         status_antes = nf.status
         chave_antes = nf.chave_acesso
-        cri = self.client.post(
+        resposta = self.client.post(
             '/api/expedicoes/',
             self._payload(nfe_saida=nf.pk),
             format='json',
-        ).json()
+        )
+        self.assertEqual(resposta.status_code, status.HTTP_201_CREATED)
+        cri = resposta.json()
         self.assertEqual(cri['nfe_saida'], nf.pk)
         nf.refresh_from_db()
         self.assertEqual(nf.status, status_antes)
         self.assertEqual(nf.chave_acesso, chave_antes)
+        self.assertEqual(nf.numeracao_volumes, numeracao_antes)
         self.assertEqual(Expedicao.objects.filter(nfe_saida=nf).count(), 1)
 
     def test_resumo_endpoint(self):
