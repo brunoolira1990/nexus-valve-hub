@@ -6,8 +6,9 @@ import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import { fornecedoresService } from '@/services/api/fornecedores';
 import { transportadorasService } from '@/services/api/transportadoras';
 import { expedicaoService } from '@/services/api/expedicao';
+import { nfeSaidasService } from '@/services/api/fiscal';
 import { apiErrorMessage } from '@/services/api/config';
-import type { Cliente, Fornecedor, Transportadora } from '@/types';
+import type { Cliente, Fornecedor, NFeSaida, NFeSaidaListItem, Transportadora } from '@/types';
 import {
   STATUS_EXPEDICAO,
   TIPOS_OPERACAO_EXPEDICAO,
@@ -79,6 +80,28 @@ function toLocalInput(iso: string | null | undefined): string {
   if (!iso) return '';
   if (iso.length >= 16 && iso.includes('T')) return iso.slice(0, 16);
   return iso.slice(0, 10);
+}
+
+function formatNfeDate(value: string): string {
+  const [year, month, day] = value.slice(0, 10).split('-');
+  return year && month && day ? `${day}/${month}/${year}` : value;
+}
+
+function nfeOptionLabel(nfe: NFeSaidaListItem): string {
+  return nfe.listagem_resumo?.titulo || nfe.numero || `NF-e #${nfe.id}`;
+}
+
+function nfeOptionFromExpedicao(item: ExpedicaoItem): NFeSaidaListItem | null {
+  if (!item.nfe_saida) return null;
+  return {
+    id: item.nfe_saida,
+    numero: item.nfe_saida_numero || `#${item.nfe_saida}`,
+    cliente_id: item.cliente ?? 0,
+    cliente_nome: item.cliente_nome || '',
+    data: '',
+    valor_total: 0,
+    status: 'AUTORIZADA_PRODUCAO',
+  };
 }
 
 function parseId(v: string): number | null {
@@ -176,6 +199,8 @@ export function ExpedicaoFormModal({ expedicaoId, open, onClose, onSaved }: Prop
   const [selCliente, setSelCliente] = useState<Cliente | null>(null);
   const [selFornecedor, setSelFornecedor] = useState<Fornecedor | null>(null);
   const [selTransportadora, setSelTransportadora] = useState<Transportadora | null>(null);
+  const [selNfeSaida, setSelNfeSaida] = useState<NFeSaidaListItem | null>(null);
+  const [nfeLoading, setNfeLoading] = useState(false);
   const [codigo, setCodigo] = useState('');
 
   const buscarFornecedor = useCallback(
@@ -186,6 +211,68 @@ export function ExpedicaoFormModal({ expedicaoId, open, onClose, onSaved }: Prop
     (term: string, limit?: number) => transportadorasService.search(term, limit ?? 25),
     [],
   );
+  const buscarNfeSaida = useCallback(
+    async (term: string, limit?: number) => {
+      const response = await nfeSaidasService.listPaginated({
+        search: term,
+        status_emissao: 'AUTORIZADA_PRODUCAO',
+        page_size: limit ?? 25,
+      });
+      return response.results.filter(
+        (nfe) => nfe.listagem_resumo?.fiscal_resumo?.badge === 'Produção autorizada',
+      );
+    },
+    [],
+  );
+
+  const aplicarDadosNfe = useCallback((nfe: NFeSaida) => {
+    setSelNfeSaida({
+      id: nfe.id,
+      numero: nfe.numero,
+      cliente_id: nfe.cliente_id,
+      cliente_nome: nfe.cliente_nome,
+      data: nfe.data,
+      valor_total: nfe.valor_total,
+      status: nfe.status,
+      status_emissao_sefaz: nfe.status_emissao_sefaz,
+      listagem_resumo: nfe.listagem_resumo,
+    });
+    setSelCliente(
+      nfe.cliente_id
+        ? ({ id: nfe.cliente_id, razao_social: nfe.cliente_nome } as Cliente)
+        : null,
+    );
+    setSelTransportadora(
+      nfe.transportadora_id
+        ? ({ id: nfe.transportadora_id, razao_social: nfe.transportadora_nome || '' } as Transportadora)
+        : null,
+    );
+    setForm((prev) => ({
+      ...prev,
+      nfe_saida: String(nfe.id),
+      volumes: nfe.quantidade_volumes ? String(nfe.quantidade_volumes) : '',
+      peso_bruto: nfe.peso_bruto ? String(nfe.peso_bruto) : '',
+      peso_liquido: nfe.peso_liquido ? String(nfe.peso_liquido) : '',
+    }));
+  }, []);
+
+  const selecionarNfeSaida = useCallback(async (option: NFeSaidaListItem | null) => {
+    if (!option) {
+      setSelNfeSaida(null);
+      setForm((prev) => ({ ...prev, nfe_saida: '' }));
+      return;
+    }
+    setNfeLoading(true);
+    try {
+      const detail = await nfeSaidasService.getById(option.id);
+      aplicarDadosNfe(detail);
+      toast.success('NF-e autorizada vinculada à expedição.');
+    } catch (e) {
+      toast.error(apiErrorMessage(e, { fallback: 'Não foi possível carregar os dados da NF-e.' }));
+    } finally {
+      setNfeLoading(false);
+    }
+  }, [aplicarDadosNfe]);
 
   const load = useCallback(async () => {
     if (!expedicaoId) return;
@@ -194,6 +281,7 @@ export function ExpedicaoFormModal({ expedicaoId, open, onClose, onSaved }: Prop
       const data = await expedicaoService.getById(expedicaoId);
       setCodigo(data.codigo);
       setForm(formFromItem(data));
+      setSelNfeSaida(nfeOptionFromExpedicao(data));
       setSelCliente(
         data.cliente
           ? ({ id: data.cliente, razao_social: data.cliente_nome } as Cliente)
@@ -224,6 +312,7 @@ export function ExpedicaoFormModal({ expedicaoId, open, onClose, onSaved }: Prop
       setSelCliente(null);
       setSelFornecedor(null);
       setSelTransportadora(null);
+      setSelNfeSaida(null);
       setCodigo('');
     }
     if (!open) {
@@ -269,7 +358,7 @@ export function ExpedicaoFormModal({ expedicaoId, open, onClose, onSaved }: Prop
           <button type="button" className="erp-btn-secondary" onClick={onClose} disabled={saving}>
             Cancelar
           </button>
-          <button type="button" className="erp-btn-primary" onClick={() => void handleSave()} disabled={saving || loading || readOnly}>
+          <button type="button" className="erp-btn-primary" onClick={() => void handleSave()} disabled={saving || loading || nfeLoading || readOnly}>
             {saving ? 'Salvando…' : 'Salvar'}
           </button>
         </div>
@@ -423,17 +512,42 @@ export function ExpedicaoFormModal({ expedicaoId, open, onClose, onSaved }: Prop
           </section>
 
           <section className="space-y-3">
-            <h3 className="text-sm font-semibold">Vínculos referenciais (IDs)</h3>
+            <h3 className="text-sm font-semibold">Vínculos referenciais</h3>
             <p className="text-xs text-muted-foreground">
-              Informe manualmente os IDs quando souber. Não há automação com estoque, financeiro ou fiscal.
+              NF-e de saída autorizada pode ser localizada por número, chave ou cliente. Os demais vínculos continuam opcionais.
             </p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="md:col-span-2">
+                <label className="erp-label">NF-e saída autorizada</label>
+                <AsyncAutocomplete<NFeSaidaListItem>
+                  wrapClassName="w-full"
+                  value={selNfeSaida?.id ?? null}
+                  selectedOption={selNfeSaida}
+                  placeholder="Buscar por número, chave ou cliente..."
+                  disabled={readOnly || nfeLoading}
+                  minChars={2}
+                  limit={25}
+                  search={buscarNfeSaida}
+                  getOptionValue={(nfe) => nfe.id}
+                  getOptionLabel={nfeOptionLabel}
+                  renderOption={(nfe) => (
+                    <div className="space-y-0.5">
+                      <div className="font-medium">{nfeOptionLabel(nfe)}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {nfe.cliente_nome || 'Cliente não informado'}
+                        {nfe.data ? ` · ${formatNfeDate(nfe.data)}` : ''}
+                      </div>
+                    </div>
+                  )}
+                  onChange={(_value, option) => void selecionarNfeSaida(option ?? null)}
+                />
+                {nfeLoading ? <p className="mt-1 text-xs text-muted-foreground">Carregando dados da NF-e…</p> : null}
+              </div>
               {(
                 [
                   ['pedido_venda', 'Pedido venda'],
                   ['pedido_compra', 'Pedido compra'],
                   ['faturamento', 'Faturamento'],
-                  ['nfe_saida', 'NF-e saída'],
                   ['alocacao_atendimento', 'Atendimento op.'],
                   ['nfe_entrada', 'NF-e entrada'],
                   ['cte_entrada', 'CT-e entrada'],
