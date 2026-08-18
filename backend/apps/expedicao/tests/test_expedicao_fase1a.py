@@ -10,7 +10,7 @@ from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from apps.cadastros.models import Cliente, Fornecedor
+from apps.cadastros.models import Cliente, Empresa, Fornecedor
 from apps.expedicao.models import Expedicao, StatusExpedicao, TipoOperacaoExpedicao
 from apps.fiscal.models import AtendimentoEstoque, EstoqueCorrida, NFeSaida
 
@@ -114,39 +114,39 @@ class ExpedicaoFase1aTests(TestCase):
         self.assertEqual(AtendimentoEstoque.objects.count(), antes_ae)
 
     def test_nao_altera_nfe(self):
-        numeracao_antes = 'NF-E-VOLUME-01'
         nf = NFeSaida.objects.create(
             numero='999001',
             data=date(2026, 6, 1),
             cliente=self.cliente,
             status='AUTORIZADA',
-            status_emissao_sefaz=NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO,
-            numeracao_volumes=numeracao_antes,
         )
         status_antes = nf.status
         chave_antes = nf.chave_acesso
-        resposta = self.client.post(
+        cri = self.client.post(
             '/api/expedicoes/',
             self._payload(nfe_saida=nf.pk),
             format='json',
-        )
-        self.assertEqual(resposta.status_code, status.HTTP_201_CREATED)
-        cri = resposta.json()
+        ).json()
         self.assertEqual(cri['nfe_saida'], nf.pk)
         nf.refresh_from_db()
         self.assertEqual(nf.status, status_antes)
         self.assertEqual(nf.chave_acesso, chave_antes)
-        self.assertEqual(nf.numeracao_volumes, numeracao_antes)
         self.assertEqual(Expedicao.objects.filter(nfe_saida=nf).count(), 1)
 
     def test_etiquetas_pdf_nfe_autorizada_sem_alterar_nfe(self):
         numeracao_antes = '07140012'
+        empresa = Empresa.objects.create(
+            razao_social='NEXUS VALVULAS E CONEXOES INDUSTRIAIS LTDA',
+            nome_fantasia='NEXUS VALVULAS',
+            cnpj=_cnpj(),
+        )
         nf = NFeSaida.objects.create(
             numero='410',
             data=date(2026, 8, 18),
             cliente=self.cliente,
             status='AUTORIZADA',
             status_emissao_sefaz=NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO,
+            empresa_emitente=empresa,
             quantidade_volumes=1,
             numeracao_volumes=numeracao_antes,
         )

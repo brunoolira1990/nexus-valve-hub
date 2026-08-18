@@ -1,5 +1,3 @@
-"""Geração de etiquetas de transporte — operação logística sem efeitos fiscais."""
-
 from __future__ import annotations
 
 from io import BytesIO
@@ -11,6 +9,7 @@ from reportlab.graphics.barcode import code128
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import portrait
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 from apps.comercial.comercial_pdf_shared import pdf_http_response
@@ -20,10 +19,6 @@ from apps.expedicao.services.expedicao_service import ExpedicaoErro, sincronizar
 
 class ExpedicaoEtiquetaErro(ValueError):
     """Erro de regra de negócio para preparação/impressão de etiquetas."""
-
-
-ETIQUETA_LARGURA = 62 * mm
-ETIQUETA_ALTURA = 100 * mm
 
 
 def _texto(valor: Any, fallback: str = '—', limite: int = 48) -> str:
@@ -59,43 +54,99 @@ def _preparar_dados(expedicao: Expedicao) -> tuple[Expedicao, int]:
     return expedicao, _quantidade_volumes(expedicao)
 
 
+def _imagem_logo(empresa: Any) -> ImageReader | None:
+    if not empresa:
+        return None
+    arquivo = getattr(empresa, 'logotipo', None)
+    if not arquivo or not getattr(arquivo, 'name', ''):
+        return None
+    try:
+        arquivo.open('rb')
+        dados = arquivo.read()
+    except (AttributeError, OSError, ValueError):
+        return None
+    finally:
+        try:
+            arquivo.close()
+        except (AttributeError, OSError, ValueError):
+            pass
+    if not dados:
+        return None
+    try:
+        return ImageReader(BytesIO(dados))
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def _desenhar_logo(c: canvas.Canvas, empresa: Any, altura: float) -> None:
+    imagem = _imagem_logo(empresa)
+    if imagem is None:
+        return
+    largura_original, altura_original = imagem.getSize()
+    if not largura_original or not altura_original:
+        return
+    largura_maxima = 16 * mm
+    altura_maxima = 17 * mm
+    escala = min(largura_maxima / largura_original, altura_maxima / altura_original)
+    c.drawImage(
+        imagem,
+        4 * mm,
+        altura - 22 * mm,
+        width=largura_original * escala,
+        height=altura_original * escala,
+        preserveAspectRatio=True,
+        mask='auto',
+    )
+
+
 def _desenhar_linha(c: canvas.Canvas, rotulo: str, valor: str, y: float) -> float:
-    c.setFont('Helvetica-Bold', 6.6)
+    c.setFont('Helvetica-Bold', 8.5)
     c.setFillColor(colors.HexColor('#374151'))
     c.drawString(5 * mm, y, f'{rotulo}:')
-    c.setFont('Helvetica', 6.8)
+    c.setFont('Helvetica', 8.5)
     c.setFillColor(colors.black)
-    c.drawString(24 * mm, y, _texto(valor, limite=25))
-    return y - 4.5 * mm
+    c.drawString(30 * mm, y, _texto(valor, limite=38))
+    return y - 7 * mm
 
 
 def _renderizar_etiquetas(expedicao: Expedicao, quantidade: int) -> bytes:
-    """Renderiza uma página de 62 × 100 mm por volume para o rolo DK-22205."""
-    largura, altura = ETIQUETA_LARGURA, ETIQUETA_ALTURA
+    largura, altura = (62 * mm, 100 * mm)
     buffer = BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=portrait((largura, altura)))
     nfe = expedicao.nfe_saida
+    empresa = getattr(nfe, 'empresa_emitente', None) if nfe else None
+    empresa_nome = (
+        getattr(empresa, 'nome_fantasia', '')
+        or getattr(empresa, 'razao_social', '')
+        or 'NEXUS VÁLVULAS E CONEXÕES INDUSTRIAIS'
+    )
+    empresa_cnpj = getattr(empresa, 'cnpj', '') if empresa else ''
     cliente_obj = expedicao.cliente if expedicao.cliente_id else None
-    fornecedor_obj = expedicao.fornecedor if expedicao.fornecedor_id else None
     transportadora_obj = expedicao.transportadora if expedicao.transportadora_id else None
     cliente = getattr(cliente_obj, 'razao_social', '') or getattr(cliente_obj, 'nome', '')
-    fornecedor = getattr(fornecedor_obj, 'razao_social', '') or getattr(fornecedor_obj, 'nome', '')
     transportadora = getattr(transportadora_obj, 'razao_social', '') or getattr(transportadora_obj, 'nome', '')
     nfe_numero = (getattr(nfe, 'numero_nfe', '') or getattr(nfe, 'numero', '')) if nfe else ''
     nfe_numeracao_volumes = getattr(nfe, 'numeracao_volumes', '') if nfe else ''
 
     for indice in range(1, quantidade + 1):
         pdf.setFillColor(colors.HexColor('#0f172a'))
-        pdf.rect(0, altura - 20 * mm, largura, 20 * mm, fill=1, stroke=0)
+        pdf.rect(0, altura - 27 * mm, largura, 27 * mm, fill=1, stroke=0)
+        _desenhar_logo(pdf, empresa, altura)
         pdf.setFillColor(colors.white)
-        pdf.setFont('Helvetica-Bold', 6.5)
-        pdf.drawCentredString(largura / 2, altura - 6.5 * mm, 'NEXUS VÁLVULAS — TRANSPORTE')
-        pdf.setFont('Helvetica-Bold', 12)
-        pdf.drawCentredString(largura / 2, altura - 15 * mm, _texto(expedicao.codigo, limite=23))
+        pdf.setFont('Helvetica-Bold', 5.8)
+        pdf.drawString(23 * mm, altura - 6 * mm, _texto(empresa_nome, limite=31))
+        pdf.setFont('Helvetica', 5.4)
+        pdf.drawString(
+            23 * mm,
+            altura - 10 * mm,
+            _texto(f'CNPJ {empresa_cnpj}', limite=31) if empresa_cnpj else 'OPERAÇÃO LOGÍSTICA',
+        )
+        pdf.setFont('Helvetica-Bold', 7.8)
+        pdf.drawCentredString(largura / 2, altura - 21.5 * mm, _texto(expedicao.codigo, limite=23))
 
         pdf.setFillColor(colors.HexColor('#111827'))
         pdf.setFont('Helvetica-Bold', 9.5)
-        pdf.drawString(5 * mm, altura - 26 * mm, f'VOLUME {indice}/{quantidade}')
+        pdf.drawString(5 * mm, altura - 33 * mm, f'VOLUME {indice}/{quantidade}')
 
         barcode = code128.Code128(
             expedicao.codigo,
@@ -103,24 +154,27 @@ def _renderizar_etiquetas(expedicao: Expedicao, quantidade: int) -> bytes:
             barWidth=0.32 * mm,
             humanReadable=False,
         )
-        barcode.drawOn(pdf, 5 * mm, altura - 39 * mm)
+        barcode.drawOn(pdf, 5 * mm, altura - 46 * mm)
 
-        y = altura - 46 * mm
+        y = altura - 53 * mm
         y = _desenhar_linha(pdf, 'Cliente', cliente, y)
-        y = _desenhar_linha(pdf, 'Fornecedor', fornecedor, y)
         y = _desenhar_linha(pdf, 'Transportadora', transportadora, y)
         y = _desenhar_linha(pdf, 'Motorista', expedicao.motorista_nome, y)
         y = _desenhar_linha(pdf, 'Placa', expedicao.placa_veiculo, y)
         y = _desenhar_linha(pdf, 'NF-e', nfe_numero, y)
         y = _desenhar_linha(pdf, 'Vol. NF-e', nfe_numeracao_volumes, y)
         y = _desenhar_linha(pdf, 'Peso bruto', f'{expedicao.peso_bruto or "—"} kg', y)
-        _desenhar_linha(pdf, 'Peso líquido', f'{expedicao.peso_liquido or "—"} kg', y)
+        y = _desenhar_linha(pdf, 'Peso líquido', f'{expedicao.peso_liquido or "—"} kg', y)
 
         pdf.setStrokeColor(colors.HexColor('#cbd5e1'))
-        pdf.line(5 * mm, 6 * mm, largura - 5 * mm, 6 * mm)
+        pdf.line(5 * mm, 8 * mm, largura - 5 * mm, 8 * mm)
         pdf.setFillColor(colors.HexColor('#475569'))
-        pdf.setFont('Helvetica', 5.6)
-        pdf.drawCentredString(largura / 2, 2.5 * mm, 'Etiqueta operacional — reimpressão permitida')
+        pdf.setFont('Helvetica', 5.8)
+        pdf.drawCentredString(
+            largura / 2,
+            4 * mm,
+            'Identificação operacional — reimpressão permitida',
+        )
         pdf.showPage()
 
     pdf.save()
@@ -133,7 +187,9 @@ def gerar_etiquetas_pdf(expedicao_id: int) -> HttpResponse:
     # transacional. Não usar FOR UPDATE junto a relações opcionais: no
     # PostgreSQL isso tenta bloquear o lado nullable de LEFT OUTER JOIN.
     expedicao = (
-        Expedicao.objects.select_related('cliente', 'fornecedor', 'transportadora', 'nfe_saida')
+        Expedicao.objects.select_related(
+            'cliente', 'fornecedor', 'transportadora', 'nfe_saida__empresa_emitente'
+        )
         .get(pk=expedicao_id)
     )
     expedicao, quantidade = _preparar_dados(expedicao)
