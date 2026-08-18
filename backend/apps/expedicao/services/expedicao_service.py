@@ -11,6 +11,7 @@ from django.db.models import Count
 from django.utils import timezone
 
 from apps.expedicao.models import Expedicao, StatusExpedicao, TipoOperacaoExpedicao
+from apps.fiscal.models import NFeSaida
 
 
 class ExpedicaoErro(ValueError):
@@ -185,6 +186,33 @@ def validar_minimo_expedicao(dados: dict[str, Any]) -> None:
         )
 
 
+def _nfe_autorizada(nfe: NFeSaida) -> bool:
+    return bool(
+        nfe.efeitos_autorizacao_aplicados_em
+        or nfe.autorizada_em
+        or nfe.xml_autorizado
+        or nfe.protocolo_autorizacao
+        or nfe.status_emissao_sefaz in {'AUTORIZADA_PRODUCAO', 'AUTORIZADA_HOMOLOGACAO'}
+    )
+
+
+def sincronizar_numeracao_nfe(expedicao: Expedicao) -> None:
+    if not expedicao.nfe_saida_id:
+        return
+    nfe = NFeSaida.objects.select_for_update().get(pk=expedicao.nfe_saida_id)
+    atual = (nfe.numeracao_volumes or '').strip()
+    if _nfe_autorizada(nfe):
+        if atual != expedicao.codigo:
+            raise ExpedicaoErro(
+                'A NF-e já está autorizada com outra numeração de volumes; '
+                'a expedição não pode sobrescrever o documento fiscal.'
+            )
+        return
+    if atual != expedicao.codigo:
+        nfe.numeracao_volumes = expedicao.codigo
+        nfe.save(update_fields=['numeracao_volumes'])
+
+
 def _normalizar_payload(dados: dict[str, Any]) -> dict[str, Any]:
     out = dict(dados)
     if 'volumes' in out:
@@ -209,6 +237,7 @@ def criar_expedicao(dados: dict[str, Any], *, usuario) -> Expedicao:
         atualizado_por=usuario,
         **campos,
     )
+    sincronizar_numeracao_nfe(exp)
     return exp
 
 
@@ -237,6 +266,7 @@ def atualizar_expedicao(expedicao: Expedicao, dados: dict[str, Any], *, usuario)
     _aplicar_campos(expedicao, payload)
     expedicao.atualizado_por = usuario
     expedicao.save()
+    sincronizar_numeracao_nfe(expedicao)
     return expedicao
 
 

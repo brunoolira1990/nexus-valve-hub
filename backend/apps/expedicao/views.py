@@ -11,6 +11,7 @@ from nexus_erp.list_mixins import AutocompleteOrPaginationMixin, aplicar_orderin
 from nexus_erp.pagination import NexusPageNumberPagination
 from nexus_erp.view_mixins import FriendlyDestroyMixin
 
+from apps.expedicao.etiquetas import ExpedicaoEtiquetaErro, gerar_etiquetas_pdf
 from apps.expedicao.models import Expedicao, StatusExpedicao
 from apps.expedicao.serializers import (
     ExpedicaoAlterarStatusSerializer,
@@ -159,6 +160,15 @@ class ExpedicaoViewSet(FriendlyDestroyMixin, AutocompleteOrPaginationMixin, view
         if isinstance(response.data, dict) and 'results' in response.data:
             response.data['resumo'] = resumo_expedicoes_por_status()
         return response
+
+    @action(detail=True, methods=['post'], url_path='etiquetas-pdf')
+    def etiquetas_pdf(self, request, pk=None):
+        try:
+            return gerar_etiquetas_pdf(int(pk))
+        except Expedicao.DoesNotExist:
+            return Response({'ok': False, 'mensagem': 'Expedição não encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+        except ExpedicaoEtiquetaErro as exc:
+            return Response({'ok': False, 'mensagem': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['get'], url_path='resumo')
     def resumo(self, request):

@@ -21,4 +21,6 @@ export const expedicaoService = {
     (await api.post<ExpedicaoItem>(`${path}${id}/alterar-status/`, payload)).data,
   cancelar: async (id: number, motivo?: string) =>
     (await api.post<ExpedicaoItem>(`${path}${id}/cancelar/`, { motivo: motivo || '' })).data,
+  etiquetasPdf: async (id: number) =>
+    (await api.post<Blob>(`${path}${id}/etiquetas-pdf/`, undefined, { responseType: 'blob' })).data,
 };

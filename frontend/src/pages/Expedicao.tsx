@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Ban, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { Ban, MoreHorizontal, Pencil, Printer, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader } from '@/components/PageHeader';
 import { ExpedicaoFormModal } from '@/components/expedicao/ExpedicaoFormModal';
@@ -13,6 +13,7 @@ import { PaginationControls } from '@/components/list/PaginationControls';
 import { ErrorState } from '@/components/list/ListStates';
 import { expedicaoService } from '@/services/api/expedicao';
 import { apiErrorMessage } from '@/services/api/config';
+import { PopupBlockedError, visualizarPdfEmNovaAba } from '@/lib/downloadBlobFile';
 import { usePaginatedList } from '@/hooks/usePaginatedList';
 import type { ExpedicaoItem, ExpedicaoResumo, StatusExpedicao } from '@/types/expedicao';
 import { STATUS_EXPEDICAO, TIPOS_OPERACAO_EXPEDICAO } from '@/types/expedicao';
@@ -45,6 +46,7 @@ const Expedicao = () => {
   const [cancelModal, setCancelModal] = useState<ExpedicaoItem | null>(null);
   const [cancelMotivo, setCancelMotivo] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [etiquetaLoadingId, setEtiquetaLoadingId] = useState<number | null>(null);
 
   const {
     items,
@@ -105,6 +107,19 @@ const Expedicao = () => {
       void reload();
     } catch (e) {
       toast.error(apiErrorMessage(e, { fallback: 'Não foi possível excluir.' }));
+    }
+  };
+
+  const handleEtiquetas = async (item: ExpedicaoItem) => {
+    setEtiquetaLoadingId(item.id);
+    try {
+      await visualizarPdfEmNovaAba(() => expedicaoService.etiquetasPdf(item.id));
+      toast.success(`Etiquetas ${item.codigo} prontas para impressão.`);
+    } catch (e) {
+      const mensagem = e instanceof PopupBlockedError ? e.message : apiErrorMessage(e, { fallback: 'Não foi possível gerar as etiquetas.' });
+      toast.error(mensagem);
+    } finally {
+      setEtiquetaLoadingId(null);
     }
   };
 
@@ -264,6 +279,18 @@ const Expedicao = () => {
                         <button type="button" className="erp-btn-ghost erp-btn-sm" title="Editar" onClick={() => openEdit(item)}>
                           <Pencil className="h-4 w-4" />
                         </button>
+                        {item.status !== 'CANCELADO' ? (
+                          <button
+                            type="button"
+                            className="erp-btn-ghost erp-btn-sm"
+                            title="Imprimir etiquetas"
+                            aria-label={`Imprimir etiquetas da expedição ${item.codigo}`}
+                            onClick={() => void handleEtiquetas(item)}
+                            disabled={etiquetaLoadingId === item.id}
+                          >
+                            <Printer className={`h-4 w-4 ${etiquetaLoadingId === item.id ? 'animate-pulse' : ''}`} />
+                          </button>
+                        ) : null}
                         {item.status !== 'CANCELADO' ? (
                           <button
                             type="button"
