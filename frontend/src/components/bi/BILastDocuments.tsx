@@ -37,7 +37,7 @@ export function BILastDocuments({
         <BIEmptyState message="Nenhum registro recente." />
       ) : (
         <div className="overflow-x-auto">
-          <table className="erp-table text-sm w-full">
+          <table className="erp-table text-sm w-full" data-mobile-table-mode="cards">
             <thead>
               <tr>
                 <th>Documento</th>

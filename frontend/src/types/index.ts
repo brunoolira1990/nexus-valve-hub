@@ -2929,6 +2929,55 @@ export interface EstoqueSaldoItem {
   corridas_resumo?: string[];
 }
 
+export interface KardexEstoqueEvento {
+  id: string;
+  natureza: 'ENTRADA' | 'SAIDA' | 'ESTORNO';
+  natureza_label: string;
+  quantidade: string;
+  quantidade_assinada: string;
+  saldo_acumulado: string;
+  movimento_em: string | null;
+  data: string | null;
+  produto_id: number;
+  codigo: string;
+  descricao: string;
+  unidade: string;
+  corrida_id: number | null;
+  corrida: string;
+  documento: string;
+  documento_id: number | null;
+  origem: string;
+  observacao: string;
+}
+
+export interface KardexEstoqueResumo {
+  entradas: string;
+  saidas: string;
+  estornos: string;
+  saldo_final: string;
+  quantidade_eventos: number;
+}
+
+export interface KardexEstoqueFiltros {
+  produto_id?: number;
+  corrida_id?: number;
+  search?: string;
+  natureza?: KardexEstoqueEvento['natureza'];
+  data_inicio?: string;
+  data_fim?: string;
+}
+
+export interface KardexEstoqueResponse {
+  count: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  next: string | null;
+  previous: string | null;
+  results: KardexEstoqueEvento[];
+  resumo: KardexEstoqueResumo;
+}
+
 export interface ApuracaoFiscalFiltros {
   empresa_id: number | null;
   data_inicio: string;

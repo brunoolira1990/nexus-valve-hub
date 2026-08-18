@@ -367,7 +367,7 @@ export const RegrasFiscaisSaidaTab = () => {
                   {c.total_configuracoes ?? 0} configuração
                   {(c.total_configuracoes ?? 0) === 1 ? '' : 'ões'}
                 </p>
-                <button type="button" className="erp-btn-primary erp-btn-sm w-fit mt-1" onClick={() => void abrirCenario(c)}>
+                <button type="button" className="erp-btn-primary erp-btn-sm w-full sm:w-fit mt-1" onClick={() => void abrirCenario(c)}>
                   Abrir cenário
                 </button>
               </div>
@@ -420,7 +420,7 @@ export const RegrasFiscaisSaidaTab = () => {
             </button>
           </div>
           <div className="erp-card overflow-x-auto">
-            <table className="erp-table text-sm">
+            <table className="erp-table text-sm" data-mobile-table-mode="cards">
               <thead>
                 <tr>
                   <th>Escopo</th>
@@ -475,7 +475,7 @@ export const RegrasFiscaisSaidaTab = () => {
             </p>
           ) : null}
           <div className="erp-card overflow-x-auto">
-            <table className="erp-table text-sm">
+            <table className="erp-table text-sm" data-mobile-table-mode="cards">
               <thead>
                 <tr>
                   <th>UF orig.</th>
@@ -535,13 +535,13 @@ export const RegrasFiscaisSaidaTab = () => {
                       ) : null}
                     </td>
                     <td>
-                      <div className="flex gap-1">
-                        <button type="button" className="erp-btn-ghost erp-btn-sm" title="Editar" onClick={() => void openEdit(cfg)}>
+                      <div className="flex flex-col sm:flex-row gap-1 w-full sm:w-auto">
+                        <button type="button" className="erp-btn-ghost erp-btn-sm w-full sm:w-auto" title="Editar" onClick={() => void openEdit(cfg)}>
                           <Pencil className="h-4 w-4" />
                         </button>
                         <button
                           type="button"
-                          className="erp-btn-ghost erp-btn-sm text-destructive"
+                          className="erp-btn-ghost erp-btn-sm w-full sm:w-auto text-destructive"
                           title="Excluir"
                           onClick={() => void handleDelete(cfg.id)}
                         >
@@ -590,11 +590,11 @@ export const RegrasFiscaisSaidaTab = () => {
             </div>
           ) : null}
         </div>
-        <div className="flex justify-end gap-2 mt-4">
-          <button type="button" className="erp-btn-outline" onClick={() => setModalEscopoOpen(false)}>
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end items-stretch sm:items-center gap-2 mt-4">
+          <button type="button" className="erp-btn-outline w-full sm:w-auto" onClick={() => setModalEscopoOpen(false)}>
             Cancelar
           </button>
-          <button type="button" className="erp-btn-primary" onClick={() => void handleCriarEscopo()}>
+          <button type="button" className="erp-btn-primary w-full sm:w-auto" onClick={() => void handleCriarEscopo()}>
             Criar
           </button>
         </div>
@@ -617,7 +617,7 @@ export const RegrasFiscaisSaidaTab = () => {
             <button
               key={aba.id}
               type="button"
-              className={abaForm === aba.id ? 'erp-btn-primary erp-btn-sm' : 'erp-btn-outline erp-btn-sm'}
+              className={abaForm === aba.id ? 'erp-btn-primary erp-btn-sm w-full sm:w-auto' : 'erp-btn-outline erp-btn-sm w-full sm:w-auto'}
               onClick={() => setAbaForm(aba.id)}
             >
               {aba.label}
@@ -644,11 +644,11 @@ export const RegrasFiscaisSaidaTab = () => {
           ) : null}
         </section>
 
-        <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
-          <button type="button" className="erp-btn-outline" onClick={() => setModalOpen(false)}>
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end items-stretch sm:items-center gap-2 mt-6 pt-4 border-t border-border">
+          <button type="button" className="erp-btn-outline w-full sm:w-auto" onClick={() => setModalOpen(false)}>
             Cancelar
           </button>
-          <button type="button" className="erp-btn-primary" onClick={() => void handleSave()}>
+          <button type="button" className="erp-btn-primary w-full sm:w-auto" onClick={() => void handleSave()}>
             Salvar
           </button>
         </div>

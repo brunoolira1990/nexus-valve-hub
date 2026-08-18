@@ -84,7 +84,7 @@ export function TituloFinanceiroFiltrosPanel({
         {temFiltro ? (
           <button
             type="button"
-            className="erp-btn-outline erp-btn-sm text-xs"
+            className="erp-btn-outline erp-btn-sm text-xs w-full sm:w-auto"
             onClick={() => onChange({ ...EMPTY })}
           >
             <X className="h-3 w-3 mr-1" />
@@ -95,7 +95,7 @@ export function TituloFinanceiroFiltrosPanel({
 
       <div className="flex flex-wrap gap-2">
         <select
-          className="erp-input erp-input-sm min-w-[140px]"
+          className="erp-input erp-input-sm w-full sm:w-auto sm:min-w-[140px]"
           value={filtros.vencimento}
           onChange={(e) => patch('vencimento', e.target.value)}
         >
@@ -107,7 +107,7 @@ export function TituloFinanceiroFiltrosPanel({
           <option value="mes">Este mês</option>
         </select>
         <select
-          className="erp-input erp-input-sm min-w-[140px]"
+          className="erp-input erp-input-sm w-full sm:w-auto sm:min-w-[140px]"
           value={filtros.status}
           onChange={(e) => patch('status', e.target.value)}
         >
@@ -128,7 +128,7 @@ export function TituloFinanceiroFiltrosPanel({
           <option value="CANCELADO">Cancelado</option>
         </select>
         <select
-          className="erp-input erp-input-sm min-w-[120px]"
+          className="erp-input erp-input-sm w-full sm:w-auto sm:min-w-[120px]"
           value={filtros.origem_tipo}
           onChange={(e) => patch('origem_tipo', e.target.value)}
         >
@@ -154,7 +154,7 @@ export function TituloFinanceiroFiltrosPanel({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 pt-2 border-t border-border/60">
           {modo === 'PAGAR' ? (
             <select
-              className="erp-input erp-input-sm"
+              className="erp-input erp-input-sm w-full"
               value={filtros.tipo_lancamento}
               onChange={(e) => patch('tipo_lancamento', e.target.value)}
             >
@@ -167,7 +167,7 @@ export function TituloFinanceiroFiltrosPanel({
             </select>
           ) : null}
           <select
-            className="erp-input erp-input-sm"
+            className="erp-input erp-input-sm w-full"
             value={filtros.categoria}
             onChange={(e) => patch('categoria', e.target.value)}
           >
@@ -179,7 +179,7 @@ export function TituloFinanceiroFiltrosPanel({
             ))}
           </select>
           <select
-            className="erp-input erp-input-sm"
+            className="erp-input erp-input-sm w-full"
             value={filtros.centro_custo}
             onChange={(e) => patch('centro_custo', e.target.value)}
           >
@@ -191,7 +191,7 @@ export function TituloFinanceiroFiltrosPanel({
             ))}
           </select>
           <select
-            className="erp-input erp-input-sm"
+            className="erp-input erp-input-sm w-full"
             value={filtros.conta_prevista}
             onChange={(e) => patch('conta_prevista', e.target.value)}
           >

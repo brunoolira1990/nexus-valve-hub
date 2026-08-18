@@ -117,40 +117,40 @@ export default function PainelFiscalGerencialHistorico() {
     <div>
       <PageHeader title="Painel fiscal/gerencial consolidado (historico)" />
       <div className="erp-card p-4 mb-6 space-y-3">
-        <div className="flex flex-wrap gap-2 items-end">
-          <select className="erp-select" value={periodoTipo} onChange={(e) => setPeriodoTipo(e.target.value as PeriodoTipo)}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:flex xl:flex-wrap gap-2 items-end">
+          <select className="erp-select w-full xl:w-auto" value={periodoTipo} onChange={(e) => setPeriodoTipo(e.target.value as PeriodoTipo)}>
             <option value="mes">Mes</option>
             <option value="trimestre">Trimestre</option>
             <option value="intervalo">Intervalo</option>
           </select>
-          {periodoTipo === 'mes' && <input type="month" className="erp-input" value={mes} onChange={(e) => setMes(e.target.value)} />}
+          {periodoTipo === 'mes' && <input type="month" className="erp-input w-full xl:w-auto" value={mes} onChange={(e) => setMes(e.target.value)} />}
           {periodoTipo === 'trimestre' && (
             <>
-              <input type="number" className="erp-input w-24" value={anoTri} onChange={(e) => setAnoTri(Number(e.target.value))} />
-              <select className="erp-select" value={numTri} onChange={(e) => setNumTri(Number(e.target.value) as 1 | 2 | 3 | 4)}>
+              <input type="number" className="erp-input w-full sm:w-24" value={anoTri} onChange={(e) => setAnoTri(Number(e.target.value))} />
+              <select className="erp-select w-full xl:w-auto" value={numTri} onChange={(e) => setNumTri(Number(e.target.value) as 1 | 2 | 3 | 4)}>
                 <option value={1}>Q1</option><option value={2}>Q2</option><option value={3}>Q3</option><option value={4}>Q4</option>
               </select>
             </>
           )}
           {periodoTipo === 'intervalo' && (
             <>
-              <input type="date" className="erp-input" value={di} onChange={(e) => setDi(e.target.value)} />
-              <input type="date" className="erp-input" value={df} onChange={(e) => setDf(e.target.value)} />
+              <input type="date" className="erp-input w-full xl:w-auto" value={di} onChange={(e) => setDi(e.target.value)} />
+              <input type="date" className="erp-input w-full xl:w-auto" value={df} onChange={(e) => setDf(e.target.value)} />
             </>
           )}
-          <select className="erp-select" value={empresaId} onChange={(e) => setEmpresaId(e.target.value)}>
+          <select className="erp-select w-full xl:w-auto" value={empresaId} onChange={(e) => setEmpresaId(e.target.value)}>
             <option value="">Empresa</option>{empresas.map((v) => <option key={v.id} value={v.id}>{v.razao_social}</option>)}
           </select>
-          <select className="erp-select" value={clienteId} onChange={(e) => setClienteId(e.target.value)}>
+          <select className="erp-select w-full xl:w-auto" value={clienteId} onChange={(e) => setClienteId(e.target.value)}>
             <option value="">Cliente</option>{clientes.map((v) => <option key={v.id} value={v.id}>{v.razao_social}</option>)}
           </select>
-          <select className="erp-select" value={fornecedorId} onChange={(e) => setFornecedorId(e.target.value)}>
+          <select className="erp-select w-full xl:w-auto" value={fornecedorId} onChange={(e) => setFornecedorId(e.target.value)}>
             <option value="">Fornecedor</option>{fornecedores.map((v) => <option key={v.id} value={v.id}>{v.razao_social}</option>)}
           </select>
-          <select className="erp-select" value={transportadoraId} onChange={(e) => setTransportadoraId(e.target.value)}>
+          <select className="erp-select w-full xl:w-auto" value={transportadoraId} onChange={(e) => setTransportadoraId(e.target.value)}>
             <option value="">Transportadora</option>{transportadoras.map((v) => <option key={v.id} value={v.id}>{v.razao_social}</option>)}
           </select>
-          <button type="button" className="erp-btn-primary" onClick={() => void carregar()} disabled={loading}>
+          <button type="button" className="erp-btn-primary w-full sm:w-auto justify-center" onClick={() => void carregar()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1 inline ${loading ? 'animate-spin' : ''}`} />Atualizar
           </button>
         </div>
@@ -159,7 +159,7 @@ export default function PainelFiscalGerencialHistorico() {
 
       {painel && fat && comp && fre && vis && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
             <div className="erp-card p-3"><div className="text-xs">Faturamento</div><div className="font-semibold">{fmtBrl(fat.totais.faturamento_bruto)}</div></div>
             <div className="erp-card p-3"><div className="text-xs">Compras</div><div className="font-semibold">{fmtBrl(comp.totais.valor_total_compras)}</div></div>
             <div className="erp-card p-3"><div className="text-xs">Fretes</div><div className="font-semibold">{fmtBrl(fre.totais.valor_total_fretes)}</div></div>
@@ -170,7 +170,7 @@ export default function PainelFiscalGerencialHistorico() {
 
           <div className="erp-card overflow-x-auto">
             <h3 className="font-medium text-sm p-4 pb-1">Fretes por transportadora</h3>
-            <table className="erp-table text-sm">
+            <table className="erp-table text-sm" data-mobile-table-mode="cards">
               <thead><tr><th>Transportadora</th><th>Total frete</th></tr></thead>
               <tbody>
                 {fre.totais.total_por_transportadora.map((row) => (

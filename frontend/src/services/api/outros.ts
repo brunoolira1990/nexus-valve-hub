@@ -7,6 +7,8 @@ import type {
   ContaContabil,
   EstoqueItem,
   EstoqueSaldoItem,
+  KardexEstoqueFiltros,
+  KardexEstoqueResponse,
   SaldoConsolidadoProduto,
 } from '@/types';
 
@@ -51,6 +53,8 @@ export const estoqueService = {
   },
   getSaldosConsolidados: async (params?: { produto_id?: number }): Promise<SaldoConsolidadoProduto | SaldoConsolidadoProduto[]> =>
     (await api.get<SaldoConsolidadoProduto | SaldoConsolidadoProduto[]>('estoque/saldos-consolidados/', { params })).data,
+  listKardexPaginated: async (params?: KardexEstoqueFiltros & { page?: number; page_size?: number }): Promise<KardexEstoqueResponse> =>
+    (await api.get<KardexEstoqueResponse>('estoque/kardex/', { params })).data,
 };
 
 export type SugestaoAtendimentoConferencia = {

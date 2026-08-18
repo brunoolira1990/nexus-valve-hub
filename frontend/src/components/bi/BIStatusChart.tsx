@@ -28,7 +28,7 @@ type BIStatusChartProps = {
   emptyMessage?: string;
 };
 
-const DEFAULT_CHART_CLASS = 'min-h-[280px] h-[320px] w-full min-w-0 aspect-auto';
+const DEFAULT_CHART_CLASS = 'min-h-[240px] sm:min-h-[280px] h-[280px] sm:h-[320px] w-full min-w-0 aspect-auto';
 
 export function BIStatusChart({ chart, className, emptyTitle, emptyMessage }: BIStatusChartProps) {
   const rows = chartRowsFromChart(chart);
@@ -70,7 +70,7 @@ export function BIStatusChart({ chart, className, emptyTitle, emptyMessage }: BI
       <ChartContainer config={config} className={heightClass}>
         <PieChart>
           <ChartTooltip content={<ChartTooltipContent />} />
-          <Pie data={rows} dataKey="value" nameKey="name" innerRadius={64} outerRadius={100} paddingAngle={2}>
+          <Pie data={rows} dataKey="value" nameKey="name" innerRadius="50%" outerRadius="78%" paddingAngle={2}>
             {rows.map((_, i) => (
               <Cell key={i} fill={BI_CHART_COLORS[i % BI_CHART_COLORS.length]} />
             ))}
@@ -89,7 +89,7 @@ export function BIStatusChart({ chart, className, emptyTitle, emptyMessage }: BI
           tickLine={false}
           axisLine={false}
           fontSize={10}
-          interval={0}
+          interval="preserveStartEnd"
           angle={-28}
           textAnchor="end"
           height={64}

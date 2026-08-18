@@ -354,13 +354,13 @@ export function FornecedorForm({
           <InputField label="Nome Fantasia" operationalUpper {...register('nome_fantasia')} />
           <div className="md:col-span-2 flex flex-col gap-2">
             <InputField label="CNPJ *" {...register('cnpj')} onBlur={onCnpjBlur} error={errors.cnpj?.message} onChange={(e) => setValue('cnpj', formatCnpj(e.target.value))} />
-            <div className="flex flex-wrap items-center gap-3 text-xs">
-              <span className="text-muted-foreground">
+            <div className="flex flex-col items-stretch gap-2 text-xs sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+              <span className="min-w-0 break-words text-muted-foreground">
                 {cnpjLookupLoading
                   ? 'Consultando CNPJ...'
                   : cnpjLookupMessage ?? 'A consulta ocorre automaticamente ao sair do campo.'}
               </span>
-              <CadastroButton type="button" variant="secondary" onClick={openContactModal}>
+              <CadastroButton className="w-full sm:w-auto" type="button" variant="secondary" onClick={openContactModal}>
                 Alterar dados de contato
               </CadastroButton>
             </div>
@@ -379,7 +379,7 @@ export function FornecedorForm({
             <div className="flex-1">
               <InputField label="CEP" {...register('cep')} onBlur={onCepBlur} onChange={(e) => setValue('cep', formatCep(e.target.value))} />
             </div>
-            <CadastroButton type="button" variant="outline" className="shrink-0" onClick={() => void runCepLookup()}>
+            <CadastroButton type="button" variant="outline" className="w-full shrink-0 sm:w-auto" onClick={() => void runCepLookup()}>
               Pesquisar CEP
             </CadastroButton>
           </div>
@@ -445,6 +445,7 @@ export function FornecedorForm({
       {tab === 'integracao' && (
         <TextareaField
           label="Integrações / observações de integração"
+          className="min-h-[140px] md:col-span-2"
           placeholder="Ex.: enviar NF por e-mail, integrar com CRM…"
           operationalUpper
           {...register('integracao_texto')}
@@ -486,7 +487,12 @@ export function FornecedorForm({
       )}
 
       {tab === 'recomendacoes' && (
-        <TextareaField label="Observações / recomendações" operationalUpper {...register('observacoes')} />
+        <TextareaField
+          label="Observações / recomendações"
+          className="min-h-[140px] md:col-span-2"
+          operationalUpper
+          {...register('observacoes')}
+        />
       )}
     </CadastroSection>
   );
@@ -509,11 +515,11 @@ export function FornecedorForm({
           {panel}
         </CadastroTabs>
 
-        <div className="flex justify-end gap-2 pt-4 border-t border-border">
-          <CadastroButton type="button" variant="outline" onClick={onCancel} disabled={saving}>
+        <div className="flex flex-col items-stretch gap-2 pt-4 border-t border-border sm:flex-row sm:justify-end">
+          <CadastroButton className="w-full sm:w-auto" type="button" variant="outline" onClick={onCancel} disabled={saving}>
             Cancelar
           </CadastroButton>
-          <CadastroButton type="submit" disabled={saving}>
+          <CadastroButton className="w-full sm:w-auto" type="submit" disabled={saving}>
             {saving ? 'Salvando…' : 'Salvar'}
           </CadastroButton>
         </div>
@@ -556,11 +562,11 @@ export function FornecedorForm({
             onChange={(e) => setContactDraft((d) => ({ ...d, contato_responsavel: e.target.value }))}
           />
         </div>
-        <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
-          <CadastroButton type="button" variant="outline" onClick={() => setContactOpen(false)}>
+        <div className="flex flex-col items-stretch gap-2 mt-6 pt-4 border-t border-border sm:flex-row sm:justify-end">
+          <CadastroButton className="w-full sm:w-auto" type="button" variant="outline" onClick={() => setContactOpen(false)}>
             Fechar
           </CadastroButton>
-          <CadastroButton type="button" onClick={applyContactModal}>
+          <CadastroButton className="w-full sm:w-auto" type="button" onClick={applyContactModal}>
             Aplicar
           </CadastroButton>
         </div>

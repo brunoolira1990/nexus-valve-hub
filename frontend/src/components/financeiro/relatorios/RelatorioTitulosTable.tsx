@@ -28,7 +28,7 @@ export function RelatorioTitulosTable({ linhas, modo, onAbrir, onBaixar }: Props
   if (!linhas.length) return null;
   return (
     <div className="erp-card overflow-x-auto">
-      <table className="w-full text-sm">
+      <table className="erp-table w-full text-sm" data-mobile-table-mode="cards">
         <thead>
           <tr className="border-b text-left text-muted-foreground">
             <th className="p-3 font-medium">Vencimento</th>
@@ -80,7 +80,7 @@ export function RelatorioTitulosTable({ linhas, modo, onAbrir, onBaixar }: Props
                 ) : null}
               </td>
               <td className="p-3">
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-1 w-full sm:w-auto">
                   <NexusButton variant="ghost" size="sm" onClick={() => onAbrir(ln.id)} title="Abrir título">
                     <Eye className="h-4 w-4" />
                   </NexusButton>

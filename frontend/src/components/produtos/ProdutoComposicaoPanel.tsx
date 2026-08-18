@@ -112,12 +112,12 @@ export function ProdutoComposicaoPanel({ produtoId, produtosOpcoes }: Props) {
 
   return (
     <div className="mt-6 border-t border-border pt-4">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
         <div>
           <h3 className="text-sm font-semibold">Composição / Montagem</h3>
           <p className="text-xs text-muted-foreground mt-0.5">{AVISO_COMPOSICAO_SEM_ESTOQUE}</p>
         </div>
-        <button type="button" className="erp-btn-outline erp-btn-sm" onClick={novaComposicao}>
+        <button type="button" className="erp-btn-outline erp-btn-sm w-full sm:w-auto" onClick={novaComposicao}>
           <Plus className="h-4 w-4 mr-1" />
           Nova composição
         </button>
@@ -142,7 +142,7 @@ export function ProdutoComposicaoPanel({ produtoId, produtosOpcoes }: Props) {
             Comprar pronto: {c.permite_comprar_pronto ? 'sim' : 'não'} · Montar: {c.permite_montar ? 'sim' : 'não'} ·
             Componentes: {c.itens?.length ?? 0}
           </p>
-          <div className="flex gap-2 mt-2">
+          <div className="flex flex-wrap gap-2 mt-2">
             <button type="button" className="erp-btn-ghost erp-btn-sm" onClick={() => setEditando(c)}>
               Editar
             </button>
@@ -161,7 +161,7 @@ export function ProdutoComposicaoPanel({ produtoId, produtosOpcoes }: Props) {
 
       {editando ? (
         <div className="rounded-md border border-dashed border-border p-3 space-y-3 mt-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="erp-label">Nome da composição</label>
               <input
@@ -225,9 +225,9 @@ export function ProdutoComposicaoPanel({ produtoId, produtosOpcoes }: Props) {
           <div>
             <p className="erp-label mb-2">Componentes</p>
             {(editando.itens || []).map((item, idx) => (
-              <div key={idx} className="grid grid-cols-12 gap-2 mb-2">
+              <div key={idx} className="grid grid-cols-1 sm:grid-cols-12 gap-2 mb-2">
                 <select
-                  className="erp-select col-span-7"
+                  className="erp-select sm:col-span-7"
                   value={item.componente_produto_id || ''}
                   onChange={(e) => {
                     const itens = [...(editando.itens || [])];
@@ -247,7 +247,7 @@ export function ProdutoComposicaoPanel({ produtoId, produtosOpcoes }: Props) {
                 <input
                   type="number"
                   step="0.0001"
-                  className="erp-input col-span-3"
+                  className="erp-input sm:col-span-3"
                   placeholder="Qtd/un"
                   value={item.quantidade_por_unidade_final}
                   onChange={(e) => {
@@ -258,7 +258,7 @@ export function ProdutoComposicaoPanel({ produtoId, produtosOpcoes }: Props) {
                 />
                 <button
                   type="button"
-                  className="erp-btn-ghost col-span-2"
+                  className="erp-btn-ghost sm:col-span-2 w-full sm:w-auto"
                   onClick={() => {
                     const itens = (editando.itens || []).filter((_, i) => i !== idx);
                     setEditando({ ...editando, itens });
@@ -270,18 +270,18 @@ export function ProdutoComposicaoPanel({ produtoId, produtosOpcoes }: Props) {
             ))}
             <button
               type="button"
-              className="erp-btn-outline erp-btn-sm"
+              className="erp-btn-outline erp-btn-sm w-full sm:w-auto"
               onClick={() => setEditando({ ...editando, itens: [...(editando.itens || []), emptyItem()] })}
             >
               + Componente
             </button>
           </div>
 
-          <div className="flex justify-end gap-2">
-            <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => setEditando(null)}>
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end items-stretch sm:items-center gap-2">
+            <button type="button" className="erp-btn-outline erp-btn-sm w-full sm:w-auto" onClick={() => setEditando(null)}>
               Cancelar
             </button>
-            <button type="button" className="erp-btn-primary erp-btn-sm" onClick={() => void salvar()}>
+            <button type="button" className="erp-btn-primary erp-btn-sm w-full sm:w-auto" onClick={() => void salvar()}>
               Salvar composição
             </button>
           </div>

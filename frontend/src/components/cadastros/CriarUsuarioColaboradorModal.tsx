@@ -153,11 +153,11 @@ export function CriarUsuarioColaboradorModal({ colaborador, onSuccess, onClose }
           />
         </div>
       </div>
-      <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
-        <button type="button" className="erp-btn-outline" onClick={onClose} disabled={loading}>
+      <div className="flex flex-col-reverse sm:flex-row sm:justify-end items-stretch sm:items-center gap-2 mt-6 pt-4 border-t border-border">
+        <button type="button" className="erp-btn-outline w-full sm:w-auto" onClick={onClose} disabled={loading}>
           Cancelar
         </button>
-        <button type="button" className="erp-btn-primary" onClick={() => void handleSubmit()} disabled={loading}>
+        <button type="button" className="erp-btn-primary w-full sm:w-auto" onClick={() => void handleSubmit()} disabled={loading}>
           {loading ? 'Criando…' : 'Criar usuário'}
         </button>
       </div>

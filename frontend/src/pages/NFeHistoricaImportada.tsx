@@ -384,7 +384,7 @@ const NFeHistoricaImportada = () => {
               precificação. Sem efeito operacional automático (faturamento, financeiro, estoque, expedição).
             </p>
           </div>
-          <label className="erp-btn-primary cursor-pointer shrink-0">
+          <label className="erp-btn-primary w-full sm:w-auto justify-center cursor-pointer shrink-0">
             <input
               type="file"
               accept=".xml,application/xml,text/xml"
@@ -409,24 +409,24 @@ const NFeHistoricaImportada = () => {
 
       {ultimoResultado && (
         <div className="erp-card p-6 mb-8">
-          <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
             <div>
               <h2 className="text-base font-semibold text-foreground">Resultado desta importação</h2>
               <p className="text-sm text-muted-foreground">
                 Refere-se somente ao último lote enviado ({ultimoResultado.resumo.total_arquivos} arquivo(s) processado(s)).
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <button
                 type="button"
-                className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1"
+                className="erp-btn-outline erp-btn-sm w-full sm:w-auto justify-center inline-flex items-center gap-1"
                 onClick={() => void copiarDiagnosticoImportacao()}
                 title="Copia resumo, listas e falhas (inclui JSON técnico das falhas)"
               >
                 <ClipboardList className="h-4 w-4" />
                 {diagCopiado ? 'Copiado!' : 'Copiar diagnóstico'}
               </button>
-              <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => setUltimoResultado(null)}>
+              <button type="button" className="erp-btn-outline erp-btn-sm w-full sm:w-auto justify-center" onClick={() => setUltimoResultado(null)}>
                 Limpar resultado
               </button>
             </div>
@@ -503,7 +503,7 @@ const NFeHistoricaImportada = () => {
                 mas a NF-e da chave ainda não estava na base (será aplicado ao importar a NF-e ou ao reprocessar).
               </p>
               <div className="overflow-x-auto border border-border rounded-md max-h-[min(60vh,480px)] overflow-y-auto">
-                <table className="erp-table text-sm">
+                <table className="erp-table text-sm" data-mobile-table-mode="cards">
                   <thead>
                     <tr>
                       <th>Arquivo</th>
@@ -545,7 +545,7 @@ const NFeHistoricaImportada = () => {
                 banco de dados).
               </p>
               <div className="overflow-x-auto border border-border rounded-md max-h-[min(70vh,520px)] overflow-y-auto">
-                <table className="erp-table text-sm">
+                <table className="erp-table text-sm" data-mobile-table-mode="cards">
                   <thead>
                     <tr>
                       <th>Arquivo</th>
@@ -605,10 +605,10 @@ const NFeHistoricaImportada = () => {
               tenta aplicar o cancelamento automaticamente. Use o reprocessamento para conciliar em lote.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             <button
               type="button"
-              className="erp-btn-outline erp-btn-sm"
+              className="erp-btn-outline erp-btn-sm w-full sm:w-auto justify-center"
               onClick={() => void loadPendentesGlobal()}
               disabled={loadingPendentes}
             >
@@ -617,7 +617,7 @@ const NFeHistoricaImportada = () => {
             </button>
             <button
               type="button"
-              className="erp-btn-primary erp-btn-sm"
+              className="erp-btn-primary erp-btn-sm w-full sm:w-auto justify-center"
               onClick={() => void reprocessarEventosPendentes()}
               disabled={reprocBusy || pendentesGlobal.length === 0}
             >
@@ -630,7 +630,7 @@ const NFeHistoricaImportada = () => {
         )}
         {pendentesGlobal.length > 0 && (
           <div className="overflow-x-auto border border-border rounded-md max-h-80 overflow-y-auto">
-            <table className="erp-table text-sm">
+            <table className="erp-table text-sm" data-mobile-table-mode="cards">
               <thead>
                 <tr>
                   <th>Chave NF-e</th>
@@ -676,11 +676,11 @@ const NFeHistoricaImportada = () => {
           </span>
         </p>
 
-        <div className="flex flex-wrap gap-3 items-end mt-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:flex xl:flex-wrap gap-3 items-end mt-4">
           <div>
             <label className="erp-label">Período</label>
             <select
-              className="erp-select mt-1 min-w-[160px]"
+              className="erp-select mt-1 w-full xl:min-w-[160px]"
               value={periodoTipo}
               onChange={(e) => setPeriodoTipo(e.target.value as PeriodoTipo)}
             >
@@ -733,7 +733,7 @@ const NFeHistoricaImportada = () => {
           )}
           <div>
             <label className="erp-label">Cliente (vinculado)</label>
-            <select className="erp-select mt-1 min-w-[200px]" value={clienteId} onChange={(e) => setClienteId(e.target.value)}>
+            <select className="erp-select mt-1 w-full xl:min-w-[200px]" value={clienteId} onChange={(e) => setClienteId(e.target.value)}>
               <option value="">Todos</option>
               {clientes.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -744,7 +744,7 @@ const NFeHistoricaImportada = () => {
           </div>
           <div>
             <label className="erp-label">Emitente (vinculado)</label>
-            <select className="erp-select mt-1 min-w-[200px]" value={empresaId} onChange={(e) => setEmpresaId(e.target.value)}>
+            <select className="erp-select mt-1 w-full xl:min-w-[200px]" value={empresaId} onChange={(e) => setEmpresaId(e.target.value)}>
               <option value="">Todos</option>
               {empresas.map((e) => (
                 <option key={e.id} value={e.id}>
@@ -753,11 +753,11 @@ const NFeHistoricaImportada = () => {
               ))}
             </select>
           </div>
-          <label className="inline-flex items-center gap-2 mt-5 text-sm text-muted-foreground">
+          <label className="inline-flex items-center gap-2 sm:mt-5 text-sm text-muted-foreground">
             <input type="checkbox" checked={incluirCanceladas} onChange={(e) => setIncluirCanceladas(e.target.checked)} />
             Incluir canceladas
           </label>
-          <button type="button" className="erp-btn-primary mt-5" onClick={() => void loadHistorico()} disabled={loadingHistorico}>
+          <button type="button" className="erp-btn-primary w-full sm:w-auto justify-center sm:mt-5" onClick={() => void loadHistorico()} disabled={loadingHistorico}>
             <RefreshCw className={`h-4 w-4 mr-1 inline ${loadingHistorico ? 'animate-spin' : ''}`} />
             Atualizar
           </button>
@@ -766,7 +766,7 @@ const NFeHistoricaImportada = () => {
       </div>
 
       <div className="erp-card overflow-x-auto">
-        <table className="erp-table">
+        <table className="erp-table" data-mobile-table-mode="cards">
           <thead>
             <tr>
               <th>Emissão</th>
@@ -814,38 +814,38 @@ const NFeHistoricaImportada = () => {
       <Modal isOpen={modalDetalhe} onClose={() => setModalDetalhe(false)} title="NF-e importada (histórico)" size="xl">
         {detalhe && (
           <div className="space-y-4 text-sm max-h-[70vh] overflow-y-auto">
-            <div className="flex flex-wrap gap-2 border-b border-border pb-3">
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 border-b border-border pb-3">
               <button
                 type="button"
-                className={`erp-btn-sm ${abaModal === 'resumo' ? 'erp-btn-primary' : 'erp-btn-outline'}`}
+                className={`erp-btn-sm w-full sm:w-auto justify-center ${abaModal === 'resumo' ? 'erp-btn-primary' : 'erp-btn-outline'}`}
                 onClick={() => setAbaModal('resumo')}
               >
                 Resumo da nota
               </button>
               <button
                 type="button"
-                className={`erp-btn-sm ${abaModal === 'totais' ? 'erp-btn-primary' : 'erp-btn-outline'}`}
+                className={`erp-btn-sm w-full sm:w-auto justify-center ${abaModal === 'totais' ? 'erp-btn-primary' : 'erp-btn-outline'}`}
                 onClick={() => setAbaModal('totais')}
               >
                 Totais fiscais
               </button>
               <button
                 type="button"
-                className={`erp-btn-sm ${abaModal === 'itens' ? 'erp-btn-primary' : 'erp-btn-outline'}`}
+                className={`erp-btn-sm w-full sm:w-auto justify-center ${abaModal === 'itens' ? 'erp-btn-primary' : 'erp-btn-outline'}`}
                 onClick={() => setAbaModal('itens')}
               >
                 Itens
               </button>
               <button
                 type="button"
-                className={`erp-btn-sm ${abaModal === 'eventos' ? 'erp-btn-primary' : 'erp-btn-outline'}`}
+                className={`erp-btn-sm w-full sm:w-auto justify-center ${abaModal === 'eventos' ? 'erp-btn-primary' : 'erp-btn-outline'}`}
                 onClick={() => setAbaModal('eventos')}
               >
                 Eventos da NF-e
               </button>
               <button
                 type="button"
-                className={`erp-btn-sm ${abaModal === 'tecnico' ? 'erp-btn-primary' : 'erp-btn-outline'}`}
+                className={`erp-btn-sm w-full sm:w-auto justify-center ${abaModal === 'tecnico' ? 'erp-btn-primary' : 'erp-btn-outline'}`}
                 onClick={() => setAbaModal('tecnico')}
               >
                 Dados técnicos / XML
@@ -853,7 +853,7 @@ const NFeHistoricaImportada = () => {
             </div>
 
             {abaModal === 'resumo' && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                 <div>
                   <span className="text-muted-foreground">Chave</span>
                   <p className="font-mono text-xs break-all">{detalhe.chave_acesso}</p>
@@ -962,7 +962,7 @@ const NFeHistoricaImportada = () => {
               <div className="space-y-3">
                 <span className="text-muted-foreground font-medium">Itens ({detalhe.itens?.length ?? 0})</span>
                 <div className="erp-card overflow-x-auto">
-                  <table className="erp-table text-xs">
+                  <table className="erp-table text-xs" data-mobile-table-mode="cards">
                     <thead>
                       <tr>
                         <th>Descrição</th>
@@ -1015,7 +1015,7 @@ const NFeHistoricaImportada = () => {
                 )}
                 {detalhe.eventos && detalhe.eventos.length > 0 && (
                   <div className="erp-card overflow-x-auto">
-                    <table className="erp-table text-xs">
+                    <table className="erp-table text-xs" data-mobile-table-mode="cards">
                       <thead>
                         <tr>
                           <th>Tipo evento</th>
@@ -1095,10 +1095,10 @@ const NFeHistoricaImportada = () => {
             )}
 
             {!detalhe.cancelada && (
-              <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
+              <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-end gap-2 border-t border-border pt-3">
                 <button
                   type="button"
-                  className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1.5"
+                  className="erp-btn-outline erp-btn-sm w-full sm:w-auto justify-center inline-flex items-center gap-1.5"
                   disabled={gerarEntradaBusy}
                   onClick={() => void gerarEntradaDevolucao()}
                   title="Cria rascunho de entrada própria (finNFe=4) referenciando esta NF-e importada"

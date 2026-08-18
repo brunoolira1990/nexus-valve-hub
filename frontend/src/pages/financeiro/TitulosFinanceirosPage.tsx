@@ -165,7 +165,7 @@ export function TitulosFinanceirosPage({ modo }: Props) {
 
       {!loading && !error ? (
         <DataTableShell>
-          <DataTable>
+          <DataTable mobileMode="cards">
             <thead>
               <tr>
                 <th>Vencimento</th>
@@ -219,10 +219,10 @@ export function TitulosFinanceirosPage({ modo }: Props) {
                       {t.origem_descricao || t.origem_numero || 'Manual'}
                     </td>
                     <td>
-                      <div className="flex gap-1">
+                      <div className="flex flex-col sm:flex-row gap-1 w-full sm:w-auto">
                         <button
                           type="button"
-                          className="erp-btn-ghost erp-btn-sm"
+                          className="erp-btn-ghost erp-btn-sm w-full sm:w-auto"
                           title={FINANCEIRO_ACTION_LABELS.verDetalhes}
                           onClick={() => setDetalheId(t.id)}
                         >
@@ -231,7 +231,7 @@ export function TitulosFinanceirosPage({ modo }: Props) {
                         {t.pode_baixar ? (
                           <button
                             type="button"
-                            className="erp-btn-ghost erp-btn-sm"
+                            className="erp-btn-ghost erp-btn-sm w-full sm:w-auto"
                             title={cfg.baixarLabel}
                             onClick={() => setBaixaTitulo(t)}
                           >

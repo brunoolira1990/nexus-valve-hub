@@ -42,7 +42,8 @@ import CTeEntrada from "./pages/CTeEntrada";
 import CTeHistoricoImportado from "./pages/CTeHistoricoImportado";
 import Certificados from "./pages/Certificados";
 import CertificadosFornecedor from "./pages/CertificadosFornecedor";
-import Estoque from "./pages/Estoque";
+import Estoque from './pages/Estoque';
+import KardexEstoque from './pages/KardexEstoque';
 import AtendimentosEstoque from "./pages/AtendimentosEstoque";
 import Expedicao from "./pages/Expedicao";
 import ApuracaoFiscal from "./pages/ApuracaoFiscal";
@@ -112,6 +113,7 @@ const App = () => (
         <Route path="certificados" element={<Certificados />} />
         <Route path="certificados-fornecedor" element={<CertificadosFornecedor />} />
         <Route path="estoque" element={<Estoque />} />
+        <Route path="estoque/kardex" element={<KardexEstoque />} />
         <Route path="atendimentos-estoque" element={<AtendimentosEstoque />} />
         <Route path="expedicao" element={<Expedicao />} />
         <Route path="apuracao-fiscal" element={<ApuracaoFiscal />} />

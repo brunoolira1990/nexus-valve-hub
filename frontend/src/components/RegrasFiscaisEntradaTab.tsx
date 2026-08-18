@@ -694,7 +694,7 @@ export const RegrasFiscaisEntradaTab = ({ autoOpenNew, prefill }: Props) => {
             </button>
           </div>
           <div className="erp-card overflow-x-auto">
-            <table className="erp-table text-sm">
+            <table className="erp-table text-sm" data-mobile-table-mode="cards">
               <thead>
                 <tr>
                   <th>Escopo</th>
@@ -748,7 +748,7 @@ export const RegrasFiscaisEntradaTab = ({ autoOpenNew, prefill }: Props) => {
             </p>
           ) : null}
           <div className="erp-card overflow-x-auto">
-            <table className="erp-table text-sm">
+            <table className="erp-table text-sm" data-mobile-table-mode="cards">
               <thead>
                 <tr>
                   <th>UF origem</th>
@@ -827,7 +827,7 @@ export const RegrasFiscaisEntradaTab = ({ autoOpenNew, prefill }: Props) => {
 
       <Modal isOpen={modalDuplicarOpen} onClose={() => setModalDuplicarOpen(false)} title="Duplicar configuração" size="md">
         {erro ? <p className="text-destructive text-sm mb-2">{erro}</p> : null}
-        <div className="grid grid-cols-2 gap-3 text-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
           <div>
             <label className="erp-label">UF origem</label>
             <select className="erp-select mt-1 w-full" value={dupForm.uf_origem} onChange={(e) => setDupForm((p) => ({ ...p, uf_origem: e.target.value }))}>
@@ -851,9 +851,9 @@ export const RegrasFiscaisEntradaTab = ({ autoOpenNew, prefill }: Props) => {
             <input className="erp-input mt-1 w-full" value={dupForm.cfop_entrada} onChange={(e) => setDupForm((p) => ({ ...p, cfop_entrada: e.target.value }))} />
           </div>
         </div>
-        <div className="flex justify-end gap-2 mt-4">
-          <button type="button" className="erp-btn-outline" onClick={() => setModalDuplicarOpen(false)}>Cancelar</button>
-          <button type="button" className="erp-btn-primary" onClick={() => void handleDuplicar()}>Duplicar</button>
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end items-stretch sm:items-center gap-2 mt-4">
+          <button type="button" className="erp-btn-outline w-full sm:w-auto" onClick={() => setModalDuplicarOpen(false)}>Cancelar</button>
+          <button type="button" className="erp-btn-primary w-full sm:w-auto" onClick={() => void handleDuplicar()}>Duplicar</button>
         </div>
       </Modal>
 
@@ -870,7 +870,7 @@ export const RegrasFiscaisEntradaTab = ({ autoOpenNew, prefill }: Props) => {
             </select>
           </div>
           {copiarDestinos.map((dest, idx) => (
-            <div key={idx} className="grid grid-cols-2 md:grid-cols-4 gap-2 border border-border rounded p-2">
+            <div key={idx} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 border border-border rounded p-2">
               <select className="erp-select" value={dest.uf_origem || ''} onChange={(e) => setCopiarDestinos((prev) => prev.map((d, i) => i === idx ? { ...d, uf_origem: e.target.value } : d))}>
                 <option value="">UF orig.</option>
                 {UFS.map((u) => (<option key={u} value={u}>{u}</option>))}
@@ -901,9 +901,9 @@ export const RegrasFiscaisEntradaTab = ({ autoOpenNew, prefill }: Props) => {
             </div>
           ) : null}
         </div>
-        <div className="flex justify-end gap-2 mt-4">
-          <button type="button" className="erp-btn-outline" onClick={() => setModalCopiarOpen(false)}>Fechar</button>
-          <button type="button" className="erp-btn-primary" onClick={() => void handleCopiar()}>Copiar</button>
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end items-stretch sm:items-center gap-2 mt-4">
+          <button type="button" className="erp-btn-outline w-full sm:w-auto" onClick={() => setModalCopiarOpen(false)}>Fechar</button>
+          <button type="button" className="erp-btn-primary w-full sm:w-auto" onClick={() => void handleCopiar()}>Copiar</button>
         </div>
       </Modal>
 
@@ -945,11 +945,11 @@ export const RegrasFiscaisEntradaTab = ({ autoOpenNew, prefill }: Props) => {
             </div>
           ) : null}
         </div>
-        <div className="flex justify-end gap-2 mt-4">
-          <button type="button" className="erp-btn-outline" onClick={() => setModalEscopoOpen(false)}>
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end items-stretch sm:items-center gap-2 mt-4">
+          <button type="button" className="erp-btn-outline w-full sm:w-auto" onClick={() => setModalEscopoOpen(false)}>
             Cancelar
           </button>
-          <button type="button" className="erp-btn-primary" onClick={() => void handleCriarEscopo()}>
+          <button type="button" className="erp-btn-primary w-full sm:w-auto" onClick={() => void handleCriarEscopo()}>
             Criar
           </button>
         </div>
@@ -978,7 +978,7 @@ export const RegrasFiscaisEntradaTab = ({ autoOpenNew, prefill }: Props) => {
             <button
               key={aba.id}
               type="button"
-              className={abaForm === aba.id ? 'erp-btn-primary erp-btn-sm' : 'erp-btn-outline erp-btn-sm'}
+              className={abaForm === aba.id ? 'erp-btn-primary erp-btn-sm w-full sm:w-auto' : 'erp-btn-outline erp-btn-sm w-full sm:w-auto'}
               onClick={() => setAbaForm(aba.id)}
             >
               {aba.label}
@@ -1487,11 +1487,11 @@ export const RegrasFiscaisEntradaTab = ({ autoOpenNew, prefill }: Props) => {
             </div>
           ) : null}
         </section>
-        <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
-          <button type="button" className="erp-btn-outline" onClick={() => setModalOpen(false)}>
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end items-stretch sm:items-center gap-2 mt-6 pt-4 border-t border-border">
+          <button type="button" className="erp-btn-outline w-full sm:w-auto" onClick={() => setModalOpen(false)}>
             Cancelar
           </button>
-          <button type="button" className="erp-btn-primary" onClick={() => void handleSave()}>
+          <button type="button" className="erp-btn-primary w-full sm:w-auto" onClick={() => void handleSave()}>
             Salvar
           </button>
         </div>

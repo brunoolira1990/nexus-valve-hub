@@ -65,6 +65,7 @@ from apps.fiscal.views import (
     AtendimentoEstoqueViewSet,
     CTeEntradaViewSet,
     CTeHistoricoImportadoViewSet,
+    EstoqueKardexViewSet,
     EstoqueSaldosConsolidadosViewSet,
     EstoqueSaldosViewSet,
     EstoqueViewSet,
@@ -171,6 +172,7 @@ router.register(
     basename='manifestacao-destinatario',
 )
 router.register(r'estoque', EstoqueViewSet, basename='estoque')
+router.register(r'estoque/kardex', EstoqueKardexViewSet, basename='estoque-kardex')
 router.register(r'estoque/saldos', EstoqueSaldosViewSet, basename='estoque-saldos')
 router.register(
     r'estoque/saldos-consolidados',

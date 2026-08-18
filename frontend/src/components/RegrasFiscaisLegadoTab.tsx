@@ -100,7 +100,7 @@ export const RegrasFiscaisLegadoTab = () => {
       {loading ? <TableSkeleton rows={5} cols={8} /> : null}
       {!loading && !error ? (
         <DataTableShell>
-          <DataTable>
+          <DataTable mobileMode="cards">
             <thead>
               <tr>
                 <th>NCM</th>
@@ -137,14 +137,14 @@ export const RegrasFiscaisLegadoTab = () => {
                 <td>{e.cst_icms}</td>
                 <td>{e.aliquota_icms}%</td>
                 <td>
-                  <div className="flex gap-1">
-                    <button type="button" onClick={() => openEdit(e)} className="erp-btn-ghost erp-btn-sm" title="Editar">
+                  <div className="flex flex-col sm:flex-row gap-1 w-full sm:w-auto">
+                    <button type="button" onClick={() => openEdit(e)} className="erp-btn-ghost erp-btn-sm w-full sm:w-auto" title="Editar">
                       <Pencil className="h-4 w-4" />
                     </button>
                     <button
                       type="button"
                       onClick={() => void handleDelete(e.id)}
-                      className="erp-btn-ghost erp-btn-sm text-destructive"
+                      className="erp-btn-ghost erp-btn-sm w-full sm:w-auto text-destructive"
                       title="Excluir"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -181,7 +181,7 @@ export const RegrasFiscaisLegadoTab = () => {
           </div>
           <div>
             <label className="erp-label">UF Origem</label>
-            <select className="erp-select mt-1" value={form.uf_origem} onChange={(e) => f('uf_origem', e.target.value)}>
+            <select className="erp-select mt-1 w-full" value={form.uf_origem} onChange={(e) => f('uf_origem', e.target.value)}>
               <option value="0">Geral (0)</option>
               {UFS.map((u) => (
                 <option key={u}>
@@ -192,7 +192,7 @@ export const RegrasFiscaisLegadoTab = () => {
           </div>
           <div>
             <label className="erp-label">UF Destino</label>
-            <select className="erp-select mt-1" value={form.uf_destino} onChange={(e) => f('uf_destino', e.target.value)}>
+            <select className="erp-select mt-1 w-full" value={form.uf_destino} onChange={(e) => f('uf_destino', e.target.value)}>
               {UFS.map((u) => (
                 <option key={u}>
                   {u}
@@ -202,7 +202,7 @@ export const RegrasFiscaisLegadoTab = () => {
           </div>
           <div>
             <label className="erp-label">Operação</label>
-            <select className="erp-select mt-1" value={form.operacao} onChange={(e) => f('operacao', e.target.value)}>
+            <select className="erp-select mt-1 w-full" value={form.operacao} onChange={(e) => f('operacao', e.target.value)}>
               <option>Entrada</option>
               <option>Saída</option>
             </select>
@@ -213,7 +213,7 @@ export const RegrasFiscaisLegadoTab = () => {
           </div>
           <div>
             <label className="erp-label">Base de Cálculo</label>
-            <select className="erp-select mt-1" value={form.base_calculo} onChange={(e) => f('base_calculo', e.target.value)}>
+            <select className="erp-select mt-1 w-full" value={form.base_calculo} onChange={(e) => f('base_calculo', e.target.value)}>
               <option>OPERACAO</option>
               <option>PRECO</option>
               <option>PAUTA</option>
@@ -277,11 +277,11 @@ export const RegrasFiscaisLegadoTab = () => {
           </div>
         </div>
         {formError ? <p className="text-sm text-destructive mt-4">{formError}</p> : null}
-        <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
-          <button type="button" onClick={() => setModalOpen(false)} className="erp-btn-outline">
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end items-stretch sm:items-center gap-2 mt-6 pt-4 border-t border-border">
+          <button type="button" onClick={() => setModalOpen(false)} className="erp-btn-outline w-full sm:w-auto">
             Cancelar
           </button>
-          <button type="button" onClick={() => void handleSave()} className="erp-btn-primary">
+          <button type="button" onClick={() => void handleSave()} className="erp-btn-primary w-full sm:w-auto">
             Salvar
           </button>
         </div>

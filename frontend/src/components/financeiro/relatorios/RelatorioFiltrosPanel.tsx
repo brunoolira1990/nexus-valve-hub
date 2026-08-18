@@ -114,13 +114,13 @@ export function RelatorioFiltrosPanel({
         : [];
 
   return (
-    <div className="erp-card p-3 mb-4 space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="erp-card p-3 sm:p-4 mb-4 space-y-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <span className="text-sm font-semibold">Filtros</span>
         {temFiltro ? (
           <button
             type="button"
-            className="erp-btn-outline erp-btn-sm text-xs"
+            className="erp-btn-outline erp-btn-sm text-xs w-full sm:w-auto"
             onClick={() => onChange({ ...EMPTY_FILTROS })}
           >
             <X className="h-3 w-3 mr-1" />
@@ -129,10 +129,10 @@ export function RelatorioFiltrosPanel({
         ) : null}
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-col sm:flex-row flex-wrap gap-2">
         {modo === 'FLUXO' || modo === 'CATEGORIAS' ? (
           <select
-            className="erp-input erp-input-sm min-w-[160px]"
+            className="erp-input erp-input-sm w-full sm:w-auto min-w-[160px]"
             value={filtros.periodo || (modo === 'FLUXO' ? 'proximos_30' : 'mes')}
             onChange={(e) => patch('periodo', e.target.value)}
           >
@@ -145,7 +145,7 @@ export function RelatorioFiltrosPanel({
           </select>
         ) : (
           <select
-            className="erp-input erp-input-sm min-w-[140px]"
+            className="erp-input erp-input-sm w-full sm:w-auto min-w-[140px]"
             value={filtros.vencimento}
             onChange={(e) => patch('vencimento', e.target.value)}
           >
@@ -160,7 +160,7 @@ export function RelatorioFiltrosPanel({
 
         {showStatusCrCp ? (
           <select
-            className="erp-input erp-input-sm min-w-[140px]"
+            className="erp-input erp-input-sm w-full sm:w-auto min-w-[140px]"
             value={filtros.status}
             onChange={(e) => patch('status', e.target.value)}
           >
@@ -175,7 +175,7 @@ export function RelatorioFiltrosPanel({
 
         {modo !== 'CLIENTES' && modo !== 'FORNECEDORES' ? (
           <select
-            className="erp-input erp-input-sm min-w-[140px]"
+            className="erp-input erp-input-sm w-full sm:w-auto min-w-[140px]"
             value={filtros.origem_tipo}
             onChange={(e) => patch('origem_tipo', e.target.value)}
           >
@@ -188,7 +188,7 @@ export function RelatorioFiltrosPanel({
           </select>
         ) : null}
 
-        <label className="inline-flex items-center gap-1.5 text-xs cursor-pointer">
+        <label className="inline-flex w-full sm:w-auto items-center gap-1.5 text-xs cursor-pointer">
           <input
             type="checkbox"
             checked={filtros.incluir_quitados === '1'}
@@ -196,7 +196,7 @@ export function RelatorioFiltrosPanel({
           />
           Incluir quitados
         </label>
-        <label className="inline-flex items-center gap-1.5 text-xs cursor-pointer">
+        <label className="inline-flex w-full sm:w-auto items-center gap-1.5 text-xs cursor-pointer">
           <input
             type="checkbox"
             checked={filtros.incluir_cancelados === '1'}
@@ -216,10 +216,10 @@ export function RelatorioFiltrosPanel({
           {maisOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </button>
         {maisOpen ? (
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-col sm:flex-row flex-wrap gap-2">
             {(modo === 'CLIENTES' || modo === 'RECEBER') && (
               <input
-                className="erp-input erp-input-sm min-w-[140px]"
+                className="erp-input erp-input-sm w-full sm:w-auto min-w-[140px]"
                 placeholder="ID do cliente"
                 value={filtros.cliente}
                 onChange={(e) => patch('cliente', e.target.value)}
@@ -227,7 +227,7 @@ export function RelatorioFiltrosPanel({
             )}
             {(modo === 'FORNECEDORES' || modo === 'PAGAR') && (
               <input
-                className="erp-input erp-input-sm min-w-[140px]"
+                className="erp-input erp-input-sm w-full sm:w-auto min-w-[140px]"
                 placeholder="ID do fornecedor"
                 value={filtros.fornecedor}
                 onChange={(e) => patch('fornecedor', e.target.value)}
@@ -235,7 +235,7 @@ export function RelatorioFiltrosPanel({
             )}
             {modo === 'PAGAR' ? (
               <select
-                className="erp-input erp-input-sm"
+                className="erp-input erp-input-sm w-full sm:w-auto"
                 value={filtros.tipo_lancamento}
                 onChange={(e) => patch('tipo_lancamento', e.target.value)}
               >
@@ -248,7 +248,7 @@ export function RelatorioFiltrosPanel({
               </select>
             ) : null}
             <select
-              className="erp-input erp-input-sm"
+              className="erp-input erp-input-sm w-full sm:w-auto"
               value={filtros.categoria}
               onChange={(e) => patch('categoria', e.target.value)}
             >
@@ -260,7 +260,7 @@ export function RelatorioFiltrosPanel({
               ))}
             </select>
             <select
-              className="erp-input erp-input-sm"
+              className="erp-input erp-input-sm w-full sm:w-auto"
               value={filtros.centro_custo}
               onChange={(e) => patch('centro_custo', e.target.value)}
             >
@@ -272,7 +272,7 @@ export function RelatorioFiltrosPanel({
               ))}
             </select>
             <select
-              className="erp-input erp-input-sm"
+              className="erp-input erp-input-sm w-full sm:w-auto"
               value={filtros.conta_prevista}
               onChange={(e) => patch('conta_prevista', e.target.value)}
             >
@@ -285,7 +285,7 @@ export function RelatorioFiltrosPanel({
             </select>
             {showVencimento ? (
               <select
-                className="erp-input erp-input-sm"
+                className="erp-input erp-input-sm w-full sm:w-auto"
                 value={filtros.periodo_emissao}
                 onChange={(e) => patch('periodo_emissao', e.target.value)}
               >
@@ -297,7 +297,7 @@ export function RelatorioFiltrosPanel({
             ) : null}
             {modo === 'CATEGORIAS' ? (
               <select
-                className="erp-input erp-input-sm"
+                className="erp-input erp-input-sm w-full sm:w-auto"
                 value={filtros.periodo_baixa || filtros.periodo}
                 onChange={(e) => patch('periodo_baixa', e.target.value)}
               >
@@ -308,7 +308,7 @@ export function RelatorioFiltrosPanel({
             ) : null}
             {showAgrupamento && agrupamentoOpts.length ? (
               <select
-                className="erp-input erp-input-sm"
+                className="erp-input erp-input-sm w-full sm:w-auto"
                 value={filtros.agrupamento}
                 onChange={(e) => patch('agrupamento', e.target.value)}
               >
@@ -319,7 +319,7 @@ export function RelatorioFiltrosPanel({
                 ))}
               </select>
             ) : null}
-            <label className="inline-flex items-center gap-1.5 text-xs cursor-pointer">
+            <label className="inline-flex w-full sm:w-auto items-center gap-1.5 text-xs cursor-pointer">
               <input
                 type="checkbox"
                 checked={filtros.origem_fiscal_cancelada === '1'}
@@ -333,7 +333,7 @@ export function RelatorioFiltrosPanel({
               Origem fiscal cancelada
             </label>
             {(modo === 'CLIENTES' || modo === 'FORNECEDORES') && (
-              <label className="inline-flex items-center gap-1.5 text-xs cursor-pointer">
+              <label className="inline-flex w-full sm:w-auto items-center gap-1.5 text-xs cursor-pointer">
                 <input
                   type="checkbox"
                   checked={filtros.incluir_sem_saldo === '1'}

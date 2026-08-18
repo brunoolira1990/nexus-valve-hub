@@ -102,7 +102,7 @@ export default function AnalisesFinanceirasPage() {
 
       {!loading && items.length > 0 ? (
         <div className="overflow-x-auto rounded-lg border border-border mb-6" data-testid="analise-fin-fila">
-          <table className="erp-table w-full text-sm">
+          <table className="erp-table w-full text-sm" data-mobile-table-mode="cards">
             <thead>
               <tr>
                 <th>Proposta</th>
@@ -126,7 +126,7 @@ export default function AnalisesFinanceirasPage() {
                   <td>
                     <button
                       type="button"
-                      className="erp-btn-outline erp-btn-sm"
+                      className="erp-btn-outline erp-btn-sm w-full sm:w-auto"
                       data-testid={`analise-fin-abrir-${a.id}`}
                       onClick={() => void abrir(a.id)}
                     >
@@ -142,14 +142,14 @@ export default function AnalisesFinanceirasPage() {
 
       {selected ? (
         <div className="rounded-lg border border-border p-4 space-y-3" data-testid="analise-fin-detalhe">
-          <div className="flex justify-between gap-2">
+          <div className="flex flex-col sm:flex-row sm:justify-between items-start sm:items-center gap-2">
             <h2 className="font-semibold">
               Análise #{selected.id} · Proposta{' '}
               <Link className="text-primary underline" to={`/propostas`}>
                 {selected.proposta_numero}
               </Link>
             </h2>
-            <button type="button" className="erp-btn-ghost erp-btn-sm" onClick={() => setSelected(null)}>
+            <button type="button" className="erp-btn-ghost erp-btn-sm w-full sm:w-auto" onClick={() => setSelected(null)}>
               Fechar
             </button>
           </div>
@@ -189,17 +189,17 @@ export default function AnalisesFinanceirasPage() {
           {podeDecidir && ['PENDENTE', 'EM_ANALISE'].includes(selected.status) ? (
             <div className="space-y-2 border-t border-border pt-3" data-testid="analise-fin-acoes">
               <textarea
-                className="erp-input min-h-[70px]"
+                className="erp-input min-h-[70px] w-full"
                 placeholder="Justificativa (obrigatória em ajuste / devolução / não aprovação)"
                 value={justificativa}
                 onChange={(e) => setJustificativa(e.target.value)}
                 data-testid="analise-fin-justificativa"
               />
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-col sm:flex-row flex-wrap gap-2">
                 {selected.status === 'PENDENTE' ? (
                   <button
                     type="button"
-                    className="erp-btn-outline erp-btn-sm"
+                    className="erp-btn-outline erp-btn-sm w-full sm:w-auto"
                     disabled={busy}
                     data-testid="analise-fin-assumir"
                     onClick={() => void run(() => analiseFinanceiraService.iniciar(selected.id))}
@@ -209,7 +209,7 @@ export default function AnalisesFinanceirasPage() {
                 ) : null}
                 <button
                   type="button"
-                  className="erp-btn-primary erp-btn-sm"
+                  className="erp-btn-primary erp-btn-sm w-full sm:w-auto"
                   disabled={busy}
                   data-testid="analise-fin-aprovar"
                   onClick={() => void run(() => analiseFinanceiraService.aprovar(selected.id))}
@@ -218,7 +218,7 @@ export default function AnalisesFinanceirasPage() {
                 </button>
                 <button
                   type="button"
-                  className="erp-btn-outline erp-btn-sm"
+                  className="erp-btn-outline erp-btn-sm w-full sm:w-auto"
                   disabled={busy}
                   data-testid="analise-fin-aprovar-avista"
                   onClick={() =>
@@ -233,7 +233,7 @@ export default function AnalisesFinanceirasPage() {
                   Aprovar à vista
                 </button>
                 <input
-                  className="erp-input w-28"
+                  className="erp-input w-full sm:w-28"
                   value={diasAjuste}
                   onChange={(e) => setDiasAjuste(e.target.value)}
                   title="Dias do ajuste, ex.: 0,30"
@@ -241,7 +241,7 @@ export default function AnalisesFinanceirasPage() {
                 />
                 <button
                   type="button"
-                  className="erp-btn-outline erp-btn-sm"
+                  className="erp-btn-outline erp-btn-sm w-full sm:w-auto"
                   disabled={busy}
                   data-testid="analise-fin-aprovar-ajuste"
                   onClick={() =>
@@ -257,7 +257,7 @@ export default function AnalisesFinanceirasPage() {
                 </button>
                 <button
                   type="button"
-                  className="erp-btn-outline erp-btn-sm"
+                  className="erp-btn-outline erp-btn-sm w-full sm:w-auto"
                   disabled={busy}
                   data-testid="analise-fin-devolver"
                   onClick={() => void run(() => analiseFinanceiraService.devolver(selected.id, justificativa))}
@@ -266,7 +266,7 @@ export default function AnalisesFinanceirasPage() {
                 </button>
                 <button
                   type="button"
-                  className="erp-btn-outline erp-btn-sm text-destructive"
+                  className="erp-btn-outline erp-btn-sm text-destructive w-full sm:w-auto"
                   disabled={busy}
                   data-testid="analise-fin-nao-aprovar"
                   onClick={() => void run(() => analiseFinanceiraService.naoAprovar(selected.id, justificativa))}

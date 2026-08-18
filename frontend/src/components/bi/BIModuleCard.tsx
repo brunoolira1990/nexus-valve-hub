@@ -17,11 +17,11 @@ export function BIModuleCard({ modulo }: { modulo: DashboardModuloHome }) {
 
   return (
     <div className="erp-card p-6 flex flex-col min-h-[280px] hover:border-primary/30 transition-colors">
-      <div className="flex items-start justify-between gap-2 mb-5">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-5">
         <h2 className="text-lg font-semibold text-foreground">{modulo.titulo}</h2>
         <Link
           to={modulo.link_bi}
-          className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary hover:bg-primary/20 transition-colors shrink-0"
+          className="inline-flex w-full sm:w-auto justify-center items-center gap-1 rounded-md bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary hover:bg-primary/20 transition-colors shrink-0"
         >
           Ver painel
           <ChevronRight className="h-4 w-4" />
@@ -38,9 +38,9 @@ export function BIModuleCard({ modulo }: { modulo: DashboardModuloHome }) {
       {secondaryKpis.length > 0 ? (
         <ul className="space-y-2 text-sm flex-1">
           {secondaryKpis.slice(0, 4).map((kpi) => (
-            <li key={kpi.id} className="flex justify-between gap-3 border-b border-border/40 pb-2 last:border-0">
+            <li key={kpi.id} className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1 sm:gap-3 border-b border-border/40 pb-2 last:border-0">
               <span className="text-muted-foreground">{kpi.titulo}</span>
-              <span className="font-semibold tabular-nums text-foreground">{formatKpiValor(kpi)}</span>
+              <span className="font-semibold tabular-nums text-foreground break-words sm:text-right">{formatKpiValor(kpi)}</span>
             </li>
           ))}
         </ul>

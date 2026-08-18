@@ -90,7 +90,7 @@ export function CreditosPage() {
             <>
               <SearchInput value={search} onChange={setSearch} />
               <select
-                className="erp-select erp-select-sm"
+                className="erp-select erp-select-sm w-full sm:w-auto"
                 value={tipoFiltro}
                 onChange={(e) => setTipoFiltro(e.target.value)}
                 aria-label="Filtrar por tipo"
@@ -103,7 +103,7 @@ export function CreditosPage() {
                 ))}
               </select>
               <select
-                className="erp-select erp-select-sm"
+                className="erp-select erp-select-sm w-full sm:w-auto"
                 value={statusFiltro}
                 onChange={(e) => setStatusFiltro(e.target.value)}
                 aria-label="Filtrar por status"
@@ -115,12 +115,12 @@ export function CreditosPage() {
                   </option>
                 ))}
               </select>
-              <NexusButton type="button" onClick={abrirNovoCredito}>
+              <NexusButton type="button" className="w-full sm:w-auto" onClick={abrirNovoCredito}>
                 {FINANCEIRO_ACTION_LABELS.novoCredito}
               </NexusButton>
             </>
           ) : (
-            <NexusButton type="button" onClick={abrirNovoCredito}>
+            <NexusButton type="button" className="w-full sm:w-auto" onClick={abrirNovoCredito}>
               {FINANCEIRO_ACTION_LABELS.novoCredito}
             </NexusButton>
           )
@@ -141,7 +141,7 @@ export function CreditosPage() {
 
       {!loading && !error && mostrarListagem ? (
         <DataTableShell>
-          <DataTable>
+          <DataTable mobileMode="cards">
             <thead>
               <tr>
                 <th>Tipo</th>
@@ -188,7 +188,7 @@ export function CreditosPage() {
                     <td>
                       <button
                         type="button"
-                        className="erp-btn-ghost erp-btn-sm"
+                        className="erp-btn-ghost erp-btn-sm w-full sm:w-auto"
                         title="Ver detalhes"
                         onClick={() => setDetalheId(c.id)}
                       >

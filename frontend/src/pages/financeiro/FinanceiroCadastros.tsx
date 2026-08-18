@@ -167,13 +167,13 @@ function CadastroContasTable({
 
   return (
     <div className="erp-card overflow-x-auto">
-      <div className="flex justify-between items-center p-4 border-b border-border">
+      <div className="flex flex-col sm:flex-row sm:justify-between items-start sm:items-center gap-2 p-4 border-b border-border">
         <h3 className="font-semibold">Contas / Caixas</h3>
-        <button type="button" onClick={openNew} className="erp-btn-primary erp-btn-sm">
+        <button type="button" onClick={openNew} className="erp-btn-primary erp-btn-sm w-full sm:w-auto">
           <Plus className="h-3 w-3" /> Nova conta
         </button>
       </div>
-      <table className="erp-table">
+      <table className="erp-table" data-mobile-table-mode="cards">
         <thead>
           <tr>
             <th>Nome</th>
@@ -191,12 +191,14 @@ function CadastroContasTable({
               <td>{labelBancoContaListagem(c)}</td>
               <td>{c.ativo ? 'Sim' : 'Não'}</td>
               <td>
-                <button type="button" className="erp-btn-ghost erp-btn-sm" onClick={() => openEdit(c)}>
-                  <Pencil className="h-3 w-3" />
-                </button>
-                <button type="button" className="erp-btn-ghost erp-btn-sm text-destructive" onClick={() => void excluir(c.id)}>
-                  <Trash2 className="h-3 w-3" />
-                </button>
+                <div className="flex flex-col sm:flex-row gap-1 w-full sm:w-auto">
+                  <button type="button" className="erp-btn-ghost erp-btn-sm w-full sm:w-auto" onClick={() => openEdit(c)}>
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                  <button type="button" className="erp-btn-ghost erp-btn-sm text-destructive w-full sm:w-auto" onClick={() => void excluir(c.id)}>
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
               </td>
             </tr>
           ))}
@@ -235,7 +237,7 @@ function CadastroContasTable({
                   placeholder={placeholderNomeContaFinanceira(form.tipo)}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label htmlFor="conta-agencia" className="erp-label">Agência</label>
                   <input
@@ -284,11 +286,11 @@ function CadastroContasTable({
               placeholder="Opcional"
             />
           </div>
-          <div className="flex justify-end gap-2">
-            <button type="button" className="erp-btn-outline" onClick={() => setModalOpen(false)}>
+          <div className="flex flex-col sm:flex-row justify-end gap-2">
+            <button type="button" className="erp-btn-outline w-full sm:w-auto" onClick={() => setModalOpen(false)}>
               Cancelar
             </button>
-            <button type="button" className="erp-btn-primary" onClick={() => void salvar()}>
+            <button type="button" className="erp-btn-primary w-full sm:w-auto" onClick={() => void salvar()}>
               Salvar
             </button>
           </div>
@@ -317,7 +319,7 @@ function CadastroCategoriasTable({ items, onReload }: { items: CategoriaFinancei
 
   return (
     <div className="erp-card overflow-x-auto">
-      <div className="flex justify-between items-center p-4 border-b border-border">
+      <div className="flex flex-col sm:flex-row sm:justify-between items-start sm:items-center gap-2 p-4 border-b border-border">
         <h3 className="font-semibold">Categorias</h3>
         <button
           type="button"
@@ -326,12 +328,12 @@ function CadastroCategoriasTable({ items, onReload }: { items: CategoriaFinancei
             setForm({ nome: '', tipo: 'AMBOS', ativo: true, observacoes: '' });
             setModalOpen(true);
           }}
-          className="erp-btn-primary erp-btn-sm"
+          className="erp-btn-primary erp-btn-sm w-full sm:w-auto"
         >
           <Plus className="h-3 w-3" /> Nova categoria
         </button>
       </div>
-      <table className="erp-table">
+      <table className="erp-table" data-mobile-table-mode="cards">
         <thead>
           <tr>
             <th>Nome</th>
@@ -349,7 +351,7 @@ function CadastroCategoriasTable({ items, onReload }: { items: CategoriaFinancei
               <td>
                 <button
                   type="button"
-                  className="erp-btn-ghost erp-btn-sm"
+                  className="erp-btn-ghost erp-btn-sm w-full sm:w-auto"
                   onClick={() => {
                     setEditing(c);
                     setForm({ nome: c.nome, tipo: c.tipo, ativo: c.ativo, observacoes: c.observacoes || '' });
@@ -405,7 +407,7 @@ function CadastroCentrosCustoTable({ items, onReload }: { items: CentroCusto[]; 
 
   return (
     <div className="erp-card overflow-x-auto">
-      <div className="flex justify-between items-center p-4 border-b border-border">
+      <div className="flex flex-col sm:flex-row sm:justify-between items-start sm:items-center gap-2 p-4 border-b border-border">
         <h3 className="font-semibold">Centros de custo</h3>
         <button
           type="button"
@@ -414,12 +416,12 @@ function CadastroCentrosCustoTable({ items, onReload }: { items: CentroCusto[]; 
             setForm({ nome: '', ativo: true, observacoes: '' });
             setModalOpen(true);
           }}
-          className="erp-btn-primary erp-btn-sm"
+          className="erp-btn-primary erp-btn-sm w-full sm:w-auto"
         >
           <Plus className="h-3 w-3" /> Novo centro
         </button>
       </div>
-      <table className="erp-table">
+      <table className="erp-table" data-mobile-table-mode="cards">
         <thead>
           <tr>
             <th>Nome</th>
@@ -435,7 +437,7 @@ function CadastroCentrosCustoTable({ items, onReload }: { items: CentroCusto[]; 
               <td>
                 <button
                   type="button"
-                  className="erp-btn-ghost erp-btn-sm"
+                  className="erp-btn-ghost erp-btn-sm w-full sm:w-auto"
                   onClick={() => {
                     setEditing(c);
                     setForm({ nome: c.nome, ativo: c.ativo, observacoes: c.observacoes || '' });

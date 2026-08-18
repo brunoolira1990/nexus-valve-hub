@@ -257,7 +257,7 @@ const NFeHistoricaEntradaImportada = () => {
             </p>
           </div>
           <NexusButton asChild disabled={busy}>
-            <label className="cursor-pointer shrink-0">
+            <label className="w-full md:w-auto justify-center cursor-pointer shrink-0">
               <input
                 type="file"
                 accept=".xml,application/xml,text/xml"
@@ -278,8 +278,8 @@ const NFeHistoricaEntradaImportada = () => {
 
       {resultado && (
         <div className="erp-card p-4 mb-4 space-y-4">
-          <div className="flex flex-wrap justify-between gap-2 items-start">
-            <div className="grid md:grid-cols-3 gap-3 flex-1">
+          <div className="flex flex-col sm:flex-row sm:justify-between gap-3 items-start">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1 w-full">
               <div>
                 <div className="text-xs text-muted-foreground">Importadas</div>
                 <div className="text-xl font-semibold">{resultado.resumo.importadas}</div>
@@ -295,7 +295,7 @@ const NFeHistoricaEntradaImportada = () => {
             </div>
             <button
               type="button"
-              className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1 shrink-0"
+              className="erp-btn-outline erp-btn-sm w-full sm:w-auto justify-center inline-flex items-center gap-1 shrink-0"
               onClick={() => void copiarDiagnosticoEntrada()}
             >
               <ClipboardList className="h-4 w-4" />
@@ -316,7 +316,7 @@ const NFeHistoricaEntradaImportada = () => {
           ))}
           {falhasEntrada.length > 0 && (
             <div className="overflow-x-auto border border-border rounded-md max-h-80 overflow-y-auto">
-              <table className="erp-table text-xs">
+              <table className="erp-table text-xs" data-mobile-table-mode="cards">
                 <thead>
                   <tr>
                     <th>Arquivo</th>
@@ -348,12 +348,12 @@ const NFeHistoricaEntradaImportada = () => {
       )}
 
       <NexusCard className="p-4 mb-4">
-        <div className="flex flex-wrap gap-3 items-end">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:flex xl:flex-wrap gap-3 items-end">
           <div>
             <label className="erp-label">{tipoData === 'entrada' ? 'Entrada de' : 'Emissão de'}</label>
             <input
               type="date"
-              className="erp-input mt-1"
+              className="erp-input mt-1 w-full xl:w-auto"
               value={dataInicio}
               onChange={(e) => {
                 setCompetencia('');
@@ -365,7 +365,7 @@ const NFeHistoricaEntradaImportada = () => {
             <label className="erp-label">{tipoData === 'entrada' ? 'Entrada até' : 'Emissão até'}</label>
             <input
               type="date"
-              className="erp-input mt-1"
+              className="erp-input mt-1 w-full xl:w-auto"
               value={dataFim}
               onChange={(e) => {
                 setCompetencia('');
@@ -375,22 +375,22 @@ const NFeHistoricaEntradaImportada = () => {
           </div>
           <div>
             <label className="erp-label">Competência (mm/aaaa)</label>
-            <div className="flex gap-2 mt-1">
+            <div className="flex flex-col sm:flex-row gap-2 mt-1">
               <input
-                className="erp-input w-28"
+                className="erp-input w-full sm:w-28"
                 value={competencia}
                 onChange={(e) => setCompetencia(e.target.value)}
                 placeholder="06/2026"
               />
-              <button type="button" className="erp-btn-outline erp-btn-sm" onClick={aplicarCompetencia}>
+              <button type="button" className="erp-btn-outline erp-btn-sm w-full sm:w-auto justify-center" onClick={aplicarCompetencia}>
                 Aplicar
               </button>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2 items-end">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 items-end">
             <button
               type="button"
-              className="erp-btn-outline erp-btn-sm"
+              className="erp-btn-outline erp-btn-sm w-full sm:w-auto justify-center"
               onClick={() => {
                 const p = intervaloMesAtual();
                 aplicarPeriodo(p.inicio, p.fim);
@@ -400,7 +400,7 @@ const NFeHistoricaEntradaImportada = () => {
             </button>
             <button
               type="button"
-              className="erp-btn-outline erp-btn-sm"
+              className="erp-btn-outline erp-btn-sm w-full sm:w-auto justify-center"
               onClick={() => {
                 const p = intervaloMesAnterior();
                 aplicarPeriodo(p.inicio, p.fim);
@@ -410,16 +410,16 @@ const NFeHistoricaEntradaImportada = () => {
             </button>
             <button
               type="button"
-              className="erp-btn-outline erp-btn-sm"
+              className="erp-btn-outline erp-btn-sm w-full sm:w-auto justify-center"
               onClick={() => aplicarPeriodo(PERIODO_ATALHO_JUN_2026.inicio, PERIODO_ATALHO_JUN_2026.fim)}
             >
               Jun/2026
             </button>
-            <button type="button" className="erp-btn-ghost erp-btn-sm" onClick={limparPeriodo}>
+            <button type="button" className="erp-btn-ghost erp-btn-sm w-full sm:w-auto justify-center" onClick={limparPeriodo}>
               Limpar período
             </button>
           </div>
-          <div className="min-w-[220px]">
+          <div className="w-full xl:min-w-[220px]">
             <label className="erp-label">Chave de acesso</label>
             <input
               className="erp-input mt-1 w-full font-mono text-sm"
@@ -428,7 +428,7 @@ const NFeHistoricaEntradaImportada = () => {
               placeholder="44 dígitos"
             />
           </div>
-          <div className="flex-1 min-w-[200px]">
+          <div className="w-full xl:flex-1 xl:min-w-[200px]">
             <label className="erp-label">Busca</label>
             <input
               className="erp-input mt-1 w-full"
@@ -445,8 +445,8 @@ const NFeHistoricaEntradaImportada = () => {
           Filtro ativo: {periodoFiltroLabel}
           {tipoData === 'entrada' ? ' (por data de entrada na conferência)' : ' (por data de emissão)'}.
         </p>
-        <div className="flex flex-wrap gap-3 items-end mt-3 pt-3 border-t border-border/60">
-          <select className="erp-select" value={empresaId} onChange={(e) => setFilter('empresa_destinataria_id', e.target.value)}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:flex xl:flex-wrap gap-3 items-end mt-3 pt-3 border-t border-border/60">
+          <select className="erp-select w-full xl:w-auto" value={empresaId} onChange={(e) => setFilter('empresa_destinataria_id', e.target.value)}>
             <option value="">Empresa destinatária (todas)</option>
             {empresas.map((e) => (
               <option key={e.id} value={e.id}>
@@ -454,7 +454,7 @@ const NFeHistoricaEntradaImportada = () => {
               </option>
             ))}
           </select>
-          <select className="erp-select" value={fornecedorId} onChange={(e) => setFilter('fornecedor_id', e.target.value)}>
+          <select className="erp-select w-full xl:w-auto" value={fornecedorId} onChange={(e) => setFilter('fornecedor_id', e.target.value)}>
             <option value="">Fornecedor emitente (todos)</option>
             {fornecedores.map((f) => (
               <option key={f.id} value={f.id}>
@@ -463,7 +463,7 @@ const NFeHistoricaEntradaImportada = () => {
             ))}
           </select>
           <select
-            className="erp-select"
+            className="erp-select w-full xl:w-auto"
             value={statusConferencia}
             onChange={(e) => setFilter('status_conferencia', e.target.value)}
           >
@@ -474,7 +474,7 @@ const NFeHistoricaEntradaImportada = () => {
             ))}
           </select>
           <select
-            className="erp-select"
+            className="erp-select w-full xl:w-auto"
             value={tipoData}
             onChange={(e) => setTipoData(e.target.value === 'entrada' ? 'entrada' : 'emissao')}
             title="Tipo de data para o filtro de período"
@@ -482,7 +482,7 @@ const NFeHistoricaEntradaImportada = () => {
             <option value="emissao">Data de emissão</option>
             <option value="entrada">Data de entrada</option>
           </select>
-          <NexusButton type="button" variant="outline" onClick={() => void reload()}>
+          <NexusButton type="button" variant="outline" className="w-full sm:w-auto justify-center" onClick={() => void reload()}>
             Atualizar
           </NexusButton>
         </div>
@@ -492,7 +492,7 @@ const NFeHistoricaEntradaImportada = () => {
       {loading ? <TableSkeleton rows={6} cols={7} /> : null}
       {!loading && !loadError ? (
         <DataTableShell>
-        <DataTable>
+        <DataTable mobileMode="cards">
           <thead>
             <tr>
               <th>Chave</th>
@@ -529,11 +529,12 @@ const NFeHistoricaEntradaImportada = () => {
                   </div>
                 </td>
                 <td>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <NexusButton
                       type="button"
                       variant="outline"
                       size="sm"
+                      className="w-full sm:w-auto justify-center"
                       onClick={() => {
                         void nfeHistoricaEntradaImportadaService.getById(r.id).then((d) => { setDetalhe(d); setModal(true); }).catch((e) => setErro(apiErrorMessage(e)));
                       }}
@@ -545,6 +546,7 @@ const NFeHistoricaEntradaImportada = () => {
                         type="button"
                         variant="outline"
                         size="sm"
+                        className="w-full sm:w-auto justify-center"
                         title="Imprimir DANFE"
                         aria-label="Imprimir DANFE"
                         onClick={() => void imprimirDanfe(r)}
@@ -556,6 +558,7 @@ const NFeHistoricaEntradaImportada = () => {
                       type="button"
                       variant="outline"
                       size="sm"
+                      className="w-full sm:w-auto justify-center"
                       onClick={() => navigate(rotaConferenciaNfeEntradaHistorica(r.id, r))}
                     >
                       {labelBotaoPrincipalConferenciaNfeEntradaHistorica(r)}
@@ -564,6 +567,7 @@ const NFeHistoricaEntradaImportada = () => {
                       type="button"
                       variant="outline"
                       size="sm"
+                      className="w-full sm:w-auto justify-center"
                       onClick={() => setReabrirId(r.id)}
                     >
                       Reabrir entrada para correção
@@ -591,11 +595,14 @@ const NFeHistoricaEntradaImportada = () => {
       <Modal isOpen={modal} onClose={() => setModal(false)} title="NF-e de entrada importada (histórico)" size="xl">
         {detalhe && (
           <div className="space-y-3 text-sm">
-            <p><strong>Chave:</strong> {detalhe.chave_acesso}</p>
-            <p><strong>Empresa (ERP):</strong> {detalhe.empresa_nome || '—'} {detalhe.papel_empresa ? `(${detalhe.papel_empresa})` : ''}</p>
-            <p><strong>Fornecedor:</strong> {detalhe.fornecedor_nome || '—'}</p>
-            <p><strong>Status XML:</strong> {detalhe.cstat || '—'} {detalhe.xmotivo ? `- ${detalhe.xmotivo}` : ''}</p>
-            <NexusButton type="button" variant="outline" size="sm" onClick={() => setReabrirId(detalhe.id)}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <p className="min-w-0"><strong>Chave:</strong> <span className="font-mono text-xs break-all">{detalhe.chave_acesso}</span></p>
+              <p className="min-w-0"><strong>Empresa (ERP):</strong> {detalhe.empresa_nome || '—'} {detalhe.papel_empresa ? `(${detalhe.papel_empresa})` : ''}</p>
+              <p className="min-w-0"><strong>Fornecedor:</strong> {detalhe.fornecedor_nome || '—'}</p>
+              <p className="min-w-0"><strong>Status XML:</strong> {detalhe.cstat || '—'} {detalhe.xmotivo ? `- ${detalhe.xmotivo}` : ''}</p>
+            </div>
+            <NexusButton type="button" variant="outline" size="sm" className="w-full sm:w-auto justify-center" onClick={() => setReabrirId(detalhe.id)}>
+
               Reabrir entrada para correção
             </NexusButton>
           </div>

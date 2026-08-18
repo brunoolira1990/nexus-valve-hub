@@ -587,7 +587,7 @@ export function ClienteForm({
               isento).
             </p>
           )}
-          <div className="md:col-span-2 flex flex-wrap gap-2 pt-1">
+          <div className="md:col-span-2 flex flex-col items-stretch gap-2 pt-1 sm:flex-row sm:flex-wrap sm:items-center">
             <CheckboxField control={control} name="ativo" label="Cadastro ativo" />
             <CheckboxField control={control} name="bloqueado" label="Bloqueado para venda" />
           </div>
@@ -600,8 +600,8 @@ export function ClienteForm({
           <AlertaEnderecoFiscal mensagem={enderecoFiscalAlerta} />
           <div>
             <InputField label="CEP" {...cepField} onChange={onCepChange} onBlur={onCepBlur} onKeyDown={onCepKeyDown} />
-            <div className="mt-1 flex items-center gap-3 text-xs">
-              <span className="text-muted-foreground">
+            <div className="mt-1 flex flex-col items-start gap-1 text-xs sm:flex-row sm:items-center sm:gap-3">
+              <span className="break-words text-muted-foreground">
                 {cepLookupLoading
                   ? 'Consultando CEP...'
                   : cepLookupMessage ?? 'A consulta ocorre automaticamente ao sair do campo.'}
@@ -662,7 +662,7 @@ export function ClienteForm({
           <AlertaEnderecoFiscal mensagem={enderecoFiscalAlerta} />
           <TextareaField
             label="Informações complementares para NF-e/DANFE"
-            className="min-h-[200px]"
+            className="min-h-[200px] md:col-span-2"
             placeholder="Ex.: ENDEREÇO DE ENTREGA RUA MIGUEL LANGONE 341 - HORÁRIO DE ENTREGA DAS 7:00 AS 15:00 HORAS"
             operationalUpper
             {...register('informacoes_complementares_nfe')}
@@ -715,7 +715,7 @@ export function ClienteForm({
           <InputField label="Vendedor padrão" operationalUpper {...register('vendedor_padrao')} />
           <TextareaField
             label="Integrações automáticas"
-            className="min-h-[90px]"
+            className="min-h-[90px] md:col-span-2"
             placeholder="Ex.: regras de envio de XML, integração com CRM e observações de automação."
             operationalUpper
             {...register('integracao_texto')}
@@ -789,11 +789,11 @@ export function ClienteForm({
         </CadastroTabs>
 
         <div className="sticky bottom-0 z-10 -mx-4 border-t border-border bg-card px-4 py-3 md:-mx-6 md:px-6">
-          <div className="flex justify-end gap-2">
-            <CadastroButton type="button" variant="outline" onClick={onCancel} disabled={saving}>
+          <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:justify-end">
+            <CadastroButton className="w-full sm:w-auto" type="button" variant="outline" onClick={onCancel} disabled={saving}>
               Cancelar
             </CadastroButton>
-            <CadastroButton type="submit" disabled={saving}>
+            <CadastroButton className="w-full sm:w-auto" type="submit" disabled={saving}>
               {saving ? 'Salvando…' : 'Salvar'}
             </CadastroButton>
           </div>

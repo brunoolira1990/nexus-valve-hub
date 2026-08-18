@@ -1564,7 +1564,7 @@ const Produtos = () => {
       />
       {listNotice ? <p className="text-sm text-emerald-800 dark:text-emerald-200 mb-3">{listNotice}</p> : null}
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <button type="button" onClick={openNewFamilia} className="erp-btn-outline text-sm">
+        <button type="button" onClick={openNewFamilia} className="erp-btn-outline text-sm w-full sm:w-auto">
           <Plus className="h-4 w-4 inline mr-1" />
           Nova família / figura (nova base técnica)
         </button>
@@ -1604,7 +1604,7 @@ const Produtos = () => {
             {listError ? <ErrorState onRetry={() => void reloadProdutos()} /> : null}
             {listLoading ? <LoadingState /> : null}
             {!listLoading && !listError ? (
-          <table className="erp-table">
+          <table className="erp-table" data-mobile-table-mode="cards">
             <thead>
               <tr>
                 <th>Código</th>
@@ -1672,7 +1672,7 @@ const Produtos = () => {
         ) : (
           <>
             {famDeleteErr ? <p className="text-sm text-destructive p-3">{famDeleteErr}</p> : null}
-            <table className="erp-table">
+            <table className="erp-table" data-mobile-table-mode="cards">
             <thead>
               <tr>
                 <th>Código figura/base</th>
@@ -1725,10 +1725,10 @@ const Produtos = () => {
         {saveError && <p className="text-sm text-destructive mb-3">{saveError}</p>}
         {duplicateCodigo ? (
           <div className="mb-3 flex flex-wrap gap-2">
-            <button type="button" className="erp-btn-outline erp-btn-sm" onClick={filtrarCodigoDuplicado}>
+            <button type="button" className="erp-btn-outline erp-btn-sm w-full sm:w-auto" onClick={filtrarCodigoDuplicado}>
               Filtrar lista por este código
             </button>
-            <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => void abrirProdutoDuplicado()}>
+            <button type="button" className="erp-btn-outline erp-btn-sm w-full sm:w-auto" onClick={() => void abrirProdutoDuplicado()}>
               Abrir produto existente
             </button>
           </div>
@@ -2144,7 +2144,7 @@ const Produtos = () => {
               {previewDesc ? (
                 <div className="mt-2">
                   <p className="text-sm">{previewDesc}</p>
-                  <button type="button" className="erp-btn-outline erp-btn-sm mt-2" onClick={aplicarDescricaoPreview}>
+                  <button type="button" className="erp-btn-outline erp-btn-sm mt-2 w-full sm:w-auto" onClick={aplicarDescricaoPreview}>
                     Usar descrição sugerida
                   </button>
                 </div>
@@ -2294,7 +2294,7 @@ const Produtos = () => {
                 {form.ncm ? (
                   <button
                     type="button"
-                    className="erp-btn-outline erp-btn-sm mt-2"
+                    className="erp-btn-outline erp-btn-sm mt-2 w-full sm:w-auto"
                     onClick={() => {
                       f('ncm', '');
                       setNcmProdutoOption(null);
@@ -2347,11 +2347,11 @@ const Produtos = () => {
           ) : null}
         </Tabs>
 
-        <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
-          <button type="button" onClick={() => setModalOpen(false)} className="erp-btn-outline">
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end items-stretch sm:items-center gap-2 mt-6 pt-4 border-t border-border">
+          <button type="button" onClick={() => setModalOpen(false)} className="erp-btn-outline w-full sm:w-auto">
             Cancelar
           </button>
-          <button type="button" onClick={handleSave} className="erp-btn-primary">
+          <button type="button" onClick={handleSave} className="erp-btn-primary w-full sm:w-auto">
             Salvar
           </button>
         </div>
@@ -2384,14 +2384,14 @@ const Produtos = () => {
             </p>
             <button
               type="button"
-              className="erp-btn-outline erp-btn-sm mt-2"
+              className="erp-btn-outline erp-btn-sm mt-2 w-full sm:w-auto"
               onClick={() => usarFamiliaExistente(familiaDuplicada)}
             >
               Usar família existente em Novo Produto
             </button>
             <button
               type="button"
-              className="erp-btn-outline erp-btn-sm mt-2 ml-2"
+              className="erp-btn-outline erp-btn-sm mt-2 w-full sm:w-auto sm:ml-2"
               onClick={() => {
                 setActiveTab('familias');
                 setSearch(familiaDuplicada.codigo_figura);
@@ -2402,7 +2402,7 @@ const Produtos = () => {
             </button>
             <button
               type="button"
-              className="erp-btn-outline erp-btn-sm mt-2 ml-2"
+              className="erp-btn-outline erp-btn-sm mt-2 w-full sm:w-auto sm:ml-2"
               onClick={() => openEditFamilia(familiaDuplicada)}
             >
               Editar família existente
@@ -2521,7 +2521,7 @@ const Produtos = () => {
                     {cls.existente.id > 0 ? (
                       <button
                         type="button"
-                        className="erp-btn-outline erp-btn-sm mt-2"
+                        className="erp-btn-outline erp-btn-sm mt-2 w-full sm:w-auto"
                         onClick={() => {
                           const found =
                             familias.find((x) => x.id === cls.existente.id) ??
@@ -2773,10 +2773,10 @@ const Produtos = () => {
           onObservacoesChange={(v) => setFamQuick((q) => ({ ...q, observacoes_conversao: v }))}
           rotulos={{ limparUnidades: 'Limpar seleção' }}
         />
-        <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end items-stretch sm:items-center gap-2 mt-6 pt-4 border-t border-border">
           <button
             type="button"
-            className="erp-btn-outline"
+            className="erp-btn-outline w-full sm:w-auto"
             disabled={famSaving}
             onClick={() => setFamModalOpen(false)}
           >
@@ -2784,7 +2784,7 @@ const Produtos = () => {
           </button>
           <button
             type="button"
-            className="erp-btn-primary"
+            className="erp-btn-primary w-full sm:w-auto"
             disabled={famSaving}
             aria-busy={famSaving || undefined}
             onClick={() => void salvarFamiliaRapida()}

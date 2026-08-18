@@ -901,7 +901,7 @@ const CertificadosFornecedor = () => {
       {listLoading ? <TableSkeleton rows={6} cols={7} /> : null}
       {!listLoading && !listError ? (
         <DataTableShell>
-        <DataTable className="text-sm">
+        <DataTable className="text-sm" mobileMode="cards">
           <thead>
             <tr>
               <th>Fornecedor</th>
@@ -1295,7 +1295,7 @@ const CertificadosFornecedor = () => {
                             {(it.corridas_adicionais || []).map((ca, caidx) => (
                               <div
                                 key={`corrida-adicional-${idx}-${ca.id ?? caidx}`}
-                                className="grid grid-cols-[1fr_1fr_5rem_auto_auto] gap-1 items-center"
+                                className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_5rem_auto_auto] gap-1 items-stretch sm:items-center"
                               >
                                 <input
                                   className="erp-input h-8 text-xs"
@@ -1395,11 +1395,11 @@ const CertificadosFornecedor = () => {
                   <div className="md:col-span-6 rounded border border-border p-2 bg-muted/10">
                     <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                       <p className="text-xs font-semibold">Componentes da válvula</p>
-                      <div className="flex gap-2">
-                        <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => adicionarComponentesPadraoValvula(idx)}>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <button type="button" className="erp-btn-outline erp-btn-sm w-full sm:w-auto" onClick={() => adicionarComponentesPadraoValvula(idx)}>
                           Usar componentes padrão de válvula
                         </button>
-                        <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => addComponente(idx)}>
+                        <button type="button" className="erp-btn-outline erp-btn-sm w-full sm:w-auto" onClick={() => addComponente(idx)}>
                           Adicionar componente
                         </button>
                       </div>
@@ -1493,11 +1493,11 @@ const CertificadosFornecedor = () => {
                                   onChange={(e) => updateComponente(idx, cidx, { observacoes: e.target.value })}
                                 />
                               </div>
-                              <div className="md:col-span-6 flex flex-wrap gap-2">
-                                <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => void buscarDadosCorridaComponente(idx, cidx)}>
+                              <div className="md:col-span-6 flex flex-col sm:flex-row gap-2">
+                                <button type="button" className="erp-btn-outline erp-btn-sm w-full sm:w-auto" onClick={() => void buscarDadosCorridaComponente(idx, cidx)}>
                                   Buscar dados existentes da corrida
                                 </button>
-                                <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => removeComponente(idx, cidx)}>
+                                <button type="button" className="erp-btn-outline erp-btn-sm w-full sm:w-auto" onClick={() => removeComponente(idx, cidx)}>
                                   Remover componente
                                 </button>
                               </div>
@@ -1515,11 +1515,11 @@ const CertificadosFornecedor = () => {
         </div>
 
         <div className="mt-4"><label className="erp-label">Observacoes</label><textarea className="erp-input mt-1 h-20" value={form.observacoes || ''} onChange={(e) => setF('observacoes', e.target.value)} /></div>
-        <div className="mt-4 flex flex-wrap justify-end gap-2">
-          <button type="button" className="erp-btn-outline" onClick={() => setModalOpen(false)}>Fechar</button>
+        <div className="mt-4 flex flex-col-reverse sm:flex-row sm:flex-wrap sm:justify-end items-stretch sm:items-center gap-2">
+          <button type="button" className="erp-btn-outline w-full sm:w-auto" onClick={() => setModalOpen(false)}>Fechar</button>
           <button
             type="button"
-            className="erp-btn-outline"
+            className="erp-btn-outline w-full sm:w-auto"
             onClick={() => void salvar(false)}
             title={titleSalvarFornecedorSemRegistrar()}
           >
@@ -1527,7 +1527,7 @@ const CertificadosFornecedor = () => {
           </button>
           <button
             type="button"
-            className="erp-btn-primary"
+            className="erp-btn-primary w-full sm:w-auto"
             disabled={form.status === 'cancelado'}
             title={form.status === 'cancelado' ? 'Não é possível registrar no status cancelado.' : 'Valida itens e grava como registrado.'}
             onClick={() => void salvar(true)}
@@ -1610,14 +1610,14 @@ const CertificadosFornecedor = () => {
               <div className="flex justify-end mt-2">
                 <button
                   type="button"
-                  className="erp-btn-outline erp-btn-sm mr-2"
+                  className="erp-btn-outline erp-btn-sm w-full sm:w-auto mr-2"
                   onClick={() => setFornecedorMatchModalOpen(false)}
                 >
                   Ignorar
                 </button>
                 <button
                   type="button"
-                  className="erp-btn-primary erp-btn-sm"
+                  className="erp-btn-primary erp-btn-sm w-full sm:w-auto"
                   onClick={() => {
                     if (fornecedorTargetIdx == null) return;
                     aplicarDadosTecnicosExistentes(

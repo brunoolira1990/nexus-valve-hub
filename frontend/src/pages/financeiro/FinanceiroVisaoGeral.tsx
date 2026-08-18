@@ -145,11 +145,11 @@ const FinanceiroVisaoGeral = () => {
       />
 
       <div className="flex flex-wrap items-center gap-3 mb-6">
-        <label className="text-sm flex items-center gap-2">
+        <label className="text-sm flex flex-col sm:flex-row sm:items-center gap-2">
           <Calendar className="h-4 w-4 text-muted-foreground" />
           Período
           <select
-            className="erp-input erp-input-sm"
+            className="erp-input erp-input-sm w-full sm:w-auto"
             value={periodo}
             onChange={(e) => setPeriodo(e.target.value as Periodo)}
           >
@@ -302,7 +302,7 @@ const FinanceiroVisaoGeral = () => {
                   return (
                     <li
                       key={a.codigo}
-                      className="flex flex-wrap items-center justify-between gap-2 text-sm border-b border-border/40 pb-2 last:border-0"
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm border-b border-border/40 pb-2 last:border-0"
                     >
                       <span>
                         {a.mensagem}
@@ -311,7 +311,7 @@ const FinanceiroVisaoGeral = () => {
                         ) : null}
                       </span>
                       {links?.length ? (
-                        <span className="flex flex-wrap gap-2">
+                        <span className="flex flex-col sm:flex-row flex-wrap gap-2">
                           {links.map((l) => (
                             <Link
                               key={l.to}
@@ -337,13 +337,13 @@ const FinanceiroVisaoGeral = () => {
                 Créditos disponíveis
               </h2>
               <dl className="text-sm space-y-2">
-                <div className="flex justify-between">
+                <div className="flex flex-col sm:flex-row sm:justify-between gap-1">
                   <dt className="text-muted-foreground">Clientes</dt>
                   <dd>
                     {resumo.creditos.clientes.quantidade} · {formatMoneyBRL(resumo.creditos.clientes.valor_disponivel)}
                   </dd>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex flex-col sm:flex-row sm:justify-between gap-1">
                   <dt className="text-muted-foreground">Fornecedores</dt>
                   <dd>
                     {resumo.creditos.fornecedores.quantidade} ·{' '}
@@ -355,21 +355,21 @@ const FinanceiroVisaoGeral = () => {
                   <dd>{formatMoneyBRL(resumo.creditos.total_disponivel)}</dd>
                 </div>
               </dl>
-              <Link to="/financeiro/creditos" className="erp-btn-outline erp-btn-sm mt-3 inline-block">
+              <Link to="/financeiro/creditos" className="erp-btn-outline erp-btn-sm mt-3 inline-block w-full sm:w-auto">
                 Ver créditos
               </Link>
             </div>
 
             <div className="erp-card p-4">
               <h2 className="font-semibold mb-3">Acesso rápido</h2>
-              <div className="flex flex-wrap gap-2">
-                <Link to="/financeiro/contas-receber" className="erp-btn-outline erp-btn-sm">
+              <div className="flex flex-col sm:flex-row flex-wrap gap-2">
+                <Link to="/financeiro/contas-receber" className="erp-btn-outline erp-btn-sm w-full sm:w-auto">
                   Contas a Receber
                 </Link>
-                <Link to="/financeiro/contas-pagar" className="erp-btn-outline erp-btn-sm">
+                <Link to="/financeiro/contas-pagar" className="erp-btn-outline erp-btn-sm w-full sm:w-auto">
                   Contas a Pagar
                 </Link>
-                <Link to="/financeiro/cadastros" className="erp-btn-outline erp-btn-sm">
+                <Link to="/financeiro/cadastros" className="erp-btn-outline erp-btn-sm w-full sm:w-auto">
                   Cadastros financeiros
                 </Link>
               </div>
@@ -380,7 +380,7 @@ const FinanceiroVisaoGeral = () => {
             <section className="erp-card p-4">
               <h2 className="font-semibold mb-3">Resumo por conta / caixa prevista</h2>
               <div className="overflow-x-auto">
-                <table className="erp-table text-sm w-full">
+                <table className="erp-table text-sm w-full" data-mobile-table-mode="cards">
                   <thead>
                     <tr>
                       <th>Conta</th>
@@ -413,7 +413,7 @@ const FinanceiroVisaoGeral = () => {
                 ) : (
                   <ul className="text-sm space-y-1">
                     {resumo.por_categoria.receitas.map((c) => (
-                      <li key={`r-${c.categoria_id}-${c.categoria_nome}`} className="flex justify-between">
+                      <li key={`r-${c.categoria_id}-${c.categoria_nome}`} className="flex flex-col sm:flex-row sm:justify-between gap-1">
                         <span>{c.categoria_nome}</span>
                         <span>{formatMoneyBRL(c.valor)}</span>
                       </li>
@@ -428,7 +428,7 @@ const FinanceiroVisaoGeral = () => {
                 ) : (
                   <ul className="text-sm space-y-1">
                     {resumo.por_categoria.despesas.map((c) => (
-                      <li key={`d-${c.categoria_id}-${c.categoria_nome}`} className="flex justify-between">
+                      <li key={`d-${c.categoria_id}-${c.categoria_nome}`} className="flex flex-col sm:flex-row sm:justify-between gap-1">
                         <span>{c.categoria_nome}</span>
                         <span>{formatMoneyBRL(c.valor)}</span>
                       </li>

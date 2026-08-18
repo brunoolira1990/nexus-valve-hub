@@ -1257,7 +1257,7 @@ const Certificados = () => {
       {listLoading ? <TableSkeleton rows={6} cols={6} /> : null}
       {!listLoading && !listError ? (
         <DataTableShell>
-        <DataTable className="text-sm">
+        <DataTable className="text-sm" mobileMode="cards">
           <thead>
             <tr>
               <th className="whitespace-nowrap">Número</th>
@@ -1307,7 +1307,7 @@ const Certificados = () => {
                       </div>
                     </td>
                     <td>
-                      <div className="flex flex-wrap justify-end gap-1">
+                      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:justify-end gap-1">
                         <button
                           type="button"
                           className="erp-btn-ghost erp-btn-sm"
@@ -2102,11 +2102,11 @@ const Certificados = () => {
           <textarea className="erp-input mt-1 h-20" value={form.texto_padrao || ''} onChange={(e) => setF('texto_padrao', e.target.value)} />
         </div>
 
-        <div className="flex flex-wrap justify-end gap-2 mt-6 pt-4 border-t border-border">
-          <button type="button" className="erp-btn-outline" onClick={closeCertModal}>Fechar</button>
+        <div className="flex flex-col-reverse sm:flex-row sm:flex-wrap sm:justify-end items-stretch sm:items-center gap-2 mt-6 pt-4 border-t border-border">
+          <button type="button" className="erp-btn-outline w-full sm:w-auto" onClick={closeCertModal}>Fechar</button>
           <button
             type="button"
-            className="erp-btn-outline"
+            className="erp-btn-outline w-full sm:w-auto"
             onClick={() => void salvar(false)}
             title={titleSalvarQualidadeSemEmitir()}
           >
@@ -2114,7 +2114,7 @@ const Certificados = () => {
           </button>
           <button
             type="button"
-            className="erp-btn-outline"
+            className="erp-btn-outline w-full sm:w-auto"
             onClick={() => void visualizarPreviaPdf()}
             disabled={modalPdfBusy || editing?.status === 'cancelado'}
             title={
@@ -2133,7 +2133,7 @@ const Certificados = () => {
           {editing?.id ? (
             <button
               type="button"
-              className="erp-btn-outline"
+              className="erp-btn-outline w-full sm:w-auto"
               onClick={() => void visualizarOuBaixarPdf(editing.id, form.status === 'rascunho', true, {
                 numero: numeroArquivoAtual(),
                 cliente: form.cliente_nome_snapshot,
@@ -2151,7 +2151,7 @@ const Certificados = () => {
           ) : null}
           <button
             type="button"
-            className="erp-btn-primary"
+            className="erp-btn-primary w-full sm:w-auto"
             disabled={form.status === 'cancelado' || modalPdfBusy}
             title={form.status === 'cancelado' ? 'Não é possível emitir um certificado cancelado.' : 'Valida itens incluídos e grava como emitido.'}
             onClick={() => {
@@ -2202,9 +2202,9 @@ const Certificados = () => {
           <div className="md:col-span-2"><label className="erp-label">Descrição</label><input className="erp-input mt-1" value={fornecedorFiltro.descricao} onChange={(e) => setFornecedorFiltro((p) => ({ ...p, descricao: e.target.value }))} /></div>
           <div><label className="erp-label">Status</label><select className="erp-select mt-1 w-full" value={fornecedorFiltro.status} onChange={(e) => setFornecedorFiltro((p) => ({ ...p, status: e.target.value }))}><option value="registrado">Registrado</option><option value="rascunho">Rascunho</option><option value="cancelado">Cancelado</option></select></div>
         </div>
-        <div className="flex justify-end gap-2 mt-4">
-          <button type="button" className="erp-btn-outline" onClick={() => setFornecedorBuscaAvancadaOpen(false)}>Cancelar</button>
-          <button type="button" className="erp-btn-primary" onClick={() => void buscarDadosFornecedorAvancado()}>Buscar</button>
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end items-stretch sm:items-center gap-2 mt-4">
+          <button type="button" className="erp-btn-outline w-full sm:w-auto" onClick={() => setFornecedorBuscaAvancadaOpen(false)}>Cancelar</button>
+          <button type="button" className="erp-btn-primary w-full sm:w-auto" onClick={() => void buscarDadosFornecedorAvancado()}>Buscar</button>
         </div>
       </Modal>
 
@@ -2252,7 +2252,7 @@ const Certificados = () => {
               <div className="flex justify-end mt-2">
                 <button
                   type="button"
-                  className="erp-btn-primary erp-btn-sm"
+                  className="erp-btn-primary erp-btn-sm w-full sm:w-auto"
                   onClick={() => {
                     if (fornecedorTargetIdx == null) return;
                     aplicarDadosFornecedor(fornecedorTargetIdx, r);

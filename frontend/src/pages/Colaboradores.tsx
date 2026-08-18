@@ -219,9 +219,9 @@ const Colaboradores = () => {
       />
 
       <NexusCard className="mb-4">
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3">
           <select
-            className="erp-select h-9 text-sm min-w-[10rem]"
+            className="erp-select h-9 text-sm w-full sm:w-auto sm:min-w-[10rem]"
             value={filtroFuncao}
             onChange={(e) => setFilter('funcao', e.target.value)}
           >
@@ -232,7 +232,7 @@ const Colaboradores = () => {
             ))}
           </select>
           <select
-            className="erp-select h-9 text-sm min-w-[8rem]"
+            className="erp-select h-9 text-sm w-full sm:w-auto sm:min-w-[8rem]"
             value={filtroAtivo}
             onChange={(e) => {
               const v = e.target.value;
@@ -250,7 +250,7 @@ const Colaboradores = () => {
       {loading ? <TableSkeleton rows={6} cols={8} /> : null}
       {!loading && !error ? (
         <DataTableShell>
-          <DataTable>
+          <DataTable mobileMode="cards">
             <thead>
               <tr>
                 <th>Nome</th>
@@ -440,11 +440,11 @@ const Colaboradores = () => {
           </section>
         </div>
 
-        <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
-          <button type="button" className="erp-btn-outline" onClick={() => setModalOpen(false)}>
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end items-stretch sm:items-center gap-2 mt-6 pt-4 border-t border-border">
+          <button type="button" className="erp-btn-outline w-full sm:w-auto" onClick={() => setModalOpen(false)}>
             Fechar
           </button>
-          <button type="button" className="erp-btn-primary" onClick={() => void handleSave()}>
+          <button type="button" className="erp-btn-primary w-full sm:w-auto" onClick={() => void handleSave()}>
             Salvar colaborador
           </button>
         </div>

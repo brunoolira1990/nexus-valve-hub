@@ -53,7 +53,7 @@ const TransportadoraList = () => {
       {loading ? <TableSkeleton rows={6} cols={7} /> : null}
       {!loading && !error ? (
         <DataTableShell>
-          <DataTable>
+          <DataTable mobileMode="cards">
             <thead>
               <tr>
                 <th>Razão Social</th>

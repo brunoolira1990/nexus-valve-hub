@@ -164,13 +164,13 @@ export function ModalCorridasCertificadoFornecedor({
               {erros.map((e) => <li key={e}>{e}</li>)}
             </ul>
           ) : null}
-          <div className="flex justify-end gap-2">
-            <button type="button" className="erp-btn-outline" onClick={fechar} disabled={aplicando}>
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end items-stretch sm:items-center gap-2">
+            <button type="button" className="erp-btn-outline w-full sm:w-auto" onClick={fechar} disabled={aplicando}>
               Cancelar
             </button>
             <button
               type="button"
-              className="erp-btn-primary"
+              className="erp-btn-primary w-full sm:w-auto"
               disabled={!podeAplicar}
               aria-disabled={!podeAplicar}
               onClick={aplicar}
@@ -202,7 +202,7 @@ export function ModalCorridasCertificadoFornecedor({
               {MSG_ESTADO_VAZIO_CORRIDAS_CF_CQ}
             </p>
           ) : (
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" data-mobile-table-mode="cards">
               <thead>
                 <tr className="text-left border-b border-border">
                   <th className="py-1 pr-2">Selecionar</th>
@@ -241,7 +241,7 @@ export function ModalCorridasCertificadoFornecedor({
                       <td className="py-2 pr-2">
                         {estado.selecionada ? (
                           <input
-                            className="erp-input w-28"
+                            className="erp-input w-full sm:w-28"
                             inputMode="decimal"
                             aria-label={`Quantidade da corrida ${linha.corrida}${linha.lote ? `/${linha.lote}` : ''}`}
                             value={estado.quantidade}

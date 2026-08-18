@@ -17,6 +17,7 @@ from nexus_erp.list_mixins import AutocompleteOrPaginationMixin, aplicar_orderin
 from nexus_erp.pagination import NexusPageNumberPagination
 
 from .estoque_services import reverter_todos_itens_entrada, reverter_todos_itens_saida
+from .kardex import build_kardex_payload
 from .nfe_saida_efeitos import (
     aplicar_efeitos_autorizacao_nfe_saida,
     aplicar_efeitos_cancelamento_nfe_saida,
@@ -4103,6 +4104,20 @@ class PainelFiscalGerencialHistoricoViewSet(viewsets.ViewSet):
                 },
             }
         )
+
+
+class EstoqueKardexViewSet(viewsets.ViewSet):
+    """Extrato derivado e somente leitura dos efeitos físicos de estoque."""
+
+    permission_classes = [IsAuthenticated]
+
+    def list(self, request):
+        payload, resumo = build_kardex_payload(request.query_params)
+        from nexus_erp.pagination import paginate_sequence
+
+        paginated = paginate_sequence(request, payload)
+        paginated.data['resumo'] = resumo
+        return paginated
 
 
 class EstoqueViewSet(viewsets.ViewSet):

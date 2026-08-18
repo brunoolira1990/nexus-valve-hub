@@ -335,7 +335,7 @@ export function TransportadoraForm({ defaultValues, onSubmit, onCancel, saving }
                   ? 'Consultando CNPJ...'
                   : cnpjLookupMessage ?? 'A consulta ocorre automaticamente ao sair do campo.'}
               </span>
-              <CadastroButton type="button" variant="secondary" onClick={openContactModal}>
+              <CadastroButton type="button" variant="secondary" className="w-full sm:w-auto" onClick={openContactModal}>
                 Alterar dados de contato
               </CadastroButton>
             </div>
@@ -354,7 +354,7 @@ export function TransportadoraForm({ defaultValues, onSubmit, onCancel, saving }
             <div className="flex-1">
               <InputField label="CEP" {...register('cep')} onBlur={onCepBlur} onChange={(e) => setValue('cep', formatCep(e.target.value))} />
             </div>
-            <CadastroButton type="button" variant="outline" className="shrink-0" onClick={() => void runCepLookup()}>
+            <CadastroButton type="button" variant="outline" className="w-full sm:w-auto shrink-0" onClick={() => void runCepLookup()}>
               Pesquisar CEP
             </CadastroButton>
           </div>
@@ -462,11 +462,11 @@ export function TransportadoraForm({ defaultValues, onSubmit, onCancel, saving }
           {panel}
         </CadastroTabs>
 
-        <div className="flex justify-end gap-2 pt-4 border-t border-border">
-          <CadastroButton type="button" variant="outline" onClick={onCancel} disabled={saving}>
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end items-stretch sm:items-center gap-2 pt-4 border-t border-border">
+          <CadastroButton type="button" variant="outline" className="w-full sm:w-auto" onClick={onCancel} disabled={saving}>
             Cancelar
           </CadastroButton>
-          <CadastroButton type="submit" disabled={saving}>
+          <CadastroButton type="submit" className="w-full sm:w-auto" disabled={saving}>
             {saving ? 'Salvando…' : 'Salvar'}
           </CadastroButton>
         </div>
@@ -504,11 +504,11 @@ export function TransportadoraForm({ defaultValues, onSubmit, onCancel, saving }
             onChange={(e) => setContactDraft((d) => ({ ...d, contato: e.target.value }))}
           />
         </div>
-        <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
-          <CadastroButton type="button" variant="outline" onClick={() => setContactOpen(false)}>
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end items-stretch sm:items-center gap-2 mt-6 pt-4 border-t border-border">
+          <CadastroButton type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setContactOpen(false)}>
             Fechar
           </CadastroButton>
-          <CadastroButton type="button" onClick={applyContactModal}>
+          <CadastroButton type="button" className="w-full sm:w-auto" onClick={applyContactModal}>
             Aplicar
           </CadastroButton>
         </div>

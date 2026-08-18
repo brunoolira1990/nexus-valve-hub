@@ -192,7 +192,7 @@ const Empresas = () => {
         {error ? <ErrorState onRetry={() => void reload()} /> : null}
         {loading ? <LoadingState /> : null}
         {!loading && !error ? (
-          <DataTable>
+          <DataTable mobileMode="cards">
             <thead><tr><th>Razão Social</th><th>CNPJ</th><th>Telefone</th><th>Cidade/UF</th><th className="w-24">Ações</th></tr></thead>
             <tbody>
               {items.length === 0 ? (
@@ -234,9 +234,9 @@ const Empresas = () => {
             {formError}
           </div>
         )}
-        <div className="flex gap-1 mb-4 border-b border-border">
+        <div className="flex flex-wrap gap-1 mb-4 border-b border-border">
           {tabs.map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${tab === t.key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>{t.label}</button>
+            <button key={t.key} onClick={() => setTab(t.key)} className={`px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors ${tab === t.key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>{t.label}</button>
           ))}
         </div>
 
@@ -318,7 +318,7 @@ const Empresas = () => {
                 ) : (
                   <div className="space-y-4">
                     {numeracoes.map((cfg) => (
-                      <div key={cfg.id} className="rounded-md border border-border p-3 grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div key={cfg.id} className="rounded-md border border-border p-3 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                         <div>
                           <label className="erp-label">Ambiente</label>
                           <p className="text-sm mt-1 capitalize">{cfg.ambiente}</p>
@@ -362,10 +362,10 @@ const Empresas = () => {
                           <label className="erp-label">Últ. autorizado</label>
                           <p className="text-sm mt-1">{cfg.ultimo_numero_autorizado ?? '—'}</p>
                         </div>
-                        <div className="md:col-span-2 flex items-end gap-2 flex-wrap">
+                        <div className="md:col-span-2 flex flex-col sm:flex-row items-stretch sm:items-end gap-2">
                           <button
                             type="button"
-                            className="erp-btn-outline erp-btn-sm"
+                            className="erp-btn-outline erp-btn-sm w-full sm:w-auto"
                             onClick={async () => {
                               try {
                                 const confirmar =
@@ -401,7 +401,7 @@ const Empresas = () => {
                           {(cfg.tipo_operacao ?? 'saida') === 'saida' ? (
                             <button
                               type="button"
-                              className="erp-btn-destructive erp-btn-sm"
+                              className="erp-btn-destructive erp-btn-sm w-full sm:w-auto"
                               onClick={() => setInutilizacaoConfigId(cfg.id)}
                             >
                               Inutilizar numeração
@@ -417,9 +417,9 @@ const Empresas = () => {
           </div>
         )}
 
-        <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
-          <button onClick={() => setModalOpen(false)} className="erp-btn-outline">Cancelar</button>
-          <button onClick={handleSave} className="erp-btn-primary">Salvar</button>
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end items-stretch sm:items-center gap-2 mt-6 pt-4 border-t border-border">
+          <button onClick={() => setModalOpen(false)} className="erp-btn-outline w-full sm:w-auto">Cancelar</button>
+          <button onClick={handleSave} className="erp-btn-primary w-full sm:w-auto">Salvar</button>
         </div>
       </Modal>
 

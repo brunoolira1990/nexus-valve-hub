@@ -66,7 +66,7 @@ const Corridas = () => {
       {loading ? <TableSkeleton rows={6} cols={6} /> : null}
       {!loading && !error ? (
         <DataTableShell>
-          <DataTable>
+          <DataTable mobileMode="cards">
           <thead><tr><th>Número</th><th>Produto</th><th>Fornecedor</th><th>Data receb.</th><th>NF entrada</th><th className="w-24">Ações</th></tr></thead>
           <tbody>
             {items.length === 0 ? (
@@ -84,9 +84,9 @@ const Corridas = () => {
               <tr key={e.id}>
                 <td className="font-mono font-medium">{e.numero}</td><td>{e.produto_nome}</td><td>{e.fornecedor_nome}</td>
                 <td>{e.data_recebimento}</td><td>{e.nf_entrada}</td>
-                <td><div className="flex gap-1">
-                  <button onClick={() => openEdit(e)} className="erp-btn-ghost erp-btn-sm"><Pencil className="h-4 w-4" /></button>
-                  <button onClick={() => handleDelete(e.id)} className="erp-btn-ghost erp-btn-sm text-destructive"><Trash2 className="h-4 w-4" /></button>
+                <td><div className="flex flex-col sm:flex-row gap-1 w-full sm:w-auto">
+                  <button onClick={() => openEdit(e)} className="erp-btn-ghost erp-btn-sm w-full sm:w-auto"><Pencil className="h-4 w-4" /></button>
+                  <button onClick={() => handleDelete(e.id)} className="erp-btn-ghost erp-btn-sm w-full sm:w-auto text-destructive"><Trash2 className="h-4 w-4" /></button>
                 </div></td>
               </tr>
             ))
@@ -108,8 +108,8 @@ const Corridas = () => {
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Corrida' : 'Nova Corrida'} size="xl">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div><label className="erp-label">Número da Corrida</label><input className="erp-input mt-1" value={form.numero} onChange={e => setForm(p => ({...p, numero:e.target.value}))} /></div>
-          <div><label className="erp-label">Produto</label><select className="erp-select mt-1" value={form.produto_id} onChange={e => setForm(p => ({...p, produto_id:+e.target.value}))}><option value={1}>Válvula Gaveta 2"</option><option value={2}>Válvula Esfera 4"</option><option value={3}>Conexão WeldoFit 3"x2"</option></select></div>
-          <div><label className="erp-label">Fornecedor</label><select className="erp-select mt-1" value={form.fornecedor_id} onChange={e => setForm(p => ({...p, fornecedor_id:+e.target.value}))}><option value={1}>Tupy S.A.</option><option value={2}>Vallourec</option></select></div>
+          <div><label className="erp-label">Produto</label><select className="erp-select mt-1 w-full" value={form.produto_id} onChange={e => setForm(p => ({...p, produto_id:+e.target.value}))}><option value={1}>Válvula Gaveta 2"</option><option value={2}>Válvula Esfera 4"</option><option value={3}>Conexão WeldoFit 3"x2"</option></select></div>
+          <div><label className="erp-label">Fornecedor</label><select className="erp-select mt-1 w-full" value={form.fornecedor_id} onChange={e => setForm(p => ({...p, fornecedor_id:+e.target.value}))}><option value={1}>Tupy S.A.</option><option value={2}>Vallourec</option></select></div>
           <div><label className="erp-label">Data Recebimento</label><input type="date" className="erp-input mt-1" value={form.data_recebimento} onChange={e => setForm(p => ({...p, data_recebimento:e.target.value}))} /></div>
           <div><label className="erp-label">NF Entrada</label><input className="erp-input mt-1" value={form.nf_entrada} onChange={e => setForm(p => ({...p, nf_entrada:e.target.value}))} /></div>
         </div>
@@ -119,7 +119,7 @@ const Corridas = () => {
           {sections.quimica ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />} Composição Química
         </button>
         {sections.quimica && (
-          <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 mb-4 p-3 border border-border rounded-md">
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 mb-4 p-3 border border-border rounded-md">
             {chemKeys.map(k => (
               <div key={k}><label className="text-xs text-muted-foreground">{k}</label><input type="number" step="0.001" className="erp-input mt-0.5 text-xs h-8" value={comp[k]} onChange={e => setComp(p => ({...p,[k]:+e.target.value}))} /></div>
             ))}
@@ -164,9 +164,9 @@ const Corridas = () => {
           </div>
         )}
 
-        <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-border">
-          <button onClick={() => setModalOpen(false)} className="erp-btn-outline">Cancelar</button>
-          <button onClick={handleSave} className="erp-btn-primary">Salvar</button>
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end items-stretch sm:items-center gap-2 mt-4 pt-4 border-t border-border">
+          <button onClick={() => setModalOpen(false)} className="erp-btn-outline w-full sm:w-auto">Cancelar</button>
+          <button onClick={handleSave} className="erp-btn-primary w-full sm:w-auto">Salvar</button>
         </div>
       </Modal>
     </div>

@@ -418,7 +418,7 @@ function AcumuloTable({ titulo, a }: { titulo: string; a: ApuracaoFiscalAcumulo 
         <h3 className="text-base font-semibold text-foreground">{titulo}</h3>
       </div>
       <div className="overflow-auto max-h-[min(440px,55vh)]">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm" data-mobile-table-mode="cards">
           <thead className="sticky top-0 z-10 bg-muted/95 backdrop-blur-sm border-b border-border/80">
             <tr>
               <th className="text-left font-medium text-foreground/90 px-5 py-3">Indicador</th>
@@ -478,7 +478,7 @@ function SaldoGerencialTable({ saldo }: { saldo: Record<string, number | string>
         </p>
       </div>
       <div className="overflow-auto max-h-[min(360px,45vh)]">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm" data-mobile-table-mode="cards">
           <thead className="sticky top-0 z-10 bg-muted/95 backdrop-blur-sm border-b border-border/80">
             <tr>
               <th className="text-left font-medium px-5 py-3">Indicador</th>
@@ -526,7 +526,7 @@ function AgrupTable({
         <p className="text-sm text-muted-foreground px-5 py-12 text-center">Nenhum agrupamento para estes filtros.</p>
       ) : (
         <div className="overflow-auto max-h-[min(520px,60vh)]">
-          <table className="w-full text-sm min-w-[760px]">
+          <table className="w-full text-sm min-w-[760px]" data-mobile-table-mode="cards">
             <thead className="sticky top-0 z-10 bg-muted/95 backdrop-blur-sm border-b border-border/80">
               <tr>
                 <th className="text-left font-semibold text-foreground/90 px-5 py-3">Código</th>
@@ -721,7 +721,7 @@ function ReformaTabelaComparativa({ r }: { r: ApuracaoReformaTributaria | undefi
         <p className="text-xs text-muted-foreground mt-1">Comparativo entre entrada, saída e CT-e no mesmo período.</p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[720px]">
+        <table className="w-full text-sm min-w-[720px]" data-mobile-table-mode="cards">
           <thead className="bg-muted/40 border-b border-border/60">
             <tr>
               <th className="text-left font-semibold text-foreground px-4 py-3">Origem</th>
@@ -1411,7 +1411,7 @@ function AjustesFiscaisManuaisPainel({
             reduzem. O saldo final atualiza na hora, sem recarregar a página.
           </p>
         </div>
-        <div className="rounded-lg border border-border/60 bg-card px-4 py-3 min-w-[200px] shadow-sm">
+        <div className="rounded-lg border border-border/60 bg-card px-4 py-3 w-full sm:min-w-[200px] shadow-sm">
           <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-semibold">Saldo final</div>
           <div className="text-lg font-mono font-semibold tabular-nums text-foreground mt-0.5">
             {fmtMoney(saldoFinal)}
@@ -1470,7 +1470,7 @@ function AjustesFiscaisManuaisPainel({
         <p className="text-xs text-muted-foreground">Nenhum ajuste neste rascunho.</p>
       ) : (
         <div className="overflow-auto max-h-56 rounded-lg border border-border/50 bg-card">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm" data-mobile-table-mode="cards">
             <thead className="bg-muted/40 border-b border-border/50">
               <tr>
                 <th className="text-left px-3 py-2 font-medium">Tipo</th>
@@ -2902,7 +2902,7 @@ const ApuracaoFiscalPage = () => {
                 ) : (
                   <div className="rounded-2xl border border-border/70 overflow-hidden shadow-sm">
                     <div className="overflow-auto max-h-[min(640px,70vh)]">
-                      <table className="w-full text-sm min-w-[960px]">
+                      <table className="w-full text-sm min-w-[960px]" data-mobile-table-mode="cards">
                         <thead className="sticky top-0 z-20 bg-muted/95 backdrop-blur-sm border-b border-border shadow-sm">
                           <tr>
                             <th className="text-left font-semibold px-4 py-3 whitespace-nowrap">Severidade</th>

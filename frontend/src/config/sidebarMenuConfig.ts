@@ -85,6 +85,7 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
     icon: Warehouse,
     children: [
       { type: 'link', label: 'Saldos', path: '/estoque' },
+      { type: 'link', label: 'Kardex por produto/corrida', path: '/estoque/kardex', activeMatchPaths: ['/estoque/kardex'] },
       { type: 'link', label: 'Atendimentos Operacionais', path: '/atendimentos-estoque' },
       { type: 'link', label: 'Expedição', path: '/expedicao' },
     ],

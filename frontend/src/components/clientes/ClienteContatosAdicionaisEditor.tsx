@@ -76,7 +76,7 @@ export function ClienteContatosAdicionaisEditor({ value, onChange, erros = [] }:
           </p>
           <p className="text-xs text-muted-foreground mt-1">{MSG_AUXILIAR_CONTATOS_FISCAIS}</p>
         </div>
-        <CadastroButton type="button" variant="secondary" onClick={addItem}>
+        <CadastroButton className="w-full sm:w-auto" type="button" variant="secondary" onClick={addItem}>
           Adicionar contato
         </CadastroButton>
       </div>
@@ -98,7 +98,7 @@ export function ClienteContatosAdicionaisEditor({ value, onChange, erros = [] }:
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-sm font-medium">Contato {index + 1}</span>
-              <CadastroButton type="button" variant="outline" onClick={() => removeItem(index)}>
+              <CadastroButton className="w-full sm:w-auto" type="button" variant="outline" onClick={() => removeItem(index)}>
                 Remover
               </CadastroButton>
             </div>

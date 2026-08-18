@@ -39,10 +39,10 @@ const RegrasFiscais = () => {
         description="Cadastre e valide regras fiscais mínimas para produção. Não altera emissão de NF-e — apenas configuração e prontidão."
       />
       <ChecklistFiscalMinimo />
-      <div className="flex gap-2 mb-4 border-b border-border">
+      <div className="flex flex-col sm:flex-row gap-1 sm:gap-2 mb-4 border-b border-border">
         <button
           type="button"
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+          className={`w-full sm:w-auto px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
             aba === 'saida' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground'
           }`}
           onClick={() => setAba('saida')}
@@ -51,7 +51,7 @@ const RegrasFiscais = () => {
         </button>
         <button
           type="button"
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+          className={`w-full sm:w-auto px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
             aba === 'entrada' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground'
           }`}
           onClick={() => setAba('entrada')}

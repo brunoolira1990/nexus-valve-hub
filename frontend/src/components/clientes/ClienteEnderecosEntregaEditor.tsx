@@ -86,7 +86,7 @@ export function ClienteEnderecosEntregaEditor({ value, onChange }: Props) {
             Endereço fiscal permanece acima. Use esta seção para locais de entrega estruturados.
           </p>
         </div>
-        <CadastroButton type="button" variant="secondary" onClick={addItem}>
+        <CadastroButton className="w-full sm:w-auto" type="button" variant="secondary" onClick={addItem}>
           Adicionar endereço
         </CadastroButton>
       </div>
@@ -99,7 +99,7 @@ export function ClienteEnderecosEntregaEditor({ value, onChange }: Props) {
         <div key={item.id ?? `novo-${index}`} className="rounded-md border border-border p-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-sm font-medium">Endereço {index + 1}</span>
-            <CadastroButton type="button" variant="outline" onClick={() => removeItem(index)}>
+            <CadastroButton className="w-full sm:w-auto" type="button" variant="outline" onClick={() => removeItem(index)}>
               Remover
             </CadastroButton>
           </div>

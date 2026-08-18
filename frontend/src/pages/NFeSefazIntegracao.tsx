@@ -293,10 +293,10 @@ const NFeSefazIntegracao = () => {
             </select>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-col sm:flex-row gap-2">
           <button
             type="button"
-            className="erp-btn-outline"
+            className="erp-btn-outline w-full sm:w-auto justify-center"
             disabled={!empresaId || validandoCert}
             onClick={handleValidarCert}
           >
@@ -304,7 +304,7 @@ const NFeSefazIntegracao = () => {
           </button>
           <button
             type="button"
-            className="erp-btn-primary"
+            className="erp-btn-primary w-full sm:w-auto justify-center"
             disabled={!empresaId || loading || consultaBloqueada}
             onClick={handleConsultar}
           >
@@ -393,10 +393,10 @@ const NFeSefazIntegracao = () => {
               (7 dias) após o restabelecimento do serviço. Enquanto a contingência estiver ativa, use o
               botão «Emitir em contingência» no modal de conferência das NFs com erro de transmissão.
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <button
                 type="button"
-                className="erp-btn-outline"
+                className="erp-btn-outline w-full sm:w-auto justify-center"
                 disabled={contingenciaTransmitindo}
                 onClick={() => void handleTransmitirPendentes()}
               >
@@ -404,7 +404,7 @@ const NFeSefazIntegracao = () => {
               </button>
               <button
                 type="button"
-                className="erp-btn-outline border-destructive/50 text-destructive hover:bg-destructive/10"
+                className="erp-btn-outline w-full sm:w-auto justify-center border-destructive/50 text-destructive hover:bg-destructive/10"
                 disabled={contingenciaEncerrando}
                 onClick={() => setEncerrarConfirmOpen(true)}
               >
@@ -418,8 +418,8 @@ const NFeSefazIntegracao = () => {
               Nenhum modo de contingência ativo para a empresa selecionada. Ative apenas quando a SEFAZ
               de origem (e as SVCs) estiverem indisponíveis — usar contingência com a SEFAZ operando é irregular.
             </p>
-            <div className="flex flex-wrap gap-2">
-              <button type="button" className="erp-btn-outline" disabled={!empresaId} onClick={() => setAtivarOpen(true)}>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button type="button" className="erp-btn-outline w-full sm:w-auto justify-center" disabled={!empresaId} onClick={() => setAtivarOpen(true)}>
                 Ativar contingência SEFAZ
               </button>
             </div>
@@ -458,16 +458,16 @@ const NFeSefazIntegracao = () => {
                   </select>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <button
                   type="button"
-                  className="erp-btn-primary"
+                  className="erp-btn-primary w-full sm:w-auto justify-center"
                   disabled={contingenciaAtivando}
                   onClick={() => void handleAtivarContingencia()}
                 >
                   {contingenciaAtivando ? 'Ativando…' : 'Confirmar ativação'}
                 </button>
-                <button type="button" className="erp-btn-outline" onClick={() => setAtivarOpen(false)}>
+                <button type="button" className="erp-btn-outline w-full sm:w-auto justify-center" onClick={() => setAtivarOpen(false)}>
                   Cancelar
                 </button>
               </div>
@@ -482,16 +482,16 @@ const NFeSefazIntegracao = () => {
                 de transmissão — use «Transmitir pendentes em contingência» antes de encerrar, ou depois que
                 a SEFAZ estiver estável.
               </p>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <button
                   type="button"
-                  className="erp-btn-primary"
+                  className="erp-btn-primary w-full sm:w-auto justify-center"
                   disabled={contingenciaEncerrando}
                   onClick={() => void handleEncerrarContingencia()}
                 >
                   {contingenciaEncerrando ? 'Encerrando…' : 'Confirmar encerramento'}
                 </button>
-                <button type="button" className="erp-btn-outline" onClick={() => setEncerrarConfirmOpen(false)}>
+                <button type="button" className="erp-btn-outline w-full sm:w-auto justify-center" onClick={() => setEncerrarConfirmOpen(false)}>
                   Cancelar
                 </button>
               </div>
@@ -537,7 +537,7 @@ const NFeSefazIntegracao = () => {
             {cStatExibicao(ultimo) || (cardFalha ? '—' : '—')}
             {!cardFalha ? (
               <>
-                <span className="font-medium ml-3">Motivo SEFAZ:</span> {motivoExibicao(ultimo)}
+                <span className="font-medium sm:ml-3">Motivo SEFAZ:</span> {motivoExibicao(ultimo)}
               </>
             ) : null}
           </p>
@@ -584,7 +584,7 @@ const NFeSefazIntegracao = () => {
       <section className="erp-card overflow-hidden">
         <h2 className="text-sm font-semibold p-4 border-b border-border">Histórico de consultas</h2>
         <div className="overflow-x-auto">
-          <table className="erp-table w-full text-sm">
+          <table className="erp-table w-full text-sm" data-mobile-table-mode="cards">
             <thead>
               <tr>
                 <th>Data</th>
@@ -662,7 +662,7 @@ const NFeSefazIntegracao = () => {
 
       {registroDetalhe ? (
         <section className="erp-card p-4 space-y-2 border-primary/30">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
             <h2 className="text-sm font-semibold">Detalhes da consulta #{registroDetalhe.id}</h2>
             <button type="button" className="text-xs underline" onClick={() => setDetalheId(null)}>
               Fechar
