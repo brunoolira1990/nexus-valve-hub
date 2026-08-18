@@ -139,6 +139,33 @@ class ExpedicaoFase1aTests(TestCase):
         self.assertEqual(nf.numeracao_volumes, numeracao_antes)
         self.assertEqual(Expedicao.objects.filter(nfe_saida=nf).count(), 1)
 
+    def test_etiquetas_pdf_nfe_autorizada_sem_alterar_nfe(self):
+        numeracao_antes = '07140012'
+        nf = NFeSaida.objects.create(
+            numero='410',
+            data=date(2026, 8, 18),
+            cliente=self.cliente,
+            status='AUTORIZADA',
+            status_emissao_sefaz=NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO,
+            quantidade_volumes=1,
+            numeracao_volumes=numeracao_antes,
+        )
+        resposta = self.client.post(
+            '/api/expedicoes/',
+            self._payload(fornecedor=None, nfe_saida=nf.pk, volumes=1),
+            format='json',
+        )
+        self.assertEqual(resposta.status_code, status.HTTP_201_CREATED)
+        expedicao_id = resposta.json()['id']
+
+        pdf_resposta = self.client.post(f'/api/expedicoes/{expedicao_id}/etiquetas-pdf/')
+        self.assertEqual(pdf_resposta.status_code, status.HTTP_200_OK)
+        self.assertEqual(pdf_resposta['Content-Type'], 'application/pdf')
+        self.assertTrue(pdf_resposta.content.startswith(b'%PDF'))
+
+        nf.refresh_from_db()
+        self.assertEqual(nf.numeracao_volumes, numeracao_antes)
+
     def test_resumo_endpoint(self):
         self.client.post('/api/expedicoes/', self._payload(), format='json')
         r = self.client.get('/api/expedicoes/resumo/')

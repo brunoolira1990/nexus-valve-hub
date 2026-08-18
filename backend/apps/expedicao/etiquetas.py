@@ -129,9 +129,11 @@ def _renderizar_etiquetas(expedicao: Expedicao, quantidade: int) -> bytes:
 
 @transaction.atomic
 def gerar_etiquetas_pdf(expedicao_id: int) -> HttpResponse:
+    # A sincronização de NF-e em rascunho possui seu próprio bloqueio
+    # transacional. Não usar FOR UPDATE junto a relações opcionais: no
+    # PostgreSQL isso tenta bloquear o lado nullable de LEFT OUTER JOIN.
     expedicao = (
-        Expedicao.objects.select_for_update()
-        .select_related('cliente', 'fornecedor', 'transportadora', 'nfe_saida')
+        Expedicao.objects.select_related('cliente', 'fornecedor', 'transportadora', 'nfe_saida')
         .get(pk=expedicao_id)
     )
     expedicao, quantidade = _preparar_dados(expedicao)
