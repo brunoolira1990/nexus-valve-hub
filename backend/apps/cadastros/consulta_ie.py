@@ -7,7 +7,6 @@ from typing import Any
 
 from django.conf import settings
 
-from apps.cadastros.consulta_cnpj import normalizar_cnpj_digitos
 from apps.cadastros.models import Empresa
 from apps.cadastros.utils import normalizar_cnpj, validar_cnpj
 from apps.fiscal.nfe_integracao.adapters.certificado_a1 import carregar_certificado_empresa
@@ -107,7 +106,6 @@ def consultar_inscricao_estadual(
     Não persiste resultado — apenas retorna payload normalizado.
     """
     cnpj_canonico = normalizar_cnpj(cnpj)
-    cnpj_digitos = normalizar_cnpj_digitos(cnpj)
     uf_norm = (uf or '').strip().upper()
 
     if not uf_norm:
@@ -124,12 +122,6 @@ def consultar_inscricao_estadual(
         raise ConsultaIeError('CNPJ inválido. Informe 14 caracteres alfanuméricos.', 'CNPJ_INVALIDO')
     if not validar_cnpj(cnpj_canonico):
         raise ConsultaIeError('CNPJ inválido.', 'CNPJ_INVALIDO')
-    if not cnpj_canonico.isdigit():
-        raise ConsultaIeError(
-            'A consulta de Inscrição Estadual via SEFAZ ainda aceita apenas CNPJ numérico.',
-            'CNPJ_ALFANUMERICO_NAO_SUPORTADO',
-        )
-
     empresa = _resolver_empresa(empresa_id)
     ambiente, homologacao = _ambiente_empresa(empresa)
 

@@ -16,6 +16,8 @@ import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
 import { EmpresaNfeAmbienteSelector } from '@/components/cadastros/EmpresaNfeAmbienteSelector';
 import { NFeInutilizacaoModal } from '@/components/fiscal/NFeInutilizacaoModal';
 import type { NfeAmbienteEmpresa } from '@/lib/empresaNfeAmbiente';
+import { isValidCnpj, normalizeCnpj } from '@/lib/cnpj';
+import { formatCnpj } from '@/lib/masks';
 
 const emptyEmpresa: Omit<Empresa, 'id'> = {
   razao_social:'', nome_fantasia:'', cnpj:'', ie:'', im:'', regime_tributario:'Lucro Presumido',
@@ -85,6 +87,7 @@ const Empresas = () => {
     setEditing(e);
     setForm({
       ...e,
+      cnpj: formatCnpj(e.cnpj ?? ''),
       senha_certificado: '',
       nfe_ambiente: (e.nfe_ambiente || 'homologacao') as NfeAmbienteEmpresa,
     });
@@ -147,8 +150,8 @@ const Empresas = () => {
   };
 
   const handleCnpjBlur = async () => {
-    const cnpj = (form.cnpj || '').replace(/\D/g, '');
-    if (cnpj.length !== 14) return;
+    const cnpj = normalizeCnpj(form.cnpj || '');
+    if (cnpj.length !== 14 || !isValidCnpj(cnpj)) return;
     try {
       setFormError(null);
       const { data } = await consultaCnpj(cnpj);
@@ -244,7 +247,7 @@ const Empresas = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div><label className="erp-label">Razão Social</label><input className="erp-input mt-1" value={form.razao_social} onChange={e => f('razao_social', e.target.value)} /></div>
             <div><label className="erp-label">Nome Fantasia</label><input className="erp-input mt-1" value={form.nome_fantasia} onChange={e => f('nome_fantasia', e.target.value)} /></div>
-            <div><label className="erp-label">CNPJ</label><input className="erp-input mt-1" value={form.cnpj} onChange={e => f('cnpj', e.target.value)} onBlur={handleCnpjBlur} /></div>
+            <div><label className="erp-label">CNPJ</label><input className="erp-input mt-1" value={form.cnpj} onChange={e => f('cnpj', formatCnpj(e.target.value))} onBlur={handleCnpjBlur} /></div>
             <div><label className="erp-label">IE</label><input className="erp-input mt-1" value={form.ie} onChange={e => f('ie', e.target.value)} /></div>
             <div><label className="erp-label">IM</label><input className="erp-input mt-1" value={form.im} onChange={e => f('im', e.target.value)} /></div>
             <div><label className="erp-label">Regime Tributário</label>

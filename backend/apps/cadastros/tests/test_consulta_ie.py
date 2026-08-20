@@ -11,6 +11,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from apps.cadastros.consulta_ie import ConsultaIeError, consultar_inscricao_estadual
 from apps.cadastros.views import consulta_ie
 from apps.fiscal.nfe_integracao.adapters.consulta_cadastro_parser import parse_consulta_cadastro_response
+from apps.fiscal.nfe_integracao.adapters.pynfe_adapter import consulta_cadastro_contribuinte
 
 XML_IE_ATIVA = """<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
@@ -139,6 +140,26 @@ class ConsultaCadastroParserTests(SimpleTestCase):
         self.assertEqual(parsed.municipio, 'UBERLANDIA')
 
 
+class ConsultaCadastroAdapterTests(SimpleTestCase):
+    def test_preserva_cnpj_alfanumerico_no_documento_sefaz(self):
+        class ComunicacaoFake:
+            def __init__(self):
+                self.chamada = None
+
+            def consulta_cadastro(self, modelo, documento, *, tipo, uf):
+                self.chamada = (modelo, documento, tipo, uf)
+                return MagicMock(text=XML_IE_ATIVA)
+
+        comunicacao = ComunicacaoFake()
+        consulta_cadastro_contribuinte(
+            comunicacao,
+            '00.000.000/E08G-12',
+            uf='sp',
+        )
+
+        self.assertEqual(comunicacao.chamada, ('nfe', '00000000E08G12', 'CNPJ', 'SP'))
+
+
 class ConsultaIeServicoTests(SimpleTestCase):
     def test_rejeita_cnpj_invalido(self):
         with self.assertRaises(ConsultaIeError) as ctx:
@@ -187,6 +208,35 @@ class ConsultaIeServicoTests(SimpleTestCase):
         self.assertTrue(payload['sucesso'])
         self.assertEqual(payload['inscricao_estadual'], '123456789012')
         self.assertEqual(payload['fonte'], 'SEFAZ_NFE_CONSULTA_CADASTRO')
+
+    @patch('apps.cadastros.consulta_ie.consulta_cadastro_contribuinte')
+    @patch('apps.cadastros.consulta_ie.criar_comunicacao_sefaz')
+    @patch('apps.cadastros.consulta_ie.carregar_certificado_empresa')
+    @patch('apps.cadastros.consulta_ie.validar_prontidao_consulta_sefaz', return_value=(True, '', ''))
+    @patch('apps.cadastros.consulta_ie._resolver_empresa')
+    def test_consulta_mockada_com_ie_alfanumerico(
+        self,
+        mock_empresa,
+        _mock_prontidao,
+        mock_cert,
+        _mock_com,
+        mock_consulta,
+    ):
+        empresa = MagicMock()
+        empresa.senha_certificado = 'senha'
+        empresa.nfe_ambiente = 'homologacao'
+        mock_empresa.return_value = empresa
+        cert = MagicMock()
+        cert.valido = True
+        cert.caminho = '/tmp/cert-teste.pfx'
+        mock_cert.return_value = cert
+        mock_consulta.return_value = MagicMock(text=XML_IE_ATIVA)
+
+        payload = consultar_inscricao_estadual('00.000.000/E08G-12', 'SP', empresa_id=1)
+
+        self.assertTrue(payload['sucesso'])
+        self.assertEqual(payload['inscricao_estadual'], '123456789012')
+        self.assertEqual(mock_consulta.call_args.args[1], '00000000E08G12')
 
     @patch('apps.cadastros.consulta_ie.consulta_cadastro_contribuinte', side_effect=Exception('timeout'))
     @patch('apps.cadastros.consulta_ie.criar_comunicacao_sefaz')

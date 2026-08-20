@@ -1,7 +1,8 @@
 import { useCallback, useState } from 'react';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import { Modal } from '@/components/Modal';
-import { formatCnpjDisplay, isValidCnpj } from '@/lib/cnpj';
+import { formatCnpjDisplay, isValidCnpj, normalizeCnpj } from '@/lib/cnpj';
+import { formatCnpj } from '@/lib/masks';
 import { consultaCep, consultaCnpj } from '@/services/api/consulta';
 import { apiErrorMessage } from '@/services/api/config';
 import { fornecedoresService } from '@/services/api/fornecedores';
@@ -58,7 +59,7 @@ function quickToCreatePayload(q: QuickForm): Omit<Fornecedor, 'id'> {
   return {
     razao_social: q.razao_social.trim(),
     nome_fantasia: q.nome_fantasia.trim(),
-    cnpj: q.cnpj.trim(),
+    cnpj: normalizeCnpj(q.cnpj),
     ie: q.ie.trim(),
     logradouro: q.logradouro.trim(),
     numero: q.numero.trim(),
@@ -125,7 +126,7 @@ export function FornecedorOpcaoField({
   const salvarQuick = async () => {
     setQuickError(null);
     const rs = quick.razao_social.trim();
-    const cnpj = quick.cnpj.trim();
+    const cnpj = normalizeCnpj(quick.cnpj);
     if (!rs) {
       setQuickError('Informe a razão social.');
       return;
@@ -216,7 +217,7 @@ export function FornecedorOpcaoField({
               <input
                 className="erp-input mt-1 w-full"
                 value={quick.cnpj}
-                onChange={(e) => setQuick((p) => ({ ...p, cnpj: e.target.value }))}
+                onChange={(e) => setQuick((p) => ({ ...p, cnpj: formatCnpj(e.target.value) }))}
                 disabled={quickSaving}
               />
             </div>
@@ -225,7 +226,13 @@ export function FornecedorOpcaoField({
               className="erp-btn-outline erp-btn-sm shrink-0"
               disabled={quickSaving}
               onClick={() => {
-                void consultaCnpj(quick.cnpj).then(({ data }) =>
+                const cnpj = normalizeCnpj(quick.cnpj);
+                if (cnpj.length !== 14 || !isValidCnpj(cnpj)) {
+                  setQuickError('Informe um CNPJ válido com 14 caracteres.');
+                  return;
+                }
+                setQuickError(null);
+                void consultaCnpj(cnpj).then(({ data }) =>
                   setQuick((prev) => ({
                     ...prev,
                     razao_social: (data.razao_social || prev.razao_social).trim(),

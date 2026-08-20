@@ -39,6 +39,10 @@ describe('consultaIeCadastro', () => {
     expect(podeConsultarIeSefaz('00000000000191', '')).toBe(MENSAGEM_UF_PENDENTE_IE);
   });
 
+  it('permite CNPJ alfanumérico válido na consulta de IE', () => {
+    expect(podeConsultarIeSefaz('00.000.000/E08G-12', 'SP')).toBeNull();
+  });
+
   it('monta chave anti-loop por CNPJ + UF', () => {
     expect(montarChaveConsultaIe('00.000.000/0001-91', 'mg')).toBe('00000000000191|MG');
   });

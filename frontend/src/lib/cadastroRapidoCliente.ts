@@ -35,7 +35,7 @@ export function emptyClienteQuickForm(prefill = ''): ClienteQuickForm {
 
 export function validarClienteQuickForm(q: ClienteQuickForm): string | null {
   const cnpj = normalizeCnpj(q.cnpj);
-  if (cnpj.length !== 14) return 'Informe o CNPJ com 14 dígitos.';
+  if (cnpj.length !== 14) return 'Informe o CNPJ com 14 caracteres.';
   if (!isValidCnpj(q.cnpj)) return 'CNPJ inválido.';
   if (!q.razao_social.trim()) return 'Razão social é obrigatória.';
   const email = q.email.trim();

@@ -56,7 +56,7 @@ const schema = z.object({
   cnpj: z
     .string()
     .min(1, 'Obrigatório')
-    .refine((v) => normalizeCnpj(v).length === 14, 'CNPJ deve ter 14 dígitos')
+    .refine((v) => normalizeCnpj(v).length === 14, 'CNPJ deve ter 14 caracteres')
     .refine((v) => isValidCnpj(v), 'CNPJ inválido'),
   ddd: z.string(),
   ie: z.string(),

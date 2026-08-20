@@ -44,6 +44,37 @@ class ConsultaCnpjCadastralTests(SimpleTestCase):
         self.assertTrue(data['consulta_ie_pendente'])
         self.assertEqual(data['aviso_ie'], AVISO_IE_FONTE_ATUAL)
 
+    @patch('apps.cadastros.consulta_cnpj._get_json')
+    def test_consulta_cnpj_alfanumerico(self, mock_get):
+        mock_get.return_value = {
+            'status': 'OK',
+            'cnpj': '00.000.000/E08G-12',
+            'nome': 'BANCO DO BRASIL SA',
+            'fantasia': '',
+            'logradouro': 'Q 201',
+            'numero': 'S/N',
+            'bairro': 'ASA NORTE',
+            'municipio': 'BRASILIA',
+            'uf': 'DF',
+            'cep': '70832540',
+            'telefone': '(61) 3493-9525',
+            'email': 'age1606@bb.com.br',
+            'atividade_principal': [{'code': '6422100'}],
+            'simples': False,
+        }
+
+        data, erro = consultar_cnpj_cadastral('00.000.000/E08G-12')
+
+        self.assertEqual(erro, '')
+        assert data is not None
+        self.assertEqual(data['cnpj'], '00.000.000/E08G-12')
+        self.assertEqual(data['razao_social'], 'BANCO DO BRASIL SA')
+        self.assertEqual(data['uf'], 'DF')
+        mock_get.assert_called_once_with(
+            'https://receitaws.com.br/v1/cnpj/00000000E08G12',
+            timeout=10.0,
+        )
+
     @patch('apps.cadastros.consulta_cnpj._get_json', side_effect=TimeoutError('fora'))
     def test_indisponivel_retorna_mensagem_amigavel(self, _mock_get):
         data, erro = consultar_cnpj_cadastral('00.000.000/0001-91')

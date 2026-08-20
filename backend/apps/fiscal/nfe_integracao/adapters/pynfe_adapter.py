@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from contextlib import contextmanager
 from typing import Any, Iterator
 
@@ -160,15 +161,21 @@ def consulta_cadastro_contribuinte(
     modelo: str = 'nfe',
 ) -> Any:
     """Consulta cadastro do contribuinte (NFeConsultaCadastro / CadConsultaCadastro4)."""
-    doc = ''.join(ch for ch in str(documento or '') if ch.isdigit())
+    tipo_norm = (tipo or 'CNPJ').strip().upper()
+    if tipo_norm == 'CNPJ':
+        doc = re.sub(r'[^0-9A-Za-z]', '', str(documento or '')).upper()
+        documento_valido = bool(re.fullmatch(r'[0-9A-Z]{14}', doc))
+    else:
+        doc = ''.join(ch for ch in str(documento or '') if ch.isdigit())
+        documento_valido = len(doc) in {11, 14}
     uf_norm = (uf or '').strip().upper()
-    if len(doc) not in {11, 14}:
+    if not documento_valido:
         raise PyNFeComunicacaoError('CNPJ inválido para consulta cadastral SEFAZ.')
     if len(uf_norm) != 2:
         raise PyNFeComunicacaoError('UF inválida para consulta cadastral SEFAZ.')
     try:
         with requests_sem_proxy_ambiente():
-            return comunicacao.consulta_cadastro(modelo, doc, tipo=tipo.upper(), uf=uf_norm)
+            return comunicacao.consulta_cadastro(modelo, doc, tipo=tipo_norm, uf=uf_norm)
     except PyNFeComunicacaoError:
         raise
     except Exception as exc:

@@ -60,19 +60,15 @@ def _parse_receitaws(payload: dict[str, Any]) -> dict[str, Any]:
 def consultar_cnpj_cadastral(cnpj: str | None) -> tuple[dict[str, Any] | None, str]:
     """
     Consulta dados cadastrais básicos por CNPJ (ReceitaWS).
-    Não retorna Inscrição Estadual — use futuro serviço dedicado de IE.
-  """
+
+    Aceita o padrão numérico legado e o novo padrão alfanumérico de 14
+    caracteres. Não retorna Inscrição Estadual — use o serviço dedicado de IE.
+    """
     cnpj_canonico = normalizar_cnpj(cnpj)
     if len(cnpj_canonico) != 14:
         return None, 'CNPJ inválido. Informe 14 caracteres alfanuméricos.'
     if not validar_cnpj(cnpj_canonico):
         return None, 'CNPJ inválido. Verifique os dígitos verificadores.'
-    if not cnpj_canonico.isdigit():
-        return None, (
-            'A consulta cadastral externa atual aceita apenas CNPJ numérico. '
-            'Para CNPJ alfanumérico, informe os dados cadastrais manualmente.'
-        )
-
     try:
         payload_rw = _get_json(f'https://receitaws.com.br/v1/cnpj/{cnpj_canonico}', timeout=10.0)
     except Exception:

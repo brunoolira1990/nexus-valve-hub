@@ -40,7 +40,7 @@ const schema = z.object({
   cnpj: z
     .string()
     .min(1, 'Obrigatório')
-    .refine((v) => normalizeCnpj(v).length === 14, 'CNPJ deve ter 14 dígitos')
+    .refine((v) => normalizeCnpj(v).length === 14, 'CNPJ deve ter 14 caracteres')
     .refine((v) => isValidCnpj(v), 'CNPJ inválido'),
   ddd: z.string(),
   ie: z.string(),
@@ -99,7 +99,7 @@ function toApiPayload(values: FornecedorFormInput): Omit<Fornecedor, 'id'> {
   return {
     razao_social: values.razao_social,
     nome_fantasia: values.nome_fantasia,
-    cnpj: values.cnpj,
+    cnpj: normalizeCnpj(values.cnpj),
     ie: values.ie,
     logradouro: values.logradouro,
     numero: values.numero,
@@ -137,7 +137,7 @@ export function fornecedorToFormValues(f: Partial<Fornecedor>): FornecedorFormIn
   return {
     razao_social: f.razao_social ?? '',
     nome_fantasia: f.nome_fantasia ?? '',
-    cnpj: f.cnpj ?? '',
+    cnpj: formatCnpj(f.cnpj ?? ''),
     ddd: f.ddd ?? '',
     ie: f.ie ?? '',
     inscricao_municipal: f.inscricao_municipal ?? '',
