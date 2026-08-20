@@ -131,6 +131,10 @@ CORS_ALLOWED_ORIGINS = [
 ]
 CORS_ALLOW_CREDENTIALS = True
 
+# Integração servidor a servidor do site com o CRM. Definir somente por ambiente;
+# nunca versionar o segredo no repositório.
+CRM_SITE_HMAC_SECRET = os.environ.get('CRM_SITE_HMAC_SECRET', '')
+
 # Propostas: quando True, busca RegraFiscalSaida no cenário padrão antes do fallback legado.
 USE_CENARIO_FISCAL_SAIDA_FOR_PROPOSTAS = os.environ.get(
     'USE_CENARIO_FISCAL_SAIDA_FOR_PROPOSTAS',

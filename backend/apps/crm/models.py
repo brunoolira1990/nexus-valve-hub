@@ -23,12 +23,20 @@ class Lead(models.Model):
         OUTRA = 'OUTRA', 'Outra'
 
     nome = models.CharField(max_length=255)
+    external_id = models.CharField(max_length=64, unique=True, null=True, blank=True)
     cnpj = models.CharField(max_length=20, blank=True)
     nome_contato = models.CharField(max_length=160, blank=True)
     email = models.EmailField(blank=True)
     telefone = models.CharField(max_length=64, blank=True)
     cidade = models.CharField(max_length=128, blank=True)
     uf = models.CharField(max_length=2, blank=True)
+    produto_interesse = models.CharField(max_length=255, blank=True)
+    pagina_origem = models.CharField(max_length=500, blank=True)
+    utm_source = models.CharField(max_length=120, blank=True)
+    utm_medium = models.CharField(max_length=120, blank=True)
+    utm_campaign = models.CharField(max_length=255, blank=True)
+    utm_content = models.CharField(max_length=255, blank=True)
+    utm_term = models.CharField(max_length=255, blank=True)
     origem = models.CharField(max_length=20, choices=Origem.choices, default=Origem.OUTRA)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.NOVO)
     responsavel = models.ForeignKey(
@@ -56,6 +64,8 @@ class Lead(models.Model):
         indexes = [
             models.Index(fields=['status', '-atualizado_em'], name='crm_lead_status_upd_idx'),
             models.Index(fields=['responsavel', 'status'], name='crm_lead_resp_status_idx'),
+            models.Index(fields=['origem', 'status', '-atualizado_em'], name='crm_lead_origin_status_idx'),
+            models.Index(fields=['utm_campaign', '-atualizado_em'], name='crm_lead_campaign_updated_idx'),
             models.Index(fields=['-atualizado_em', '-id'], name='crm_lead_updated_id_idx'),
         ]
         constraints = [

@@ -26,6 +26,7 @@ class LeadSerializer(serializers.ModelSerializer):
         model = Lead
         fields = (
             'id',
+            'external_id',
             'nome',
             'cnpj',
             'nome_contato',
@@ -33,6 +34,13 @@ class LeadSerializer(serializers.ModelSerializer):
             'telefone',
             'cidade',
             'uf',
+            'produto_interesse',
+            'pagina_origem',
+            'utm_source',
+            'utm_medium',
+            'utm_campaign',
+            'utm_content',
+            'utm_term',
             'origem',
             'status',
             'responsavel_id',
@@ -45,6 +53,7 @@ class LeadSerializer(serializers.ModelSerializer):
         )
         read_only_fields = (
             'id',
+            'external_id',
             'responsavel_nome',
             'cliente_nome',
             'criado_em',
@@ -141,3 +150,33 @@ class OportunidadeSerializer(serializers.ModelSerializer):
 
     def get_lead_nome(self, obj):
         return obj.lead.nome if obj.lead else ''
+
+
+class SiteLeadCaptureSerializer(serializers.Serializer):
+    external_id = serializers.CharField(max_length=64)
+    nome = serializers.CharField(max_length=160)
+    empresa = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    email = serializers.EmailField()
+    telefone = serializers.CharField(max_length=64, required=False, allow_blank=True)
+    assunto = serializers.CharField(max_length=255)
+    mensagem = serializers.CharField(max_length=10000, min_length=10)
+    produto_interesse = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    pagina_origem = serializers.CharField(max_length=500, required=False, allow_blank=True)
+    utm_source = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    utm_medium = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    utm_campaign = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    utm_content = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    utm_term = serializers.CharField(max_length=255, required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        for field in ('external_id', 'nome', 'assunto', 'mensagem'):
+            attrs[field] = attrs[field].strip()
+        if not attrs['external_id']:
+            raise serializers.ValidationError({'external_id': 'Identificador da submissão é obrigatório.'})
+        if not attrs['nome']:
+            raise serializers.ValidationError({'nome': 'Nome do contato é obrigatório.'})
+        if not attrs['assunto']:
+            raise serializers.ValidationError({'assunto': 'Assunto é obrigatório.'})
+        if len(attrs['mensagem']) < 10:
+            raise serializers.ValidationError({'mensagem': 'Mensagem deve ter pelo menos 10 caracteres.'})
+        return attrs

@@ -26,6 +26,7 @@ from apps.cadastros.views import (
     TransportadoraViewSet,
 )
 from apps.comercial.views import PedidoCompraViewSet, PedidoVendaViewSet, PropostaViewSet
+from apps.crm.public_views import site_lead_capture
 from apps.crm.views import LeadViewSet, OportunidadeViewSet
 from apps.comercial.analise_financeira_views import AnaliseFinanceiraPropostaViewSet
 from apps.comercial.vendedor_views import VendedorViewSet
@@ -213,6 +214,11 @@ router.register(
 )
 
 urlpatterns = [
+    path(
+        'crm/public/site-leads/',
+        site_lead_capture,
+        name='crm-public-site-leads',
+    ),
     # Rotas explícitas: garantem endpoints críticos mesmo com runserver --noreload (Docker).
     # Após alterar apps/api_urls.py ou views, reinicie: docker compose restart backend
     path('auditoria/', include('apps.auditoria.urls')),
