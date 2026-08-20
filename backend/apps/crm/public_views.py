@@ -10,7 +10,7 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from .models import Lead
+from .models import HistoricoLead, Lead
 from .serializers import SiteLeadCaptureSerializer
 
 
@@ -139,6 +139,16 @@ def site_lead_capture(request):
     try:
         with transaction.atomic():
             lead = Lead.objects.create(**lead_data)
+            HistoricoLead.objects.create(
+                lead=lead,
+                evento=HistoricoLead.Evento.CRIADO,
+                titulo='Lead captado pelo site',
+                descricao='Captação recebida pelo formulário público do site.',
+                dados={
+                    'origem': Lead.Origem.SITE,
+                    'external_id': str(lead.external_id),
+                },
+            )
     except IntegrityError:
         lead = Lead.objects.filter(external_id=validated['external_id']).first()
         if lead:

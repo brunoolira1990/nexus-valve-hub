@@ -82,6 +82,7 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
       { type: 'link', label: 'Visão geral', path: '/crm' },
       { type: 'link', label: 'Leads', path: '/crm/leads' },
       { type: 'link', label: 'Oportunidades', path: '/crm/oportunidades' },
+      { type: 'link', label: 'Atividades', path: '/crm/atividades' },
     ],
   },
   {

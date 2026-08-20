@@ -150,3 +150,114 @@ class Oportunidade(models.Model):
 
     def __str__(self):
         return self.titulo
+
+
+class Atividade(models.Model):
+    class Tipo(models.TextChoices):
+        LIGACAO = 'LIGACAO', 'Ligação'
+        EMAIL = 'EMAIL', 'E-mail'
+        WHATSAPP = 'WHATSAPP', 'WhatsApp'
+        REUNIAO = 'REUNIAO', 'Reunião'
+        VISITA = 'VISITA', 'Visita'
+        TAREFA = 'TAREFA', 'Tarefa'
+        NOTA = 'NOTA', 'Nota'
+        OUTRA = 'OUTRA', 'Outra'
+
+    class Status(models.TextChoices):
+        PENDENTE = 'PENDENTE', 'Pendente'
+        CONCLUIDA = 'CONCLUIDA', 'Concluída'
+        CANCELADA = 'CANCELADA', 'Cancelada'
+
+    titulo = models.CharField(max_length=255)
+    tipo = models.CharField(max_length=20, choices=Tipo.choices, default=Tipo.TAREFA)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDENTE)
+    lead = models.ForeignKey(
+        Lead,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='atividades',
+    )
+    oportunidade = models.ForeignKey(
+        Oportunidade,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='atividades',
+    )
+    responsavel = models.ForeignKey(
+        Colaborador,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='atividades_crm',
+    )
+    descricao = models.TextField(blank=True)
+    agendada_para = models.DateTimeField(null=True, blank=True)
+    concluida_em = models.DateTimeField(null=True, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['agendada_para', '-criado_em', '-id']
+        verbose_name = 'Atividade CRM'
+        verbose_name_plural = 'Atividades CRM'
+        indexes = [
+            models.Index(fields=['lead', 'status', 'agendada_para'], name='crm_activity_lead_due_idx'),
+            models.Index(fields=['oportunidade', 'status', 'agendada_para'], name='crm_activity_opp_due_idx'),
+            models.Index(fields=['responsavel', 'status', 'agendada_para'], name='crm_activity_resp_due_idx'),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(lead__isnull=False) | Q(oportunidade__isnull=False),
+                name='crm_activity_lead_or_opp_required',
+            ),
+        ]
+
+    def __str__(self):
+        return self.titulo
+
+
+class HistoricoLead(models.Model):
+    class Evento(models.TextChoices):
+        CRIADO = 'CRIADO', 'Lead criado'
+        STATUS_ALTERADO = 'STATUS_ALTERADO', 'Status alterado'
+        RESPONSAVEL_ALTERADO = 'RESPONSAVEL_ALTERADO', 'Responsável alterado'
+        ATIVIDADE_CRIADA = 'ATIVIDADE_CRIADA', 'Atividade criada'
+        ATIVIDADE_ATUALIZADA = 'ATIVIDADE_ATUALIZADA', 'Atividade atualizada'
+        NOTA = 'NOTA', 'Nota adicionada'
+        CONVERSAO = 'CONVERSAO', 'Lead convertido'
+        OUTRO = 'OUTRO', 'Outro evento'
+
+    lead = models.ForeignKey(Lead, on_delete=models.CASCADE, related_name='historico')
+    evento = models.CharField(max_length=24, choices=Evento.choices, default=Evento.OUTRO)
+    titulo = models.CharField(max_length=255)
+    descricao = models.TextField(blank=True)
+    atividade = models.ForeignKey(
+        Atividade,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='eventos_historico',
+    )
+    realizado_por = models.ForeignKey(
+        Colaborador,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='historicos_crm',
+    )
+    dados = models.JSONField(default=dict, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-criado_em', '-id']
+        verbose_name = 'Histórico de Lead'
+        verbose_name_plural = 'Históricos de Leads'
+        indexes = [
+            models.Index(fields=['lead', '-criado_em'], name='crm_lead_history_created_idx'),
+            models.Index(fields=['evento', '-criado_em'], name='crm_history_event_created_idx'),
+        ]
+
+    def __str__(self):
+        return self.titulo

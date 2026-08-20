@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Clock3, Pencil, Trash2 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal, ModalFooterActions } from '@/components/Modal';
 import { NexusCard } from '@/components/nexus/NexusCard';
 import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
 import { TableSkeleton } from '@/components/nexus/Skeleton';
 import { StatusBadge } from '@/components/nexus/StatusBadge';
+import CRMLeadHistoricoModal from '@/components/crm/CRMLeadHistoricoModal';
 import { EmptyState, ErrorState } from '@/components/list/ListStates';
 import { PaginationControls } from '@/components/list/PaginationControls';
 import { usePaginatedList } from '@/hooks/usePaginatedList';
@@ -55,6 +56,7 @@ const CRMLeads = () => {
   const [form, setForm] = useState<CrmLeadPayload>(emptyForm);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [historyLead, setHistoryLead] = useState<CrmLead | null>(null);
 
   const openNew = () => {
     setEditing(null);
@@ -80,6 +82,8 @@ const CRMLeads = () => {
     setFormError(null);
     setModalOpen(true);
   };
+
+  const openHistory = (lead: CrmLead) => setHistoryLead(lead);
 
   const save = async () => {
     if (!String(form.nome || '').trim()) {
@@ -204,6 +208,9 @@ const CRMLeads = () => {
                     <td>{lead.responsavel_nome || 'Não atribuído'}</td>
                     <td>
                       <div className="flex gap-1">
+                        <button type="button" onClick={() => openHistory(lead)} className="erp-btn-ghost erp-btn-sm" title="Ver histórico">
+                          <Clock3 className="h-4 w-4" />
+                        </button>
                         <button type="button" onClick={() => openEdit(lead)} className="erp-btn-ghost erp-btn-sm" title="Editar">
                           <Pencil className="h-4 w-4" />
                         </button>
@@ -275,6 +282,13 @@ const CRMLeads = () => {
         </div>
         {formError ? <p className="mt-4 text-sm text-destructive">{formError}</p> : null}
       </Modal>
+
+      <CRMLeadHistoricoModal
+        leadId={historyLead?.id ?? null}
+        leadName={historyLead?.nome}
+        isOpen={Boolean(historyLead)}
+        onClose={() => setHistoryLead(null)}
+      />
     </div>
   );
 };
