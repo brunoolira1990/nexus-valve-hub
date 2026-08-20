@@ -12,6 +12,9 @@ import DashboardCompras from "./pages/dashboard/DashboardCompras";
 import DashboardQualidade from "./pages/dashboard/DashboardQualidade";
 import DashboardFinanceiro from "./pages/dashboard/DashboardFinanceiro";
 import ModuloEmBreve from "./pages/modulos/ModuloEmBreve";
+import CRM from "./pages/crm/CRM";
+import CRMLeads from "./pages/crm/CRMLeads";
+import CRMOportunidades from "./pages/crm/CRMOportunidades";
 import ContadorExportarXmls from "./pages/contador/ContadorExportarXmls";
 import Empresas from "./pages/Empresas";
 import ClienteList from "./pages/Clientes/ClienteList";
@@ -78,6 +81,9 @@ const App = () => (
         <Route path="dashboard/qualidade" element={<DashboardQualidade />} />
         <Route path="dashboard/financeiro" element={<DashboardFinanceiro />} />
         <Route path="modulos/:modulo" element={<ModuloEmBreve />} />
+        <Route path="crm" element={<CRM />} />
+        <Route path="crm/leads" element={<CRMLeads />} />
+        <Route path="crm/oportunidades" element={<CRMOportunidades />} />
         <Route path="contador/exportar-xmls" element={<ContadorExportarXmls />} />
         <Route path="contador/sped" element={<ModuloEmBreve moduloKey="sped" />} />
         <Route path="empresas" element={<Empresas />} />

@@ -78,7 +78,11 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
   {
     label: 'CRM',
     icon: Users,
-    children: [{ type: 'link', label: 'Visão geral', path: '/modulos/crm' }],
+    children: [
+      { type: 'link', label: 'Visão geral', path: '/crm' },
+      { type: 'link', label: 'Leads', path: '/crm/leads' },
+      { type: 'link', label: 'Oportunidades', path: '/crm/oportunidades' },
+    ],
   },
   {
     label: 'Estoque & Logística',
