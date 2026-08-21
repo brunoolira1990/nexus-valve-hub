@@ -7,6 +7,7 @@ import { GlobalSearch } from './header/GlobalSearch';
 import { EmpresaAtualBadge } from './header/EmpresaAtualBadge';
 import { AmbienteBadge } from './header/AmbienteBadge';
 import { UserMenu } from './header/UserMenu';
+import { NotificacoesSino } from './layout/NotificacoesSino';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
@@ -53,6 +54,7 @@ export const Header = ({ onToggleSidebar, breadcrumbs = [] }: HeaderProps) => {
           <EmpresaAtualBadge empresa={contexto.empresa} />
         </div>
         <AmbienteBadge label={contexto.ambiente_label} />
+        <NotificacoesSino />
         <UserMenu usuario={contexto.usuario} />
         <NexusButton
           type="button"

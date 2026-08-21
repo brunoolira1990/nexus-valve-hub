@@ -3,14 +3,29 @@ import hmac
 import json
 import time
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
+from apps.cadastros.models import Colaborador
 from apps.crm.models import Lead
+from apps.notificacoes.models import Notificacao
 
 
 @override_settings(CRM_SITE_HMAC_SECRET='test-site-secret')
 class SiteLeadCaptureTests(TestCase):
+    def setUp(self):
+        self.usuario_comercial = get_user_model().objects.create_user(
+            username='crm.site.comercial',
+            password='senha-teste',
+        )
+        Colaborador.objects.create(
+            nome='Comercial site',
+            usuario=self.usuario_comercial,
+            ativo=True,
+            eh_vendedor=True,
+        )
+
     def _post(self, payload, *, timestamp=None, signature=None, request_id=None):
         raw_body = json.dumps(
             payload,
@@ -52,7 +67,8 @@ class SiteLeadCaptureTests(TestCase):
         }
 
     def test_cria_lead_site_com_atribuicao(self):
-        response = self._post(self._payload())
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self._post(self._payload())
 
         self.assertEqual(response.status_code, 201)
         self.assertFalse(response.json()['duplicate'])
@@ -64,17 +80,33 @@ class SiteLeadCaptureTests(TestCase):
         self.assertEqual(lead.produto_interesse, 'Válvula esfera')
         self.assertEqual(lead.utm_campaign, 'teste-crm')
         self.assertIn('Preciso de válvula', lead.observacoes)
+        self.assertEqual(
+            Notificacao.objects.filter(
+                destinatario=self.usuario_comercial,
+                tipo=Notificacao.Tipo.NOVO_LEAD,
+            ).count(),
+            1,
+        )
 
     def test_reenvio_do_mesmo_external_id_nao_duplica_lead(self):
         payload = self._payload('site-test-002')
 
-        first = self._post(payload)
-        second = self._post(payload)
+        with self.captureOnCommitCallbacks(execute=True):
+            first = self._post(payload)
+        with self.captureOnCommitCallbacks(execute=True):
+            second = self._post(payload)
 
         self.assertEqual(first.status_code, 201)
         self.assertEqual(second.status_code, 200)
         self.assertTrue(second.json()['duplicate'])
         self.assertEqual(Lead.objects.filter(external_id='site-test-002').count(), 1)
+        self.assertEqual(
+            Notificacao.objects.filter(
+                destinatario=self.usuario_comercial,
+                tipo=Notificacao.Tipo.NOVO_LEAD,
+            ).count(),
+            1,
+        )
 
     def test_rejeita_assinatura_invalida(self):
         response = self._post(self._payload('site-test-003'), signature='0' * 64)

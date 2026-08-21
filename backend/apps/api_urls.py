@@ -33,6 +33,7 @@ from apps.crm.views import (
     LeadViewSet,
     OportunidadeViewSet,
 )
+from apps.notificacoes.views import NotificacaoViewSet
 from apps.comercial.analise_financeira_views import AnaliseFinanceiraPropostaViewSet
 from apps.comercial.vendedor_views import VendedorViewSet
 from apps.contabil.views import BalanceteView, ContaViewSet, LancamentoViewSet
@@ -159,6 +160,7 @@ router.register(r'crm/leads', LeadViewSet, basename='crm-lead')
 router.register(r'crm/oportunidades', OportunidadeViewSet, basename='crm-oportunidade')
 router.register(r'crm/atividades', AtividadeViewSet, basename='crm-atividade')
 router.register(r'crm/historico-leads', HistoricoLeadViewSet, basename='crm-historico-lead')
+router.register(r'notificacoes', NotificacaoViewSet, basename='notificacao')
 router.register(r'nf-entradas', NFeEntradaViewSet, basename='nfentrada')
 router.register(r'nf-saidas', NFeSaidaViewSet, basename='nfsaida')
 router.register(r'nfe-numeracoes', NFeNumeracaoConfiguracaoViewSet, basename='nfe-numeracao')

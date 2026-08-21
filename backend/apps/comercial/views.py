@@ -17,6 +17,7 @@ from .converter_proposta_pedido import (
 from apps.comercial.analise_financeira_servico import LiberacaoFinanceiraBloqueio
 from apps.comercial.analise_financeira_views import PropostaAnaliseFinanceiraActionsMixin
 from apps.fiscal.nfe_saida_from_faturamento import gerar_nfe_saida_from_faturamento
+from apps.notificacoes.events import notificar_proposta_aguardando_acao
 
 from .faturamento_pedido_venda import (
     cancelar_faturamento_pedido,
@@ -104,6 +105,14 @@ class PropostaViewSet(PropostaAnaliseFinanceiraActionsMixin, AutocompleteOrPagin
             {'data': 'data', 'numero': 'numero', 'valor_total': 'valor_total', 'status': 'status'},
             '-id',
         )
+
+    def perform_create(self, serializer):
+        proposta = serializer.save()
+        notificar_proposta_aguardando_acao(proposta)
+
+    def perform_update(self, serializer):
+        proposta = serializer.save()
+        notificar_proposta_aguardando_acao(proposta)
 
     @action(detail=False, methods=['get'], url_path='sugestao-nova')
     def sugestao_nova(self, request):

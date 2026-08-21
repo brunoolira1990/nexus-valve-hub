@@ -4,6 +4,8 @@ from rest_framework import permissions, viewsets
 from nexus_erp.list_mixins import AutocompleteOrPaginationMixin, aplicar_ordering
 from nexus_erp.pagination import NexusPageNumberPagination
 
+from apps.notificacoes.events import notificar_atividade_vencida
+
 from .models import Atividade, HistoricoLead, Lead, Oportunidade
 from .serializers import AtividadeSerializer, HistoricoLeadSerializer, LeadSerializer, OportunidadeSerializer
 
@@ -216,6 +218,7 @@ class AtividadeViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
             realizado_por=getattr(self.request.user, 'colaborador', None),
             dados={'tipo': atividade.tipo, 'status': atividade.status},
         )
+        notificar_atividade_vencida(atividade)
 
     def perform_update(self, serializer):
         atividade_anterior = self.get_object()
@@ -233,6 +236,7 @@ class AtividadeViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
                 'status_atual': atividade.status,
             },
         )
+        notificar_atividade_vencida(atividade)
 
 
 class HistoricoLeadViewSet(viewsets.ReadOnlyModelViewSet):

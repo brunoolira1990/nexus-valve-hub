@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     'apps.core',
     'apps.expedicao',
     'apps.crm',
+    'apps.notificacoes',
 ]
 
 MIDDLEWARE = [

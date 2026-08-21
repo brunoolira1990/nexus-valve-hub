@@ -10,6 +10,9 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from apps.notificacoes.models import Notificacao
+from apps.notificacoes.service import notificar_destinatarios, usuarios_destinatarios
+
 from .models import HistoricoLead, Lead
 from .serializers import SiteLeadCaptureSerializer
 
@@ -154,5 +157,20 @@ def site_lead_capture(request):
         if lead:
             return _lead_response(lead, duplicate=True)
         raise
+
+    transaction.on_commit(
+        lambda: notificar_destinatarios(
+            modulo=Notificacao.Modulo.CRM,
+            tipo=Notificacao.Tipo.NOVO_LEAD,
+            titulo='Novo lead captado pelo site',
+            mensagem=f'{lead.nome} enviou uma nova solicitação pelo formulário do site.',
+            destinatarios=usuarios_destinatarios(modulo=Notificacao.Modulo.CRM),
+            url_destino='/crm/leads',
+            prioridade=Notificacao.Prioridade.ALTA,
+            objeto_tipo='crm.lead',
+            objeto_id=lead.pk,
+            chave_idempotencia=f'crm:novo-lead-site:{lead.pk}',
+        )
+    )
 
     return _lead_response(lead, duplicate=False)

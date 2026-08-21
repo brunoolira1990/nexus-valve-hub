@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   LayoutDashboard,
+  Bell,
   Building2,
   Package,
   ShoppingBag,
@@ -40,6 +41,7 @@ export type SidebarMenuItem = {
 
 export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
   { label: 'Dashboard', icon: LayoutDashboard, dashboardNav: true },
+  { label: 'Notificações', path: '/notificacoes', icon: Bell },
   {
     label: 'Cadastros',
     icon: Building2,
