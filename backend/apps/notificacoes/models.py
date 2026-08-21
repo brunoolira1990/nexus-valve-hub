@@ -30,6 +30,8 @@ class Notificacao(models.Model):
         PROPOSTA_ACAO = 'PROPOSTA_ACAO', 'Proposta aguardando ação'
         PENDENCIA_OPERACIONAL = 'PENDENCIA_OPERACIONAL', 'Pendência operacional'
         DOCUMENTO_FISCAL = 'DOCUMENTO_FISCAL', 'Documento fiscal'
+        PENDENCIA_FISCAL = 'PENDENCIA_FISCAL', 'Pendência fiscal'
+        FALHA_CAPTURA_FISCAL = 'FALHA_CAPTURA_FISCAL', 'Falha na captura fiscal'
         SISTEMA = 'SISTEMA', 'Aviso do sistema'
 
     destinatario = models.ForeignKey(

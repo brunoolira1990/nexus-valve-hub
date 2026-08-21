@@ -30,13 +30,59 @@ export const NotificacoesSino = () => {
   const [items, setItems] = useState<Notificacao[]>([]);
   const [loading, setLoading] = useState(false);
   const [position, setPosition] = useState({ top: 0, right: 12 });
+  const [desktopPermission, setDesktopPermission] = useState<NotificationPermission | 'unsupported'>('unsupported');
+  const previousCountRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setDesktopPermission(window.Notification.permission);
+    }
+  }, []);
 
   const refreshCount = useCallback(async () => {
     try {
-      setCount(await notificacoesService.countNaoLidas());
+      const nextCount = await notificacoesService.countNaoLidas();
+      const previousCount = previousCountRef.current;
+      setCount(nextCount);
+      if (
+        previousCount !== null &&
+        nextCount > previousCount &&
+        typeof window !== 'undefined' &&
+        'Notification' in window &&
+        window.Notification.permission === 'granted'
+      ) {
+        const response = await notificacoesService.listPaginated({
+          page: 1,
+          page_size: 1,
+          lida: 'false',
+          ordering: '-criado_em',
+        });
+        const latest = response.results[0];
+        if (latest) {
+          const desktopNotification = new window.Notification(latest.titulo, {
+            body: latest.mensagem,
+            tag: `nexus-notificacao-${latest.id}`,
+          });
+          desktopNotification.onclick = () => {
+            window.focus();
+            navigate(latest.url_destino || '/notificacoes');
+            desktopNotification.close();
+          };
+        }
+      }
+      previousCountRef.current = nextCount;
     } catch {
       // O sino não pode bloquear o cabeçalho quando a sessão ou a rede falhar.
     }
+  }, [navigate]);
+
+  const requestDesktopPermission = useCallback(async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      setDesktopPermission('unsupported');
+      return;
+    }
+    const permission = await window.Notification.requestPermission();
+    setDesktopPermission(permission);
   }, []);
 
   const refreshPreview = useCallback(async () => {
@@ -133,9 +179,18 @@ export const NotificacoesSino = () => {
           <p className="text-sm font-semibold text-foreground">Notificações</p>
           <p className="text-xs text-muted-foreground">Atualização automática a cada minuto</p>
         </div>
-        <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={openCenter}>
+        <div className="flex items-center gap-3">
+          {desktopPermission === 'default' ? (
+            <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={() => void requestDesktopPermission()}>
+              Ativar alertas no PC
+            </button>
+          ) : desktopPermission === 'denied' ? (
+            <span className="text-[11px] text-muted-foreground">Alertas do PC bloqueados</span>
+          ) : null}
+          <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={openCenter}>
           Ver central
-        </button>
+          </button>
+        </div>
       </div>
       <div className="max-h-[min(28rem,70vh)] overflow-y-auto">
         {loading ? (

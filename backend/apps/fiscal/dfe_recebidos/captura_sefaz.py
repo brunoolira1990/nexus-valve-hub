@@ -552,6 +552,13 @@ def capturar_dfe_recebidos_sefaz(
         }
 
     resumo['pendentes_total'] = resumo['nfe_novas'] + resumo['cte_novos']
+    notificacoes_fiscais_criadas = 0
+    try:
+        from apps.notificacoes.events import notificar_documentos_central_dfe
+
+        notificacoes_fiscais_criadas = notificar_documentos_central_dfe(empresa.pk)
+    except Exception:
+        logger.exception('Falha ao criar notificações fiscais após captura empresa=%s', empresa.pk)
 
     if sefaz_consultada and resumo['pendentes_total'] == 0 and not resumo['nfe_duplicadas'] and not resumo['cte_duplicados']:
         mensagens.append(MSG_NENHUM_NOVO)
@@ -584,6 +591,7 @@ def capturar_dfe_recebidos_sefaz(
         'empresa': {'id': empresa.pk, 'razao_social': empresa.razao_social, 'cnpj': empresa.cnpj},
         'tipos_processados': tipos_processados,
         'resumo': resumo,
+        'notificacoes_fiscais_criadas': notificacoes_fiscais_criadas,
         'mensagens': _uniq(mensagens),
         'avisos': _uniq(avisos),
         'erros': _uniq(erros),

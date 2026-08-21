@@ -12,8 +12,11 @@ from apps.crm.models import Atividade, Lead
 from apps.financeiro.models import TituloFinanceiro
 from apps.produtos.models import Produto
 
+from apps.fiscal.central_dfe.service import DocumentoCentralDfe
+
 from apps.notificacoes.events import (
     gerar_notificacoes_pendentes,
+    notificar_documento_central_dfe,
     notificar_atividade_vencida,
     notificar_estoque_minimo,
     notificar_proposta_aguardando_acao,
@@ -152,6 +155,43 @@ class NotificacaoServiceTests(TestCase):
         self.assertEqual(titulo_criado[0].url_destino, '/financeiro/contas-pagar')
         self.assertEqual(len(estoque_criado), 1)
         self.assertEqual(estoque_criado[0].modulo, Notificacao.Modulo.ESTOQUE)
+
+    def test_documento_fiscal_central_dfe_notifica_area_e_idempotente(self):
+        Colaborador.objects.create(
+            nome='Responsável fiscal',
+            usuario=self.user,
+            ativo=True,
+            eh_responsavel_fiscal=True,
+        )
+        documento = DocumentoCentralDfe(
+            id=7,
+            tipo_documento='NFE_ENTRADA',
+            chave_resumida='3526...0007',
+            chave_acesso='35260812345678000123550010000000071000000070',
+            numero='7',
+            serie='1',
+            data_emissao=date.today(),
+            data_importacao=timezone.now(),
+            emitente_nome='Fornecedor de teste',
+            emitente_cnpj='12345678000123',
+            uf='SP',
+            valor_total=Decimal('100.00'),
+            status_entrada='PENDENTE_ENTRADA',
+            status_entrada_label='Pendente de entrada',
+            tipo_label='NF-e Fornecedor',
+            detalhe_rota='/nfe-entrada-historica-importada',
+            empresa_id=1,
+        )
+
+        primeira = notificar_documento_central_dfe(documento)
+        segunda = notificar_documento_central_dfe(documento)
+
+        self.assertEqual(len(primeira), 1)
+        self.assertEqual(segunda, [])
+        self.assertEqual(primeira[0].modulo, Notificacao.Modulo.FISCAL)
+        self.assertEqual(primeira[0].tipo, Notificacao.Tipo.DOCUMENTO_FISCAL)
+        self.assertEqual(primeira[0].url_destino, '/nfe-entrada-historica-importada')
+        self.assertIn('Fornecedor de teste', primeira[0].mensagem)
 
     def test_lote_processa_atividade_vencida_com_idempotencia(self):
         colaborador = Colaborador.objects.create(
