@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ItemPedido } from '@/types';
-import { buildItemPayload, computePedidoTotal, normalizeItemPedidoForForm } from '@/lib/pedidosVendaItems';
+import {
+  buildItemPayload,
+  computePedidoFinancialSummary,
+  computePedidoTotal,
+  normalizeItemPedidoForForm,
+} from '@/lib/pedidosVendaItems';
 
 function itemBase(): ItemPedido {
   return {
@@ -30,12 +35,24 @@ describe('pedidosVendaItems', () => {
     expect(computePedidoTotal([itemBase()])).toBe(500);
   });
 
+  it('calcula subtotal, desconto, frete de cabeçalho e total separadamente', () => {
+    const item = { ...itemBase(), desconto_valor: 10, frete_valor: 999 };
+    expect(computePedidoFinancialSummary([item], 12.34)).toEqual({
+      subtotal: 500,
+      desconto: 10,
+      frete: 12.34,
+      total: 502.34,
+    });
+    expect(computePedidoTotal([item], 12.34)).toBe(502.34);
+  });
+
   it('payload envia produto_id e nao envia objeto cru', () => {
     const payload = buildItemPayload(itemBase(), 0);
     expect(payload.produto_id).toBe(456);
     expect(payload.quantidade).toBe(2);
     expect(payload.preco_por_unidade_negociada).toBe(250);
     expect('produto' in payload).toBe(false);
+    expect(payload).not.toHaveProperty('frete_valor');
   });
 
   it('payload preserva preco com 3 casas e espelho legado com 2', () => {
@@ -58,6 +75,6 @@ describe('pedidosVendaItems', () => {
       quantidade_negociada: 3,
       quantidade: 3,
     };
-    expect(computePedidoTotal([item])).toBeCloseTo(30.375, 5);
+    expect(computePedidoTotal([item])).toBe(30.38);
   });
 });

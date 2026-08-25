@@ -86,6 +86,7 @@ const PedidosVenda = () => {
     proposta_id: undefined as number | undefined,
     vendedor_id: null as number | null,
     condicao_pagamento_texto: CONDICAO_PAGAMENTO_PADRAO,
+    valor_frete: 0,
     prazo_entrega_texto: '',
     observacoes_comerciais: '',
     observacoes_internas: '',
@@ -199,6 +200,7 @@ const PedidosVenda = () => {
         proposta_id: p.proposta_id,
         vendedor_id: p.vendedor_id ?? null,
         condicao_pagamento_texto: p.condicao_pagamento_texto ?? CONDICAO_PAGAMENTO_PADRAO,
+        valor_frete: Number(p.valor_frete ?? 0),
         observacoes_comerciais: p.observacoes_comerciais ?? '',
         observacoes_internas: p.observacoes_internas ?? '',
       });
@@ -255,7 +257,7 @@ const PedidosVenda = () => {
       },
     ]);
   const removeItem = (id: number) => setItens((p) => p.filter((i) => i.id !== id));
-  const total = computePedidoTotal(itens);
+  const total = computePedidoTotal(itens, form.valor_frete);
 
   const updateItem = (idx: number, patch: Partial<ItemPedido>) => {
     setItens((prev) => {
@@ -333,6 +335,7 @@ const PedidosVenda = () => {
       proposta_id: undefined,
       vendedor_id: null,
       condicao_pagamento_texto: CONDICAO_PAGAMENTO_PADRAO,
+      valor_frete: 0,
       prazo_entrega_texto: '',
       observacoes_comerciais: '',
       observacoes_internas: '',
@@ -356,6 +359,7 @@ const PedidosVenda = () => {
         proposta_id: p.proposta_id,
         vendedor_id: p.vendedor_id ?? null,
         condicao_pagamento_texto: p.condicao_pagamento_texto ?? CONDICAO_PAGAMENTO_PADRAO,
+        valor_frete: Number(p.valor_frete ?? 0),
         prazo_entrega_texto: p.prazo_entrega_texto ?? '',
         observacoes_comerciais: p.observacoes_comerciais ?? '',
         observacoes_internas: p.observacoes_internas ?? '',
@@ -434,6 +438,12 @@ const PedidosVenda = () => {
 
   const handleSave = async () => {
     setSaveError(null);
+    if (form.valor_frete < 0) {
+      const msg = 'Frete não pode ser negativo.';
+      setSaveError(msg);
+      toast.error(msg);
+      return;
+    }
     if (!form.cliente_id) {
       const msg = 'Selecione um cliente.';
       setSaveError(msg);

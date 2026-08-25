@@ -44,7 +44,13 @@ def _produto() -> Produto:
     )
 
 
-def _pedido_item(*, qtd=Decimal('10'), preco=Decimal('100')) -> tuple[PedidoVenda, ItemPedidoVenda]:
+def _pedido_item(
+    *,
+    qtd=Decimal('10'),
+    preco=Decimal('100'),
+    desconto=Decimal('0'),
+    valor_frete=Decimal('0'),
+) -> tuple[PedidoVenda, ItemPedidoVenda]:
     emp = Empresa.objects.create(razao_social='Emit', cnpj=_cnpj(), uf='SP')
     cli = Cliente.objects.create(
         razao_social='Cli',
@@ -62,7 +68,8 @@ def _pedido_item(*, qtd=Decimal('10'), preco=Decimal('100')) -> tuple[PedidoVend
         cliente=cli,
         data=date.today(),
         status='ABERTO',
-        valor_total=Decimal('1000'),
+        valor_total=(qtd * preco) - desconto + valor_frete,
+        valor_frete=valor_frete,
     )
     prod = _produto()
     item = ItemPedidoVenda.objects.create(
@@ -72,6 +79,7 @@ def _pedido_item(*, qtd=Decimal('10'), preco=Decimal('100')) -> tuple[PedidoVend
         quantidade_negociada=qtd,
         valor_unitario=preco,
         preco_por_unidade_negociada=preco,
+        desconto=desconto,
         snapshot_fiscal={'origem_regra_fiscal_saida': 'LEGADO', 'ncm': '84818200', 'cfop': '5102'},
     )
     return pedido, item
@@ -150,6 +158,40 @@ class NFeSaidaFaturamentoTests(TestCase):
         r = gerar_nfe_saida_from_faturamento(pedido, fat.pk)
         nf = NFeSaida.objects.get(pk=r['nfe_saida_id'])
         self.assertEqual(nf.valor_total, Decimal('250.00'))
+
+    def test_frete_e_desconto_entram_uma_vez_no_total_preview_xml(self):
+        from apps.fiscal.nfe_saida_preview import _xml_preview_string, gerar_dados_preview_nfe_saida
+        from apps.fiscal.nfe_transporte_validacao import validar_coerencia_transporte_nfe
+
+        pedido, item = _pedido_item(
+            qtd=Decimal('5'),
+            preco=Decimal('50'),
+            desconto=Decimal('5'),
+            valor_frete=Decimal('12.34'),
+        )
+        atendimentos_antes = AtendimentoEstoque.objects.count()
+        fat = _faturamento_pronto(pedido, item, qtd='5')
+        self.assertEqual(fat.valor_frete, Decimal('12.34'))
+
+        resultado = gerar_nfe_saida_from_faturamento(pedido, fat.pk)
+        nf = NFeSaida.objects.get(pk=resultado['nfe_saida_id'])
+        self.assertEqual(nf.valor_frete, Decimal('12.34'))
+        self.assertEqual(nf.valor_total, Decimal('257.34'))
+        self.assertEqual(AtendimentoEstoque.objects.count(), atendimentos_antes)
+
+        dados = gerar_dados_preview_nfe_saida(nf)
+        self.assertEqual(dados['totais']['v_frete'], '12.34')
+        self.assertEqual(dados['totais']['v_nf'], '257.34')
+        xml = _xml_preview_string(dados)
+        self.assertIn('<vFrete>12.34</vFrete>', xml)
+        self.assertIn('<vNF>257.34</vNF>', xml)
+
+        codigos = {pendencia['codigo'] for pendencia in validar_coerencia_transporte_nfe(nf)}
+        self.assertIn('TRANSPORTE_MOD9_INCOERENTE', codigos)
+        nf.modalidade_frete = '0'
+        nf.save(update_fields=['modalidade_frete'])
+        codigos_compativeis = {pendencia['codigo'] for pendencia in validar_coerencia_transporte_nfe(nf)}
+        self.assertNotIn('TRANSPORTE_MOD9_INCOERENTE', codigos_compativeis)
 
     def test_sem_estoque_atendimento_financeiro(self):
         pedido, item = _pedido_item()

@@ -100,7 +100,7 @@ def build_icms_tot_bindings(nfe_module: Any, tot: dict[str, Any]) -> Any:
         vFCPST=z,
         vFCPSTRet=z,
         vProd=_dec_str(tot.get('v_prod')),
-        vFrete=z,
+        vFrete=_dec_str(tot.get('v_frete')),
         vSeg=z,
         vDesc=_dec_str(tot.get('v_desc')),
         vII=z,

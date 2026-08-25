@@ -159,7 +159,26 @@ def recalcular_valor_nf_entrada(nf: NFeEntrada) -> None:
 
 
 def recalcular_valor_nf_saida(nf: NFeSaida) -> None:
-    total = sum((_dec(it.valor) * _dec(it.quantidade) for it in nf.itens.all()), Decimal('0'))
+    valor_frete = _dec(nf.valor_frete)
+    if valor_frete < 0:
+        raise ValidationError({'valor_frete': 'Frete não pode ser negativo.'})
+
+    total_itens = Decimal('0')
+    for item in nf.itens.all():
+        snapshot = item.snapshot_comercial or {}
+        if snapshot.get('valor_total') not in (None, ''):
+            valor_item = _dec(snapshot['valor_total'])
+        else:
+            valor_item = _dec(item.valor) * _dec(item.quantidade)
+            if snapshot.get('desconto') not in (None, ''):
+                valor_item -= _dec(snapshot['desconto'])
+        total_itens += valor_item
+
+    total = (total_itens + valor_frete).quantize(Decimal('0.01'))
+    if total < 0:
+        raise ValidationError(
+            {'valor_total': 'Produtos menos descontos mais frete não pode resultar em total negativo.'},
+        )
     nf.valor_total = total
     nf.save(update_fields=['valor_total'])
 
@@ -714,6 +733,12 @@ def _gerar_ou_atualizar_certificado(nf: NFeSaida) -> None:
 
 class NFeSaidaSerializer(serializers.ModelSerializer):
     cliente_id = serializers.PrimaryKeyRelatedField(queryset=Cliente.objects.all(), source='cliente')
+    valor_frete = serializers.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        required=False,
+        min_value=Decimal('0'),
+    )
     pedido_venda_id = serializers.PrimaryKeyRelatedField(
         queryset=PedidoVenda.objects.all(),
         source='pedido_venda',

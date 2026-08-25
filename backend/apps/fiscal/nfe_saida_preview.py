@@ -498,6 +498,7 @@ def gerar_dados_preview_nfe_saida(
         'totais': {
             'v_prod': _dec_str(soma_prod),
             'v_desc': _dec_str(soma_desc),
+            'v_frete': _dec_str(nf.valor_frete),
             'v_nf': _dec_str(nf.valor_total),
         },
         'transporte': montar_transporte_dados_nfe(nf),
@@ -716,6 +717,7 @@ def _xml_preview_string(dados: dict[str, Any]) -> str:
     total = ET.SubElement(inf, 'total')
     icms_tot = ET.SubElement(total, 'ICMSTot')
     _sub(icms_tot, 'vProd', dados['totais']['v_prod'])
+    _sub(icms_tot, 'vFrete', dados['totais']['v_frete'])
     _sub(icms_tot, 'vDesc', dados['totais']['v_desc'])
     totais = dict(dados.get('totais') or {})
     payload_totais = {'itens': dados['itens'], 'totais': totais}

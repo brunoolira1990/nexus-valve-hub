@@ -29,7 +29,13 @@ def _cnpj() -> str:
     return f'{h % 90 + 10:02d}.{h // 100 % 900 + 100:03d}.{h // 100000 % 900 + 100:03d}/0001-{h % 97:02d}'
 
 
-def _pedido_stale_total(*, qtd=Decimal('2'), preco=Decimal('250'), valor_salvo=Decimal('250')):
+def _pedido_stale_total(
+    *,
+    qtd=Decimal('2'),
+    preco=Decimal('250'),
+    valor_salvo=Decimal('250'),
+    valor_frete=Decimal('0'),
+):
     emp = Empresa.objects.create(razao_social='Emit PDF', cnpj=_cnpj(), uf='SP')
     cli = Cliente.objects.create(razao_social='Cli PDF', cnpj=_cnpj(), uf='RJ')
     fam = FamiliaProduto.objects.create(
@@ -54,6 +60,7 @@ def _pedido_stale_total(*, qtd=Decimal('2'), preco=Decimal('250'), valor_salvo=D
         data=date.today(),
         status='Aberto',
         valor_total=valor_salvo,
+        valor_frete=valor_frete,
     )
     ItemPedidoVenda.objects.create(
         pedido=pedido,
@@ -111,6 +118,20 @@ class PedidoVendaPdfTotaisTests(TestCase):
         self.assertTrue(resumo['valor_total_recalculado'])
         self.assertTrue(any(i['codigo'] == 'valor_total_pedido_desatualizado' for i in resumo['inconsistencias']))
         self.assertFalse(resumo['tem_inconsistencia_bloqueante_nfe'])
+
+    def test_pdf_mostra_subtotal_desconto_frete_e_total_separados(self):
+        pedido = _pedido_stale_total(valor_salvo=Decimal('510.01'), valor_frete=Decimal('10.01'))
+        totais = calcular_totais_pedido_venda(pedido)
+        self.assertEqual(totais.subtotal_produtos, Decimal('500.00'))
+        self.assertEqual(totais.desconto_total, Decimal('0.00'))
+        self.assertEqual(totais.frete, Decimal('10.01'))
+        self.assertEqual(totais.valor_total, Decimal('510.01'))
+        text = _pdf_text(gerar_pedido_venda_pdf_bytes(pedido))
+        self.assertIn('Subtotal produtos', text)
+        self.assertIn('Desconto total', text)
+        self.assertIn('Frete', text)
+        self.assertIn('10,01', text)
+        self.assertIn('510,01', text)
 
     def test_pdf_faturado_parcial_coerente(self):
         pedido = _pedido_stale_total(valor_salvo=Decimal('250'))

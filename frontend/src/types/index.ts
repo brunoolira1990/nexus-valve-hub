@@ -1934,6 +1934,7 @@ export interface Proposta {
   validade: string;
   validade_dias?: number | null;
   frete_texto?: string;
+  valor_frete?: number;
   mensagem_comercial?: string;
   observacoes_proposta?: string;
   referencia_cliente?: string;
@@ -2125,11 +2126,13 @@ export interface ResumoFaturamentoPedido {
   itens_faturados: number;
   valor_total_pedido: string;
   valor_faturado: string;
+  valor_frete_faturado?: string;
   valor_pendente: string;
   faturamentos_rascunho: {
     faturamento_id: number;
     numero_faturamento?: string;
     status: string;
+    valor_frete?: string;
     observacao: string;
     criado_em: string;
     itens_count: number;
@@ -2138,6 +2141,7 @@ export interface ResumoFaturamentoPedido {
     faturamento_id: number;
     numero_faturamento?: string;
     status: string;
+    valor_frete?: string;
     observacao: string;
     criado_em: string;
     itens_count: number;
@@ -2257,6 +2261,7 @@ export interface PedidoVenda {
   quantidade_parcelas: number;
   vencimentos_previstos: string[];
   valor_total: number;
+  valor_frete?: number;
   proposta_id?: number;
   proposta_numero?: string;
   itens: ItemPedido[];

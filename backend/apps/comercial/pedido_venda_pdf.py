@@ -31,7 +31,6 @@ from apps.core.pdf.formatters import (
     fmt_cnpj,
     fmt_date_br,
     format_phone,
-    format_currency_br,
     nobr,
     qty_br,
     txt_or_emdash,
@@ -111,7 +110,10 @@ def _total_linha_pv(it: ItemPedidoVenda) -> Decimal:
     q = quantidade_pedida_item(it)
     p = preco_unitario_item(it)
     d = dec(it.desconto)
-    return max(Decimal('0'), q * p - d)
+    total = q * p - d
+    if total < 0:
+        raise ValueError(f'Item do pedido #{it.pk} possui desconto maior que o subtotal.')
+    return total
 
 
 def _nota_faturamento_item(it: ItemPedidoVenda, *, abreviada: bool = False) -> str:
@@ -162,8 +164,6 @@ def _validade_exibicao_pedido(pedido: PedidoVenda) -> str:
 
 
 def _frete_condicoes_pedido(pedido: PedidoVenda, frete_valor) -> str | None:
-    if dec(frete_valor) > 0:
-        return format_currency_br(frete_valor)
     try:
         if pedido.proposta_id and pedido.proposta:
             ft = (pedido.proposta.frete_texto or '').strip()
@@ -201,7 +201,7 @@ def _linhas_condicoes_comerciais_pdf(
         rows.append(('Status:', st))
     frete_txt = _frete_condicoes_pedido(pedido, frete_valor)
     if frete_txt:
-        rows.append(('Frete:', frete_txt))
+        rows.append(('Condição de frete:', frete_txt))
     return rows
 
 

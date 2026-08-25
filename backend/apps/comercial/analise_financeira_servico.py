@@ -76,6 +76,7 @@ def montar_snapshot_proposta(proposta: Proposta, condicao: dict[str, Any]) -> di
         'numero': proposta.numero,
         'cliente_id': proposta.cliente_id,
         'valor_total': format(_dec(proposta.valor_total), 'f'),
+        'valor_frete': format(_dec(proposta.valor_frete), 'f'),
         'condicao_pagamento_texto': (proposta.condicao_pagamento_texto or '').strip(),
         'condicao': condicao,
         'data_proposta': proposta.data.isoformat() if proposta.data else None,
