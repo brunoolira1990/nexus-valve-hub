@@ -87,24 +87,40 @@ def _round(v: Decimal) -> Decimal:
     return v.quantize(Decimal('0.01'))
 
 
+def _valor_liquido_item_comercial(item) -> Decimal:
+    if isinstance(item, dict):
+        get = item.get
+    else:
+        get = lambda key, default=None: getattr(item, key, default)
+    quantidade = _dec(get('quantidade_negociada') or get('quantidade'))
+    preco = _dec(get('preco_por_unidade_negociada') or get('valor_unitario'))
+    return quantidade * preco - _dec(get('desconto'))
+
+
+def _validar_total_comercial(itens, valor_frete: Decimal) -> Decimal:
+    if valor_frete < 0:
+        raise serializers.ValidationError({'valor_frete': 'Frete não pode ser negativo.'})
+    total = sum((_valor_liquido_item_comercial(item) for item in itens), Decimal('0')) + valor_frete
+    if total < 0:
+        raise serializers.ValidationError(
+            {'valor_total': 'Subtotal menos descontos mais frete não pode resultar em total negativo.'},
+        )
+    return _round(total)
+
+
 def recalcular_proposta(proposta: Proposta) -> None:
-    total = Decimal('0')
-    for it in proposta.itens.all():
-        total += _dec(it.quantidade_negociada or it.quantidade) * _dec(it.preco_por_unidade_negociada or it.valor_unitario) - _dec(it.desconto)
-    proposta.valor_total = total
+    proposta.valor_total = _validar_total_comercial(
+        proposta.itens.all(),
+        _dec(proposta.valor_frete),
+    )
     proposta.save(update_fields=['valor_total'])
 
 
 def recalcular_pedido_venda(pedido: PedidoVenda) -> None:
-    total = sum(
-        (
-            _dec(it.quantidade_negociada or it.quantidade) * _dec(it.preco_por_unidade_negociada or it.valor_unitario)
-            - _dec(it.desconto)
-            for it in pedido.itens.all()
-        ),
-        Decimal('0'),
+    pedido.valor_total = _validar_total_comercial(
+        pedido.itens.all(),
+        _dec(pedido.valor_frete),
     )
-    pedido.valor_total = total
     pedido.save(update_fields=['valor_total'])
 
 
@@ -706,6 +722,12 @@ class PropostaSerializer(serializers.ModelSerializer):
     validade = serializers.DateField(required=False)
     validade_dias = serializers.IntegerField(required=False, allow_null=True, min_value=1, max_value=3650)
     frete_texto = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    valor_frete = serializers.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        required=False,
+        min_value=Decimal('0'),
+    )
     mensagem_comercial = serializers.CharField(required=False, allow_blank=True)
     observacoes_proposta = serializers.CharField(required=False, allow_blank=True)
     referencia_cliente = serializers.CharField(max_length=128, required=False, allow_blank=True)
@@ -781,6 +803,7 @@ class PropostaSerializer(serializers.ModelSerializer):
             'validade',
             'validade_dias',
             'frete_texto',
+            'valor_frete',
             'mensagem_comercial',
             'observacoes_proposta',
             'referencia_cliente',
@@ -891,6 +914,7 @@ class PropostaSerializer(serializers.ModelSerializer):
             else inferir_validade_dias(instance.data, instance.validade)
         )
         data['frete_texto'] = instance.frete_texto or ''
+        data['valor_frete'] = float(instance.valor_frete or 0)
         data['mensagem_comercial'] = instance.mensagem_comercial or ''
         data['observacoes_proposta'] = instance.observacoes_proposta or ''
         data['referencia_cliente'] = instance.referencia_cliente or ''
@@ -934,6 +958,22 @@ class PropostaSerializer(serializers.ModelSerializer):
         _apply_emitente_e_uf_operacao_saida(attrs, self.instance)
         sincronizar_validade_proposta(attrs, instance=self.instance)
         aplicar_defaults_proposta(attrs, instance=self.instance, request=self.context.get('request'))
+        valor_frete = _dec(
+            attrs.get('valor_frete', self.instance.valor_frete if self.instance else Decimal('0')),
+        )
+        if (
+            self.instance
+            and 'valor_frete' in attrs
+            and self.instance.pedidos_gerados.exists()
+            and _round(valor_frete) != _round(_dec(self.instance.valor_frete))
+        ):
+            raise serializers.ValidationError(
+                {'valor_frete': 'Frete da proposta não pode ser alterado após a primeira conversão.'},
+            )
+        itens_validacao = attrs.get('itens')
+        if itens_validacao is None and self.instance:
+            itens_validacao = self.instance.itens.all()
+        _validar_total_comercial(itens_validacao or [], valor_frete)
         return attrs
 
     def create(self, validated_data):
@@ -1120,6 +1160,12 @@ class PedidoVendaSerializer(serializers.ModelSerializer):
     vendedor_nome = serializers.SerializerMethodField(read_only=True)
     resumo_atendimento_operacional = serializers.SerializerMethodField(read_only=True)
     itens = ItemPedidoVendaSerializer(many=True)
+    valor_frete = serializers.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        required=False,
+        min_value=Decimal('0'),
+    )
 
     class Meta:
         model = PedidoVenda
@@ -1145,6 +1191,7 @@ class PedidoVendaSerializer(serializers.ModelSerializer):
             'quantidade_parcelas',
             'vencimentos_previstos',
             'valor_total',
+            'valor_frete',
             'proposta_id',
             'proposta_numero',
             'itens',
@@ -1192,6 +1239,7 @@ class PedidoVendaSerializer(serializers.ModelSerializer):
         data['prazo_entrega'] = instance.prazo_entrega.isoformat() if instance.prazo_entrega else None
         data['vencimentos_previstos'] = [d.isoformat() for d in instance.vencimentos_previstos]
         data['valor_total'] = float(instance.valor_total)
+        data['valor_frete'] = float(instance.valor_frete or 0)
         data['proposta_id'] = instance.proposta_id
         data['vendedor_id'] = instance.vendedor_ref_id
         data['vendedor_nome'] = nome_vendedor_exibicao(instance)
@@ -1237,6 +1285,22 @@ class PedidoVendaSerializer(serializers.ModelSerializer):
         attrs['quantidade_parcelas'] = len(dias)
         attrs['vencimentos_previstos'] = compute_due_dates(data_base, dias) if data_base else []
         aplicar_defaults_pedido_venda(attrs, instance=self.instance)
+        valor_frete = _dec(
+            attrs.get('valor_frete', self.instance.valor_frete if self.instance else Decimal('0')),
+        )
+        if (
+            self.instance
+            and 'valor_frete' in attrs
+            and self.instance.faturamentos.exists()
+            and _round(valor_frete) != _round(_dec(self.instance.valor_frete))
+        ):
+            raise serializers.ValidationError(
+                {'valor_frete': 'Frete do pedido não pode ser alterado após o primeiro faturamento.'},
+            )
+        itens_validacao = attrs.get('itens')
+        if itens_validacao is None and self.instance:
+            itens_validacao = self.instance.itens.all()
+        _validar_total_comercial(itens_validacao or [], valor_frete)
         return attrs
 
     def create(self, validated_data):

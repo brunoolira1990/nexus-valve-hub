@@ -115,6 +115,12 @@ class Proposta(models.Model):
     quantidade_parcelas = models.PositiveSmallIntegerField(default=0)
     vencimentos_previstos = ArrayField(models.DateField(), default=_default_datas, blank=True)
     valor_total = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
+    valor_frete = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=Decimal('0'),
+        help_text='Valor de frete cobrado do cliente no cabeçalho da proposta.',
+    )
     prazo_entrega_texto = models.CharField(
         max_length=255,
         blank=True,
@@ -166,6 +172,12 @@ class Proposta(models.Model):
 
     class Meta:
         ordering = ['-data', 'numero']
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(valor_frete__gte=Decimal('0')),
+                name='prop_valor_frete_nao_negativo',
+            ),
+        ]
 
 
 class ItemProposta(models.Model):
@@ -372,6 +384,12 @@ class PedidoVenda(models.Model):
     quantidade_parcelas = models.PositiveSmallIntegerField(default=0)
     vencimentos_previstos = ArrayField(models.DateField(), default=_default_datas, blank=True)
     valor_total = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
+    valor_frete = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=Decimal('0'),
+        help_text='Valor de frete cobrado do cliente no cabeçalho do pedido.',
+    )
     vendedor = models.CharField(max_length=255, blank=True)
     vendedor_ref = models.ForeignKey(
         'comercial.Vendedor',
@@ -404,6 +422,12 @@ class PedidoVenda(models.Model):
 
     class Meta:
         ordering = ['-data', 'numero']
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(valor_frete__gte=Decimal('0')),
+                name='pedv_valor_frete_nao_negativo',
+            ),
+        ]
 
 
 class ItemPedidoVenda(models.Model):
@@ -480,6 +504,12 @@ class FaturamentoPedidoVenda(models.Model):
         default=Status.RASCUNHO,
     )
     numero_faturamento = models.CharField(max_length=32, blank=True, db_index=True)
+    valor_frete = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=Decimal('0'),
+        help_text='Parcela do frete do pedido congelada neste faturamento.',
+    )
     cliente_snapshot = models.JSONField(default=dict, blank=True)
     observacao = models.TextField(blank=True)
     criado_por = models.ForeignKey(
@@ -502,6 +532,12 @@ class FaturamentoPedidoVenda(models.Model):
 
     class Meta:
         ordering = ['-criado_em', '-id']
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(valor_frete__gte=Decimal('0')),
+                name='fatpv_valor_frete_nao_negativo',
+            ),
+        ]
 
 
 class ItemFaturamentoPedidoVenda(models.Model):

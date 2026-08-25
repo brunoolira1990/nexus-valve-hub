@@ -1,6 +1,7 @@
 """PDF Proposta e Pedido de Venda — rotas, conteúdo e efeitos colaterais."""
 
 import io
+from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -175,6 +176,7 @@ class PropostaPdfCamposComerciaisTests(ComercialPdfBaseFixture):
                 'condicao_pagamento_texto': '30',
                 'referencia_cliente': 'REQ-2026-001',
                 'frete_texto': 'FOB – POSTO / SP',
+                'valor_frete': '12.34',
                 'observacoes_proposta': 'Observação comercial\nlinha 2',
                 'mensagem_comercial': 'A regra é não perder pedidos.',
                 'itens': [
@@ -191,12 +193,15 @@ class PropostaPdfCamposComerciaisTests(ComercialPdfBaseFixture):
         )
         self.assertTrue(ser.is_valid(), ser.errors)
         proposta = ser.save()
+        self.assertEqual(proposta.valor_total, Decimal('112.34'))
         pdf_bytes = gerar_proposta_pdf_bytes(proposta)
         text = ''
         for page in PdfReader(io.BytesIO(pdf_bytes)).pages:
             text += page.extract_text() or ''
         self.assertIn('REQ-2026-001', text)
         self.assertIn('FOB', text.upper())
+        self.assertIn('12,34', text)
+        self.assertIn('112,34', text)
         self.assertIn('OBSERVA', text.upper())
         self.assertIn('PERDER PEDIDOS', text.upper())
         self.assertIn('PC', text)

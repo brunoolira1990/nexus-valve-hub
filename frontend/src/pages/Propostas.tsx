@@ -242,6 +242,7 @@ const Propostas = () => {
     data: '',
     validade_dias: VALIDADE_DIAS_PADRAO,
     frete_texto: '',
+    valor_frete: 0,
     mensagem_comercial: '',
     observacoes_proposta: '',
     referencia_cliente: '',
@@ -681,10 +682,13 @@ const Propostas = () => {
     ]);
   };
   const removeItem = (id: number) => setItens(p => p.filter(i => i.id !== id));
-  const total = itens.reduce(
-    (s, i) => s + (i.quantidade_negociada ?? i.quantidade) * (i.preco_por_unidade_negociada ?? i.preco_final) - i.desconto,
+  const subtotal = itens.reduce(
+    (s, i) => s + (i.quantidade_negociada ?? i.quantidade) * (i.preco_por_unidade_negociada ?? i.preco_final),
     0,
   );
+  const descontoTotal = itens.reduce((s, i) => s + i.desconto, 0);
+  const valorFrete = toNumber(form.valor_frete);
+  const total = subtotal - descontoTotal + valorFrete;
   const custoTotal = itens.reduce((s, i) => s + i.quantidade * i.custo_final, 0);
   const receitaTotal = total;
   const lucroTotal = receitaTotal - custoTotal;
@@ -710,6 +714,7 @@ const Propostas = () => {
       data: hoje,
       validade_dias: VALIDADE_DIAS_PADRAO,
       frete_texto: '',
+      valor_frete: 0,
       mensagem_comercial: MENSAGEM_COMERCIAL_PADRAO,
       observacoes_proposta: '',
       referencia_cliente: '',
@@ -776,6 +781,7 @@ const Propostas = () => {
       data: e.data,
       validade_dias: e.validade_dias ?? diasValidadeEntreDatas(e.data, e.validade) ?? VALIDADE_DIAS_PADRAO,
       frete_texto: e.frete_texto ?? '',
+      valor_frete: toNumber(e.valor_frete),
       mensagem_comercial: e.mensagem_comercial ?? '',
       observacoes_proposta: e.observacoes_proposta ?? '',
       referencia_cliente: e.referencia_cliente ?? '',
@@ -822,6 +828,10 @@ const Propostas = () => {
   }, [modalOpen]);
   const handleDelete = async (id: number) => { if (confirm('Excluir?')) { await propostasService.delete(id); load(); } };
   const handleSave = async () => {
+    if (form.valor_frete < 0) {
+      toast.error('Frete não pode ser negativo.');
+      return;
+    }
     if (!clienteAvulso && !form.cliente_id) {
       toast.error('Selecione um cliente cadastrado ou marque cliente avulso.');
       return;
@@ -1681,13 +1691,31 @@ const Propostas = () => {
                 />
               </div>
               <div>
-                <label className="erp-label">Frete / condição de frete</label>
+                <label className="erp-label">Condição de frete</label>
                 <input
                   className="erp-input mt-1"
                   placeholder="Ex.: FOB – POSTO / SP, CIF, RETIRA, A COMBINAR"
                   value={form.frete_texto}
                   onChange={(e) => setForm((p) => ({ ...p, frete_texto: e.target.value }))}
                 />
+              </div>
+              <div>
+                <label className="erp-label">Frete cobrado do cliente (R$)</label>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.01"
+                  className="erp-input mt-1 text-right"
+                  value={inputNumberValue(form.valor_frete)}
+                  disabled={Boolean(editing?.pedidos_gerados_resumo?.length || editing?.pedido_venda_id)}
+                  onChange={(e) => setForm((p) => ({ ...p, valor_frete: +e.target.value || 0 }))}
+                />
+                {editing?.pedidos_gerados_resumo?.length || editing?.pedido_venda_id ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    O frete fica bloqueado após a primeira conversão em Pedido de Venda.
+                  </p>
+                ) : null}
               </div>
               <div className="md:col-span-2">
                 <label className="erp-label">Mensagem comercial</label>
@@ -2321,6 +2349,24 @@ const Propostas = () => {
 
         <ComercialModalSection title="Totais" className="mb-4">
           <div className="text-right text-2xl font-bold text-foreground">Total da proposta: {formatMoneyBr(total)}</div>
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="rounded-md border border-border bg-muted/20 p-3">
+              <p className="text-xs text-muted-foreground">Subtotal</p>
+              <p className="text-lg font-semibold">{formatMoneyBr(subtotal)}</p>
+            </div>
+            <div className="rounded-md border border-border bg-muted/20 p-3">
+              <p className="text-xs text-muted-foreground">Desconto</p>
+              <p className="text-lg font-semibold">{formatMoneyBr(descontoTotal)}</p>
+            </div>
+            <div className="rounded-md border border-border bg-muted/20 p-3">
+              <p className="text-xs text-muted-foreground">Frete</p>
+              <p className="text-lg font-semibold">{formatMoneyBr(valorFrete)}</p>
+            </div>
+            <div className="rounded-md border border-border bg-muted/20 p-3">
+              <p className="text-xs text-muted-foreground">Total</p>
+              <p className="text-lg font-semibold">{formatMoneyBr(total)}</p>
+            </div>
+          </div>
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             <div className="rounded-md border border-border bg-muted/20 p-3">
               <p className="text-xs text-muted-foreground">Custo total</p>

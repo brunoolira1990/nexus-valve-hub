@@ -151,6 +151,7 @@ class ConverterPropostaPedidoTests(ConverterPropostaPedidoSetupMixin, TestCase):
         pedido = PedidoVenda.objects.get(pk=r['pedido_id'])
         self.assertEqual(pedido.proposta_id, p.pk)
         self.assertEqual(pedido.status, STATUS_PEDIDO_INICIAL)
+        self.assertEqual(pedido.valor_frete, Decimal('0'))
         self.assertEqual(pedido.vendedor.upper(), 'VENDEDOR TESTE')
         pv_item = ItemPedidoVenda.objects.get(pedido=pedido)
         self.assertEqual(pv_item.item_proposta_id, item.pk)
@@ -160,6 +161,72 @@ class ConverterPropostaPedidoTests(ConverterPropostaPedidoSetupMixin, TestCase):
         self.assertEqual(pv_item.snapshot_fiscal['origem_regra_fiscal_saida'], 'LEGADO')
         p.refresh_from_db()
         self.assertEqual(p.status, STATUS_PROPOSTA_CONVERTIDA)
+
+    def test_frete_edicao_centavos_e_rateio_parcial_com_residuo(self):
+        p = _proposta_aprovada()
+        item_1 = _item(p, _produto())
+        item_2 = _item(p, _produto())
+
+        resposta_edicao = self.client.patch(
+            f'/api/propostas/{p.pk}/',
+            {'valor_frete': '10.01'},
+            format='json',
+        )
+        self.assertEqual(resposta_edicao.status_code, status.HTTP_200_OK, resposta_edicao.json())
+        p.refresh_from_db()
+        self.assertEqual(p.valor_frete, Decimal('10.01'))
+        self.assertEqual(p.valor_total, Decimal('400.01'))
+
+        primeiro = gerar_pedido_venda_de_proposta(
+            p,
+            itens_payload=[{'proposta_item_id': item_1.pk}],
+            acao_itens_nao_selecionados='MANTER_PENDENTE',
+        )
+        pedido_1 = PedidoVenda.objects.get(pk=primeiro['pedido_id'])
+        self.assertEqual(pedido_1.valor_frete, Decimal('5.01'))
+        self.assertEqual(pedido_1.valor_total, Decimal('200.01'))
+
+        segundo = gerar_pedido_venda_de_proposta(
+            p,
+            itens_payload=[{'proposta_item_id': item_2.pk}],
+            acao_itens_nao_selecionados='MANTER_PENDENTE',
+        )
+        pedido_2 = PedidoVenda.objects.get(pk=segundo['pedido_id'])
+        self.assertEqual(pedido_2.valor_frete, Decimal('5.00'))
+        self.assertEqual(pedido_2.valor_total, Decimal('200.00'))
+        self.assertEqual(
+            sum(PedidoVenda.objects.filter(proposta=p).values_list('valor_frete', flat=True)),
+            Decimal('10.01'),
+        )
+
+    def test_frete_negativo_rejeitado_e_bloqueado_apos_conversao(self):
+        p = _proposta_aprovada()
+        item_1 = _item(p, _produto())
+        _item(p, _produto())
+
+        negativo = self.client.patch(
+            f'/api/propostas/{p.pk}/',
+            {'valor_frete': '-0.01'},
+            format='json',
+        )
+        self.assertEqual(negativo.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('valor_frete', negativo.json())
+
+        p.valor_frete = Decimal('10.00')
+        p.save(update_fields=['valor_frete'])
+        recalcular_proposta(p)
+        gerar_pedido_venda_de_proposta(
+            p,
+            itens_payload=[{'proposta_item_id': item_1.pk}],
+            acao_itens_nao_selecionados='MANTER_PENDENTE',
+        )
+        bloqueado = self.client.patch(
+            f'/api/propostas/{p.pk}/',
+            {'valor_frete': '12.00'},
+            format='json',
+        )
+        self.assertEqual(bloqueado.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('primeira convers', str(bloqueado.json()).lower())
 
     def test_converter_nao_duplica(self):
         p = _proposta_aprovada()

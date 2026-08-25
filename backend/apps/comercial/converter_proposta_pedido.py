@@ -116,7 +116,13 @@ def _snapshot_fiscal_item(item: ItemProposta, proposta: Proposta) -> dict[str, A
     }
 
 
-def _snapshot_conversao_proposta(proposta: Proposta, *, parcial: bool, itens_ids: list[int]) -> dict[str, Any]:
+def _snapshot_conversao_proposta(
+    proposta: Proposta,
+    *,
+    parcial: bool,
+    itens_ids: list[int],
+    valor_frete_pedido: Decimal,
+) -> dict[str, Any]:
     return {
         'proposta_id': proposta.pk,
         'proposta_numero': proposta.numero,
@@ -131,6 +137,8 @@ def _snapshot_conversao_proposta(proposta: Proposta, *, parcial: bool, itens_ids
         ),
         'convertido_em': timezone.now().isoformat(),
         'valor_total_proposta': str(proposta.valor_total),
+        'valor_frete_proposta': str(_round_monetary(proposta.valor_frete or Decimal('0'))),
+        'valor_frete_pedido': str(_round_monetary(valor_frete_pedido)),
         'conversao_parcial': parcial,
         'itens_proposta_ids': itens_ids,
     }
@@ -141,6 +149,39 @@ def _valor_item_proposta(item: ItemProposta) -> Decimal:
     preco = item.preco_por_unidade_negociada or item.valor_unitario or item.preco_final
     bruto = (qtd * preco) - (item.desconto or Decimal('0'))
     return _round_monetary(bruto)
+
+
+def _ratear_frete_conversao(
+    proposta: Proposta,
+    *,
+    itens_selecionados: list[ItemProposta],
+    ultimo_pedido: bool,
+) -> Decimal:
+    frete_original = _round_monetary(proposta.valor_frete or Decimal('0'))
+    if frete_original < 0:
+        raise ValueError('Frete da proposta não pode ser negativo.')
+
+    frete_transferido = _round_monetary(
+        sum(
+            (pedido.valor_frete or Decimal('0') for pedido in proposta.pedidos_gerados.all()),
+            Decimal('0'),
+        ),
+    )
+    if frete_transferido > frete_original:
+        raise ValueError('Frete já transferido aos pedidos excede o frete original da proposta.')
+    restante = frete_original - frete_transferido
+    if restante == 0 or frete_original == 0:
+        return Decimal('0')
+    if ultimo_pedido:
+        return restante
+
+    total_liquido = sum((_valor_item_proposta(item) for item in proposta.itens.all()), Decimal('0'))
+    selecionado_liquido = sum((_valor_item_proposta(item) for item in itens_selecionados), Decimal('0'))
+    if total_liquido <= 0 or selecionado_liquido <= 0:
+        raise ValueError('Não é possível ratear frete com valor líquido de itens menor ou igual a zero.')
+
+    proporcional = _round_monetary(frete_original * selecionado_liquido / total_liquido)
+    return min(proporcional, restante)
 
 
 def _validar_produto_e_ncm_itens(
@@ -248,12 +289,15 @@ def _montar_payload_pedido(
     *,
     itens: list[ItemProposta],
     mensagens: list[str],
+    valor_frete: Decimal = Decimal('0'),
     observacao: str = '',
 ) -> dict[str, Any]:
     itens_payload = [_montar_item_payload(item, proposta) for item in itens]
     valor_total = _round_monetary(
-        sum((_valor_item_proposta(item) for item in itens), Decimal('0')),
+        sum((_valor_item_proposta(item) for item in itens), Decimal('0')) + valor_frete,
     )
+    if valor_total < 0:
+        raise ValueError('Subtotal menos descontos mais frete não pode resultar em total negativo.')
     obs_internas = (proposta.homologacao_fiscal_observacao or '').strip()
     if observacao.strip():
         extra = observacao.strip()
@@ -269,6 +313,7 @@ def _montar_payload_pedido(
         'quantidade_parcelas': proposta.quantidade_parcelas,
         'vencimentos_previstos': [d.isoformat() for d in proposta.vencimentos_previstos],
         'valor_total': valor_total,
+        'valor_frete': valor_frete,
         'proposta_id': proposta.id,
         'vendedor': nome_vendedor_exibicao(proposta),
         'vendedor_id': proposta.vendedor_ref_id,
@@ -280,6 +325,7 @@ def _montar_payload_pedido(
             proposta,
             parcial=parcial,
             itens_ids=[it.pk for it in itens],
+            valor_frete_pedido=valor_frete,
         ),
         'itens': itens_payload,
         '_mensagens': mensagens,
@@ -343,6 +389,7 @@ def _sincronizar_status_legado_com_pedido(proposta: Proposta) -> None:
         proposta.save(update_fields=['status'])
 
 
+@transaction.atomic
 def gerar_pedido_venda_de_proposta(
     proposta: Proposta,
     *,
@@ -351,7 +398,7 @@ def gerar_pedido_venda_de_proposta(
     observacao: str = '',
     usuario=None,
 ) -> ConverterPropostaPedidoDict:
-    proposta = Proposta.objects.select_related(
+    proposta = Proposta.objects.select_for_update(of=('self',)).select_related(
         'cliente',
         'empresa_emitente',
         'cenario_fiscal_saida',
@@ -393,8 +440,20 @@ def gerar_pedido_venda_de_proposta(
 
     selecionados_ids = {it.pk for it in selecionados}
     nao_selecionados = [it for it in itens_pendentes_conversao(proposta) if it.pk not in selecionados_ids]
+    ultimo_pedido = not nao_selecionados or acao_itens_nao_selecionados == ACAO_CANCELAR
+    valor_frete_pedido = _ratear_frete_conversao(
+        proposta,
+        itens_selecionados=selecionados,
+        ultimo_pedido=ultimo_pedido,
+    )
 
-    payload = _montar_payload_pedido(proposta, itens=selecionados, mensagens=mensagens, observacao=observacao)
+    payload = _montar_payload_pedido(
+        proposta,
+        itens=selecionados,
+        mensagens=mensagens,
+        valor_frete=valor_frete_pedido,
+        observacao=observacao,
+    )
     extra_msgs = payload.pop('_mensagens', [])
 
     with transaction.atomic():
