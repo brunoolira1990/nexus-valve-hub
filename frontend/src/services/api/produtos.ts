@@ -56,6 +56,8 @@ export type PreviewCodigoPayload = {
 
 export type PreviewCodigoResponse = {
   codigo: string;
+  codigo_base?: string;
+  sequencia_tecnica?: boolean;
   descricao_sugerida: string;
   mensagem: string;
   ncm_efetivo?: string;

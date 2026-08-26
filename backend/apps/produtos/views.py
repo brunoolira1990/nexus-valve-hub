@@ -303,6 +303,8 @@ class ProdutoViewSet(FriendlyDestroyMixin, AutocompleteOrPaginationMixin, viewse
         return Response(
             {
                 'codigo': v.get('_codigo', ''),
+                'codigo_base': v.get('_codigo_base', v.get('_codigo', '')),
+                'sequencia_tecnica': bool(v.get('_sequencia_tecnica', False)),
                 'descricao_sugerida': v.get('_descricao', ''),
                 'mensagem': v.get('_mensagem', ''),
                 'ncm_efetivo': v.get('_ncm_efetivo', ''),

@@ -18,6 +18,12 @@ from apps.produtos.dimensional_regra import (
 )
 from apps.produtos.familia_regra import aplicar_flags_derivadas_no_dict
 from apps.produtos.familia_codigo import FamiliaCodigoConfigError, FamiliaCodigoEsgotadoError, reservar_codigo_figura
+from apps.produtos.manometro_sku import (
+    MENSAGEM_ALTERACAO_ESTRUTURAL,
+    familia_e_manometro,
+    montar_codigo_base_manometro,
+    proximo_codigo_manometro_sugerido,
+)
 from apps.produtos.familia_duplicidade import (
     buscar_familia_duplicada_descricao_modelo,
     chave_descricao_duplicidade_familia,
@@ -711,6 +717,14 @@ class ProdutoSerializer(serializers.ModelSerializer):
         modo = pick('modo_codigo') or Produto.ModoCodigo.LEGADO
         familia = pick('familia')
         codigo_in = to_operational_upper(pick('codigo_completo')) or ''
+        familia_anterior = getattr(inst, 'familia', None) if inst else None
+        if inst and familia_e_manometro(familia_anterior):
+            if (
+                getattr(familia, 'pk', None) != inst.familia_id
+                or getattr(pick('rosca_conexao'), 'pk', None) != inst.rosca_conexao_id
+                or getattr(pick('polegada_principal_ref'), 'pk', None) != inst.polegada_principal_ref_id
+            ):
+                raise serializers.ValidationError({'non_field_errors': [MENSAGEM_ALTERACAO_ESTRUTURAL]})
 
         if modo == Produto.ModoCodigo.MANUAL:
             if not codigo_in:
@@ -860,6 +874,12 @@ class ProdutoSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {'non_field_errors': ['Código será gerado após preencher os campos obrigatórios da família.']},
             )
+
+        if familia_e_manometro(familia):
+            if inst and modo == Produto.ModoCodigo.INTERNO and familia_e_manometro(familia_anterior):
+                codigo = inst.codigo_completo
+            else:
+                codigo = proximo_codigo_manometro_sugerido(codigo, excluir_pk=inst.pk if inst else None)
 
         qs = Produto.objects.exclude(pk=inst.pk) if inst else Produto.objects.all()
         if qs.filter(codigo_completo=codigo).exists():
@@ -1223,7 +1243,14 @@ class PreviewCodigoSerializer(serializers.Serializer):
             attrs['_mensagens'] = [attrs['_mensagem']]
             return attrs
 
+        codigo_base = codigo
+        sequencia_tecnica = False
+        if f.tipo_dimensional == FamiliaProduto.TipoDimensional.MANOMETRO:
+            codigo = proximo_codigo_manometro_sugerido(codigo_base)
+            sequencia_tecnica = codigo != codigo_base
         attrs['_codigo'] = codigo
+        attrs['_codigo_base'] = codigo_base
+        attrs['_sequencia_tecnica'] = sequencia_tecnica
         attrs['_descricao'] = normalizar_descricao_produto(montar_descricao_sugerida(f, **desc_kwargs))
         attrs['_mensagem'] = ''
         attrs['_ncm_efetivo'] = (f.ncm_padrao.codigo if f.ncm_padrao_id else '')

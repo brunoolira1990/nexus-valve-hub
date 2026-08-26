@@ -451,8 +451,34 @@ class Produto(models.Model):
 
     def save(self, *args, **kwargs):
         from apps.produtos.codigo_produto import produto_aplicar_codigo_completo
+        from apps.produtos.manometro_sku import (
+            familia_e_manometro,
+            produto_e_manometro_interno,
+            reservar_codigo_manometro,
+        )
 
-        produto_aplicar_codigo_completo(self)
+        anterior = None
+        if self.pk:
+            anterior = type(self).objects.select_related('familia').filter(pk=self.pk).first()
+        if anterior and familia_e_manometro(anterior.familia):
+            mudou_estrutura = (
+                self.familia_id != anterior.familia_id
+                or self.rosca_conexao_id != anterior.rosca_conexao_id
+                or self.polegada_principal_ref_id != anterior.polegada_principal_ref_id
+            )
+            if mudou_estrutura:
+                raise ValueError(
+                    'Família, rosca ou polegada alteram a identidade estrutural deste SKU. '
+                    'Cadastre um novo Produto para essa nova configuração.',
+                )
+            if produto_e_manometro_interno(self) and anterior.modo_codigo == self.ModoCodigo.INTERNO:
+                self.codigo_completo = anterior.codigo_completo
+            else:
+                produto_aplicar_codigo_completo(self)
+        elif produto_e_manometro_interno(self):
+            self.codigo_completo = reservar_codigo_manometro(self)
+        else:
+            produto_aplicar_codigo_completo(self)
         super().save(*args, **kwargs)
 
     def _fallback_familia_attr(self, attr: str):
@@ -658,6 +684,24 @@ class FamiliaProdutoSchedulePermitido(models.Model):
 
     def __str__(self):
         return f'{self.familia.codigo_figura} - {self.schedule.codigo_schedule}'
+
+
+class ProdutoManometroSkuSequencia(models.Model):
+    """Sequência transacional isolada por variante estrutural de MANOMETRO."""
+
+    codigo_base = models.CharField(max_length=128, unique=True, db_index=True)
+    familia = models.ForeignKey(FamiliaProduto, on_delete=models.PROTECT, related_name='sequencias_sku_manometro')
+    rosca_conexao = models.ForeignKey(RoscaConexao, on_delete=models.PROTECT, related_name='sequencias_sku_manometro')
+    polegada_principal = models.ForeignKey(Polegada, on_delete=models.PROTECT, related_name='sequencias_sku_manometro')
+    proximo_numero = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(proximo_numero__gte=1),
+                name='ck_manometro_sku_seq_proximo_ge_1',
+            ),
+        ]
 
 
 class FamiliaProdutoCodigoSequencia(models.Model):

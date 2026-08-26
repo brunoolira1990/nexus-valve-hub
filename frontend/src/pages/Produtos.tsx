@@ -408,6 +408,8 @@ const Produtos = () => {
   const [scheduleOption, setScheduleOption] = useState<ScheduleEspessura | null>(null);
   const [famSearch, setFamSearch] = useState('');
   const [previewCodigo, setPreviewCodigo] = useState('');
+  const [previewCodigoBase, setPreviewCodigoBase] = useState('');
+  const [previewSequenciaTecnica, setPreviewSequenciaTecnica] = useState(false);
   const [previewDesc, setPreviewDesc] = useState('');
   const [previewMsg, setPreviewMsg] = useState('');
   const [previewNcm, setPreviewNcm] = useState('');
@@ -655,6 +657,8 @@ const Produtos = () => {
     if (form.modo_codigo !== 'INTERNO' || !form.familia_id) {
       previewRequestSeqRef.current += 1;
       setPreviewCodigo('');
+      setPreviewCodigoBase('');
+      setPreviewSequenciaTecnica(false);
       setPreviewDesc('');
       setPreviewMsg('');
       setPreviewNcm('');
@@ -686,6 +690,8 @@ const Produtos = () => {
       });
       if (seq !== previewRequestSeqRef.current) return;
       setPreviewCodigo(res.codigo);
+      setPreviewCodigoBase(res.codigo_base || res.codigo);
+      setPreviewSequenciaTecnica(Boolean(res.sequencia_tecnica));
       setPreviewDesc(res.descricao_sugerida);
       setPreviewMsg(res.mensagem);
       setPreviewNcm(res.ncm_efetivo || '');
@@ -693,6 +699,8 @@ const Produtos = () => {
     } catch {
       if (seq !== previewRequestSeqRef.current) return;
       setPreviewCodigo('');
+      setPreviewCodigoBase('');
+      setPreviewSequenciaTecnica(false);
       setPreviewDesc('');
       setPreviewMsg('Não foi possível calcular a prévia.');
       setPreviewNcm('');
@@ -1180,7 +1188,11 @@ const Produtos = () => {
         setDuplicateProdutoId(null);
         await fetchProdutos();
         setListNotice(
-          code ? `Produto ${code} atualizado. Lista atualizada.` : 'Produto atualizado. Lista atualizada.',
+          code && previewCodigo && code !== previewCodigo
+            ? `Produto salvo com o código definitivo ${code}; o preview era ${previewCodigo} por causa da concorrência. Lista atualizada.`
+            : code
+              ? `Produto ${code} atualizado. Lista atualizada.`
+              : 'Produto atualizado. Lista atualizada.',
         );
       } else {
         const created = await produtosService.create(body as Omit<Produto, 'id'>);
@@ -1192,7 +1204,11 @@ const Produtos = () => {
         if (codigoSalvo) {
           setSearch(codigoSalvo);
           await fetchProdutos(codigoSalvo);
-          setListNotice(`Produto ${codigoSalvo} salvo com sucesso. Lista atualizada.`);
+          setListNotice(
+            previewCodigo && codigoSalvo !== previewCodigo
+              ? `Produto salvo com o código definitivo ${codigoSalvo}; o preview era ${previewCodigo} por causa da concorrência. Lista atualizada.`
+              : `Produto ${codigoSalvo} salvo com sucesso. Lista atualizada.`,
+          );
         } else {
           await fetchProdutos();
           setListNotice('Produto salvo com sucesso. Lista atualizada.');
@@ -2159,6 +2175,11 @@ const Produtos = () => {
               <p className="text-xs font-semibold text-foreground">Prévia do produto</p>
               <p className="text-xs text-muted-foreground mt-1">Código sugerido</p>
               <p className="font-mono font-semibold text-lg mt-1">{previewCodigo || '—'}</p>
+              {previewSequenciaTecnica ? (
+                <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                  Sequência técnica sugerida para a variante {previewCodigoBase} (o número só é reservado ao salvar).
+                </p>
+              ) : null}
               {previewCodigoDuplicado ? (
                 <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
                   Status: já existe produto com este código.
