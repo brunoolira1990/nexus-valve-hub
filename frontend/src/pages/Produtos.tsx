@@ -242,6 +242,7 @@ const TIPOS_DIMENSIONAIS: { value: TipoDimensional; label: string }[] = [
   { value: 'FLANGE', label: 'Flange (orientação)' },
   { value: 'ESPIGAO_X_FLANGE', label: 'Espigão x Flange (duas NPS, texto flange na descrição base)' },
   { value: 'VALVULA', label: 'Válvula (orientação)' },
+  { value: 'MANOMETRO', label: 'Manômetro (descrição técnica)' },
   { value: 'MANUAL', label: 'Dimensional manual' },
   { value: 'LEGADO', label: 'Legado / misto' },
 ];
@@ -558,6 +559,10 @@ const Produtos = () => {
     () => tokensDescricaoTecnicaConfigurados(familiaSel?.descricao_base),
     [familiaSel?.descricao_base],
   );
+  const atributosTecnicosFamilia = useMemo(
+    () => familiaSel?.tipo_dimensional === 'MANOMETRO' ? DESCRICAO_TOKENS_TECNICOS : tokensTecnicosFamilia,
+    [familiaSel?.tipo_dimensional, tokensTecnicosFamilia],
+  );
   const roscasPermitidas = roscas;
   const tipoMedidaPrincipal = useMemo<'NPS' | 'OD' | undefined>(() => {
     const td = familiaSel?.tipo_dimensional;
@@ -572,6 +577,7 @@ const Produtos = () => {
       td === 'FLANGE' ||
       td === 'ESPIGAO_X_FLANGE' ||
       td === 'VALVULA' ||
+      td === 'MANOMETRO' ||
       td === 'ROSCA' ||
       td === 'ROSCA_X_ROSCA'
     )
@@ -2159,16 +2165,16 @@ const Produtos = () => {
                     />
                   </div>
                 )}
-                {tokensTecnicosFamilia.length > 0 && (
+                {atributosTecnicosFamilia.length > 0 && (
                   <div className="md:col-span-2 rounded-md border border-dashed border-border bg-background p-3 space-y-3">
                     <div>
                       <p className="text-xs font-semibold text-foreground">Atributos técnicos da Figura</p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Preencha somente os atributos configurados pelos tokens desta Figura. Eles alimentam a prévia e a descrição sugerida.
+                        Preencha os atributos exigidos pela regra estrutural ou configurados pelos tokens desta Figura. Eles alimentam a prévia e a descrição sugerida.
                       </p>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {tokensTecnicosFamilia.map(({ token, key, label, hint }) => (
+                      {atributosTecnicosFamilia.map(({ token, key, label, hint }) => (
                         <div key={token}>
                           <label className="erp-label">
                             {label} <code className="font-mono text-xs">{token}</code>

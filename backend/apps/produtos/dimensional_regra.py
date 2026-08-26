@@ -69,6 +69,8 @@ def validar_tipo_dimensional_x_regra(*, tipo_dimensional: str, tipo_regra_codigo
         return None
     if tipo_dimensional == Td.SIMPLES:
         return None
+    if tipo_dimensional == Td.MANOMETRO and tipo_regra_codigo != Tr.BASE_ROSCA_POLEGADA:
+        return 'Manômetro exige a regra Base + rosca/conexão + polegada principal.'
 
     sch_rules = _schedule_code_rules()
 
@@ -180,6 +182,17 @@ def requisitos_efetivos_produto(familia: FamiliaProduto) -> RequisitosEfetivosPr
         'exige_comprimento_mm': False,
         'incluir_schedule_na_descricao': bool(flags['usa_schedule']),
     }
+
+    if td == Td.MANOMETRO:
+        r['usa_rosca_conexao'] = True
+        r['usa_schedule'] = False
+        r['usa_polegada_principal'] = True
+        r['usa_polegada_secundaria'] = False
+        r['exige_od_mm'] = False
+        r['exige_espessura_mm'] = False
+        r['exige_comprimento_mm'] = False
+        r['incluir_schedule_na_descricao'] = False
+        return r
 
     tr = familia.tipo_regra_codigo
 
@@ -415,6 +428,8 @@ def validar_campos_obrigatorios_produto_interno(
             errs['polegada_principal_ref_id'] = 'Informe a polegada nominal (NPS).'
         elif td == Td.BITOLA_POLEGADA:
             errs['polegada_principal_ref_id'] = 'Informe a bitola.'
+        elif td == Td.MANOMETRO:
+            errs['polegada_principal_ref_id'] = 'Informe a polegada principal do manômetro.'
         elif td == Td.OD_MM_X_ROSCA:
             errs['polegada_principal_ref_id'] = 'Informe a bitola (ex.: 1/4").'
         else:
@@ -479,6 +494,7 @@ def tipo_medida_esperado_por_campo(familia: FamiliaProduto) -> dict[str, str | N
         Td.VALVULA,
         Td.ROSCA,
         Td.ROSCA_X_ROSCA,
+        Td.MANOMETRO,
     ):
         principal = tipo_nps
 

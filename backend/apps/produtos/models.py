@@ -157,6 +157,7 @@ class FamiliaProduto(models.Model):
         FLANGE = 'FLANGE', 'Flange (orientação)'
         ESPIGAO_X_FLANGE = 'ESPIGAO_X_FLANGE', 'Espigão x Flange (duas NPS + texto flange na base)'
         VALVULA = 'VALVULA', 'Válvula (orientação)'
+        MANOMETRO = 'MANOMETRO', 'Manômetro (descrição técnica)'
         MANUAL = 'MANUAL', 'Dimensional manual / sem padrão automático'
         LEGADO = 'LEGADO', 'Legado / misto (orientação)'
 

@@ -256,6 +256,7 @@ export type TipoDimensional =
   | 'FLANGE'
   | 'ESPIGAO_X_FLANGE'
   | 'VALVULA'
+  | 'MANOMETRO'
   | 'MANUAL'
   | 'LEGADO';
 

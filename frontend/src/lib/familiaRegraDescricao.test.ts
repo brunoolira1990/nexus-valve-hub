@@ -4,6 +4,8 @@ import {
   DESCRICAO_TOKEN_POLEGADA_PRINCIPAL,
   DESCRICAO_TOKENS_TECNICOS,
   tokensDescricaoTecnicaConfigurados,
+  sugerirTipoRegraPorDimensional,
+  tipoMedidaPrincipalPorDimensional,
 } from '@/lib/familiaRegra';
 
 describe('descrição posicionável de Família/Figura', () => {
@@ -30,5 +32,10 @@ describe('descrição posicionável de Família/Figura', () => {
       expect.objectContaining({ token: '[ESCALA]', key: 'escala' }),
       expect.objectContaining({ token: '[UNIDADE]', key: 'unidade_escala' }),
     ]);
+  });
+
+  it('mapeia MANOMETRO para a regra de código compatível e medida NPS', () => {
+    expect(sugerirTipoRegraPorDimensional('MANOMETRO')).toBe('BASE_ROSCA_POLEGADA');
+    expect(tipoMedidaPrincipalPorDimensional('MANOMETRO')).toBe('NPS');
   });
 });

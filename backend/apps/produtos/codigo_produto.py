@@ -64,6 +64,40 @@ def _renderizar_tokens_descricao_tecnica(base: str, dimensoes: dict | None) -> s
     return _normalize_spaces(texto)
 
 
+def _montar_descricao_manometro(
+    base: str,
+    *,
+    polegada: str,
+    rosca: str,
+    dimensoes: dict | None,
+) -> str:
+    """Regra específica de descrição; não participa do código dimensional."""
+    partes: list[str] = []
+    if base:
+        partes.append(base)
+    if polegada:
+        partes.append(polegada)
+    if rosca and not _token_in_text(base.upper(), rosca):
+        partes.append(rosca)
+
+    escala = _valor_descricao_tecnica(dimensoes, 'escala')
+    unidade = _valor_descricao_tecnica(dimensoes, 'unidade_escala')
+    if escala and unidade:
+        partes.append(f'ESCALA {escala} {unidade}')
+
+    for chave, prefixo in (
+        ('ponteiro', 'PONTEIRO'),
+        ('vidro', 'VIDRO'),
+        ('classe', 'E CLASSE'),
+        ('fluido', 'C/'),
+        ('certificacao', 'E CERTIFICACAO'),
+    ):
+        valor = _valor_descricao_tecnica(dimensoes, chave)
+        if valor:
+            partes.append(f'{prefixo} {valor}')
+    return ' '.join(partes)
+
+
 def expandir_siglas_valvula_descricao_base(text: str) -> str:
     """Apenas VEM/VEB/VET no início da descrição base (planilha) → texto comercial completo."""
     raw = (text or '').strip()
@@ -442,6 +476,21 @@ def montar_descricao_sugerida(
 
     p_desc = _normalize_spaces((polegada_principal.descricao or '').strip()) if polegada_principal else ''
     base_template = _base_descricao_comercial(familia)
+    td = familia.tipo_dimensional or FamiliaProduto.TipoDimensional.SIMPLES
+    legacy_tokens = (
+        DESCRICAO_TOKEN_POLEGADA_PRINCIPAL in base_template
+        or any(token in base_template for token in DESCRICAO_TOKENS_TECNICOS)
+    )
+    if td == FamiliaProduto.TipoDimensional.MANOMETRO and not legacy_tokens:
+        return _fin(
+            _montar_descricao_manometro(
+                base_template,
+                polegada=p_desc,
+                rosca=_descricao_rosca_comercial(rosca),
+                dimensoes=dimensoes,
+            ),
+        )
+
     p_token_consumed = DESCRICAO_TOKEN_POLEGADA_PRINCIPAL in base_template
     if p_token_consumed:
         base_template = base_template.replace(DESCRICAO_TOKEN_POLEGADA_PRINCIPAL, p_desc)
@@ -449,7 +498,6 @@ def montar_descricao_sugerida(
     principal_desc_for_append = '' if p_token_consumed else p_desc
 
     req = requisitos_efetivos_produto(familia)
-    td = familia.tipo_dimensional or FamiliaProduto.TipoDimensional.SIMPLES
     Td = FamiliaProduto.TipoDimensional
     schedule_eff = schedule if req['incluir_schedule_na_descricao'] else None
 

@@ -161,6 +161,8 @@ export function hintTipoDimensional(td: TipoDimensional | undefined | null): str
       return 'Dimensional livre controlado — campos estruturados sem NPS/SCH/OD técnico.';
     case 'PERFIL_RETANGULAR_MM':
       return 'Perfil retangular mm — preparado para fluxo dimensional assistido.';
+    case 'MANOMETRO':
+      return 'Manômetro — usa Polegada NPS + rosca e atributos técnicos de descrição.';
     case 'NPS_X_ROSCA':
       return 'NPS x Rosca — polegada nominal com rosca no código (regra 2).';
     case 'ESPIGAO_X_FLANGE':
@@ -175,7 +177,7 @@ export function labelPolegadaPrincipal(td: TipoDimensional | undefined | null): 
   if (td === 'OD_POLEGADA' || td === 'OD_POLEGADA_X_ESPESSURA' || td === 'OD_POLEGADA_X_ROSCA') return 'Medida OD (cadastro mestre)';
   if (td === 'CANTONEIRA_POLEGADA') return 'Aba em polegada';
   if (td === 'BITOLA_POLEGADA' || td === 'OD_MM_X_ROSCA') return 'Bitola';
-  if (td === 'NPS_SCHEDULE' || td === 'NPS') return 'Polegada nominal (NPS)';
+  if (td === 'NPS_SCHEDULE' || td === 'NPS' || td === 'MANOMETRO') return 'Polegada nominal (NPS)';
   if (td === 'REDUCAO_NPS') return 'Polegada maior';
   return 'Polegada principal (código oficial)';
 }
@@ -266,6 +268,7 @@ export function sugerirTipoRegraPorDimensional(td: TipoDimensional): TipoRegraCo
   if (td === 'OD_POLEGADA_X_ROSCA') return 'BASE_ROSCA_DUAS_POLEGADAS';
   if (td === 'OD_MM_X_ESPESSURA' || td === 'OD_MM_X_ESPESSURA_X_COMPRIMENTO') return 'BASE_OD_MM_ESPESSURA';
   if (td === 'NPS_X_ROSCA') return 'BASE_ROSCA_POLEGADA';
+  if (td === 'MANOMETRO') return 'BASE_ROSCA_POLEGADA';
   if (td === 'ESPIGAO_X_FLANGE') return 'BASE_ESPIGAO_FLANGE_NPS';
   if (td === 'CANTONEIRA_POLEGADA') return 'BASE_POLEGADA';
   if (td === 'ROSCA_X_ROSCA') return 'BASE_ROSCA_DUAS_POLEGADAS';
@@ -731,6 +734,7 @@ export function tipoMedidaPrincipalPorDimensional(td: TipoDimensional | undefine
     td === 'FLANGE' ||
     td === 'ESPIGAO_X_FLANGE' ||
     td === 'VALVULA' ||
+    td === 'MANOMETRO' ||
     td === 'ROSCA' ||
     td === 'ROSCA_X_ROSCA'
   )
