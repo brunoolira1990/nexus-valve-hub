@@ -5,7 +5,7 @@ import {
   DESCRICAO_TOKENS_TECNICOS,
   LEGACY_DESCRIPTION_TOKENS,
   ORIENTACAO_DESCRICAO_MANOMETRO,
-  deveExibirTokensDescricaoFamilia,
+  orientacaoDescricaoBaseFamilia,
   tokensDescricaoTecnicaConfigurados,
   sugerirTipoRegraPorDimensional,
   tipoMedidaPrincipalPorDimensional,
@@ -43,9 +43,9 @@ describe('descrição posicionável de Família/Figura', () => {
   });
 
   it('separa a orientação estrutural dos tokens mantidos para legado', () => {
-    expect(deveExibirTokensDescricaoFamilia('MANOMETRO')).toBe(false);
-    expect(deveExibirTokensDescricaoFamilia('NPS')).toBe(true);
-    expect(ORIENTACAO_DESCRICAO_MANOMETRO).toContain('Polegada, rosca e atributos técnicos');
+    expect(orientacaoDescricaoBaseFamilia('MANOMETRO')).toBe(ORIENTACAO_DESCRICAO_MANOMETRO);
+    expect(orientacaoDescricaoBaseFamilia('NPS')).toBeNull();
+    expect(ORIENTACAO_DESCRICAO_MANOMETRO).toContain('Polegada, rosca e atributos técnicos do manômetro');
     expect(DESCRICAO_TOKENS_TECNICOS).toHaveLength(7);
     expect(DESCRICAO_TOKENS_TECNICOS).toBe(LEGACY_DESCRIPTION_TOKENS);
   });

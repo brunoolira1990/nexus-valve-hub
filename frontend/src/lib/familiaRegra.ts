@@ -5,7 +5,7 @@ export const DESCRICAO_TOKEN_POLEGADA_PRINCIPAL = '[P]';
 
 /** Orientação do fluxo estrutural; os tokens abaixo permanecem somente para legado. */
 export const ORIENTACAO_DESCRICAO_MANOMETRO =
-  'Informe na descrição base apenas as características fixas da família. Polegada, rosca e atributos técnicos são adicionados automaticamente conforme os campos do Produto.';
+  'Informe apenas as características fixas desta família. Polegada, rosca e atributos técnicos do manômetro são informados no cadastro do Produto.';
 
 export const LEGACY_DESCRIPTION_TOKENS = [
   { token: '[ESCALA]', key: 'escala', label: 'Escala', hint: 'Ex.: 0 A 4' },
@@ -31,8 +31,8 @@ export function usaDescricaoEstruturalManometro(tipoDimensional: TipoDimensional
   return tipoDimensional === 'MANOMETRO';
 }
 
-export function deveExibirTokensDescricaoFamilia(tipoDimensional: TipoDimensional | undefined | null): boolean {
-  return !usaDescricaoEstruturalManometro(tipoDimensional);
+export function orientacaoDescricaoBaseFamilia(tipoDimensional: TipoDimensional | undefined | null): string | null {
+  return usaDescricaoEstruturalManometro(tipoDimensional) ? ORIENTACAO_DESCRICAO_MANOMETRO : null;
 }
 
 export type CategoriaProdutoSugestao = 'PRODUTO_TECNICO' | 'MATERIAL_DIMENSIONAL' | 'MANUAL_FABRICANTE';

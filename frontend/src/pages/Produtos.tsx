@@ -33,10 +33,7 @@ import {
   materialValorParaForm,
 } from '@/lib/produtoMaterial';
 import {
-  DESCRICAO_TOKEN_POLEGADA_PRINCIPAL,
   DESCRICAO_TOKENS_TECNICOS,
-  LEGACY_DESCRIPTION_TOKENS,
-  ORIENTACAO_DESCRICAO_MANOMETRO,
   expandirSiglasValvulaDescricaoBase,
   exemploCodigoDimensionalFamilia,
   exemploDescricaoDimensionalFamilia,
@@ -47,6 +44,7 @@ import {
   labelsCamposObrigatorios,
   labelsCamposObrigatoriosProduto,
   normalizarTipoRegra,
+  orientacaoDescricaoBaseFamilia,
   requisitosMedidasPermitidasModal,
   sugerirConfiguracaoFamilia,
   sugerirTipoRegraPorDimensional,
@@ -60,7 +58,6 @@ import {
   classificarDuplicidadeDescricaoFamilia,
   campoCodigoFiguraVisivelNaCriacao,
   deveRecarregarFamiliasAposErroCodigoApi,
-  deveExibirTokensDescricaoFamilia,
   extrairDuplicidadeDescricaoModeloApi,
   montarPayloadFamiliaSalvar,
   podeIniciarSalvarFamilia,
@@ -830,23 +827,6 @@ const Produtos = () => {
   const getAtributoTecnico = (key: string): string => {
     const value = form.dimensoes_json?.[key];
     return value == null ? '' : String(value);
-  };
-
-  const inserirTokenDescricaoFamilia = (token: string) => {
-    const input = famDescricaoRef.current;
-    const current = famQuick.descricao_base || '';
-    if (current.toUpperCase().includes(token)) return;
-    const start = input?.selectionStart ?? current.length;
-    const end = input?.selectionEnd ?? start;
-    const next = `${current.slice(0, start)}${token}${current.slice(end)}`;
-    setFamQuick((q) => ({ ...q, descricao_base: next }));
-    window.requestAnimationFrame(() => {
-      const el = famDescricaoRef.current;
-      if (!el) return;
-      const caret = start + token.length;
-      el.focus();
-      el.setSelectionRange(caret, caret);
-    });
   };
 
   const openNew = () => {
@@ -2577,55 +2557,13 @@ const Produtos = () => {
                 setFamQuick((q) => ({ ...q, descricao_base: e.target.value }));
               }}
             />
-            {manometroEstruturalNaFamilia ? (
+            {orientacaoDescricaoBaseFamilia(famQuick.tipo_dimensional) ? (
               <div className="mt-2 rounded-md border border-dashed border-border bg-muted/20 p-3">
-                <p className="text-xs text-muted-foreground">{ORIENTACAO_DESCRICAO_MANOMETRO}</p>
-              </div>
-            ) : (
-              <>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Use <code className="font-mono">{DESCRICAO_TOKEN_POLEGADA_PRINCIPAL}</code> na descrição para posicionar a Polegada principal (P) dentro do texto; sem o token, o comportamento legado é mantido.
+                <p className="text-xs text-muted-foreground">
+                  {orientacaoDescricaoBaseFamilia(famQuick.tipo_dimensional)}
                 </p>
-                <div className="mt-2 rounded-md border border-dashed border-border bg-muted/20 p-3">
-                  <p className="text-xs font-semibold text-foreground">Tokens técnicos fechados</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    A Figura controla quais atributos serão solicitados no Produto. Clique para inserir no ponto selecionado da descrição; não é um motor universal.
-                  </p>
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    <button
-                      type="button"
-                      className="erp-btn-outline erp-btn-sm font-mono"
-                      disabled={famQuick.descricao_base.toUpperCase().includes(DESCRICAO_TOKEN_POLEGADA_PRINCIPAL)}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => inserirTokenDescricaoFamilia(DESCRICAO_TOKEN_POLEGADA_PRINCIPAL)}
-                      title="Polegada principal"
-                    >
-                      {DESCRICAO_TOKEN_POLEGADA_PRINCIPAL} — Polegada principal
-                    </button>
-                    {LEGACY_DESCRIPTION_TOKENS.map(({ token, label, hint }) => (
-                      <button
-                        key={token}
-                        type="button"
-                        className="erp-btn-outline erp-btn-sm font-mono"
-                        disabled={famQuick.descricao_base.toUpperCase().includes(token)}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => inserirTokenDescricaoFamilia(token)}
-                        title={hint}
-                      >
-                        {token} — {label}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="mt-2 space-y-1">
-                    {LEGACY_DESCRIPTION_TOKENS.map(({ token, label, hint }) => (
-                      <p key={`${token}-hint`} className="text-xs text-muted-foreground">
-                        <code className="font-mono">{token}</code> = {label} ({hint})
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
+              </div>
+            ) : null}
             {(() => {
               const cls =
                 famDuplicidadeExistente && classificacaoDupFamilia.tipo !== 'exata'
