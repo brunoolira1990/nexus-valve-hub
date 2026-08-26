@@ -15,6 +15,53 @@ def _normalize_spaces(text: str) -> str:
 
 
 DESCRICAO_TOKEN_POLEGADA_PRINCIPAL = '[P]'
+DESCRICAO_TOKEN_ESCALA = '[ESCALA]'
+DESCRICAO_TOKEN_UNIDADE_ESCALA = '[UNIDADE]'
+DESCRICAO_TOKEN_PONTEIRO = '[PONTEIRO]'
+DESCRICAO_TOKEN_VIDRO = '[VIDRO]'
+DESCRICAO_TOKEN_CLASSE = '[CLASSE]'
+DESCRICAO_TOKEN_FLUIDO = '[FLUIDO]'
+DESCRICAO_TOKEN_CERTIFICACAO = '[CERTIFICACAO]'
+
+# Conjunto fechado desta etapa. Não é um motor universal de atributos.
+DESCRICAO_TOKENS_TECNICOS = {
+    DESCRICAO_TOKEN_ESCALA: 'escala',
+    DESCRICAO_TOKEN_UNIDADE_ESCALA: 'unidade_escala',
+    DESCRICAO_TOKEN_PONTEIRO: 'ponteiro',
+    DESCRICAO_TOKEN_VIDRO: 'vidro',
+    DESCRICAO_TOKEN_CLASSE: 'classe',
+    DESCRICAO_TOKEN_FLUIDO: 'fluido',
+    DESCRICAO_TOKEN_CERTIFICACAO: 'certificacao',
+}
+
+# Frases que só fazem sentido completas. Se faltar qualquer parte, a frase
+# inteira é removida para não gerar textos como "ESCALA BAR" ou "C/".
+DESCRICAO_FRASES_TECNICAS_OPCIONAIS = (
+    ('ESCALA [ESCALA] [UNIDADE]', ('escala', 'unidade_escala')),
+    ('PONTEIRO [PONTEIRO]', ('ponteiro',)),
+    ('VIDRO [VIDRO]', ('vidro',)),
+    ('E CLASSE [CLASSE]', ('classe',)),
+    ('C/ [FLUIDO]', ('fluido',)),
+    ('E CERTIFICACAO [CERTIFICACAO]', ('certificacao',)),
+)
+
+
+def _valor_descricao_tecnica(dimensoes: dict | None, chave: str) -> str:
+    raw = (dimensoes or {}).get(chave)
+    if raw in (None, ''):
+        return ''
+    return _normalize_spaces(str(raw))
+
+
+def _renderizar_tokens_descricao_tecnica(base: str, dimensoes: dict | None) -> str:
+    valores = {chave: _valor_descricao_tecnica(dimensoes, chave) for chave in DESCRICAO_TOKENS_TECNICOS.values()}
+    texto = base
+    for frase, chaves in DESCRICAO_FRASES_TECNICAS_OPCIONAIS:
+        if not all(valores[chave] for chave in chaves):
+            texto = re.sub(re.escape(frase), ' ', texto, flags=re.IGNORECASE)
+    for token, chave in DESCRICAO_TOKENS_TECNICOS.items():
+        texto = texto.replace(token, valores[chave])
+    return _normalize_spaces(texto)
 
 
 def expandir_siglas_valvula_descricao_base(text: str) -> str:
@@ -398,6 +445,7 @@ def montar_descricao_sugerida(
     p_token_consumed = DESCRICAO_TOKEN_POLEGADA_PRINCIPAL in base_template
     if p_token_consumed:
         base_template = base_template.replace(DESCRICAO_TOKEN_POLEGADA_PRINCIPAL, p_desc)
+    base_template = _renderizar_tokens_descricao_tecnica(base_template, dimensoes)
     principal_desc_for_append = '' if p_token_consumed else p_desc
 
     req = requisitos_efetivos_produto(familia)
