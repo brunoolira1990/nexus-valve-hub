@@ -6,6 +6,9 @@ import {
   LEGACY_DESCRIPTION_TOKENS,
   ORIENTACAO_DESCRICAO_MANOMETRO,
   orientacaoDescricaoBaseFamilia,
+  requisitosMedidasPermitidasModal,
+  TIPOS_DIMENSIONAIS_MATERIAL_DIMENSIONAL,
+  TIPOS_DIMENSIONAIS_PRODUTO_TECNICO,
   tokensDescricaoTecnicaConfigurados,
   sugerirTipoRegraPorDimensional,
   tipoMedidaPrincipalPorDimensional,
@@ -48,5 +51,21 @@ describe('descrição posicionável de Família/Figura', () => {
     expect(ORIENTACAO_DESCRICAO_MANOMETRO).toContain('Polegada, rosca e atributos técnicos do manômetro');
     expect(DESCRICAO_TOKENS_TECNICOS).toHaveLength(7);
     expect(DESCRICAO_TOKENS_TECNICOS).toBe(LEGACY_DESCRIPTION_TOKENS);
+  });
+
+  it('disponibiliza MANOMETRO apenas para Produto técnico com requisitos corretos', () => {
+    expect(TIPOS_DIMENSIONAIS_PRODUTO_TECNICO).toContain('MANOMETRO');
+    expect(TIPOS_DIMENSIONAIS_MATERIAL_DIMENSIONAL).not.toContain('MANOMETRO');
+    expect(TIPOS_DIMENSIONAIS_PRODUTO_TECNICO).toEqual(
+      expect.arrayContaining(['SIMPLES', 'NPS', 'NPS_X_ROSCA', 'VALVULA', 'MANOMETRO']),
+    );
+
+    expect(requisitosMedidasPermitidasModal('MANOMETRO', 'BASE_ROSCA_POLEGADA')).toEqual({
+      usa_rosca_conexao: true,
+      usa_schedule: false,
+      usa_polegada_principal: true,
+      usa_polegada_secundaria: false,
+    });
+    expect(sugerirTipoRegraPorDimensional('MANOMETRO')).toBe('BASE_ROSCA_POLEGADA');
   });
 });

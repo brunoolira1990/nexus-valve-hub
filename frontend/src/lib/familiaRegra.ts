@@ -52,6 +52,43 @@ export type FlagsFamilia = {
   usa_polegada_secundaria: boolean;
 };
 
+/** Tipos liberados no seletor de Modelo de medidas por categoria de Família. */
+export const TIPOS_DIMENSIONAIS_PRODUTO_TECNICO: readonly TipoDimensional[] = [
+  'SIMPLES',
+  'NPS',
+  'NPS_SCHEDULE',
+  'REDUCAO_NPS',
+  'ROSCA',
+  'ROSCA_X_ROSCA',
+  'NPS_X_ROSCA',
+  'OD_POLEGADA',
+  'OD_POLEGADA_X_ESPESSURA',
+  'OD_POLEGADA_X_ROSCA',
+  'DN_MM',
+  'DN_MM_REDUCAO',
+  'BITOLA_POLEGADA',
+  'OD_MM',
+  'OD_MM_REDUCAO',
+  'OD_MM_X_ROSCA',
+  'OD_MM_X_ESPESSURA',
+  'OD_MM_X_ESPESSURA_X_COMPRIMENTO',
+  'FLANGE',
+  'ESPIGAO_X_FLANGE',
+  'VALVULA',
+  'MANOMETRO',
+];
+
+export const TIPOS_DIMENSIONAIS_MATERIAL_DIMENSIONAL: readonly TipoDimensional[] = [
+  'CHAPA_MM',
+  'CHAPA_FURO_MM',
+  'BARRA_CHATA_MM',
+  'METALON_MM',
+  'CANTONEIRA_MM',
+  'CANTONEIRA_POLEGADA',
+  'PERFIL_RETANGULAR_MM',
+  'DIMENSIONAL_LIVRE_CONTROLADO',
+];
+
 const TABLE: Record<TipoRegraCodigo, FlagsFamilia> = {
   BASE_POLEGADA: { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: true, usa_polegada_secundaria: false },
   BASE_ROSCA_POLEGADA: { usa_rosca_conexao: true, usa_schedule: false, usa_polegada_principal: true, usa_polegada_secundaria: false },

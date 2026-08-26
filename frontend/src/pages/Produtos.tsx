@@ -46,6 +46,8 @@ import {
   normalizarTipoRegra,
   orientacaoDescricaoBaseFamilia,
   requisitosMedidasPermitidasModal,
+  TIPOS_DIMENSIONAIS_MATERIAL_DIMENSIONAL,
+  TIPOS_DIMENSIONAIS_PRODUTO_TECNICO,
   sugerirConfiguracaoFamilia,
   sugerirTipoRegraPorDimensional,
   tokensDescricaoTecnicaConfigurados,
@@ -1391,35 +1393,9 @@ const Produtos = () => {
   const tiposDimensionaisPorCategoria = useMemo(() => {
     if (famQuick.categoria_produto === 'MANUAL_FABRICANTE') return [{ value: 'MANUAL' as TipoDimensional, label: 'Manual/fabricante' }];
     if (famQuick.categoria_produto === 'MATERIAL_DIMENSIONAL') {
-      return TIPOS_DIMENSIONAIS.filter((x) =>
-        ['CHAPA_MM', 'CHAPA_FURO_MM', 'BARRA_CHATA_MM', 'METALON_MM', 'CANTONEIRA_MM', 'CANTONEIRA_POLEGADA', 'PERFIL_RETANGULAR_MM', 'DIMENSIONAL_LIVRE_CONTROLADO'].includes(x.value),
-      );
+      return TIPOS_DIMENSIONAIS.filter((x) => TIPOS_DIMENSIONAIS_MATERIAL_DIMENSIONAL.includes(x.value));
     }
-    return TIPOS_DIMENSIONAIS.filter((x) =>
-      [
-        'SIMPLES',
-        'NPS',
-        'NPS_SCHEDULE',
-        'REDUCAO_NPS',
-        'ROSCA',
-        'ROSCA_X_ROSCA',
-        'NPS_X_ROSCA',
-        'OD_POLEGADA',
-        'OD_POLEGADA_X_ESPESSURA',
-        'OD_POLEGADA_X_ROSCA',
-        'DN_MM',
-        'DN_MM_REDUCAO',
-        'BITOLA_POLEGADA',
-        'OD_MM',
-        'OD_MM_REDUCAO',
-        'OD_MM_X_ROSCA',
-        'OD_MM_X_ESPESSURA',
-        'OD_MM_X_ESPESSURA_X_COMPRIMENTO',
-        'FLANGE',
-        'ESPIGAO_X_FLANGE',
-        'VALVULA',
-      ].includes(x.value),
-    );
+    return TIPOS_DIMENSIONAIS.filter((x) => TIPOS_DIMENSIONAIS_PRODUTO_TECNICO.includes(x.value));
   }, [famQuick.categoria_produto]);
 
   const herancaConv = useMemo(() => {
