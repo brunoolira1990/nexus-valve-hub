@@ -1,6 +1,8 @@
 import type { FamiliaProduto, RequisitosProdutoDimensionais, TipoDimensional, TipoRegraCodigo } from '@/types';
 import { normalizarDescricaoProduto } from '@/lib/descricaoProduto';
 
+export const DESCRICAO_TOKEN_POLEGADA_PRINCIPAL = '[P]';
+
 export type CategoriaProdutoSugestao = 'PRODUTO_TECNICO' | 'MATERIAL_DIMENSIONAL' | 'MANUAL_FABRICANTE';
 
 export type SugestaoConfiguracaoFamilia = {

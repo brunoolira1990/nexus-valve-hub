@@ -33,6 +33,7 @@ import {
   materialValorParaForm,
 } from '@/lib/produtoMaterial';
 import {
+  DESCRICAO_TOKEN_POLEGADA_PRINCIPAL,
   expandirSiglasValvulaDescricaoBase,
   exemploCodigoDimensionalFamilia,
   exemploDescricaoDimensionalFamilia,
@@ -2500,6 +2501,9 @@ const Produtos = () => {
                 setFamQuick((q) => ({ ...q, descricao_base: e.target.value }));
               }}
             />
+            <p className="text-xs text-muted-foreground mt-1">
+              Use <code className="font-mono">{DESCRICAO_TOKEN_POLEGADA_PRINCIPAL}</code> na descrição para posicionar a Polegada principal (P) dentro do texto; sem o token, o comportamento legado é mantido.
+            </p>
             {(() => {
               const cls =
                 famDuplicidadeExistente && classificacaoDupFamilia.tipo !== 'exata'
