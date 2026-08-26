@@ -1,6 +1,25 @@
 import type { FamiliaProduto, RequisitosProdutoDimensionais, TipoDimensional, TipoRegraCodigo } from '@/types';
 import { normalizarDescricaoProduto } from '@/lib/descricaoProduto';
 
+export const DESCRICAO_TOKEN_POLEGADA_PRINCIPAL = '[P]';
+
+export const DESCRICAO_TOKENS_TECNICOS = [
+  { token: '[ESCALA]', key: 'escala', label: 'Escala', hint: 'Ex.: 0 A 4' },
+  { token: '[UNIDADE]', key: 'unidade_escala', label: 'Unidade da escala', hint: 'Ex.: BAR' },
+  { token: '[PONTEIRO]', key: 'ponteiro', label: 'Ponteiro', hint: 'Ex.: MICROMÉTRICO' },
+  { token: '[VIDRO]', key: 'vidro', label: 'Vidro', hint: 'Ex.: SAFETY GLASS' },
+  { token: '[CLASSE]', key: 'classe', label: 'Classe', hint: 'Ex.: A1' },
+  { token: '[FLUIDO]', key: 'fluido', label: 'Fluido / preenchimento', hint: 'Ex.: GLICERINA' },
+  { token: '[CERTIFICACAO]', key: 'certificacao', label: 'Certificação', hint: 'Ex.: RBC INMETRO' },
+] as const;
+
+export type TokenDescricaoTecnica = (typeof DESCRICAO_TOKENS_TECNICOS)[number];
+
+export function tokensDescricaoTecnicaConfigurados(descricaoBase: string | undefined | null): TokenDescricaoTecnica[] {
+  const base = (descricaoBase || '').toUpperCase();
+  return DESCRICAO_TOKENS_TECNICOS.filter(({ token }) => base.includes(token));
+}
+
 export type CategoriaProdutoSugestao = 'PRODUTO_TECNICO' | 'MATERIAL_DIMENSIONAL' | 'MANUAL_FABRICANTE';
 
 export type SugestaoConfiguracaoFamilia = {

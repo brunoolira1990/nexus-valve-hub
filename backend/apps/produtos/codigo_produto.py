@@ -14,6 +14,56 @@ def _normalize_spaces(text: str) -> str:
     return re.sub(r'\s+', ' ', (text or '').strip())
 
 
+DESCRICAO_TOKEN_POLEGADA_PRINCIPAL = '[P]'
+DESCRICAO_TOKEN_ESCALA = '[ESCALA]'
+DESCRICAO_TOKEN_UNIDADE_ESCALA = '[UNIDADE]'
+DESCRICAO_TOKEN_PONTEIRO = '[PONTEIRO]'
+DESCRICAO_TOKEN_VIDRO = '[VIDRO]'
+DESCRICAO_TOKEN_CLASSE = '[CLASSE]'
+DESCRICAO_TOKEN_FLUIDO = '[FLUIDO]'
+DESCRICAO_TOKEN_CERTIFICACAO = '[CERTIFICACAO]'
+
+# Conjunto fechado desta etapa. Não é um motor universal de atributos.
+DESCRICAO_TOKENS_TECNICOS = {
+    DESCRICAO_TOKEN_ESCALA: 'escala',
+    DESCRICAO_TOKEN_UNIDADE_ESCALA: 'unidade_escala',
+    DESCRICAO_TOKEN_PONTEIRO: 'ponteiro',
+    DESCRICAO_TOKEN_VIDRO: 'vidro',
+    DESCRICAO_TOKEN_CLASSE: 'classe',
+    DESCRICAO_TOKEN_FLUIDO: 'fluido',
+    DESCRICAO_TOKEN_CERTIFICACAO: 'certificacao',
+}
+
+# Frases que só fazem sentido completas. Se faltar qualquer parte, a frase
+# inteira é removida para não gerar textos como "ESCALA BAR" ou "C/".
+DESCRICAO_FRASES_TECNICAS_OPCIONAIS = (
+    ('ESCALA [ESCALA] [UNIDADE]', ('escala', 'unidade_escala')),
+    ('PONTEIRO [PONTEIRO]', ('ponteiro',)),
+    ('VIDRO [VIDRO]', ('vidro',)),
+    ('E CLASSE [CLASSE]', ('classe',)),
+    ('C/ [FLUIDO]', ('fluido',)),
+    ('E CERTIFICACAO [CERTIFICACAO]', ('certificacao',)),
+)
+
+
+def _valor_descricao_tecnica(dimensoes: dict | None, chave: str) -> str:
+    raw = (dimensoes or {}).get(chave)
+    if raw in (None, ''):
+        return ''
+    return _normalize_spaces(str(raw))
+
+
+def _renderizar_tokens_descricao_tecnica(base: str, dimensoes: dict | None) -> str:
+    valores = {chave: _valor_descricao_tecnica(dimensoes, chave) for chave in DESCRICAO_TOKENS_TECNICOS.values()}
+    texto = base
+    for frase, chaves in DESCRICAO_FRASES_TECNICAS_OPCIONAIS:
+        if not all(valores[chave] for chave in chaves):
+            texto = re.sub(re.escape(frase), ' ', texto, flags=re.IGNORECASE)
+    for token, chave in DESCRICAO_TOKENS_TECNICOS.items():
+        texto = texto.replace(token, valores[chave])
+    return _normalize_spaces(texto)
+
+
 def expandir_siglas_valvula_descricao_base(text: str) -> str:
     """Apenas VEM/VEB/VET no início da descrição base (planilha) → texto comercial completo."""
     raw = (text or '').strip()
@@ -390,6 +440,14 @@ def montar_descricao_sugerida(
     def _fin(texto: str) -> str:
         return normalizar_descricao_produto(_normalize_spaces(texto))
 
+    p_desc = _normalize_spaces((polegada_principal.descricao or '').strip()) if polegada_principal else ''
+    base_template = _base_descricao_comercial(familia)
+    p_token_consumed = DESCRICAO_TOKEN_POLEGADA_PRINCIPAL in base_template
+    if p_token_consumed:
+        base_template = base_template.replace(DESCRICAO_TOKEN_POLEGADA_PRINCIPAL, p_desc)
+    base_template = _renderizar_tokens_descricao_tecnica(base_template, dimensoes)
+    principal_desc_for_append = '' if p_token_consumed else p_desc
+
     req = requisitos_efetivos_produto(familia)
     td = familia.tipo_dimensional or FamiliaProduto.TipoDimensional.SIMPLES
     Td = FamiliaProduto.TipoDimensional
@@ -397,11 +455,11 @@ def montar_descricao_sugerida(
 
     if td == Td.OD_POLEGADA_X_ROSCA:
         partes_od: list[str] = []
-        base = _base_descricao_comercial(familia)
+        base = base_template
         if base:
             partes_od.append(base)
-        if polegada_principal and (polegada_principal.descricao or '').strip():
-            partes_od.append(_normalize_spaces(polegada_principal.descricao))
+        if principal_desc_for_append:
+            partes_od.append(principal_desc_for_append)
         rosca_text = _descricao_rosca_comercial(rosca)
         if rosca_text:
             partes_od.append(f'X ROSCA {rosca_text}')
@@ -410,8 +468,8 @@ def montar_descricao_sugerida(
         return _fin(' '.join(partes_od))
 
     if familia_espigao_x_flange_nps(familia):
-        base = _base_descricao_comercial(familia)
-        d1 = _normalize_spaces((polegada_principal.descricao or '').strip()) if polegada_principal else ''
+        base = base_template
+        d1 = principal_desc_for_append
         d2 = _normalize_spaces((polegada_secundaria.descricao or '').strip()) if polegada_secundaria else ''
         rx = re.compile(r'\s+X\s+FLANGE\s+', re.IGNORECASE)
         m = rx.search(base)
@@ -431,7 +489,7 @@ def montar_descricao_sugerida(
         return _fin(' '.join(chunks_ef))
 
     if td in (Td.CHAPA_MM, Td.CHAPA_FURO_MM, Td.BARRA_CHATA_MM, Td.METALON_MM, Td.PERFIL_RETANGULAR_MM, Td.CANTONEIRA_MM):
-        base = _base_descricao_comercial(familia)
+        base = base_template
         chunks: list[str] = []
         if td == Td.CHAPA_MM:
             for k in ('espessura_mm', 'largura_mm', 'comprimento_mm'):
@@ -472,14 +530,16 @@ def montar_descricao_sugerida(
 
     if td == Td.CANTONEIRA_POLEGADA:
         partes_cp: list[str] = []
-        base = _base_descricao_comercial(familia)
+        base = base_template
         if base:
             partes_cp.append(base)
-        if polegada_principal and polegada_secundaria:
-            partes_cp.append(f'{_normalize_spaces(polegada_principal.descricao)} X {_normalize_spaces(polegada_secundaria.descricao)}')
+        if principal_desc_for_append and polegada_secundaria:
+            partes_cp.append(f'{principal_desc_for_append} X {_normalize_spaces(polegada_secundaria.descricao)}')
+        elif polegada_secundaria and (polegada_secundaria.descricao or '').strip():
+            partes_cp.append(_normalize_spaces(polegada_secundaria.descricao))
         return _fin(' '.join(partes_cp))
     if td == Td.DIMENSIONAL_LIVRE_CONTROLADO:
-        base = _base_descricao_comercial(familia)
+        base = base_template
         dim_desc = normalizar_descricao_produto(str((dimensoes or {}).get('dimensao_descricao') or ''))
         return _fin(' '.join([base, dim_desc]))
 
@@ -487,12 +547,12 @@ def montar_descricao_sugerida(
     tr = getattr(familia, 'tipo_regra_codigo', '') or ''
 
     if td == Td.DN_MM:
-        base = _base_descricao_comercial(familia)
+        base = base_template
         mm = _format_mm_descricao(od_mm) if od_mm is not None else ''
         return _fin(' '.join([x for x in (base, mm) if x]))
 
     if td == Td.DN_MM_REDUCAO:
-        base = _base_descricao_comercial(familia)
+        base = base_template
         d1 = _format_mm_descricao(od_mm) if od_mm is not None else ''
         d2 = _format_mm_descricao(espessura_mm) if espessura_mm is not None else ''
         if d1 and d2:
@@ -500,12 +560,12 @@ def montar_descricao_sugerida(
         return _fin(' '.join([x for x in (base, d1, d2) if x]))
 
     if td == Td.BITOLA_POLEGADA:
-        base = _base_descricao_comercial(familia)
-        pol = _normalize_spaces((polegada_principal.descricao or '').strip()) if polegada_principal else ''
+        base = base_template
+        pol = principal_desc_for_append
         return _fin(' '.join([x for x in (base, pol) if x]))
 
     if td == Td.OD_MM_REDUCAO:
-        base = _base_descricao_comercial(familia)
+        base = base_template
         d1 = _format_mm_descricao(od_mm) if od_mm is not None else ''
         d2 = _format_mm_descricao(espessura_mm) if espessura_mm is not None else ''
         if d1 and d2:
@@ -513,9 +573,9 @@ def montar_descricao_sugerida(
         return _fin(' '.join([x for x in (base, d1, d2) if x]))
 
     if td == Td.OD_MM_X_ROSCA:
-        base = _base_descricao_comercial(familia)
+        base = base_template
         mm = _format_mm_descricao(od_mm) if od_mm is not None else ''
-        pol_txt = _normalize_spaces((polegada_principal.descricao or '').strip()) if polegada_principal else ''
+        pol_txt = principal_desc_for_append
         rosca_txt = _descricao_rosca_comercial(rosca) if rosca else ''
         tail = pol_txt or rosca_txt
         if base and mm and tail:
@@ -523,8 +583,8 @@ def montar_descricao_sugerida(
         return _fin(' '.join([x for x in (base, mm, tail) if x]))
 
     if td == Td.OD_POLEGADA_X_ESPESSURA:
-        base = _base_descricao_comercial(familia)
-        od_txt = _normalize_spaces((polegada_principal.descricao or '').strip()) if polegada_principal else ''
+        base = base_template
+        od_txt = principal_desc_for_append
         esp_txt = _format_espessura_mm_comercial(espessura_mm)
         dim = ''
         if od_txt and esp_txt:
@@ -537,7 +597,7 @@ def montar_descricao_sugerida(
 
     if td in (Td.OD_MM, Td.OD_MM_X_ESPESSURA, Td.OD_MM_X_ESPESSURA_X_COMPRIMENTO):
         partes_mm: list[str] = []
-        base = _base_descricao_comercial(familia)
+        base = base_template
         if base:
             partes_mm.append(base)
         dim_chunks: list[str] = []
@@ -553,7 +613,7 @@ def montar_descricao_sugerida(
         return _fin(' '.join(partes_mm))
 
     partes: list[str] = []
-    base = _base_descricao_comercial(familia)
+    base = base_template
     base_upper = base.upper()
     if base:
         partes.append(base)
@@ -564,8 +624,9 @@ def montar_descricao_sugerida(
     if schedule_text and not _token_in_text(base_upper, schedule_text):
         partes.append(schedule_text)
     if td == Td.REDUCAO_NPS and polegada_principal and polegada_secundaria:
-        p1 = _normalize_spaces(polegada_principal.descricao)
+        p1 = principal_desc_for_append
         p2 = _normalize_spaces(polegada_secundaria.descricao)
+
         if p1 and p2:
             partes.append(f'{p1} X {p2}')
         elif p1:
@@ -573,8 +634,8 @@ def montar_descricao_sugerida(
         elif p2:
             partes.append(p2)
     else:
-        if polegada_principal and (polegada_principal.descricao or '').strip():
-            partes.append(_normalize_spaces(polegada_principal.descricao))
+        if principal_desc_for_append:
+            partes.append(principal_desc_for_append)
         if polegada_secundaria and (polegada_secundaria.descricao or '').strip():
             partes.append(f'x {_normalize_spaces(polegada_secundaria.descricao)}')
     return _fin(' '.join(partes))

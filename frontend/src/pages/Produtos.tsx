@@ -33,6 +33,8 @@ import {
   materialValorParaForm,
 } from '@/lib/produtoMaterial';
 import {
+  DESCRICAO_TOKEN_POLEGADA_PRINCIPAL,
+  DESCRICAO_TOKENS_TECNICOS,
   expandirSiglasValvulaDescricaoBase,
   exemploCodigoDimensionalFamilia,
   exemploDescricaoDimensionalFamilia,
@@ -46,6 +48,7 @@ import {
   requisitosMedidasPermitidasModal,
   sugerirConfiguracaoFamilia,
   sugerirTipoRegraPorDimensional,
+  tokensDescricaoTecnicaConfigurados,
 } from '@/lib/familiaRegra';
 import { normalizarDescricaoProduto } from '@/lib/descricaoProduto';
 import {
@@ -430,6 +433,7 @@ const Produtos = () => {
   const [podeVerHistoricoProduto, setPodeVerHistoricoProduto] = useState(false);
   const previewRequestSeqRef = useRef(0);
   const famSavingRef = useRef(false);
+  const famDescricaoRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (modalOpen) setProdutoFichaTab('geral');
@@ -550,6 +554,10 @@ const Produtos = () => {
       incluir_schedule_na_descricao: fl.usa_schedule,
     };
   }, [familiaSel]);
+  const tokensTecnicosFamilia = useMemo(
+    () => tokensDescricaoTecnicaConfigurados(familiaSel?.descricao_base),
+    [familiaSel?.descricao_base],
+  );
   const roscasPermitidas = roscas;
   const tipoMedidaPrincipal = useMemo<'NPS' | 'OD' | undefined>(() => {
     const td = familiaSel?.tipo_dimensional;
@@ -798,6 +806,35 @@ const Produtos = () => {
       nextDims[key] = parsed;
       const fld = fieldMap[key];
       return { ...prev, dimensoes_json: nextDims, ...(fld ? { [fld]: parsed } : {}) };
+    });
+  };
+
+  const setAtributoTecnico = (key: string, value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      dimensoes_json: { ...(prev.dimensoes_json || {}), [key]: value },
+    }));
+  };
+
+  const getAtributoTecnico = (key: string): string => {
+    const value = form.dimensoes_json?.[key];
+    return value == null ? '' : String(value);
+  };
+
+  const inserirTokenDescricaoFamilia = (token: string) => {
+    const input = famDescricaoRef.current;
+    const current = famQuick.descricao_base || '';
+    if (current.toUpperCase().includes(token)) return;
+    const start = input?.selectionStart ?? current.length;
+    const end = input?.selectionEnd ?? start;
+    const next = `${current.slice(0, start)}${token}${current.slice(end)}`;
+    setFamQuick((q) => ({ ...q, descricao_base: next }));
+    window.requestAnimationFrame(() => {
+      const el = famDescricaoRef.current;
+      if (!el) return;
+      const caret = start + token.length;
+      el.focus();
+      el.setSelectionRange(caret, caret);
     });
   };
 
@@ -2122,6 +2159,31 @@ const Produtos = () => {
                     />
                   </div>
                 )}
+                {tokensTecnicosFamilia.length > 0 && (
+                  <div className="md:col-span-2 rounded-md border border-dashed border-border bg-background p-3 space-y-3">
+                    <div>
+                      <p className="text-xs font-semibold text-foreground">Atributos técnicos da Figura</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Preencha somente os atributos configurados pelos tokens desta Figura. Eles alimentam a prévia e a descrição sugerida.
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {tokensTecnicosFamilia.map(({ token, key, label, hint }) => (
+                        <div key={token}>
+                          <label className="erp-label">
+                            {label} <code className="font-mono text-xs">{token}</code>
+                          </label>
+                          <input
+                            className="erp-input mt-1"
+                            value={getAtributoTecnico(key)}
+                            placeholder={hint}
+                            onChange={(e) => setAtributoTecnico(key, e.target.value)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </>
             )}
             <div className="rounded-md border border-dashed border-border p-3 bg-background">
@@ -2494,12 +2556,54 @@ const Produtos = () => {
                   ? ' border-destructive'
                   : ''
               }`}
+              ref={famDescricaoRef}
               value={famQuick.descricao_base}
               onChange={(e) => {
                 limparErroDuplicidadeDescricao();
                 setFamQuick((q) => ({ ...q, descricao_base: e.target.value }));
               }}
             />
+            <p className="text-xs text-muted-foreground mt-1">
+              Use <code className="font-mono">{DESCRICAO_TOKEN_POLEGADA_PRINCIPAL}</code> na descrição para posicionar a Polegada principal (P) dentro do texto; sem o token, o comportamento legado é mantido.
+            </p>
+            <div className="mt-2 rounded-md border border-dashed border-border bg-muted/20 p-3">
+              <p className="text-xs font-semibold text-foreground">Tokens técnicos fechados</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                A Figura controla quais atributos serão solicitados no Produto. Clique para inserir no ponto selecionado da descrição; não é um motor universal.
+              </p>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                <button
+                  type="button"
+                  className="erp-btn-outline erp-btn-sm font-mono"
+                  disabled={famQuick.descricao_base.toUpperCase().includes(DESCRICAO_TOKEN_POLEGADA_PRINCIPAL)}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => inserirTokenDescricaoFamilia(DESCRICAO_TOKEN_POLEGADA_PRINCIPAL)}
+                  title="Polegada principal"
+                >
+                  {DESCRICAO_TOKEN_POLEGADA_PRINCIPAL} — Polegada principal
+                </button>
+                {DESCRICAO_TOKENS_TECNICOS.map(({ token, label, hint }) => (
+                  <button
+                    key={token}
+                    type="button"
+                    className="erp-btn-outline erp-btn-sm font-mono"
+                    disabled={famQuick.descricao_base.toUpperCase().includes(token)}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => inserirTokenDescricaoFamilia(token)}
+                    title={hint}
+                  >
+                    {token} — {label}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-2 space-y-1">
+                {DESCRICAO_TOKENS_TECNICOS.map(({ token, label, hint }) => (
+                  <p key={`${token}-hint`} className="text-xs text-muted-foreground">
+                    <code className="font-mono">{token}</code> = {label} ({hint})
+                  </p>
+                ))}
+              </div>
+            </div>
             {(() => {
               const cls =
                 famDuplicidadeExistente && classificacaoDupFamilia.tipo !== 'exata'
