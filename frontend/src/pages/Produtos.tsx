@@ -35,6 +35,8 @@ import {
 import {
   DESCRICAO_TOKEN_POLEGADA_PRINCIPAL,
   DESCRICAO_TOKENS_TECNICOS,
+  LEGACY_DESCRIPTION_TOKENS,
+  ORIENTACAO_DESCRICAO_MANOMETRO,
   expandirSiglasValvulaDescricaoBase,
   exemploCodigoDimensionalFamilia,
   exemploDescricaoDimensionalFamilia,
@@ -58,6 +60,7 @@ import {
   classificarDuplicidadeDescricaoFamilia,
   campoCodigoFiguraVisivelNaCriacao,
   deveRecarregarFamiliasAposErroCodigoApi,
+  deveExibirTokensDescricaoFamilia,
   extrairDuplicidadeDescricaoModeloApi,
   montarPayloadFamiliaSalvar,
   podeIniciarSalvarFamilia,
@@ -620,6 +623,8 @@ const Produtos = () => {
     () => requisitosMedidasPermitidasModal(famQuick.tipo_dimensional, famQuick.tipo_regra_codigo),
     [famQuick.tipo_dimensional, famQuick.tipo_regra_codigo],
   );
+  const manometroEstruturalNaFamilia = famQuick.tipo_dimensional === 'MANOMETRO';
+  const manometroEstruturalNoProduto = familiaSel?.tipo_dimensional === 'MANOMETRO';
   const sugestaoFamiliaAuto = useMemo(() => sugerirConfiguracaoFamilia(famQuick.descricao_base), [famQuick.descricao_base]);
   const classificacaoDupFamilia = useMemo(
     () =>
@@ -2170,14 +2175,16 @@ const Produtos = () => {
                     <div>
                       <p className="text-xs font-semibold text-foreground">Atributos técnicos da Figura</p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Preencha os atributos exigidos pela regra estrutural ou configurados pelos tokens desta Figura. Eles alimentam a prévia e a descrição sugerida.
+                        {manometroEstruturalNoProduto
+                          ? 'Preencha os atributos técnicos estruturais do Produto. Eles alimentam a prévia e a descrição sugerida.'
+                          : 'Preencha os atributos exigidos pela regra estrutural ou configurados pelos tokens desta Figura. Eles alimentam a prévia e a descrição sugerida.'}
                       </p>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {atributosTecnicosFamilia.map(({ token, key, label, hint }) => (
                         <div key={token}>
                           <label className="erp-label">
-                            {label} <code className="font-mono text-xs">{token}</code>
+                            {label}{!manometroEstruturalNoProduto ? <code className="font-mono text-xs"> {token}</code> : null}
                           </label>
                           <input
                             className="erp-input mt-1"
@@ -2564,52 +2571,61 @@ const Produtos = () => {
               }`}
               ref={famDescricaoRef}
               value={famQuick.descricao_base}
+              placeholder={manometroEstruturalNaFamilia ? 'Ex.: MANOMETRO 100MM TOTAL INOX 304 ROSCA RETA' : undefined}
               onChange={(e) => {
                 limparErroDuplicidadeDescricao();
                 setFamQuick((q) => ({ ...q, descricao_base: e.target.value }));
               }}
             />
-            <p className="text-xs text-muted-foreground mt-1">
-              Use <code className="font-mono">{DESCRICAO_TOKEN_POLEGADA_PRINCIPAL}</code> na descrição para posicionar a Polegada principal (P) dentro do texto; sem o token, o comportamento legado é mantido.
-            </p>
-            <div className="mt-2 rounded-md border border-dashed border-border bg-muted/20 p-3">
-              <p className="text-xs font-semibold text-foreground">Tokens técnicos fechados</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                A Figura controla quais atributos serão solicitados no Produto. Clique para inserir no ponto selecionado da descrição; não é um motor universal.
-              </p>
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                <button
-                  type="button"
-                  className="erp-btn-outline erp-btn-sm font-mono"
-                  disabled={famQuick.descricao_base.toUpperCase().includes(DESCRICAO_TOKEN_POLEGADA_PRINCIPAL)}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => inserirTokenDescricaoFamilia(DESCRICAO_TOKEN_POLEGADA_PRINCIPAL)}
-                  title="Polegada principal"
-                >
-                  {DESCRICAO_TOKEN_POLEGADA_PRINCIPAL} — Polegada principal
-                </button>
-                {DESCRICAO_TOKENS_TECNICOS.map(({ token, label, hint }) => (
-                  <button
-                    key={token}
-                    type="button"
-                    className="erp-btn-outline erp-btn-sm font-mono"
-                    disabled={famQuick.descricao_base.toUpperCase().includes(token)}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => inserirTokenDescricaoFamilia(token)}
-                    title={hint}
-                  >
-                    {token} — {label}
-                  </button>
-                ))}
+            {manometroEstruturalNaFamilia ? (
+              <div className="mt-2 rounded-md border border-dashed border-border bg-muted/20 p-3">
+                <p className="text-xs text-muted-foreground">{ORIENTACAO_DESCRICAO_MANOMETRO}</p>
               </div>
-              <div className="mt-2 space-y-1">
-                {DESCRICAO_TOKENS_TECNICOS.map(({ token, label, hint }) => (
-                  <p key={`${token}-hint`} className="text-xs text-muted-foreground">
-                    <code className="font-mono">{token}</code> = {label} ({hint})
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Use <code className="font-mono">{DESCRICAO_TOKEN_POLEGADA_PRINCIPAL}</code> na descrição para posicionar a Polegada principal (P) dentro do texto; sem o token, o comportamento legado é mantido.
+                </p>
+                <div className="mt-2 rounded-md border border-dashed border-border bg-muted/20 p-3">
+                  <p className="text-xs font-semibold text-foreground">Tokens técnicos fechados</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    A Figura controla quais atributos serão solicitados no Produto. Clique para inserir no ponto selecionado da descrição; não é um motor universal.
                   </p>
-                ))}
-              </div>
-            </div>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    <button
+                      type="button"
+                      className="erp-btn-outline erp-btn-sm font-mono"
+                      disabled={famQuick.descricao_base.toUpperCase().includes(DESCRICAO_TOKEN_POLEGADA_PRINCIPAL)}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => inserirTokenDescricaoFamilia(DESCRICAO_TOKEN_POLEGADA_PRINCIPAL)}
+                      title="Polegada principal"
+                    >
+                      {DESCRICAO_TOKEN_POLEGADA_PRINCIPAL} — Polegada principal
+                    </button>
+                    {LEGACY_DESCRIPTION_TOKENS.map(({ token, label, hint }) => (
+                      <button
+                        key={token}
+                        type="button"
+                        className="erp-btn-outline erp-btn-sm font-mono"
+                        disabled={famQuick.descricao_base.toUpperCase().includes(token)}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => inserirTokenDescricaoFamilia(token)}
+                        title={hint}
+                      >
+                        {token} — {label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-2 space-y-1">
+                    {LEGACY_DESCRIPTION_TOKENS.map(({ token, label, hint }) => (
+                      <p key={`${token}-hint`} className="text-xs text-muted-foreground">
+                        <code className="font-mono">{token}</code> = {label} ({hint})
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
             {(() => {
               const cls =
                 famDuplicidadeExistente && classificacaoDupFamilia.tipo !== 'exata'

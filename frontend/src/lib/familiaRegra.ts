@@ -3,7 +3,11 @@ import { normalizarDescricaoProduto } from '@/lib/descricaoProduto';
 
 export const DESCRICAO_TOKEN_POLEGADA_PRINCIPAL = '[P]';
 
-export const DESCRICAO_TOKENS_TECNICOS = [
+/** Orientação do fluxo estrutural; os tokens abaixo permanecem somente para legado. */
+export const ORIENTACAO_DESCRICAO_MANOMETRO =
+  'Informe na descrição base apenas as características fixas da família. Polegada, rosca e atributos técnicos são adicionados automaticamente conforme os campos do Produto.';
+
+export const LEGACY_DESCRIPTION_TOKENS = [
   { token: '[ESCALA]', key: 'escala', label: 'Escala', hint: 'Ex.: 0 A 4' },
   { token: '[UNIDADE]', key: 'unidade_escala', label: 'Unidade da escala', hint: 'Ex.: BAR' },
   { token: '[PONTEIRO]', key: 'ponteiro', label: 'Ponteiro', hint: 'Ex.: MICROMÉTRICO' },
@@ -13,11 +17,22 @@ export const DESCRICAO_TOKENS_TECNICOS = [
   { token: '[CERTIFICACAO]', key: 'certificacao', label: 'Certificação', hint: 'Ex.: RBC INMETRO' },
 ] as const;
 
-export type TokenDescricaoTecnica = (typeof DESCRICAO_TOKENS_TECNICOS)[number];
+/** Nome histórico preservado para consumidores existentes; o catálogo é legado. */
+export const DESCRICAO_TOKENS_TECNICOS = LEGACY_DESCRIPTION_TOKENS;
+
+export type TokenDescricaoTecnica = (typeof LEGACY_DESCRIPTION_TOKENS)[number];
 
 export function tokensDescricaoTecnicaConfigurados(descricaoBase: string | undefined | null): TokenDescricaoTecnica[] {
   const base = (descricaoBase || '').toUpperCase();
-  return DESCRICAO_TOKENS_TECNICOS.filter(({ token }) => base.includes(token));
+  return LEGACY_DESCRIPTION_TOKENS.filter(({ token }) => base.includes(token));
+}
+
+export function usaDescricaoEstruturalManometro(tipoDimensional: TipoDimensional | undefined | null): boolean {
+  return tipoDimensional === 'MANOMETRO';
+}
+
+export function deveExibirTokensDescricaoFamilia(tipoDimensional: TipoDimensional | undefined | null): boolean {
+  return !usaDescricaoEstruturalManometro(tipoDimensional);
 }
 
 export type CategoriaProdutoSugestao = 'PRODUTO_TECNICO' | 'MATERIAL_DIMENSIONAL' | 'MANUAL_FABRICANTE';

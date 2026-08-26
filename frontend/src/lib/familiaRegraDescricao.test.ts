@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   DESCRICAO_TOKEN_POLEGADA_PRINCIPAL,
   DESCRICAO_TOKENS_TECNICOS,
+  LEGACY_DESCRIPTION_TOKENS,
+  ORIENTACAO_DESCRICAO_MANOMETRO,
+  deveExibirTokensDescricaoFamilia,
   tokensDescricaoTecnicaConfigurados,
   sugerirTipoRegraPorDimensional,
   tipoMedidaPrincipalPorDimensional,
@@ -37,5 +40,13 @@ describe('descrição posicionável de Família/Figura', () => {
   it('mapeia MANOMETRO para a regra de código compatível e medida NPS', () => {
     expect(sugerirTipoRegraPorDimensional('MANOMETRO')).toBe('BASE_ROSCA_POLEGADA');
     expect(tipoMedidaPrincipalPorDimensional('MANOMETRO')).toBe('NPS');
+  });
+
+  it('separa a orientação estrutural dos tokens mantidos para legado', () => {
+    expect(deveExibirTokensDescricaoFamilia('MANOMETRO')).toBe(false);
+    expect(deveExibirTokensDescricaoFamilia('NPS')).toBe(true);
+    expect(ORIENTACAO_DESCRICAO_MANOMETRO).toContain('Polegada, rosca e atributos técnicos');
+    expect(DESCRICAO_TOKENS_TECNICOS).toHaveLength(7);
+    expect(DESCRICAO_TOKENS_TECNICOS).toBe(LEGACY_DESCRIPTION_TOKENS);
   });
 });
