@@ -206,6 +206,44 @@ class DescricaoPosicionavelTests(TestCase):
         for trecho in ('ESCALA', 'PONTEIRO', 'VIDRO', 'CLASSE', 'C/', 'CERTIFICACAO'):
             self.assertNotIn(trecho, descricao)
 
+    def test_manometro_fluido_formata_presenca_e_ausencia(self):
+        casos = {
+            'GLICERINA': 'C/ GLICERINA',
+            'SILICONE': 'C/ SILICONE',
+            'SEM PREENCHIMENTO': 'S/ PREENCHIMENTO',
+            'SEM GLICERINA': 'S/ GLICERINA',
+            'S/ GLICERINA': 'S/ GLICERINA',
+            'C/ SILICONE': 'C/ SILICONE',
+            'AR': 'C/ AR',
+            '': '',
+        }
+        for fluido, trecho_esperado in casos.items():
+            descricao = self.render_manometro({'fluido': fluido})
+            if trecho_esperado:
+                self.assertIn(trecho_esperado, descricao, fluido)
+            else:
+                self.assertNotIn('C/', descricao)
+                self.assertNotIn('S/', descricao)
+
+    def test_fluido_nao_altera_codigo_estrutural_manometro(self):
+        kwargs = {
+            'rosca': self.rosca_bsp,
+            'schedule': None,
+            'polegada_principal': self.polegada,
+            'polegada_secundaria': None,
+        }
+        codigo_base = montar_codigo_interno(self.familia_manometro, dimensoes={}, **kwargs)
+        for fluido in ('GLICERINA', 'SILICONE', 'SEM PREENCHIMENTO', 'S/ GLICERINA', ''):
+            self.assertEqual(
+                montar_codigo_interno(
+                    self.familia_manometro,
+                    dimensoes={'fluido': fluido},
+                    **kwargs,
+                ),
+                codigo_base,
+                fluido,
+            )
+
     def test_manometro_estrutural_com_tokens_preserva_precedencia_legada(self):
         familia = FamiliaProduto.objects.create(
             codigo_figura='9905',

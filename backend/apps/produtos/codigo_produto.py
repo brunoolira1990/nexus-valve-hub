@@ -64,6 +64,21 @@ def _renderizar_tokens_descricao_tecnica(base: str, dimensoes: dict | None) -> s
     return _normalize_spaces(texto)
 
 
+def _descricao_fluido_manometro(valor: str) -> str:
+    """Formata preenchimento sem criar frases como ``C/ SEM ...``."""
+    texto = _normalize_spaces(valor)
+    if not texto:
+        return ''
+    upper = texto.upper()
+    if upper.startswith('S/'):
+        return f'S/ {texto[2:].strip()}'
+    if upper.startswith('SEM '):
+        return f'S/ {texto[4:].strip()}'
+    if upper.startswith('C/'):
+        return f'C/ {texto[2:].strip()}'
+    return f'C/ {texto}'
+
+
 def _montar_descricao_manometro(
     base: str,
     *,
@@ -89,11 +104,15 @@ def _montar_descricao_manometro(
         ('ponteiro', 'PONTEIRO'),
         ('vidro', 'VIDRO'),
         ('classe', 'E CLASSE'),
-        ('fluido', 'C/'),
+        ('fluido', ''),
         ('certificacao', 'E CERTIFICACAO'),
     ):
         valor = _valor_descricao_tecnica(dimensoes, chave)
-        if valor:
+        if not valor:
+            continue
+        if chave == 'fluido':
+            partes.append(_descricao_fluido_manometro(valor))
+        else:
             partes.append(f'{prefixo} {valor}')
     return ' '.join(partes)
 
