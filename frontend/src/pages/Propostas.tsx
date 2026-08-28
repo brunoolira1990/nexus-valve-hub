@@ -2501,12 +2501,7 @@ const Propostas = () => {
 
         {editing?.id ? (
           <div className="mt-6 rounded-md border border-border bg-muted/30 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm font-medium">Pedido de venda</p>
-              <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => navigate(`/cotacoes-fornecedores?proposta_id=${editing.id}`)}>
-                Cotar com fornecedores
-              </button>
-            </div>
+            <p className="text-sm font-medium">Pedido de venda</p>
             {propostaRequerRecuperacao(editing) ? (
               <div className="mt-2 space-y-2">
                 <p className="text-xs text-amber-800 dark:text-amber-200">
