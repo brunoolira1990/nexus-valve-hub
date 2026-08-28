@@ -3275,3 +3275,85 @@ export const TIPOS_CONTA = [
 export const POLEGADAS = ['1/2"','3/4"','1"','1 1/4"','1 1/2"','2"','2 1/2"','3"','4"','6"','8"','10"','12"'];
 
 export const MATERIAIS = ['Aço Carbono','Aço Inoxidável','Aço Liga','Ferro Fundido','Bronze','Latão'];
+
+
+export type CotacaoFornecedorStatus = 'RASCUNHO' | 'EM_COTACAO' | 'PARCIAL' | 'CONCLUIDA' | 'CANCELADA';
+export type CotacaoParticipanteStatus = 'PENDENTE' | 'RESPONDIDO' | 'RECUSADO' | 'SEM_RETORNO';
+export type CotacaoRespostaStatus = 'RESPONDIDO' | 'RECUSADO' | 'SEM_RETORNO';
+
+export interface CotacaoFornecedorRespostaItem {
+  id: number;
+  participante: number;
+  cotacao_item: number;
+  fornecedor_id: number;
+  fornecedor_nome: string;
+  preco_unitario: number | null;
+  quantidade_atendida: number;
+  prazo_entrega: string;
+  condicao_pagamento: string;
+  frete: number | null;
+  frete_tipo: string;
+  marca_fabricante: string;
+  validade: string | null;
+  observacao: string;
+  status_item: CotacaoRespostaStatus;
+  selecionada_como_referencia: boolean;
+  selecionada_por: number | null;
+  selecionada_por_nome: string;
+  selecionada_em: string | null;
+}
+
+export interface CotacaoFornecedorItem {
+  id: number;
+  item_proposta_id: number;
+  produto_id: number | null;
+  produto_nome: string;
+  produto_snapshot: Record<string, unknown>;
+  quantidade: number;
+  observacao_tecnica: string;
+  status: string;
+  respostas: CotacaoFornecedorRespostaItem[];
+}
+
+export interface CotacaoFornecedorParticipante {
+  id: number;
+  fornecedor_id: number;
+  fornecedor_nome: string;
+  status: CotacaoParticipanteStatus;
+  enviado_em: string | null;
+  respondido_em: string | null;
+  observacao: string;
+  respostas: CotacaoFornecedorRespostaItem[];
+}
+
+export interface CotacaoFornecedor {
+  id: number;
+  numero: string;
+  proposta_id: number;
+  data: string;
+  responsavel: number;
+  responsavel_nome: string;
+  prazo_resposta: string | null;
+  observacao: string;
+  status: CotacaoFornecedorStatus;
+  criado_em: string;
+  atualizado_em: string;
+  itens: CotacaoFornecedorItem[];
+  participantes: CotacaoFornecedorParticipante[];
+}
+
+export interface CotacaoComparativoItem {
+  cotacao_item_id: number;
+  item_proposta_id: number;
+  produto_id: number | null;
+  descricao: string;
+  quantidade: number;
+  respostas: CotacaoFornecedorRespostaItem[];
+}
+
+export interface CotacaoComparativo {
+  cotacao_id: number;
+  numero: string;
+  status: CotacaoFornecedorStatus;
+  itens: CotacaoComparativoItem[];
+}

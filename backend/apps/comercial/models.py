@@ -871,3 +871,121 @@ class ConsultaExternaAnaliseFinanceira(models.Model):
 
     def __str__(self) -> str:
         return f'ConsultaExterna#{self.pk} {self.tipo} {self.status}'
+
+
+class CotacaoFornecedor(models.Model):
+    class Status(models.TextChoices):
+        RASCUNHO = 'RASCUNHO', 'Rascunho'
+        EM_COTACAO = 'EM_COTACAO', 'Em cotação'
+        PARCIAL = 'PARCIAL', 'Parcial'
+        CONCLUIDA = 'CONCLUIDA', 'Concluída'
+        CANCELADA = 'CANCELADA', 'Cancelada'
+
+    numero = models.CharField(max_length=32, unique=True)
+    proposta = models.ForeignKey(Proposta, on_delete=models.PROTECT, related_name='cotacoes_fornecedores')
+    data = models.DateField()
+    responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='cotacoes_fornecedores_responsavel',
+    )
+    prazo_resposta = models.DateField(null=True, blank=True)
+    observacao = models.TextField(blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.RASCUNHO, db_index=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-data', '-id']
+        permissions = (
+            ('registrar_resposta_cotacaofornecedor', 'Pode registrar resposta de cotação com fornecedor'),
+            ('selecionar_referencia_cotacaofornecedor', 'Pode selecionar referência de cotação com fornecedor'),
+            ('cancel_cotacaofornecedor', 'Pode cancelar cotação com fornecedor'),
+        )
+
+    def __str__(self):
+        return self.numero
+
+
+class CotacaoFornecedorItem(models.Model):
+    class Status(models.TextChoices):
+        PENDENTE = 'PENDENTE', 'Pendente'
+        PARCIAL = 'PARCIAL', 'Parcial'
+        COTADO = 'COTADO', 'Cotado'
+        CANCELADO = 'CANCELADO', 'Cancelado'
+
+    cotacao = models.ForeignKey(CotacaoFornecedor, on_delete=models.CASCADE, related_name='itens')
+    item_proposta = models.ForeignKey(ItemProposta, on_delete=models.PROTECT, related_name='cotacoes_fornecedores')
+    produto = models.ForeignKey('produtos.Produto', on_delete=models.PROTECT, null=True, blank=True)
+    produto_snapshot = models.JSONField(default=dict, blank=True)
+    quantidade = models.DecimalField(max_digits=14, decimal_places=3, default=Decimal('0'))
+    observacao_tecnica = models.TextField(blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDENTE)
+
+    class Meta:
+        ordering = ['id']
+        constraints = (
+            models.UniqueConstraint(fields=['cotacao', 'item_proposta'], name='uniq_cotacao_item_proposta'),
+            models.CheckConstraint(condition=models.Q(quantidade__gte=Decimal('0')), name='cot_item_quantidade_nao_neg'),
+        )
+
+
+class CotacaoFornecedorParticipante(models.Model):
+    class Status(models.TextChoices):
+        PENDENTE = 'PENDENTE', 'Pendente'
+        RESPONDIDO = 'RESPONDIDO', 'Respondido'
+        RECUSADO = 'RECUSADO', 'Recusado'
+        SEM_RETORNO = 'SEM_RETORNO', 'Sem retorno'
+
+    cotacao = models.ForeignKey(CotacaoFornecedor, on_delete=models.CASCADE, related_name='participantes')
+    fornecedor = models.ForeignKey('cadastros.Fornecedor', on_delete=models.PROTECT, related_name='cotacoes_fornecedores')
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDENTE)
+    enviado_em = models.DateTimeField(null=True, blank=True)
+    respondido_em = models.DateTimeField(null=True, blank=True)
+    observacao = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['fornecedor__razao_social', 'id']
+        constraints = (
+            models.UniqueConstraint(fields=['cotacao', 'fornecedor'], name='uniq_cotacao_fornecedor_participante'),
+        )
+
+
+class CotacaoFornecedorRespostaItem(models.Model):
+    class StatusItem(models.TextChoices):
+        RESPONDIDO = 'RESPONDIDO', 'Respondido'
+        RECUSADO = 'RECUSADO', 'Recusado'
+        SEM_RETORNO = 'SEM_RETORNO', 'Sem retorno'
+
+    participante = models.ForeignKey(CotacaoFornecedorParticipante, on_delete=models.CASCADE, related_name='respostas')
+    cotacao_item = models.ForeignKey(CotacaoFornecedorItem, on_delete=models.CASCADE, related_name='respostas')
+    preco_unitario = models.DecimalField(max_digits=14, decimal_places=4, null=True, blank=True)
+    quantidade_atendida = models.DecimalField(max_digits=14, decimal_places=3, default=Decimal('0'))
+    prazo_entrega = models.CharField(max_length=120, blank=True)
+    condicao_pagamento = models.CharField(max_length=120, blank=True)
+    frete = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    frete_tipo = models.CharField(max_length=24, blank=True)
+    marca_fabricante = models.CharField(max_length=255, blank=True)
+    validade = models.DateField(null=True, blank=True)
+    observacao = models.TextField(blank=True)
+    status_item = models.CharField(max_length=16, choices=StatusItem.choices, default=StatusItem.RESPONDIDO)
+    selecionada_como_referencia = models.BooleanField(default=False, db_index=True)
+    selecionada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='respostas_cotacao_selecionadas',
+    )
+    selecionada_em = models.DateTimeField(null=True, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['id']
+        constraints = (
+            models.UniqueConstraint(fields=['participante', 'cotacao_item'], name='uniq_cotacao_resposta_participante_item'),
+            models.CheckConstraint(condition=models.Q(preco_unitario__isnull=True) | models.Q(preco_unitario__gte=Decimal('0')), name='cot_resp_preco_nao_neg'),
+            models.CheckConstraint(condition=models.Q(quantidade_atendida__gte=Decimal('0')), name='cot_resp_qtd_atendida_nao_neg'),
+            models.CheckConstraint(condition=models.Q(frete__isnull=True) | models.Q(frete__gte=Decimal('0')), name='cot_resp_frete_nao_neg'),
+        )

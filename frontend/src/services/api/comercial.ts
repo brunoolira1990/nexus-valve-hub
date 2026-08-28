@@ -30,6 +30,9 @@ import type {
   PedidoCompra,
   PedidoVenda,
   Proposta,
+  CotacaoFornecedor,
+  CotacaoComparativo,
+  CotacaoFornecedorRespostaItem,
 } from '@/types';
 
 function stripPropostaPayload(data: Record<string, unknown>) {
@@ -240,6 +243,28 @@ export const propostasService = {
   gerarPdf: (id: number, numeroRef: string, previewTab?: Window | null) =>
     visualizarCommercialPdf(PROPOSTA_PDF_CONFIG, id, numeroRef, previewTab),
   baixarPdf: (id: number, numeroRef: string) => baixarCommercialPdf(PROPOSTA_PDF_CONFIG, id, numeroRef),
+};
+
+export const cotacoesFornecedoresService = {
+  list: async (params?: { proposta_id?: number; status?: string }) => {
+    const response = await api.get<CotacaoFornecedor[] | PaginatedResponse<CotacaoFornecedor>>('cotacoes-fornecedores/', { params });
+    return unwrapListResults(response.data);
+  },
+  getById: async (id: number) => (await api.get<CotacaoFornecedor>(`cotacoes-fornecedores/${id}/`)).data,
+  create: async (data: { proposta: number; data?: string; prazo_resposta?: string | null; observacao?: string }) =>
+    (await api.post<CotacaoFornecedor>('cotacoes-fornecedores/', data)).data,
+  addItem: async (id: number, data: { item_proposta_id: number; quantidade?: number; observacao_tecnica?: string }) =>
+    (await api.post(`cotacoes-fornecedores/${id}/itens/`, data)).data,
+  addParticipante: async (id: number, fornecedor_id: number) =>
+    (await api.post(`cotacoes-fornecedores/${id}/participantes/`, { fornecedor_id })).data,
+  resposta: async (id: number, data: Record<string, unknown>) =>
+    (await api.post<CotacaoFornecedorRespostaItem>(`cotacoes-fornecedores/${id}/respostas/`, data)).data,
+  comparativo: async (id: number) =>
+    (await api.get<CotacaoComparativo>(`cotacoes-fornecedores/${id}/comparativo/`)).data,
+  selecionarReferencia: async (id: number, resposta_id: number) =>
+    (await api.post<CotacaoFornecedorRespostaItem>(`cotacoes-fornecedores/${id}/selecionar-referencia/`, { resposta_id })).data,
+  cancelar: async (id: number) =>
+    (await api.post<CotacaoFornecedor>(`cotacoes-fornecedores/${id}/cancelar/`, {})).data,
 };
 
 export const pedidosVendaService = {
