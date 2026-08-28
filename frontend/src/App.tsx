@@ -32,6 +32,7 @@ import Produtos from "./pages/Produtos";
 import Corridas from "./pages/Corridas";
 import RegrasFiscais from "./pages/RegrasFiscais";
 import Propostas from "./pages/Propostas";
+import CotacoesFornecedores from "./pages/CotacoesFornecedores";
 import PedidosVenda from "./pages/PedidosVenda";
 import PedidosCompra from "./pages/PedidosCompra";
 import NFeEntrada from "./pages/NFeEntrada";
@@ -107,6 +108,7 @@ const App = () => (
         <Route path="corridas" element={<Corridas />} />
         <Route path="regras-fiscais" element={<RegrasFiscais />} />
         <Route path="propostas" element={<Propostas />} />
+        <Route path="cotacoes-fornecedores" element={<CotacoesFornecedores />} />
         <Route path="pedidos-venda" element={<PedidosVenda />} />
         <Route path="pedidos-compra" element={<PedidosCompra />} />
         <Route path="nfe-entrada" element={<NFeEntrada />} />
