@@ -10,7 +10,7 @@ import {formatMoneyBRL} from '@/lib/numberFields';
 
 const fmtMoney = (v: string | number | null | undefined): string => {
   const n = Number(String(v ?? '0').replace(',', '.'));
-  return `formatMoneyBRL(n)`;
+  return formatMoneyBRL(n);
 };
 
 const fmtData = (v: string | null | undefined): string => {

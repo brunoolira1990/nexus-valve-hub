@@ -20,7 +20,7 @@ const BASE_CTE_IMPORTADA_PATH = '/cte-historico-importado';
 
 const fmtMoney = (v: unknown): string => {
   const n = Number(v ?? 0);
-  return `formatMoneyBRL(n)`;
+  return formatMoneyBRL(n);
 };
 
 const CTeEntrada = () => {

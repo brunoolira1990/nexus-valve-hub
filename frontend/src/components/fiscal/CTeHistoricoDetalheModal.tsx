@@ -27,7 +27,7 @@ type Aba = 'resumo' | 'participantes' | 'totais' | 'docs' | 'frete' | 'eventos' 
 
 const fmtMoney = (v: unknown): string => {
   const n = Number(String(v ?? 0).replace(',', '.'));
-  return `formatMoneyBRL(n)`;
+  return formatMoneyBRL(n);
 };
 
 type Props = {
