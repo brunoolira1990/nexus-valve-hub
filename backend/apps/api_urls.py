@@ -26,6 +26,7 @@ from apps.cadastros.views import (
     TransportadoraViewSet,
 )
 from apps.comercial.views import PedidoCompraViewSet, PedidoVendaViewSet, PropostaViewSet
+from apps.comercial.cotacao_fornecedor_views import CotacaoFornecedorViewSet
 from apps.crm.public_views import site_lead_capture
 from apps.crm.views import (
     AtividadeViewSet,
@@ -153,6 +154,7 @@ router.register(
 )
 router.register(r'vendedores', VendedorViewSet, basename='vendedor')
 router.register(r'propostas', PropostaViewSet, basename='proposta')
+router.register(r'cotacoes-fornecedores', CotacaoFornecedorViewSet, basename='cotacao-fornecedor')
 router.register(r'analises-financeiras', AnaliseFinanceiraPropostaViewSet, basename='analise-financeira')
 router.register(r'pedidos-venda', PedidoVendaViewSet, basename='pedidovenda')
 router.register(r'pedidos-compra', PedidoCompraViewSet, basename='pedidocompra')

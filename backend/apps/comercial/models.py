@@ -56,6 +56,11 @@ class Proposta(models.Model):
         REPROVADA = 'REPROVADA', 'Reprovada'
         VOLTOU_LEGADO = 'VOLTOU_LEGADO', 'Voltou ao legado'
 
+    class CustoFinanceiroOrigem(models.TextChoices):
+        AUTOMATICO_CONDICAO = 'AUTOMATICO_CONDICAO', 'Automático pela condição de pagamento'
+        MANUAL = 'MANUAL', 'Manual'
+        SEM_CUSTO_CONFIRMADO = 'SEM_CUSTO_CONFIRMADO', 'Sem custo confirmado'
+
     numero = models.CharField(max_length=32, unique=True)
     cliente = models.ForeignKey(
         'cadastros.Cliente',
@@ -121,6 +126,34 @@ class Proposta(models.Model):
         default=Decimal('0'),
         help_text='Valor de frete cobrado do cliente no cabeçalho da proposta.',
     )
+    valor_seguro_cobrado = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=Decimal('0'),
+        help_text='Valor de seguro cobrado do cliente; zero representa ausência da cobrança.',
+    )
+    valor_outras_despesas_cobradas = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=Decimal('0'),
+        help_text='Outras despesas cobradas do cliente; zero representa ausência da cobrança.',
+    )
+    custo_financeiro_valor = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text='NULL significa desconhecido; zero significa custo explicitamente inexistente.',
+    )
+    custo_financeiro_origem = models.CharField(
+        max_length=32,
+        choices=CustoFinanceiroOrigem.choices,
+        null=True,
+        blank=True,
+    )
+    custo_financeiro_justificativa = models.TextField(blank=True)
+    snapshot_rentabilidade = models.JSONField(null=True, blank=True)
+    rentabilidade_congelada_em = models.DateTimeField(null=True, blank=True)
     prazo_entrega_texto = models.CharField(
         max_length=255,
         blank=True,
@@ -177,6 +210,52 @@ class Proposta(models.Model):
                 condition=models.Q(valor_frete__gte=Decimal('0')),
                 name='prop_valor_frete_nao_negativo',
             ),
+            models.CheckConstraint(
+                condition=models.Q(valor_seguro_cobrado__gte=Decimal('0')),
+                name='prop_seguro_cob_nao_neg',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(valor_outras_despesas_cobradas__gte=Decimal('0')),
+                name='prop_outras_cob_nao_neg',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(custo_financeiro_valor__isnull=True)
+                | models.Q(custo_financeiro_valor__gte=Decimal('0')),
+                name='prop_cfin_val_nao_neg',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(custo_financeiro_origem__isnull=True)
+                | models.Q(
+                    custo_financeiro_origem__in=[
+                        'AUTOMATICO_CONDICAO',
+                        'MANUAL',
+                        'SEM_CUSTO_CONFIRMADO',
+                    ],
+                ),
+                name='prop_cfin_origem_valida',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(custo_financeiro_valor__isnull=True)
+                | models.Q(custo_financeiro_origem__isnull=False),
+                name='prop_cfin_val_exige_origem',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(custo_financeiro_origem__isnull=True)
+                | models.Q(custo_financeiro_valor__isnull=False),
+                name='prop_cfin_origem_exige_val',
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(custo_financeiro_origem='MANUAL')
+                | ~models.Q(custo_financeiro_justificativa=''),
+                name='prop_cfin_manual_just',
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(
+                    custo_financeiro_origem='SEM_CUSTO_CONFIRMADO',
+                )
+                | models.Q(custo_financeiro_valor=Decimal('0')),
+                name='prop_cfin_sem_custo_zero',
+            ),
         ]
 
 
@@ -211,6 +290,22 @@ class ItemProposta(models.Model):
     fator_conversao = models.DecimalField(max_digits=14, decimal_places=6, default=Decimal('0'))
     desconto = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
     custo_utilizado = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
+    custo_negociado_unitario = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text='Custo negociado manual; NULL significa não informado e zero é valor confirmado.',
+    )
+    custo_negociado_justificativa = models.TextField(blank=True)
+    custo_negociado_alterado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='custos_negociados_itens_proposta',
+    )
+    custo_negociado_alterado_em = models.DateTimeField(null=True, blank=True)
     frete = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
     despesas = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
     ipi_entrada_percentual = models.DecimalField(max_digits=7, decimal_places=2, default=Decimal('0'))
@@ -272,6 +367,25 @@ class ItemProposta(models.Model):
     )
     motivo_cancelamento_item = models.TextField(blank=True)
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(custo_negociado_unitario__isnull=True)
+                | models.Q(custo_negociado_unitario__gte=Decimal('0')),
+                name='itemprop_custo_neg_nao_neg',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(custo_negociado_unitario__isnull=True)
+                | ~models.Q(custo_negociado_justificativa=''),
+                name='itemprop_custo_neg_just',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(custo_negociado_unitario__isnull=True)
+                | models.Q(custo_negociado_alterado_em__isnull=False),
+                name='itemprop_custo_neg_data',
+            ),
+        ]
+
 
 class HomologacaoFiscalPropostaEvento(models.Model):
     """Fase Saída 3.10 — trilha de auditoria da homologação fiscal por proposta."""
@@ -328,6 +442,7 @@ class PropostaComercialHistorico(models.Model):
         ITEM_CONVERTIDO = 'ITEM_CONVERTIDO', 'Item convertido em pedido'
         ITEM_CANCELADO = 'ITEM_CANCELADO', 'Item cancelado'
         ITEM_MANTIDO_PENDENTE = 'ITEM_MANTIDO_PENDENTE', 'Item mantido pendente'
+        RENTABILIDADE_CONGELADA = 'RENTABILIDADE_CONGELADA', 'Rentabilidade congelada'
         PEDIDO_EXCLUIDO_STATUS_REVERTIDO = (
             'PEDIDO_EXCLUIDO_STATUS_REVERTIDO',
             'Pedido excluído — status revertido',
@@ -871,3 +986,121 @@ class ConsultaExternaAnaliseFinanceira(models.Model):
 
     def __str__(self) -> str:
         return f'ConsultaExterna#{self.pk} {self.tipo} {self.status}'
+
+
+class CotacaoFornecedor(models.Model):
+    class Status(models.TextChoices):
+        RASCUNHO = 'RASCUNHO', 'Rascunho'
+        EM_COTACAO = 'EM_COTACAO', 'Em cotação'
+        PARCIAL = 'PARCIAL', 'Parcial'
+        CONCLUIDA = 'CONCLUIDA', 'Concluída'
+        CANCELADA = 'CANCELADA', 'Cancelada'
+
+    numero = models.CharField(max_length=32, unique=True)
+    proposta = models.ForeignKey(Proposta, on_delete=models.PROTECT, related_name='cotacoes_fornecedores')
+    data = models.DateField()
+    responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='cotacoes_fornecedores_responsavel',
+    )
+    prazo_resposta = models.DateField(null=True, blank=True)
+    observacao = models.TextField(blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.RASCUNHO, db_index=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-data', '-id']
+        permissions = (
+            ('registrar_resposta_cotacaofornecedor', 'Pode registrar resposta de cotação com fornecedor'),
+            ('selecionar_referencia_cotacaofornecedor', 'Pode selecionar referência de cotação com fornecedor'),
+            ('cancel_cotacaofornecedor', 'Pode cancelar cotação com fornecedor'),
+        )
+
+    def __str__(self):
+        return self.numero
+
+
+class CotacaoFornecedorItem(models.Model):
+    class Status(models.TextChoices):
+        PENDENTE = 'PENDENTE', 'Pendente'
+        PARCIAL = 'PARCIAL', 'Parcial'
+        COTADO = 'COTADO', 'Cotado'
+        CANCELADO = 'CANCELADO', 'Cancelado'
+
+    cotacao = models.ForeignKey(CotacaoFornecedor, on_delete=models.CASCADE, related_name='itens')
+    item_proposta = models.ForeignKey(ItemProposta, on_delete=models.PROTECT, related_name='cotacoes_fornecedores')
+    produto = models.ForeignKey('produtos.Produto', on_delete=models.PROTECT, null=True, blank=True)
+    produto_snapshot = models.JSONField(default=dict, blank=True)
+    quantidade = models.DecimalField(max_digits=14, decimal_places=3, default=Decimal('0'))
+    observacao_tecnica = models.TextField(blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDENTE)
+
+    class Meta:
+        ordering = ['id']
+        constraints = (
+            models.UniqueConstraint(fields=['cotacao', 'item_proposta'], name='uniq_cotacao_item_proposta'),
+            models.CheckConstraint(condition=models.Q(quantidade__gte=Decimal('0')), name='cot_item_quantidade_nao_neg'),
+        )
+
+
+class CotacaoFornecedorParticipante(models.Model):
+    class Status(models.TextChoices):
+        PENDENTE = 'PENDENTE', 'Pendente'
+        RESPONDIDO = 'RESPONDIDO', 'Respondido'
+        RECUSADO = 'RECUSADO', 'Recusado'
+        SEM_RETORNO = 'SEM_RETORNO', 'Sem retorno'
+
+    cotacao = models.ForeignKey(CotacaoFornecedor, on_delete=models.CASCADE, related_name='participantes')
+    fornecedor = models.ForeignKey('cadastros.Fornecedor', on_delete=models.PROTECT, related_name='cotacoes_fornecedores')
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDENTE)
+    enviado_em = models.DateTimeField(null=True, blank=True)
+    respondido_em = models.DateTimeField(null=True, blank=True)
+    observacao = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['fornecedor__razao_social', 'id']
+        constraints = (
+            models.UniqueConstraint(fields=['cotacao', 'fornecedor'], name='uniq_cotacao_fornecedor_participante'),
+        )
+
+
+class CotacaoFornecedorRespostaItem(models.Model):
+    class StatusItem(models.TextChoices):
+        RESPONDIDO = 'RESPONDIDO', 'Respondido'
+        RECUSADO = 'RECUSADO', 'Recusado'
+        SEM_RETORNO = 'SEM_RETORNO', 'Sem retorno'
+
+    participante = models.ForeignKey(CotacaoFornecedorParticipante, on_delete=models.CASCADE, related_name='respostas')
+    cotacao_item = models.ForeignKey(CotacaoFornecedorItem, on_delete=models.CASCADE, related_name='respostas')
+    preco_unitario = models.DecimalField(max_digits=14, decimal_places=4, null=True, blank=True)
+    quantidade_atendida = models.DecimalField(max_digits=14, decimal_places=3, default=Decimal('0'))
+    prazo_entrega = models.CharField(max_length=120, blank=True)
+    condicao_pagamento = models.CharField(max_length=120, blank=True)
+    frete = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    frete_tipo = models.CharField(max_length=24, blank=True)
+    marca_fabricante = models.CharField(max_length=255, blank=True)
+    validade = models.DateField(null=True, blank=True)
+    observacao = models.TextField(blank=True)
+    status_item = models.CharField(max_length=16, choices=StatusItem.choices, default=StatusItem.RESPONDIDO)
+    selecionada_como_referencia = models.BooleanField(default=False, db_index=True)
+    selecionada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='respostas_cotacao_selecionadas',
+    )
+    selecionada_em = models.DateTimeField(null=True, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['id']
+        constraints = (
+            models.UniqueConstraint(fields=['participante', 'cotacao_item'], name='uniq_cotacao_resposta_participante_item'),
+            models.CheckConstraint(condition=models.Q(preco_unitario__isnull=True) | models.Q(preco_unitario__gte=Decimal('0')), name='cot_resp_preco_nao_neg'),
+            models.CheckConstraint(condition=models.Q(quantidade_atendida__gte=Decimal('0')), name='cot_resp_qtd_atendida_nao_neg'),
+            models.CheckConstraint(condition=models.Q(frete__isnull=True) | models.Q(frete__gte=Decimal('0')), name='cot_resp_frete_nao_neg'),
+        )
