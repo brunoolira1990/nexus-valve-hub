@@ -882,7 +882,7 @@ class CotacaoFornecedor(models.Model):
         CANCELADA = 'CANCELADA', 'Cancelada'
 
     numero = models.CharField(max_length=32, unique=True)
-    proposta = models.ForeignKey(Proposta, on_delete=models.PROTECT, related_name='cotacoes_fornecedores')
+    proposta = models.ForeignKey(Proposta, on_delete=models.PROTECT, related_name='cotacoes_fornecedores', null=True, blank=True)
     data = models.DateField()
     responsavel = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -915,9 +915,11 @@ class CotacaoFornecedorItem(models.Model):
         CANCELADO = 'CANCELADO', 'Cancelado'
 
     cotacao = models.ForeignKey(CotacaoFornecedor, on_delete=models.CASCADE, related_name='itens')
-    item_proposta = models.ForeignKey(ItemProposta, on_delete=models.PROTECT, related_name='cotacoes_fornecedores')
+    item_proposta = models.ForeignKey(ItemProposta, on_delete=models.PROTECT, related_name='cotacoes_fornecedores', null=True, blank=True)
     produto = models.ForeignKey('produtos.Produto', on_delete=models.PROTECT, null=True, blank=True)
     produto_snapshot = models.JSONField(default=dict, blank=True)
+    descricao_item = models.TextField(blank=True, default='')
+    unidade = models.CharField(max_length=30, blank=True, default='')
     quantidade = models.DecimalField(max_digits=14, decimal_places=3, default=Decimal('0'))
     observacao_tecnica = models.TextField(blank=True)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDENTE)
@@ -925,8 +927,19 @@ class CotacaoFornecedorItem(models.Model):
     class Meta:
         ordering = ['id']
         constraints = (
-            models.UniqueConstraint(fields=['cotacao', 'item_proposta'], name='uniq_cotacao_item_proposta'),
+            models.UniqueConstraint(
+                fields=['cotacao', 'item_proposta'],
+                condition=models.Q(item_proposta__isnull=False),
+                name='uniq_cotacao_item_proposta',
+            ),
             models.CheckConstraint(condition=models.Q(quantidade__gte=Decimal('0')), name='cot_item_quantidade_nao_neg'),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(item_proposta__isnull=False)
+                    | (models.Q(descricao_item__gt='') & models.Q(unidade__gt='') & models.Q(quantidade__gt=Decimal('0')))
+                ),
+                name='cot_item_manual_estrutura_valida',
+            ),
         )
 
 
@@ -949,6 +962,24 @@ class CotacaoFornecedorParticipante(models.Model):
         constraints = (
             models.UniqueConstraint(fields=['cotacao', 'fornecedor'], name='uniq_cotacao_fornecedor_participante'),
         )
+
+
+class CotacaoFornecedorHistorico(models.Model):
+    cotacao = models.ForeignKey(CotacaoFornecedor, on_delete=models.CASCADE, related_name='historico')
+    evento = models.CharField(max_length=64)
+    descricao = models.TextField()
+    dados_json = models.JSONField(default=dict, blank=True)
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='historico_cotacoes_fornecedores',
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-criado_em', '-id']
 
 
 class CotacaoFornecedorRespostaItem(models.Model):

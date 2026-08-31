@@ -251,9 +251,9 @@ export const cotacoesFornecedoresService = {
     return unwrapListResults(response.data);
   },
   getById: async (id: number) => (await api.get<CotacaoFornecedor>(`cotacoes-fornecedores/${id}/`)).data,
-  create: async (data: { proposta: number; data?: string; prazo_resposta?: string | null; observacao?: string }) =>
+  create: async (data: { proposta?: number | null; data?: string; prazo_resposta?: string | null; observacao?: string }) =>
     (await api.post<CotacaoFornecedor>('cotacoes-fornecedores/', data)).data,
-  addItem: async (id: number, data: { item_proposta_id: number; quantidade?: number; observacao_tecnica?: string }) =>
+  addItem: async (id: number, data: { item_proposta_id?: number; produto_id?: number; descricao_item?: string; unidade?: string; quantidade?: number; observacao_tecnica?: string }) =>
     (await api.post(`cotacoes-fornecedores/${id}/itens/`, data)).data,
   addParticipante: async (id: number, fornecedor_id: number) =>
     (await api.post(`cotacoes-fornecedores/${id}/participantes/`, { fornecedor_id })).data,
@@ -261,6 +261,8 @@ export const cotacoesFornecedoresService = {
     (await api.post<CotacaoFornecedorRespostaItem>(`cotacoes-fornecedores/${id}/respostas/`, data)).data,
   comparativo: async (id: number) =>
     (await api.get<CotacaoComparativo>(`cotacoes-fornecedores/${id}/comparativo/`)).data,
+  historico: async (id: number) =>
+    (await api.get<import('@/types').CotacaoFornecedorHistorico[]>(`cotacoes-fornecedores/${id}/historico/`)).data,
   selecionarReferencia: async (id: number, resposta_id: number) =>
     (await api.post<CotacaoFornecedorRespostaItem>(`cotacoes-fornecedores/${id}/selecionar-referencia/`, { resposta_id })).data,
   cancelar: async (id: number) =>

@@ -20,7 +20,9 @@ from .cotacao_fornecedor_permissions import (
 )
 from .cotacao_fornecedor_serializers import (
     CotacaoFornecedorCreateSerializer,
+    CotacaoFornecedorItemInputSerializer,
     CotacaoFornecedorItemSerializer,
+    CotacaoFornecedorHistoricoSerializer,
     CotacaoFornecedorParticipanteSerializer,
     CotacaoFornecedorRespostaInputSerializer,
     CotacaoFornecedorRespostaItemSerializer,
@@ -39,6 +41,7 @@ from .models import (
     CotacaoFornecedorItem,
     CotacaoFornecedorParticipante,
     CotacaoFornecedorRespostaItem,
+    CotacaoFornecedorHistorico,
 )
 
 
@@ -90,7 +93,7 @@ class CotacaoFornecedorViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        proposta = serializer.validated_data['proposta']
+        proposta = serializer.validated_data.get('proposta')
         cotacao = CotacaoFornecedor.objects.create(
             numero=self._novo_numero(),
             proposta=proposta,
@@ -106,13 +109,18 @@ class CotacaoFornecedorViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='itens')
     def adicionar_item_action(self, request, pk=None):
         cotacao = self.get_object()
+        serializer = CotacaoFornecedorItemInputSerializer(data=request.data, context={'proposta_id': cotacao.proposta_id})
+        serializer.is_valid(raise_exception=True)
         try:
             item = adicionar_item(
                 cotacao,
-                request.data.get('item_proposta_id'),
-                request.data.get('quantidade'),
-                request.data.get('observacao_tecnica', ''),
+                serializer.validated_data.get('item_proposta_id').pk if serializer.validated_data.get('item_proposta_id') else None,
+                serializer.validated_data.get('quantidade'),
+                serializer.validated_data.get('observacao_tecnica', ''),
                 request.user,
+                produto=serializer.validated_data.get('produto_id'),
+                descricao_item=serializer.validated_data.get('descricao_item', ''),
+                unidade=serializer.validated_data.get('unidade', ''),
             )
         except (ValueError, TypeError, CotacaoFornecedorItem.DoesNotExist) as exc:
             raise ValidationError({'detail': str(exc)}) from exc
@@ -176,11 +184,18 @@ class CotacaoFornecedorViewSet(viewsets.ModelViewSet):
                 'cotacao_item_id': item.pk,
                 'item_proposta_id': item.item_proposta_id,
                 'produto_id': item.produto_id,
-                'descricao': (item.produto_snapshot or {}).get('descricao', ''),
+                'descricao': item.descricao_item or (item.produto_snapshot or {}).get('descricao', '') or getattr(item.produto, 'descricao', '') or (f'Item da Proposta #{item.item_proposta_id}' if item.item_proposta_id else ''),
+                'unidade': item.unidade,
                 'quantidade': item.quantidade,
                 'respostas': CotacaoFornecedorRespostaItemSerializer(item.respostas.select_related('participante__fornecedor', 'selecionada_por'), many=True).data,
             })
-        return Response({'cotacao_id': cotacao.pk, 'numero': cotacao.numero, 'status': cotacao.status, 'itens': rows})
+        return Response({'cotacao_id': cotacao.pk, 'numero': cotacao.numero, 'status': cotacao.status, 'proposta_id': cotacao.proposta_id, 'itens': rows})
+
+    @action(detail=True, methods=['get'], url_path='historico')
+    def historico(self, request, pk=None):
+        cotacao = self.get_object()
+        eventos = cotacao.historico.select_related('usuario').all()
+        return Response(CotacaoFornecedorHistoricoSerializer(eventos, many=True).data)
 
     @action(detail=True, methods=['post'], url_path='selecionar-referencia')
     def selecionar_referencia_action(self, request, pk=None):

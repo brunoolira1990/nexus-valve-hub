@@ -176,6 +176,63 @@ class CotacaoFornecedorApiTests(TestCase):
         response = client.get('/api/cotacoes-fornecedores/')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_cria_cotacao_manual_com_item_livre_e_comparativo(self):
+        response = self.client.post(
+            '/api/cotacoes-fornecedores/',
+            {'data': date.today().isoformat(), 'observacao': 'Cotação manual'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        cotacao = CotacaoFornecedor.objects.get(pk=response.data['id'])
+        self.assertIsNone(cotacao.proposta_id)
+        item_response = self.client.post(
+            f'/api/cotacoes-fornecedores/{cotacao.pk}/itens/',
+            {'descricao_item': 'Junta especial', 'unidade': 'PC', 'quantidade': '3'},
+            format='json',
+        )
+        self.assertEqual(item_response.status_code, status.HTTP_201_CREATED, item_response.data)
+        item = CotacaoFornecedorItem.objects.get(pk=item_response.data['id'])
+        self.assertIsNone(item.item_proposta_id)
+        self.assertEqual(item.descricao_item, 'Junta especial')
+        self.assertEqual(item.unidade, 'PC')
+        comparativo = self.client.get(f'/api/cotacoes-fornecedores/{cotacao.pk}/comparativo/')
+        self.assertEqual(comparativo.status_code, status.HTTP_200_OK)
+        self.assertEqual(comparativo.data['itens'][0]['descricao'], 'Junta especial')
+        self.assertEqual(comparativo.data['itens'][0]['unidade'], 'PC')
+        self.assertTrue(cotacao.historico.filter(evento='COTACAO_CRIADA').exists())
+        self.assertTrue(cotacao.historico.filter(evento='ITEM_COTACAO_ADICIONADO').exists())
+
+    def test_cotacao_manual_rejeita_item_sem_estrutura_obrigatoria(self):
+        response = self.client.post(
+            '/api/cotacoes-fornecedores/',
+            {'data': date.today().isoformat()},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        cotacao = CotacaoFornecedor.objects.get(pk=response.data['id'])
+        item_response = self.client.post(
+            f'/api/cotacoes-fornecedores/{cotacao.pk}/itens/',
+            {'descricao_item': 'Sem unidade', 'quantidade': '0'},
+            format='json',
+        )
+        self.assertEqual(item_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(cotacao.itens.count(), 0)
+
+    def test_cotacao_manual_nao_aceita_item_de_proposta(self):
+        response = self.client.post(
+            '/api/cotacoes-fornecedores/',
+            {'data': date.today().isoformat()},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        cotacao = CotacaoFornecedor.objects.get(pk=response.data['id'])
+        item_response = self.client.post(
+            f'/api/cotacoes-fornecedores/{cotacao.pk}/itens/',
+            {'item_proposta_id': self.item_a.pk},
+            format='json',
+        )
+        self.assertEqual(item_response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_cancelamento_e_nenhum_efeito_em_preco_ou_pedidos(self):
         cotacao = self._criar_cotacao()
         item_proposta_antes = {

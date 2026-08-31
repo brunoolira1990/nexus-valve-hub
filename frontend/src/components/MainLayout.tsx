@@ -32,6 +32,7 @@ const breadcrumbMap: Record<string, { label: string; path?: string }[]> = {
   '/modulos/folha-rh': [{ label: 'Folha / RH' }, { label: 'Visão geral' }],
   '/pedidos-compra': [{ label: 'Compras' }, { label: 'Pedidos de Compra' }],
   '/nfe-entrada': [{ label: 'Compras' }, { label: 'Entrada Própria' }],
+  '/cotacoes-fornecedores': [{ label: 'Compras' }, { label: 'Cotações com Fornecedores' }],
   '/nfe-entrada-historica-importada': [{ label: 'Fiscal' }, { label: 'NF-e Entrada (base)' }],
   '/nfe-saida': [{ label: 'Fiscal' }, { label: 'NF-e Saída' }],
   '/nfe-historica-importada': [{ label: 'Fiscal' }, { label: 'NF-e Saída (base)' }],
