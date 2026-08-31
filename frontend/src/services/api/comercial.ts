@@ -246,7 +246,7 @@ export const propostasService = {
 };
 
 export const cotacoesFornecedoresService = {
-  list: async (params?: { proposta_id?: number; status?: string }) => {
+  list: async (params?: { proposta_id?: number; status?: string; limit?: number }) => {
     const response = await api.get<CotacaoFornecedor[] | PaginatedResponse<CotacaoFornecedor>>('cotacoes-fornecedores/', { params });
     return unwrapListResults(response.data);
   },

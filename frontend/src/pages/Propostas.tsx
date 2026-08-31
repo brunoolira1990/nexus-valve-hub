@@ -98,6 +98,7 @@ import {
   labelStatusItemProposta,
   labelEventoComercialProposta,
 } from '@/lib/propostaStatus';
+import { novaCotacaoComPropostaPath } from '@/lib/cotacaoFornecedores';
 import { usePaginatedList } from '@/hooks/usePaginatedList';
 import { PaginationControls } from '@/components/list/PaginationControls';
 import { FilterBar } from '@/components/list/FilterBar';
@@ -2503,7 +2504,7 @@ const Propostas = () => {
           <div className="mt-6 rounded-md border border-border bg-muted/30 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm font-medium">Pedido de venda</p>
-              <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => navigate(`/cotacoes-fornecedores?proposta_id=${editing.id}`)}>
+              <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => navigate(novaCotacaoComPropostaPath(editing.id))}>
                 Cotar com fornecedores
               </button>
             </div>
