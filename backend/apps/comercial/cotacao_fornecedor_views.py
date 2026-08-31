@@ -1,5 +1,7 @@
 from datetime import date
 
+from decimal import Decimal
+
 from django.db import transaction
 from django.db.models import Prefetch
 from django.utils import timezone
@@ -29,6 +31,7 @@ from .cotacao_fornecedor_serializers import (
     CotacaoFornecedorSerializer,
 )
 from .cotacao_fornecedor_service import (
+    calcular_custo_resposta,
     _evento,
     adicionar_item,
     adicionar_participante,
@@ -187,8 +190,21 @@ class CotacaoFornecedorViewSet(viewsets.ModelViewSet):
                 'descricao': item.descricao_item or (item.produto_snapshot or {}).get('descricao', '') or getattr(item.produto, 'descricao', '') or (f'Item da Proposta #{item.item_proposta_id}' if item.item_proposta_id else ''),
                 'unidade': item.unidade,
                 'quantidade': item.quantidade,
-                'respostas': CotacaoFornecedorRespostaItemSerializer(item.respostas.select_related('participante__fornecedor', 'selecionada_por'), many=True).data,
+                'respostas': [],
             })
+            respostas_obj = list(item.respostas.select_related('participante__fornecedor', 'selecionada_por'))
+            respostas_data = CotacaoFornecedorRespostaItemSerializer(respostas_obj, many=True).data
+            calculos = [calcular_custo_resposta(resposta, item) for resposta in respostas_obj]
+            precos = [resposta.preco_unitario for resposta in respostas_obj if resposta.status_item == CotacaoFornecedorRespostaItem.StatusItem.RESPONDIDO and resposta.preco_unitario is not None]
+            custos = [calculo['custo_unitario_efetivo'] for calculo in calculos if calculo['custo_unitario_efetivo'] is not None]
+            menor_preco = min(precos) if precos else None
+            melhor_custo = min(custos) if custos else None
+            for data, calculo in zip(respostas_data, calculos):
+                data['menor_preco'] = menor_preco is not None and data.get('preco_unitario') is not None and Decimal(str(data['preco_unitario'])) == menor_preco
+                data['melhor_custo_total'] = melhor_custo is not None and calculo['custo_unitario_efetivo'] == melhor_custo
+                data['custo_incompleto'] = calculo['status'] == 'CUSTO INCOMPLETO'
+                data['motivos_incompletude'] = calculo['motivos']
+            rows[-1]['respostas'] = respostas_data
         return Response({'cotacao_id': cotacao.pk, 'numero': cotacao.numero, 'status': cotacao.status, 'proposta_id': cotacao.proposta_id, 'itens': rows})
 
     @action(detail=True, methods=['get'], url_path='historico')

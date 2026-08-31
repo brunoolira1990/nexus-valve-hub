@@ -1,8 +1,11 @@
+from decimal import Decimal, ROUND_HALF_UP
+
 from rest_framework import serializers
 
 from apps.cadastros.models import Fornecedor
 from apps.produtos.models import Produto
 
+from .cotacao_fornecedor_service import calcular_custo_resposta, classificar_completude_resposta, normalizar_tipo_frete
 from .models import (
     CotacaoFornecedor,
     Proposta,
@@ -30,19 +33,31 @@ class CotacaoFornecedorRespostaItemSerializer(serializers.ModelSerializer):
     fornecedor_id = serializers.IntegerField(source='participante.fornecedor_id', read_only=True)
     fornecedor_nome = serializers.CharField(source='participante.fornecedor.razao_social', read_only=True)
     selecionada_por_nome = serializers.SerializerMethodField(read_only=True)
+    completude = serializers.SerializerMethodField(read_only=True)
+    calculo_custo = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = CotacaoFornecedorRespostaItem
         fields = (
             'id', 'participante', 'cotacao_item', 'fornecedor_id', 'fornecedor_nome',
-            'preco_unitario', 'quantidade_atendida', 'prazo_entrega', 'condicao_pagamento',
-            'frete', 'frete_tipo', 'marca_fabricante', 'validade', 'observacao', 'status_item',
+            'preco_unitario', 'preco_unitario_bruto', 'desconto', 'quantidade_atendida',
+            'unidade_cotada', 'fator_conversao', 'prazo_entrega', 'condicao_pagamento',
+            'frete', 'frete_tipo', 'frete_tipo_codigo', 'ipi_custo', 'icms_st_custo',
+            'outros_tributos_custo', 'despesas_adicionais', 'marca_fabricante', 'validade',
+            'observacao', 'status_item', 'completude', 'calculo_custo',
             'selecionada_como_referencia', 'selecionada_por', 'selecionada_por_nome', 'selecionada_em',
         )
         read_only_fields = ('selecionada_por', 'selecionada_em', 'selecionada_como_referencia')
 
     def get_selecionada_por_nome(self, obj):
         return getattr(obj.selecionada_por, 'get_username', lambda: '')() if obj.selecionada_por else ''
+
+    def get_completude(self, obj):
+        return classificar_completude_resposta(obj, obj.cotacao_item)
+
+    def get_calculo_custo(self, obj):
+        result = calcular_custo_resposta(obj, obj.cotacao_item)
+        return {key: str(value) if isinstance(value, Decimal) else value for key, value in result.items()}
 
 
 class CotacaoFornecedorItemSerializer(serializers.ModelSerializer):
@@ -136,13 +151,41 @@ class CotacaoFornecedorCreateSerializer(serializers.ModelSerializer):
 class CotacaoFornecedorRespostaInputSerializer(serializers.ModelSerializer):
     class Meta:
         model = CotacaoFornecedorRespostaItem
-        fields = ('participante', 'cotacao_item', 'preco_unitario', 'quantidade_atendida', 'prazo_entrega', 'condicao_pagamento', 'frete', 'frete_tipo', 'marca_fabricante', 'validade', 'observacao', 'status_item')
+        fields = (
+            'participante', 'cotacao_item', 'preco_unitario', 'preco_unitario_bruto', 'desconto',
+            'quantidade_atendida', 'unidade_cotada', 'fator_conversao', 'prazo_entrega',
+            'condicao_pagamento', 'frete', 'frete_tipo', 'frete_tipo_codigo', 'ipi_custo',
+            'icms_st_custo', 'outros_tributos_custo', 'despesas_adicionais', 'marca_fabricante',
+            'validade', 'observacao', 'status_item',
+        )
 
     def validate(self, attrs):
         participante = attrs['participante']
         item = attrs['cotacao_item']
         if participante.cotacao_id != item.cotacao_id:
             raise serializers.ValidationError('Participante e item pertencem a cotações diferentes.')
-        if attrs.get('status_item', CotacaoFornecedorRespostaItem.StatusItem.RESPONDIDO) == CotacaoFornecedorRespostaItem.StatusItem.RESPONDIDO and attrs.get('preco_unitario') is None:
+        status_item = attrs.get('status_item', CotacaoFornecedorRespostaItem.StatusItem.RESPONDIDO)
+        if status_item == CotacaoFornecedorRespostaItem.StatusItem.RESPONDIDO and attrs.get('preco_unitario') is None:
             raise serializers.ValidationError({'preco_unitario': 'Preço unitário é obrigatório para resposta respondida.'})
+        fator = attrs.get('fator_conversao')
+        if fator is not None and fator <= 0:
+            raise serializers.ValidationError({'fator_conversao': 'O fator de conversão deve ser maior que zero.'})
+        tipo_codigo = attrs.get('frete_tipo_codigo')
+        if tipo_codigo and tipo_codigo not in {'CIF', 'FOB', 'INCLUSO', 'OUTRO'}:
+            raise serializers.ValidationError({'frete_tipo_codigo': 'Use CIF, FOB, INCLUSO ou OUTRO.'})
+        bruto = attrs.get('preco_unitario_bruto')
+        desconto = attrs.get('desconto')
+        liquido = attrs.get('preco_unitario')
+        if bruto is not None and bruto < 0:
+            raise serializers.ValidationError({'preco_unitario_bruto': 'Preço bruto não pode ser negativo.'})
+        if desconto is not None and desconto < 0:
+            raise serializers.ValidationError({'desconto': 'Desconto não pode ser negativo.'})
+        if bruto is not None and desconto is not None and liquido is not None:
+            esperado = (bruto - desconto).quantize(Decimal('0.0001'), rounding=ROUND_HALF_UP)
+            if liquido != esperado:
+                raise serializers.ValidationError({'preco_unitario': 'Preço unitário deve ser o preço líquido após desconto.'})
+        if not tipo_codigo and attrs.get('frete_tipo'):
+            normalizado = normalizar_tipo_frete('', attrs['frete_tipo'])
+            if normalizado:
+                attrs['frete_tipo_codigo'] = normalizado
         return attrs

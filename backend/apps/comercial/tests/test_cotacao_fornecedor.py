@@ -8,6 +8,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from apps.cadastros.models import Cliente, Fornecedor
+from apps.comercial.cotacao_fornecedor_service import classificar_completude_resposta, normalizar_tipo_frete
 from apps.comercial.models import (
     CotacaoFornecedor,
     CotacaoFornecedorItem,
@@ -253,6 +254,106 @@ class CotacaoFornecedorApiTests(TestCase):
         self.assertFalse(PedidoVenda.objects.filter(proposta_id=self.proposta.pk).exists())
         self.assertEqual(ItemPedidoCompra.objects.count(), 0)
         self.assertFalse(ItemPedidoVenda.objects.filter(item_proposta_id=self.item_a.pk).exists())
+
+    def test_resposta_antiga_continua_valida_e_custo_incompleto(self):
+        cotacao = self._criar_cotacao()
+        item = adicionar_item_api(self.client, cotacao, self.item_a)
+        participante = adicionar_participante_api(self.client, cotacao, self.fornecedor_a)
+        response = self.client.post(
+            f'/api/cotacoes-fornecedores/{cotacao.pk}/respostas/',
+            {'participante_id': participante.pk, 'cotacao_item_id': item.pk, 'preco_unitario': '10.0000', 'quantidade_atendida': '10'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data['completude']['status'], 'CUSTO INCOMPLETO')
+        self.assertEqual(CotacaoFornecedorRespostaItem.objects.count(), 1)
+
+    def test_resposta_estrutura_frete_tributos_desconto_e_fator(self):
+        cotacao = self._criar_cotacao()
+        item = adicionar_item_api(self.client, cotacao, self.item_a)
+        participante = adicionar_participante_api(self.client, cotacao, self.fornecedor_a)
+        payload = {
+            'participante_id': participante.pk,
+            'cotacao_item_id': item.pk,
+            'preco_unitario': '95.0000',
+            'preco_unitario_bruto': '100.0000',
+            'desconto': '5.00',
+            'quantidade_atendida': '10',
+            'unidade_cotada': 'CX',
+            'fator_conversao': '10',
+            'frete': '25.00',
+            'frete_tipo': 'FOB',
+            'frete_tipo_codigo': 'FOB',
+            'ipi_custo': '4.50',
+            'icms_st_custo': '7.25',
+            'outros_tributos_custo': '1.00',
+            'despesas_adicionais': '2.00',
+        }
+        response = self.client.post(f'/api/cotacoes-fornecedores/{cotacao.pk}/respostas/', payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data['frete_tipo_codigo'], 'FOB')
+        self.assertEqual(response.data['completude']['status'], 'COMPLETA PARA CALCULO')
+
+    def test_custo_total_e_unitario_efetivo_sao_derivados_sem_dupla_aplicacao(self):
+        response = self.client.post('/api/cotacoes-fornecedores/', {'data': date.today().isoformat()}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        cotacao = CotacaoFornecedor.objects.get(pk=response.data['id'])
+        item_response = self.client.post(f'/api/cotacoes-fornecedores/{cotacao.pk}/itens/', {'descricao_item': 'Item custo', 'unidade': 'UN', 'quantidade': '10'}, format='json')
+        item = CotacaoFornecedorItem.objects.get(pk=item_response.data['id'])
+        participante = adicionar_participante_api(self.client, cotacao, self.fornecedor_a)
+        resposta = self.client.post(f'/api/cotacoes-fornecedores/{cotacao.pk}/respostas/', {
+            'participante_id': participante.pk, 'cotacao_item_id': item.pk, 'preco_unitario': '95.0000', 'preco_unitario_bruto': '100.0000', 'desconto': '5.00',
+            'quantidade_atendida': '10', 'unidade_cotada': 'UN', 'frete_tipo_codigo': 'FOB', 'frete': '25.00', 'ipi_custo': '4.50', 'icms_st_custo': '7.25', 'outros_tributos_custo': '1.00', 'despesas_adicionais': '2.00',
+        }, format='json')
+        self.assertEqual(resposta.status_code, status.HTTP_200_OK, resposta.data)
+        self.assertEqual(resposta.data['calculo_custo']['valor_produtos'], '950.00')
+        self.assertEqual(resposta.data['calculo_custo']['custo_total_estimado'], '989.75')
+        self.assertEqual(resposta.data['calculo_custo']['custo_unitario_efetivo'], '98.98')
+
+    def test_comparativo_destaca_menor_preco_e_melhor_custo_sem_selecionar(self):
+        response = self.client.post('/api/cotacoes-fornecedores/', {'data': date.today().isoformat()}, format='json')
+        cotacao = CotacaoFornecedor.objects.get(pk=response.data['id'])
+        item_response = self.client.post(f'/api/cotacoes-fornecedores/{cotacao.pk}/itens/', {'descricao_item': 'Item ranking', 'unidade': 'UN', 'quantidade': '10'}, format='json')
+        item = CotacaoFornecedorItem.objects.get(pk=item_response.data['id'])
+        p_a = adicionar_participante_api(self.client, cotacao, self.fornecedor_a)
+        p_b = adicionar_participante_api(self.client, cotacao, self.fornecedor_b)
+        base = {'cotacao_item_id': item.pk, 'quantidade_atendida': '10', 'unidade_cotada': 'UN', 'ipi_custo': '0', 'icms_st_custo': '0', 'outros_tributos_custo': '0', 'despesas_adicionais': '0'}
+        a = dict(base, participante_id=p_a.pk, preco_unitario='90.0000', frete='60.00', frete_tipo_codigo='FOB')
+        b = dict(base, participante_id=p_b.pk, preco_unitario='95.0000', frete='0.00', frete_tipo_codigo='INCLUSO')
+        self.assertEqual(self.client.post(f'/api/cotacoes-fornecedores/{cotacao.pk}/respostas/', a, format='json').status_code, status.HTTP_200_OK)
+        self.assertEqual(self.client.post(f'/api/cotacoes-fornecedores/{cotacao.pk}/respostas/', b, format='json').status_code, status.HTTP_200_OK)
+        comparativo = self.client.get(f'/api/cotacoes-fornecedores/{cotacao.pk}/comparativo/')
+        self.assertEqual(comparativo.status_code, status.HTTP_200_OK)
+        respostas = {r['fornecedor_id']: r for r in comparativo.data['itens'][0]['respostas']}
+        self.assertTrue(respostas[self.fornecedor_a.pk]['menor_preco'])
+        self.assertTrue(respostas[self.fornecedor_b.pk]['melhor_custo_total'])
+        self.assertFalse(respostas[self.fornecedor_a.pk]['selecionada_como_referencia'])
+        self.assertFalse(respostas[self.fornecedor_b.pk]['selecionada_como_referencia'])
+
+    def test_tipos_de_frete_sao_normalizados_sem_semantica_critica_em_texto(self):
+        self.assertEqual(normalizar_tipo_frete('CIF', ''), 'CIF')
+        self.assertEqual(normalizar_tipo_frete('FOB', ''), 'FOB')
+        self.assertEqual(normalizar_tipo_frete('INCLUSO', ''), 'INCLUSO')
+        self.assertEqual(normalizar_tipo_frete('OUTRO', ''), 'OUTRO')
+        self.assertEqual(normalizar_tipo_frete('', 'INCLUSAO'), 'INCLUSO')
+
+    def test_frete_fob_sem_valor_fica_incompleto_e_fator_invalido_rejeita(self):
+        cotacao = self._criar_cotacao()
+        item = adicionar_item_api(self.client, cotacao, self.item_a)
+        participante = adicionar_participante_api(self.client, cotacao, self.fornecedor_a)
+        response = self.client.post(
+            f'/api/cotacoes-fornecedores/{cotacao.pk}/respostas/',
+            {'participante_id': participante.pk, 'cotacao_item_id': item.pk, 'preco_unitario': '10', 'quantidade_atendida': '1', 'unidade_cotada': 'CX', 'frete_tipo_codigo': 'FOB'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertIn('frete FOB sem valor', response.data['completude']['motivos'])
+        invalid = self.client.post(
+            f'/api/cotacoes-fornecedores/{cotacao.pk}/respostas/',
+            {'participante_id': participante.pk, 'cotacao_item_id': item.pk, 'preco_unitario': '10', 'quantidade_atendida': '1', 'fator_conversao': '0'},
+            format='json',
+        )
+        self.assertEqual(invalid.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 def adicionar_item_api(client, cotacao, item):
