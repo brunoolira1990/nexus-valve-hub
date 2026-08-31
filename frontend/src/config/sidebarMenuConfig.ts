@@ -67,6 +67,7 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
     children: [
       { type: 'link', label: 'Pedidos de Compra', path: '/pedidos-compra' },
       { type: 'link', label: 'Entrada Própria', path: '/nfe-entrada' },
+      { type: 'link', label: 'Cotações com Fornecedores', path: '/cotacoes-fornecedores' },
     ],
   },
   {

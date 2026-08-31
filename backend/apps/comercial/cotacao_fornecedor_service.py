@@ -10,6 +10,7 @@ from .models import (
     CotacaoFornecedorItem,
     CotacaoFornecedorParticipante,
     CotacaoFornecedorRespostaItem,
+    CotacaoFornecedorHistorico,
     ItemProposta,
     PropostaComercialHistorico,
 )
@@ -26,10 +27,19 @@ def _snapshot_item(item: ItemProposta) -> dict:
 
 
 def _evento(cotacao, tipo: str, descricao: str, usuario=None, dados=None):
-    return PropostaComercialHistorico.objects.create(
-        proposta=cotacao.proposta,
-        tipo_evento=tipo,
-        descricao=f'Cotação {cotacao.numero}: {descricao}',
+    texto = f'Cotação {cotacao.numero}: {descricao}'
+    if cotacao.proposta_id:
+        return PropostaComercialHistorico.objects.create(
+            proposta=cotacao.proposta,
+            tipo_evento=tipo,
+            descricao=texto,
+            usuario=usuario,
+            dados_json=dados or {},
+        )
+    return CotacaoFornecedorHistorico.objects.create(
+        cotacao=cotacao,
+        evento=tipo,
+        descricao=texto,
         usuario=usuario,
         dados_json=dados or {},
     )
@@ -57,25 +67,44 @@ def atualizar_status(cotacao: CotacaoFornecedor):
 
 
 @transaction.atomic
-def adicionar_item(cotacao, item_proposta_id, quantidade=None, observacao_tecnica='', usuario=None):
-    item = ItemProposta.objects.select_related('produto').get(pk=item_proposta_id, proposta=cotacao.proposta)
+def adicionar_item(cotacao, item_proposta_id=None, quantidade=None, observacao_tecnica='', usuario=None, *, produto=None, descricao_item='', unidade=''):
     if cotacao.status == CotacaoFornecedor.Status.CANCELADA:
         raise ValueError('Cotação cancelada não aceita novos itens.')
-    if quantidade is None:
-        quantidade = item.quantidade_negociada or item.quantidade
-    obj, created = CotacaoFornecedorItem.objects.get_or_create(
+    if cotacao.proposta_id:
+        if item_proposta_id is None:
+            raise ValueError('Cotação vinculada exige item da Proposta.')
+        item = ItemProposta.objects.select_related('produto').get(pk=item_proposta_id, proposta=cotacao.proposta)
+        if quantidade is None:
+            quantidade = item.quantidade_negociada or item.quantidade
+        obj = CotacaoFornecedorItem.objects.create(
+            cotacao=cotacao,
+            item_proposta=item,
+            produto=item.produto,
+            produto_snapshot=_snapshot_item(item),
+            descricao_item='',
+            unidade=item.unidade_negociada or getattr(item.produto, 'unidade', '') if item.produto else item.unidade_negociada,
+            quantidade=quantidade,
+            observacao_tecnica=observacao_tecnica or '',
+        )
+        _evento(cotacao, 'ITEM_COTACAO_ADICIONADO', f'item da Proposta #{item.pk} adicionado', usuario, {'item_id': item.pk})
+        return obj
+    if item_proposta_id is not None:
+        raise ValueError('Cotação manual não aceita item da Proposta.')
+    if not descricao_item.strip() or not unidade.strip() or quantidade is None or Decimal(str(quantidade)) <= 0:
+        raise ValueError('Item manual exige descrição, unidade e quantidade maior que zero.')
+    snapshot = {}
+    if produto is not None:
+        snapshot = {'produto_id': produto.pk, 'codigo_completo': getattr(produto, 'codigo_completo', ''), 'descricao': produto.descricao, 'unidade': getattr(produto, 'unidade', '')}
+    obj = CotacaoFornecedorItem.objects.create(
         cotacao=cotacao,
-        item_proposta=item,
-        defaults={
-            'produto': item.produto,
-            'produto_snapshot': _snapshot_item(item),
-            'quantidade': quantidade,
-            'observacao_tecnica': observacao_tecnica or '',
-        },
+        produto=produto,
+        produto_snapshot=snapshot,
+        descricao_item=descricao_item.strip(),
+        unidade=unidade.strip(),
+        quantidade=quantidade,
+        observacao_tecnica=observacao_tecnica or '',
     )
-    if not created:
-        raise ValueError('O item já pertence a esta cotação.')
-    _evento(cotacao, 'ITEM_COTACAO_ADICIONADO', f'item da Proposta #{item.pk} adicionado', usuario, {'item_id': item.pk})
+    _evento(cotacao, 'ITEM_COTACAO_ADICIONADO', 'item manual adicionado', usuario, {'item_id': obj.pk})
     return obj
 
 

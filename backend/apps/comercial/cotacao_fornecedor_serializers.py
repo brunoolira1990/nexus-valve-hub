@@ -1,14 +1,29 @@
 from rest_framework import serializers
 
 from apps.cadastros.models import Fornecedor
+from apps.produtos.models import Produto
 
 from .models import (
     CotacaoFornecedor,
+    Proposta,
     CotacaoFornecedorItem,
+    CotacaoFornecedorHistorico,
     CotacaoFornecedorParticipante,
     CotacaoFornecedorRespostaItem,
     ItemProposta,
 )
+
+
+class CotacaoFornecedorHistoricoSerializer(serializers.ModelSerializer):
+    usuario_nome = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = CotacaoFornecedorHistorico
+        fields = ('id', 'evento', 'descricao', 'dados_json', 'usuario', 'usuario_nome', 'criado_em')
+        read_only_fields = fields
+
+    def get_usuario_nome(self, obj):
+        return obj.usuario.get_username() if obj.usuario_id else ''
 
 
 class CotacaoFornecedorRespostaItemSerializer(serializers.ModelSerializer):
@@ -40,7 +55,7 @@ class CotacaoFornecedorItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CotacaoFornecedorItem
-        fields = ('id', 'item_proposta_id', 'produto_id', 'produto_nome', 'produto_snapshot', 'quantidade', 'observacao_tecnica', 'status', 'respostas')
+        fields = ('id', 'item_proposta_id', 'produto_id', 'produto_nome', 'produto_snapshot', 'descricao_item', 'unidade', 'quantidade', 'observacao_tecnica', 'status', 'respostas')
         read_only_fields = ('produto_id', 'produto_nome', 'produto_snapshot', 'status', 'respostas')
 
     def get_produto_nome(self, obj):
@@ -51,6 +66,32 @@ class CotacaoFornecedorItemSerializer(serializers.ModelSerializer):
         if proposta_id and value.proposta_id != int(proposta_id):
             raise serializers.ValidationError('O item não pertence à Proposta da cotação.')
         return value
+
+
+class CotacaoFornecedorItemInputSerializer(serializers.Serializer):
+    item_proposta_id = serializers.PrimaryKeyRelatedField(queryset=ItemProposta.objects.all(), required=False, allow_null=True)
+    produto_id = serializers.PrimaryKeyRelatedField(queryset=Produto.objects.all(), required=False, allow_null=True)
+    descricao_item = serializers.CharField(required=False, allow_blank=True)
+    unidade = serializers.CharField(required=False, allow_blank=True)
+    quantidade = serializers.DecimalField(max_digits=14, decimal_places=3, required=False)
+    observacao_tecnica = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        item = attrs.get('item_proposta_id')
+        proposta_id = self.context.get('proposta_id')
+        if item is not None:
+            if proposta_id is None or item.proposta_id != int(proposta_id):
+                raise serializers.ValidationError({'item_proposta_id': 'O item deve pertencer à Proposta da cotação.'})
+            if any(attrs.get(key) not in (None, '') for key in ('descricao_item', 'unidade', 'produto_id')):
+                raise serializers.ValidationError('Payload ambíguo: itens vinculados não aceitam campos manuais.')
+            return attrs
+        if not attrs.get('descricao_item', '').strip():
+            raise serializers.ValidationError({'descricao_item': 'Descrição é obrigatória para item manual.'})
+        if not attrs.get('unidade', '').strip():
+            raise serializers.ValidationError({'unidade': 'Unidade é obrigatória para item manual.'})
+        if attrs.get('quantidade') is None or attrs['quantidade'] <= 0:
+            raise serializers.ValidationError({'quantidade': 'Quantidade deve ser maior que zero.'})
+        return attrs
 
 
 class CotacaoFornecedorParticipanteSerializer(serializers.ModelSerializer):
@@ -80,12 +121,14 @@ class CotacaoFornecedorSerializer(serializers.ModelSerializer):
 
 
 class CotacaoFornecedorCreateSerializer(serializers.ModelSerializer):
+    proposta = serializers.PrimaryKeyRelatedField(queryset=Proposta.objects.all(), required=False, allow_null=True)
+
     class Meta:
         model = CotacaoFornecedor
         fields = ('proposta', 'data', 'prazo_resposta', 'observacao')
 
     def validate_proposta(self, value):
-        if not value.itens.exists():
+        if value is not None and not value.itens.exists():
             raise serializers.ValidationError('A Proposta precisa ter ao menos um item.')
         return value
 

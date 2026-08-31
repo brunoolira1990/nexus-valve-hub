@@ -3305,10 +3305,12 @@ export interface CotacaoFornecedorRespostaItem {
 
 export interface CotacaoFornecedorItem {
   id: number;
-  item_proposta_id: number;
+  item_proposta_id: number | null;
   produto_id: number | null;
   produto_nome: string;
   produto_snapshot: Record<string, unknown>;
+  descricao_item: string;
+  unidade: string;
   quantidade: number;
   observacao_tecnica: string;
   status: string;
@@ -3326,10 +3328,20 @@ export interface CotacaoFornecedorParticipante {
   respostas: CotacaoFornecedorRespostaItem[];
 }
 
+export interface CotacaoFornecedorHistorico {
+  id: number;
+  evento: string;
+  descricao: string;
+  dados_json: Record<string, unknown>;
+  usuario: number | null;
+  usuario_nome: string;
+  criado_em: string;
+}
+
 export interface CotacaoFornecedor {
   id: number;
   numero: string;
-  proposta_id: number;
+  proposta_id: number | null;
   data: string;
   responsavel: number;
   responsavel_nome: string;
@@ -3344,9 +3356,10 @@ export interface CotacaoFornecedor {
 
 export interface CotacaoComparativoItem {
   cotacao_item_id: number;
-  item_proposta_id: number;
+  item_proposta_id: number | null;
   produto_id: number | null;
   descricao: string;
+  unidade: string;
   quantidade: number;
   respostas: CotacaoFornecedorRespostaItem[];
 }
@@ -3354,6 +3367,7 @@ export interface CotacaoComparativoItem {
 export interface CotacaoComparativo {
   cotacao_id: number;
   numero: string;
+  proposta_id: number | null;
   status: CotacaoFornecedorStatus;
   itens: CotacaoComparativoItem[];
 }
