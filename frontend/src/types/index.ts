@@ -3281,6 +3281,17 @@ export type CotacaoFornecedorStatus = 'RASCUNHO' | 'EM_COTACAO' | 'PARCIAL' | 'C
 export type CotacaoParticipanteStatus = 'PENDENTE' | 'RESPONDIDO' | 'RECUSADO' | 'SEM_RETORNO';
 export type CotacaoRespostaStatus = 'RESPONDIDO' | 'RECUSADO' | 'SEM_RETORNO';
 
+export interface CotacaoRespostaCalculoCusto {
+  status: 'COMPLETA PARA CALCULO' | 'CUSTO INCOMPLETO';
+  motivos: string[];
+  tipo_frete: string;
+  valor_produtos: string | null;
+  custo_total_estimado: string | null;
+  custo_unitario_efetivo: string | null;
+  quantidade_normalizada: string | null;
+  frete_efetivo: string | null;
+}
+
 export interface CotacaoFornecedorRespostaItem {
   id: number;
   participante: number;
@@ -3288,15 +3299,30 @@ export interface CotacaoFornecedorRespostaItem {
   fornecedor_id: number;
   fornecedor_nome: string;
   preco_unitario: number | null;
+  preco_unitario_bruto: number | null;
+  desconto: number | null;
   quantidade_atendida: number;
+  unidade_cotada: string;
+  fator_conversao: number | null;
   prazo_entrega: string;
   condicao_pagamento: string;
   frete: number | null;
   frete_tipo: string;
+  frete_tipo_codigo: string;
+  ipi_custo: number | null;
+  icms_st_custo: number | null;
+  outros_tributos_custo: number | null;
+  despesas_adicionais: number | null;
   marca_fabricante: string;
   validade: string | null;
   observacao: string;
   status_item: CotacaoRespostaStatus;
+  completude: { status: string; motivos: string[]; tipo_frete: string };
+  calculo_custo: CotacaoRespostaCalculoCusto;
+  menor_preco: boolean;
+  melhor_custo_total: boolean;
+  custo_incompleto: boolean;
+  motivos_incompletude: string[];
   selecionada_como_referencia: boolean;
   selecionada_por: number | null;
   selecionada_por_nome: string;

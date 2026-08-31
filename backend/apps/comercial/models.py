@@ -990,12 +990,26 @@ class CotacaoFornecedorRespostaItem(models.Model):
 
     participante = models.ForeignKey(CotacaoFornecedorParticipante, on_delete=models.CASCADE, related_name='respostas')
     cotacao_item = models.ForeignKey(CotacaoFornecedorItem, on_delete=models.CASCADE, related_name='respostas')
-    preco_unitario = models.DecimalField(max_digits=14, decimal_places=4, null=True, blank=True)
+    preco_unitario = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        null=True,
+        blank=True,
+    )
+    preco_unitario_bruto = models.DecimalField(max_digits=14, decimal_places=4, null=True, blank=True)
+    desconto = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     quantidade_atendida = models.DecimalField(max_digits=14, decimal_places=3, default=Decimal('0'))
+    unidade_cotada = models.CharField(max_length=30, blank=True)
+    fator_conversao = models.DecimalField(max_digits=14, decimal_places=6, null=True, blank=True)
     prazo_entrega = models.CharField(max_length=120, blank=True)
     condicao_pagamento = models.CharField(max_length=120, blank=True)
     frete = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     frete_tipo = models.CharField(max_length=24, blank=True)
+    frete_tipo_codigo = models.CharField(max_length=8, blank=True)
+    ipi_custo = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    icms_st_custo = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    outros_tributos_custo = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    despesas_adicionais = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     marca_fabricante = models.CharField(max_length=255, blank=True)
     validade = models.DateField(null=True, blank=True)
     observacao = models.TextField(blank=True)
@@ -1019,4 +1033,7 @@ class CotacaoFornecedorRespostaItem(models.Model):
             models.CheckConstraint(condition=models.Q(preco_unitario__isnull=True) | models.Q(preco_unitario__gte=Decimal('0')), name='cot_resp_preco_nao_neg'),
             models.CheckConstraint(condition=models.Q(quantidade_atendida__gte=Decimal('0')), name='cot_resp_qtd_atendida_nao_neg'),
             models.CheckConstraint(condition=models.Q(frete__isnull=True) | models.Q(frete__gte=Decimal('0')), name='cot_resp_frete_nao_neg'),
+            models.CheckConstraint(condition=models.Q(preco_unitario_bruto__isnull=True) | models.Q(preco_unitario_bruto__gte=Decimal('0')), name='cot_resp_preco_bruto_nao_neg'),
+            models.CheckConstraint(condition=models.Q(desconto__isnull=True) | models.Q(desconto__gte=Decimal('0')), name='cot_resp_desconto_nao_neg'),
+            models.CheckConstraint(condition=models.Q(fator_conversao__isnull=True) | models.Q(fator_conversao__gt=Decimal('0')), name='cot_resp_fator_conversao_positivo'),
         )

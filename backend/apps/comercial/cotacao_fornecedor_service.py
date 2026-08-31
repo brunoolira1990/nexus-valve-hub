@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction
 from django.utils import timezone
@@ -14,6 +14,82 @@ from .models import (
     ItemProposta,
     PropostaComercialHistorico,
 )
+
+
+TIPOS_FRETE = {'CIF', 'FOB', 'INCLUSO', 'OUTRO'}
+
+
+def normalizar_tipo_frete(tipo_codigo='', tipo_texto='') -> str:
+    valor = (tipo_codigo or tipo_texto or '').strip().upper()
+    aliases = {'INCLUSAO': 'INCLUSO', 'INCLUSO_NO_PRECO': 'INCLUSO'}
+    return aliases.get(valor, valor if valor in TIPOS_FRETE else '')
+
+
+def _money(value) -> Decimal:
+    return Decimal(str(value or 0)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+
+def calcular_custo_resposta(resposta, item=None) -> dict:
+    completude = classificar_completude_resposta(resposta, item)
+    if completude['status'] != 'COMPLETA PARA CALCULO':
+        return {
+            'status': completude['status'],
+            'motivos': completude['motivos'],
+            'tipo_frete': completude['tipo_frete'],
+            'valor_produtos': None,
+            'custo_total_estimado': None,
+            'custo_unitario_efetivo': None,
+            'quantidade_normalizada': None,
+            'frete_efetivo': None,
+        }
+    unidade_cotada = (resposta.unidade_cotada or '').strip().upper()
+    unidade_base = (getattr(item, 'unidade', '') or '').strip().upper() if item else unidade_cotada
+    fator = Decimal('1') if unidade_cotada == unidade_base else Decimal(str(resposta.fator_conversao))
+    quantidade_normalizada = Decimal(str(resposta.quantidade_atendida)) * fator
+    frete_efetivo = Decimal('0') if completude['tipo_frete'] in {'CIF', 'INCLUSO'} else Decimal(str(resposta.frete or 0))
+    valor_produtos = quantidade_normalizada * Decimal(str(resposta.preco_unitario))
+    custo_total = valor_produtos + sum(
+        Decimal(str(getattr(resposta, campo))) for campo in ('ipi_custo', 'icms_st_custo', 'outros_tributos_custo', 'despesas_adicionais')
+    ) + frete_efetivo
+    custo_total = _money(custo_total)
+    return {
+        'status': completude['status'],
+        'motivos': [],
+        'tipo_frete': completude['tipo_frete'],
+        'valor_produtos': _money(valor_produtos),
+        'custo_total_estimado': custo_total,
+        'custo_unitario_efetivo': _money(custo_total / quantidade_normalizada),
+        'quantidade_normalizada': quantidade_normalizada,
+        'frete_efetivo': _money(frete_efetivo),
+    }
+
+
+def classificar_completude_resposta(resposta, item=None) -> dict:
+    motivos = []
+    if resposta.status_item == CotacaoFornecedorRespostaItem.StatusItem.RESPONDIDO:
+        if resposta.preco_unitario is None:
+            motivos.append('preço ausente')
+        if resposta.quantidade_atendida <= 0:
+            motivos.append('quantidade atendida ausente')
+        if not (resposta.unidade_cotada or '').strip():
+            motivos.append('unidade cotada ausente')
+        if any(getattr(resposta, campo) is None for campo in ('ipi_custo', 'icms_st_custo', 'outros_tributos_custo', 'despesas_adicionais')):
+            motivos.append('tributos/despesas de entrada incompletos')
+    tipo_frete = normalizar_tipo_frete(resposta.frete_tipo_codigo, resposta.frete_tipo)
+    if not tipo_frete:
+        motivos.append('tipo de frete ausente')
+    if tipo_frete in {'FOB', 'OUTRO'} and resposta.frete is None:
+        motivos.append(f'frete {tipo_frete} sem valor')
+    if resposta.fator_conversao is None:
+        unidade_cotada = (resposta.unidade_cotada or '').strip()
+        unidade_base = (getattr(item, 'unidade', '') or '').strip() if item else ''
+        if unidade_cotada and unidade_base and unidade_cotada.upper() != unidade_base.upper():
+            motivos.append('unidade incompatível sem fator')
+    return {
+        'status': 'COMPLETA PARA CALCULO' if not motivos else 'CUSTO INCOMPLETO',
+        'motivos': motivos,
+        'tipo_frete': tipo_frete,
+    }
 
 
 def _snapshot_item(item: ItemProposta) -> dict:
@@ -132,11 +208,20 @@ def registrar_resposta(*, participante, cotacao_item, dados, usuario=None):
         raise ValueError('Quantidade atendida não pode ser negativa.')
     defaults = {
         'preco_unitario': dados.get('preco_unitario'),
-        'quantidade_atendida': dados.get('quantidade_atendida') or 0,
         'prazo_entrega': dados.get('prazo_entrega') or '',
         'condicao_pagamento': dados.get('condicao_pagamento') or '',
+        'preco_unitario_bruto': dados.get('preco_unitario_bruto'),
+        'desconto': dados.get('desconto'),
+        'quantidade_atendida': dados.get('quantidade_atendida') or 0,
+        'unidade_cotada': dados.get('unidade_cotada') or '',
+        'fator_conversao': dados.get('fator_conversao'),
         'frete': dados.get('frete'),
         'frete_tipo': dados.get('frete_tipo') or '',
+        'frete_tipo_codigo': normalizar_tipo_frete(dados.get('frete_tipo_codigo'), dados.get('frete_tipo')),
+        'ipi_custo': dados.get('ipi_custo'),
+        'icms_st_custo': dados.get('icms_st_custo'),
+        'outros_tributos_custo': dados.get('outros_tributos_custo'),
+        'despesas_adicionais': dados.get('despesas_adicionais'),
         'marca_fabricante': dados.get('marca_fabricante') or '',
         'validade': dados.get('validade'),
         'observacao': dados.get('observacao') or '',
