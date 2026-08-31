@@ -1,101 +1,232 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { Plus, RefreshCw, Send, CheckCircle2, Trash2 } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Plus, RefreshCw } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { EmptyState, ErrorState } from '@/components/list/ListStates';
-import { formatMoneyBRL } from '@/lib/numberFields';
+import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
+import { StatusBadge } from '@/components/nexus/StatusBadge';
+import { formatDateBr } from '@/lib/dateBr';
+import { apiErrorMessage } from '@/services/api/config';
 import { cotacoesFornecedoresService, propostasService } from '@/services/api/comercial';
-import { fornecedoresService } from '@/services/api/fornecedores';
-import { produtosService } from '@/services/api/produtos';
-import type { CotacaoComparativo, CotacaoFornecedor, Fornecedor, Produto, Proposta } from '@/types';
+import {
+  filtrarCotacoes,
+  labelOrigemCotacao,
+  labelStatusCotacao,
+  type CotacaoOrigemFiltro,
+} from '@/lib/cotacaoFornecedores';
+import type { CotacaoFornecedor, CotacaoFornecedorStatus, Proposta } from '@/types';
 
-const statusLabel: Record<string, string> = {
-  RASCUNHO: 'Rascunho', EM_COTACAO: 'Em cotação', PARCIAL: 'Parcial', CONCLUIDA: 'Concluída', CANCELADA: 'Cancelada',
-  PENDENTE: 'Pendente', RESPONDIDO: 'Respondido', RECUSADO: 'Recusado', SEM_RETORNO: 'Sem retorno',
+type FiltrosCotacao = {
+  busca: string;
+  status: CotacaoFornecedorStatus | 'TODOS';
+  origem: CotacaoOrigemFiltro;
 };
 
-type ModoCotacao = 'proposta' | 'manual';
-type RespostaDraft = { preco_unitario: string; preco_unitario_bruto: string; desconto: string; quantidade_atendida: string; unidade_cotada: string; fator_conversao: string; prazo_entrega: string; frete: string; frete_tipo: string; ipi_custo: string; icms_st_custo: string; outros_tributos_custo: string; despesas_adicionais: string; status_item: string };
-type ItemManualDraft = { key: number; descricao_item: string; unidade: string; quantidade: string; produto_id: string };
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return formatDateBr(value) || '—';
+  return date.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+}
 
 export default function CotacoesFornecedores() {
-  const [params] = useSearchParams();
-  const propostaInicial = Number(params.get('proposta_id') || 0) || null;
-  const [modo, setModo] = useState<ModoCotacao>(propostaInicial ? 'proposta' : 'manual');
+  const navigate = useNavigate();
+  const [cotacoes, setCotacoes] = useState<CotacaoFornecedor[]>([]);
   const [propostas, setPropostas] = useState<Proposta[]>([]);
-  const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
-  const [produtos, setProdutos] = useState<Produto[]>([]);
-  const [propostaId, setPropostaId] = useState<number | null>(propostaInicial);
-  const [cotacao, setCotacao] = useState<CotacaoFornecedor | null>(null);
-  const [comparativo, setComparativo] = useState<CotacaoComparativo | null>(null);
-  const [itensSelecionados, setItensSelecionados] = useState<number[]>([]);
-  const [fornecedoresSelecionados, setFornecedoresSelecionados] = useState<number[]>([]);
-  const [itensManuais, setItensManuais] = useState<ItemManualDraft[]>([{ key: 1, descricao_item: '', unidade: '', quantidade: '', produto_id: '' }]);
-  const [nextManualKey, setNextManualKey] = useState(2);
-  const [drafts, setDrafts] = useState<Record<string, RespostaDraft>>({});
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-
-  const propostaAtual = useMemo(() => propostas.find((p) => p.id === propostaId) || null, [propostas, propostaId]);
+  const [filtros, setFiltros] = useState<FiltrosCotacao>({
+    busca: '',
+    status: 'TODOS',
+    origem: 'TODAS',
+  });
 
   const load = async () => {
-    setLoading(true); setError('');
+    setLoading(true);
+    setError('');
     try {
-      const [ps, fs, prs] = await Promise.all([propostasService.getAll({ limit: 200 }), fornecedoresService.getAll({ limit: 200 }), produtosService.getAll({ limit: 200 })]);
-      setPropostas(ps); setFornecedores(fs.filter((f) => f.ativo)); setProdutos(prs.filter((p) => p.ativo));
-    } catch (err) { setError(err instanceof Error ? err.message : 'Não foi possível carregar Propostas, Fornecedores e Produtos.'); }
-    finally { setLoading(false); }
-  };
-  useEffect(() => { void load(); }, []);
-
-  const refreshCotacao = async (id: number) => {
-    const [detail, compare] = await Promise.all([cotacoesFornecedoresService.getById(id), cotacoesFornecedoresService.comparativo(id)]);
-    setCotacao(detail); setComparativo(compare);
-  };
-
-  const criarCotacao = async () => {
-    const manuaisValidos = itensManuais.filter((item) => item.descricao_item.trim() && item.unidade.trim() && Number(item.quantidade) > 0);
-    if (!fornecedoresSelecionados.length || (modo === 'proposta' && (!propostaId || !itensSelecionados.length)) || (modo === 'manual' && manuaisValidos.length !== itensManuais.length)) return;
-    setSaving(true); setError('');
-    try {
-      const nova = await cotacoesFornecedoresService.create({ proposta: modo === 'proposta' ? propostaId : null, observacao: modo === 'manual' ? 'Cotação manual.' : 'Cotação criada a partir da Proposta.' });
-      if (modo === 'proposta') for (const itemId of itensSelecionados) await cotacoesFornecedoresService.addItem(nova.id, { item_proposta_id: itemId });
-      else for (const item of manuaisValidos) await cotacoesFornecedoresService.addItem(nova.id, { descricao_item: item.descricao_item.trim(), unidade: item.unidade.trim(), quantidade: Number(item.quantidade), ...(item.produto_id ? { produto_id: Number(item.produto_id) } : {}) });
-      for (const fornecedorId of fornecedoresSelecionados) await cotacoesFornecedoresService.addParticipante(nova.id, fornecedorId);
-      await refreshCotacao(nova.id);
-    } catch (err) { setError(err instanceof Error ? err.message : 'Não foi possível criar a cotação.'); }
-    finally { setSaving(false); }
+      const [cotacoesRows, propostasRows] = await Promise.all([
+        cotacoesFornecedoresService.list({ limit: 200 }),
+        propostasService.getAll({ limit: 200 }),
+      ]);
+      setCotacoes(cotacoesRows);
+      setPropostas(propostasRows);
+    } catch (err) {
+      setError(apiErrorMessage(err, { fallback: 'Não foi possível carregar as cotações.' }));
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const updateManual = (key: number, patch: Partial<ItemManualDraft>) => setItensManuais((prev) => prev.map((item) => item.key === key ? { ...item, ...patch } : item));
-  const adicionarManual = () => { setItensManuais((prev) => [...prev, { key: nextManualKey, descricao_item: '', unidade: '', quantidade: '', produto_id: '' }]); setNextManualKey((value) => value + 1); };
-  const removerManual = (key: number) => setItensManuais((prev) => prev.length === 1 ? prev : prev.filter((item) => item.key !== key));
+  useEffect(() => {
+    void load();
+  }, []);
 
-  const registrarResposta = async (participanteId: number, itemId: number) => {
-    if (!cotacao) return;
-    const key = `${participanteId}-${itemId}`; const draft = drafts[key] || { preco_unitario: '', preco_unitario_bruto: '', desconto: '', quantidade_atendida: '', unidade_cotada: '', fator_conversao: '', prazo_entrega: '', frete: '', frete_tipo: '', ipi_custo: '', icms_st_custo: '', outros_tributos_custo: '', despesas_adicionais: '', status_item: 'RESPONDIDO' };
-    setSaving(true);
-    try { await cotacoesFornecedoresService.resposta(cotacao.id, { participante_id: participanteId, cotacao_item_id: itemId, preco_unitario: draft.status_item === 'RESPONDIDO' ? Number(draft.preco_unitario || 0) : null, preco_unitario_bruto: draft.preco_unitario_bruto ? Number(draft.preco_unitario_bruto) : null, desconto: draft.desconto ? Number(draft.desconto) : null, quantidade_atendida: Number(draft.quantidade_atendida || 0), unidade_cotada: draft.unidade_cotada, fator_conversao: draft.fator_conversao ? Number(draft.fator_conversao) : null, prazo_entrega: draft.prazo_entrega, frete: draft.frete ? Number(draft.frete) : null, frete_tipo: draft.frete_tipo, frete_tipo_codigo: draft.frete_tipo, ipi_custo: draft.ipi_custo ? Number(draft.ipi_custo) : null, icms_st_custo: draft.icms_st_custo ? Number(draft.icms_st_custo) : null, outros_tributos_custo: draft.outros_tributos_custo ? Number(draft.outros_tributos_custo) : null, despesas_adicionais: draft.despesas_adicionais ? Number(draft.despesas_adicionais) : null, status_item: draft.status_item }); await refreshCotacao(cotacao.id); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Não foi possível registrar a resposta.'); } finally { setSaving(false); }
-  };
-  const updateDraft = (participanteId: number, itemId: number, patch: Partial<RespostaDraft>) => { const key = `${participanteId}-${itemId}`; setDrafts((prev) => ({ ...prev, [key]: { ...(prev[key] || { preco_unitario: '', preco_unitario_bruto: '', desconto: '', quantidade_atendida: '', unidade_cotada: '', fator_conversao: '', prazo_entrega: '', frete: '', frete_tipo: '', ipi_custo: '', icms_st_custo: '', outros_tributos_custo: '', despesas_adicionais: '', status_item: 'RESPONDIDO' }), ...patch } })); };
+  const propostaNumeroPorId = useMemo(() => {
+    const map: Record<number, string> = {};
+    for (const proposta of propostas) {
+      map[proposta.id] = proposta.numero;
+    }
+    return map;
+  }, [propostas]);
 
-  if (loading) return <div className="p-6">Carregando Cotações com Fornecedores…</div>;
-  if (error && !propostas.length && !fornecedores.length) return <ErrorState title="Falha ao carregar cotações" description={error} onRetry={() => void load()} />;
+  const cotacoesFiltradas = useMemo(
+    () => filtrarCotacoes(cotacoes, filtros, propostaNumeroPorId),
+    [cotacoes, filtros, propostaNumeroPorId],
+  );
 
-  return <div className="space-y-5">
-    <PageHeader title="Cotações com Fornecedores" description="Consulte o mercado antes da formação de preço da Proposta, sem alterar custo ou preço de venda." actions={<button className="erp-btn-outline" onClick={() => void load()}><RefreshCw className="mr-2 h-4 w-4" />Atualizar</button>} />
-    {error && <div className="erp-alert erp-alert-error">{error}</div>}
-    <section className="erp-card p-4 space-y-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="min-w-[220px] text-sm font-medium">Modo de cotação<select className="erp-input mt-1 w-full" value={modo} onChange={(e) => { setModo(e.target.value as ModoCotacao); setCotacao(null); setComparativo(null); }}><option value="proposta">Vinculada à Proposta</option><option value="manual">Cotação manual</option></select></label>
-        {modo === 'proposta' && <><label className="min-w-[280px] flex-1 text-sm font-medium">Proposta<select className="erp-input mt-1 w-full" value={propostaId || ''} onChange={(e) => { setPropostaId(Number(e.target.value) || null); setCotacao(null); setComparativo(null); }}><option value="">Selecione uma Proposta</option>{propostas.map((p) => <option key={p.id} value={p.id}>{p.numero} — {p.cliente_nome || p.cliente_avulso_nome || 'Cliente avulso'}</option>)}</select></label><Link className="erp-btn-outline" to={propostaId ? `/propostas?proposta_id=${propostaId}` : '/propostas'}>Abrir Proposta</Link></>}
+  return (
+    <div className="min-w-0">
+      <PageHeader
+        title="Cotações com Fornecedores"
+        description="Listagem de cotações de compra criadas para consulta de mercado."
+        breadcrumbs={[
+          { label: 'Compras' },
+          { label: 'Cotações com Fornecedores' },
+        ]}
+        actions={
+          <button
+            type="button"
+            className="erp-btn-primary"
+            onClick={() => navigate('/cotacoes-fornecedores/nova')}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Nova cotação
+          </button>
+        }
+      />
+
+      {error ? <div className="erp-alert erp-alert-error mb-4">{error}</div> : null}
+
+      <div className="space-y-4">
+        {/* Filtros */}
+        <div className="flex flex-wrap gap-3">
+          <input
+            className="erp-input flex-1 min-w-[200px] max-w-md"
+            placeholder="Buscar por número, Proposta ou responsável..."
+            aria-label="Buscar cotação"
+            value={filtros.busca}
+            onChange={(event) =>
+              setFiltros((prev) => ({ ...prev, busca: event.target.value }))
+            }
+          />
+
+          <select
+            className="erp-input min-w-[180px]"
+            aria-label="Filtrar por status"
+            value={filtros.status}
+            onChange={(event) =>
+              setFiltros((prev) => ({
+                ...prev,
+                status: event.target.value as CotacaoFornecedorStatus | 'TODOS',
+              }))
+            }
+          >
+            <option value="TODOS">Todos os status</option>
+            <option value="RASCUNHO">Rascunho</option>
+            <option value="EM_COTACAO">Em cotação</option>
+            <option value="PARCIAL">Parcial</option>
+            <option value="CONCLUIDA">Concluída</option>
+            <option value="CANCELADA">Cancelada</option>
+          </select>
+
+          <select
+            className="erp-input min-w-[180px]"
+            aria-label="Filtrar por origem"
+            value={filtros.origem}
+            onChange={(event) =>
+              setFiltros((prev) => ({
+                ...prev,
+                origem: event.target.value as CotacaoOrigemFiltro,
+              }))
+            }
+          >
+            <option value="TODAS">Todas as origens</option>
+            <option value="MANUAL">Manual</option>
+            <option value="PROPOSTA">Vinculada à Proposta</option>
+          </select>
+
+          <button
+            type="button"
+            className="erp-btn-outline"
+            onClick={() => void load()}
+          >
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Atualizar
+          </button>
+        </div>
+
+        {/* Tabela */}
+        <DataTableShell>
+          {loading ? (
+            <div className="py-12 text-center text-sm text-muted-foreground">
+              Carregando cotações…
+            </div>
+          ) : error ? (
+            <ErrorState message={error} onRetry={() => void load()} />
+          ) : cotacoesFiltradas.length === 0 ? (
+            <EmptyState
+              message="Nenhuma cotação criada ainda."
+              actionLabel="Criar primeira cotação"
+              onAction={() => navigate('/cotacoes-fornecedores/nova')}
+            />
+          ) : (
+            <DataTable>
+              <thead>
+                <tr>
+                  <th>Número</th>
+                  <th>Origem</th>
+                  <th>Proposta</th>
+                  <th>Itens</th>
+                  <th>Fornecedores</th>
+                  <th>Status</th>
+                  <th>Atualização</th>
+                  <th className="w-24">Ação</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cotacoesFiltradas.map((cotacao) => (
+                  <tr key={cotacao.id}>
+                    <td className="font-medium">{cotacao.numero}</td>
+                    <td>{labelOrigemCotacao(cotacao)}</td>
+                    <td>
+                      {cotacao.proposta_id == null ? (
+                        '—'
+                      ) : (
+                        <Link
+                          className="text-primary hover:underline"
+                          to={`/propostas?proposta_id=${cotacao.proposta_id}`}
+                        >
+                          {propostaNumeroPorId[cotacao.proposta_id] ||
+                            `#${cotacao.proposta_id}`}
+                        </Link>
+                      )}
+                    </td>
+                    <td>{cotacao.itens.length}</td>
+                    <td>{cotacao.participantes.length}</td>
+                    <td>
+                      <StatusBadge
+                        status={cotacao.status}
+                        label={labelStatusCotacao(cotacao.status)}
+                      />
+                    </td>
+                    <td className="text-sm">{formatDateTime(cotacao.atualizado_em)}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="erp-btn-ghost erp-btn-sm"
+                        onClick={() => navigate(`/cotacoes-fornecedores/${cotacao.id}`)}
+                      >
+                        Abrir
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </DataTable>
+          )}
+        </DataTableShell>
       </div>
-      {!cotacao && modo === 'proposta' && propostaAtual && <div><h2 className="text-sm font-semibold">Itens para consultar</h2><div className="mt-2 grid gap-2 md:grid-cols-2">{(propostaAtual.itens || []).map((item) => <label key={item.id} className="flex items-center gap-2 rounded border p-2 text-sm"><input type="checkbox" checked={itensSelecionados.includes(item.id)} onChange={(e) => setItensSelecionados((prev) => e.target.checked ? [...prev, item.id] : prev.filter((id) => id !== item.id))} /><span>{item.produto_nome || item.descricao_avulsa || `Item #${item.id}`} · qtd. {item.quantidade_negociada || item.quantidade}</span></label>)}</div></div>}
-      {!cotacao && modo === 'manual' && <div><div className="flex items-center justify-between"><h2 className="text-sm font-semibold">Itens manuais</h2><button className="erp-btn-outline erp-btn-sm" onClick={adicionarManual}><Plus className="mr-1 h-4 w-4" />Adicionar item</button></div><div className="mt-2 space-y-2">{itensManuais.map((item) => <div key={item.key} className="grid gap-2 rounded border p-3 md:grid-cols-[2fr_120px_120px_2fr_auto]"><input className="erp-input" placeholder="Descrição técnica" value={item.descricao_item} onChange={(e) => updateManual(item.key, { descricao_item: e.target.value })} /><input className="erp-input" placeholder="Unidade" value={item.unidade} onChange={(e) => updateManual(item.key, { unidade: e.target.value })} /><input className="erp-input" type="number" min="0.001" step="0.001" placeholder="Quantidade" value={item.quantidade} onChange={(e) => updateManual(item.key, { quantidade: e.target.value })} /><select className="erp-input" value={item.produto_id} onChange={(e) => updateManual(item.key, { produto_id: e.target.value })}><option value="">Produto catalogado (opcional)</option>{produtos.map((p) => <option key={p.id} value={p.id}>{p.codigo_completo} — {p.descricao}</option>)}</select><button className="erp-btn-outline erp-btn-sm" title="Remover item" onClick={() => removerManual(item.key)}><Trash2 className="h-4 w-4" /></button></div>)}</div></div>}
-      {!cotacao && <><div><h2 className="text-sm font-semibold">Fornecedores participantes</h2><div className="mt-2 grid gap-2 md:grid-cols-3">{fornecedores.map((f) => <label key={f.id} className="flex items-center gap-2 rounded border p-2 text-sm"><input type="checkbox" checked={fornecedoresSelecionados.includes(f.id)} onChange={(e) => setFornecedoresSelecionados((prev) => e.target.checked ? [...prev, f.id] : prev.filter((id) => id !== f.id))} /><span>{f.razao_social}</span></label>)}</div></div><button className="erp-btn-primary" disabled={saving || !fornecedoresSelecionados.length || (modo === 'proposta' ? !itensSelecionados.length || !propostaId : itensManuais.some((item) => !item.descricao_item.trim() || !item.unidade.trim() || Number(item.quantidade) <= 0))} onClick={() => void criarCotacao()}><Plus className="mr-2 h-4 w-4" />Criar cotação</button></>}
-    </section>
-    {cotacao && comparativo && <section className="erp-card p-4 space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">{cotacao.numero}</h2><p className="text-sm text-muted-foreground">Status: {statusLabel[cotacao.status] || cotacao.status} · referência apenas informativa</p></div><button className="erp-btn-outline" onClick={() => void refreshCotacao(cotacao.id)}><RefreshCw className="mr-2 h-4 w-4" />Recarregar comparativo</button></div>{comparativo.itens.length === 0 ? <EmptyState title="Nenhum item na cotação" description="Adicione itens para iniciar a consulta." /> : comparativo.itens.map((item) => <div key={item.cotacao_item_id} className="rounded border p-3"><h3 className="font-semibold">{item.descricao || `Item #${item.cotacao_item_id}`} · {item.unidade || 'un.'} · qtd. {item.quantidade}</h3><div className="mt-3 grid gap-3 xl:grid-cols-2">{cotacao.participantes.map((participante) => { const resposta = item.respostas.find((r) => r.participante === participante.id); const key = `${participante.id}-${item.cotacao_item_id}`; const draft = drafts[key] || { preco_unitario: '', preco_unitario_bruto: '', desconto: '', quantidade_atendida: '', unidade_cotada: '', fator_conversao: '', prazo_entrega: '', frete: '', frete_tipo: '', ipi_custo: '', icms_st_custo: '', outros_tributos_custo: '', despesas_adicionais: '', status_item: 'RESPONDIDO' }; return <div key={participante.id} className="rounded bg-muted/30 p-3"><div className="flex items-center justify-between"><strong>{participante.fornecedor_nome}</strong><span className="text-xs">{statusLabel[resposta?.status_item || participante.status] || participante.status}</span></div>{resposta ? <div className="mt-2 space-y-2 text-sm"><div className="flex flex-wrap gap-2"><span className={resposta.menor_preco ? 'rounded bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900' : ''}>{resposta.menor_preco ? 'MENOR PREÇO' : ''}</span><span className={resposta.melhor_custo_total ? 'rounded bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-900' : ''}>{resposta.melhor_custo_total ? 'MELHOR CUSTO TOTAL' : ''}</span><span className={resposta.custo_incompleto ? 'rounded bg-red-100 px-2 py-1 text-xs font-semibold text-red-900' : 'rounded bg-emerald-50 px-2 py-1 text-xs text-emerald-800'}>{resposta.custo_incompleto ? 'CUSTO INCOMPLETO' : 'COMPLETA PARA CÁLCULO'}</span></div><div><strong>Oferta:</strong> Líquido {resposta.preco_unitario == null ? '—' : formatMoneyBRL(resposta.preco_unitario)} · Bruto {resposta.preco_unitario_bruto == null ? '—' : formatMoneyBRL(resposta.preco_unitario_bruto)} · Desconto {resposta.desconto == null ? '—' : formatMoneyBRL(resposta.desconto)} · Atendida {resposta.quantidade_atendida} {resposta.unidade_cotada || item.unidade} {resposta.fator_conversao ? `· fator ${resposta.fator_conversao}` : ''}</div><div><strong>Tributos/custos:</strong> IPI {resposta.ipi_custo == null ? '—' : formatMoneyBRL(resposta.ipi_custo)} · ICMS-ST {resposta.icms_st_custo == null ? '—' : formatMoneyBRL(resposta.icms_st_custo)} · Outros {resposta.outros_tributos_custo == null ? '—' : formatMoneyBRL(resposta.outros_tributos_custo)} · Despesas {resposta.despesas_adicionais == null ? '—' : formatMoneyBRL(resposta.despesas_adicionais)}</div><div><strong>Frete:</strong> {resposta.frete_tipo_codigo || resposta.frete_tipo || '—'} · {resposta.frete == null ? '—' : formatMoneyBRL(resposta.frete)}</div><div><strong>Resultado:</strong> Total {resposta.calculo_custo.custo_total_estimado == null ? '—' : formatMoneyBRL(Number(resposta.calculo_custo.custo_total_estimado))} · Unitário efetivo {resposta.calculo_custo.custo_unitario_efetivo == null ? '—' : formatMoneyBRL(Number(resposta.calculo_custo.custo_unitario_efetivo))}</div>{resposta.custo_incompleto && <div className="text-xs text-red-700">Motivos: {resposta.motivos_incompletude.join('; ')}</div>}<div>Prazo: {resposta.prazo_entrega || '—'}</div><div className="flex flex-wrap items-center gap-2">{resposta.selecionada_como_referencia && <span className="text-primary"><CheckCircle2 className="mr-1 inline h-4 w-4" />Referência selecionada</span>}<button className="erp-btn-outline erp-btn-sm" onClick={() => void cotacoesFornecedoresService.selecionarReferencia(cotacao.id, resposta.id).then(() => refreshCotacao(cotacao.id))}>Usar como referência</button></div></div> : <div className="mt-2 grid gap-2 sm:grid-cols-2"><p className="sm:col-span-2 text-xs font-semibold uppercase text-muted-foreground">Oferta</p><input className="erp-input" placeholder="Preço unitário líquido" value={draft.preco_unitario} onChange={(e) => updateDraft(participante.id, item.cotacao_item_id, { preco_unitario: e.target.value })} /><input className="erp-input" placeholder="Preço bruto (opcional)" value={draft.preco_unitario_bruto} onChange={(e) => updateDraft(participante.id, item.cotacao_item_id, { preco_unitario_bruto: e.target.value })} /><input className="erp-input" placeholder="Desconto (opcional)" value={draft.desconto} onChange={(e) => updateDraft(participante.id, item.cotacao_item_id, { desconto: e.target.value })} /><input className="erp-input" placeholder="Qtd. atendida" value={draft.quantidade_atendida} onChange={(e) => updateDraft(participante.id, item.cotacao_item_id, { quantidade_atendida: e.target.value })} /><input className="erp-input" placeholder="Unidade cotada" value={draft.unidade_cotada} onChange={(e) => updateDraft(participante.id, item.cotacao_item_id, { unidade_cotada: e.target.value })} /><input className="erp-input" placeholder="Fator conversão (opcional)" value={draft.fator_conversao} onChange={(e) => updateDraft(participante.id, item.cotacao_item_id, { fator_conversao: e.target.value })} /><input className="erp-input" placeholder="Prazo" value={draft.prazo_entrega} onChange={(e) => updateDraft(participante.id, item.cotacao_item_id, { prazo_entrega: e.target.value })} /><input className="erp-input" placeholder="Frete" value={draft.frete} onChange={(e) => updateDraft(participante.id, item.cotacao_item_id, { frete: e.target.value })} /><select className="erp-input" value={draft.frete_tipo} onChange={(e) => updateDraft(participante.id, item.cotacao_item_id, { frete_tipo: e.target.value })}><option value="">Tipo de frete</option><option value="CIF">CIF</option><option value="FOB">FOB</option><option value="INCLUSO">Incluso</option><option value="OUTRO">Outro</option></select><p className="sm:col-span-2 text-xs font-semibold uppercase text-muted-foreground">Tributos e custos</p><input className="erp-input" placeholder="IPI de custo" value={draft.ipi_custo} onChange={(e) => updateDraft(participante.id, item.cotacao_item_id, { ipi_custo: e.target.value })} /><input className="erp-input" placeholder="ICMS-ST de custo" value={draft.icms_st_custo} onChange={(e) => updateDraft(participante.id, item.cotacao_item_id, { icms_st_custo: e.target.value })} /><input className="erp-input" placeholder="Outros tributos" value={draft.outros_tributos_custo} onChange={(e) => updateDraft(participante.id, item.cotacao_item_id, { outros_tributos_custo: e.target.value })} /><input className="erp-input" placeholder="Despesas adicionais" value={draft.despesas_adicionais} onChange={(e) => updateDraft(participante.id, item.cotacao_item_id, { despesas_adicionais: e.target.value })} /><select className="erp-input" value={draft.status_item} onChange={(e) => updateDraft(participante.id, item.cotacao_item_id, { status_item: e.target.value })}><option value="RESPONDIDO">Respondido</option><option value="RECUSADO">Recusado</option><option value="SEM_RETORNO">Sem retorno</option></select><button className="erp-btn-primary" disabled={saving} onClick={() => void registrarResposta(participante.id, item.cotacao_item_id)}><Send className="mr-2 inline h-4 w-4" />Registrar</button></div>}</div>; })}</div></div>)}</section>}
-  </div>;
+    </div>
+  );
 }
