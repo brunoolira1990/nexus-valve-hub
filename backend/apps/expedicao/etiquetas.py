@@ -84,8 +84,6 @@ def _quebrar_texto(
 
 def _quantidade_volumes(expedicao: Expedicao) -> int:
     quantidade = int(expedicao.volumes or 0)
-    if expedicao.nfe_saida_id:
-        quantidade = max(quantidade, int(expedicao.nfe_saida.quantidade_volumes or 0))
     if quantidade < 1:
         raise ExpedicaoEtiquetaErro('Informe ao menos 1 volume antes de imprimir as etiquetas.')
     return quantidade
