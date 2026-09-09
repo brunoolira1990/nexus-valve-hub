@@ -37,6 +37,7 @@ import CotacoesFornecedores from "./pages/CotacoesFornecedores";
 import CotacaoFornecedorNova from "./pages/CotacaoFornecedorNova";
 import CotacaoFornecedorDetalhe from "./pages/CotacaoFornecedorDetalhe";
 import PedidosVenda from "./pages/PedidosVenda";
+import PedidoVendaDetalhe from "@/pages/PedidosVendaDetalhe.tsx";
 import PedidosCompra from "./pages/PedidosCompra";
 import NFeEntrada from "./pages/NFeEntrada";
 import NFeSaida from "./pages/NFeSaida";
