@@ -139,6 +139,42 @@ def _valor_item_faturamento(item: ItemPedidoVenda, quantidade: Decimal) -> tuple
     return preco, desconto, valor
 
 
+def _ratear_frete_faturamento(
+    pedido: PedidoVenda,
+    *,
+    valor_liquido_faturamento: Decimal,
+    ultimo_faturamento: bool,
+) -> Decimal:
+    frete_original = _round_money(_dec(pedido.valor_frete))
+    if frete_original < 0:
+        raise ValueError('Frete do pedido não pode ser negativo.')
+
+    frete_reservado = _round_money(
+        _dec(
+            pedido.faturamentos.exclude(status=FaturamentoPedidoVenda.Status.CANCELADO).aggregate(
+                total=Sum('valor_frete'),
+            )['total'],
+        ),
+    )
+    if frete_reservado > frete_original:
+        raise ValueError('Frete já atribuído aos faturamentos excede o frete original do pedido.')
+    restante = frete_original - frete_reservado
+    if restante == 0 or frete_original == 0:
+        return Decimal('0')
+    if ultimo_faturamento:
+        return restante
+
+    itens_ativos = pedido.itens.exclude(status_item=ItemPedidoVenda.StatusItem.CANCELADO)
+    total_liquido_pedido = sum(
+        (_valor_item_faturamento(item, quantidade_pedida_item(item))[2] for item in itens_ativos),
+        Decimal('0'),
+    )
+    if total_liquido_pedido <= 0 or valor_liquido_faturamento <= 0:
+        raise ValueError('Não é possível ratear frete com valor líquido de itens menor ou igual a zero.')
+    proporcional = _round_money(frete_original * valor_liquido_faturamento / total_liquido_pedido)
+    return min(proporcional, restante)
+
+
 def _snapshot_cliente(pedido: PedidoVenda) -> dict[str, Any]:
     cli = pedido.cliente
     return {
@@ -325,6 +361,7 @@ def montar_resumo_faturamento(pedido: PedidoVenda) -> dict[str, Any]:
             'faturamento_id': f.pk,
             'numero_faturamento': (f.numero_faturamento or '').strip(),
             'status': f.status,
+            'valor_frete': str(_round_money(f.valor_frete)),
             'observacao': f.observacao,
             'criado_em': f.criado_em.isoformat(),
             'itens_count': f.itens.count(),
@@ -373,6 +410,7 @@ def montar_resumo_faturamento(pedido: PedidoVenda) -> dict[str, Any]:
                 'faturamento_id': f.pk,
                 'numero_faturamento': (f.numero_faturamento or '').strip(),
                 'status': f.status,
+                'valor_frete': str(_round_money(f.valor_frete)),
                 'observacao': f.observacao,
                 'criado_em': f.criado_em.isoformat(),
                 'itens_count': f.itens.count(),
@@ -435,7 +473,16 @@ def montar_resumo_faturamento(pedido: PedidoVenda) -> dict[str, Any]:
 
     totais_pedido = calcular_totais_pedido_venda(pedido, itens=itens)
     valor_total_pedido = totais_pedido.valor_total
-    valor_pendente = max(Decimal('0'), valor_total_pedido - valor_faturado)
+    frete_faturado = _dec(
+        pedido.faturamentos.filter(
+            status__in=(
+                FaturamentoPedidoVenda.Status.PRONTO_PARA_NFE,
+                FaturamentoPedidoVenda.Status.GERADO_NFE,
+            ),
+        ).aggregate(total=Sum('valor_frete'))['total'],
+    )
+    valor_faturado += frete_faturado
+    valor_pendente = valor_total_pedido - valor_faturado
 
     if totais_pedido.divergente_salvo:
         inconsistencias.append(
@@ -487,6 +534,7 @@ def montar_resumo_faturamento(pedido: PedidoVenda) -> dict[str, Any]:
         'valor_total_pedido_salvo': str(totais_pedido.valor_total_salvo),
         'valor_total_recalculado': totais_pedido.divergente_salvo,
         'valor_faturado': str(_round_money(valor_faturado)),
+        'valor_frete_faturado': str(_round_money(frete_faturado)),
         'valor_pendente': str(_round_money(valor_pendente)),
         'inconsistencias': inconsistencias,
         'tem_inconsistencia_fiscal': bool(inconsistencias),
@@ -514,7 +562,12 @@ def criar_faturamento_pedido(
     *,
     usuario=None,
 ) -> dict[str, Any]:
-    pedido = PedidoVenda.objects.select_related('cliente').prefetch_related('itens__produto').get(pk=pedido.pk)
+    pedido = (
+        PedidoVenda.objects.select_for_update()
+        .select_related('cliente')
+        .prefetch_related('itens__produto', 'faturamentos')
+        .get(pk=pedido.pk)
+    )
 
     ok, msg = pedido_permite_faturamento(pedido)
     if not ok:
@@ -524,6 +577,13 @@ def criar_faturamento_pedido(
     if not itens_payload:
         raise ValueError('Informe ao menos um item com quantidade a faturar.')
 
+    itens_map = {it.pk: it for it in pedido.itens.select_related('produto')}
+    disponivel_antes = {
+        item.pk: quantidade_disponivel_faturar(item)
+        for item in itens_map.values()
+        if item.status_item != ItemPedidoVenda.StatusItem.CANCELADO
+    }
+
     fat = FaturamentoPedidoVenda.objects.create(
         pedido=pedido,
         status=FaturamentoPedidoVenda.Status.RASCUNHO,
@@ -532,8 +592,9 @@ def criar_faturamento_pedido(
         criado_por=usuario if usuario and getattr(usuario, 'is_authenticated', False) else None,
     )
 
-    itens_map = {it.pk: it for it in pedido.itens.select_related('produto')}
     criados = 0
+    valor_liquido_faturamento = Decimal('0')
+    quantidades_selecionadas: dict[int, Decimal] = {}
 
     for linha in itens_payload:
         item_id = linha.get('item_pedido_id')
@@ -567,11 +628,26 @@ def criar_faturamento_pedido(
             snapshot_fiscal=item.snapshot_fiscal or {},
             observacao=(linha.get('observacao') or '').strip(),
         )
+        valor_liquido_faturamento += valor_total
+        quantidades_selecionadas[item.pk] = _round_qty(
+            quantidades_selecionadas.get(item.pk, Decimal('0')) + qtd,
+        )
         criados += 1
 
     if criados == 0:
         fat.delete()
         raise ValueError('Nenhum item válido para faturamento.')
+
+    ultimo_faturamento = all(
+        disponivel <= 0 or quantidades_selecionadas.get(item_id, Decimal('0')) == disponivel
+        for item_id, disponivel in disponivel_antes.items()
+    )
+    fat.valor_frete = _ratear_frete_faturamento(
+        pedido,
+        valor_liquido_faturamento=_round_money(valor_liquido_faturamento),
+        ultimo_faturamento=ultimo_faturamento,
+    )
+    fat.save(update_fields=['valor_frete', 'atualizado_em'])
 
     recalcular_status_pedido(pedido)
 
@@ -580,6 +656,7 @@ def criar_faturamento_pedido(
         'pedido_id': pedido.pk,
         'status': fat.status,
         'itens_criados': criados,
+        'valor_frete': str(_round_money(fat.valor_frete)),
         'mensagens': [MSG_FATURAMENTO_CRIADO],
     }
 

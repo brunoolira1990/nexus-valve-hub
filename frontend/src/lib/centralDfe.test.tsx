@@ -193,6 +193,8 @@ describe('CentralDfe', () => {
       const tabela = screen.getByRole('table');
       expect(within(tabela).getByText('10 / 1')).toBeInTheDocument();
       expect(within(tabela).getByText('Fornecedor Teste')).toBeInTheDocument();
+      expect(within(tabela).getByText('R$ 100,00')).toBeInTheDocument();
+      expect(within(tabela).queryByText('formatMoneyBRL(n)')).not.toBeInTheDocument();
       expect(within(tabela).getAllByText('XML disponível').length).toBeGreaterThanOrEqual(2);
       expect(within(tabela).queryByText('processando')).not.toBeInTheDocument();
       expect(within(tabela).getByText(/Entrada: Pendente de entrada/i)).toBeInTheDocument();

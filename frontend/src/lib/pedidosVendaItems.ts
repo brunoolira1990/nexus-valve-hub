@@ -25,18 +25,33 @@ export function normalizeItemPedidoForForm(it: ItemPedido): ItemPedido {
   };
 }
 
-export function computePedidoTotal(itens: ItemPedido[]): number {
+function computePedidoTotalRaw(itens: ItemPedido[], valorFrete = 0): number {
   return itens.reduce((s, i) => {
     const qtd = toNumber(i.quantidade_negociada ?? i.quantidade, 0);
     const pu = toNumber(i.preco_por_unidade_negociada ?? i.valor_unitario, 0);
     const desconto = toNumber((i as ItemPedido & { desconto?: number }).desconto ?? i.desconto_valor, 0);
-    const ipi = toNumber(i.ipi_valor, 0);
-    const st = toNumber(i.icms_st_valor, 0);
-    const frete = toNumber(i.frete_valor, 0);
-    const outras = toNumber(i.outras_despesas_valor, 0);
     // Sem arredondar o unitário antes do produto; total da UI é informativo.
-    return s + Math.max(0, qtd * pu - desconto + ipi + st + frete + outras);
-  }, 0);
+    return s + qtd * pu - desconto;
+  }, toNumber(valorFrete, 0));
+}
+
+export function computePedidoFinancialSummary(itens: ItemPedido[], valorFrete = 0) {
+  const subtotal = itens.reduce(
+    (s, i) => s + toNumber(i.quantidade_negociada ?? i.quantidade, 0) * toNumber(i.preco_por_unidade_negociada ?? i.valor_unitario, 0),
+    0,
+  );
+  const desconto = itens.reduce(
+    (s, i) => s + toNumber((i as ItemPedido & { desconto?: number }).desconto ?? i.desconto_valor, 0),
+    0,
+  );
+  const frete = toNumber(valorFrete, 0);
+  const totalRaw = computePedidoTotalRaw(itens, valorFrete);
+  const total = Math.round((totalRaw + Number.EPSILON) * 100) / 100;
+  return { subtotal, desconto, frete, total };
+}
+
+export function computePedidoTotal(itens: ItemPedido[], valorFrete = 0): number {
+  return computePedidoFinancialSummary(itens, valorFrete).total;
 }
 
 export function buildItemPayload(it: ItemPedido, idx: number): Record<string, unknown> {
@@ -61,7 +76,6 @@ export function buildItemPayload(it: ItemPedido, idx: number): Record<string, un
     unidade_negociada: (it.unidade_negociada || 'PC').toUpperCase(),
     ipi_valor: toNumber(it.ipi_valor, 0),
     icms_st_valor: toNumber(it.icms_st_valor, 0),
-    frete_valor: toNumber(it.frete_valor, 0),
     outras_despesas_valor: toNumber(it.outras_despesas_valor, 0),
   };
 }

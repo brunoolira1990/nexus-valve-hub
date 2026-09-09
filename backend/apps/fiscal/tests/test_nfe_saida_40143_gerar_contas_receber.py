@@ -125,6 +125,26 @@ class NFe40143GerarContasReceberTests(TestCase):
         soma = sum(p.valor_original for p in titulo.parcelas.all())
         self.assertAlmostEqual(float(soma), float(titulo.valor_original), places=2)
 
+    def test_frete_ja_incluso_no_total_nao_e_somado_novamente(self):
+        total_original = self.nf.valor_total
+        self.nf.valor_frete = Decimal('12.34')
+        self.nf.valor_total = total_original + self.nf.valor_frete
+        self.nf.save(update_fields=['valor_frete', 'valor_total'])
+        aplicar_duplicatas_nfe_saida(self.nf)
+
+        preview = preview_contas_receber_de_nfe(self.nf)
+        soma_preview = sum(Decimal(str(parcela['valor'])) for parcela in preview['parcelas'])
+        self.assertEqual(soma_preview, self.nf.valor_total)
+
+        resposta = self.client.post(
+            f'/api/nf-saidas/{self.nf.pk}/financeiro/gerar-contas-receber/',
+            {'parcelas': preview['parcelas']},
+            format='json',
+        )
+        self.assertEqual(resposta.status_code, 201, resposta.json())
+        titulo = TituloFinanceiro.objects.get(pk=resposta.json()['titulo']['id'])
+        self.assertEqual(titulo.valor_original, self.nf.valor_total)
+
     def test_nao_permite_geracao_duplicada(self):
         preview = preview_contas_receber_de_nfe(self.nf)
         res1 = self.client.post(

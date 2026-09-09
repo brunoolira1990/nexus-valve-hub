@@ -90,7 +90,10 @@ def _total_linha_proposta(it: ItemProposta) -> Decimal:
     q = dec(it.quantidade_negociada or it.quantidade)
     p = dec(it.preco_por_unidade_negociada or it.preco_final or it.valor_unitario)
     d = dec(it.desconto)
-    return max(Decimal('0'), q * p - d)
+    total = q * p - d
+    if total < 0:
+        raise ValueError(f'Item da proposta #{it.pk} possui desconto maior que o subtotal.')
+    return total
 
 
 def _bloco_cliente_proposta(proposta: Proposta, *, page_w, p_party_title, p_party_bold, p_party_norm):
@@ -282,7 +285,7 @@ def gerar_proposta_pdf_bytes(proposta: Proposta) -> bytes:
                 page_w=page_w,
                 subtotal_produtos=subtotal,
                 desconto_total=total_desc,
-                frete=Decimal('0'),
+                frete=dec(proposta.valor_frete),
                 outras_despesas=Decimal('0'),
                 ipi=Decimal('0'),
                 icms_st=Decimal('0'),
@@ -313,7 +316,7 @@ def gerar_proposta_pdf_bytes(proposta: Proposta) -> bytes:
         ]
         frete_txt = (proposta.frete_texto or '').strip()
         if frete_txt:
-            cond_rows.insert(2, ('Frete:', frete_txt))
+            cond_rows.insert(2, ('Condição de frete:', frete_txt))
         story.extend(
             build_conditions_commercial_grid(
                 'Condições comerciais',

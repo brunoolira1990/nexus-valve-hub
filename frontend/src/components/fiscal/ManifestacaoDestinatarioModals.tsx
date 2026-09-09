@@ -53,7 +53,7 @@ const fmtData = (v: string | null | undefined): string => {
 
 const fmtMoney = (v: string | number | null | undefined): string => {
   const n = Number(String(v ?? '0').replace(',', '.'));
-  return `formatMoneyBRL(n)`;
+  return formatMoneyBRL(n);
 };
 
 type ManifestacaoEventoFormProps = {

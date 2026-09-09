@@ -146,6 +146,7 @@ def gerar_nfe_saida_from_faturamento(
         data=date.today(),
         status=STATUS_NFE_RASCUNHO,
         valor_total=Decimal('0'),
+        valor_frete=fat.valor_frete,
         ambiente_emissao=ambiente_emissao,
         modo_atendimento_estoque=NFeSaida.ModoAtendimentoEstoque.IMEDIATO,
         pedido_venda=pedido,

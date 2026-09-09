@@ -56,7 +56,7 @@ def calcular_totais_pedido_venda(
 
     valor_total = subtotal_produtos - desconto_total + frete + outras + IPI + ICMS ST
 
-    Pedido de Venda não possui frete/IPI/ST no cabeçalho nesta fase — apenas itens.
+    O frete cobrado do cliente fica no cabeçalho; IPI/ST continuam derivados dos itens.
     """
     if itens is None:
         itens = list(
@@ -71,11 +71,15 @@ def calcular_totais_pedido_venda(
         subtotal += q * p
         desconto += _dec(it.desconto)
 
-    frete = Decimal('0')
+    frete = _round_money(_dec(pedido.valor_frete))
+    if frete < 0:
+        raise ValueError('Frete do pedido não pode ser negativo.')
     outras = Decimal('0')
     ipi = Decimal('0')
     icms_st = Decimal('0')
-    valor_total = _round_money(max(Decimal('0'), subtotal - desconto + frete + outras + ipi + icms_st))
+    valor_total = _round_money(subtotal - desconto + frete + outras + ipi + icms_st)
+    if valor_total < 0:
+        raise ValueError('Subtotal menos descontos mais frete não pode resultar em total negativo.')
     salvo = _round_money(_dec(pedido.valor_total))
 
     return TotaisPedidoVenda(

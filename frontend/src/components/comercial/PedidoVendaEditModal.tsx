@@ -88,6 +88,7 @@ type PedidoForm = {
   proposta_id?: number;
   vendedor_id: number | null;
   condicao_pagamento_texto: string;
+  valor_frete: number;
   prazo_entrega_texto: string;
   observacoes_comerciais: string;
   observacoes_internas: string;
@@ -105,7 +106,7 @@ function itemDesconto(item: ItemPedido & { desconto?: number }): number {
 function itemTotalLinha(item: ItemPedido & { desconto?: number }): number {
   const qtd = numSafe(item.quantidade_negociada ?? item.quantidade);
   const preco = numSafe(item.preco_por_unidade_negociada ?? item.valor_unitario);
-  return Math.max(0, qtd * preco - itemDesconto(item));
+  return qtd * preco - itemDesconto(item);
 }
 
 function labelFaturamentoResumo(status?: string): string {
@@ -226,6 +227,17 @@ export function PedidoVendaEditModal({
     selectedVendedor?.nome || editing?.vendedor_nome || editing?.vendedor || '—';
   const numeroExib = form.numero || editing?.numero || (editing ? '—' : 'Novo');
   const statusExib = form.status || editing?.status || 'ABERTO';
+  const subtotalItens = itens.reduce(
+    (s, item) =>
+      s +
+      numSafe(item.quantidade_negociada ?? item.quantidade) *
+        numSafe(item.preco_por_unidade_negociada ?? item.valor_unitario),
+    0,
+  );
+  const descontoItens = itens.reduce((s, item) => s + itemDesconto(item), 0);
+  const freteBloqueado = Boolean(
+    faturamentoResumo?.faturamentos_rascunho?.length || faturamentoResumo?.faturamentos_nfe?.length,
+  );
 
   useEffect(() => {
     if (!isOpen) {
@@ -646,6 +658,24 @@ export function PedidoVendaEditModal({
                 <CondicaoPagamentoResumo condicao={form.condicao_pagamento_texto} dataBaseIso={form.data} />
               </div>
             </div>
+            <div>
+              <label className="erp-label">Frete cobrado do cliente (R$)</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="0.01"
+                className="erp-input mt-1 text-right"
+                value={inputNumberValue(form.valor_frete)}
+                disabled={freteBloqueado}
+                onChange={(e) => setForm((p) => ({ ...p, valor_frete: +e.target.value || 0 }))}
+              />
+              {freteBloqueado ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  O frete fica bloqueado após o primeiro faturamento.
+                </p>
+              ) : null}
+            </div>
             <div className="md:col-span-2">
               <label className="erp-label">Prazo previsto de entrega</label>
               <input
@@ -951,15 +981,6 @@ export function PedidoVendaEditModal({
                                         onChange={(e) => updateItem(idx, { icms_st_valor: +e.target.value })}
                                       />
                                     </div>
-                                    <div>
-                                      <label className="text-xs text-muted-foreground">Frete (R$)</label>
-                                      <input
-                                        type="number"
-                                        className="erp-input h-8 text-sm w-full"
-                                        value={numSafe(item.frete_valor)}
-                                        onChange={(e) => updateItem(idx, { frete_valor: +e.target.value })}
-                                      />
-                                    </div>
                                   </ItemComercialMetricasGrid>
                                 </details>
                               </div>
@@ -973,8 +994,11 @@ export function PedidoVendaEditModal({
               </table>
             </div>
           )}
-          <div className="text-right font-bold text-sm pt-2 border-t">
-            Total: {formatCurrencyBRL(total)}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 pt-2 border-t text-sm">
+            <div><span className="text-muted-foreground">Subtotal:</span> <strong>{formatCurrencyBRL(subtotalItens)}</strong></div>
+            <div><span className="text-muted-foreground">Desconto:</span> <strong>{formatCurrencyBRL(descontoItens)}</strong></div>
+            <div><span className="text-muted-foreground">Frete:</span> <strong>{formatCurrencyBRL(form.valor_frete)}</strong></div>
+            <div className="text-right"><span className="text-muted-foreground">Total:</span> <strong>{formatCurrencyBRL(total)}</strong></div>
           </div>
         </TabsContent>
 

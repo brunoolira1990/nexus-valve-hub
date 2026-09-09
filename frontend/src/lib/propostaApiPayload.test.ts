@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { percentualSaidaTotal } from '@/lib/propostaPricing';
-import { sanitizeItemPropostaForApi } from '@/lib/propostaApiPayload';
+import { sanitizeItemPropostaForApi, sanitizePropostaRestForApi } from '@/lib/propostaApiPayload';
 import type { ItemProposta } from '@/types';
 
 describe('sanitizeItemPropostaForApi', () => {
@@ -26,6 +26,19 @@ describe('sanitizeItemPropostaForApi', () => {
     expect(payload).not.toHaveProperty('id');
     expect(payload.icms_saida_percentual).toBe(18);
     expect(payload.pis_saida_percentual).toBe(1.65);
+  });
+});
+
+describe('sanitizePropostaRestForApi', () => {
+  it('preserva o frete de cabeçalho e remove campos somente leitura', () => {
+    const payload = sanitizePropostaRestForApi({
+      valor_frete: 12.34,
+      cliente_nome: 'Somente leitura',
+      itens: [],
+    });
+    expect(payload.valor_frete).toBe(12.34);
+    expect(payload).not.toHaveProperty('cliente_nome');
+    expect(payload).not.toHaveProperty('itens');
   });
 });
 

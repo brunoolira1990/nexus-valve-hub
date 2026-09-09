@@ -81,6 +81,23 @@ class NfeTranspBindingsTests(TestCase):
         self.assertIsNone(getattr(inf.transp, 'transporta', None))
         self.assertFalse(getattr(inf.transp, 'vol', None))
 
+    def test_totais_nfelib_serializam_frete_e_total_uma_vez(self):
+        from nfelib.nfe.bindings import v4_0 as nfe
+
+        from apps.fiscal.nfe_emissao.xml_serializacao import build_icms_tot_bindings
+
+        totais = build_icms_tot_bindings(
+            nfe,
+            {
+                'v_prod': '250.00',
+                'v_desc': '5.00',
+                'v_frete': '12.34',
+                'v_nf': '257.34',
+            },
+        )
+        self.assertEqual(str(totais.vFrete), '12.34')
+        self.assertEqual(str(totais.vNF), '257.34')
+
     def test_aplicar_transp_nfelib_vol_e_transporta(self):
         from nfelib.nfe.bindings import v4_0 as nfe
 

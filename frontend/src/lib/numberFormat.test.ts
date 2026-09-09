@@ -30,7 +30,7 @@ describe('formatPercent', () => {
 
 describe('formatMoneyBr', () => {
   it('formata moeda', () => {
-    expect(formatMoneyBr(500)).toBe('R$ 500,00');
+    expect(formatMoneyBr(500).replace(/\u00a0/g, ' ')).toBe('R$ 500,00');
   });
 });
 

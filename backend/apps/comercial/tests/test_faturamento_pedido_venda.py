@@ -57,7 +57,13 @@ def _produto() -> Produto:
     )
 
 
-def _pedido_com_itens(*, qtd=Decimal('10'), preco=Decimal('100'), desconto=Decimal('0')) -> tuple[PedidoVenda, ItemPedidoVenda]:
+def _pedido_com_itens(
+    *,
+    qtd=Decimal('10'),
+    preco=Decimal('100'),
+    desconto=Decimal('0'),
+    valor_frete=Decimal('0'),
+) -> tuple[PedidoVenda, ItemPedidoVenda]:
     emp = Empresa.objects.create(razao_social='Emit', cnpj=_cnpj(), uf='SP')
     cli = Cliente.objects.create(razao_social='Cli', cnpj=_cnpj(), uf='RJ')
     pedido = PedidoVenda.objects.create(
@@ -66,7 +72,8 @@ def _pedido_com_itens(*, qtd=Decimal('10'), preco=Decimal('100'), desconto=Decim
         cliente=cli,
         data=date.today(),
         status='ABERTO',
-        valor_total=Decimal('1000'),
+        valor_total=(qtd * preco) - desconto + valor_frete,
+        valor_frete=valor_frete,
     )
     prod = _produto()
     item = ItemPedidoVenda.objects.create(
@@ -98,6 +105,38 @@ class FaturamentoPedidoVendaTests(TestCase):
         self.assertEqual(row['quantidade_pendente'], '10.000')
         self.assertEqual(row['status_item'], ItemPedidoVenda.StatusItem.PENDENTE)
 
+    def test_edicao_frete_pedido_negativo_e_bloqueio_apos_faturamento(self):
+        pedido, item = _pedido_com_itens()
+        negativo = self.client.patch(
+            f'/api/pedidos-venda/{pedido.pk}/',
+            {'valor_frete': '-0.01'},
+            format='json',
+        )
+        self.assertEqual(negativo.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('valor_frete', negativo.json())
+
+        editado = self.client.patch(
+            f'/api/pedidos-venda/{pedido.pk}/',
+            {'valor_frete': '12.34'},
+            format='json',
+        )
+        self.assertEqual(editado.status_code, status.HTTP_200_OK, editado.json())
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.valor_frete, Decimal('12.34'))
+        self.assertEqual(pedido.valor_total, Decimal('1012.34'))
+
+        criar_faturamento_pedido(
+            pedido,
+            {'itens': [{'item_pedido_id': item.pk, 'quantidade': '1'}]},
+        )
+        bloqueado = self.client.patch(
+            f'/api/pedidos-venda/{pedido.pk}/',
+            {'valor_frete': '20.00'},
+            format='json',
+        )
+        self.assertEqual(bloqueado.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('primeiro faturamento', str(bloqueado.json()).lower())
+
     def test_criar_faturamento_parcial(self):
         pedido, item = _pedido_com_itens()
         r = criar_faturamento_pedido(
@@ -112,6 +151,55 @@ class FaturamentoPedidoVendaTests(TestCase):
         self.assertEqual(linha.snapshot_fiscal['origem_regra_fiscal_saida'], 'LEGADO')
         item.refresh_from_db()
         self.assertEqual(item.quantidade_faturada, Decimal('0'))
+
+    def test_frete_rateado_congelado_com_residuo_no_ultimo_faturamento(self):
+        pedido, item = _pedido_com_itens(valor_frete=Decimal('10.01'))
+        primeiro = criar_faturamento_pedido(
+            pedido,
+            {'itens': [{'item_pedido_id': item.pk, 'quantidade': '4'}]},
+        )
+        segundo = criar_faturamento_pedido(
+            pedido,
+            {'itens': [{'item_pedido_id': item.pk, 'quantidade': '6'}]},
+        )
+        fat_1 = FaturamentoPedidoVenda.objects.get(pk=primeiro['faturamento_id'])
+        fat_2 = FaturamentoPedidoVenda.objects.get(pk=segundo['faturamento_id'])
+        self.assertEqual(fat_1.valor_frete, Decimal('4.00'))
+        self.assertEqual(fat_2.valor_frete, Decimal('6.01'))
+        self.assertEqual(fat_1.valor_frete + fat_2.valor_frete, Decimal('10.01'))
+
+        confirmar_faturamento_pedido(pedido, fat_1.pk)
+        resumo = montar_resumo_faturamento(pedido)
+        self.assertEqual(resumo['valor_faturado'], '404.00')
+        self.assertEqual(resumo['valor_frete_faturado'], '4.00')
+        self.assertEqual(resumo['valor_pendente'], '606.01')
+
+    def test_cancelamento_e_estorno_liberam_frete_para_novo_faturamento(self):
+        pedido, item = _pedido_com_itens(valor_frete=Decimal('10.01'))
+        rascunho = criar_faturamento_pedido(
+            pedido,
+            {'itens': [{'item_pedido_id': item.pk, 'quantidade': '4'}]},
+        )
+        cancelar_faturamento_pedido(pedido, rascunho['faturamento_id'])
+        novo_total = criar_faturamento_pedido(
+            pedido,
+            {'itens': [{'item_pedido_id': item.pk, 'quantidade': '10'}]},
+        )
+        fat_total = FaturamentoPedidoVenda.objects.get(pk=novo_total['faturamento_id'])
+        self.assertEqual(fat_total.valor_frete, Decimal('10.01'))
+        confirmar_faturamento_pedido(pedido, fat_total.pk)
+        estornar_faturamento_pedido(
+            pedido,
+            fat_total.pk,
+            motivo='Estorno para validar liberação do frete comercial',
+        )
+
+        reposicao = criar_faturamento_pedido(
+            pedido,
+            {'itens': [{'item_pedido_id': item.pk, 'quantidade': '10'}]},
+        )
+        fat_reposicao = FaturamentoPedidoVenda.objects.get(pk=reposicao['faturamento_id'])
+        self.assertEqual(fat_reposicao.valor_frete, Decimal('10.01'))
 
     def test_criar_acima_saldo_bloqueia(self):
         pedido, item = _pedido_com_itens()
