@@ -121,7 +121,7 @@ export default function CotacoesFornecedores() {
               {propostas.map((p) => <option key={p.id} value={p.id}>{p.numero} — {p.cliente_nome || p.cliente_avulso_nome || 'Cliente avulso'}</option>)}
             </select>
           </label>
-          <Link className="erp-btn-outline" to={propostaId ? `/propostas?proposta_id=${propostaId}` : '/propostas'}>Abrir Proposta</Link>
+          <Link className="erp-btn-outline" to={propostaId ? `/propostas/${propostaId}` : '/propostas'}>Abrir Proposta</Link>
         </div>
         {!cotacao && propostaAtual && <>
           <div><h2 className="text-sm font-semibold">Itens para consultar</h2><div className="mt-2 grid gap-2 md:grid-cols-2">{(propostaAtual.itens || []).map((item) => <label key={item.id} className="flex items-center gap-2 rounded border p-2 text-sm"><input type="checkbox" checked={itensSelecionados.includes(item.id)} onChange={(e) => setItensSelecionados((prev) => e.target.checked ? [...prev, item.id] : prev.filter((id) => id !== item.id))} /><span>{item.produto_nome || item.descricao_avulsa || `Item #${item.id}`} · qtd. {item.quantidade_negociada || item.quantidade}</span></label>)}</div></div>
