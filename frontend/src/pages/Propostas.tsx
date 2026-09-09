@@ -1871,17 +1871,25 @@ const Propostas = ({ dedicated = false, proposta = null }: { dedicated?: boolean
         </div>
 
         <ComercialModalSection title="Itens" className="mb-4">
-        <div className="border border-border rounded-md p-3 -mx-0">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
-            <h3 className="font-medium text-sm">Itens</h3>
-            <button onClick={addItem} className="erp-btn-outline erp-btn-sm w-full sm:w-auto justify-center"><Plus className="h-3 w-3" /> Adicionar Item</button>
-          </div>
-          {existeAvulsoSemNcm ? (
-            <div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100">
-              Há item(ns) avulso(s) sem NCM válido (8 dígitos): a proposta segue como <strong>simulação comercial</strong> para tributos de
-              saída. Para converter em pedido ou faturar, informe o NCM em cada item avulso e depois vincule um produto cadastrado.
+        <div className="border border-border rounded-md -mx-0 overflow-visible">
+          <div className="sticky top-0 z-10 bg-card/50 backdrop-blur supports-[backdrop-filter]:bg-card/80 border-b border-border rounded-t-md p-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div className="flex items-center gap-3">
+                <h3 className="font-medium text-sm">Itens da proposta</h3>
+                <span className="inline-flex items-center justify-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground min-w-[2rem] text-center tabular-nums">
+                  {itens.length}
+                </span>
+              </div>
+              <button onClick={addItem} className="erp-btn-outline erp-btn-sm w-full sm:w-auto justify-center shrink-0"><Plus className="h-3 w-3" /> Adicionar item</button>
             </div>
-          ) : null}
+          </div>
+          <div className="p-3 space-y-3">
+            {existeAvulsoSemNcm ? (
+              <div className="mb-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100">
+                Há item(ns) avulso(s) sem NCM válido (8 dígitos): a proposta segue como <strong>simulação comercial</strong> para tributos de
+                saída. Para converter em pedido ou faturar, informe o NCM em cada item avulso e depois vincule um produto cadastrado.
+              </div>
+            ) : null}
           {itens.map((item, idx) => {
             const pctSaida = percentualSaidaTotal(item);
             const precoRef = item.modo_preco === 'manual' ? item.preco_final : item.preco_sugerido;
@@ -2381,6 +2389,7 @@ const Propostas = ({ dedicated = false, proposta = null }: { dedicated?: boolean
               </div>
             );
           })}
+          </div>
         </div>
         </ComercialModalSection>
 
