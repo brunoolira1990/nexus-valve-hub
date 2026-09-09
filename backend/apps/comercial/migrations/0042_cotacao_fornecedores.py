@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
     dependencies = [
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
         ('cadastros', '0017_alter_transportadora_cnpj'),
-        ('comercial', '0041_proposta_rentabilidade_canonica'),
+        ('comercial', '0040_valor_frete_comercial'),
         ('produtos', '0027_familia_codigo_sequencia'),
     ]
 
