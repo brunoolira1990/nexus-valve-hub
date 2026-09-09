@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { MSG_SALVE_ANTES_PDF } from '@/lib/commercialPdfDownload';
 import { PageHeader } from '@/components/PageHeader';
+import PropostaForm from '@/components/comercial/PropostaForm';
 import { Modal } from '@/components/Modal';
 import { HomologacaoFiscalPropostaPanel } from '@/components/HomologacaoFiscalPropostaPanel';
 import { propostasService } from '@/services/api/comercial';
@@ -206,7 +207,7 @@ function itemFromBuscaRegra(row: ItemProposta, busca: BuscaRegraFiscalSaida): It
   };
 }
 
-const Propostas = () => {
+const Propostas = ({ dedicated = false, proposta = null }: { dedicated?: boolean; proposta?: Proposta | null }) => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const statusUrl = searchParams.get('status') || '';
@@ -227,9 +228,11 @@ const Propostas = () => {
     reload: reloadList,
   } = usePaginatedList<Proposta>({
     fetchPage: propostasService.listPaginated,
+    enabled: !dedicated,
     initialFilters: statusUrl ? { status: statusUrl } : {},
   });
   const [modalOpen, setModalOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<Proposta | null>(null);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const itensRef = useRef<ItemProposta[]>([]);
@@ -700,6 +703,13 @@ const Propostas = () => {
   );
 
   const openNew = () => {
+    navigate('/propostas/nova');
+  };
+  const openEdit = (e: Proposta) => {
+    navigate(`/propostas/${e.id}`);
+  };
+
+  const initializeNew = () => {
     const hoje = dataHojeIso();
     setEditing(null);
     setClienteAvulso(false);
@@ -765,7 +775,7 @@ const Propostas = () => {
       });
     });
   };
-  const openEdit = (e: Proposta) => {
+  const initializeEdit = (e: Proposta) => {
     setEditing(e);
     setHistoricoComercialOpen(false);
     setHistoricoComercialEventos(null);
@@ -801,6 +811,19 @@ const Propostas = () => {
     setModalOpen(true);
   };
 
+  const initializeRef = useRef({ initializeNew, initializeEdit });
+  initializeRef.current = { initializeNew, initializeEdit };
+  useEffect(() => {
+    if (!dedicated) return;
+    if (proposta) initializeRef.current.initializeEdit(proposta);
+    else initializeRef.current.initializeNew();
+  }, [dedicated, proposta]);
+
+  const closeForm = () => {
+    if (dedicated) navigate('/propostas');
+    else setModalOpen(false);
+  };
+
   const refreshItensAposHomologacao = useCallback(async () => {
     if (!editing?.id) return;
     try {
@@ -829,6 +852,7 @@ const Propostas = () => {
   }, [modalOpen]);
   const handleDelete = async (id: number) => { if (confirm('Excluir?')) { await propostasService.delete(id); load(); } };
   const handleSave = async () => {
+    if (saving) return;
     if (form.valor_frete < 0) {
       toast.error('Frete não pode ser negativo.');
       return;
@@ -873,13 +897,23 @@ const Propostas = () => {
     if (!editing && !form.numero?.trim()) {
       delete (payload as { numero?: string }).numero;
     }
+    setSaving(true);
     try {
-      if (editing) await propostasService.update(editing.id, payload);
-      else await propostasService.create(payload as Omit<Proposta, 'id'>);
-      setModalOpen(false);
-      load();
+      const saved = editing
+        ? await propostasService.update(editing.id, payload)
+        : await propostasService.create(payload as Omit<Proposta, 'id'>);
+      if (dedicated) {
+        initializeEdit(saved);
+        if (!editing) navigate('/propostas/' + saved.id, { replace: true });
+        toast.success('Proposta salva com sucesso.');
+      } else {
+        setModalOpen(false);
+        load();
+      }
     } catch (e) {
       toast.error(apiErrorMessage(e, { fallback: 'Não foi possível salvar a proposta.' }));
+    } finally {
+      setSaving(false);
     }
   };
   const refreshProposta = async (id: number) => {
@@ -1362,6 +1396,7 @@ const Propostas = () => {
 
   return (
     <div>
+      {!dedicated && <>
       <PageHeader
         title="Propostas"
         description="Gestão de propostas comerciais e acompanhamento até conversão em pedido."
@@ -1494,7 +1529,8 @@ const Propostas = () => {
         ) : null}
         </DataTableShell>
       ) : null}
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Proposta' : 'Nova Proposta'} size="xl">
+      </>}
+      <PropostaForm isOpen={modalOpen} onCancel={closeForm} title={editing ? 'Proposta ' + editing.numero : 'Nova Proposta'}>
         <div className="space-y-4 mb-4">
           <ComercialModalSection title="Cabeçalho" description="Dados principais da proposta comercial.">
             <div className="space-y-4">
@@ -2647,7 +2683,7 @@ const Propostas = () => {
         ) : null}
 
         <div className="flex flex-col-reverse sm:flex-row sm:flex-wrap sm:justify-end gap-2 mt-6 pt-4 border-t border-border">
-          <button onClick={() => setModalOpen(false)} className="erp-btn-outline w-full sm:w-auto">Cancelar</button>
+          <button onClick={closeForm} className="erp-btn-outline w-full sm:w-auto">Cancelar</button>
           {editing?.id ? (
             <>
               <button
@@ -2670,9 +2706,9 @@ const Propostas = () => {
           ) : (
             <span className="text-xs text-muted-foreground self-center mr-2">{MSG_SALVE_ANTES_PDF}</span>
           )}
-          <button onClick={handleSave} className="erp-btn-primary w-full sm:w-auto">Salvar</button>
+          <button onClick={handleSave} disabled={saving} className="erp-btn-primary w-full sm:w-auto">{saving ? 'Salvando...' : 'Salvar'}</button>
         </div>
-      </Modal>
+      </PropostaForm>
 
       <Modal
         isOpen={wizardOpen}

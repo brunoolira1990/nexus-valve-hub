@@ -195,7 +195,7 @@ export default function CotacoesFornecedores() {
                       ) : (
                         <Link
                           className="text-primary hover:underline"
-                          to={`/propostas?proposta_id=${cotacao.proposta_id}`}
+                          to={`/propostas/${cotacao.proposta_id}`}
                         >
                           {propostaNumeroPorId[cotacao.proposta_id] ||
                             `#${cotacao.proposta_id}`}

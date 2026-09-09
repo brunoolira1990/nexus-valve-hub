@@ -32,6 +32,7 @@ import Produtos from "./pages/Produtos";
 import Corridas from "./pages/Corridas";
 import RegrasFiscais from "./pages/RegrasFiscais";
 import Propostas from "./pages/Propostas";
+import PropostaDetalhe from "./pages/Propostas/PropostaDetalhe";
 import CotacoesFornecedores from "./pages/CotacoesFornecedores";
 import CotacaoFornecedorNova from "./pages/CotacaoFornecedorNova";
 import CotacaoFornecedorDetalhe from "./pages/CotacaoFornecedorDetalhe";
@@ -110,6 +111,8 @@ const App = () => (
         <Route path="corridas" element={<Corridas />} />
         <Route path="regras-fiscais" element={<RegrasFiscais />} />
         <Route path="propostas" element={<Propostas />} />
+        <Route path="propostas/nova" element={<PropostaDetalhe />} />
+        <Route path="propostas/:id" element={<PropostaDetalhe />} />
         <Route path="cotacoes-fornecedores" element={<CotacoesFornecedores />} />
         <Route path="cotacoes-fornecedores/nova" element={<CotacaoFornecedorNova />} />
         <Route path="cotacoes-fornecedores/:id" element={<CotacaoFornecedorDetalhe />} />
