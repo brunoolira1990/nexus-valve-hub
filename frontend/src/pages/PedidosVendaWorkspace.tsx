@@ -28,6 +28,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatDateBr } from '@/lib/dateBr';
 import { formatCurrencyBRL, formatQuantidadeBR } from '@/lib/formatBr';
 import { formatPrecoUnitarioBRL } from '@/lib/pedidoVendaValorUnitario';
+import { computePedidoTotal } from '@/lib/pedidosVendaItems';
 import {
    classificarNfeResumoPedido,
    getFaturamentoStatusLabel,
