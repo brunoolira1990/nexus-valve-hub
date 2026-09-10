@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { pedidosVendaService } from '@/services/api/comercial';
 import { PageHeader } from '@/components/PageHeader';
-import { PedidoVendaEditModal } from '@/components/comercial/PedidoVendaEditModal';
+
 import { clientesService } from '@/services/api/clientes';
 import { empresasService } from '@/services/api/empresas';
 import { produtosService } from '@/services/api/produtos';
@@ -188,37 +188,7 @@ const PedidosVenda = ({ dedicated = false, pedido = null }: PedidosVendaProps) =
     }
   };
 
-  useEffect(() => {
-    if (!pedidoDeepLink) return;
-    const id = Number(pedidoDeepLink);
-    if (!id) return;
-    const found = items.find((i) => resolvePedidoVendaId(i) === id);
-    const abrir = (p: PedidoVenda) => {
-      setEditing(p);
-      hydrateCliente(p.cliente_id, p.cliente_nome);
-      hydrateProdutosItens(p.itens ?? []);
-      setForm({
-        numero: p.numero ?? '',
-        empresa_emitente_id: p.empresa_emitente_id ?? (empresas.length === 1 ? empresas[0]?.id ?? null : null),
-        cliente_id: p.cliente_id ?? null,
-        data: p.data ?? '',
-        status: p.status || STATUS_PEDIDO_VENDA_INICIAL,
-        proposta_id: p.proposta_id,
-        vendedor_id: p.vendedor_id ?? null,
-        condicao_pagamento_texto: p.condicao_pagamento_texto ?? CONDICAO_PAGAMENTO_PADRAO,
-        observacoes_comerciais: p.observacoes_comerciais ?? '',
-        observacoes_internas: p.observacoes_internas ?? '',
-      });
-      hydrateVendedor(p.vendedor_id ?? null, p.vendedor_nome || p.vendedor);
-      setItens((p.itens ?? []).map(normalizeItemPedidoForForm));
-      setModalOpen(true);
-    };
-    if (found) {
-      void pedidosVendaService.getById(id).then(abrir).catch(() => abrir(found));
-      return;
-    }
-    void pedidosVendaService.getById(id).then(abrir).catch(() => undefined);
-  }, [pedidoDeepLink, items, empresas]);
+
 
   useEffect(() => {
     if (!modalOpen || empresas.length !== 1) return;
@@ -575,15 +545,15 @@ return (
      <div>
        {!dedicated ? (
          <>
-           <PageHeader
-             title="Pedidos de Venda"
-             description="Gestão de pedidos comerciais, status e faturamento."
-             onAdd={openNew}
-             addLabel="Novo Pedido"
-             searchValue={search}
-             onSearch={setSearch}
-             searchPlaceholder="Digite parte do número do pedido, como 0006 ou 20260714."
-           />
+<PageHeader
+              title="Pedidos de Venda"
+              description="Gestão de pedidos comerciais, status e faturamento."
+              onAdd={() => navigate('/pedidos-venda/novo')}
+              addLabel="Novo Pedido"
+              searchValue={search}
+              onSearch={setSearch}
+              searchPlaceholder="Digite parte do número do pedido, como 0006 ou 20260714."
+            />
            <FilterBar
              filters={[
                {
@@ -620,7 +590,7 @@ return (
                    {items.length === 0 ? (
                      <tr>
                        <td colSpan={7}>
-                         <EmptyState message="Nenhum pedido de venda encontrado." actionLabel="Novo pedido" onAction={openNew} />
+                         <EmptyState message="Nenhum pedido de venda encontrado." actionLabel="Novo pedido" onAction={() => navigate('/pedidos-venda/novo')} />
                        </td>
                      </tr>
                    ) : null}
@@ -633,12 +603,11 @@ return (
                          <td data-label="Status">
                            <StatusBadge status={e.status} />
                          </td>
-                         <td data-label="Atendimento">
-                           <AtendimentoOperacionalInline
-                             resumo={e.resumo_atendimento_operacional}
-                             apenasComAlocacao={false}
-                             maxBadges={2}
-                           />
+<td data-label="Atendimento">
+                            <AtendimentoOperacionalInline
+                              resumo={e.resumo_atendimento_operacional}
+                              apenasComAlocacao={false}
+                              maxBadges={2} />
                          </td>
                          <td data-label="Valor total">{formatMoneyBRL(e.valor_total ?? 0)}</td>
                          <td data-label="Ações" className="text-right">
@@ -649,7 +618,7 @@ return (
                                </button>
                              </DropdownMenuTrigger>
                              <DropdownMenuContent align="end" className="w-52" onOpenAutoFocus={(ev) => ev.preventDefault()}>
-                               <DropdownMenuItem className="cursor-pointer" onSelect={() => openEdit(e)}>
+                               <DropdownMenuItem className="cursor-pointer" onSelect={() => navigate(`/pedidos-venda/${resolvePedidoVendaId(e)}`)}>
                                  <span className="flex items-center gap-2">
                                    <Pencil className="h-4 w-4" />
                                    Editar
@@ -696,37 +665,7 @@ return (
                  />
                ) : null}
              </DataTableShell>
-           <PedidoVendaEditModal
-             isOpen={modalOpen}
-             onClose={handleModalClose}
-             editing={editing}
-             form={form}
-             setForm={setForm}
-             itens={itens}
-             setItens={setItens}
-             empresas={empresas}
-             selectedCliente={selectedCliente}
-             selectedVendedor={selectedVendedor}
-             selectedColaboradorVendedor={selectedColaboradorVendedor}
-             setSelectedCliente={setSelectedCliente}
-             setSelectedVendedor={setSelectedVendedor}
-             setSelectedColaboradorVendedor={setSelectedColaboradorVendedor}
-             produtoCache={produtoCache}
-             mergeProdutoCache={mergeProdutoCache}
-             updateItem={updateItem}
-             aplicarConversao={aplicarConversao}
-             addItem={addItem}
-             removeItem={removeItem}
-             total={total}
-             statusOpcoesPedido={statusOpcoesPedido}
-             referenciaFrete={referenciaFrete}
-             referenciaCustoCompra={referenciaCustoCompra}
-             onSave={handleSave}
-             saveError={saveError}
-             faturamentoRefreshKey={faturamentoRefreshKey}
-             onFaturamentoAtualizado={onFaturamentoAtualizado}
-             onAtendimentoResumoAtualizado={onAtendimentoResumoAtualizado}
-           />
+
          </>
        ) : (
          <PedidoVendaWorkspace pedido={editing} onClose={handleModalClose} />
