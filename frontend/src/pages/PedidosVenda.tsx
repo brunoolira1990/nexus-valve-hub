@@ -55,8 +55,9 @@ type PedidosVendaProps = {
 };
 
 const PedidosVenda = ({ dedicated = false, pedido = null }: PedidosVendaProps) => {
-  const [searchParams] = useSearchParams();
-  const statusUrl = searchParams.get('status') || '';
+   const [searchParams] = useSearchParams();
+   const navigate = useNavigate();
+   const statusUrl = searchParams.get('status') || '';
   const {
     items,
     count,
