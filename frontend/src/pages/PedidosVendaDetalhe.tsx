@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import PedidosVendaWorkspace from './PedidosVendaWorkspace';
 import { pedidosVendaService } from '@/services/api/comercial';
 import type { PedidoVenda } from '@/types';
