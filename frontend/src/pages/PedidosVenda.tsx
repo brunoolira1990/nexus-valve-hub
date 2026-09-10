@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Download, FileDown, MoreVertical, Pencil, Trash2 } from 'lucide-react';
+import PedidoVendaWorkspace from './PedidosVendaWorkspace';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,7 +49,12 @@ import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
 import { StatusBadge } from '@/components/nexus/StatusBadge';
 import { AtendimentoOperacionalInline } from '@/components/comercial/AtendimentoOperacionalInline';
 import {formatMoneyBRL} from '@/lib/numberFields';
-const PedidosVenda = () => {
+type PedidosVendaProps = {
+  dedicated?: boolean;
+  pedido?: PedidoVenda | null;
+};
+
+const PedidosVenda = ({ dedicated = false, pedido = null }: PedidosVendaProps) => {
   const [searchParams] = useSearchParams();
   const statusUrl = searchParams.get('status') || '';
   const {
@@ -66,10 +72,11 @@ const PedidosVenda = () => {
     loading: loadingList,
     error: loadError,
     reload: load,
-  } = usePaginatedList<PedidoVenda>({
-    fetchPage: pedidosVendaService.listPaginated,
-    initialFilters: statusUrl ? { status: statusUrl } : {},
-  });
+} = usePaginatedList<PedidoVenda>({
+     fetchPage: pedidosVendaService.listPaginated,
+     enabled: !dedicated,
+     initialFilters: statusUrl ? { status: statusUrl } : {},
+   });
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<PedidoVenda | null>(null);
   const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
@@ -516,162 +523,216 @@ const PedidosVenda = () => {
     }
   }, [editing?.id, load]);
 
-  return (
-    <div>
-      <PageHeader
-        title="Pedidos de Venda"
-        description="Gestão de pedidos comerciais, status e faturamento."
-        onAdd={openNew}
-        addLabel="Novo Pedido"
-        searchValue={search}
-        onSearch={setSearch}
-        searchPlaceholder="Digite parte do número do pedido, como 0006 ou 20260714."
-      />
-      <FilterBar
-        filters={[
-          {
-            key: 'status',
-            label: 'Status',
-            value: filters.status || '',
-            options: [
-              { value: 'aberto', label: 'Aberto' },
-              { value: 'PARCIAL', label: 'Parcialmente faturado' },
-              { value: 'FATURADO', label: 'Faturado' },
-              { value: 'CANCEL', label: 'Cancelado' },
-            ],
-          },
-        ]}
-        onChange={setFilter}
-      />
-      {loadError ? <ErrorState message={loadError} onRetry={() => void load()} /> : null}
-      <DataTableShell>
-        {loadingList ? <LoadingState message="Carregando pedidos de venda…" /> : null}
-        {!loadingList && !loadError ? (
-        <DataTable mobileMode="cards">
-          <thead>
-            <tr>
-              <th>Número</th>
-              <th>Cliente</th>
-              <th>Data</th>
-              <th>Status</th>
-              <th>Atendimento</th>
-              <th>Valor Total</th>
-              <th className="w-36 text-right">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.length === 0 ? (
-              <tr>
-                <td colSpan={7}>
-                  <EmptyState message="Nenhum pedido de venda encontrado." actionLabel="Novo pedido" onAction={openNew} />
-                </td>
-              </tr>
-            ) : null}
-            {!loadingList &&
-              items.map((e) => (
-              <tr key={resolvePedidoVendaId(e) ?? e.numero}>
-                <td data-label="Número" className="font-medium">{e.numero || '—'}</td>
-                <td data-label="Cliente">{e.cliente_nome || '—'}</td>
-                <td data-label="Data">{formatDateBr(e.data)}</td>
-                <td data-label="Status">
-                  <StatusBadge status={e.status} />
-                </td>
-                <td data-label="Atendimento">
-                  <AtendimentoOperacionalInline
-                    resumo={e.resumo_atendimento_operacional}
-                    apenasComAlocacao={false}
-                    maxBadges={2}
-                  />
-                </td>
-                <td data-label="Valor total">{formatMoneyBRL(e.valor_total ?? 0)}</td>
-                <td data-label="Ações" className="text-right">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button type="button" className="erp-btn-ghost erp-btn-sm" aria-label="Ações do pedido">
-                        <MoreVertical className="h-4 w-4" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-52" onOpenAutoFocus={(ev) => ev.preventDefault()}>
-                      <DropdownMenuItem className="cursor-pointer" onSelect={() => openEdit(e)}>
-                        <span className="flex items-center gap-2">
-                          <Pencil className="h-4 w-4" />
-                          Editar
-                        </span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem className="cursor-pointer" onSelect={() => void handleVisualizarPdf(e)}>
-                        <span className="flex items-center gap-2">
-                          <FileDown className="h-4 w-4" />
-                          Visualizar PDF
-                        </span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem className="cursor-pointer" onSelect={() => void handleBaixarPdf(e)}>
-                        <span className="flex items-center gap-2">
-                          <Download className="h-4 w-4" />
-                          Baixar PDF
-                        </span>
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        className="cursor-pointer text-destructive focus:text-destructive"
-                        onSelect={() => void handleDelete(e)}
-                      >
-                        <span className="flex items-center gap-2">
-                          <Trash2 className="h-4 w-4" />
-                          Excluir
-                        </span>
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </DataTable>
-        ) : null}
-        {!loadingList && !loadError && count > 0 ? (
-          <PaginationControls
-            page={page}
-            pageSize={pageSize}
-            count={count}
-            totalPages={totalPages}
-            onPageChange={setPage}
-            onPageSizeChange={setPageSize}
-          />
-        ) : null}
-      </DataTableShell>
-      <PedidoVendaEditModal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        editing={editing}
-        form={form}
-        setForm={setForm}
-        itens={itens}
-        setItens={setItens}
-        empresas={empresas}
-        selectedCliente={selectedCliente}
-        selectedVendedor={selectedVendedor}
-        selectedColaboradorVendedor={selectedColaboradorVendedor}
-        setSelectedCliente={setSelectedCliente}
-        setSelectedVendedor={setSelectedVendedor}
-        setSelectedColaboradorVendedor={setSelectedColaboradorVendedor}
-        produtoCache={produtoCache}
-        mergeProdutoCache={mergeProdutoCache}
-        updateItem={updateItem}
-        aplicarConversao={aplicarConversao}
-        addItem={addItem}
-        removeItem={removeItem}
-        total={total}
-        statusOpcoesPedido={statusOpcoesPedido}
-        referenciaFrete={referenciaFrete}
-        referenciaCustoCompra={referenciaCustoCompra}
-        onSave={handleSave}
-        saveError={saveError}
-        faturamentoRefreshKey={faturamentoRefreshKey}
-        onFaturamentoAtualizado={onFaturamentoAtualizado}
-        onAtendimentoResumoAtualizado={onAtendimentoResumoAtualizado}
-      />
-    </div>
-  );
+   // NEW: Initialization functions for dedicated mode
+   const initializeNew = () => {
+     openNew();
+   };
+
+   const initializeEdit = (pedidoToEdit: PedidoVenda) => {
+     setEditing(pedidoToEdit);
+     hydrateCliente(pedidoToEdit.cliente_id, pedidoToEdit.cliente_nome);
+     hydrateVendedor(pedidoToEdit.vendedor_id ?? null, pedidoToEdit.vendedor_nome || pedidoToEdit.vendedor);
+     hydrateProdutosItens(pedidoToEdit.itens ?? []);
+     setForm({
+       numero: pedidoToEdit.numero ?? '',
+       empresa_emitente_id: pedidoToEdit.empresa_emitente_id ?? (empresas.length === 1 ? empresas[0]?.id ?? null : null),
+       cliente_id: pedidoToEdit.cliente_id ?? null,
+       data: pedidoToEdit.data ?? '',
+       status: pedidoToEdit.status || STATUS_PEDIDO_VENDA_INICIAL,
+       proposta_id: pedidoToEdit.proposta_id,
+       vendedor_id: pedidoToEdit.vendedor_id ?? null,
+       condicao_pagamento_texto: pedidoToEdit.condicao_pagamento_texto ?? CONDICAO_PAGAMENTO_PADRAO,
+       prazo_entrega_texto: pedidoToEdit.prazo_entrega_texto ?? '',
+       observacoes_comerciais: pedidoToEdit.observacoes_comerciais ?? '',
+       observacoes_internas: pedidoToEdit.observacoes_internas ?? '',
+     });
+     setItens((pedidoToEdit.itens ?? []).map(normalizeItemPedidoForForm));
+     setSaveError(null);
+     setModalOpen(true);
+   };
+
+   const initializeRef = useRef({ initializeNew, initializeEdit });
+   initializeRef.current = { initializeNew, initializeEdit };
+
+   useEffect(() => {
+     if (!dedicated) return;
+     if (pedido) {
+       initializeRef.current.initializeEdit(pedido);
+     } else {
+       initializeRef.current.initializeNew();
+     }
+   }, [dedicated, pedido]);
+
+   const handleModalClose = () => {
+     if (dedicated) {
+       navigate('/pedidos-venda');
+     } else {
+       setModalOpen(false);
+     }
+   };
+
+return (
+     <div>
+       {!dedicated ? (
+         <>
+           <PageHeader
+             title="Pedidos de Venda"
+             description="Gestão de pedidos comerciais, status e faturamento."
+             onAdd={openNew}
+             addLabel="Novo Pedido"
+             searchValue={search}
+             onSearch={setSearch}
+             searchPlaceholder="Digite parte do número do pedido, como 0006 ou 20260714."
+           />
+           <FilterBar
+             filters={[
+               {
+                 key: 'status',
+                 label: 'Status',
+                 value: filters.status || '',
+                 options: [
+                   { value: 'aberto', label: 'Aberto' },
+                   { value: 'PARCIAL', label: 'Parcialmente faturado' },
+                   { value: 'FATURADO', label: 'Faturado' },
+                   { value: 'CANCEL', label: 'Cancelado' },
+                 ],
+               },
+             ]}
+             onChange={setFilter}
+           />
+           {loadError ? <ErrorState message={loadError} onRetry={() => void load()} /> : null}
+           <DataTableShell>
+             {loadingList ? <LoadingState message="Carregando pedidos de venda…" /> : null}
+             {!loadingList && !loadError ? (
+               <DataTable mobileMode="cards">
+                 <thead>
+                   <tr>
+                     <th>Número</th>
+                     <th>Cliente</th>
+                     <th>Data</th>
+                     <th>Status</th>
+                     <th>Atendimento</th>
+                     <th>Valor Total</th>
+                     <th className="w-36 text-right">Ações</th>
+                   </tr>
+                 </thead>
+                 <tbody>
+                   {items.length === 0 ? (
+                     <tr>
+                       <td colSpan={7}>
+                         <EmptyState message="Nenhum pedido de venda encontrado." actionLabel="Novo pedido" onAction={openNew} />
+                       </td>
+                     </tr>
+                   ) : null}
+                   {!loadingList &&
+                     items.map((e) => (
+                       <tr key={resolvePedidoVendaId(e) ?? e.numero}>
+                         <td data-label="Número" className="font-medium">{e.numero || '—'}</td>
+                         <td data-label="Cliente">{e.cliente_nome || '—'}</td>
+                         <td data-label="Data">{formatDateBr(e.data)}</td>
+                         <td data-label="Status">
+                           <StatusBadge status={e.status} />
+                         </td>
+                         <td data-label="Atendimento">
+                           <AtendimentoOperacionalInline
+                             resumo={e.resumo_atendimento_operacional}
+                             apenasComAlocacao={false}
+                             maxBadges={2}
+                           />
+                         </td>
+                         <td data-label="Valor total">{formatMoneyBRL(e.valor_total ?? 0)}</td>
+                         <td data-label="Ações" className="text-right">
+                           <DropdownMenu>
+                             <DropdownMenuTrigger asChild>
+                               <button type="button" className="erp-btn-ghost erp-btn-sm" aria-label="Ações do pedido">
+                                 <MoreVertical className="h-4 w-4" />
+                               </button>
+                             </DropdownMenuTrigger>
+                             <DropdownMenuContent align="end" className="w-52" onOpenAutoFocus={(ev) => ev.preventDefault()}>
+                               <DropdownMenuItem className="cursor-pointer" onSelect={() => openEdit(e)}>
+                                 <span className="flex items-center gap-2">
+                                   <Pencil className="h-4 w-4" />
+                                   Editar
+                                 </span>
+                               </DropdownMenuItem>
+                               <DropdownMenuItem className="cursor-pointer" onSelect={() => void handleVisualizarPdf(e)}>
+                                 <span className="flex items-center gap-2">
+                                   <FileDown className="h-4 w-4" />
+                                   Visualizar PDF
+                                 </span>
+                               </DropdownMenuItem>
+                               <DropdownMenuItem className="cursor-pointer" onSelect={() => void handleBaixarPdf(e)}>
+                                 <span className="flex items-center gap-2">
+                                   <Download className="h-4 w-4" />
+                                   Baixar PDF
+                                 </span>
+                               </DropdownMenuItem>
+                               <DropdownMenuSeparator />
+                               <DropdownMenuItem
+                                 className="cursor-pointer text-destructive focus:text-destructive"
+                                 onSelect={() => void handleDelete(e)}
+                               >
+                                 <span className="flex items-center gap-2">
+                                   <Trash2 className="h-4 w-4" />
+                                   Excluir
+                                 </span>
+                               </DropdownMenuItem>
+                             </DropdownMenuContent>
+                           </DropdownMenu>
+                         </td>
+                       </tr>
+                     ))}
+                 </tbody>
+               </DataTable>
+               ) : null}
+               {!loadingList && !loadError && count > 0 ? (
+                 <PaginationControls
+                   page={page}
+                   pageSize={pageSize}
+                   count={count}
+                   totalPages={totalPages}
+                   onPageChange={setPage}
+                   onPageSizeChange={setPageSize}
+                 />
+               ) : null}
+             </DataTableShell>
+           <PedidoVendaEditModal
+             isOpen={modalOpen}
+             onClose={handleModalClose}
+             editing={editing}
+             form={form}
+             setForm={setForm}
+             itens={itens}
+             setItens={setItens}
+             empresas={empresas}
+             selectedCliente={selectedCliente}
+             selectedVendedor={selectedVendedor}
+             selectedColaboradorVendedor={selectedColaboradorVendedor}
+             setSelectedCliente={setSelectedCliente}
+             setSelectedVendedor={setSelectedVendedor}
+             setSelectedColaboradorVendedor={setSelectedColaboradorVendedor}
+             produtoCache={produtoCache}
+             mergeProdutoCache={mergeProdutoCache}
+             updateItem={updateItem}
+             aplicarConversao={aplicarConversao}
+             addItem={addItem}
+             removeItem={removeItem}
+             total={total}
+             statusOpcoesPedido={statusOpcoesPedido}
+             referenciaFrete={referenciaFrete}
+             referenciaCustoCompra={referenciaCustoCompra}
+             onSave={handleSave}
+             saveError={saveError}
+             faturamentoRefreshKey={faturamentoRefreshKey}
+             onFaturamentoAtualizado={onFaturamentoAtualizado}
+             onAtendimentoResumoAtualizado={onAtendimentoResumoAtualizado}
+           />
+         </>
+       ) : (
+         <PedidoVendaWorkspace pedido={editing} onClose={handleModalClose} />
+       )}
+     </div>
+   );
 };
 
 export default PedidosVenda;
