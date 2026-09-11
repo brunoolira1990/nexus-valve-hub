@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import PedidosVendaWorkspace from './PedidosVendaWorkspace';
 import { pedidosVendaService } from '@/services/api/comercial';
 import type { PedidoVenda } from '@/types';
@@ -12,9 +12,12 @@ export default function PedidoVendaDetalhe() {
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
 
+  const isNovo = id === undefined || id === 'novo';
+
   useEffect(() => {
-    if (id === undefined) {
+    if (isNovo) {
       setPedido(null);
+      setError(null);
       setLoading(false);
       return;
     }
@@ -36,7 +39,16 @@ export default function PedidoVendaDetalhe() {
       }
     );
     return () => { active = false; };
-  }, [id, attempt]);
+  }, [id, attempt, isNovo]);
+
+  if (isNovo) {
+    return (
+      <PedidosVendaWorkspace
+        pedido={null}
+        onClose={() => navigate('/pedidos-venda')}
+      />
+    );
+  }
 
   if (loading) return <p role="status">Carregando pedido...</p>;
 
