@@ -663,124 +663,11 @@ export default function PedidoVendaWorkspace({ pedido, onClose }: PedidoVendaWor
             {pedidoId ? <TabsTrigger value="faturamento">Faturamento</TabsTrigger> : null}
             {pedidoId ? <TabsTrigger value="atendimento">Atendimento operacional</TabsTrigger> : null}
             {pedidoId ? <TabsTrigger value="fiscal">NF-e / Fiscal</TabsTrigger> : null}
-            <TabsTrigger value="historico">Observações / Histórico</TabsTrigger>
+            <TabsTrigger value="historico">Observações</TabsTrigger>
           </TabsList>
 
           <TabsContent value="resumo" className={`mt-0 ${pedidoId ? 'space-y-6' : 'space-y-4'}`}>
-            {pedidoId && faturamentoLoading ? (
-              <p className="text-xs text-muted-foreground">Carregando resumo de faturamento…</p>
-            ) : null}
-            {pedidoId ? (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
-                {[
-                  { label: 'Número', value: numeroExib },
-                  { label: 'Status', value: labelStatusPedidoVenda(statusExib) },
-                  { label: 'Cliente', value: clienteNome },
-                  { label: 'Vendedor', value: vendedorNome },
-                  {
-                    label: 'Total pedido',
-                    value: formatCurrencyBRL(numSafe(total)),
-                  },
-                  {
-                    label: 'Valor faturado',
-                    value: valorFaturadoCard != null ? formatCurrencyBRL(valorFaturadoCard) : '—',
-                  },
-                  {
-                    label: 'Valor pendente',
-                    value: valorPendenteCard != null ? formatCurrencyBRL(valorPendenteCard) : '—',
-                  },
-                  { label: 'Faturamento', value: faturamentoLabel },
-                ].map((c) => (
-                  <div key={c.label} className="rounded-md border border-border bg-card px-3 py-2">
-                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{c.label}</div>
-                    <div className="text-sm font-medium mt-0.5 truncate" title={String(c.value)}>
-                      {c.value}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-
-            {pedidoId ? (
-              <div className="rounded-md border border-border bg-card px-3 py-2 space-y-2">
-                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">NF-e vinculada</div>
-                {semNfeGerada && !faturamentoLoading ? (
-                  <p className="text-sm text-muted-foreground">Nenhuma NF-e gerada</p>
-                ) : null}
-                {nfesVinculadas.map((f) => {
-                  const refInt = referenciaInternaNfe(f);
-                  return (
-                    <div key={f.faturamento_id} className="space-y-1.5">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-medium">{tituloResumoNfePedido(f)}</span>
-                        {getNFeFiscalBadgeTokens(f).map((tok) => (
-                          <StatusBadge key={tok} status={tok} />
-                        ))}
-                        <button
-                          type="button"
-                          className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1"
-                          onClick={() => navigate(`/nfe-saida?nfe=${f.nfe_saida_id}`)}
-                        >
-                          <ExternalLink className="h-3 w-3" />
-                          Abrir NF-e
-                        </button>
-                        {pedidoFaturamentoPermiteEstorno(f) ? (
-                          <button
-                            type="button"
-                            className="erp-btn-outline erp-btn-sm text-destructive border-destructive/40 inline-flex items-center gap-1"
-                            disabled={estornoLoading}
-                            onClick={() =>
-                              setEstornoModal({
-                                faturamentoId: f.faturamento_id,
-                                label: linhaFaturamentoNfeAmigavel(f),
-                              })
-                            }
-                          >
-                            <RotateCcw className="h-3 w-3" aria-hidden />
-                            Estornar faturamento
-                          </button>
-                        ) : null}
-                      </div>
-                      {refInt ? (
-                        <p className="text-[10px] text-muted-foreground">Referência interna: {refInt}</p>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : null}
-
-            {pedidoId && linhaEstornoResumo ? (
-              <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 flex flex-wrap gap-2 items-center justify-between">
-                <p className="text-xs text-muted-foreground">
-                  NF-e ainda não autorizada — você pode estornar o faturamento e reabrir o pedido (sem SEFAZ).
-                </p>
-                <button
-                  type="button"
-                  className="erp-btn-outline erp-btn-sm text-destructive border-destructive/50 inline-flex items-center gap-1 shrink-0"
-                  disabled={estornoLoading}
-                  onClick={() =>
-                    setEstornoModal({
-                      faturamentoId: linhaEstornoResumo.faturamento_id,
-                      label: linhaFaturamentoNfeAmigavel(linhaEstornoResumo),
-                    })
-                  }
-                >
-                  <RotateCcw className="h-3 w-3" aria-hidden />
-                  Estornar faturamento
-                </button>
-              </div>
-            ) : null}
-
-            {alertaAtendimentoFaturado ? (
-              <p className="text-xs text-amber-800 dark:text-amber-200 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2">
-                {MSG_PEDIDO_FATURADO_SEM_ATENDIMENTO}
-              </p>
-            ) : null}
-
-            {pedidoId ? <AtendimentoOperacionalResumo resumo={editing?.resumo_atendimento_operacional} /> : null}
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 border-t border-border pt-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
               <div>
                 <label className="erp-label">Número</label>
                 <input
@@ -1272,11 +1159,6 @@ export default function PedidoVendaWorkspace({ pedido, onClose }: PedidoVendaWor
 
           {pedidoId ? (
             <TabsContent value="faturamento" className="mt-0 space-y-3">
-              {alertaAtendimentoFaturado ? (
-                <p className="text-xs text-amber-800 dark:text-amber-200 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2">
-                  {MSG_ALERTA_FATURAMENTO_SEM_ATENDIMENTO}
-                </p>
-              ) : null}
               <PedidoFaturamentoPanel
                 embedded
                 pedidoId={pedidoId}
