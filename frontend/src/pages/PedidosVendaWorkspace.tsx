@@ -590,36 +590,34 @@ export default function PedidoVendaWorkspace({ pedido, onClose }: PedidoVendaWor
 
   return (
     <Fragment>
-      <PageHeader
-        title={editing ? `Pedido ${editing.numero || editing.id}` : 'Novo Pedido de Venda'}
-        description="Dados do pedido comercial: cliente, vendedor, itens, condições e totais."
-        onSave={handleSave}
-        saving={saving}
-        onClose={onClose}
-      >
-        <button className="erp-btn-outline" onClick={onClose}>
-          Voltar
-        </button>
-      </PageHeader>
-      <div className={`p-6 ${pedidoId ? 'space-y-6' : 'space-y-4'}`}>
+      <div className={`px-4 pb-5 sm:px-5 sm:pb-6 ${pedidoId ? 'space-y-3' : 'space-y-2.5'}`}>
+        <PageHeader
+          title={editing ? `Pedido ${editing.numero || editing.id}` : 'Novo Pedido de Venda'}
+          description="Dados do pedido comercial: cliente, vendedor, itens, condições e totais."
+          actions={
+            <button type="button" className="erp-btn-outline shrink-0" onClick={onClose}>
+              Voltar
+            </button>
+          }
+        />
         {pedidoId ? (
-          <div className="grid grid-cols-1 gap-3 rounded-lg border border-border bg-muted/15 px-3 py-3 text-sm sm:grid-cols-2 sm:px-4 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-x-3.5 gap-y-1.5 rounded-lg border border-border bg-muted/15 px-2.5 py-1.5 text-sm sm:grid-cols-2 lg:grid-cols-4 lg:gap-x-3 lg:gap-y-1.5">
             <div>
-              <span className="text-xs text-muted-foreground block">Pedido</span>
+              <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80 block">Pedido</span>
               <span className="font-semibold text-foreground">{numeroExib}</span>
             </div>
             <div>
-              <span className="text-xs text-muted-foreground block">Cliente</span>
+              <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80 block">Cliente</span>
               <span className="font-medium truncate block" title={clienteNome}>
                 {clienteNome}
               </span>
             </div>
             <div>
-              <span className="text-xs text-muted-foreground block">Status</span>
+              <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80 block">Status</span>
               <StatusBadge status={tokenStatusComercialPedido(statusExib)} className="mt-0.5" />
             </div>
             <div>
-              <span className="text-xs text-muted-foreground block">Total do pedido</span>
+              <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80 block">Total do pedido</span>
               <span className="font-semibold tabular-nums">
                 {formatCurrencyBRL(numSafe(total))}
                 <span className="text-muted-foreground font-normal"> · {faturamentoLabel}</span>
@@ -627,23 +625,23 @@ export default function PedidoVendaWorkspace({ pedido, onClose }: PedidoVendaWor
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3 rounded-lg border border-border bg-muted/15 px-3 py-3 text-sm sm:grid-cols-2 sm:px-4 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-x-3.5 gap-y-1.5 rounded-lg border border-border bg-muted/15 px-2.5 py-1.5 text-sm sm:grid-cols-2 md:grid-cols-4 md:gap-x-3 md:gap-y-1.5">
             <div>
-              <span className="text-xs text-muted-foreground block">Número</span>
+              <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80 block">Número</span>
               <span className="font-semibold text-foreground">{numeroExib}</span>
             </div>
             <div>
-              <span className="text-xs text-muted-foreground block">Cliente</span>
+              <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80 block">Cliente</span>
               <span className="font-medium truncate block" title={clienteNome}>
                 {clienteNome}
               </span>
             </div>
             <div>
-              <span className="text-xs text-muted-foreground block">Status</span>
-              <StatusBadge status={tokenStatusComercialPedido(statusExib)} className="mt-0.5" />
+              <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80 block">Status</span>
+              <StatusBadge status={statusExib.toLowerCase()} className="mt-0.5" />
             </div>
             <div>
-              <span className="text-xs text-muted-foreground block">Total do pedido</span>
+              <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80 block">Total do pedido</span>
               <span className="font-semibold tabular-nums text-foreground">
                 {formatCurrencyBRL(numSafe(total))}
               </span>
@@ -657,7 +655,7 @@ export default function PedidoVendaWorkspace({ pedido, onClose }: PedidoVendaWor
         ) : null}
 
         <Tabs value={modalTab} onValueChange={setModalTab} className="flex flex-col min-h-0">
-          <TabsList className="sticky top-0 z-20 h-auto w-full justify-start gap-1 overflow-x-auto whitespace-nowrap bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85 border-b border-border -mx-6 px-6 -mt-6 pt-6 pb-2 mb-1 rounded-t-none">
+          <TabsList className="sticky top-0 z-20 h-auto w-full justify-start gap-1 overflow-x-auto whitespace-nowrap bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/90 border border-border border-b-0 rounded-t-lg px-3 pt-2.5 pb-1 sm:px-4">
             <TabsTrigger value="resumo">Dados do pedido</TabsTrigger>
             <TabsTrigger value="itens">Itens</TabsTrigger>
             {pedidoId ? <TabsTrigger value="faturamento">Faturamento</TabsTrigger> : null}
@@ -666,787 +664,793 @@ export default function PedidoVendaWorkspace({ pedido, onClose }: PedidoVendaWor
             <TabsTrigger value="historico">Observações</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="resumo" className={`mt-0 ${pedidoId ? 'space-y-6' : 'space-y-4'}`}>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
-              <div>
-                <label className="erp-label">Número</label>
-                <input
-                  className="erp-input mt-1"
-                  placeholder={editing ? undefined : 'Gerado automaticamente (PV-AAAAMMDD-NNNN)'}
-                  value={form.numero}
-                  onChange={(e) => setForm((p) => ({ ...p, numero: e.target.value }))}
-                />
-              </div>
-              <DateBrInput label="Data" valueIso={form.data} onChangeIso={(iso) => setForm((p) => ({ ...p, data: iso }))} />
-              <div>
-                <label className="erp-label">Status</label>
-                <select
-                  className="erp-select mt-1 w-full"
-                  value={form.status}
-                  onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}
-                >
-                  {statusOpcoesPedido.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div>
-                <label className="erp-label">Cliente</label>
-                <ClienteComercialField
-                  valueId={form.cliente_id}
-                  selectedCliente={selectedCliente}
-                  onSelect={(c) => {
-                    setForm((p) => ({ ...p, cliente_id: c.id }));
-                    setSelectedCliente(c);
-                  }}
-                  onClear={() => {
-                    setForm((p) => ({ ...p, cliente_id: null }));
-                    setSelectedCliente(null);
-                  }}
-                />
-              </div>
-              <div>
-                <label className="erp-label">Vendedor</label>
-                <VendedorComercialField
-                  valueId={form.vendedor_id}
-                  selectedVendedor={selectedVendedor}
-                  selectedColaborador={selectedColaboradorVendedor}
-                  onSelect={(vendedorId, colab) => {
-                    setForm((p) => ({ ...p, vendedor_id: vendedorId }));
-                    setSelectedColaboradorVendedor(colab);
-                    setSelectedVendedor({ id: vendedorId, nome: colab.nome, codigo: colab.codigo, ativo: true });
-                  }}
-                  onClear={() => {
-                    setForm((p) => ({ ...p, vendedor_id: null }));
-                    setSelectedVendedor(null);
-                    setSelectedColaboradorVendedor(null);
-                  }}
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-              {empresas.length > 1 ? (
-                <div className="w-full min-w-0 sm:min-w-[14rem] sm:flex-1">
-                  <label className="erp-label">Empresa emitente</label>
+          <div className="border border-border border-t-0 rounded-b-lg bg-card px-4 py-3.5 sm:px-5 sm:py-4 min-h-0 flex-1">
+            <TabsContent value="resumo" className={`mt-0 ${pedidoId ? 'space-y-4' : 'space-y-3.5'}`}>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-0.5">
+                <div>
+                  <label className="erp-label">Número</label>
+                  <input
+                    className="erp-input mt-1"
+                    placeholder={editing ? undefined : 'Gerado automaticamente (PV-AAAAMMDD-NNNN)'}
+                    value={form.numero}
+                    onChange={(e) => setForm((p) => ({ ...p, numero: e.target.value }))}
+                  />
+                </div>
+                <DateBrInput label="Data" valueIso={form.data} onChangeIso={(iso) => setForm((p) => ({ ...p, data: iso }))} />
+                <div>
+                  <label className="erp-label">Status</label>
                   <select
                     className="erp-select mt-1 w-full"
-                    value={form.empresa_emitente_id ?? ''}
-                    onChange={(e) =>
-                      setForm((p) => ({
-                        ...p,
-                        empresa_emitente_id: e.target.value ? Number(e.target.value) : null,
-                      }))
-                    }
+                    value={form.status}
+                    onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}
                   >
-                    <option value="">Selecione matriz ou filial</option>
-                    {empresas.map((em) => (
-                      <option key={em.id} value={em.id}>
-                        {em.razao_social}
-                        {em.uf ? ` (${em.uf})` : ''}
+                    {statusOpcoesPedido.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
                       </option>
                     ))}
                   </select>
                 </div>
-              ) : empresas.length === 1 ? (
-                <p className="text-sm text-muted-foreground">
-                  Emitente: <span className="font-medium text-foreground">{empresas[0].razao_social}</span>
-                </p>
-              ) : null}
-              {editing?.proposta_id ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="erp-badge-success">
-                    Origem: Proposta {editing.proposta_numero || editing.proposta_id}
-                  </span>
-                  <button
-                    type="button"
-                    className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1"
-                    onClick={() => navigate('/propostas')}
-                  >
-                    <ExternalLink className="h-3 w-3" />
-                    Ver proposta
-                  </button>
-                </div>
-              ) : null}
-            </div>
+              </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-border pt-4">
-              <div>
-                <label className="erp-label">Condição de pagamento</label>
-                <input
-                  className="erp-input mt-1"
-                  placeholder="Ex.: 30, 45, 60"
-                  value={form.condicao_pagamento_texto}
-                  onChange={(e) => setForm((p) => ({ ...p, condicao_pagamento_texto: e.target.value }))}
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  {condicaoPreview.erro ? condicaoPreview.erro : condicaoPreview.resumo}
-                </p>
-              </div>
-              <div>
-                <label className="erp-label">Vencimentos previstos</label>
-                <div className="mt-1 rounded-md border border-border bg-muted/10 p-3">
-                  <CondicaoPagamentoResumo condicao={form.condicao_pagamento_texto} dataBaseIso={form.data} />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="erp-label">Cliente</label>
+                  <ClienteComercialField
+                    valueId={form.cliente_id}
+                    selectedCliente={selectedCliente}
+                    onSelect={(c) => {
+                      setForm((p) => ({ ...p, cliente_id: c.id }));
+                      setSelectedCliente(c);
+                    }}
+                    onClear={() => {
+                      setForm((p) => ({ ...p, cliente_id: null }));
+                      setSelectedCliente(null);
+                    }}
+                  />
+                </div>
+                <div>
+                  <label className="erp-label">Vendedor</label>
+                  <VendedorComercialField
+                    valueId={form.vendedor_id}
+                    selectedVendedor={selectedVendedor}
+                    selectedColaborador={selectedColaboradorVendedor}
+                    onSelect={(vendedorId, colab) => {
+                      setForm((p) => ({ ...p, vendedor_id: vendedorId }));
+                      setSelectedColaboradorVendedor(colab);
+                      setSelectedVendedor({ id: vendedorId, nome: colab.nome, codigo: colab.codigo, ativo: true });
+                    }}
+                    onClear={() => {
+                      setForm((p) => ({ ...p, vendedor_id: null }));
+                      setSelectedVendedor(null);
+                      setSelectedColaboradorVendedor(null);
+                    }}
+                  />
                 </div>
               </div>
-              <div className="md:col-span-2">
-                <label className="erp-label">Prazo previsto de entrega</label>
-                <input
-                  className="erp-input mt-1"
-                  placeholder="Ex.: 30 dias após aprovação do pedido"
-                  value={form.prazo_entrega_texto}
-                  onChange={(e) => setForm((p) => ({ ...p, prazo_entrega_texto: e.target.value }))}
-                />
-                {editing?.proposta_id ? (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Herdado da proposta ao converter; pode ser ajustado conforme o compromisso operacional.
+
+              <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                {empresas.length > 1 ? (
+                  <div className="w-full min-w-0 sm:min-w-[14rem] sm:flex-1">
+                    <label className="erp-label">Empresa emitente</label>
+                    <select
+                      className="erp-select mt-1 w-full"
+                      value={form.empresa_emitente_id ?? ''}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          empresa_emitente_id: e.target.value ? Number(e.target.value) : null,
+                        }))
+                      }
+                    >
+                      <option value="">Selecione matriz ou filial</option>
+                      {empresas.map((em) => (
+                        <option key={em.id} value={em.id}>
+                          {em.razao_social}
+                          {em.uf ? ` (${em.uf})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : empresas.length === 1 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Emitente: <span className="font-medium text-foreground">{empresas[0].razao_social}</span>
                   </p>
                 ) : null}
-              </div>
-            </div>
-
-            <div className="rounded-md border border-border bg-card p-3 space-y-2">
-              <div className="text-sm font-medium">Totais do pedido</div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
-                <div>
-                  <div className="text-xs text-muted-foreground">Itens</div>
-                  <div className="font-medium tabular-nums">{itens.length} item(ns)</div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground">Total</div>
-                  <div className="font-semibold tabular-nums">{formatCurrencyBRL(total)}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground">Quantidade negociada</div>
-                  <div className="font-medium tabular-nums">
-                    {formatQuantidadeBR(
-                      itens.reduce((acc, it) => acc + Number(it.quantidade_negociada ?? it.quantidade ?? 0), 0),
-                      'UN',
-                    )}
+                {editing?.proposta_id ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="erp-badge-success">
+                      Origem: Proposta {editing.proposta_numero || editing.proposta_id}
+                    </span>
+                    <button
+                      type="button"
+                      className="erp-btn-outline erp-btn-sm inline-flex items-center gap-1"
+                      onClick={() => navigate('/propostas')}
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      Ver proposta
+                    </button>
                   </div>
-                </div>
-              </div>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="itens" className="mt-0 space-y-4">
-            {itensSomenteLeitura ? (
-              <p className="text-sm text-amber-800 dark:text-amber-200 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2">
-                {MSG_PEDIDO_FATURADO_ITENS}
-              </p>
-            ) : null}
-            <div className="bg-card border-b border-border rounded-t-md p-3 -mx-6 mt-2">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                <div className="flex items-center gap-3">
-                  <h3 className="font-medium text-sm">Itens do pedido</h3>
-                  <span className="inline-flex items-center justify-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground min-w-[2rem] text-center tabular-nums">
-                    {itens.length}
-                  </span>
-                </div>
-                {!itensSomenteLeitura ? (
-                  <button type="button" onClick={addItem} className="erp-btn-outline erp-btn-sm w-full sm:w-auto justify-center shrink-0">
-                    <Plus className="h-3 w-3" /> Adicionar item
-                  </button>
                 ) : null}
               </div>
-            </div>
-            <div className="-mx-6 px-6 space-y-3 mt-2">
-              {itens.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8 border border-dashed rounded-md">
-                  {itensSomenteLeitura ? 'Nenhum item no pedido.' : 'Nenhum item. Clique em Adicionar item.'}
-                </p>
-              ) : itensSomenteLeitura ? (
-                <div className="border border-border rounded-md overflow-x-auto bg-muted/5">
-                  <table className="erp-table text-sm">
-                    <thead>
-                      <tr>
-                        <th>Produto</th>
-                        <th className="text-right">Qtd</th>
-                        <th className="text-right">Fat.</th>
-                        <th className="text-right">Pend.</th>
-                        <th className="text-right">Preço</th>
-                        <th className="text-right">Desc.</th>
-                        <th className="text-right">Total</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {itens.map((item) => {
-                        const qtd = numSafe(item.quantidade_negociada ?? item.quantidade);
-                        const qFat = numSafe(item.quantidade_faturada);
-                        const qPend = numSafe(item.quantidade_pendente ?? qtd - qFat);
-                        const un = item.unidade_negociada || '';
-                        return (
-                          <tr key={item.id}>
-                            <td className="max-w-[280px]">
-                              <span className="font-medium block truncate" title={item.produto_nome}>
-                                {item.produto_nome || (item.produto_id ? 'Produto' : '—')}
-                              </span>
-                            </td>
-                            <td className="text-right tabular-nums">{formatQuantidadeBR(qtd, un)}</td>
-                            <td className="text-right tabular-nums">{formatQuantidadeBR(qFat, un)}</td>
-                            <td className="text-right tabular-nums">{formatQuantidadeBR(qPend, un)}</td>
-                            <td className="text-right tabular-nums">
-                              {formatPrecoUnitarioBRL(item.preco_por_unidade_negociada ?? item.valor_unitario)}
-                            </td>
-                            <td className="text-right tabular-nums">{formatCurrencyBRL(itemDesconto(item))}</td>
-                            <td className="text-right tabular-nums font-medium">
-                              {formatCurrencyBRL(itemTotalLinha(item))}
-                            </td>
-                            <td>
-                              <span className={statusItemBadge(item.status_item)}>
-                                {getStatusItemLabel(item.status_item)}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 border-t border-border pt-3.5">
+                <div>
+                  <label className="erp-label">Condição de pagamento</label>
+                  <input
+                    className="erp-input mt-1"
+                    placeholder="Ex.: 30, 45, 60"
+                    value={form.condicao_pagamento_texto}
+                    onChange={(e) => setForm((p) => ({ ...p, condicao_pagamento_texto: e.target.value }))}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {condicaoPreview.erro ? condicaoPreview.erro : condicaoPreview.resumo}
+                  </p>
                 </div>
-              ) : (
-                <div className="border border-border rounded-md overflow-x-auto">
-                  <table className="erp-table text-sm">
-                    <thead>
-                      <tr>
-                        <th className="w-8" />
-                        <th>Produto</th>
-                        <th>Un.</th>
-                        <th className="text-right">Qtd</th>
-                        <th className="text-right">Fat.</th>
-                        <th className="text-right">Pend.</th>
-                        <th className="text-right">Preço</th>
-                        <th className="text-right">Desc.</th>
-                        <th className="text-right">Total</th>
-                        <th>Status</th>
-                        <th className="w-16" />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {itens.map((item, idx) => {
-                        const expandido = expandedItemId === item.id;
-                        const qtd = numSafe(item.quantidade_negociada ?? item.quantidade);
-                        const qFat = numSafe(item.quantidade_faturada);
-                        const qPend = numSafe(item.quantidade_pendente ?? qtd - qFat);
-                        const readOnly = itemPedidoReadOnly(item, form.status);
-                        const qtdEditavel = itemPedidoQuantidadeEditavel(item, form.status);
-                        const podeExcluir = itemPedidoPodeExcluir(item, form.status);
-                        const parcialFaturado =
-                          (item.status_item || '').toUpperCase() === 'PARCIAL' && qFat > 0;
-                        const patchQtd = (qtdVal: number): Partial<ItemPedido> => ({
-                          quantidade_negociada: qtdVal,
-                          quantidade: qtdVal,
-                        });
-                        return (
-                          <Fragment key={item.id}>
-                            <tr className="align-top">
-                              <td>
-                                <button
-                                  type="button"
-                                  className="erp-btn-ghost erp-btn-sm p-1"
-                                  onClick={() => setExpandedItemId(expandido ? null : item.id)}
-                                  aria-label={expandido ? 'Recolher' : 'Editar item'}
-                                >
-                                  {expandido ? (
-                                    <ChevronDown className="h-4 w-4" />
-                                  ) : (
-                                    <ChevronRight className="h-4 w-4" />
-                                  )}
-                                </button>
-                              </td>
-                              <td className="max-w-[220px]">
-                                <span className="font-medium block truncate">
+                <div>
+                  <label className="erp-label">Vencimentos previstos</label>
+                  <div className="mt-1 rounded-md border border-border bg-muted/10 p-3">
+                    <CondicaoPagamentoResumo condicao={form.condicao_pagamento_texto} dataBaseIso={form.data} />
+                  </div>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="erp-label">Prazo previsto de entrega</label>
+                  <input
+                    className="erp-input mt-1"
+                    placeholder="Ex.: 30 dias após aprovação do pedido"
+                    value={form.prazo_entrega_texto}
+                    onChange={(e) => setForm((p) => ({ ...p, prazo_entrega_texto: e.target.value }))}
+                  />
+                  {editing?.proposta_id ? (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Herdado da proposta ao converter; pode ser ajustado conforme o compromisso operacional.
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="itens" className="mt-0 space-y-3">
+              {itensSomenteLeitura ? (
+                <p className="text-sm text-amber-800 dark:text-amber-200 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                  {MSG_PEDIDO_FATURADO_ITENS}
+                </p>
+              ) : null}
+              <div className="bg-muted/20 border border-border rounded-t-md p-3">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div className="flex items-center gap-3">
+                    <h3 className="font-medium text-sm">Itens do pedido</h3>
+                    <span className="inline-flex items-center justify-center rounded-md bg-background px-2 py-0.5 text-xs font-medium text-muted-foreground min-w-[2rem] text-center tabular-nums ring-1 ring-border/50">
+                      {itens.length}
+                    </span>
+                  </div>
+                  {!itensSomenteLeitura ? (
+                    <button type="button" onClick={addItem} className="erp-btn-outline erp-btn-sm w-full sm:w-auto justify-center shrink-0">
+                      <Plus className="h-3 w-3" /> Adicionar item
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+              <div className="space-y-3">
+                {itens.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4 border border-dashed rounded-md">
+                    {itensSomenteLeitura ? 'Nenhum item no pedido.' : 'Nenhum item. Clique em Adicionar item.'}
+                  </p>
+                ) : itensSomenteLeitura ? (
+                  <div className="border border-border rounded-md overflow-x-auto bg-muted/5">
+                    <table className="erp-table text-sm">
+                      <thead>
+                        <tr>
+                          <th>Produto</th>
+                          <th className="text-right">Qtd</th>
+                          <th className="text-right">Fat.</th>
+                          <th className="text-right">Pend.</th>
+                          <th className="text-right">Preço</th>
+                          <th className="text-right">Desc.</th>
+                          <th className="text-right">Total</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {itens.map((item) => {
+                          const qtd = numSafe(item.quantidade_negociada ?? item.quantidade);
+                          const qFat = numSafe(item.quantidade_faturada);
+                          const qPend = numSafe(item.quantidade_pendente ?? qtd - qFat);
+                          const un = item.unidade_negociada || '';
+                          return (
+                            <tr key={item.id}>
+                              <td className="max-w-[280px]">
+                                <span className="font-medium block truncate" title={item.produto_nome}>
                                   {item.produto_nome || (item.produto_id ? 'Produto' : '—')}
                                 </span>
                               </td>
-                              <td>{(item.unidade_negociada || '—').toUpperCase()}</td>
+                              <td className="text-right tabular-nums">{formatQuantidadeBR(qtd, un)}</td>
+                              <td className="text-right tabular-nums">{formatQuantidadeBR(qFat, un)}</td>
+                              <td className="text-right tabular-nums">{formatQuantidadeBR(qPend, un)}</td>
                               <td className="text-right tabular-nums">
-                                <QuantityDisplay value={qtd} unidade={item.unidade_negociada} />
+                                {formatPrecoUnitarioBRL(item.preco_por_unidade_negociada ?? item.valor_unitario)}
                               </td>
-                              <td className="text-right tabular-nums">
-                                <QuantityDisplay value={qFat} unidade={item.unidade_negociada} />
-                              </td>
-                              <td className="text-right tabular-nums">
-                                <QuantityDisplay value={qPend} unidade={item.unidade_negociada} />
-                              </td>
-                              <td className="text-right tabular-nums">
-                                <UnitPriceDisplay value={item.preco_por_unidade_negociada ?? item.valor_unitario} />
-                              </td>
-                              <td className="text-right tabular-nums">
-                                <MoneyDisplay value={itemDesconto(item)} />
-                              </td>
+                              <td className="text-right tabular-nums">{formatCurrencyBRL(itemDesconto(item))}</td>
                               <td className="text-right tabular-nums font-medium">
-                                <MoneyDisplay value={itemTotalLinha(item)} />
+                                {formatCurrencyBRL(itemTotalLinha(item))}
                               </td>
                               <td>
                                 <span className={statusItemBadge(item.status_item)}>
                                   {getStatusItemLabel(item.status_item)}
                                 </span>
                               </td>
-                              <td>
-                                {podeExcluir ? (
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="border border-border rounded-md overflow-x-auto">
+                    <table className="erp-table text-sm">
+                      <thead>
+                        <tr>
+                          <th className="w-8" />
+                          <th>Produto</th>
+                          <th>Un.</th>
+                          <th className="text-right">Qtd</th>
+                          <th className="text-right">Fat.</th>
+                          <th className="text-right">Pend.</th>
+                          <th className="text-right">Preço</th>
+                          <th className="text-right">Desc.</th>
+                          <th className="text-right">Total</th>
+                          <th>Status</th>
+                          <th className="w-16" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {itens.map((item, idx) => {
+                          const expandido = expandedItemId === item.id;
+                          const qtd = numSafe(item.quantidade_negociada ?? item.quantidade);
+                          const qFat = numSafe(item.quantidade_faturada);
+                          const qPend = numSafe(item.quantidade_pendente ?? qtd - qFat);
+                          const readOnly = itemPedidoReadOnly(item, form.status);
+                          const qtdEditavel = itemPedidoQuantidadeEditavel(item, form.status);
+                          const podeExcluir = itemPedidoPodeExcluir(item, form.status);
+                          const parcialFaturado =
+                            (item.status_item || '').toUpperCase() === 'PARCIAL' && qFat > 0;
+                          const patchQtd = (qtdVal: number): Partial<ItemPedido> => ({
+                            quantidade_negociada: qtdVal,
+                            quantidade: qtdVal,
+                          });
+                          return (
+                            <Fragment key={item.id}>
+                              <tr className="align-top">
+                                <td>
                                   <button
                                     type="button"
-                                    onClick={() => removeItem(item.id)}
-                                    className="erp-btn-ghost erp-btn-sm text-destructive"
+                                    className="erp-btn-ghost erp-btn-sm p-1"
+                                    onClick={() => setExpandedItemId(expandido ? null : item.id)}
+                                    aria-label={expandido ? 'Recolher' : 'Editar item'}
                                   >
-                                    <X className="h-4 w-4" />
+                                    {expandido ? (
+                                      <ChevronDown className="h-4 w-4" />
+                                    ) : (
+                                      <ChevronRight className="h-4 w-4" />
+                                    )}
                                   </button>
-                                ) : null}
-                              </td>
-                            </tr>
-                            {expandido ? (
-                              <tr>
-                                <td colSpan={11} className="bg-muted/10 p-4">
-                                  <div className="space-y-3 max-w-full">
-                                    {parcialFaturado ? (
-                                      <p className="text-xs text-amber-800 dark:text-amber-200 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1">
-                                        Item parcialmente faturado: quantidade mínima{' '}
-                                        {formatQuantidadeBR(qFat, item.unidade_negociada)}; produto e preço
-                                        bloqueados.
-                                      </p>
-                                    ) : null}
-                                    <div>
-                                      <label className="text-xs text-muted-foreground">Produto</label>
-                                      {readOnly ? (
-                                        <p className="erp-input mt-1 bg-muted/30 text-sm">
-                                          {item.produto_nome || (item.produto_id ? `Produto #${item.produto_id}` : '—')}
-                                        </p>
-                                      ) : (
-                                        <ProdutoComercialField
-                                          valueId={item.produto_id || null}
-                                          selectedProduto={
-                                            item.produto_id ? produtoCache.get(item.produto_id) ?? null : null
-                                          }
-                                          onSelect={(pr) => {
-                                            mergeProdutoCache(pr);
-                                            const unidades = unidadesNegociacaoProduto(pr);
-                                            const patch = {
-                                              produto_id: pr.id,
-                                              produto_nome: pr.descricao,
-                                              unidade_negociada: unidades[0] || item.unidade_negociada || 'PC',
-                                            };
-                                            updateItem(idx, patch);
-                                            void aplicarConversao(idx, patch);
-                                          }}
-                                          onClear={() => updateItem(idx, { produto_id: 0, produto_nome: '' })}
-                                        />
-                                      )}
-                                    </div>
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                                      <div>
-                                        <label className="text-xs text-muted-foreground">Unidade</label>
-                                        <UnitSelect
-                                          value={item.unidade_negociada || ''}
-                                          disabled={readOnly}
-                                          options={(() => {
-                                            const p = item.produto_id ? produtoCache.get(item.produto_id) : undefined;
-                                            return p ? unidadesNegociacaoProduto(p) : todasUnidadesPadrao();
-                                          })()}
-                                          onChange={(value) => {
-                                            const patch = { unidade_negociada: value };
-                                            updateItem(idx, patch);
-                                            void aplicarConversao(idx, patch);
-                                          }}
-                                        />
-                                      </div>
-                                      <div>
-                                        <label className="text-xs text-muted-foreground">Quantidade comercial</label>
-                                        <QuantityInput
-                                          value={Number(inputNumberValue(item.quantidade_negociada ?? item.quantidade, 1))}
-                                          min={qFat > 0 ? qFat : 0.001}
-                                          readOnly={!qtdEditavel}
-                                          onChange={(val) => {
-                                            updateItem(idx, patchQtd(val));
-                                            void aplicarConversao(idx, patchQtd(val));
-                                          }}
-                                        />
-                                      </div>
-                                      <div>
-                                        <label className="text-xs text-muted-foreground">
-                                          {labelPrecoPorUnidade(item.unidade_negociada)}
-                                        </label>
-                                        <UnitPriceInput
-                                          value={item.preco_por_unidade_negociada ?? item.valor_unitario}
-                                          readOnly={readOnly}
-                                          onChange={(value) => updateItem(idx, { preco_por_unidade_negociada: value })}
-                                        />
-                                      </div>
-                                      <div>
-                                        <label className="text-xs text-muted-foreground">Desconto (R$)</label>
-                                        <DiscountInput
-                                          value={itemDesconto(item)}
-                                          readOnly={readOnly}
-                                          onChange={(v) => {
-                                            updateItem(idx, {
-                                              desconto_valor: v,
-                                              ...({ desconto: v } as Partial<ItemPedido>),
-                                            });
-                                          }}
-                                        />
-                                      </div>
-                                      <div>
-                                        <label className="text-xs text-muted-foreground">Total linha</label>
-                                        <ReadonlyCalculatedField value={formatCurrencyBRL(itemTotalLinha(item))} />
-                                      </div>
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">{previewConversaoItem(item)}</p>
-                                    <details className="rounded-md border border-border bg-muted/10 text-xs">
-                                      <summary className="cursor-pointer px-3 py-2 font-medium text-muted-foreground select-none">
-                                        Conversão dimensional e preços equivalentes
-                                      </summary>
-                                      <div className="px-3 pb-2 text-muted-foreground">
-                                        {equivalentesPreco(item).length
-                                          ? equivalentesPreco(item).join(' · ')
-                                          : 'Sem equivalentes calculados.'}
-                                      </div>
-                                    </details>
-                                    <details className="rounded-md border border-border bg-muted/10 text-xs">
-                                      <summary className="cursor-pointer px-3 py-2 font-medium text-muted-foreground select-none">
-                                        Impostos e adicionais (fiscal)
-                                      </summary>
-                                      <ItemComercialMetricasGrid className="p-3 pt-0">
-                                        <div>
-                                          <label className="text-xs text-muted-foreground">IPI (R$)</label>
-                                          <input
-                                            type="number"
-                                            className="erp-input h-8 text-sm w-full"
-                                            value={numSafe(item.ipi_valor)}
-                                            onChange={(e) => updateItem(idx, { ipi_valor: +e.target.value })}
-                                          />
-                                        </div>
-                                        <div>
-                                          <label className="text-xs text-muted-foreground">ICMS ST (R$)</label>
-                                          <input
-                                            type="number"
-                                            className="erp-input h-8 text-sm w-full"
-                                            value={numSafe(item.icms_st_valor)}
-                                            onChange={(e) => updateItem(idx, { icms_st_valor: +e.target.value })}
-                                          />
-                                        </div>
-                                        <div>
-                                          <label className="text-xs text-muted-foreground">Frete (R$)</label>
-                                          <input
-                                            type="number"
-                                            className="erp-input h-8 text-sm w-full"
-                                            value={numSafe(item.frete_valor)}
-                                            onChange={(e) => updateItem(idx, { frete_valor: +e.target.value })}
-                                          />
-                                        </div>
-                                      </ItemComercialMetricasGrid>
-                                    </details>
-                                  </div>
+                                </td>
+                                <td className="max-w-[220px]">
+                                  <span className="font-medium block truncate">
+                                    {item.produto_nome || (item.produto_id ? 'Produto' : '—')}
+                                  </span>
+                                </td>
+                                <td>{(item.unidade_negociada || '—').toUpperCase()}</td>
+                                <td className="text-right tabular-nums">
+                                  <QuantityDisplay value={qtd} unidade={item.unidade_negociada} />
+                                </td>
+                                <td className="text-right tabular-nums">
+                                  <QuantityDisplay value={qFat} unidade={item.unidade_negociada} />
+                                </td>
+                                <td className="text-right tabular-nums">
+                                  <QuantityDisplay value={qPend} unidade={item.unidade_negociada} />
+                                </td>
+                                <td className="text-right tabular-nums">
+                                  <UnitPriceDisplay value={item.preco_por_unidade_negociada ?? item.valor_unitario} />
+                                </td>
+                                <td className="text-right tabular-nums">
+                                  <MoneyDisplay value={itemDesconto(item)} />
+                                </td>
+                                <td className="text-right tabular-nums font-medium">
+                                  <MoneyDisplay value={itemTotalLinha(item)} />
+                                </td>
+                                <td>
+                                  <span className={statusItemBadge(item.status_item)}>
+                                    {getStatusItemLabel(item.status_item)}
+                                  </span>
+                                </td>
+                                <td>
+                                  {podeExcluir ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => removeItem(item.id)}
+                                      className="erp-btn-ghost erp-btn-sm text-destructive"
+                                    >
+                                      <X className="h-4 w-4" />
+                                    </button>
+                                  ) : null}
                                 </td>
                               </tr>
-                            ) : null}
-                          </Fragment>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                              {expandido ? (
+                                <tr>
+                                  <td colSpan={11} className="bg-muted/10 p-4">
+                                    <div className="space-y-3 max-w-full">
+                                      {parcialFaturado ? (
+                                        <p className="text-xs text-amber-800 dark:text-amber-200 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1">
+                                          Item parcialmente faturado: quantidade mínima{' '}
+                                          {formatQuantidadeBR(qFat, item.unidade_negociada)}; produto e preço
+                                          bloqueados.
+                                        </p>
+                                      ) : null}
+                                      <div>
+                                        <label className="text-xs text-muted-foreground">Produto</label>
+                                        {readOnly ? (
+                                          <p className="erp-input mt-1 bg-muted/30 text-sm">
+                                            {item.produto_nome || (item.produto_id ? `Produto #${item.produto_id}` : '—')}
+                                          </p>
+                                        ) : (
+                                          <ProdutoComercialField
+                                            valueId={item.produto_id || null}
+                                            selectedProduto={
+                                              item.produto_id ? produtoCache.get(item.produto_id) ?? null : null
+                                            }
+                                            onSelect={(pr) => {
+                                              mergeProdutoCache(pr);
+                                              const unidades = unidadesNegociacaoProduto(pr);
+                                              const patch = {
+                                                produto_id: pr.id,
+                                                produto_nome: pr.descricao,
+                                                unidade_negociada: unidades[0] || item.unidade_negociada || 'PC',
+                                              };
+                                              updateItem(idx, patch);
+                                              void aplicarConversao(idx, patch);
+                                            }}
+                                            onClear={() => updateItem(idx, { produto_id: 0, produto_nome: '' })}
+                                          />
+                                        )}
+                                      </div>
+                                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                                        <div>
+                                          <label className="text-xs text-muted-foreground">Unidade</label>
+                                          <UnitSelect
+                                            value={item.unidade_negociada || ''}
+                                            disabled={readOnly}
+                                            options={(() => {
+                                              const p = item.produto_id ? produtoCache.get(item.produto_id) : undefined;
+                                              return p ? unidadesNegociacaoProduto(p) : todasUnidadesPadrao();
+                                            })()}
+                                            onChange={(value) => {
+                                              const patch = { unidade_negociada: value };
+                                              updateItem(idx, patch);
+                                              void aplicarConversao(idx, patch);
+                                            }}
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="text-xs text-muted-foreground">Quantidade comercial</label>
+                                          <QuantityInput
+                                            value={Number(inputNumberValue(item.quantidade_negociada ?? item.quantidade, 1))}
+                                            min={qFat > 0 ? qFat : 0.001}
+                                            readOnly={!qtdEditavel}
+                                            onChange={(val) => {
+                                              updateItem(idx, patchQtd(val));
+                                              void aplicarConversao(idx, patchQtd(val));
+                                            }}
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="text-xs text-muted-foreground">
+                                            {labelPrecoPorUnidade(item.unidade_negociada)}
+                                          </label>
+                                          <UnitPriceInput
+                                            value={item.preco_por_unidade_negociada ?? item.valor_unitario}
+                                            readOnly={readOnly}
+                                            onChange={(value) => updateItem(idx, { preco_por_unidade_negociada: value })}
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="text-xs text-muted-foreground">Desconto (R$)</label>
+                                          <DiscountInput
+                                            value={itemDesconto(item)}
+                                            readOnly={readOnly}
+                                            onChange={(v) => {
+                                              updateItem(idx, {
+                                                desconto_valor: v,
+                                                ...({ desconto: v } as Partial<ItemPedido>),
+                                              });
+                                            }}
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="text-xs text-muted-foreground">Total linha</label>
+                                          <ReadonlyCalculatedField value={formatCurrencyBRL(itemTotalLinha(item))} />
+                                        </div>
+                                      </div>
+                                      <p className="text-xs text-muted-foreground">{previewConversaoItem(item)}</p>
+                                      <details className="rounded-md border border-border bg-muted/10 text-xs">
+                                        <summary className="cursor-pointer px-3 py-2 font-medium text-muted-foreground select-none">
+                                          Conversão dimensional e preços equivalentes
+                                        </summary>
+                                        <div className="px-3 pb-2 text-muted-foreground">
+                                          {equivalentesPreco(item).length
+                                            ? equivalentesPreco(item).join(' · ')
+                                            : 'Sem equivalentes calculados.'}
+                                        </div>
+                                      </details>
+                                      <details className="rounded-md border border-border bg-muted/10 text-xs">
+                                        <summary className="cursor-pointer px-3 py-2 font-medium text-muted-foreground select-none">
+                                          Impostos e adicionais (fiscal)
+                                        </summary>
+                                        <ItemComercialMetricasGrid className="p-3 pt-0">
+                                          <div>
+                                            <label className="text-xs text-muted-foreground">IPI (R$)</label>
+                                            <input
+                                              type="number"
+                                              className="erp-input h-8 text-sm w-full"
+                                              value={numSafe(item.ipi_valor)}
+                                              onChange={(e) => updateItem(idx, { ipi_valor: +e.target.value })}
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="text-xs text-muted-foreground">ICMS ST (R$)</label>
+                                            <input
+                                              type="number"
+                                              className="erp-input h-8 text-sm w-full"
+                                              value={numSafe(item.icms_st_valor)}
+                                              onChange={(e) => updateItem(idx, { icms_st_valor: +e.target.value })}
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="text-xs text-muted-foreground">Frete (R$)</label>
+                                            <input
+                                              type="number"
+                                              className="erp-input h-8 text-sm w-full"
+                                              value={numSafe(item.frete_valor)}
+                                              onChange={(e) => updateItem(idx, { frete_valor: +e.target.value })}
+                                            />
+                                          </div>
+                                        </ItemComercialMetricasGrid>
+                                      </details>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ) : null}
+                            </Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-1.5 rounded-b-md border border-t-0 border-border bg-muted/15 px-3.5 py-2">
+                  <div className="text-xs text-muted-foreground sm:text-left">
+                    Quantidade negociada:{' '}
+                    <span className="font-medium tabular-nums text-foreground/85">
+                      {formatQuantidadeBR(
+                        itens.reduce((acc, it) => acc + Number(it.quantidade_negociada ?? it.quantidade ?? 0), 0),
+                        'UN',
+                      )}
+                    </span>
+                  </div>
+                  <div className="text-right text-sm font-medium tabular-nums text-foreground/85">
+                    Subtotal itens: {formatCurrencyBRL(total)}
+                  </div>
                 </div>
-              )}
-              <div className="text-right font-bold text-sm pt-2 border-t">
-                Total: {formatCurrencyBRL(total)}
               </div>
-            </div>
-          </TabsContent>
-
-          {pedidoId ? (
-            <TabsContent value="faturamento" className="mt-0 space-y-3">
-              <PedidoFaturamentoPanel
-                embedded
-                pedidoId={pedidoId}
-                itens={itens}
-                onAtualizado={onFaturamentoAtualizado}
-              />
             </TabsContent>
-          ) : null}
 
-          {pedidoId ? (
-            <TabsContent value="atendimento" className="mt-0 space-y-3">
-              {alertaAtendimentoFaturado ? (
-                <p className="text-xs text-amber-800 dark:text-amber-200 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2">
-                  {MSG_PEDIDO_FATURADO_SEM_ATENDIMENTO}
-                </p>
-              ) : null}
-              <AlocacaoAtendimentoGerenciarPanel
-                pedidoVendaId={pedidoId}
-                itens={itens}
-                resumoInicial={editing?.resumo_atendimento_operacional}
-                onResumoAtualizado={onAtendimentoResumoAtualizado}
-              />
-            </TabsContent>
-          ) : null}
+            {pedidoId ? (
+              <TabsContent value="faturamento" className="mt-0 space-y-3">
+                <PedidoFaturamentoPanel
+                  embedded
+                  pedidoId={pedidoId}
+                  itens={itens}
+                  onAtualizado={onFaturamentoAtualizado}
+                />
+              </TabsContent>
+            ) : null}
 
-          {pedidoId ? (
-            <TabsContent value="fiscal" className="mt-0 space-y-4">
-              <p className="text-xs text-muted-foreground">
-                Detalhes fiscais por faturamento. DANFE e XML ficam nesta aba; o PDF do pedido de venda está no
-                rodapé da página.
-              </p>
-              {faturamentoLoading ? (
-                <p className="text-sm text-muted-foreground">Carregando…</p>
-              ) : (faturamentoResumo?.historico_nfe_saida ?? []).length === 0 &&
-                (faturamentoResumo?.faturamentos_nfe ?? []).length === 0 ? (
-                <p className="text-sm text-muted-foreground py-6 text-center border border-dashed rounded-md">
-                  Nenhuma NF-e vinculada a este pedido.
+            {pedidoId ? (
+              <TabsContent value="atendimento" className="mt-0 space-y-3">
+                {alertaAtendimentoFaturado ? (
+                  <p className="text-xs text-amber-800 dark:text-amber-200 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2">
+                    {MSG_PEDIDO_FATURADO_SEM_ATENDIMENTO}
+                  </p>
+                ) : null}
+                <AlocacaoAtendimentoGerenciarPanel
+                  pedidoVendaId={pedidoId}
+                  itens={itens}
+                  resumoInicial={editing?.resumo_atendimento_operacional}
+                  onResumoAtualizado={onAtendimentoResumoAtualizado}
+                />
+              </TabsContent>
+            ) : null}
+
+            {pedidoId ? (
+              <TabsContent value="fiscal" className="mt-0 space-y-4">
+                <p className="text-xs text-muted-foreground">
+                  Detalhes fiscais por faturamento. DANFE e XML ficam nesta aba; o PDF do pedido de venda está no
+                  rodapé da página.
                 </p>
-              ) : (
-                <div className="space-y-3">
-                  {(faturamentoResumo?.historico_nfe_saida ?? []).length > 0 ? (
-                    <div className="rounded-md border border-border p-4 space-y-2">
-                      <p className="text-sm font-medium">Histórico fiscal de NF-e</p>
-                      <PedidoVendaNfeHistoricoList
-                        historico={faturamentoResumo?.historico_nfe_saida ?? []}
-                        compacto
-                      />
-                    </div>
-                  ) : null}
-                  {(faturamentoResumo?.faturamentos_nfe ?? []).map((f) => {
-                    const inconsistencia = mensagemNfeFaturamentoInconsistencia(f);
-                    const sefazLabel = getNfeEmissaoSefazLabel(f.nfe_status_emissao_sefaz, f.nfe_saida_status);
-                    const casoNfe = classificarNfeResumoPedido(f);
-                    return (
-                      <div key={f.faturamento_id} className="rounded-md border border-border p-4 space-y-3">
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                          <div>
-                            <div className="font-medium text-sm">
-                              {f.numero_faturamento || `Faturamento #${f.faturamento_id}`}
-                            </div>
-                            <div className="text-xs text-muted-foreground mt-0.5">
-                              Status faturamento: {getFaturamentoStatusLabel(f.status)}
-                            </div>
-                            <p className="text-[10px] text-muted-foreground/80">
-                              Código interno: {f.status}
-                            </p>
-                          </div>
-                          <StatusBadge status={tokenStatusComercialPedido(faturamentoResumo?.status)} />
-                        </div>
-                        {inconsistencia ? (
-                          <p className="text-xs text-amber-800 dark:text-amber-200 rounded-md bg-amber-500/10 px-2 py-1.5 border border-amber-500/20">
-                            {inconsistencia}
-                          </p>
-                        ) : null}
-                        {f.nfe_saida_id ? (
-                          <>
-                            <div className="space-y-1">
-                              <p className="text-sm font-medium">{tituloResumoNfePedido(f)}</p>
-                              <div className="flex flex-wrap gap-1.5">
-                                {getNFeFiscalBadgeTokens(f).map((tok) => (
-                                  <StatusBadge key={tok} status={tok} />
-                                ))}
-                              </div>
-                              {casoNfe === 'cancelada' ? (
-                                <p className="text-xs text-destructive/90 rounded-md bg-destructive/5 px-2 py-1.5 border border-destructive/20">
-                                  NF-e cancelada na SEFAZ — não representa faturamento fiscal válido.
-                                  {f.nfe_motivo_cancelamento ? ` Motivo: ${f.nfe_motivo_cancelamento}` : ''}
-                                </p>
-                              ) : null}
-                              <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1 text-xs text-muted-foreground pt-1">
-                                {f.nfe_numero_fiscal ? (
-                                  <>
-                                    <dt>Número fiscal</dt>
-                                    <dd className="text-foreground">{f.nfe_numero_fiscal}</dd>
-                                  </>
-                                ) : null}
-                                {f.nfe_serie_fiscal ? (
-                                  <>
-                                    <dt>Série</dt>
-                                    <dd className="text-foreground">{f.nfe_serie_fiscal}</dd>
-                                  </>
-                                ) : null}
-                                {sefazLabel ? (
-                                  <>
-                                    <dt>Status fiscal</dt>
-                                    <dd className="text-foreground">{sefazLabel}</dd>
-                                  </>
-                                ) : null}
-                                {f.nfe_cstat ? (
-                                  <>
-                                    <dt>cStat</dt>
-                                    <dd className="text-foreground">{f.nfe_cstat}</dd>
-                                  </>
-                                ) : null}
-                                <dt>Ambiente</dt>
-                                <dd className="text-foreground">
-                                  {f.nfe_status_emissao_sefaz === 'AUTORIZADA_HOMOLOGACAO'
-                                    ? 'Homologação'
-                                    : 'Conferência / produção futura'}
-                                </dd>
-                              </dl>
-                              {referenciaInternaNfe(f) ? (
-                                <p className="text-[10px] text-muted-foreground">
-                                  Referência interna: {referenciaInternaNfe(f)}
-                                </p>
-                              ) : null}
-                            </div>
-                            <PedidoVendaFiscalNfeAcoes
-                              nfeSaidaId={f.nfe_saida_id}
-                              nfeStatusEmissaoSefaz={f.nfe_status_emissao_sefaz}
-                              nfeSaidaStatus={f.nfe_saida_status}
-                            />
-                            {(f.duplicatas_nfe?.length ?? 0) > 0 ? (
-                              <div className="rounded-md border border-border p-3 space-y-2">
-                                <p className="text-sm font-medium">Duplicatas da NF-e</p>
-                                <p className="text-xs text-muted-foreground">
-                                  As duplicatas representam a cobrança informada na NF-e. Nesta fase, não
-                                  geram contas a receber automaticamente.
-                                </p>
-                                <div className="overflow-x-auto">
-                                  <table className="w-full text-xs">
-                                    <thead>
-                                      <tr className="text-muted-foreground border-b border-border">
-                                        <th className="text-left py-1 pr-3 font-medium">Número</th>
-                                        <th className="text-left py-1 pr-3 font-medium">Vencimento</th>
-                                        <th className="text-right py-1 font-medium">Valor</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {f.duplicatas_nfe!.map((dup) => (
-                                        <tr key={dup.numero} className="border-b border-border/60 last:border-0">
-                                          <td className="py-1 pr-3 text-foreground">{dup.numero}</td>
-                                          <td className="py-1 pr-3 text-foreground">
-                                            {dup.vencimento_formatado}
-                                          </td>
-                                          <td className="py-1 text-right text-foreground">
-                                            {dup.valor_formatado}
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
-                            ) : null}
-                          </>
-                        ) : (
-                          <p className="text-xs text-muted-foreground">
-                            {inconsistencia
-                              ? null
-                              : 'NF-e ainda não gerada para este faturamento.'}
-                          </p>
-                        )}
-                        {!f.nfe_saida_id && f.status === 'PRONTO_PARA_NFE' ? (
-                          <button
-                            type="button"
-                            className="erp-btn-outline erp-btn-sm"
-                            onClick={() => setModalTab('faturamento')}
-                          >
-                            Ir para Faturamento
-                          </button>
-                        ) : null}
+                {faturamentoLoading ? (
+                  <p className="text-sm text-muted-foreground">Carregando…</p>
+                ) : (faturamentoResumo?.historico_nfe_saida ?? []).length === 0 &&
+                  (faturamentoResumo?.faturamentos_nfe ?? []).length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-6 text-center border border-dashed rounded-md">
+                    Nenhuma NF-e vinculada a este pedido.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {(faturamentoResumo?.historico_nfe_saida ?? []).length > 0 ? (
+                      <div className="rounded-md border border-border p-4 space-y-2">
+                        <p className="text-sm font-medium">Histórico fiscal de NF-e</p>
+                        <PedidoVendaNfeHistoricoList
+                          historico={faturamentoResumo?.historico_nfe_saida ?? []}
+                          compacto
+                        />
                       </div>
-                    );
-                  })}
+                    ) : null}
+                    {(faturamentoResumo?.faturamentos_nfe ?? []).map((f) => {
+                      const inconsistencia = mensagemNfeFaturamentoInconsistencia(f);
+                      const sefazLabel = getNfeEmissaoSefazLabel(f.nfe_status_emissao_sefaz, f.nfe_saida_status);
+                      const casoNfe = classificarNfeResumoPedido(f);
+                      return (
+                        <div key={f.faturamento_id} className="rounded-md border border-border p-4 space-y-3">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <div className="font-medium text-sm">
+                                {f.numero_faturamento || `Faturamento #${f.faturamento_id}`}
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-0.5">
+                                Status faturamento: {getFaturamentoStatusLabel(f.status)}
+                              </div>
+                              <p className="text-[10px] text-muted-foreground/80">
+                                Código interno: {f.status}
+                              </p>
+                            </div>
+                            <StatusBadge status={tokenStatusComercialPedido(faturamentoResumo?.status)} />
+                          </div>
+                          {inconsistencia ? (
+                            <p className="text-xs text-amber-800 dark:text-amber-200 rounded-md bg-amber-500/10 px-2 py-1.5 border border-amber-500/20">
+                              {inconsistencia}
+                            </p>
+                          ) : null}
+                          {f.nfe_saida_id ? (
+                            <>
+                              <div className="space-y-1">
+                                <p className="text-sm font-medium">{tituloResumoNfePedido(f)}</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {getNFeFiscalBadgeTokens(f).map((tok) => (
+                                    <StatusBadge key={tok} status={tok} />
+                                  ))}
+                                </div>
+                                {casoNfe === 'cancelada' ? (
+                                  <p className="text-xs text-destructive/90 rounded-md bg-destructive/5 px-2 py-1.5 border border-destructive/20">
+                                    NF-e cancelada na SEFAZ — não representa faturamento fiscal válido.
+                                    {f.nfe_motivo_cancelamento ? ` Motivo: ${f.nfe_motivo_cancelamento}` : ''}
+                                  </p>
+                                ) : null}
+                                <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1 text-xs text-muted-foreground pt-1">
+                                  {f.nfe_numero_fiscal ? (
+                                    <>
+                                      <dt>Número fiscal</dt>
+                                      <dd className="text-foreground">{f.nfe_numero_fiscal}</dd>
+                                    </>
+                                  ) : null}
+                                  {f.nfe_serie_fiscal ? (
+                                    <>
+                                      <dt>Série</dt>
+                                      <dd className="text-foreground">{f.nfe_serie_fiscal}</dd>
+                                    </>
+                                  ) : null}
+                                  {sefazLabel ? (
+                                    <>
+                                      <dt>Status fiscal</dt>
+                                      <dd className="text-foreground">{sefazLabel}</dd>
+                                    </>
+                                  ) : null}
+                                  {f.nfe_cstat ? (
+                                    <>
+                                      <dt>cStat</dt>
+                                      <dd className="text-foreground">{f.nfe_cstat}</dd>
+                                    </>
+                                  ) : null}
+                                  <dt>Ambiente</dt>
+                                  <dd className="text-foreground">
+                                    {f.nfe_status_emissao_sefaz === 'AUTORIZADA_HOMOLOGACAO'
+                                      ? 'Homologação'
+                                      : 'Conferência / produção futura'}
+                                  </dd>
+                                </dl>
+                                {referenciaInternaNfe(f) ? (
+                                  <p className="text-[10px] text-muted-foreground">
+                                    Referência interna: {referenciaInternaNfe(f)}
+                                  </p>
+                                ) : null}
+                              </div>
+                              <PedidoVendaFiscalNfeAcoes
+                                nfeSaidaId={f.nfe_saida_id}
+                                nfeStatusEmissaoSefaz={f.nfe_status_emissao_sefaz}
+                                nfeSaidaStatus={f.nfe_saida_status}
+                              />
+                              {(f.duplicatas_nfe?.length ?? 0) > 0 ? (
+                                <div className="rounded-md border border-border p-3 space-y-2">
+                                  <p className="text-sm font-medium">Duplicatas da NF-e</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    As duplicatas representam a cobrança informada na NF-e. Nesta fase, não
+                                    geram contas a receber automaticamente.
+                                  </p>
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-xs">
+                                      <thead>
+                                        <tr className="text-muted-foreground border-b border-border">
+                                          <th className="text-left py-1 pr-3 font-medium">Número</th>
+                                          <th className="text-left py-1 pr-3 font-medium">Vencimento</th>
+                                          <th className="text-right py-1 font-medium">Valor</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {f.duplicatas_nfe!.map((dup) => (
+                                          <tr key={dup.numero} className="border-b border-border/60 last:border-0">
+                                            <td className="py-1 pr-3 text-foreground">{dup.numero}</td>
+                                            <td className="py-1 pr-3 text-foreground">
+                                              {dup.vencimento_formatado}
+                                            </td>
+                                            <td className="py-1 text-right text-foreground">
+                                              {dup.valor_formatado}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              ) : null}
+                            </>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">
+                              {inconsistencia
+                                ? null
+                                : 'NF-e ainda não gerada para este faturamento.'}
+                            </p>
+                          )}
+                          {!f.nfe_saida_id && f.status === 'PRONTO_PARA_NFE' ? (
+                            <button
+                              type="button"
+                              className="erp-btn-outline erp-btn-sm"
+                              onClick={() => setModalTab('faturamento')}
+                            >
+                              Ir para Faturamento
+                            </button>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </TabsContent>
+            ) : null}
+
+            <TabsContent value="historico" className={`mt-0 ${pedidoId ? 'space-y-4' : 'space-y-3.5'} pb-2.5`}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="erp-label">Observações comerciais</label>
+                  <textarea
+                    className="erp-input mt-1 w-full min-h-[104px]"
+                    value={form.observacoes_comerciais}
+                    onChange={(e) => setForm((p) => ({ ...p, observacoes_comerciais: e.target.value }))}
+                  />
                 </div>
-              )}
+                <div>
+                  <label className="erp-label">Observações internas</label>
+                  <textarea
+                    className="erp-input mt-1 w-full min-h-[104px]"
+                    value={form.observacoes_internas}
+                    onChange={(e) => setForm((p) => ({ ...p, observacoes_internas: e.target.value }))}
+                  />
+                </div>
+              </div>
+              {editing?.proposta_id ? (
+                <div className="rounded-md border border-border p-3 text-sm">
+                  <span className="font-medium">Origem: </span>
+                  Proposta {editing.proposta_numero || editing.proposta_id}
+                  <button
+                    type="button"
+                    className="erp-btn-outline erp-btn-sm ml-3 inline-flex items-center gap-1"
+                    onClick={() => navigate('/propostas')}
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    Abrir proposta
+                  </button>
+                </div>
+              ) : null}
+              {editing?.data ? (
+                <p className="text-xs text-muted-foreground">Data do pedido: {formatDateBr(editing.data)}</p>
+              ) : null}
+
+              <details className="rounded-md border border-border bg-muted/10">
+                <summary className="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground select-none">
+                  Referências comerciais (frete e custo de compra)
+                </summary>
+                <div className="p-3 pt-0 space-y-3">
+                  {referenciaFrete ? (
+                    <div className="text-sm">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Frete observado</p>
+                      <p className="text-xs">{referenciaFrete.mensagem}</p>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Sem referência de frete para o período.</p>
+                  )}
+                  {referenciaCustoCompra ? (
+                    <div className="text-sm">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Custo de compra observado</p>
+                      <p className="text-xs">{referenciaCustoCompra.mensagem}</p>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Sem referência de custo de compra.</p>
+                  )}
+                </div>
+              </details>
             </TabsContent>
-          ) : null}
-
-          <TabsContent value="historico" className="mt-0 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="erp-label">Observações comerciais</label>
-                <textarea
-                  className="erp-input mt-1 w-full min-h-[88px]"
-                  value={form.observacoes_comerciais}
-                  onChange={(e) => setForm((p) => ({ ...p, observacoes_comerciais: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="erp-label">Observações internas</label>
-                <textarea
-                  className="erp-input mt-1 w-full min-h-[88px]"
-                  value={form.observacoes_internas}
-                  onChange={(e) => setForm((p) => ({ ...p, observacoes_internas: e.target.value }))}
-                />
-              </div>
-            </div>
-            {editing?.proposta_id ? (
-              <div className="rounded-md border border-border p-3 text-sm">
-                <span className="font-medium">Origem: </span>
-                Proposta {editing.proposta_numero || editing.proposta_id}
-                <button
-                  type="button"
-                  className="erp-btn-outline erp-btn-sm ml-3 inline-flex items-center gap-1"
-                  onClick={() => navigate('/propostas')}
-                >
-                  <ExternalLink className="h-3 w-3" />
-                  Abrir proposta
-                </button>
-              </div>
-            ) : null}
-            {editing?.data ? (
-              <p className="text-xs text-muted-foreground">Data do pedido: {formatDateBr(editing.data)}</p>
-            ) : null}
-
-            <details className="rounded-md border border-border bg-muted/10">
-              <summary className="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground select-none">
-                Referências comerciais (frete e custo de compra)
-              </summary>
-              <div className="p-3 pt-0 space-y-3">
-                {referenciaFrete ? (
-                  <div className="text-sm">
-                    <p className="text-xs font-medium text-muted-foreground mb-1">Frete observado</p>
-                    <p className="text-xs">{referenciaFrete.mensagem}</p>
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">Sem referência de frete para o período.</p>
-                )}
-                {referenciaCustoCompra ? (
-                  <div className="text-sm">
-                    <p className="text-xs font-medium text-muted-foreground mb-1">Custo de compra observado</p>
-                    <p className="text-xs">{referenciaCustoCompra.mensagem}</p>
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">Sem referência de custo de compra.</p>
-                )}
-              </div>
-            </details>
-          </TabsContent>
+          </div>
         </Tabs>
 
-        <div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end pt-4 border-t border-border">
-          {footerConfig.primaryKind === 'save' ? (
-            <button type="button" onClick={onClose} className="erp-btn-outline w-full sm:w-auto">
-              Cancelar
-            </button>
-          ) : null}
-          {footerConfig.showPedidoPdf ? (
-            <>
+        <div className="rounded-lg border border-border bg-card px-4 py-3 shadow-sm sm:px-4 sm:py-3.5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-8">
+              <div>
+                <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80 block">Itens</span>
+                <span className="font-medium tabular-nums text-sm">{itens.length} item(ns)</span>
+              </div>
+              <div className="text-left">
+                <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80 block">Total do pedido</span>
+                <span className="font-bold tabular-nums text-2xl tracking-tight">
+                  {formatCurrencyBRL(numSafe(total))}
+                </span>
+              </div>
+            </div>
+            <div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
+              {footerConfig.primaryKind === 'save' ? (
+                <button type="button" onClick={onClose} className="erp-btn-outline w-full sm:w-auto">
+                  Cancelar
+                </button>
+              ) : null}
+              {footerConfig.showPedidoPdf ? (
+                <>
+                  <button
+                    type="button"
+                    className="erp-btn-outline inline-flex w-full items-center gap-1 sm:w-auto"
+                    onClick={() => void handleVisualizarPdf()}
+                  >
+                    <FileDown className="h-4 w-4" />
+                    Ver PDF do pedido
+                  </button>
+                  <button
+                    type="button"
+                    className="erp-btn-outline inline-flex w-full items-center gap-1 sm:w-auto"
+                    onClick={() => void handleBaixarPdf()}
+                  >
+                    <Download className="h-4 w-4" />
+                    Baixar PDF do pedido
+                  </button>
+                </>
+              ) : (
+                <span className="text-xs text-muted-foreground self-center">Salve antes de gerar PDF.</span>
+              )}
               <button
                 type="button"
-                className="erp-btn-outline inline-flex w-full items-center gap-1 sm:w-auto"
-                onClick={() => void handleVisualizarPdf()}
+                onClick={footerConfig.primaryKind === 'close' ? onClose : handleSave}
+                className="erp-btn-primary w-full sm:w-auto"
               >
-                <FileDown className="h-4 w-4" />
-                Ver PDF do pedido
+                {footerConfig.primaryLabel}
               </button>
-              <button
-                type="button"
-                className="erp-btn-outline inline-flex w-full items-center gap-1 sm:w-auto"
-                onClick={() => void handleBaixarPdf()}
-              >
-                <Download className="h-4 w-4" />
-                Baixar PDF do pedido
-              </button>
-            </>
-          ) : (
-            <span className="text-xs text-muted-foreground self-center">Salve antes de gerar PDF.</span>
-          )}
-          <button
-            type="button"
-            onClick={footerConfig.primaryKind === 'close' ? onClose : handleSave}
-            className="erp-btn-primary w-full sm:w-auto"
-          >
-            {footerConfig.primaryLabel}
-          </button>
+            </div>
+          </div>
         </div>
       </div>
 
