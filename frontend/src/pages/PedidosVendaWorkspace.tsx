@@ -619,7 +619,7 @@ export default function PedidoVendaWorkspace({ pedido, onClose }: PedidoVendaWor
               <StatusBadge status={tokenStatusComercialPedido(statusExib)} className="mt-0.5" />
             </div>
             <div>
-              <span className="text-xs text-muted-foreground block">Total / Faturamento</span>
+              <span className="text-xs text-muted-foreground block">Total do pedido</span>
               <span className="font-semibold tabular-nums">
                 {formatCurrencyBRL(numSafe(total))}
                 <span className="text-muted-foreground font-normal"> · {faturamentoLabel}</span>
