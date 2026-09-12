@@ -666,16 +666,18 @@ export default function PedidoVendaWorkspace({ pedido, onClose }: PedidoVendaWor
 
           <div className="border border-border border-t-0 rounded-b-lg bg-card px-4 py-3.5 sm:px-5 sm:py-4 min-h-0 flex-1">
             <TabsContent value="resumo" className={`mt-0 ${pedidoId ? 'space-y-4' : 'space-y-3.5'}`}>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-0.5">
-                <div>
-                  <label className="erp-label">Número</label>
-                  <input
-                    className="erp-input mt-1"
-                    placeholder={editing ? undefined : 'Gerado automaticamente (PV-AAAAMMDD-NNNN)'}
-                    value={form.numero}
-                    onChange={(e) => setForm((p) => ({ ...p, numero: e.target.value }))}
-                  />
-                </div>
+              <div className={`grid grid-cols-1 md:grid-cols-2 gap-3 pt-0.5 ${pedidoId ? '' : 'lg:grid-cols-3'}`}>
+                {!pedidoId ? (
+                  <div>
+                    <label className="erp-label">Número</label>
+                    <input
+                      className="erp-input mt-1"
+                      placeholder={editing ? undefined : 'Gerado automaticamente (PV-AAAAMMDD-NNNN)'}
+                      value={form.numero}
+                      onChange={(e) => setForm((p) => ({ ...p, numero: e.target.value }))}
+                    />
+                  </div>
+                ) : null}
                 <DateBrInput label="Data" valueIso={form.data} onChangeIso={(iso) => setForm((p) => ({ ...p, data: iso }))} />
                 <div>
                   <label className="erp-label">Status</label>
