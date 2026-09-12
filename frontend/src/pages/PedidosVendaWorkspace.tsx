@@ -1199,7 +1199,6 @@ export default function PedidoVendaWorkspace({ pedido, onClose }: PedidoVendaWor
                     ) : null}
                     {(faturamentoResumo?.faturamentos_nfe ?? []).map((f) => {
                       const inconsistencia = mensagemNfeFaturamentoInconsistencia(f);
-                      const sefazLabel = getNfeEmissaoSefazLabel(f.nfe_status_emissao_sefaz, f.nfe_saida_status);
                       const casoNfe = classificarNfeResumoPedido(f);
                       return (
                         <div key={f.faturamento_id} className="rounded-md border border-border p-4 space-y-3">
@@ -1223,104 +1222,61 @@ export default function PedidoVendaWorkspace({ pedido, onClose }: PedidoVendaWor
                             </p>
                           ) : null}
                           {f.nfe_saida_id ? (
-                            <>
-                              <div className="space-y-1">
-                                <p className="text-sm font-medium">{tituloResumoNfePedido(f)}</p>
+                            <div className="space-y-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-xs font-medium text-muted-foreground">
+                                  NF-e vinculada:
+                                </span>
+                                <span className="text-sm font-medium text-foreground">
+                                  {tituloResumoNfePedido(f)}
+                                </span>
                                 <div className="flex flex-wrap gap-1.5">
                                   {getNFeFiscalBadgeTokens(f).map((tok) => (
                                     <StatusBadge key={tok} status={tok} />
                                   ))}
                                 </div>
-                                {casoNfe === 'cancelada' ? (
-                                  <p className="text-xs text-destructive/90 rounded-md bg-destructive/5 px-2 py-1.5 border border-destructive/20">
-                                    NF-e cancelada na SEFAZ — não representa faturamento fiscal válido.
-                                    {f.nfe_motivo_cancelamento ? ` Motivo: ${f.nfe_motivo_cancelamento}` : ''}
-                                  </p>
-                                ) : null}
-                                <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1 text-xs text-muted-foreground pt-1">
-                                  {f.nfe_numero_fiscal ? (
-                                    <>
-                                      <dt>Número fiscal</dt>
-                                      <dd className="text-foreground">{f.nfe_numero_fiscal}</dd>
-                                    </>
-                                  ) : null}
-                                  {f.nfe_serie_fiscal ? (
-                                    <>
-                                      <dt>Série</dt>
-                                      <dd className="text-foreground">{f.nfe_serie_fiscal}</dd>
-                                    </>
-                                  ) : null}
-                                  {sefazLabel ? (
-                                    <>
-                                      <dt>Status fiscal</dt>
-                                      <dd className="text-foreground">{sefazLabel}</dd>
-                                    </>
-                                  ) : null}
-                                  {f.nfe_cstat ? (
-                                    <>
-                                      <dt>cStat</dt>
-                                      <dd className="text-foreground">{f.nfe_cstat}</dd>
-                                    </>
-                                  ) : null}
-                                  <dt>Ambiente</dt>
-                                  <dd className="text-foreground">
-                                    {f.nfe_status_emissao_sefaz === 'AUTORIZADA_HOMOLOGACAO'
-                                      ? 'Homologação'
-                                      : 'Conferência / produção futura'}
-                                  </dd>
-                                </dl>
-                                {referenciaInternaNfe(f) ? (
-                                  <p className="text-[10px] text-muted-foreground">
-                                    Referência interna: {referenciaInternaNfe(f)}
-                                  </p>
-                                ) : null}
                               </div>
-                              <PedidoVendaFiscalNfeAcoes
-                                nfeSaidaId={f.nfe_saida_id}
-                                nfeStatusEmissaoSefaz={f.nfe_status_emissao_sefaz}
-                                nfeSaidaStatus={f.nfe_saida_status}
-                              />
-                              {(f.duplicatas_nfe?.length ?? 0) > 0 ? (
-                                <div className="rounded-md border border-border p-3 space-y-2">
-                                  <p className="text-sm font-medium">Duplicatas da NF-e</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    As duplicatas representam a cobrança informada na NF-e. Nesta fase, não
-                                    geram contas a receber automaticamente.
-                                  </p>
-                                  <div className="overflow-x-auto">
-                                    <table className="w-full text-xs">
-                                      <thead>
-                                        <tr className="text-muted-foreground border-b border-border">
-                                          <th className="text-left py-1 pr-3 font-medium">Número</th>
-                                          <th className="text-left py-1 pr-3 font-medium">Vencimento</th>
-                                          <th className="text-right py-1 font-medium">Valor</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {f.duplicatas_nfe!.map((dup) => (
-                                          <tr key={dup.numero} className="border-b border-border/60 last:border-0">
-                                            <td className="py-1 pr-3 text-foreground">{dup.numero}</td>
-                                            <td className="py-1 pr-3 text-foreground">
-                                              {dup.vencimento_formatado}
-                                            </td>
-                                            <td className="py-1 text-right text-foreground">
-                                              {dup.valor_formatado}
-                                            </td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                </div>
+                              {casoNfe === 'cancelada' ? (
+                                <p className="text-xs text-destructive/90 rounded-md bg-destructive/5 px-2 py-1.5 border border-destructive/20">
+                                  NF-e cancelada na SEFAZ — não representa faturamento fiscal válido.
+                                  {f.nfe_motivo_cancelamento ? ` Motivo: ${f.nfe_motivo_cancelamento}` : ''}
+                                </p>
                               ) : null}
-                            </>
+                            </div>
                           ) : (
                             <p className="text-xs text-muted-foreground">
-                              {inconsistencia
-                                ? null
-                                : 'NF-e ainda não gerada para este faturamento.'}
+                              {inconsistencia ? null : 'NF-e ainda não gerada para este faturamento.'}
                             </p>
                           )}
+                          {(f.duplicatas_nfe?.length ?? 0) > 0 ? (
+                            <div className="rounded-md border border-border p-3 space-y-2">
+                              <p className="text-sm font-medium">Duplicatas da NF-e</p>
+                              <p className="text-xs text-muted-foreground">
+                                As duplicatas representam a cobrança informada na NF-e. Nesta fase, não
+                                geram contas a receber automaticamente.
+                              </p>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-xs">
+                                  <thead>
+                                    <tr className="text-muted-foreground border-b border-border">
+                                      <th className="text-left py-1 pr-3 font-medium">Número</th>
+                                      <th className="text-left py-1 pr-3 font-medium">Vencimento</th>
+                                      <th className="text-right py-1 font-medium">Valor</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {f.duplicatas_nfe!.map((dup) => (
+                                      <tr key={dup.numero} className="border-b border-border/60 last:border-0">
+                                        <td className="py-1 pr-3 text-foreground">{dup.numero}</td>
+                                        <td className="py-1 pr-3 text-foreground">{dup.vencimento_formatado}</td>
+                                        <td className="py-1 text-right text-foreground">{dup.valor_formatado}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          ) : null}
                           {!f.nfe_saida_id && f.status === 'PRONTO_PARA_NFE' ? (
                             <button
                               type="button"
