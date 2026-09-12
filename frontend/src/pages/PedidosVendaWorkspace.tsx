@@ -655,7 +655,7 @@ export default function PedidoVendaWorkspace({ pedido, onClose }: PedidoVendaWor
         ) : null}
 
         <Tabs value={modalTab} onValueChange={setModalTab} className="flex flex-col min-h-0">
-          <TabsList className="sticky top-0 z-20 h-auto w-full justify-start gap-1 overflow-x-auto whitespace-nowrap bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/90 border border-border border-b-0 rounded-t-lg px-3 pt-2.5 pb-1 sm:px-4">
+          <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto whitespace-nowrap bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/90 border border-border border-b-0 rounded-t-lg px-3 pt-2.5 pb-1 sm:px-4">
             <TabsTrigger value="resumo">Dados do pedido</TabsTrigger>
             <TabsTrigger value="itens">Itens</TabsTrigger>
             {pedidoId ? <TabsTrigger value="faturamento">Faturamento</TabsTrigger> : null}
