@@ -826,7 +826,7 @@ export default function PedidoVendaWorkspace({ pedido, onClose }: PedidoVendaWor
                       {itens.length}
                     </span>
                   </div>
-                  {!itensSomenteLeitura ? (
+                  {!itensSomenteLeitura && itens.length === 0 ? (
                     <button type="button" onClick={addItem} className="erp-btn-outline erp-btn-sm w-full sm:w-auto justify-center shrink-0">
                       <Plus className="h-3 w-3" /> Adicionar item
                     </button>
@@ -1129,6 +1129,17 @@ export default function PedidoVendaWorkspace({ pedido, onClose }: PedidoVendaWor
                     </table>
                   </div>
                 )}
+                {itens.length > 0 && !itensSomenteLeitura ? (
+                  <div className="flex flex-col items-stretch sm:flex-row sm:justify-end">
+                    <button
+                      type="button"
+                      onClick={addItem}
+                      className="erp-btn-outline erp-btn-sm w-full sm:w-auto justify-center"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Adicionar item
+                    </button>
+                  </div>
+                ) : null}
                 <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-1.5 rounded-b-md border border-t-0 border-border bg-muted/15 px-3.5 py-2">
                   <div className="text-xs text-muted-foreground sm:text-left">
                     Quantidade negociada:{' '}
