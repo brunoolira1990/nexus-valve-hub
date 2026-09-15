@@ -39,6 +39,7 @@ import CotacaoFornecedorDetalhe from "./pages/CotacaoFornecedorDetalhe";
 import PedidosVenda from "./pages/PedidosVenda";
 import PedidoVendaDetalhe from "@/pages/PedidosVendaDetalhe.tsx";
 import PedidosCompra from "./pages/PedidosCompra";
+import PedidoCompraDetalhe from "@/pages/PedidoCompraDetalhe.tsx";
 import NFeEntrada from "./pages/NFeEntrada";
 import NFeSaida from "./pages/NFeSaida";
 import NFeSefazIntegracao from "./pages/NFeSefazIntegracao";
@@ -121,6 +122,8 @@ const App = () => (
         <Route path="pedidos-venda/novo" element={<PedidoVendaDetalhe />} />
         <Route path="pedidos-venda/:id" element={<PedidoVendaDetalhe />} />
         <Route path="pedidos-compra" element={<PedidosCompra />} />
+        <Route path="pedidos-compra/novo" element={<PedidoCompraDetalhe />} />
+        <Route path="pedidos-compra/:id" element={<PedidoCompraDetalhe />} />
         <Route path="nfe-entrada" element={<NFeEntrada />} />
         <Route path="nfe-saida" element={<NFeSaida />} />
         <Route path="nfe-sefaz" element={<NFeSefazIntegracao />} />
