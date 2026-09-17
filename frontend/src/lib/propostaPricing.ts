@@ -116,3 +116,63 @@ export function recalcPropostaItem(item: ItemProposta): ItemProposta {
     margem_resultante: margem,
   };
 }
+
+/** Receita comercial do item após desconto (unidade negociada). */
+export function computeReceitaComercialItem(item: ItemProposta): number {
+  const qtd = toNumber(item.quantidade_negociada ?? item.quantidade);
+  const preco = toNumber(item.preco_por_unidade_negociada ?? item.preco_final);
+  const desconto = toNumber(item.desconto);
+  return round2(qtd * preco - desconto);
+}
+
+/** Custo carregado total do item (quantidade negociada × custo_final). */
+export function computeCustoCarregadoTotalItem(item: ItemProposta): number {
+  const qtd = toNumber(item.quantidade_negociada ?? item.quantidade);
+  const custoFinal = toNumber(item.custo_final);
+  return round2(qtd * custoFinal);
+}
+
+/** Cargas/despesas variáveis totais do item (quantidade negociada × unitários). */
+export function computeCargasDespesasVariaveisTotalItem(item: ItemProposta): number {
+  const qtd = toNumber(item.quantidade_negociada ?? item.quantidade);
+  const precoRef = toNumber(item.preco_por_unidade_negociada ?? (item.modo_preco === 'manual' ? item.preco_final : item.preco_sugerido));
+  const pctSaida = percentualSaidaTotal(item);
+  const valorCarga = computeValorCargaSaida(precoRef, pctSaida);
+  const freteSaida = toNumber(item.frete_saida);
+  const outrasSaida = toNumber(item.outras_despesas_saida);
+  return round2(qtd * (valorCarga + freteSaida + outrasSaida));
+}
+
+/** Resultado Estimado do item (gerencial, não persistido). */
+export function computeResultadoEstimadoItem(item: ItemProposta): number {
+  const receita = computeReceitaComercialItem(item);
+  const custoTotal = computeCustoCarregadoTotalItem(item);
+  const cargasTotal = computeCargasDespesasVariaveisTotalItem(item);
+  return round2(receita - custoTotal - cargasTotal);
+}
+
+/** Margem de Contribuição Estimada do item (%). */
+export function computeMargemContribuicaoEstimadaItem(item: ItemProposta): number {
+  const receita = computeReceitaComercialItem(item);
+  if (receita <= 0) return 0;
+  const resultado = computeResultadoEstimadoItem(item);
+  return round2((resultado / receita) * 100);
+}
+
+/** Consolidado da proposta: Receita comercial total. */
+export function computeReceitaComercialConsolidada(itens: ItemProposta[]): number {
+  return round2(itens.reduce((s, i) => s + computeReceitaComercialItem(i), 0));
+}
+
+/** Consolidado da proposta: Resultado Estimado total. */
+export function computeResultadoEstimadoConsolidado(itens: ItemProposta[]): number {
+  return round2(itens.reduce((s, i) => s + computeResultadoEstimadoItem(i), 0));
+}
+
+/** Consolidado da proposta: Margem de Contribuição Estimada (%). */
+export function computeMargemContribuicaoEstimadaConsolidada(itens: ItemProposta[]): number {
+  const receita = computeReceitaComercialConsolidada(itens);
+  if (receita <= 0) return 0;
+  const resultado = computeResultadoEstimadoConsolidado(itens);
+  return round2((resultado / receita) * 100);
+}
