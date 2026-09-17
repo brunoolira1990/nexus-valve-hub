@@ -5,7 +5,7 @@ import PropostaDetalhe from './PropostaDetalhe';
 import { propostasService } from '@/services/api/comercial';
 import type { Proposta } from '@/types';
 vi.mock('@/services/api/comercial', () => ({ propostasService: { getById: vi.fn() } }));
-vi.mock('../Propostas', () => ({ default: ({ proposta }: { proposta?: Proposta }) => <div>Formulario {proposta?.id ?? 'novo'}</div> }));
+vi.mock('../PropostaWorkspace', () => ({ default: ({ proposta }: { proposta?: Proposta }) => <div>Formulario {proposta?.id ?? 'novo'}</div> }));
 function open(path: string) {
   render(<MemoryRouter initialEntries={[path]}><Link to="/propostas/43">Outra proposta</Link><Link to="/propostas/nova">Nova</Link><Routes>
     <Route path="/propostas/nova" element={<PropostaDetalhe />} />
