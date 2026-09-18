@@ -21,7 +21,7 @@ def reforma_nfe_config() -> dict[str, Any]:
         'ambiente_homologacao': bool(getattr(settings, 'REFORMA_TRIBUTARIA_NFE_AMBIENTE_HOMOLOGACAO', True)),
         'incluir_xml': bool(getattr(settings, 'REFORMA_TRIBUTARIA_NFE_INCLUIR_XML', False)),
         'incluir_danfe': bool(getattr(settings, 'REFORMA_TRIBUTARIA_NFE_INCLUIR_DANFE', False)),
-        'producao_bloqueada': True,
+        'producao_bloqueada': bool(getattr(settings, 'REFORMA_TRIBUTARIA_NFE_PRODUCAO_BLOQUEADA', True)),
     }
 
 
@@ -46,7 +46,9 @@ def status_reforma_nfe_documento(nf) -> str:
             return 'configurada_sem_xml'
         return 'preparacao'
     if cfg['modo'] == 'producao':
-        return 'bloqueada_producao'
+        if cfg.get('producao_bloqueada'):
+            return 'bloqueada_producao'
+        return 'homologacao'
     return 'nao_preparada'
 
 

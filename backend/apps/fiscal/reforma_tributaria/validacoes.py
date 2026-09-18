@@ -15,9 +15,9 @@ MSG_REFORMA_NAO_PREPARADA = (
 def reforma_pode_incluir_no_xml() -> bool:
     """Flag de homologação RTC ativa (controle operacional, sem exigir ``incluir_xml``)."""
     cfg = reforma_nfe_config()
-    if cfg['modo'] == 'producao' and cfg.get('producao_bloqueada'):
-        return False
-    return cfg['enabled'] and cfg['modo'] in ('homologacao', 'preparacao', 'producao')
+    if cfg['modo'] == 'producao':
+        return cfg['enabled'] and not cfg.get('producao_bloqueada', True)
+    return cfg['enabled'] and cfg['modo'] in ('homologacao', 'preparacao')
 
 
 def reforma_deve_serializar_no_xml() -> bool:

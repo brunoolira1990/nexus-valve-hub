@@ -820,6 +820,16 @@ def _validar_apuracao_reforma(nf: NFeSaida | None) -> list[dict[str, str]]:
                 secao='reforma_tributaria',
             ),
         )
+    elif cfg['modo'] == 'producao' and not cfg.get('producao_bloqueada'):
+        itens.append(
+            _item(
+                'reforma_producao',
+                'Produção RTC',
+                'ok',
+                'Reforma Tributária habilitada para produção — IBSCBS/IBSCBSTot serão serializados.',
+                secao='reforma_tributaria',
+            ),
+        )
     else:
         msg = 'Estrutura em pesquisa/preparação. XML e DANFE seguem layout atual.'
         if nf:
