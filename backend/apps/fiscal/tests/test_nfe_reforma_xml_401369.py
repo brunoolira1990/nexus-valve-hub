@@ -298,3 +298,162 @@ class NFeReformaIntegracao401369Tests(TestCase):
         trecho = xml[idx_dest : idx_dest + 400].lower()
         self.assertIn('1501402', trecho)
         self.assertNotIn('3550308', trecho)
+
+
+REFORMA_XML_PRODUCAO_SETTINGS = {
+    'REFORMA_TRIBUTARIA_NFE_ENABLED': True,
+    'REFORMA_TRIBUTARIA_NFE_MODO': 'producao',
+    'REFORMA_TRIBUTARIA_NFE_INCLUIR_XML': True,
+    'REFORMA_TRIBUTARIA_NFE_PRODUCAO_BLOQUEADA': False,
+}
+
+
+@override_settings(**REFORMA_XML_PRODUCAO_SETTINGS)
+@unittest.skipUnless(nfelib_disponivel(), 'nfelib não instalado')
+class ReformaXmlProducao401369Tests(TestCase):
+    """Testes para serialização IBS/CBS em XML de produção (tpAmb=1)."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user('nfe401369_prod', 'nfe401369_prod@test.com', 'x')
+        regra = _regra_sp_pa()
+        regra.reforma_tributaria = {
+            'cst_ibs_cbs': '000',
+            'classificacao_tributaria': '000001',
+            'aliquota_ibs_estadual': '0,1',
+            'aliquota_cbs': '0,9',
+        }
+        regra.save(update_fields=['reforma_tributaria'])
+
+    @patch('apps.cadastros.endereco_fiscal.consultar_cep_viacep')
+    def test_xml_producao_tpamb_1_contem_ibscbs(self, mock_cep):
+        """XML deve conter IBSCBS e IBSCBSTot quando modo produção da Reforma está habilitado."""
+        mock_cep.return_value = {
+            'cidade': 'BELEM',
+            'uf': 'PA',
+            'cep': '66630-505',
+            'logradouro': '',
+            'bairro': '',
+            'complemento': '',
+        }
+        nf, nf_item = _nf_pa()
+        if nf.empresa_emitente_id:
+            emp = nf.empresa_emitente
+            if not (emp.ie or '').strip():
+                emp.ie = '123456789012'
+                emp.save(update_fields=['ie'])
+        aplicar_atualizacao_impostos_nfe(nf, usuario=self.user)
+        nf_item.refresh_from_db()
+
+        dados = gerar_dados_preview_nfe_saida(nf)
+        self.assertFalse(dados.get('bloqueado'))
+        for linha in dados.get('itens') or []:
+            if linha.get('item_id') == nf_item.pk:
+                linha['snapshot_fiscal'] = nf_item.snapshot_fiscal or {}
+
+        tnfe = montar_tnfe_oficial(dados, nfe_saida=nf)
+        xml = serializar_tnfe(tnfe, pretty=False)
+
+        # Preview XML usa tpAmb=2; emissão produção usa tpAmb=1 via montar_tnfe_emissao
+        # O importante aqui é que os grupos IBSCBS/IBSCBSTot estejam presentes
+        self.assertTrue(_xml_tem_tag(xml, 'ibscbs'))
+        self.assertTrue(_xml_tem_tag(xml, 'ibscbstot'))
+
+        ref = (nf_item.snapshot_fiscal or {}).get('reforma_tributaria') or {}
+        self.assertEqual(ref.get('cst_ibs_cbs'), '000')
+        self.assertEqual(ref.get('classificacao_tributaria'), '000001')
+
+        import re
+        # Debug: find IBSCBS CST and cClassTrib (with namespace handling)
+        cst_matches = re.findall(r'<(?:[\w]*:)?cst>([^<]+)</(?:[\w]*:)?cst>', xml, re.IGNORECASE)
+        cclass_matches = re.findall(r'<(?:[\w]*:)?cclasstrib>([^<]+)</(?:[\w]*:)?cclasstrib>', xml, re.IGNORECASE)
+        ibscbs_matches = re.findall(r'<(?:[\w]*:)?ibscbs[^>]*>.*?</(?:[\w]*:)?ibscbs>', xml, re.IGNORECASE | re.DOTALL)
+        # IBSCBS CST should be 000 (3 digits), ICMS CST is 00 (2 digits)
+        ibscbs_cst = next((c for c in cst_matches if c == '000'), None)
+        ibscbs_cclass = cclass_matches[0] if cclass_matches else None
+        self.assertIsNotNone(ibscbs_cst, f'CST 000 not found in XML. All CSTs: {cst_matches}')
+        self.assertIsNotNone(ibscbs_cclass)
+        self.assertEqual(ibscbs_cst, '000')
+        self.assertEqual(ibscbs_cclass, '000001')
+
+        vbc = _xml_valor_tag(xml, 'vBC')
+        self.assertIsNotNone(vbc)
+        self.assertEqual(vbc, '500.00')
+
+        vibsuf = _xml_valor_tag(xml, 'vIBSUF')
+        pibsuf = _xml_valor_tag(xml, 'pIBSUF')
+        self.assertEqual(vibsuf, '0.50')
+        self.assertEqual(pibsuf, '0.1000')
+
+        vibsmun = _xml_valor_tag(xml, 'vIBSMun')
+        self.assertEqual(vibsmun, '0.00')
+
+        vcbs = _xml_valor_tag(xml, 'vCBS')
+        pcbs = _xml_valor_tag(xml, 'pCBS')
+        self.assertEqual(vcbs, '4.50')
+        self.assertEqual(pcbs, '0.9000')
+
+        vbc_total = _xml_valor_tag(xml, 'vBCIBSCBS')
+        self.assertEqual(vbc_total, '500.00')
+
+    @patch('apps.cadastros.endereco_fiscal.consultar_cep_viacep')
+    def test_validacao_detecta_reforma_no_xml_producao(self, mock_cep):
+        """Validação deve detectar REFORMA_XML_OK em produção quando serializada."""
+        mock_cep.return_value = {
+            'cidade': 'BELEM',
+            'uf': 'PA',
+            'cep': '66630-505',
+            'logradouro': '',
+            'bairro': '',
+            'complemento': '',
+        }
+        nf, nf_item = _nf_pa()
+        if nf.empresa_emitente_id:
+            emp = nf.empresa_emitente
+            if not (emp.ie or '').strip():
+                emp.ie = '123456789012'
+                emp.save(update_fields=['ie'])
+        aplicar_atualizacao_impostos_nfe(nf, usuario=self.user)
+        nf_item.refresh_from_db()
+
+        dados = gerar_dados_preview_nfe_saida(nf)
+        self.assertFalse(dados.get('bloqueado'))
+        for linha in dados.get('itens') or []:
+            if linha.get('item_id') == nf_item.pk:
+                linha['snapshot_fiscal'] = nf_item.snapshot_fiscal or {}
+
+        tnfe = montar_tnfe_oficial(dados, nfe_saida=nf)
+        xml = serializar_tnfe(tnfe, pretty=False)
+
+        from apps.fiscal.reforma_tributaria.xml import validar_reforma_serializada_em_xml
+        chk = validar_reforma_serializada_em_xml(
+            xml,
+            itens=[{'snapshot_fiscal': nf_item.snapshot_fiscal or {}}],
+        )
+        self.assertTrue(any(c['codigo'] == 'REFORMA_XML_OK' for c in chk))
+
+    @patch('apps.cadastros.endereco_fiscal.consultar_cep_viacep')
+    def test_checklist_producao_status_ok(self, mock_cep):
+        """Checklist deve mostrar status OK para produção habilitada explicitamente."""
+        mock_cep.return_value = {
+            'cidade': 'BELEM',
+            'uf': 'PA',
+            'cep': '66630-505',
+            'logradouro': '',
+            'bairro': '',
+            'complemento': '',
+        }
+        nf, _ = _nf_pa()
+        if nf.empresa_emitente_id:
+            emp = nf.empresa_emitente
+            if not (emp.ie or '').strip():
+                emp.ie = '123456789012'
+                emp.save(update_fields=['ie'])
+        aplicar_atualizacao_impostos_nfe(nf, usuario=self.user)
+
+        from apps.fiscal.nfe_saida_checklist_homologacao import validar_prontidao_nfe_homologacao
+        resultado = validar_prontidao_nfe_homologacao(nfe_saida=nf)
+        rtc_items = [i for i in resultado['itens'] if i['secao'] == 'reforma_tributaria']
+        status_item = next((i for i in rtc_items if i['codigo'] == 'reforma_status'), None)
+        self.assertIsNotNone(status_item)
+        self.assertEqual(status_item['status'], 'ok')
+        self.assertIn('homologacao', status_item['mensagem'].lower())

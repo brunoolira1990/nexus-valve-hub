@@ -190,6 +190,11 @@ REFORMA_TRIBUTARIA_NFE_INCLUIR_DANFE = os.environ.get('REFORMA_TRIBUTARIA_NFE_IN
     'true',
     'yes',
 )
+REFORMA_TRIBUTARIA_NFE_PRODUCAO_BLOQUEADA = os.environ.get('REFORMA_TRIBUTARIA_NFE_PRODUCAO_BLOQUEADA', 'true').lower() in (
+    '1',
+    'true',
+    'yes',
+)
 
 # ERP 4.0.15.x Fase 3B — emissão NF-e Saída produção SEFAZ (default desligado)
 NFE_PRODUCAO_HABILITADA = os.environ.get('NFE_PRODUCAO_HABILITADA', 'false').lower() in (
