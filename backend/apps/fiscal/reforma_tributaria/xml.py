@@ -93,12 +93,10 @@ def build_reforma_tributaria_item_bindings(
             vIBSUF=v_ibs_uf or '0.00',
         )
 
-    gibsmun = None
-    if p_ibs_mun or _dec(v_ibs_mun) > 0:
-        gibsmun = dfe.Tcibs.GIbsmun(
-            pIBSMun=p_ibs_mun or '0.0000',
-            vIBSMun=v_ibs_mun or '0.00',
-        )
+    gibsmun = dfe.Tcibs.GIbsmun(
+        pIBSMun=p_ibs_mun or '0.0000',
+        vIBSMun=v_ibs_mun or '0.00',
+    )
 
     gcbs = None
     if p_cbs or v_cbs:
@@ -166,15 +164,25 @@ def build_reforma_tributaria_total_bindings(
         vBCIBSCBS=_fmt2(agg['base']) or '0.00',
         gIBS=dfe.TibscbsmonoTot.GIbs(
             gIBSUF=dfe.TibscbsmonoTot.GIbs.GIbsuf(
+                vDif='0.00',  # TODO: derivar do snapshot quando disponível.
+                vDevTrib='0.00',  # TODO: derivar do snapshot quando disponível.
                 vIBSUF=_fmt2(agg['valor_ibs_uf']) or '0.00',
             ),
             gIBSMun=dfe.TibscbsmonoTot.GIbs.GIbsmun(
+                vDif='0.00',  # TODO: derivar do snapshot quando disponível.
+                vDevTrib='0.00',  # TODO: derivar do snapshot quando disponível.
                 vIBSMun=_fmt2(agg['valor_ibs_mun']) or '0.00',
             ),
             vIBS=_fmt2(agg['valor_ibs']) or '0.00',
+            vCredPres='0.00',  # TODO: derivar do snapshot quando disponível.
+            vCredPresCondSus='0.00',  # TODO: derivar do snapshot quando disponível.
         ),
         gCBS=dfe.TibscbsmonoTot.GCbs(
+            vDif='0.00',  # TODO: derivar do snapshot quando disponível.
+            vDevTrib='0.00',  # TODO: derivar do snapshot quando disponível.
             vCBS=_fmt2(agg['valor_cbs']) or '0.00',
+            vCredPres='0.00',  # TODO: derivar do snapshot quando disponível.
+            vCredPresCondSus='0.00',  # TODO: derivar do snapshot quando disponível.
         ),
     )
 
