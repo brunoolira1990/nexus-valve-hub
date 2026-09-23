@@ -12,7 +12,7 @@ from apps.auditoria.servico import (
 from apps.comercial.payment_terms import parse_payment_condition
 from apps.text_normalize import normalize_operational_fields
 
-from .utils import normalizar_cnpj
+from .utils import normalizar_cnpj, validar_cnpj_django
 
 from .colaborador_acesso import montar_acesso_colaborador, PERFIS_DISPONIVEIS
 from .colaborador_senha import email_operacional_valido, usuario_eh_admin
@@ -36,6 +36,9 @@ from .models import (
     EnderecoEntregaCliente,
     Fornecedor,
     Transportadora,
+    Dependente,
+    EventoVinculo,
+    Vinculo,
 )
 
 
@@ -707,6 +710,49 @@ class ColaboradorSerializer(serializers.ModelSerializer):
             'eh_responsavel_qualidade',
             'eh_administrador',
             'observacoes',
+            'nome_social',
+            'tipo_pessoa',
+            'cpf',
+            'cnpj',
+            'identidade_tipo',
+            'identidade_numero',
+            'identidade_orgao',
+            'identidade_uf',
+            'identidade_emissao',
+            'identidade_validade',
+            'data_nascimento',
+            'sexo',
+            'estado_civil',
+            'nacionalidade',
+            'naturalidade_cidade',
+            'naturalidade_uf',
+            'nome_mae',
+            'nome_pai',
+            'celular',
+            'email_pessoal',
+            'emergencia_nome',
+            'emergencia_telefone',
+            'emergencia_parentesco',
+            'cep',
+            'logradouro',
+            'numero',
+            'complemento',
+            'bairro',
+            'cidade',
+            'uf',
+            'ctps_numero',
+            'ctps_serie',
+            'ctps_uf',
+            'ctps_emissao',
+            'pis_pasep',
+            'titulo_numero',
+            'titulo_zona',
+            'titulo_secao',
+            'titulo_uf',
+            'cnh_numero',
+            'cnh_categoria',
+            'cnh_validade',
+            'reservista_numero',
             'vendedor_id',
             'criado_em',
             'atualizado_em',
@@ -850,6 +896,49 @@ class ColaboradorSerializer(serializers.ModelSerializer):
         attrs = super().validate(attrs)
         normalize_operational_fields(attrs, {'nome', 'codigo', 'observacoes', 'cargo', 'departamento'})
         instance = getattr(self, 'instance', None)
+        tipo_pessoa = attrs.get('tipo_pessoa', getattr(instance, 'tipo_pessoa', 'FISICA'))
+        cpf = attrs.get('cpf', getattr(instance, 'cpf', None))
+        cnpj = attrs.get('cnpj', getattr(instance, 'cnpj', None))
+        cpf_digitos = ''.join(caractere for caractere in (cpf or '') if caractere.isdigit())
+
+        if tipo_pessoa == 'FISICA':
+            if not cpf:
+                raise serializers.ValidationError({'cpf': 'CPF é obrigatório para pessoa física.'})
+            if not _cpf_valido(cpf):
+                raise serializers.ValidationError({'cpf': 'CPF inválido.'})
+        elif tipo_pessoa == 'JURIDICA':
+            if not cnpj:
+                raise serializers.ValidationError({'cnpj': 'CNPJ é obrigatório para pessoa jurídica.'})
+            try:
+                validar_cnpj_django(cnpj)
+            except DjangoValidationError:
+                raise serializers.ValidationError({'cnpj': 'CNPJ inválido.'})
+
+        identidade_tipo = attrs.get('identidade_tipo', getattr(instance, 'identidade_tipo', ''))
+        identidade_numero = attrs.get(
+            'identidade_numero',
+            getattr(instance, 'identidade_numero', ''),
+        )
+        if identidade_tipo == 'CIN' and ''.join(caractere for caractere in (identidade_numero or '') if caractere.isdigit()) != cpf_digitos:
+            raise serializers.ValidationError(
+                {'identidade_numero': 'O número da CIN deve ser igual ao CPF.'},
+            )
+
+        cpf_normalizado = cpf_digitos or None
+        if cpf_normalizado:
+            queryset = Colaborador.objects.filter(cpf=cpf_normalizado)
+            if instance:
+                queryset = queryset.exclude(pk=instance.pk)
+            if queryset.exists():
+                raise serializers.ValidationError({'cpf': 'Já existe um colaborador com este CPF.'})
+        cnpj_normalizado = normalizar_cnpj(cnpj) if cnpj else None
+        if cnpj_normalizado:
+            queryset = Colaborador.objects.filter(cnpj=cnpj_normalizado)
+            if instance:
+                queryset = queryset.exclude(pk=instance.pk)
+            if queryset.exists():
+                raise serializers.ValidationError({'cnpj': 'Já existe um colaborador com este CNPJ.'})
+
         perfil_vinculo = (attrs.pop('perfil_acesso_vinculo', None) or '').strip().lower()
         if perfil_vinculo and perfil_vinculo not in PERFIS_DISPONIVEIS:
             raise serializers.ValidationError({'perfil_acesso_vinculo': 'Perfil de acesso inválido.'})
@@ -895,3 +984,65 @@ class ColaboradorSerializer(serializers.ModelSerializer):
         data['usuario_login'] = self.get_usuario_login(instance)
         data['vendedor_id'] = vendedor_id_colaborador(instance)
         return data
+
+
+def _cpf_valido(valor):
+    digitos = ''.join(caractere for caractere in (valor or '') if caractere.isdigit())
+    if len(digitos) != 11 or len(set(digitos)) == 1:
+        return False
+    soma = sum(int(digito) * (10 - indice) for indice, digito in enumerate(digitos[:9]))
+    primeiro_digito = (soma * 10 % 11) % 10
+    soma = sum(int(digito) * (11 - indice) for indice, digito in enumerate(digitos[:10]))
+    segundo_digito = (soma * 10 % 11) % 10
+    return digitos[-2:] == f'{primeiro_digito}{segundo_digito}'
+
+
+class VinculoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Vinculo
+        fields = '__all__'
+        read_only_fields = ('criado_em', 'atualizado_em')
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        instance = getattr(self, 'instance', None)
+        data_admissao = attrs.get('data_admissao', getattr(instance, 'data_admissao', None))
+        data_demissao = attrs.get('data_demissao', getattr(instance, 'data_demissao', None))
+        if data_admissao and data_demissao and data_demissao < data_admissao:
+            raise serializers.ValidationError(
+                {'data_demissao': 'A data de demissão deve ser igual ou posterior à admissão.'},
+            )
+
+        salario_base = attrs.get('salario_base', getattr(instance, 'salario_base', None))
+        if salario_base is not None and salario_base < 0:
+            raise serializers.ValidationError({'salario_base': 'O salário base não pode ser negativo.'})
+
+        pix_tipo = attrs.get('pix_tipo', getattr(instance, 'pix_tipo', ''))
+        pix_chave = attrs.get('pix_chave', getattr(instance, 'pix_chave', ''))
+        if pix_tipo == 'CPF' and pix_chave and not _cpf_valido(pix_chave):
+            raise serializers.ValidationError({'pix_chave': 'A chave PIX CPF é inválida.'})
+
+        colaborador = attrs.get('colaborador', getattr(instance, 'colaborador', None))
+        gestor = attrs.get('gestor', getattr(instance, 'gestor', None))
+        if colaborador and gestor and colaborador.pk == gestor.pk:
+            raise serializers.ValidationError({'gestor': 'Um colaborador não pode ser gestor de si mesmo.'})
+        if colaborador and gestor and Vinculo.objects.filter(
+            colaborador=gestor,
+            gestor=colaborador,
+        ).exclude(pk=getattr(instance, 'pk', None)).exists():
+            raise serializers.ValidationError({'gestor': 'O vínculo criaria um ciclo de gestores.'})
+        return attrs
+
+
+class EventoVinculoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EventoVinculo
+        fields = '__all__'
+        read_only_fields = ('criado_em',)
+
+
+class DependenteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Dependente
+        fields = '__all__'
+        read_only_fields = ('criado_em', 'atualizado_em')

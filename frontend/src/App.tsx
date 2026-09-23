@@ -25,7 +25,9 @@ import FornecedorList from "./pages/Fornecedores/FornecedorList";
 import FornecedorFormPage from "./pages/Fornecedores/FornecedorFormPage";
 import TransportadoraList from "./pages/Transportadoras/TransportadoraList";
 import TransportadoraFormPage from "./pages/Transportadoras/TransportadoraFormPage";
-import Colaboradores from "./pages/Colaboradores";
+import ColaboradorList from "./pages/Colaboradores/ColaboradorList";
+import ColaboradorDetalhe from "./pages/Colaboradores/ColaboradorDetalhe";
+
 import MinhaConta from "./pages/MinhaConta";
 import MinhaContaAlterarSenha from "./pages/MinhaContaAlterarSenha";
 import Produtos from "./pages/Produtos";
@@ -106,7 +108,9 @@ const App = () => (
         <Route path="transportadoras" element={<TransportadoraList />} />
         <Route path="transportadoras/novo" element={<TransportadoraFormPage />} />
         <Route path="transportadoras/:id/edit" element={<TransportadoraFormPage />} />
-        <Route path="colaboradores" element={<Colaboradores />} />
+        <Route path="colaboradores" element={<ColaboradorList />} />
+        <Route path="colaboradores/novo" element={<ColaboradorDetalhe />} />
+        <Route path="colaboradores/:id" element={<ColaboradorDetalhe />} />
         <Route path="minha-conta" element={<MinhaConta />} />
         <Route path="minha-conta/alterar-senha" element={<MinhaContaAlterarSenha />} />
         <Route path="produtos" element={<Produtos />} />

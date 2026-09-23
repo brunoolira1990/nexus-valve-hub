@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
-import Colaboradores from '@/pages/Colaboradores';
+import ColaboradorList from '@/pages/Colaboradores/ColaboradorList';
 import Corridas from '@/pages/Corridas';
 import Certificados from '@/pages/Certificados';
 import CertificadosFornecedor from '@/pages/CertificadosFornecedor';
@@ -71,7 +71,7 @@ describe('ERP 4.0.9.2 — migração visual Nexus (Qualidade/Cadastros)', () => 
   it('Colaboradores renderiza PageHeader e DataTable', () => {
     render(
       <MemoryRouter>
-        <Colaboradores />
+        <ColaboradorList />
       </MemoryRouter>,
     );
     expect(screen.getByRole('heading', { name: 'Colaboradores' })).toBeInTheDocument();
