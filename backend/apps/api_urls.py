@@ -17,7 +17,12 @@ from rest_framework.routers import DefaultRouter
 from apps.apuracao_fiscal.views import ApuracaoFiscalPersistidaViewSet, ApuracaoView
 from apps.core.app_views import app_contexto, busca_global, minha_conta
 from apps.core.minha_conta_views import alterar_senha
-from apps.cadastros.colaborador_views import ColaboradorViewSet
+from apps.cadastros.colaborador_views import (
+    ColaboradorViewSet,
+    DependenteViewSet,
+    EventoVinculoViewSet,
+    VinculoViewSet,
+)
 from apps.cadastros.usuario_views import UsuarioViewSet
 from apps.cadastros.views import (
     ClienteViewSet,
@@ -117,6 +122,9 @@ from apps.regras_fiscais.views import (
 router = DefaultRouter()
 router.register(r'empresas', EmpresaViewSet, basename='empresa')
 router.register(r'colaboradores', ColaboradorViewSet, basename='colaborador')
+router.register(r'vinculos', VinculoViewSet, basename='vinculo')
+router.register(r'eventos-vinculo', EventoVinculoViewSet, basename='evento-vinculo')
+router.register(r'dependentes', DependenteViewSet, basename='dependente')
 router.register(r'usuarios', UsuarioViewSet, basename='usuario')
 router.register(r'clientes', ClienteViewSet, basename='cliente')
 router.register(r'fornecedores', FornecedorViewSet, basename='fornecedor')

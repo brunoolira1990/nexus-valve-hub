@@ -1862,6 +1862,60 @@ export interface Colaborador {
   eh_responsavel_qualidade: boolean;
   eh_administrador: boolean;
   observacoes?: string;
+  // ─── Identificação complementar ───
+  nome_social?: string;
+  tipo_pessoa?: 'FISICA' | 'JURIDICA';
+  cpf?: string;
+  cnpj?: string;
+
+  // ─── Identidade ───
+  identidade_tipo?: '' | 'RG' | 'CIN' | 'OUTRO';
+  identidade_numero?: string;
+  identidade_orgao?: string;
+  identidade_uf?: string;
+  identidade_emissao?: string | null;
+  identidade_validade?: string | null;
+
+  // ─── Dados pessoais ───
+  data_nascimento?: string | null;
+  sexo?: '' | 'M' | 'F' | 'OUTRO' | 'NAO_INFORMAR';
+  estado_civil?: '' | 'SOLTEIRO' | 'CASADO' | 'DIVORCIADO' | 'VIUVO' | 'UNIAO_ESTAVEL';
+  nacionalidade?: string;
+  naturalidade_cidade?: string;
+  naturalidade_uf?: string;
+  nome_mae?: string;
+  nome_pai?: string;
+
+  // ─── Contato complementar ───
+  celular?: string;
+  email_pessoal?: string;
+  emergencia_nome?: string;
+  emergencia_telefone?: string;
+  emergencia_parentesco?: string;
+
+  // ─── Endereço ───
+  cep?: string;
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  cidade?: string;
+  uf?: string;
+
+  // ─── Documentos pessoais ───
+  ctps_numero?: string;
+  ctps_serie?: string;
+  ctps_uf?: string;
+  ctps_emissao?: string | null;
+  pis_pasep?: string;
+  titulo_numero?: string;
+  titulo_zona?: string;
+  titulo_secao?: string;
+  titulo_uf?: string;
+  cnh_numero?: string;
+  cnh_categoria?: string;
+  cnh_validade?: string | null;
+  reservista_numero?: string;
   /** Preenchido quando eh_vendedor e há registro Vendedor espelhado. */
   vendedor_id?: number | null;
   criado_em?: string;
@@ -1908,6 +1962,74 @@ export interface Colaborador {
     pode_desativar?: boolean;
   };
   perfil_acesso_vinculo?: string;
+}
+
+export interface Vinculo {
+  id: number;
+  colaborador: number;
+  empresa?: number | null;
+  tipo_contrato?: '' | 'CLT' | 'PJ' | 'ESTAGIO' | 'SOCIO' | 'AUTONOMO' | 'TEMPORARIO' | 'APRENDIZ';
+  matricula?: string;
+  data_admissao?: string | null;
+  data_demissao?: string | null;
+  motivo_demissao?: string;
+  cargo?: string;
+  departamento?: string;
+  cbo?: string;
+  local_trabalho?: string;
+  gestor?: number | null;
+  jornada_horas?: string | number | null;
+  jornada_turno?: '' | 'MANHA' | 'TARDE' | 'NOITE' | 'INTEGRAL' | 'COMERCIAL';
+  salario_base?: string | number | null;
+  salario_tipo?: '' | 'MENSAL' | 'HORISTA' | 'DIARIO' | 'COMISSAO';
+  eh_vendedor?: boolean;
+  eh_comprador?: boolean;
+  eh_responsavel_fiscal?: boolean;
+  eh_responsavel_financeiro?: boolean;
+  eh_responsavel_estoque?: boolean;
+  eh_responsavel_qualidade?: boolean;
+  eh_administrador?: boolean;
+  banco_codigo?: string;
+  banco_nome?: string;
+  agencia?: string;
+  conta?: string;
+  conta_digito?: string;
+  conta_tipo?: '' | 'CORRENTE' | 'POUPANCA' | 'SALARIO';
+  pix_tipo?: '' | 'CPF' | 'CNPJ' | 'EMAIL' | 'TELEFONE' | 'ALEATORIA';
+  pix_chave?: string;
+  forma_pagamento?: '' | 'DEPOSITO' | 'PIX' | 'DINHEIRO' | 'CHEQUE';
+  codigo_categoria_esocial?: string;
+  grau_instrucao?: string;
+  natureza_atividade?: string;
+  observacoes?: string;
+  criado_em?: string;
+  atualizado_em?: string;
+}
+
+export interface EventoVinculo {
+  id: number;
+  vinculo: number;
+  tipo: 'ADMISSAO' | 'PROMOCAO' | 'AUMENTO' | 'TRANSFERENCIA' | 'MUDANCA_JORNADA' | 'MUDANCA_GESTOR' | 'AFASTAMENTO' | 'RETORNO' | 'ENCERRAMENTO' | 'OUTRO';
+  data_efetiva: string;
+  motivo?: string;
+  observacao?: string;
+  dados_antes?: Record<string, unknown> | null;
+  dados_depois?: Record<string, unknown> | null;
+  registrado_por?: number | null;
+  criado_em?: string;
+}
+
+export interface Dependente {
+  id: number;
+  colaborador: number;
+  nome: string;
+  cpf?: string;
+  data_nascimento?: string | null;
+  parentesco?: string;
+  dependente_ir?: boolean;
+  dependente_saude?: boolean;
+  criado_em?: string;
+  atualizado_em?: string;
 }
 
 export interface Vendedor {

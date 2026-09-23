@@ -20,13 +20,16 @@ from .colaborador_acesso import (
 )
 from .colaborador_senha import redefinir_senha_colaborador, usuario_eh_admin
 from .colaborador_sync import sincronizar_vendedor_colaborador, vendedor_id_colaborador
-from .models import Colaborador
+from .models import Colaborador, Dependente, EventoVinculo, Vinculo
 from .serializers import (
     ColaboradorSerializer,
     CriarUsuarioColaboradorSerializer,
     DefinirPerfilAcessoSerializer,
+    DependenteSerializer,
     EditarAcessoColaboradorSerializer,
+    EventoVinculoSerializer,
     RedefinirSenhaColaboradorSerializer,
+    VinculoSerializer,
     VincularUsuarioColaboradorSerializer,
 )
 
@@ -233,3 +236,45 @@ class ColaboradorViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         except ValueError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return _resposta_colaborador(colaborador, request, mensagem='Senha redefinida com sucesso.')
+
+
+class VinculoViewSet(viewsets.ModelViewSet):
+    """CRUD de vínculos. Filtre por ?colaborador=<id> para listar de um colaborador."""
+
+    serializer_class = VinculoSerializer
+    queryset = Vinculo.objects.select_related('colaborador', 'gestor').all()
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        colaborador_id = self.request.query_params.get('colaborador')
+        if colaborador_id:
+            qs = qs.filter(colaborador_id=colaborador_id)
+        return qs.order_by('-data_admissao', '-pk')
+
+
+class EventoVinculoViewSet(viewsets.ModelViewSet):
+    """CRUD de eventos de vínculo. Filtre por ?vinculo=<id>."""
+
+    serializer_class = EventoVinculoSerializer
+    queryset = EventoVinculo.objects.select_related('vinculo', 'registrado_por').all()
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        vinculo_id = self.request.query_params.get('vinculo')
+        if vinculo_id:
+            qs = qs.filter(vinculo_id=vinculo_id)
+        return qs.order_by('-data_efetiva', '-pk')
+
+
+class DependenteViewSet(viewsets.ModelViewSet):
+    """CRUD de dependentes. Filtre por ?colaborador=<id>."""
+
+    serializer_class = DependenteSerializer
+    queryset = Dependente.objects.select_related('colaborador').all()
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        colaborador_id = self.request.query_params.get('colaborador')
+        if colaborador_id:
+            qs = qs.filter(colaborador_id=colaborador_id)
+        return qs.order_by('nome')

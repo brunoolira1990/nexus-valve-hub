@@ -1,5 +1,5 @@
 import api from './config';
-import type { Colaborador, ColaboradorFuncao } from '@/types';
+import type { Colaborador, ColaboradorFuncao, Dependente, EventoVinculo, Vinculo } from '@/types';
 import {
   buildListParams,
   type ListQueryParams,
@@ -90,4 +90,45 @@ export const colaboradoresService = {
     )).data,
   listPerfisAcesso: async () =>
     (await api.get<{ value: string; label: string }[]>(`${path}perfis-acesso/`)).data,
+
+  // ─── Vínculos ───
+  listVinculos: async (colaboradorId: number) => {
+    const response = await api.get<Vinculo[] | PaginatedResponse<Vinculo>>('vinculos/', {
+      params: { colaborador: colaboradorId },
+    });
+    return unwrapListResults(response.data);
+  },
+  getVinculo: async (id: number) => (await api.get<Vinculo>(`vinculos/${id}/`)).data,
+  createVinculo: async (data: Omit<Vinculo, 'id' | 'criado_em' | 'atualizado_em'>) =>
+    (await api.post<Vinculo>('vinculos/', data)).data,
+  updateVinculo: async (id: number, data: Partial<Vinculo>) =>
+    (await api.patch<Vinculo>(`vinculos/${id}/`, data)).data,
+  deleteVinculo: async (id: number) => {
+    await api.delete(`vinculos/${id}/`);
+  },
+
+  // ─── Eventos de vínculo ───
+  listEventosVinculo: async (vinculoId: number) => {
+    const response = await api.get<EventoVinculo[] | PaginatedResponse<EventoVinculo>>('eventos-vinculo/', {
+      params: { vinculo: vinculoId },
+    });
+    return unwrapListResults(response.data);
+  },
+  createEventoVinculo: async (data: Omit<EventoVinculo, 'id' | 'criado_em'>) =>
+    (await api.post<EventoVinculo>('eventos-vinculo/', data)).data,
+
+  // ─── Dependentes ───
+  listDependentes: async (colaboradorId: number) => {
+    const response = await api.get<Dependente[] | PaginatedResponse<Dependente>>('dependentes/', {
+      params: { colaborador: colaboradorId },
+    });
+    return unwrapListResults(response.data);
+  },
+  createDependente: async (data: Omit<Dependente, 'id' | 'criado_em' | 'atualizado_em'>) =>
+    (await api.post<Dependente>('dependentes/', data)).data,
+  updateDependente: async (id: number, data: Partial<Dependente>) =>
+    (await api.patch<Dependente>(`dependentes/${id}/`, data)).data,
+  deleteDependente: async (id: number) => {
+    await api.delete(`dependentes/${id}/`);
+  },
 };
