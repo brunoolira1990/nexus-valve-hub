@@ -174,6 +174,19 @@ class NFeEntrada(models.Model):
     xmotivo_lote = models.TextField(blank=True)
     recibo_lote = models.CharField(max_length=20, blank=True)
 
+    # ERP 4.0.16.x — efeitos de devolução no pedido original
+    efeitos_devolucao_aplicados_em = models.DateTimeField(
+        null=True, blank=True, help_text='Quando o estorno de quantidade_faturada foi aplicado no pedido.'
+    )
+    efeitos_devolucao_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='efeitos_devolucao_nfe_entrada_aplicados',
+        help_text='Usuário que aplicou/estornou os efeitos da devolução.',
+    )
+
     class Meta:
         ordering = ['-data', 'numero']
         verbose_name = 'NF entrada'

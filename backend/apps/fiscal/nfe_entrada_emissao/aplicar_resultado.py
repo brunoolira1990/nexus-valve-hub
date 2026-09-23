@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 
+from django.db import transaction
 from django.utils import timezone
 
 from apps.cadastros.models import Empresa
@@ -125,6 +127,8 @@ def aplicar_resultado_sefaz_homologacao_entrada(
             serie=nf.serie_nfe,
             numero_nfe=nf.numero_nfe,
         )
+        # Aplica estorno no pedido original se for devolução (finNFe=4)
+        aplicar_estorno_pedido_pos_autorizacao_devolucao(nf, usuario=usuario)
 
     logger.info(
         'RESULTADO_SEFAZ_ENTRADA_HOMOLOG nf_id=%s status=%s cStat_lote=%s cStat_nfe=%s protocolo=%s',
@@ -211,6 +215,8 @@ def aplicar_resultado_sefaz_producao_entrada(
             serie=nf.serie_nfe,
             numero_nfe=nf.numero_nfe,
         )
+        # Aplica estorno no pedido original se for devolução (finNFe=4)
+        aplicar_estorno_pedido_pos_autorizacao_devolucao(nf, usuario=usuario)
 
     logger.info(
         'RESULTADO_SEFAZ_ENTRADA_PRODUCAO nf_id=%s status=%s cStat_lote=%s cStat_nfe=%s protocolo=%s',
@@ -221,6 +227,51 @@ def aplicar_resultado_sefaz_producao_entrada(
         nf.protocolo_autorizacao or '',
     )
     return nf
+
+
+@transaction.atomic
+def aplicar_estorno_pedido_pos_autorizacao_devolucao(nf_entrada: NFeEntrada, *, usuario=None) -> dict[str, Any]:
+    """
+    Após autorizar NFeEntrada de devolução (finNFe=4), estorna quantidade_faturada
+    nos itens do pedido original e recalcula status. Não mexe em estoque/financeiro.
+    Idempotente: não reaplica se já foi aplicado.
+    """
+    from apps.comercial.models import PedidoVenda
+    from apps.comercial.faturamento_pedido_venda import recalcular_status_pedido
+    from apps.fiscal.nfe_saida_pedido_cancelamento import _estornar_quantidades_pedido_da_nfe
+
+    # Só se for devolução vinculada a uma saída
+    if (nf_entrada.fin_nfe or '').strip() != '4':
+        return {'aplicado': False, 'motivo': 'Não é devolução (finNFe≠4).'}
+    if not nf_entrada.nfe_saida_origem_id:
+        return {'aplicado': False, 'motivo': 'Sem nfe_saida_origem.'}
+
+    nf_saida = nf_entrada.nfe_saida_origem
+    if not nf_saida.faturamento_pedido_venda_id:
+        return {'aplicado': False, 'motivo': 'NF saída sem faturamento.'}
+
+    # Idempotência: marca na NFeEntrada que já aplicou
+    if getattr(nf_entrada, 'efeitos_devolucao_aplicados_em', None):
+        return {'aplicado': False, 'motivo': 'Já aplicado antes.'}
+
+    # Reusa a lógica existente de estorno do cancelamento
+    estorno_resumo, pedido_ids = _estornar_quantidades_pedido_da_nfe(nf_saida)
+
+    for pid in sorted(pedido_ids):
+        pedido = PedidoVenda.objects.select_for_update().get(pk=pid)
+        recalcular_status_pedido(pedido)
+
+    # Marca timestamp de aplicação
+    nf_entrada.efeitos_devolucao_aplicados_em = timezone.now()
+    if usuario and getattr(usuario, 'is_authenticated', False):
+        nf_entrada.efeitos_devolucao_por = usuario
+    nf_entrada.save(update_fields=['efeitos_devolucao_aplicados_em', 'efeitos_devolucao_por'])
+
+    return {
+        'aplicado': True,
+        'estorno_resumo': estorno_resumo,
+        'pedidos_afetados': sorted(pedido_ids),
+    }
 
 
 def mensagem_resposta_resultado_entrada(resultado: ResultadoAutorizacaoSefaz) -> str:
