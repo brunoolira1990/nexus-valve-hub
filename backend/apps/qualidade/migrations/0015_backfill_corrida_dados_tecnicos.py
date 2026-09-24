@@ -1,3 +1,5 @@
+from django.db import migrations, models
+
 def backfill_corrida_dados_tecnicos(apps, schema_editor):
     ItemCertificadoFornecedorCorrida = apps.get_model('qualidade', 'ItemCertificadoFornecedorCorrida')
     ItemCertificadoFornecedorEntrada = apps.get_model('qualidade', 'ItemCertificadoFornecedorEntrada')
