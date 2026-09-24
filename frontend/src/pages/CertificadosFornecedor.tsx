@@ -1396,7 +1396,6 @@ const CertificadosFornecedor = () => {
                               </Fragment>
                             ))}
                           </div>
-                        </div>
                         {(() => {
                             const resumo = resumoQuantidadesCorridasItemCf(it);
                             const erros = errosCorridasAdicionaisItemCf(it);
