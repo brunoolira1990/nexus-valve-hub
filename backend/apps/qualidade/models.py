@@ -374,6 +374,9 @@ class ItemCertificadoFornecedorCorrida(models.Model):
     corrida = models.CharField(max_length=64, blank=True)
     lote = models.CharField(max_length=64, blank=True)
     quantidade = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
+    composicao_json = models.JSONField(default=dict, blank=True)
+    ensaio_tracao_json = models.JSONField(default=dict, blank=True)
+    ensaio_impacto_json = models.JSONField(default=dict, blank=True)
     criado_em = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -240,6 +240,9 @@ const ensureCorridaAdicional = (raw: unknown, ordem = 1): ItemCertificadoFornece
     corrida: String(obj.corrida || ''),
     lote: String(obj.lote || ''),
     quantidade: obj.quantidade == null || obj.quantidade === '' ? null : Number(obj.quantidade),
+    composicao_json: obj.composicao_json || {},
+    ensaio_tracao_json: obj.ensaio_tracao_json || {},
+    ensaio_impacto_json: obj.ensaio_impacto_json || {},
     ...(obj.criado_em ? { criado_em: String(obj.criado_em) } : {}),
   };
 };
@@ -1319,7 +1322,7 @@ const CertificadosFornecedor = () => {
                                     })
                                   }
                                 />
-                                <span
+<span
                                   className="erp-badge-info text-[10px] whitespace-nowrap"
                                   title={TEXTO_EXPLICATIVO_CORRIDAS_ADICIONAIS_CF}
                                 >
@@ -1334,9 +1337,66 @@ const CertificadosFornecedor = () => {
                                   ✕
                                 </button>
                               </div>
+                              <div className="mt-2 pt-2 border-t border-border">
+                                <p className="text-xs font-semibold mb-1">Composição química</p>
+                                <div className="grid grid-cols-2 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                                  {COMPOSICAO_FIELDS.map((f) => (
+                                    <div key={`${idx}-ca-${caidx}-cq-${f}`}>
+                                      <label className="erp-label">{f}</label>
+                                      <input
+                                        className="erp-input mt-1"
+                                        placeholder="***"
+                                        value={ca.composicao_json[f] || ''}
+                                        onChange={(e) =>
+                                          updateCorridaAdicional(idx, caidx, {
+                                            composicao_json: {
+                                              ...ca.composicao_json,
+                                              [f]: e.target.value,
+                                            },
+                                          })
+                                        }
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                                <p className="text-xs font-semibold mt-3 mb-1">Tração / propriedades mecânicas</p>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                  {TRACAO_FIELDS.map((f) => (
+                                    <div key={`${idx}-ca-${caidx}-pm-${f.key}`}>
+                                      <label className="erp-label">{f.label}</label>
+                                      <input
+                                        className="erp-input mt-1"
+                                        value={ca.ensaio_tracao_json[f.key] || ''}
+                                        onChange={(e) =>
+                                          updateCorridaAdicional(idx, caidx, {
+                                            ensaio_tracao_json: {
+                                              ...ca.ensaio_tracao_json,
+                                              [f.key]: e.target.value,
+                                            },
+                                          })
+                                        }
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                                <p className="text-xs font-semibold mt-3 mb-1">Ensaios de impacto</p>
+                                <div className="grid grid-cols-1 gap-2">
+                                  <label className="erp-label">Valor</label>
+                                  <input
+                                    className="erp-input mt-1"
+                                    value={JSON.stringify(ca.ensaio_impacto_json) || ''}
+                                    onChange={(e) =>
+                                      updateCorridaAdicional(idx, caidx, {
+                                        ensaio_impacto_json: JSON.parse(e.target.value) || {},
+                                      })
+                                    }
+                                  />
+                                </div>
+                              </div>
                             ))}
                           </div>
-                          {(() => {
+                        </div>
+                        {(() => {
                             const resumo = resumoQuantidadesCorridasItemCf(it);
                             const erros = errosCorridasAdicionaisItemCf(it);
                             const avisos = avisosCorridasAdicionaisItemCf(it);

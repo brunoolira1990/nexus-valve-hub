@@ -497,6 +497,9 @@ class ItemCertificadoFornecedorCorridaSerializer(serializers.ModelSerializer):
             'corrida',
             'lote',
             'quantidade',
+            'composicao_json',
+            'ensaio_tracao_json',
+            'ensaio_impacto_json',
             'criado_em',
         )
         read_only_fields = ('criado_em',)
