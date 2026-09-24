@@ -195,6 +195,16 @@ def xml_contem_reforma_tributaria(xml: str) -> bool:
     return 'ibscbs' in low or 'ibscbstot' in low
 
 
+def _extrair_bloco_xml(xml: str, tag: str) -> str | None:
+    """Extrai o conteúdo interno do primeiro bloco <tag>...</tag> do XML."""
+    m = re.search(
+        rf'<(?:[\w]{{1,12}}:)?{re.escape(tag)}>(.*?)</(?:[\w]{{1,12}}:)?{re.escape(tag)}>',
+        xml,
+        re.IGNORECASE | re.DOTALL,
+    )
+    return m.group(1) if m else None
+
+
 def _xml_valor_tag(xml: str, tag: str) -> Decimal | None:
     m = re.search(rf'<(?:[\w]{{1,12}}:)?{re.escape(tag)}>([^<]+)</', xml, re.IGNORECASE)
     if not m:
@@ -203,13 +213,17 @@ def _xml_valor_tag(xml: str, tag: str) -> Decimal | None:
 
 
 def extrair_resumo_reforma_xml(xml: str) -> dict[str, Any] | None:
-    """Extrai valores CBS/IBS UF do XML para exibição/diagnóstico."""
+    """Extrai valores CBS/IBS UF do bloco de TOTAL do XML (IBSCBSTot)."""
     if not xml_contem_reforma_tributaria(xml):
         return None
-    v_cbs = _xml_valor_tag(xml, 'vCBS')
-    v_ibs_uf = _xml_valor_tag(xml, 'vIBSUF')
-    v_ibs_mun = _xml_valor_tag(xml, 'vIBSMun')
-    v_ibs = _xml_valor_tag(xml, 'vIBS')
+    # Lê do bloco <IBSCBSTot> (total), não do primeiro <det> — evita pegar item 1
+    bloco_tot = _extrair_bloco_xml(xml, 'IBSCBSTot')
+    if bloco_tot is None:
+        return None
+    v_cbs = _xml_valor_tag(bloco_tot, 'vCBS')
+    v_ibs_uf = _xml_valor_tag(bloco_tot, 'vIBSUF')
+    v_ibs_mun = _xml_valor_tag(bloco_tot, 'vIBSMun')
+    v_ibs = _xml_valor_tag(bloco_tot, 'vIBS')
     return {
         'presente': True,
         'valor_cbs': float(v_cbs) if v_cbs is not None else None,
