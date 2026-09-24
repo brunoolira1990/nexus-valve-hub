@@ -1,3 +1,5 @@
+from datetime import date
+
 from decimal import Decimal
 
 from django.conf import settings
@@ -30,6 +32,7 @@ from .nfe_saida_preview import (
     gerar_preview_danfe_nfe_saida,
     gerar_preview_xml_nfe_saida,
 )
+from .nfe_saida_financeiro import montar_parcelas_sugeridas_nfe
 from .nfe_saida_xml_nfelib import gerar_xml_oficial_nfe_saida
 from .validacao_nfe_saida import validar_nfe_saida_para_emissao
 from .cte_import.service import importar_arquivos_cte
@@ -647,6 +650,9 @@ class NFeEntradaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
             )
         code = status.HTTP_200_OK if payload.get('ok') else status.HTTP_422_UNPROCESSABLE_ENTITY
         return response.Response(payload, status=code)
+
+
+STATUS_PERMITE_EDITAR_PARCELAS = {'RASCUNHO', 'EM_CONFERENCIA'}
 
 
 class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
@@ -2156,6 +2162,93 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         except ValueError as exc:
             return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return response.Response(payload)
+
+    @action(detail=True, methods=['get'], url_path='parcelas/sugeridas')
+    def parcelas_sugeridas(self, request, pk=None):
+        """Retorna parcelas sugeridas do pedido, permitindo edição antes da autorização."""
+        nf = self.get_object()
+        try:
+            parcelas = montar_parcelas_sugeridas_nfe(nf)
+        except Exception as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'parcelas': parcelas, 'valor_total': str(nf.valor_total or 0)})
+
+    @action(detail=True, methods=['patch'], url_path='parcelas')
+    def atualizar_parcelas(self, request, pk=None):
+        """Atualiza parcelas da NF-e quando status permite edição (RASCUNHO, EM_CONFERENCIA)."""
+        nf = self.get_object()
+        status_nf = (nf.status or '').upper()
+        if status_nf not in STATUS_PERMITE_EDITAR_PARCELAS:
+            return Response(
+                {'detail': 'Parcelas só podem ser editadas em rascunho ou conferência.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        parcelas_data = request.data.get('parcelas') or []
+        if not isinstance(parcelas_data, list) or len(parcelas_data) == 0:
+            return Response(
+                {'detail': 'Parcelas inválidas.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        from decimal import Decimal
+        total_nf = Decimal(str(nf.valor_total or 0)).quantize(Decimal('0.01'))
+        from datetime import date as dt_date
+        titulos = []
+        vencs = []
+        for idx, p in enumerate(parcelas_data, start=1):
+            try:
+                venc_str = str(p.get('vencimento', ''))[:10]
+                venc = dt_date.fromisoformat(venc_str) if venc_str else None
+                if not venc:
+                    return Response(
+                        {'detail': f'Parcela {idx}: vencimento inválido.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                val = Decimal(str(p.get('valor', 0))).quantize(Decimal('0.01'))
+                if val <= 0:
+                    return Response(
+                        {'detail': f'Parcela {idx}: valor deve ser maior que zero.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                # Vencimento não pode ser anterior à data da NF-e
+                if nf.data and venc < nf.data:
+                    return Response(
+                        {'detail': f'Parcela {idx}: vencimento não pode ser anterior à data de emissão da NF-e.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                numero = p.get('numero', idx)
+                titulo = {
+                    'parcela': str(numero).zfill(3),
+                    'dias': (venc - nf.data).days if nf.data else 0,
+                    'vencimento': venc.isoformat(),
+                    'valor': str(val),
+                }
+                titulos.append(titulo)
+                vencs.append(venc)
+            except (ValueError, TypeError, KeyError):
+                return Response(
+                    {'detail': f'Parcela {idx} inválida.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        # Validar soma
+        soma = sum(Decimal(t['valor']) for t in titulos)
+        if abs(soma - total_nf) > Decimal('0.01'):
+            return Response(
+                {
+                    'detail': f'Soma das parcelas (R$ {soma}) difere do total da NF (R$ {total_nf}).',
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        # Salvar
+        nf.titulos_receber = titulos
+        nf.vencimentos_finais = vencs
+        nf.quantidade_parcelas = len(titulos)
+        nf.save(update_fields=['titulos_receber', 'vencimentos_finais', 'quantidade_parcelas'])
+        return Response(
+            {
+                'titulos_receber': nf.titulos_receber,
+                'quantidade_parcelas': nf.quantidade_parcelas,
+            }
+        )
 
     @action(detail=True, methods=['post'], url_path='financeiro/gerar-contas-receber')
     def gerar_contas_receber(self, request, pk=None):

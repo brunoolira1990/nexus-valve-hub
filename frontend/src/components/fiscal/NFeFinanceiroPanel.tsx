@@ -3,6 +3,7 @@ import { fmtMoeda } from '@/lib/nfeSaidaConferencia';
 import { isAutorizadaHomologacao } from '@/lib/nfeSaidaUi';
 import { isAutorizadaProducao, isCanceladaNfe } from '@/lib/nfeSaidaAcoesMatriz';
 import { NFeFinanceiroAcoes } from '@/components/fiscal/NFeFinanceiroAcoes';
+import { NFeParcelasEditor } from '@/components/fiscal/NFeParcelasEditor';
 
 type FinanceiroFlags = {
   financeiro_gerado?: boolean;
@@ -25,6 +26,7 @@ type Props = {
   valorTotal?: number | string;
   quantidadeParcelas?: number | null;
   onGerar: () => void;
+  dataEmissao?: string;
 };
 
 function statusFinanceiroLabel(flags: FinanceiroFlags): { texto: string; tone: 'muted' | 'success' | 'warning' } {
@@ -63,6 +65,10 @@ export function NFeFinanceiroPanel({
   onGerar,
 }: Props) {
   const flags = financeiro ?? {};
+  const podeEditarParcelas = [
+    'RASCUNHO',
+    'EM_CONFERENCIA',
+  ].includes((status ?? '').toUpperCase());
   const cancelada = isCanceladaNfe(status);
   const statusInfo = cancelada
     ? {
@@ -173,6 +179,15 @@ export function NFeFinanceiroPanel({
         </div>
       ) : null}
 
+      {podeEditarParcelas ? (
+        <NFeParcelasEditor
+          nfeId={nfeId}
+          valorTotal={valorTotal ?? 0}
+          dataEmissao={dataEmissao}
+          onSalvo={onGerar}
+        />
+      ) : null}
+
       <div className="rounded-md border border-border p-3 space-y-2">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Ações</p>
         <NFeFinanceiroAcoes
@@ -182,6 +197,7 @@ export function NFeFinanceiroPanel({
           resumoEmissaoSefaz={resumoEmissaoSefaz}
           financeiro={financeiro}
           onGerar={onGerar}
+          editandoParcelas={podeEditarParcelas}
         />
       </div>
     </div>

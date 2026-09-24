@@ -20,6 +20,7 @@ type Props = {
   financeiro?: FinanceiroFlags | null;
   onGerar: () => void;
   className?: string;
+  editandoParcelas?: boolean;
 };
 
 export function NFeFinanceiroAcoes({
@@ -117,7 +118,7 @@ export function NFeFinanceiroAcoes({
     );
   }
 
-  if (!autorizada) {
+  if (!autorizada && !props.editandoParcelas) {
     return (
       <div className={className}>
         <button
