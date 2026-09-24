@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { Fragment, useEffect, useState, useCallback, useMemo } from 'react';
 import { AxiosError } from 'axios';
 import { Pencil } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
@@ -1296,8 +1296,8 @@ const CertificadosFornecedor = () => {
                         <>
                           <div className="space-y-1">
                             {(it.corridas_adicionais || []).map((ca, caidx) => (
+                              <Fragment key={`corrida-adicional-${idx}-${ca.id ?? caidx}`}>
                               <div
-                                key={`corrida-adicional-${idx}-${ca.id ?? caidx}`}
                                 className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_5rem_auto_auto] gap-1 items-stretch sm:items-center"
                               >
                                 <input
@@ -1393,6 +1393,7 @@ const CertificadosFornecedor = () => {
                                   />
                                 </div>
                               </div>
+                              </Fragment>
                             ))}
                           </div>
                         </div>
