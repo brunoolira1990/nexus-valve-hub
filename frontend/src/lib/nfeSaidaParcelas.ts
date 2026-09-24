@@ -11,7 +11,7 @@ export async function listarParcelasSugeridas(nfeId: number): Promise<{
   valor_total: string;
 }> {
   const { data } = await api.get<{ parcelas: any[]; valor_total: number }>(
-    `/api/nf-saidas/${nfeId}/parcelas/sugeridas/`,
+    `/nf-saidas/${nfeId}/parcelas/sugeridas/`,
   );
   return {
     parcelas: data.parcelas.map((p: any) => ({
@@ -24,5 +24,5 @@ export async function listarParcelasSugeridas(nfeId: number): Promise<{
 }
 
 export async function salvarParcelas(nfeId: number, parcelas: ParcelaNFe[]): Promise<void> {
-  await api.patch(`/api/nf-saidas/${nfeId}/parcelas/`, { parcelas });
+  await api.patch(`/nf-saidas/${nfeId}/parcelas/`, { parcelas });
 }

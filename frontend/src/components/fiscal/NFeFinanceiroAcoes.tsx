@@ -31,6 +31,7 @@ export function NFeFinanceiroAcoes({
   financeiro,
   onGerar,
   className = '',
+  editandoParcelas = false,
 }: Props) {
   const navigate = useNavigate();
   const autorizadaHomolog = isAutorizadaHomologacao({
@@ -118,7 +119,7 @@ export function NFeFinanceiroAcoes({
     );
   }
 
-  if (!autorizada && !props.editandoParcelas) {
+  if (!autorizada && !editandoParcelas) {
     return (
       <div className={className}>
         <button

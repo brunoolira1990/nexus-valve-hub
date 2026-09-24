@@ -183,7 +183,6 @@ export function NFeFinanceiroPanel({
         <NFeParcelasEditor
           nfeId={nfeId}
           valorTotal={valorTotal ?? 0}
-          dataEmissao={dataEmissao}
           onSalvo={onGerar}
         />
       ) : null}
