@@ -40,6 +40,7 @@ def classificar_papel_fiscal_nfe_pedido(nf: NFeSaida) -> str:
     """
     Papel da NF-e no pedido:
     - ativa: autorizada e não cancelada (faturamento fiscal válido);
+    - devolvida: autorizada mas com devolução autorizada vinculada (sem cobertura comercial ativa);
     - historico: cancelada (permanece visível, sem validade fiscal);
     - rejeitada: rejeitada/descartada/inutilizada no fluxo atual;
     - pendente: rascunho ou aguardando autorização.
@@ -53,6 +54,15 @@ def classificar_papel_fiscal_nfe_pedido(nf: NFeSaida) -> str:
     if st in ('DESCARTADA_INTERNA',) or 'REJEIT' in st or 'REJEIT' in sefaz:
         return 'rejeitada'
 
+    # NF-e autorizada com devolução autorizada vinculada não conta como faturamento ativo
+    if hasattr(nf, 'entradas_proprias_geradas'):
+        tem_devolucao_autorizada = nf.entradas_proprias_geradas.filter(
+            fin_nfe='4',
+            status_emissao_sefaz__in=('AUTORIZADA_PRODUCAO', 'AUTORIZADA_HOMOLOGACAO'),
+        ).exists()
+        if tem_devolucao_autorizada:
+            return 'devolvida'
+
     if sefaz in ('AUTORIZADA_PRODUCAO', 'AUTORIZADA_HOMOLOGACAO'):
         return 'ativa'
     if st in ('AUTORIZADA', 'AUTORIZADA_PRODUCAO', 'AUTORIZADA_HOMOLOGACAO', 'EMITIDA', 'EMITIDO'):
@@ -64,6 +74,7 @@ def classificar_papel_fiscal_nfe_pedido(nf: NFeSaida) -> str:
 def _mensagem_papel_fiscal(papel: str) -> str:
     return {
         'ativa': 'Documento fiscal ativo — representa faturamento fiscal válido do pedido.',
+        'devolvida': 'Devolução autorizada — NF-e original sem cobertura comercial ativa.',
         'historico': 'Histórico fiscal — NF-e cancelada, sem validade para circulação ou faturamento ativo.',
         'pendente': 'Em elaboração — ainda não representa faturamento fiscal concluído.',
         'rejeitada': 'Não autorizada — não vale como faturamento fiscal ativo.',
