@@ -38,10 +38,12 @@ MSG_ITEM_CF_VINCULO_INVALIDO = (
 
 ORIGEM_TECNICA_ITEM_CF = 'dados_do_item_cf'
 ORIGEM_TECNICA_HERDADA = 'herdados_item_principal'
+ORIGEM_TECNICA_PROPRIA_CORRIDA = 'propria_da_corrida'
 
 LABEL_ORIGEM_TECNICA = {
-    ORIGEM_TECNICA_ITEM_CF: 'Dados técnicos herdados do item principal do CF',
+    ORIGEM_TECNICA_ITEM_CF: 'Dados técnicos do item principal do CF',
     ORIGEM_TECNICA_HERDADA: 'Dados técnicos herdados do item principal do CF',
+    ORIGEM_TECNICA_PROPRIA_CORRIDA: 'Dados técnicos próprios desta corrida do CF',
 }
 
 LIMITACAO_ITENS_INDEPENDENTES_A2 = (
@@ -82,6 +84,50 @@ def _dados_tecnicos_item_cf(item: ItemCertificadoFornecedorEntrada) -> dict:
     }
 
 
+def _tem_dados_proprios_corrida(ca) -> bool:
+    """True quando a corrida adicional tem composicao/tracao/impacto proprios preenchidos."""
+    def _non_empty(d) -> bool:
+        if not isinstance(d, dict):
+            return False
+        return any(str(v or '').strip() for v in d.values())
+
+    return (
+        _non_empty(ca.composicao_json)
+        or _non_empty(ca.ensaio_tracao_json)
+        or _non_empty(ca.ensaio_impacto_json)
+    )
+
+
+def _dados_tecnicos_corrida_adicional(
+    item: ItemCertificadoFornecedorEntrada,
+    ca,
+) -> tuple[dict, str, bool]:
+    """Retorna (dados_tecnicos, origem_tecnica, dados_proprios).
+
+    Quando a corrida adicional tem dados proprios (composicao/tracao/impacto),
+    usa-os. Caso contrario, herda do item principal (compatibilidade com
+    certificados antigos que nao tinham dados por corrida).
+    """
+    if _tem_dados_proprios_corrida(ca):
+        return (
+            {
+                'norma': item.norma or '',
+                'ncm': item.ncm or '',
+                'tipo_dados_tecnicos': item.tipo_dados_tecnicos,
+                'composicao_json': ca.composicao_json or {},
+                'ensaio_tracao_json': ca.ensaio_tracao_json or {},
+                'ensaio_impacto_json': ca.ensaio_impacto_json or {},
+            },
+            ORIGEM_TECNICA_PROPRIA_CORRIDA,
+            True,
+        )
+    return (
+        _dados_tecnicos_item_cf(item),
+        ORIGEM_TECNICA_HERDADA,
+        False,
+    )
+
+
 def quantidade_principal_derivada_item_cf(
     item: ItemCertificadoFornecedorEntrada,
 ) -> tuple[Decimal | None, bool]:
@@ -112,6 +158,8 @@ def _linha_base(
     lote: str,
     quantidade_no_certificado: Decimal | None,
     origem_tecnica: str,
+    dados_tecnicos: dict | None = None,
+    dados_tecnicos_herdados: bool = True,
 ) -> dict:
     cert = item.certificado_fornecedor
     return {
@@ -123,10 +171,10 @@ def _linha_base(
         'unidade': item.unidade or '',
         'origem_tecnica': origem_tecnica,
         'origem_tecnica_label': LABEL_ORIGEM_TECNICA[origem_tecnica],
-        'dados_tecnicos_herdados': True,
+        'dados_tecnicos_herdados': dados_tecnicos_herdados,
         'permite_preenchimento_manual': True,
-        'modo_dados_tecnicos_padrao': 'herdados',
-        'modos_dados_tecnicos_permitidos': ['herdados', 'manual'],
+        'modo_dados_tecnicos_padrao': 'herdados' if dados_tecnicos_herdados else 'proprios',
+        'modos_dados_tecnicos_permitidos': ['herdados', 'manual', 'proprios'],
         'certificado_fornecedor_id': cert.id,
         'item_certificado_fornecedor_id': item.id,
         'codigo_produto': item.codigo_produto or '',
@@ -137,7 +185,7 @@ def _linha_base(
             item.numero_certificado_fornecedor_item or cert.numero_certificado_fornecedor or ''
         ),
         'status_certificado_fornecedor': str(cert.status or '').strip().lower(),
-        'dados_tecnicos': _dados_tecnicos_item_cf(item),
+        'dados_tecnicos': dados_tecnicos if dados_tecnicos is not None else _dados_tecnicos_item_cf(item),
     }
 
 
@@ -216,6 +264,8 @@ def listar_corridas_cf_para_item_cq(
                 lote=lote_principal,
                 quantidade_no_certificado=qtd_principal,
                 origem_tecnica=ORIGEM_TECNICA_ITEM_CF,
+                dados_tecnicos=_dados_tecnicos_item_cf(item),
+                dados_tecnicos_herdados=True,
             )
         )
 
@@ -226,6 +276,7 @@ def listar_corridas_cf_para_item_cq(
             continue
         if ca.quantidade is None:
             avisos.append(MSG_ADICIONAL_SEM_QUANTIDADE_CF)
+        dados_ca, origem_ca, proprios_ca = _dados_tecnicos_corrida_adicional(item, ca)
         linhas.append(
             _linha_base(
                 item,
@@ -233,7 +284,9 @@ def listar_corridas_cf_para_item_cq(
                 corrida=corrida_extra,
                 lote=lote_extra,
                 quantidade_no_certificado=ca.quantidade,
-                origem_tecnica=ORIGEM_TECNICA_HERDADA,
+                origem_tecnica=origem_ca,
+                dados_tecnicos=dados_ca,
+                dados_tecnicos_herdados=not proprios_ca,
             )
         )
 
