@@ -34,6 +34,7 @@ import {
   selecoesExistentesCorridasCfCq,
   type CorridasCfParaCqResponse,
   type SelecaoCorridaCfCq,
+  baseItemIrmao,
 } from '@/lib/cqCorridasCfUi';
 import { ModalCorridasCertificadoFornecedor } from '@/components/qualidade/ModalCorridasCertificadoFornecedor';
 import type {
@@ -250,6 +251,8 @@ const Certificados = () => {
   const [produtoBusca, setProdutoBusca] = useState<Record<number, string>>({});
   const [produtoResultados, setProdutoResultados] = useState<Record<number, Produto[]>>({});
   const [corridasDisponiveisPorItem, setCorridasDisponiveisPorItem] = useState<Record<number, CorridaDisponivelCertificadoQualidade[]>>({});
+  /** Estado local para modo "dividir item em varias corridas". */
+  const [dividindoCorridas, setDividindoCorridas] = useState<Record<number, Array<{corrida: string, lote: string, quantidade: string, valorSelecao: string}>>>({});
   /** Modal de corridas do CF exato vinculado ao item do CQ (hotfix múltiplas corridas). */
   const [corridasCfModal, setCorridasCfModal] = useState<
     | {
@@ -798,6 +801,32 @@ const Certificados = () => {
     }
   };
 
+  const construirItemIrmaoDeCorrida = (idx: number, source: CorridaDisponivelCertificadoQualidade, quantidade: string): ItemCertificadoQualidade => {
+    const item = formRef.current.itens[idx];
+    return {
+      ...baseItemIrmao(item),
+      corrida: source.corrida || item.corrida,
+      lote: source.lote || item.lote || '',
+      quantidade: parseFloat(quantidade) || 0,
+      norma: source.norma || item.norma,
+      ncm: source.ncm || item.ncm || '',
+      composicao_json: ensureMap(source.composicao_json),
+      ensaio_tracao_json: ensureMap(source.ensaio_tracao_json),
+      ensaio_impacto_json: ensureMap(source.ensaio_impacto_json),
+      certificado_fornecedor_origem_id: source.certificado_fornecedor_origem_id ?? source.certificado_fornecedor_id ?? null,
+      item_certificado_fornecedor_origem_id: source.item_certificado_fornecedor_origem_id ?? source.item_certificado_fornecedor_id ?? null,
+      fornecedor_nome_snapshot: source.fornecedor || '',
+      nf_entrada_snapshot: source.nf_entrada || '',
+      numero_certificado_fornecedor_item_snapshot:
+        source.numero_certificado_fornecedor_item || source.certificado_fornecedor || '',
+      corrida_snapshot: source.corrida || '',
+      lote_snapshot: source.lote || '',
+      origem_rastreabilidade_tipo: source.origem || 'manual',
+      origem_status_tecnico: source.status_origem_tecnica || (source.tem_dados_tecnicos ? 'dados_tecnicos' : 'sem_dados_tecnicos'),
+      origem_observacoes: source.observacoes_origem || '',
+    };
+  };
+
   const aplicarCorridaDisponivel = (idx: number, valorSelecao: string) => {
     const item = formRef.current.itens[idx];
     const source = (corridasDisponiveisPorItem[idx] || []).find(
@@ -815,29 +844,110 @@ const Certificados = () => {
     if (existeDivergenciaNcm) {
       alertas.push('A corrida foi encontrada, mas há divergência entre descrição/NCM/norma da origem e do item de saída. Confira antes de aplicar.');
     }
-    updateItem(idx, {
-      corrida: source.corrida || item.corrida,
-      lote: source.lote || item.lote || '',
-      norma: source.norma || item.norma,
-      ncm: source.ncm || item.ncm || '',
-      composicao_json: ensureMap(source.composicao_json),
-      ensaio_tracao_json: ensureMap(source.ensaio_tracao_json),
-      ensaio_impacto_json: ensureMap(source.ensaio_impacto_json),
-      certificado_fornecedor_origem_id: source.certificado_fornecedor_origem_id ?? source.certificado_fornecedor_id ?? null,
-      item_certificado_fornecedor_origem_id: source.item_certificado_fornecedor_origem_id ?? source.item_certificado_fornecedor_id ?? null,
-      fornecedor_nome_snapshot: source.fornecedor || '',
-      nf_entrada_snapshot: source.nf_entrada || '',
-      numero_certificado_fornecedor_item_snapshot:
-        source.numero_certificado_fornecedor_item || source.certificado_fornecedor || '',
-      corrida_snapshot: source.corrida || '',
-      lote_snapshot: source.lote || '',
-      origem_rastreabilidade_tipo: source.origem || 'manual',
-      origem_status_tecnico: source.status_origem_tecnica || (source.tem_dados_tecnicos ? 'dados_tecnicos' : 'sem_dados_tecnicos'),
-      origem_observacoes: source.observacoes_origem || alertas.join(' | '),
-    });
+    const quantidadeItem = item.quantidade || 0;
+    updateItem(idx, construirItemIrmaoDeCorrida(idx, source, String(quantidadeItem)));
     if (alertas.length) {
       adicionarMensagensUnicas(alertas);
     }
+  };
+
+  /**
+   * Adiciona uma linha vazia ao estado de divisão de corridas para o item idx.
+   */
+  const addLinhaCorrida = (idx: number) =>
+    setDividindoCorridas((prev) => ({
+      ...prev,
+      [idx]: [...(prev[idx] || []), { corrida: '', lote: '', quantidade: '', valorSelecao: '' }],
+    }));
+
+  /**
+   * Remove uma linha específica do estado de divisão de corridas.
+   */
+  const removeLinhaCorrida = (idx: number, linhaIdx: number) =>
+    setDividindoCorridas((prev) => {
+      const linhas = prev[idx] || [];
+      const next = [...linhas];
+      next.splice(linhaIdx, 1);
+      return { ...prev, [idx]: next.length > 0 ? next : undefined };
+    });
+
+  /**
+   * Atualiza um campo de uma linha específica do estado de divisão de corridas.
+   */
+  const updateLinhaCorrida = (idx: number, linhaIdx: number, patch: Partial<{ corrida: string; lote: string; quantidade: string; valorSelecao: string }>) =>
+    setDividindoCorridas((prev) => {
+      const linhas = prev[idx] || [];
+      const next = [...linhas];
+      next[linhaIdx] = { ...next[linhaIdx], ...patch };
+      return { ...prev, [idx]: next };
+    });
+
+  /**
+   * Aplica a distribuição de corridas: valida soma e quantidade, cria itens irmãos no array `itens`.
+   */
+  const aplicarDistribuicaoCorridas = (idx: number) => {
+    const linhas = dividindoCorridas[idx] || [];
+    if (!linhas.length) return;
+
+    // Valida: todas as linhas têm corrida e quantidade > 0
+    const linhasInvalidas = linhas.some((l) => !l.valorSelecao || !l.quantidade || parseFloat(l.quantidade) <= 0);
+    if (linhasInvalidas) {
+      adicionarMensagensUnicas(['Informe corrida e quantidade > 0 para todas as linhas.']);
+      return;
+    }
+
+    // Valida: soma == quantidade do item original
+    const quantidadeOriginal = formRef.current.itens[idx].quantidade || 0;
+    const somaTotal = linhas.reduce((sum, l) => sum + parseFloat(l.quantidade), 0);
+    if (Math.abs(somaTotal - quantidadeOriginal) > 0.001) {
+      adicionarMensagensUnicas([
+        `A soma das quantidades (${somaTotal}) deve ser equal à quantidade do item original (${quantidadeOriginal}).`,
+      ]);
+      return;
+    }
+
+    // Valida: sem corrida duplicada
+    const chaves = new Set<string>();
+    for (const l of linhas) {
+      const chave = (l.valorSelecao || '').trim().toUpperCase();
+      if (chaves.has(chave)) {
+        adicionarMensagensUnicas(['A mesma corrida não pode ser adicionada duas vezes.']);
+        return;
+      }
+      chaves.add(chave);
+    }
+
+    // Para cada linha selecionada, cria item irmão
+    const novosItens: ItemCertificadoQualidade[] = [];
+
+    for (const l of linhas) {
+      const source = (corridasDisponiveisPorItem[idx] || []).find(
+        (c) => (c.valor_selecao && c.valor_selecao === l.valorSelecao) || `${c.corrida}||${c.lote || ''}` === l.valorSelecao,
+      );
+      if (!source) continue;
+
+      const itemIrmao = construirItemIrmaoDeCorrida(idx, source, l.quantidade);
+      // Garantir que corrida e lote vêm da source selecionada
+      itemIrmao.corrida = source.corrida || '';
+      itemIrmao.lote = source.lote || '';
+      itemIrmao.quantidade = parseFloat(l.quantidade);
+
+      novosItens.push(itemIrmao);
+    }
+
+    // Substitui item original pelos irmaos no array itens
+    const itemOriginal = formRef.current.itens[idx];
+    const novosItensOrdenados = novosItens.map((it, i) => ({ ...it, ordem: (itemOriginal.ordem || idx + 1) + i }));
+
+    setForm((p) => {
+      const next = [...p.itens];
+      next.splice(idx, 1, ...novosItensOrdenados);
+      return { ...p, itens: next };
+    });
+
+    // Limpa estado do item
+    setDividindoCorridas({});
+    setCorridasDisponiveisPorItem({});
   };
 
   const abrirModalCorridasCf = async (idx: number) => {
@@ -1834,6 +1944,119 @@ const Certificados = () => {
                         </p>
                       ) : null}
                     </div>
+                  </div>
+                  <div className="mt-3 rounded border border-border p-3 bg-muted/20">
+                    <p className="text-sm font-semibold mb-2">Dividir item em varias corridas</p>
+                    {dividindoCorridas[idx] && dividindoCorridas[idx].length > 0 ? (
+                      <p className="text-xs text-amber-800 dark:text-amber-300 mb-2">
+                        Este item foi dividido em {dividindoCorridas[idx].length} itens
+                      </p>
+                    ) : null}
+                    {!dividindoCorridas[idx] || dividindoCorridas[idx].length === 0 && !form.itens[idx].tem_corrida_lote ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                        <button
+                          type="button"
+                          className="erp-btn-outline erp-btn-sm w-full"
+                          onClick={() => addLinhaCorrida(idx)}
+                          disabled={editing?.status === 'cancelado'}
+                        >
+                          + Adicionar corrida a lista
+                        </button>
+                      </div>
+                    ) : null}
+                    {dividindoCorridas[idx] && dividindoCorridas[idx].length > 0 ? (
+                      <div className="overflow-auto max-h-[200px]">
+                        <div className="grid grid-cols-6 gap-2 text-xs border-b border-border pb-2">
+                          <div className="col-span-2">Corrida</div>
+                          <div>Lote</div>
+                          <div>Quantidade</div>
+                          <div className="col-span-2">Ações</div>
+                        </div>
+                        {dividindoCorridas[idx].map((linha, linhaIdx) => (
+                          <div key={linhaIdx} className="grid grid-cols-6 gap-2 py-2 border-b border-border">
+                            <div className="col-span-3">
+                              <select
+                                className="erp-select"
+                                value={linha.valorSelecao || ''}
+                                onChange={(e) => updateLinhaCorrida(idx, linhaIdx, { valorSelecao: e.target.value })}
+                              >
+                                <option value="">Selecione...</option>
+                                {(() => {
+                                  const list = corridasDisponiveisPorItem[idx] || [];
+                                  const corrEff = it.corrida || it.corrida_snapshot || '';
+                                  const loteEff = it.lote || it.lote_snapshot || '';
+                                  const manualVal = `${corrEff}||${loteEff}`;
+                                  const inList = list.some(
+                                    (c) => (c.valor_selecao || `${c.corrida}||${c.lote || ''}`) === manualVal,
+                                  );
+                                  const extra =
+                                    corrEff || loteEff
+                                      ? !inList && manualVal !== '||'
+                                        ? (
+                                            <option key={`__manual_cq__-${idx}`} value={manualVal}>
+                                              Corrida/lote manual: {corrEff}
+                                              {loteEff ? ` / ${loteEff}` : ''}
+                                            </option>
+                                          )
+                                        : null
+                                      : null;
+                                  return (
+                                    <>
+                                      {extra}
+                                      {list.map((c) => (
+                                        <option
+                                          key={c.valor_selecao || `${c.corrida}-${c.lote || ''}`}
+                                          value={c.valor_selecao || `${c.corrida}||${c.lote || ''}`}
+                                        >
+                                          {c.corrida}
+                                          {c.lote ? `/${c.lote}` : ''}
+                                          {c.saldo ? ` - Saldo: ${c.saldo} ${c.unidade || ''}` : ''}
+                                          {c.fornecedor ? ` - ${c.fornecedor}` : ''}
+                                          {c.nf_entrada ? ` - NF ${c.nf_entrada}` : ''}
+                                          {c.certificado_fornecedor ? ` - Cert. Forn. ${c.certificado_fornecedor}` : ''}
+                                          {c.status_certificado_fornecedor === 'rascunho' ? ' - Rascunho' : ''}
+                                        </option>
+                                      ))}
+                                      </>
+                                    );
+                                })()}
+                              </select>
+                            </div>
+                            <div className="col-span-1">
+                              <input
+                                className="erp-input mt-1 w-full"
+                                inputMode="decimal"
+                                value={linha.quantidade}
+                                onChange={(e) => updateLinhaCorrida(idx, linhaIdx, { quantidade: e.target.value })}
+                              />
+                            </div>
+                            <div className="col-span-1">
+                              <span className="erp-btn-outline erp-btn-sm" onClick={() => removeLinhaCorrida(idx, linhaIdx)}>✕</span>
+                            </div>
+                            <div className="col-span-2">
+                              <span className="text-xs text-muted-foreground">({linha.corrida} / {linha.lote})</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    {dividindoCorridas[idx] && dividindoCorridas[idx].length > 0 ? (
+                      <div className="mt-3 p-3 rounded border border-border bg-muted/20">
+                        <div className="flex flex-col sm:flex-row justify-between items-center text-sm">
+                          <span>Total do item: {form.itens[idx].quantidade || 0}</span>
+                          <span>Soma: {((dividindoCorridas[idx] || []).reduce((s, l) => s + parseFloat(l.quantidade || 0), 0).toFixed(3))}</span>
+                          <span style={{ color: (((dividindoCorridas[idx] || []).reduce((s, l) => s + parseFloat(l.quantidade || 0), 0) !== (form.itens[idx].quantidade || 0)) ? 'red' : 'inherit') }>Saldo: {((form.itens[idx].quantidade || 0) - ((dividindoCorridas[idx] || []).reduce((s, l) => s + parseFloat(l.quantidade || 0), 0))).toFixed(3)}</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="erp-btn-primary w-full mt-2"
+                          disabled={(((dividindoCorridas[idx] || []).reduce((s, l) => s + parseFloat(l.quantidade || 0), 0) !== (form.itens[idx].quantidade || 0)) || hasCorridaDuplicada(idx))}
+                          onClick={() => aplicarDistribuicaoCorridas(idx)}
+                        >
+                          Aplicar distribuicao
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                   <div className="md:col-span-6 rounded border border-border p-2">
                     <label className="inline-flex items-center gap-2 text-sm">
