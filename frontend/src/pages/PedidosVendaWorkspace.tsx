@@ -109,6 +109,8 @@ type PedidoForm = {
   prazo_entrega_texto: string;
   observacoes_comerciais: string;
   observacoes_internas: string;
+  desconto_cabecalho: number;
+  desconto_cabecalho_tipo: 'valor' | 'percentual';
 };
 
 type RefFrete = {
@@ -149,6 +151,26 @@ function itemTotalLinha(item: ItemPedido & { desconto?: number }): number {
   const qtd = numSafe(item.quantidade_negociada ?? item.quantidade);
   const preco = numSafe(item.preco_por_unidade_negociada ?? item.valor_unitario);
   return Math.max(0, qtd * preco - itemDesconto(item));
+}
+
+function descontoCabecalhoTotal(
+  itens: ItemPedido[],
+  desconto_cabecalho: number,
+  desconto_cabecalho_tipo: 'valor' | 'percentual',
+  frete: number
+): number {
+  const subtotal = itens.reduce((acc, it) => {
+    const qtd = numSafe(it.quantidade_negociada ?? it.quantidade);
+    const preco = numSafe(it.preco_por_unidade_negociada ?? it.valor_unitario);
+    return acc + qtd * preco;
+  }, 0);
+  const descontoItens = itens.reduce((acc, it) => acc + (itemDesconto(it) || 0), 0);
+  const base = subtotal - descontoItens;
+  let descontoCabecalhoValor = desconto_cabecalho;
+  if (desconto_cabecalho_tipo === 'percentual') {
+    descontoCabecalhoValor = Math.round(base * desconto_cabecalho / 100 * 100) / 100;
+  }
+  return Math.max(0, base - descontoCabecalhoValor + frete);
 }
 
 function labelFaturamentoResumo(status?: string): string {
@@ -197,6 +219,8 @@ export default function PedidoVendaWorkspace({ pedido, onClose }: PedidoVendaWor
     prazo_entrega_texto: '',
     observacoes_comerciais: '',
     observacoes_internas: '',
+    desconto_cabecalho: 0,
+    desconto_cabecalho_tipo: 'valor',
   });
   const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
   const [selectedVendedor, setSelectedVendedor] = useState<Vendedor | null>(null);
@@ -225,6 +249,8 @@ export default function PedidoVendaWorkspace({ pedido, onClose }: PedidoVendaWor
         prazo_entrega_texto: pedido.prazo_entrega_texto ?? '',
         observacoes_comerciais: pedido.observacoes_comerciais ?? '',
         observacoes_internas: pedido.observacoes_internas ?? '',
+        desconto_cabecalho: pedido.desconto_cabecalho ?? 0,
+        desconto_cabecalho_tipo: pedido.desconto_cabecalho_tipo || 'valor',
       });
       setItens((pedido.itens ?? []).map(normalizeItemPedidoForForm));
     } else {
@@ -504,6 +530,21 @@ export default function PedidoVendaWorkspace({ pedido, onClose }: PedidoVendaWor
     selectedVendedor?.nome || editing?.vendedor_nome || editing?.vendedor || '—';
   const numeroExib = form.numero || editing?.numero || (editing ? '—' : 'Novo');
   const statusExib = form.status || editing?.status || 'ABERTO';
+
+  // Computa subtotal e total com desconto de cabeçalho
+  const subtotalItens = itens.reduce((acc, it) => {
+    const qtd = numSafe(it.quantidade_negociada ?? it.quantidade);
+    const preco = numSafe(it.preco_por_unidade_negociada ?? it.valor_unitario);
+    return acc + qtd * preco;
+  }, 0);
+  const descontoItens = itens.reduce((acc, it) => acc + (itemDesconto(it) || 0), 0);
+  const base = subtotalItens - descontoItens;
+  let descontoCabecalhoValor = form.desconto_cabecalho;
+  if (form.desconto_cabecalho_tipo === 'percentual') {
+    descontoCabecalhoValor = Math.round(base * form.desconto_cabecalho / 100 * 100) / 100;
+  }
+  const totalComDescontoCabecalho = Math.max(0, base - descontoCabecalhoValor + (editing?.valor_frete ? Number(editing.valor_frete) : 0));
+  const totalOriginal = computePedidoTotal(itens);
 
   useEffect(() => {
     if (!pedidoId) {
@@ -1376,10 +1417,72 @@ export default function PedidoVendaWorkspace({ pedido, onClose }: PedidoVendaWor
                 <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80 block">Itens</span>
                 <span className="font-medium tabular-nums text-sm">{itens.length} item(ns)</span>
               </div>
-              <div className="text-left">
-                <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80 block">Total do pedido</span>
-                <span className="font-bold tabular-nums text-2xl tracking-tight">
-                  {formatCurrencyBRL(numSafe(total))}
+              <div className="flex items-baseline gap-2">
+                <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80 block">Subtotal</span>
+                <span className="font-medium tabular-nums text-sm text-foreground">
+                  {formatCurrencyBRL(
+                    itens.reduce((acc, it) => {
+                      const qtd = numSafe(it.quantidade_negociada ?? it.quantidade);
+                      const preco = numSafe(it.preco_por_unidade_negociada ?? it.valor_unitario);
+                      return acc + qtd * preco;
+                    }, 0)
+                  )}
+                </span>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80 block">Desconto</span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    className="erp-input w-24 h-8 text-sm"
+                    value={form.desconto_cabecalho}
+                    onChange={(e) => {
+                      setForm((p) => ({ ...p, desconto_cabecalho: Number(e.target.value) || 0 }));
+                      // Recalcular total automaticamente
+                    }}
+                  />
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      className={`erp-btn-outline erp-btn-sm ${
+                        form.desconto_cabecalho_tipo === 'percentual' ? 'bg-primary/10 text-primary' : ''
+                      }`}
+                      onClick={() => setForm((p) => ({ ...p, desconto_cabecalho_tipo: 'valor' }))}
+                      title="R$"
+                    >
+                      R$
+                    </button>
+                    <button
+                      type="button"
+                      className={`erp-btn-outline erp-btn-sm ${
+                        form.desconto_cabecalho_tipo === 'percentual'
+                          ? 'bg-primary/10 text-primary'
+                          : ''
+                        }`}
+                      onClick={() => setForm((p) => ({ ...p, desconto_cabecalho_tipo: 'percentual' }))}
+                      title="%"
+                    >
+                      %
+                    </button>
+                  </div>
+                </div>
+                {form.desconto_cabecalho_tipo === 'percentual' && form.desconto_cabecalho > 0 && (
+                  <span className="text-[10px] text-red-600">
+                    = -{formatCurrencyBRL(
+                      Math.round(
+                        (itens.reduce((acc, it) => {
+                          const qtd = numSafe(it.quantidade_negociada ?? it.quantidade);
+                          const preco = numSafe(it.preco_por_unidade_negociada ?? it.valor_unitario);
+                          return acc + qtd * preco;
+                        }, 0) -
+                        itens.reduce((acc, it) => acc + (itemDesconto(it) || 0), 0)
+                      ) * form.desconto_cabecalho / 100 * 100) / 100
+                    )}</span>
+                )}
+              </div>
+              <div className="border-t border-border pt-2 mt-2">
+                <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80 block font-bold text-2xl tracking-tight text-foreground">
+                  {formatCurrencyBRL(totalComDescontoCabecalho)}
                 </span>
               </div>
             </div>
