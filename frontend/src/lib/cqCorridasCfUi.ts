@@ -286,7 +286,7 @@ const dadosTecnicosManuaisVazios = (): Partial<ItemCertificadoQualidade> => ({
   origem_observacoes: MSG_DADOS_PROPRIOS_MANUAIS_CQ,
 });
 
-const baseItemIrmao = (
+export const baseItemIrmao = (
   itemOriginal: ItemCertificadoQualidade,
 ): ItemCertificadoQualidade => ({
   ordem: itemOriginal.ordem || 1,

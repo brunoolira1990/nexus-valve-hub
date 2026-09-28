@@ -2045,7 +2045,7 @@ const Certificados = () => {
                         <div className="flex flex-col sm:flex-row justify-between items-center text-sm">
                           <span>Total do item: {form.itens[idx].quantidade || 0}</span>
                           <span>Soma: {((dividindoCorridas[idx] || []).reduce((s, l) => s + parseFloat(l.quantidade || 0), 0).toFixed(3))}</span>
-                          <span style={{ color: (((dividindoCorridas[idx] || []).reduce((s, l) => s + parseFloat(l.quantidade || 0), 0) !== (form.itens[idx].quantidade || 0)) ? 'red' : 'inherit') }>Saldo: {((form.itens[idx].quantidade || 0) - ((dividindoCorridas[idx] || []).reduce((s, l) => s + parseFloat(l.quantidade || 0), 0))).toFixed(3)}</span>
+                          <span className={((dividindoCorridas[idx] || []).reduce((s, l) => s + parseFloat(l.quantidade || 0), 0) !== (form.itens[idx].quantidade || 0)) ? 'text-red-600' : ''}>Saldo: {((form.itens[idx].quantidade || 0) - ((dividindoCorridas[idx] || []).reduce((s, l) => s + parseFloat(l.quantidade || 0), 0))).toFixed(3)}</span>
                         </div>
                         <button
                           type="button"
