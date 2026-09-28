@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AxiosError } from 'axios';
 import { Pencil } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
@@ -350,6 +351,7 @@ const CertificadosFornecedor = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<CertificadoFornecedorEntrada | null>(null);
   const [form, setForm] = useState(emptyForm());
+  const navigate = useNavigate();
   const [saveErrors, setSaveErrors] = useState<string[]>([]);
   const [buscaNfOperacional, setBuscaNfOperacional] = useState('');
   const [buscaNfHistorica, setBuscaNfHistorica] = useState('');
@@ -489,7 +491,7 @@ const CertificadosFornecedor = () => {
     setNfOperacionalCache(null);
     setNfHistoricaCache(null);
     setNfeSelecionadaResumo(null);
-    setModalOpen(true);
+    navigate('/certificados-fornecedor/novo');
   };
 
   const openEdit = (row: CertificadoFornecedorEntrada) => {
@@ -524,7 +526,7 @@ const CertificadosFornecedor = () => {
       valorTotal: undefined,
       chaveAcesso: '',
     });
-    setModalOpen(true);
+    navigate(`/certificados-fornecedor/${row.id}`);
   };
 
   const setF = (k: keyof typeof form, v: unknown) => setForm((p) => ({ ...p, [k]: v }));
