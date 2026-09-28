@@ -1166,6 +1166,20 @@ class PedidoVendaSerializer(serializers.ModelSerializer):
         required=False,
         min_value=Decimal('0'),
     )
+    desconto_cabecalho_tipo = serializers.ChoiceField(
+        choices=[('valor', 'R$'), ('percentual', '%')],
+        required=False,
+        default='valor',
+        help_text='Tipo do desconto do cabeçalho: valor em R$ ou percentual (%).',
+    )
+    desconto_cabecalho = serializers.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        min_value=Decimal('0'),
+        help_text='Desconto aplicado no total do pedido (R$ ou % conforme desconto_cabecalho_tipo).',
+    )
 
     class Meta:
         model = PedidoVenda
@@ -1192,6 +1206,8 @@ class PedidoVendaSerializer(serializers.ModelSerializer):
             'vencimentos_previstos',
             'valor_total',
             'valor_frete',
+            'desconto_cabecalho_tipo',
+            'desconto_cabecalho',
             'proposta_id',
             'proposta_numero',
             'itens',

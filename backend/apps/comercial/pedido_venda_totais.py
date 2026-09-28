@@ -54,7 +54,7 @@ def calcular_totais_pedido_venda(
     """
     Total comercial do pedido a partir dos itens ativos:
 
-    valor_total = subtotal_produtos - desconto_total + frete + outras + IPI + ICMS ST
+    valor_total = subtotal_produtos - desconto_total - desconto_cabecalho + frete + outras + IPI + ICMS ST
 
     Pedido de Venda não possui frete/IPI/ST no cabeçalho nesta fase — apenas itens.
     """
@@ -71,11 +71,21 @@ def calcular_totais_pedido_venda(
         subtotal += q * p
         desconto += _dec(it.desconto)
 
+    desconto_cabecalho_bruto = _dec(getattr(pedido, 'desconto_cabecalho', Decimal('0')) or Decimal('0'))
+    desconto_cabecalho_tipo = getattr(pedido, 'desconto_cabecalho_tipo', 'valor') or 'valor'
+    base_desconto_cabecalho = subtotal - desconto
+    if desconto_cabecalho_tipo == 'percentual':
+        desconto_cabecalho = _round_money(base_desconto_cabecalho * desconto_cabecalho_bruto / Decimal('100'))
+    else:
+        desconto_cabecalho = _round_money(desconto_cabecalho_bruto)
+    # Clamp: nao pode passar do subtotal - desconto_itens, nem ser negativo
+    desconto_cabecalho = max(Decimal('0'), min(desconto_cabecalho, max(Decimal('0'), base_desconto_cabecalho)))
+
     frete = Decimal('0')
     outras = Decimal('0')
     ipi = Decimal('0')
     icms_st = Decimal('0')
-    valor_total = _round_money(max(Decimal('0'), subtotal - desconto + frete + outras + ipi + icms_st))
+    valor_total = _round_money(max(Decimal('0'), subtotal - desconto - desconto_cabecalho + frete + outras + ipi + icms_st))
     salvo = _round_money(_dec(pedido.valor_total))
 
     return TotaisPedidoVenda(

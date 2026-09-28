@@ -363,6 +363,11 @@ class PropostaComercialHistorico(models.Model):
         verbose_name_plural = 'Históricos comerciais das propostas'
 
 
+class TipoDescontoCabecalho(models.TextChoices):
+    VALOR = 'valor', 'R$'
+    PERCENTUAL = 'percentual', '%'
+
+
 class PedidoVenda(models.Model):
     numero = models.CharField(max_length=32, unique=True)
     empresa_emitente = models.ForeignKey(
@@ -384,6 +389,20 @@ class PedidoVenda(models.Model):
     quantidade_parcelas = models.PositiveSmallIntegerField(default=0)
     vencimentos_previstos = ArrayField(models.DateField(), default=_default_datas, blank=True)
     valor_total = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
+    desconto_cabecalho_tipo = models.CharField(
+        max_length=12,
+        choices=TipoDescontoCabecalho.choices,
+        default=TipoDescontoCabecalho.VALOR,
+        help_text='Tipo do desconto do cabeçalho: valor em R$ ou percentual (%).',
+    )
+    desconto_cabecalho = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=Decimal('0'),
+        blank=True,
+        null=True,
+        help_text='Desconto aplicado no total do pedido (R$ ou % conforme desconto_cabecalho_tipo).',
+    )
     valor_frete = models.DecimalField(
         max_digits=14,
         decimal_places=2,
