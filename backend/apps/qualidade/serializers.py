@@ -680,6 +680,9 @@ def sincronizar_corridas_adicionais_item_cf(
             'corrida': (row.get('corrida') or '').strip(),
             'lote': (row.get('lote') or '').strip(),
             'quantidade': row.get('quantidade'),
+            'composicao_json': row.get('composicao_json') or {},
+            'ensaio_tracao_json': row.get('ensaio_tracao_json') or {},
+            'ensaio_impacto_json': row.get('ensaio_impacto_json') or {},
         }
         row_id = row.get('id')
         if row_id:

@@ -719,8 +719,15 @@ const CertificadosFornecedor = () => {
   const addCorridaAdicional = (itemIdx: number) => {
     setForm((p) => {
       const itemsNext = [...p.itens];
-      const corridas = [...(itemsNext[itemIdx].corridas_adicionais || [])];
-      corridas.push(ensureCorridaAdicional({}, corridas.length + 1));
+      const item = itemsNext[itemIdx];
+      const corridas = [...(item.corridas_adicionais || [])];
+      // Nova corrida herda dados tecnicos do item principal (evita bloqueio de validacao
+      // e replica o comportamento historico do badge "Dados herdados")
+      const nova = ensureCorridaAdicional({}, corridas.length + 1);
+      nova.composicao_json = { ...(item.composicao_json || {}) };
+      nova.ensaio_tracao_json = { ...(item.ensaio_tracao_json || {}) };
+      nova.ensaio_impacto_json = { ...(item.ensaio_impacto_json || {}) };
+      corridas.push(nova);
       itemsNext[itemIdx] = { ...itemsNext[itemIdx], corridas_adicionais: corridas };
       return { ...p, itens: itemsNext };
     });
@@ -1420,36 +1427,40 @@ const CertificadosFornecedor = () => {
                         </>
                       )}
                     </div>
-                    <div className="md:col-span-6 rounded border border-border p-2">
-                      <p className="text-xs font-semibold mb-2">Composicao quimica</p>
-                      <ComposicaoQuimicaFields
-                        idPrefix={`item-${idx}`}
-                        values={ensureMap(it.composicao_json)}
-                        onChange={(key, value) =>
-                          updateItem(idx, {
-                            composicao_json: {
-                              ...ensureMap(it.composicao_json),
-                              [key]: norm(value),
-                            },
-                          })
-                        }
-                      />
-                    </div>
-                    <div className="md:col-span-6 rounded border border-border p-2">
-                      <p className="text-xs font-semibold mb-2">Tracao / propriedades mecanicas</p>
-                      <PropriedadesMecanicasFields
-                        idPrefix={`item-${idx}`}
-                        values={ensureMap(it.ensaio_tracao_json)}
-                        onChange={(key, value) =>
-                          updateItem(idx, {
-                            ensaio_tracao_json: {
-                              ...ensureMap(it.ensaio_tracao_json),
-                              [key]: norm(value),
-                            },
-                          })
-                        }
-                      />
-                    </div>
+                    {((it.corridas_adicionais || []).length === 0) ? (
+                      <>
+                        <div className="md:col-span-6 rounded border border-border p-2">
+                          <p className="text-xs font-semibold mb-2">Composicao quimica</p>
+                          <ComposicaoQuimicaFields
+                            idPrefix={`item-${idx}`}
+                            values={ensureMap(it.composicao_json)}
+                            onChange={(key, value) =>
+                              updateItem(idx, {
+                                composicao_json: {
+                                  ...ensureMap(it.composicao_json),
+                                  [key]: norm(value),
+                                },
+                              })
+                            }
+                          />
+                        </div>
+                        <div className="md:col-span-6 rounded border border-border p-2">
+                          <p className="text-xs font-semibold mb-2">Tracao / propriedades mecanicas</p>
+                          <PropriedadesMecanicasFields
+                            idPrefix={`item-${idx}`}
+                            values={ensureMap(it.ensaio_tracao_json)}
+                            onChange={(key, value) =>
+                              updateItem(idx, {
+                                ensaio_tracao_json: {
+                                  ...ensureMap(it.ensaio_tracao_json),
+                                  [key]: norm(value),
+                                },
+                              })
+                            }
+                          />
+                        </div>
+                      </>
+                    ) : null}
                   </>
                 ) : (
                   <div className="md:col-span-6 rounded border border-border p-2 bg-muted/10">
