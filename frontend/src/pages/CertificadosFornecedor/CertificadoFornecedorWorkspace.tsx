@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AxiosError } from 'axios';
 import { Modal } from '@/components/Modal';
 import { formatApiErrors } from '@/lib/apiErrors';
@@ -307,6 +308,7 @@ export function CertificadoFornecedorWorkspace({ certificadoId, onSaved, onCance
   const [editing, setEditing] = useState<CertificadoFornecedorEntrada | null>(null);
   const [form, setForm] = useState(emptyForm());
   const [saveErrors, setSaveErrors] = useState<string[]>([]);
+  const [abaAtiva, setAbaAtiva] = useState('dados');
   const [buscaNfOperacional, setBuscaNfOperacional] = useState('');
   const [buscaNfHistorica, setBuscaNfHistorica] = useState('');
   const [nfeSelecionadaResumo, setNfeSelecionadaResumo] = useState<NFeResumo | null>(null);
@@ -397,6 +399,13 @@ export function CertificadoFornecedorWorkspace({ certificadoId, onSaved, onCance
     }, 350);
     return () => { cancelled = true; window.clearTimeout(t); };
   }, [buscaNfHistorica]);
+
+  useEffect(() => {
+    const hasItemError = saveErrors.some((msg) => msg.startsWith('Item '));
+    if (hasItemError) {
+      setAbaAtiva('itens');
+    }
+  }, [saveErrors]);
 
   const labelSalvarFornecedorSemRegistrar = (): string => {
     if (form.status === 'cancelado') {
@@ -1441,6 +1450,746 @@ export function CertificadoFornecedorWorkspace({ certificadoId, onSaved, onCance
       </div>
 
       <div className="mt-4"><label className="erp-label">Observacoes</label><textarea className="erp-input mt-1 h-20" value={form.observacoes || ''} onChange={(e) => setF('observacoes', e.target.value)} /></div>
+      <div className="mt-4 flex flex-col-reverse sm:flex-row sm:flex-wrap sm:justify-end items-stretch sm:items-center gap-2">
+        <button type="button" className="erp-btn-outline w-full sm:w-auto" onClick={onCancel}>Cancelar</button>
+        <button
+          type="button"
+          className="erp-btn-outline w-full sm:w-auto"
+          onClick={() => void salvar(false)}
+          title={titleSalvarFornecedorSemRegistrar()}
+        >
+          {labelSalvarFornecedorSemRegistrar()}
+        </button>
+        <button
+          type="button"
+          className="erp-btn-primary w-full sm:w-auto"
+          disabled={form.status === 'cancelado'}
+          title={form.status === 'cancelado' ? 'Não é possível registrar no status cancelado.' : 'Valida itens e grava como registrado.'}
+          onClick={() => void salvar(true)}
+        >
+          Registrar certificado
+        </button>
+      </div>
+
+      <Modal
+        isOpen={fornecedorMatchModalOpen}
+        onClose={() => setFornecedorMatchModalOpen(false)}
+        title="Resultados de dados técnicos por corrida"
+        size="xl"
+      >
+        <div className="space-y-2 max-h-[55vh] overflow-auto pr-1">
+          {fornecedorMatches.length > 1 ? (
+            <p className="text-xs text-amber-700 dark:text-amber-300">
+              {MSG_MULTIPLOS_CERTIFICADOS_COMPATIVEIS_CF}
+            </p>
+          ) : null}
+          {fornecedorMatches.map((r) => (
+            <div key={`${r.certificado_fornecedor_id}-${r.id}`} className="rounded border border-border p-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-1 text-sm">
+                <p><span className="font-medium">Fornecedor:</span> {r.fornecedor_nome || '—'}</p>
+                <p><span className="font-medium">NF entrada:</span> {r.numero_nf_entrada || '—'} {r.data_nf_entrada ? `(${formatDate(r.data_nf_entrada)})` : ''}</p>
+                <p><span className="font-medium">Certificado (item):</span> {r.numero_certificado_fornecedor_item || r.numero_certificado_fornecedor || `#${r.certificado_fornecedor_id}`}</p>
+                <p><span className="font-medium">Status (fornecedor):</span>{' '}
+                  {(() => {
+                    const sb = certificadoFornecedorStatusBadge(r.status_certificado_fornecedor);
+                    return <span className={sb.className}>{sb.label}</span>;
+                  })()}
+                </p>
+                <p><span className="font-medium">Código item:</span> {r.codigo_produto || '—'}</p>
+                <p><span className="font-medium">Descrição:</span> {r.descricao_material || '—'}</p>
+                <p><span className="font-medium">Corrida:</span> {r.corrida || '—'}</p>
+                <p><span className="font-medium">Lote:</span> {r.lote || '—'}</p>
+                <p><span className="font-medium">Norma:</span> {r.norma || '—'}</p>
+                <p><span className="font-medium">Tipo técnico:</span> {r.tipo_dados_tecnicos === 'VALVULA_COMPONENTES' ? 'Válvula/componentes' : 'Item padrão'}</p>
+                <p><span className="font-medium">Confiança:</span> {r.confianca_correspondencia || '—'}</p>
+                <p><span className="font-medium">Classificação:</span> {r.tipo_correspondencia || '—'}</p>
+              </div>
+              {r.dados_tecnicos_herdados ? (
+                <div className="mt-2 rounded border border-sky-500/35 bg-sky-500/5 px-2 py-1 text-xs">
+                  <p className="font-medium text-sky-800 dark:text-sky-300">
+                    {r.mensagem_corrida_adicional || 'Esta corrida compartilha os dados técnicos do item principal.'}
+                  </p>
+                  <p className="text-muted-foreground">
+                    Corrida encontrada: {r.corrida_encontrada || '—'}
+                    {' · '}Lote: {r.lote_encontrado || '—'}
+                    {' · '}Qtd: {r.quantidade_corrida_encontrada ?? '—'}
+                    {' · '}Origem dos dados técnicos: item principal (corrida {r.corrida || '—'})
+                  </p>
+                </div>
+              ) : null}
+              {r.mensagem_contexto ? <p className="text-xs text-muted-foreground mt-2">{r.mensagem_contexto}</p> : null}
+              {[r.aviso_divergencia_item, r.aviso_divergencia_dados_tecnicos, r.aviso_certificado_rascunho]
+                .filter(Boolean)
+                .map((a) => (
+                  <p key={a} className="text-xs text-amber-700 dark:text-amber-300 mt-1">{a}</p>
+                ))}
+              <div className="mt-2">
+                <button
+                  type="button"
+                  className="erp-btn-outline erp-btn-sm"
+                  onClick={() => setFornecedorComparacaoVisible((p) => ({ ...p, [`${r.certificado_fornecedor_id}-${r.id}`]: !p[`${r.certificado_fornecedor_id}-${r.id}`] }))}
+                >
+                  Ver detalhes
+                </button>
+              </div>
+              {fornecedorComparacaoVisible[`${r.certificado_fornecedor_id}-${r.id}`] ? (
+                <div className="mt-2 rounded border border-border p-2 text-xs">
+                  <p><span className="font-medium">Comparação rápida:</span></p>
+                  <p>Produto encontrado: {r.codigo_produto || '—'} - {r.descricao_material || '—'}</p>
+                  <p>Norma encontrada: {r.norma || '—'}</p>
+                  <p>Norma/material compatível: {r.norma_compativel ? 'Sim' : 'Conferir'}</p>
+                  <p>Produto tecnicamente relacionado: {r.produto_relacionado ? 'Sim' : 'Conferir'}</p>
+                </div>
+              ) : null}
+              <div className="flex justify-end mt-2">
+                <button
+                  type="button"
+                  className="erp-btn-outline erp-btn-sm w-full sm:w-auto mr-2"
+                  onClick={() => setFornecedorMatchModalOpen(false)}
+                >
+                  Ignorar
+                </button>
+                <button
+                  type="button"
+                  className="erp-btn-primary erp-btn-sm w-full sm:w-auto"
+                  onClick={() => {
+                    if (fornecedorTargetIdx == null) return;
+                    aplicarDadosTecnicosExistentes(
+                      fornecedorTargetIdx,
+                      r,
+                      fornecedorTargetCompIdx == null ? undefined : fornecedorTargetCompIdx,
+                    );
+                    setFornecedorMatchModalOpen(false);
+                  }}
+                >
+                  Usar estes dados técnicos
+                </button>
+              </div>
+            </div>
+          ))}
+          {!fornecedorMatches.length ? <p className="text-sm text-muted-foreground">Nenhum resultado.</p> : null}
+        </div>
+      </Modal>
+    </div>
+  );
+  return (
+    <div className="space-y-4">
+      <Tabs value={abaAtiva} onValueChange={setAbaAtiva}>
+        <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto whitespace-nowrap bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/90 border border-border border-b-0 rounded-t-lg px-3 pt-2.5 pb-1 sm:px-4">
+          <TabsTrigger value="dados">Dados</TabsTrigger>
+          <TabsTrigger value="itens">Itens</TabsTrigger>
+          <TabsTrigger value="observacoes">Observacoes</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="dados" className="mt-0 space-y-4">
+    {saveErrors.length ? (
+            <div className="mb-2 rounded border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+              <p className="font-medium mb-1">Não foi possível salvar o certificado:</p>
+              {saveErrors.map((msg) => <p key={msg}>- {msg}</p>)}
+            </div>
+          ) : null}
+          {mensagemInfo ? <p className="text-sm text-emerald-700 dark:text-emerald-300 mb-2">{mensagemInfo}</p> : null}
+          {editing?.status === 'cancelado' ? (
+            <div className="mb-3 rounded border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              Este certificado de fornecedor está cancelado. O cadastro permanece para rastreabilidade e consulta.
+            </div>
+          ) : null}
+          {editing?.status === 'registrado' ? (
+            <div className="mb-3 rounded border border-amber-300/70 bg-amber-50/90 dark:bg-amber-950/25 px-3 py-2 text-sm text-amber-950 dark:text-amber-100">
+              Certificado já registrado. Alterações podem afetar vínculos usados no certificado de qualidade — revise com cuidado.
+            </div>
+          ) : null}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div><label className="erp-label">Número do certificado (fornecedor)</label><input className="erp-input mt-1" value={form.numero_certificado_fornecedor || ''} onChange={(e) => setF('numero_certificado_fornecedor', e.target.value)} /></div>
+            <div><label className="erp-label">Fornecedor</label><input className="erp-input mt-1" value={form.fornecedor_nome_snapshot} onChange={(e) => setF('fornecedor_nome_snapshot', e.target.value)} /></div>
+            <div><label className="erp-label">CNPJ fornecedor</label><input className="erp-input mt-1" value={form.fornecedor_cnpj_snapshot || ''} onChange={(e) => setF('fornecedor_cnpj_snapshot', e.target.value)} /></div>
+            <div>
+              <label className="erp-label">Status</label>
+              <select
+                className="erp-select mt-1 w-full"
+                value={form.status}
+                disabled={editing?.status === 'cancelado'}
+                onChange={(e) => setF('status', e.target.value as CertificadoFornecedorStatus)}
+              >
+                <option value="rascunho">Rascunho</option>
+                <option value="registrado">Registrado</option>
+                <option value="cancelado">Cancelado</option>
+              </select>
+              {editing?.status === 'cancelado' ? (
+                <p className="text-xs text-muted-foreground mt-1">Status bloqueado após cancelamento.</p>
+              ) : null}
+            </div>
+          </div>
+          <div className="mt-2">
+            <button type="button" className="erp-btn-outline erp-btn-sm" onClick={aplicarNumeroCabecalhoEmTodosOsItens}>
+              Copiar número do cabeçalho para todos os itens
+            </button>
+          </div>
+
+          <div className="mt-4 p-3 rounded border border-border bg-muted/20">
+            <p className="text-sm font-medium">Selecionar NF-e de entrada</p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-2">
+              <div>
+                <label className="erp-label">NF-e entrada operacional</label>
+                <input
+                  className="erp-input mt-1"
+                  placeholder="Digite o número da NF-e (busca no servidor)..."
+                  value={buscaNfOperacional}
+                  onChange={(e) => setBuscaNfOperacional(e.target.value)}
+                />
+                <select className="erp-select mt-1 w-full" value={form.nf_entrada_operacional || ''} onChange={(e) => {
+                  const id = e.target.value ? +e.target.value : null;
+                  setF('nf_entrada_operacional', id);
+                  setF('nf_entrada_historica', null);
+                  setNfHistoricaCache(null);
+                  if (id) {
+                    const n = nfOperacionaisOpcoes.find((x) => x.id === id);
+                    if (n) {
+                      setNfOperacionalCache(n);
+                      const r = toResumoOperacional(n);
+                      setNfeSelecionadaResumo(r);
+                      setF('fornecedor_nome_snapshot', r.fornecedor);
+                      setF('fornecedor_cnpj_snapshot', r.fornecedorCnpj);
+                      setF('numero_nf_entrada', r.numero);
+                      setF('serie_nf_entrada', r.serie || '');
+                      setF('data_nf_entrada', r.emissao || '');
+                    }
+                  } else {
+                    setNfOperacionalCache(null);
+                  }
+                }}>
+                  <option value="">Selecione...</option>
+                  {nfOperacionaisOpcoes.map((n) => {
+                    const r = toResumoOperacional(n);
+                    return <option key={n.id} value={n.id} title={labelNfCompleta(r)}>{labelNfCompacta(r)}</option>;
+                  })}
+                </select>
+              </div>
+              <div>
+                <label className="erp-label">NF-e entrada historica</label>
+                <input
+                  className="erp-input mt-1"
+                  placeholder="Digite o número da NF-e (busca no servidor)..."
+                  value={buscaNfHistorica}
+                  onChange={(e) => setBuscaNfHistorica(e.target.value)}
+                />
+                <select className="erp-select mt-1 w-full" value={form.nf_entrada_historica || ''} onChange={(e) => {
+                  const id = e.target.value ? +e.target.value : null;
+                  setF('nf_entrada_historica', id);
+                  setF('nf_entrada_operacional', null);
+                  setNfOperacionalCache(null);
+                  if (id) {
+                    const n = nfHistoricasOpcoes.find((x) => x.id === id);
+                    if (n) {
+                      setNfHistoricaCache(n);
+                      const r = toResumoHistorica(n);
+                      setNfeSelecionadaResumo(r);
+                      setF('fornecedor', n.fornecedor_id || null);
+                      setF('fornecedor_nome_snapshot', r.fornecedor);
+                      setF('fornecedor_cnpj_snapshot', r.fornecedorCnpj);
+                      setF('numero_nf_entrada', r.numero);
+                      setF('serie_nf_entrada', r.serie || '');
+                      setF('data_nf_entrada', r.emissao || '');
+                    }
+                  } else {
+                    setNfHistoricaCache(null);
+                  }
+                }}>
+                  <option value="">Selecione...</option>
+                  {nfHistoricasOpcoes.map((n) => {
+                    const r = toResumoHistorica(n);
+                    return <option key={n.id} value={n.id} title={labelNfCompleta(r)}>{labelNfCompacta(r)}</option>;
+                  })}
+                </select>
+              </div>
+              <div className="flex items-end">
+                <button type="button" className="erp-btn-outline w-full" onClick={() => void carregarItens()}>Carregar itens da NF-e</button>
+              </div>
+            </div>
+          </div>
+
+          {nfeSelecionadaResumo ? (
+            <div className="mt-4 rounded border border-border p-3 bg-muted/20">
+              <p className="text-sm font-medium mb-2">NF-e selecionada</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                <p><span className="font-medium">Fornecedor:</span> {nfeSelecionadaResumo.fornecedor || '—'}</p>
+                <p><span className="font-medium">CNPJ:</span> {nfeSelecionadaResumo.fornecedorCnpj || '—'}</p>
+                <p><span className="font-medium">NF/Série:</span> {nfeSelecionadaResumo.numero || '—'} / {nfeSelecionadaResumo.serie || '—'}</p>
+                <p><span className="font-medium">Emissão:</span> {formatDate(nfeSelecionadaResumo.emissao)}</p>
+                <p><span className="font-medium">Valor:</span> {formatCurrency(nfeSelecionadaResumo.valorTotal)}</p>
+                <p><span className="font-medium">Chave:</span> {nfeSelecionadaResumo.chaveAcesso || '—'}</p>
+              </div>
+            </div>
+          ) : null}
+        </TabsContent>
+
+        <TabsContent value="itens" className="mt-0 space-y-3.5">
+          <div className="mt-4 space-y-3">
+            {form.itens.map((it, idx) => {
+              const origem = resumoOrigemItemCf(it, form);
+              return (
+              <details key={idx} className="rounded border border-border p-3" open>
+                <summary className="cursor-pointer text-sm font-medium">
+                  <span className="inline-flex flex-wrap items-center gap-2">
+                    <span>Item {it.ordem || idx + 1} - {it.codigo_produto || 'Sem codigo'} - {it.descricao_material || 'Sem descricao'}</span>
+                    <span className={(it.tipo_dados_tecnicos || 'PADRAO_ITEM') === 'VALVULA_COMPONENTES' ? 'erp-badge-warning' : 'erp-badge-success'}>
+                      {(it.tipo_dados_tecnicos || 'PADRAO_ITEM') === 'VALVULA_COMPONENTES' ? 'Válvula por componentes' : 'Dados por item'}
+                    </span>
+                    <span className={origem.badgeClass} title={origem.mensagem}>
+                      {origem.badgeText}
+                    </span>
+                    {numeroEfetivoItem(it).numero ? (
+                      <span className="erp-badge-success">
+                        Nº efetivo: {numeroEfetivoItem(it).numero} — origem: {numeroEfetivoItem(it).origem}
+                      </span>
+                    ) : (
+                      <span className="erp-badge-warning">Sem número de certificado</span>
+                    )}
+                  </span>
+                </summary>
+                <div
+                  className={`mb-2 rounded border px-3 py-2 text-xs ${
+                    origem.origemCompleta
+                      ? 'border-emerald-500/30 bg-emerald-500/5 text-muted-foreground'
+                      : 'border-amber-500/35 bg-amber-500/5 text-muted-foreground'
+                  }`}
+                >
+                  <p
+                    className={
+                      origem.origemCompleta
+                        ? 'font-medium text-emerald-800 dark:text-emerald-300'
+                        : 'font-medium text-amber-800 dark:text-amber-300'
+                    }
+                  >
+                    {origem.mensagem}
+                  </p>
+                  {origem.temVinculo ? (
+                    <dl className="mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-1">
+                      <div>
+                        <dt className="inline font-medium text-foreground/85">NF: </dt>
+                        <dd className="inline">{origem.nfNumero}/{origem.nfSerie}</dd>
+                      </div>
+                      <div>
+                        <dt className="inline font-medium text-foreground/85">Item da NF: </dt>
+                        <dd className="inline">{origem.itemNf}</dd>
+                      </div>
+                      <div>
+                        <dt className="inline font-medium text-foreground/85">Status conferência: </dt>
+                        <dd className="inline">{origem.statusConferenciaLabel}</dd>
+                      </div>
+                      <div>
+                        <dt className="inline font-medium text-foreground/85">Produto na conferência: </dt>
+                        <dd className="inline">{origem.produtoNaConferencia ? 'Sim' : 'Não'}</dd>
+                      </div>
+                      {origem.corridaHerdada ? (
+                        <div>
+                          <dt className="inline font-medium text-foreground/85">Corrida (conferência): </dt>
+                          <dd className="inline">{origem.corridaHerdada}</dd>
+                        </div>
+                      ) : null}
+                      {origem.loteHerdado ? (
+                        <div>
+                          <dt className="inline font-medium text-foreground/85">Lote (conferência): </dt>
+                          <dd className="inline">{origem.loteHerdado}</dd>
+                        </div>
+                      ) : null}
+                      {origem.origemCompleta ? (
+                        <>
+                          <div className="sm:col-span-2 lg:col-span-3">
+                            <dt className="inline font-medium text-foreground/85">Pedido: </dt>
+                            <dd className="inline">
+                              {origem.pedidoNumero} · item do pedido {origem.itemPedidoId}
+                            </dd>
+                          </div>
+                          <div className="sm:col-span-2 lg:col-span-3">
+                            <dt className="inline font-medium text-foreground/85">Produto pedido: </dt>
+                            <dd className="inline">
+                              {origem.produtoPedidoCodigo} · {origem.produtoPedidoDescricao}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="inline font-medium text-foreground/85">Qtd pedido: </dt>
+                            <dd className="inline">
+                              {origem.quantidadePedido} {origem.unidadePedido}
+                            </dd>
+                          </div>
+                        </>
+                      ) : null}
+                    </dl>
+                  ) : null}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-6 gap-2 mt-2">
+                  <div><label className="erp-label">Codigo</label><input className="erp-input mt-1" value={it.codigo_produto} onChange={(e) => updateItem(idx, { codigo_produto: e.target.value })} /></div>
+                  <div className="md:col-span-2"><label className="erp-label">Descricao</label><input className="erp-input mt-1" value={it.descricao_material} onChange={(e) => updateItem(idx, { descricao_material: e.target.value })} /></div>
+                  <div className="md:col-span-3">
+                    <label className="erp-label">Tipo de dados técnicos</label>
+                    <select
+                      className="erp-select mt-1 w-full"
+                      value={it.tipo_dados_tecnicos || 'PADRAO_ITEM'}
+                      onChange={(e) => updateItem(idx, { tipo_dados_tecnicos: e.target.value as 'PADRAO_ITEM' | 'VALVULA_COMPONENTES' })}
+                    >
+                      <option value="PADRAO_ITEM">Dados por item</option>
+                      <option value="VALVULA_COMPONENTES">Válvula por componentes</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="erp-label">Nº certificado fornecedor do item</label>
+                    <input
+                      className="erp-input mt-1"
+                      value={it.numero_certificado_fornecedor_item || ''}
+                      onChange={(e) => updateItem(idx, { numero_certificado_fornecedor_item: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="erp-label">Data certificado do item</label>
+                    <input
+                      type="date"
+                      className="erp-input mt-1"
+                      value={it.data_certificado_fornecedor_item || ''}
+                      onChange={(e) => updateItem(idx, { data_certificado_fornecedor_item: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="erp-label">Página / origem no PDF</label>
+                    <input
+                      className="erp-input mt-1"
+                      value={it.pagina_certificado_fornecedor || ''}
+                      onChange={(e) => updateItem(idx, { pagina_certificado_fornecedor: e.target.value })}
+                    />
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="erp-label">Observação da origem do certificado</label>
+                    <input
+                      className="erp-input mt-1"
+                      value={it.observacao_origem_certificado || ''}
+                      onChange={(e) => updateItem(idx, { observacao_origem_certificado: e.target.value })}
+                    />
+                  </div>
+                  {(it.tipo_dados_tecnicos || 'PADRAO_ITEM') === 'PADRAO_ITEM' ? (
+                    <>
+                      <div><label className="erp-label">Norma</label><input className="erp-input mt-1" value={it.norma} onChange={(e) => updateItem(idx, { norma: e.target.value })} /></div>
+                      <div>
+                        <label className="erp-label">Corrida</label>
+                        <input
+                          className="erp-input mt-1"
+                          value={it.corrida}
+                          onChange={(e) => updateItem(idx, { corrida: e.target.value })}
+                          onBlur={() => void buscarDadosCorridaExistente(idx, true)}
+                        />
+                      </div>
+                      <div>
+                        <label className="erp-label">Lote</label>
+                        <input
+                          className="erp-input mt-1"
+                          value={it.lote || ''}
+                          onChange={(e) => updateItem(idx, { lote: e.target.value })}
+                          onBlur={() => void buscarDadosCorridaExistente(idx, true)}
+                        />
+                      </div>
+                      <div className="md:col-span-6 flex flex-wrap gap-2 mt-1">
+                        <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => void buscarDadosCorridaExistente(idx, false)}>
+                          Buscar dados existentes da corrida
+                        </button>
+                        <label className="text-xs flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            checked={includeRascunhoBusca}
+                            onChange={(e) => setIncludeRascunhoBusca(e.target.checked)}
+                          />
+                          Incluir certificados em rascunho
+                        </label>
+                      </div>
+                      <div className="md:col-span-6 rounded border border-border p-2 bg-muted/10">
+                        <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                          <p className="text-xs font-semibold">{TITULO_CORRIDAS_ADICIONAIS_CF}</p>
+                          <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => addCorridaAdicional(idx)}>
+                            + Adicionar corrida
+                          </button>
+                        </div>
+                        <p className="text-xs text-muted-foreground mb-2">{TEXTO_EXPLICATIVO_CORRIDAS_ADICIONAIS_CF}</p>
+                        {(it.corridas_adicionais || []).length === 0 ? null : (
+                          <>
+                            <div className="space-y-1">
+                              {(it.corridas_adicionais || []).map((ca, caidx) => (
+                                <Fragment key={`corrida-adicional-${idx}-${ca.id ?? caidx}`}>
+                                <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_5rem_auto_auto] gap-1 items-stretch sm:items-center">
+                                  <input
+                                    className="erp-input h-8 text-xs"
+                                    placeholder="Corrida"
+                                    value={ca.corrida}
+                                    onChange={(e) => updateCorridaAdicional(idx, caidx, { corrida: e.target.value })}
+                                  />
+                                  <input
+                                    className="erp-input h-8 text-xs"
+                                    placeholder="Lote"
+                                    value={ca.lote || ''}
+                                    onChange={(e) => updateCorridaAdicional(idx, caidx, { lote: e.target.value })}
+                                  />
+                                  <input
+                                    className="erp-input h-8 text-xs"
+                                    placeholder="Qtd"
+                                    value={ca.quantidade ?? ''}
+                                    onChange={(e) =>
+                                      updateCorridaAdicional(idx, caidx, {
+                                        quantidade: e.target.value === '' ? null : Number(e.target.value.replace(',', '.')),
+                                      })
+                                    }
+                                  />
+                                  <span className="erp-badge-info text-[10px] whitespace-nowrap" title={TEXTO_EXPLICATIVO_CORRIDAS_ADICIONAIS_CF}>
+                                    {AVISO_DADOS_HERDADOS_CORRIDA_CF}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="erp-btn-outline h-8 px-2 text-xs"
+                                    onClick={() => removeCorridaAdicional(idx, caidx)}
+                                    title="Remover corrida adicional"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                                <div className="mt-2 pt-2 border-t border-border">
+                                  <p className="text-xs font-semibold mb-1">Composição química</p>
+                                  <div className="grid grid-cols-2 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                                    {COMPOSICAO_FIELDS.map((f) => (
+                                      <div key={`${idx}-ca-${caidx}-cq-${f}`}>
+                                        <label className="erp-label">{f}</label>
+                                        <input
+                                          className="erp-input mt-1"
+                                          placeholder="***"
+                                          value={(ca.composicao_json as Record<string, string>)[f] || ''}
+                                          onChange={(e) =>
+                                            updateCorridaAdicional(idx, caidx, {
+                                              composicao_json: {
+                                                ...(ca.composicao_json as Record<string, string>),
+                                                [f]: e.target.value,
+                                              },
+                                            })
+                                          }
+                                        />
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <p className="text-xs font-semibold mt-3 mb-1">Tração / propriedades mecânicas</p>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    {TRACAO_FIELDS.map((f) => (
+                                      <div key={`${idx}-ca-${caidx}-pm-${f.key}`}>
+                                        <label className="erp-label">{f.label}</label>
+                                        <input
+                                          className="erp-input mt-1"
+                                          value={(ca.ensaio_tracao_json as Record<string, string>)[f.key] || ''}
+                                          onChange={(e) =>
+                                            updateCorridaAdicional(idx, caidx, {
+                                              ensaio_tracao_json: {
+                                                ...(ca.ensaio_tracao_json as Record<string, string>),
+                                                [f.key]: e.target.value,
+                                              },
+                                            })
+                                          }
+                                        />
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <p className="text-xs font-semibold mt-3 mb-1">Ensaios de impacto</p>
+                                  <div className="grid grid-cols-1 gap-2">
+                                    <label className="erp-label">Valor</label>
+                                    <input
+                                      className="erp-input mt-1"
+                                      value={JSON.stringify(ca.ensaio_impacto_json) || ''}
+                                      onChange={(e) =>
+                                        updateCorridaAdicional(idx, caidx, {
+                                          ensaio_impacto_json: JSON.parse(e.target.value) || {},
+                                        })
+                                      }
+                                    />
+                                  </div>
+                                </div>
+                                </Fragment>
+                              ))}
+                            </div>
+                            {(() => {
+                              const resumo = resumoQuantidadesCorridasItemCf(it);
+                              const erros = errosCorridasAdicionaisItemCf(it);
+                              const avisos = avisosCorridasAdicionaisItemCf(it);
+                              return (
+                                <div className="mt-2 space-y-1">
+                                  <p className="text-xs text-muted-foreground">
+                                    Quantidade do item: {resumo.quantidadeItem ?? '—'}
+                                    {' · '}Soma das corridas adicionais: {resumo.somaAdicionais}
+                                    {' · '}Corrida principal (calculada):{' '}
+                                    {resumo.principalDerivada != null ? resumo.principalDerivada : '—'}
+                                  </p>
+                                  {erros.map((msg) => (
+                                    <p key={msg} className="text-xs text-destructive">{msg}</p>
+                                  ))}
+                                  {avisos.map((msg) => (
+                                    <p key={msg} className="text-xs text-amber-700 dark:text-amber-300">{msg}</p>
+                                  ))}
+                                </div>
+                              );
+                            })()}
+                          </>
+                        )}
+                      </div>
+                      <div className="md:col-span-6 rounded border border-border p-2">
+                        <p className="text-xs font-semibold mb-2">Composicao quimica</p>
+                        <ComposicaoQuimicaFields
+                          idPrefix={`item-${idx}`}
+                          values={ensureMap(it.composicao_json)}
+                          onChange={(key, value) =>
+                            updateItem(idx, {
+                              composicao_json: {
+                                ...ensureMap(it.composicao_json),
+                                [key]: norm(value),
+                              },
+                            })
+                          }
+                        />
+                      </div>
+                      <div className="md:col-span-6 rounded border border-border p-2">
+                        <p className="text-xs font-semibold mb-2">Tracao / propriedades mecanicas</p>
+                        <PropriedadesMecanicasFields
+                          idPrefix={`item-${idx}`}
+                          values={ensureMap(it.ensaio_tracao_json)}
+                          onChange={(key, value) =>
+                            updateItem(idx, {
+                              ensaio_tracao_json: {
+                                ...ensureMap(it.ensaio_tracao_json),
+                                [key]: norm(value),
+                              },
+                            })
+                          }
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="md:col-span-6 rounded border border-border p-2 bg-muted/10">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                        <p className="text-xs font-semibold">Componentes da válvula</p>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <button type="button" className="erp-btn-outline erp-btn-sm w-full sm:w-auto" onClick={() => adicionarComponentesPadraoValvula(idx)}>
+                            Usar componentes padrão de válvula
+                          </button>
+                          <button type="button" className="erp-btn-outline erp-btn-sm w-full sm:w-auto" onClick={() => addComponente(idx)}>
+                            Adicionar componente
+                          </button>
+                        </div>
+                      </div>
+                      {(it.componentes || []).length === 0 ? (
+                        <p className="text-xs text-amber-700 dark:text-amber-300">Informe ao menos um componente para válvula por componentes.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {(it.componentes || []).map((cp, cidx) => (
+                            <details key={cidx} className="rounded border border-border p-2" open>
+                              <summary className="cursor-pointer text-xs font-medium">
+                                <span className="inline-flex flex-wrap items-center gap-2">
+                                  <span>Componente {cp.ordem} - {cp.nome_componente || `Componente ${cidx + 1}`}</span>
+                                  <span className="erp-badge-success">
+                                    Nº efetivo componente: {numeroEfetivoComponente(it, cp).numero || '—'} — origem: {numeroEfetivoComponente(it, cp).origem}
+                                  </span>
+                                  {componenteStatus(it, ensureComp(cp, cidx + 1)) === 'Completo' ? (
+                                    <span className="erp-badge-success">Completo</span>
+                                  ) : (
+                                    <span className="erp-badge-warning">{componenteStatus(it, ensureComp(cp, cidx + 1))}</span>
+                                  )}
+                                </span>
+                              </summary>
+                              <div className="grid grid-cols-1 md:grid-cols-6 gap-2 mt-2">
+                                <div><label className="erp-label">Componente</label><input className="erp-input mt-1" value={cp.nome_componente} onChange={(e) => updateComponente(idx, cidx, { nome_componente: e.target.value })} /></div>
+                                <div>
+                                  <label className="erp-label">Nº certificado do componente</label>
+                                  <input className="erp-input mt-1" value={cp.numero_certificado_fornecedor_componente || ''} onChange={(e) => updateComponente(idx, cidx, { numero_certificado_fornecedor_componente: e.target.value })} />
+                                </div>
+                                <div className="md:col-span-2 text-xs flex items-end">
+                                  {numeroEfetivoComponente(it, cp).numero ? (
+                                    <span className="erp-badge-success">Nº efetivo componente: {numeroEfetivoComponente(it, cp).numero} — origem: {numeroEfetivoComponente(it, cp).origem}</span>
+                                  ) : (
+                                    <span className="erp-badge-warning">Sem número de certificado</span>
+                                  )}
+                                </div>
+                                <div><label className="erp-label">Corrida</label><input className="erp-input mt-1" value={cp.corrida || ''} onChange={(e) => updateComponente(idx, cidx, { corrida: e.target.value })} /></div>
+                                <div><label className="erp-label">Lote</label><input className="erp-input mt-1" value={cp.lote || ''} onChange={(e) => updateComponente(idx, cidx, { lote: e.target.value })} /></div>
+                                <div><label className="erp-label">Norma</label><input className="erp-input mt-1" value={cp.norma || ''} onChange={(e) => updateComponente(idx, cidx, { norma: e.target.value })} /></div>
+                                <div className="md:col-span-6 rounded border border-border p-2">
+                                  <p className="text-xs font-semibold mb-2">Composição química do componente</p>
+                                  <ComposicaoQuimicaFields
+                                    idPrefix={`item-${idx}-comp-${cidx}`}
+                                    values={ensureMap(cp.composicao_json)}
+                                    onChange={(key, value) =>
+                                      updateComponente(idx, cidx, {
+                                        composicao_json: {
+                                          ...ensureMap(cp.composicao_json),
+                                          [key]: norm(value),
+                                        },
+                                      })
+                                    }
+                                  />
+                                </div>
+                                <div className="md:col-span-6 rounded border border-border p-2">
+                                  <p className="text-xs font-semibold mb-2">Propriedades mecânicas / tração do componente</p>
+                                  <PropriedadesMecanicasFields
+                                    idPrefix={`item-${idx}-comp-${cidx}`}
+                                    values={ensureMap(cp.ensaio_tracao_json)}
+                                    onChange={(key, value) =>
+                                      updateComponente(idx, cidx, {
+                                        ensaio_tracao_json: {
+                                          ...ensureMap(cp.ensaio_tracao_json),
+                                          [key]: norm(value),
+                                        },
+                                      })
+                                    }
+                                  />
+                                </div>
+                                <div className="md:col-span-6">
+                                  <label className="erp-label">Impacto (opcional)</label>
+                                  <input
+                                    className="erp-input mt-1"
+                                    placeholder="Opcional"
+                                    value={ensureMap(cp.ensaio_impacto_json).media || ''}
+                                    onChange={(e) =>
+                                      updateComponente(idx, cidx, {
+                                        ensaio_impacto_json: {
+                                          ...ensureMap(cp.ensaio_impacto_json),
+                                          media: norm(e.target.value),
+                                        },
+                                      })
+                                    }
+                                  />
+                                </div>
+                                <div className="md:col-span-6">
+                                  <label className="erp-label">Observações do componente</label>
+                                  <input
+                                    className="erp-input mt-1"
+                                    value={cp.observacoes || ''}
+                                    onChange={(e) => updateComponente(idx, cidx, { observacoes: e.target.value })}
+                                  />
+                                </div>
+                                <div className="md:col-span-6 flex flex-col sm:flex-row gap-2">
+                                  <button type="button" className="erp-btn-outline erp-btn-sm w-full sm:w-auto" onClick={() => void buscarDadosCorridaComponente(idx, cidx)}>
+                                    Buscar dados existentes da corrida
+                                  </button>
+                                  <button type="button" className="erp-btn-outline erp-btn-sm w-full sm:w-auto" onClick={() => removeComponente(idx, cidx)}>
+                                    Remover componente
+                                  </button>
+                                </div>
+                              </div>
+                            </details>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </details>
+              );
+            })}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="observacoes" className="mt-0 space-y-4">
+          <div className="mt-4"><label className="erp-label">Observacoes</label><textarea className="erp-input mt-1 h-20" value={form.observacoes || ''} onChange={(e) => setF('observacoes', e.target.value)} /></div>
+        </TabsContent>
+      </Tabs>
+
       <div className="mt-4 flex flex-col-reverse sm:flex-row sm:flex-wrap sm:justify-end items-stretch sm:items-center gap-2">
         <button type="button" className="erp-btn-outline w-full sm:w-auto" onClick={onCancel}>Cancelar</button>
         <button
