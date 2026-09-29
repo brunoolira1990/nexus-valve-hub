@@ -1495,6 +1495,20 @@ class PedidoCompraSerializer(serializers.ModelSerializer):
     itens = ItemPedidoCompraSerializer(many=True)
     data_prevista_entrega = serializers.DateField(required=False, allow_null=True)
     resumo_financeiro_pedido = serializers.SerializerMethodField(read_only=True)
+    desconto_cabecalho_tipo = serializers.ChoiceField(
+        choices=[('valor', 'R$'), ('percentual', '%')],
+        required=False,
+        default='valor',
+        help_text='Tipo do desconto do cabeçalho: valor em R$ ou percentual (%).',
+    )
+    desconto_cabecalho = serializers.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        min_value=Decimal('0'),
+        help_text='Desconto aplicado no total do pedido (R$ ou % conforme desconto_cabecalho_tipo).',
+    )
 
     class Meta:
         model = PedidoCompra
@@ -1515,6 +1529,8 @@ class PedidoCompraSerializer(serializers.ModelSerializer):
             'observacoes',
             'resumo_financeiro_pedido',
             'itens',
+            'desconto_cabecalho_tipo',
+            'desconto_cabecalho',
         )
         read_only_fields = (
             'id',
@@ -1535,11 +1551,23 @@ class PedidoCompraSerializer(serializers.ModelSerializer):
             desc += _dec(it.desconto_valor)
             frete += _dec(it.frete_valor)
             outras += _dec(it.outras_despesas_valor)
+
+        # Desconto do cabecalho: % sobre (subtotal - desconto_itens) ou valor direto
+        base_cabecalho = sub - desc
+        desc_cab_bruto = _dec(getattr(obj, 'desconto_cabecalho', Decimal('0')) or Decimal('0'))
+        desc_cab_tipo = getattr(obj, 'desconto_cabecalho_tipo', 'valor') or 'valor'
+        if desc_cab_tipo == 'percentual':
+            desc_cab_valor = _round(base_cabecalho * desc_cab_bruto / Decimal('100'))
+        else:
+            desc_cab_valor = _round(desc_cab_bruto)
+        desc_cab_valor = max(Decimal('0'), min(desc_cab_valor, max(Decimal('0'), base_cabecalho)))
+
         return {
             'subtotal_produtos': float(_round(sub)),
             'total_ipi': float(_round(ipi)),
             'total_icms_st': float(_round(st)),
             'total_descontos': float(_round(desc)),
+            'total_desconto_cabecalho': float(desc_cab_valor),
             'total_frete': float(_round(frete)),
             'total_outras_despesas': float(_round(outras)),
             'valor_total_pedido': float(_round(_dec(obj.valor_total))),

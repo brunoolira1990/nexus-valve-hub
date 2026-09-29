@@ -2406,6 +2406,8 @@ export interface PedidoCompra {
   prazo_entrega_texto?: string;
   data_prevista_entrega?: string | null;
   observacoes?: string;
+  desconto_cabecalho_tipo: 'valor' | 'percentual';
+  desconto_cabecalho: number;
   resumo_financeiro_pedido?: {
     subtotal_produtos: number;
     total_ipi: number;

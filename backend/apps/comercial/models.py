@@ -641,6 +641,20 @@ class PedidoCompra(models.Model):
     prazo_entrega_texto = models.CharField(max_length=255, blank=True)
     data_prevista_entrega = models.DateField(null=True, blank=True)
     observacoes = models.TextField(blank=True)
+    desconto_cabecalho_tipo = models.CharField(
+        max_length=12,
+        choices=TipoDescontoCabecalho.choices,
+        default=TipoDescontoCabecalho.VALOR,
+        help_text='Tipo do desconto do cabeçalho: valor em R$ ou percentual (%).',
+    )
+    desconto_cabecalho = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=Decimal('0'),
+        blank=True,
+        null=True,
+        help_text='Desconto aplicado no total do pedido (R$ ou % conforme desconto_cabecalho_tipo).',
+    )
 
     class Meta:
         ordering = ['-data', 'numero']

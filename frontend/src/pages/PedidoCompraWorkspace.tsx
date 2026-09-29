@@ -117,6 +117,8 @@ export default function PedidoCompraWorkspace({ pedido, onClose }: PedidoCompraW
     prazo_entrega_texto: '',
     data_prevista_entrega: '' as string,
     observacoes: '',
+    desconto_cabecalho: 0,
+    desconto_cabecalho_tipo: 'valor' as 'valor' | 'percentual',
   }));
   const [dataEntregaTouched, setDataEntregaTouched] = useState(false);
   const prazoEntregaAnterior = useRef('');
@@ -168,6 +170,8 @@ export default function PedidoCompraWorkspace({ pedido, onClose }: PedidoCompraW
         prazo_entrega_texto: pedido.prazo_entrega_texto ?? '',
         data_prevista_entrega: prevEntregaStr,
         observacoes: pedido.observacoes ?? '',
+        desconto_cabecalho: Number(pedido.desconto_cabecalho ?? 0),
+        desconto_cabecalho_tipo: pedido.desconto_cabecalho_tipo === 'percentual' ? 'percentual' : 'valor',
       });
       setDataEntregaTouched(true);
       prazoEntregaAnterior.current = pedido.prazo_entrega_texto ?? '';
@@ -275,16 +279,26 @@ export default function PedidoCompraWorkspace({ pedido, onClose }: PedidoCompraW
       outras += c.outras;
       total += c.valorTotalItem;
     }
+
+    // Desconto do cabecalho
+    const baseCabecalho = Math.max(0, sub - desc);
+    const descCabBruto = numSeguro(form.desconto_cabecalho);
+    const descCabValor = form.desconto_cabecalho_tipo === 'percentual'
+      ? Math.round(baseCabecalho * descCabBruto) / 100
+      : descCabBruto;
+    const descCabClamp = Math.max(0, Math.min(descCabValor, baseCabecalho));
+
     return {
       subtotal_produtos: Math.round(sub * 100) / 100,
       total_ipi: Math.round(ipi * 100) / 100,
       total_icms_st: Math.round(st * 100) / 100,
       total_descontos: Math.round(desc * 100) / 100,
+      total_desconto_cabecalho: Math.round(descCabClamp * 100) / 100,
       total_frete: Math.round(frete * 100) / 100,
       total_outras_despesas: Math.round(outras * 100) / 100,
-      valor_total_pedido: Math.round(total * 100) / 100,
+      valor_total_pedido: Math.max(0, Math.round((total - descCabClamp) * 100) / 100),
     };
-  }, [itens]);
+  }, [itens, form.desconto_cabecalho, form.desconto_cabecalho_tipo]);
 
   const pagamentoParsed = useMemo(
     () => parseCondicaoPagamentoPedido(form.condicao_pagamento_texto),
@@ -1250,6 +1264,12 @@ export default function PedidoCompraWorkspace({ pedido, onClose }: PedidoCompraW
                 </span>
               </div>
               <div className="flex items-baseline justify-between gap-2 sm:justify-normal sm:gap-1.5">
+                <span className="text-xs text-muted-foreground">Desconto do pedido</span>
+                <span className="text-sm font-medium text-foreground" id="desconto-pedido-display">
+                  {formatMoneyBRL(resumoFinanceiroPedido.valor_total_pedido - resumoFinanceiroPedido.subtotal_produtos + resumoFinanceiroPedido.total_descontos)}
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between gap-2 sm:justify-normal sm:gap-1.5">
                 <span className="text-xs text-muted-foreground">Frete</span>
                 <span className="text-sm font-medium text-foreground">
                   {formatMoneyBRL(resumoFinanceiroPedido.total_frete)}
@@ -1261,6 +1281,49 @@ export default function PedidoCompraWorkspace({ pedido, onClose }: PedidoCompraW
                   {formatMoneyBRL(resumoFinanceiroPedido.total_outras_despesas)}
                 </span>
               </div>
+            </div>
+
+            <div className="mt-3 pt-3 border-t border-border flex flex-wrap items-center gap-2">
+              <label className="text-xs text-muted-foreground">Desconto no total:</label>
+              <input
+                type="number"
+                className="erp-input w-28 h-8 text-sm tabular-nums"
+                value={form.desconto_cabecalho || ''}
+                onChange={(e) => setForm((p) => ({ ...p, desconto_cabecalho: Number(e.target.value) || 0 }))}
+                step="0.01"
+                min="0"
+              />
+              <div className="inline-flex rounded-md border border-border overflow-hidden">
+                <button
+                  type="button"
+                  className={`px-2.5 py-1 text-xs font-medium transition-colors ${
+                    form.desconto_cabecalho_tipo === 'valor'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-background text-muted-foreground hover:bg-muted'
+                  }`}
+                  onClick={() => setForm((p) => ({ ...p, desconto_cabecalho_tipo: 'valor' }))}
+                >
+                  R$
+                </button>
+                <button
+                  type="button"
+                  className={`px-2.5 py-1 text-xs font-medium transition-colors border-l border-border ${
+                    form.desconto_cabecalho_tipo === 'percentual'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-background text-muted-foreground hover:bg-muted'
+                  }`}
+                  onClick={() => setForm((p) => ({ ...p, desconto_cabecalho_tipo: 'percentual' }))}
+                >
+                  %
+                </button>
+              </div>
+              {form.desconto_cabecalho > 0 && resumoFinanceiroPedido.subtotal_produtos - resumoFinanceiroPedido.total_descontos > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  {form.desconto_cabecalho_tipo === 'percentual'
+                    ? `= -${formatMoneyBRL(resumoFinanceiroPedido.total_desconto_cabecalho)}`
+                    : `= ${((form.desconto_cabecalho / (resumoFinanceiroPedido.subtotal_produtos - resumoFinanceiroPedido.total_descontos)) * 100).toFixed(2).replace('.', ',')}% do total`}
+                </span>
+              )}
             </div>
           </div>
 
