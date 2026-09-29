@@ -1410,84 +1410,82 @@ export default function PedidoVendaWorkspace({ pedido, onClose }: PedidoVendaWor
           </div>
         </Tabs>
 
-        <div className="rounded-lg border border-border bg-card px-4 py-3 shadow-sm sm:px-4 sm:py-3.5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-8">
-              <div>
-                <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80 block">Itens</span>
-                <span className="font-medium tabular-nums text-sm">{itens.length} item(ns)</span>
-              </div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80 block">Subtotal</span>
-                <span className="font-medium tabular-nums text-sm text-foreground">
-                  {formatCurrencyBRL(
-                    itens.reduce((acc, it) => {
-                      const qtd = numSafe(it.quantidade_negociada ?? it.quantidade);
-                      const preco = numSafe(it.preco_por_unidade_negociada ?? it.valor_unitario);
-                      return acc + qtd * preco;
-                    }, 0)
-                  )}
+<div className="rounded-lg border border-border bg-card p-3.5 sm:p-4 grid grid-cols-1 lg:grid-cols-12 gap-4">
+          <div className="lg:col-span-7">
+            <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80">Resumo financeiro</span>
+            <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 tabular-nums sm:grid-cols-3">
+              <div className="flex items-baseline justify-between gap-2 sm:justify-normal sm:gap-1.5">
+                <span className="text-xs text-muted-foreground">Subtotal</span>
+                <span className="text-sm font-medium text-foreground">
+                  {formatCurrencyBRL(subtotalItens)}
                 </span>
               </div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80 block">Desconto</span>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    className="erp-input w-24 h-8 text-sm"
-                    value={form.desconto_cabecalho}
-                    onChange={(e) => {
-                      setForm((p) => ({ ...p, desconto_cabecalho: Number(e.target.value) || 0 }));
-                      // Recalcular total automaticamente
-                    }}
-                  />
-                  <div className="flex gap-1">
-                    <button
-                      type="button"
-                      className={`erp-btn-outline erp-btn-sm ${
-                        form.desconto_cabecalho_tipo === 'percentual' ? 'bg-primary/10 text-primary' : ''
-                      }`}
-                      onClick={() => setForm((p) => ({ ...p, desconto_cabecalho_tipo: 'valor' }))}
-                      title="R$"
-                    >
-                      R$
-                    </button>
-                    <button
-                      type="button"
-                      className={`erp-btn-outline erp-btn-sm ${
-                        form.desconto_cabecalho_tipo === 'percentual'
-                          ? 'bg-primary/10 text-primary'
-                          : ''
-                        }`}
-                      onClick={() => setForm((p) => ({ ...p, desconto_cabecalho_tipo: 'percentual' }))}
-                      title="%"
-                    >
-                      %
-                    </button>
-                  </div>
-                </div>
-                {form.desconto_cabecalho > 0 && base > 0 && (
-                  <div className="flex items-center gap-1">
-                    {form.desconto_cabecalho_tipo === 'percentual' && (
-                      <span className="text-[10px] text-red-600">
-                        = -{formatCurrencyBRL(descontoCabecalhoValor)}
-                      </span>
-                    )}
-                    {form.desconto_cabecalho_tipo === 'valor' && (
-                      <span className="text-[10px] text-muted-foreground">
-                        = {((form.desconto_cabecalho / base) * 100).toFixed(2).replace('.', ',')}% do total
-                      </span>
-                    )}
-                  </div>
-                )}
+              <div className="flex items-baseline justify-between gap-2 sm:justify-normal sm:gap-1.5">
+                <span className="text-xs text-muted-foreground">Descontos itens</span>
+                <span className="text-sm font-medium text-foreground">
+                  {formatCurrencyBRL(descontoItens)}
+                </span>
               </div>
-              <div className="border-t border-border pt-2 mt-2">
-                <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80 block font-bold text-2xl tracking-tight text-foreground">
-                  {formatCurrencyBRL(totalComDescontoCabecalho)}
+              <div className="flex items-baseline justify-between gap-2 sm:justify-normal sm:gap-1.5">
+                <span className="text-xs text-muted-foreground">Desconto do pedido</span>
+                <span className="text-sm font-medium text-foreground">
+                  {descontoCabecalhoValor > 0 ? `- ${formatCurrencyBRL(descontoCabecalhoValor)}` : formatCurrencyBRL(0)}
                 </span>
               </div>
             </div>
-            <div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
+
+            <div className="mt-3 pt-3 border-t border-border flex flex-wrap items-center gap-2">
+              <label className="text-xs text-muted-foreground">Desconto no total:</label>
+              <input
+                type="number"
+                className="erp-input w-28 h-8 text-sm tabular-nums"
+                value={form.desconto_cabecalho || ''}
+                onChange={(e) => setForm((p) => ({ ...p, desconto_cabecalho: Number(e.target.value) || 0 }))}
+                step="0.01"
+                min="0"
+              />
+              <div className="inline-flex rounded-md border border-border overflow-hidden">
+                <button
+                  type="button"
+                  className={`px-2.5 py-1 text-xs font-medium transition-colors ${
+                    form.desconto_cabecalho_tipo === 'valor'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-background text-muted-foreground hover:bg-muted'
+                  }`}
+                  onClick={() => setForm((p) => ({ ...p, desconto_cabecalho_tipo: 'valor' }))}
+                >
+                  R$
+                </button>
+                <button
+                  type="button"
+                  className={`px-2.5 py-1 text-xs font-medium transition-colors border-l border-border ${
+                    form.desconto_cabecalho_tipo === 'percentual'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-background text-muted-foreground hover:bg-muted'
+                  }`}
+                  onClick={() => setForm((p) => ({ ...p, desconto_cabecalho_tipo: 'percentual' }))}
+                >
+                  %
+                </button>
+              </div>
+              {form.desconto_cabecalho > 0 && base > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  {form.desconto_cabecalho_tipo === 'percentual'
+                    ? `= -${formatCurrencyBRL(descontoCabecalhoValor)}`
+                    : `= ${((form.desconto_cabecalho / base) * 100).toFixed(2).replace('.', ',')}% do total`}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="lg:col-span-5 flex flex-col gap-3 border-t border-border pt-3 lg:border-t-0 lg:border-l lg:pl-5 lg:pt-0">
+            <div className="flex flex-col items-start">
+              <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80">Total do pedido</span>
+              <span className="text-2xl font-bold tabular-nums text-primary sm:text-3xl">
+                {formatCurrencyBRL(totalComDescontoCabecalho)}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
               {footerConfig.primaryKind === 'save' ? (
                 <button type="button" onClick={onClose} className="erp-btn-outline w-full sm:w-auto">
                   Cancelar
