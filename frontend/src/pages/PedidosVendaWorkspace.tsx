@@ -1466,18 +1466,19 @@ export default function PedidoVendaWorkspace({ pedido, onClose }: PedidoVendaWor
                     </button>
                   </div>
                 </div>
-                {form.desconto_cabecalho_tipo === 'percentual' && form.desconto_cabecalho > 0 && (
-                  <span className="text-[10px] text-red-600">
-                    = -{formatCurrencyBRL(
-                      Math.round(
-                        (itens.reduce((acc, it) => {
-                          const qtd = numSafe(it.quantidade_negociada ?? it.quantidade);
-                          const preco = numSafe(it.preco_por_unidade_negociada ?? it.valor_unitario);
-                          return acc + qtd * preco;
-                        }, 0) -
-                        itens.reduce((acc, it) => acc + (itemDesconto(it) || 0), 0)
-                      ) * form.desconto_cabecalho / 100 * 100) / 100
-                    )}</span>
+                {form.desconto_cabecalho > 0 && base > 0 && (
+                  <div className="flex items-center gap-1">
+                    {form.desconto_cabecalho_tipo === 'percentual' && (
+                      <span className="text-[10px] text-red-600">
+                        = -{formatCurrencyBRL(descontoCabecalhoValor)}
+                      </span>
+                    )}
+                    {form.desconto_cabecalho_tipo === 'valor' && (
+                      <span className="text-[10px] text-muted-foreground">
+                        = {((form.desconto_cabecalho / base) * 100).toFixed(2).replace('.', ',')}% do total
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
               <div className="border-t border-border pt-2 mt-2">
