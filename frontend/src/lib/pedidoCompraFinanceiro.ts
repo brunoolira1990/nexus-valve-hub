@@ -10,12 +10,68 @@ export type CalculoFinanceiroItemPedido = {
   valorTotalItem: number;
 };
 
-function n(v: unknown): number {
-  const x = Number(v);
-  return Number.isFinite(x) ? x : 0;
+/** Calcula rateio do desconto de cabecalho proporcionalmente aos itens (nao gravado no banco). */
+export function calcularRateioDescontoCabecalhoLocally(
+  itens: ItemPedido[],
+  descontoCabecalho: number,
+  tipo: 'valor' | 'percentual'
+): Record<number, number> {
+  const itensNaoCancelados = itens.filter((it) => it.status_item !== 'CANCELADO');
+  if (!itensNaoCancelados.length) {
+    return {};
+  }
+  // Verifica se algum item tem desconto proprio
+  if (itensNaoCancelados.some((it) => (it.desconto_valor ?? 0) > 0)) {
+    return {}; // regra um-ou-outro
+  }
+
+  // Calcula subtotal dos itens (qtd * preco)
+  const subtotal = itensNaoCancelados.reduce(
+    (sum, it) => sum + Number((it.quantidade_negociada ?? it.quantidade) * (it.preco_por_unidade_negociada ?? it.valor_unitario ?? 0)),
+    0
+  );
+
+  let descCabValor: number;
+  if (tipo === 'percentual') {
+    descCabValor = Math.max(0, Math.min((subtotal * descontoCabecalho) / 100, subtotal));
+  } else {
+    descCabValor = Math.max(0, Math.min(descontoCabecalho, subtotal));
+  }
+  if (descCabValor <= 0) {
+    return {};
+  }
+
+  // Calcula pesos (qtd * preco) de cada item
+  const pesos: Record<number, number> = {};
+  let totalPeso = 0;
+  for (const it of itensNaoCancelados) {
+    const peso = Number((it.quantidade_negociada ?? it.quantidade) * (it.preco_por_unidade_negociada ?? it.valor_unitario ?? 0));
+    pesos[it.id] = peso;
+    totalPeso += peso;
+  }
+  if (totalPeso <= 0) {
+    return {};
+  }
+
+  // Distribui o desconto proporcionalmente
+  const rateio: Record<number, number> = {};
+  let acumulado = 0;
+  const itensOrdenados = [...itensNaoCancelados].sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
+  for (let idx = 0; idx < itensOrdenados.length; idx++) {
+    const it = itensOrdenados[idx];
+    let valor: number;
+    if (idx === itensOrdenados.length - 1) {
+      // ultimo absorve diferenca
+      valor = Math.max(0, descCabValor - acumulado);
+    } else {
+      valor = Math.round((descCabValor * pesos[it.id] / totalPeso) * 100) / 100;
+      acumulado += valor;
+    }
+    rateio[it.id] = valor;
+  }
+  return rateio;
 }
 
-/** Espelha a lógica do backend (`calcular_financeiro_item_pedido_compra`). */
 export function calcularFinanceiroItemPedidoCompra(
   item: Pick<
     ItemPedido,

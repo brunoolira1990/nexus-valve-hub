@@ -13,7 +13,7 @@ from apps.produtos.snapshot import build_produto_snapshot
 from apps.regras_fiscais.models import CenarioFiscalSaida
 from apps.comercial.payment_terms import compute_due_dates, parse_payment_condition
 from apps.comercial.conversao_item_comercial import calcular_item_comercial_com_conversao
-from apps.comercial.pedido_compra_finance import calcular_financeiro_item_pedido_compra
+from apps.comercial.pedido_compra_finance import calcular_financeiro_item_pedido_compra, calcular_rateio_desconto_cabecalho, desconto_final_item_compra
 from apps.comercial.commercial_defaults import (
     aplicar_defaults_pedido_venda,
     aplicar_defaults_proposta,
@@ -1435,6 +1435,19 @@ class ItemPedidoCompraSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         attrs = super().validate(attrs)
         normalize_operational_fields(attrs, {'unidade_negociada'})
+
+        # Validacao: nao pode ter desconto no item E desconto no cabecalho ao mesmo tempo
+        pedido_cabecalho_desc = Decimal('0')
+        if 'pedido' in self.context and self.context['pedido'] is not None:
+            pedido = self.context['pedido']
+            desc_cab = getattr(pedido, 'desconto_cabecalho', None)
+            if desc_cab is not None:
+                pedido_cabecalho_desc = Decimal(str(desc_cab))
+        if (attrs.get('desconto_valor') or Decimal('0')) > Decimal('0') and pedido_cabecalho_desc > Decimal('0'):
+            raise serializers.ValidationError(
+                {'desconto_valor': 'Nao e possivel usar desconto no item e no cabecalho ao mesmo tempo.'}
+            )
+
         produto = attrs.get('produto', self.instance.produto if self.instance else None)
         if not produto:
             raise serializers.ValidationError(
@@ -1576,15 +1589,28 @@ class PedidoCompraSerializer(serializers.ModelSerializer):
             frete += _dec(it.frete_valor)
             outras += _dec(it.outras_despesas_valor)
 
+        # Calcula rateio do desconto de cabecalho on-the-fly
+        rateio = calcular_rateio_desconto_cabecalho(obj)
+        desconto_rateado_por_item = {str(k): float(v) for k, v in rateio.items()} if rateio else {}
+
         # Desconto do cabecalho: % sobre (subtotal - desconto_itens) ou valor direto
         base_cabecalho = sub - desc
         desc_cab_bruto = _dec(getattr(obj, 'desconto_cabecalho', Decimal('0')) or Decimal('0'))
         desc_cab_tipo = getattr(obj, 'desconto_cabecalho_tipo', 'valor') or 'valor'
-        if desc_cab_tipo == 'percentual':
-            desc_cab_valor = _round(base_cabecalho * desc_cab_bruto / Decimal('100'))
+        tem_desconto_em_item = any(
+            (_dec(it.desconto_valor) or Decimal('0')) > Decimal('0')
+            for it in obj.itens.all()
+        )
+
+        # Se ha desconto nos itens, total_desconto_cabecalho = 0 (nao double-count)
+        if tem_desconto_em_item:
+            desc_cab_valor = Decimal('0')
         else:
-            desc_cab_valor = _round(desc_cab_bruto)
-        desc_cab_valor = max(Decimal('0'), min(desc_cab_valor, max(Decimal('0'), base_cabecalho)))
+            if desc_cab_tipo == 'percentual':
+                desc_cab_valor = _round(base_cabecalho * desc_cab_bruto / Decimal('100'))
+            else:
+                desc_cab_valor = _round(desc_cab_bruto)
+            desc_cab_valor = max(Decimal('0'), min(desc_cab_valor, max(Decimal('0'), base_cabecalho)))
 
         return {
             'subtotal_produtos': float(_round(sub)),
@@ -1595,6 +1621,7 @@ class PedidoCompraSerializer(serializers.ModelSerializer):
             'total_frete': float(_round(frete)),
             'total_outras_despesas': float(_round(outras)),
             'valor_total_pedido': float(_round(_dec(obj.valor_total))),
+            'desconto_rateado_por_item': desconto_rateado_por_item,
         }
 
     def to_representation(self, instance):
@@ -1619,12 +1646,18 @@ class PedidoCompraSerializer(serializers.ModelSerializer):
         attrs['quantidade_parcelas'] = len(dias)
         attrs['vencimentos_previstos'] = compute_due_dates(data_base, dias)
         itens = attrs.get('itens')
-        if self.instance is None:
-            if not itens:
-                raise serializers.ValidationError({'itens': 'Inclua ao menos um item no pedido.'})
-        elif itens is not None and len(itens) == 0:
-            raise serializers.ValidationError({'itens': 'O pedido deve manter ao menos um item.'})
-        return attrs
+        
+        # Validacao: nao pode ter desconto no cabecalho E desconto em item ao mesmo tempo
+        desc_cabecalho = _dec(attrs.get('desconto_cabecalho', self.instance.desconto_cabecalho if self.instance else Decimal('0')) or Decimal('0'))
+        tem_desconto_cabecalho = desc_cabecalho > Decimal('0')
+        tem_desconto_em_item = any(
+            (_dec(item.get('desconto_valor', item.get('desconto_valor', Decimal('0')))) or Decimal('0')) > Decimal('0')
+            for item in (itens or [])
+        )
+        if tem_desconto_cabecalho and tem_desconto_em_item:
+            raise serializers.ValidationError(
+                {'detail': 'Nao e possivel usar desconto no item e no cabecalho ao mesmo tempo.'}
+            )
 
     def create(self, validated_data):
         itens_data = validated_data.pop('itens')

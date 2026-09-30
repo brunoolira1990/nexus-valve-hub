@@ -8,13 +8,79 @@ def _q(v: Decimal, places: str = '0.01') -> Decimal:
 
 
 def _dec(v) -> Decimal:
-    return Decimal('0') if v is None else Decimal(str(v))
+    return Decimal(str(v)) if v is None else Decimal('0')
 
 
 def _desconto_item(q: Decimal, preco: Decimal, desconto_tipo: str, desconto_valor: Decimal) -> Decimal:
     if desconto_tipo == 'percentual':
         return _q(q * preco * desconto_valor / Decimal('100'))
     return _round(desconto_valor)
+
+
+def calcular_desconto_item(it) -> Decimal:
+    """Calcula o desconto propio de um item (igual ao get_desconto_valor_calculado do serializer)."""
+    q = _dec(it.quantidade_negociada) or _dec(it.quantidade)
+    preco = _dec(it.preco_por_unidade_negociada) or _dec(it.valor_unitario)
+    if it.desconto_tipo == 'percentual':
+        return _q(q * preco * it.desconto_valor / Decimal('100'))
+    return _round(it.desconto_valor)
+
+
+def calcular_rateio_desconto_cabecalho(pedido) -> dict[int, Decimal]:
+    """Retorna {item_id: valor_desconto_rateado} proporcional ao valor do item.
+    Vazio se nao ha desconto de cabecalho ou se ja ha desconto em item."""
+    if not pedido:
+        return {}
+    itens = list(pedido.itens.exclude(status_item='CANCELADO'))
+    if not itens:
+        return {}
+    if any((it.desconto_valor or Decimal('0')) > Decimal('0') for it in itens):
+        return {}  # regra um-ou-outro: nao rateia se ha desconto proprio
+
+    subtotal = Decimal('0')
+    for it in itens:
+        q = _dec(it.quantidade_negociada) or _dec(it.quantidade)
+        p_it = _dec(it.preco_por_unidade_negociada) or _dec(it.valor_unitario)
+        subtotal += q * p_it
+    desc_cab_bruto = _dec(pedido.desconto_cabecalho)
+    if pedido.desconto_cabecalho_tipo == 'percentual':
+        desc_cab_valor = (subtotal * desc_cab_bruto / Decimal('100')).quantize(Decimal('0.01'))
+    else:
+        desc_cab_valor = desc_cab_bruto.quantize(Decimal('0.01'))
+    desc_cab_valor = max(Decimal('0'), min(desc_cab_valor, subtotal))
+    if desc_cab_valor <= 0:
+        return {}
+
+    pesos = {}
+    total_peso = Decimal('0')
+    for it in itens:
+        q = _dec(it.quantidade_negociada) or _dec(it.quantidade)
+        p_it = _dec(it.preco_por_unidade_negociada) or _dec(it.valor_unitario)
+        peso = q * p_it
+        pesos[it.id] = peso
+        total_peso += peso
+    if total_peso <= 0:
+        return {}
+
+    rateio = {}
+    acumulado = Decimal('0')
+    itens_ordenados = sorted(itens, key=lambda x: x.id)
+    for idx, it in enumerate(itens_ordenados):
+        if idx == len(itens_ordenados) - 1:
+            valor = desc_cab_valor - acumulado  # ultimo absorve diferenca
+        else:
+            valor = (desc_cab_valor * pesos[it.id] / total_peso).quantize(Decimal('0.01'))
+            acumulado += valor
+        rateio[it.id] = valor
+    return rateio
+
+
+def desconto_final_item_compra(item, rateio: dict[int, Decimal]) -> Decimal:
+    """Desconto proprio do item. Se vazio, usa o rateado do cabecalho."""
+    proprio = calcular_desconto_item(item)  # ja existe
+    if proprio and proprio > Decimal('0'):
+        return proprio
+    return rateio.get(item.id, Decimal('0'))
 
 
 def calcular_financeiro_item_pedido_compra(
