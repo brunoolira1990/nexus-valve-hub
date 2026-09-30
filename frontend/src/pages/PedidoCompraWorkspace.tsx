@@ -1154,7 +1154,7 @@ export default function PedidoCompraWorkspace({ pedido, onClose }: PedidoCompraW
                                 <label className="text-xs text-muted-foreground">Valor ICMS ST (R$)</label>
                                 <MoneyInput className="erp-input mt-1 w-full" value={item.icms_st_valor ?? 0} onChange={(value) => updateItem(idx, { icms_st_valor: value })} />
                               </div>
-                              <div>
+                              <div className="lg:col-span-2">
                                 <label className="text-xs text-muted-foreground">
                                   Desconto {item.desconto_tipo === 'percentual' ? '(%)' : '(R$)'}
                                 </label>
