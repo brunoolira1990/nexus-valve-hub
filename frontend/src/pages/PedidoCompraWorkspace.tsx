@@ -18,6 +18,7 @@ import {
 } from '@/lib/paymentTerms';
 import { sugerirDataPrevistaEntregaIso } from '@/lib/prazoEntrega';
 import { calcularFinanceiroItemPedidoCompra } from '@/lib/pedidoCompraFinanceiro';
+import { calcularRateioDescontoCabecalhoLocally } from '@/lib/pedidoCompraFinanceiro';
 import type { PedidoCompra, ItemPedido, Fornecedor, Produto } from '@/types';
 import { equivalentesPreco, labelPrecoUnitarioPorUnidade, unidadesNegociacaoCompraProduto } from '@/lib/comercialDimensional';
 import { StatusBadge } from '@/components/nexus/StatusBadge';
@@ -262,6 +263,15 @@ export default function PedidoCompraWorkspace({ pedido, onClose }: PedidoCompraW
     [itens],
   );
 
+  const temDescontoNosItens = useMemo(
+    () => itens.some((it) => (it.desconto_valor ?? 0) > 0),
+    [itens],
+  );
+  const temDescontoNoCabecalho = useMemo(
+    () => (form.desconto_cabecalho ?? 0) > 0,
+    [form.desconto_cabecalho],
+  );
+
   const resumoFinanceiroPedido = useMemo(() => {
     let sub = 0;
     let ipi = 0;
@@ -281,25 +291,33 @@ export default function PedidoCompraWorkspace({ pedido, onClose }: PedidoCompraW
       total += c.valorTotalItem;
     }
 
-    // Desconto do cabecalho
-    const baseCabecalho = Math.max(0, sub - desc);
-    const descCabBruto = numSeguro(form.desconto_cabecalho);
-    const descCabValor = form.desconto_cabecalho_tipo === 'percentual'
-      ? Math.round(baseCabecalho * descCabBruto) / 100
-      : descCabBruto;
-    const descCabClamp = Math.max(0, Math.min(descCabValor, baseCabecalho));
+    // Desconto do cabecalho - rateio proporcional (on-the-fly, nao gravado)
+    const descRateadoPorItem = calcularRateioDescontoCabecalhoLocally(
+      itens,
+      Number(form.desconto_cabecalho ?? 0),
+      form.desconto_cabecalho_tipo === 'percentual' ? 'percentual' : 'valor'
+    );
+
+    let totalDescontoCabecalho = 0;
+    if (temDescontoNoCabecalho) {
+      totalDescontoCabecalho = Object.values(descRateadoPorItem).reduce(
+        (sum, val) => sum + val,
+        0
+      );
+    }
 
     return {
       subtotal_produtos: Math.round(sub * 100) / 100,
       total_ipi: Math.round(ipi * 100) / 100,
       total_icms_st: Math.round(st * 100) / 100,
-      total_descontos: Math.round(desc * 100) / 100,
-      total_desconto_cabecalho: Math.round(descCabClamp * 100) / 100,
+      total_descontos: temDescontoNoCabecalho ? 0 : Math.round(desc * 100) / 100,
+      total_desconto_cabecalho: Math.round(totalDescontoCabecalho * 100) / 100,
       total_frete: Math.round(frete * 100) / 100,
       total_outras_despesas: Math.round(outras * 100) / 100,
-      valor_total_pedido: Math.max(0, Math.round((total - descCabClamp) * 100) / 100),
+      valor_total_pedido: Math.max(0, Math.round((total - totalDescontoCabecalho) * 100) / 100),
+      desconto_rateado_por_item: descRateadoPorItem,
     };
-  }, [itens, form.desconto_cabecalho, form.desconto_cabecalho_tipo]);
+  }, [itens, form.desconto_cabecalho, form.desconto_cabecalho_tipo, temDescontoNoCabecalho]);
 
   const pagamentoParsed = useMemo(
     () => parseCondicaoPagamentoPedido(form.condicao_pagamento_texto),
@@ -1130,6 +1148,12 @@ export default function PedidoCompraWorkspace({ pedido, onClose }: PedidoCompraW
                               <ReadonlyCalculatedField value={`${formatMoneyBRL(fin.valorProdutos)}`} className="erp-input mt-1 flex h-10 items-center justify-end tabular-nums" />
                             </div>
                           </div>
+
+                          {temDescontoNoCabecalho && resumoFinanceiroPedido.desconto_rateado_por_item[item.id] > 0 && (
+                            <div className="mt-2 p-2 bg-muted/30 border border-border/60 rounded text-xs text-foreground/80">
+                              Desconto rateado: {formatMoneyBRL(resumoFinanceiroPedido.desconto_rateado_por_item[item.id])}
+                            </div>
+                          )}
                           <details
                             className="rounded-md border border-border bg-muted/10 text-sm open:bg-muted/15"
                             defaultOpen={temImpostosOuAdicionais(item)}
@@ -1159,7 +1183,16 @@ export default function PedidoCompraWorkspace({ pedido, onClose }: PedidoCompraW
                                   Desconto {item.desconto_tipo === 'percentual' ? '(%)' : '(R$)'}
                                 </label>
                                 <div className="flex items-center gap-1 mt-1">
-                                  <DiscountInput className="erp-input flex-1" value={item.desconto_valor ?? 0} onChange={(value) => updateItem(idx, { desconto_valor: value })} />
+                                  <DiscountInput
+  className="erp-input flex-1"
+  disabled={temDescontoNoCabecalho}
+  value={item.desconto_valor ?? 0}
+  onChange={(value) => updateItem(idx, { desconto_valor: value })} />
+              {temDescontoNoCabecalho && (
+                <span className="text-xs text-destructive ml-2">
+                  Zere o desconto do total para editar descontos por item
+                </span>
+              )}
                                   <div className="inline-flex rounded-md border border-border overflow-hidden shrink-0">
                                     <button
                                       type="button"
@@ -1322,11 +1355,17 @@ export default function PedidoCompraWorkspace({ pedido, onClose }: PedidoCompraW
               <input
                 type="number"
                 className="erp-input w-28 h-8 text-sm tabular-nums"
+                disabled={temDescontoNosItens}
                 value={form.desconto_cabecalho || ''}
                 onChange={(e) => setForm((p) => ({ ...p, desconto_cabecalho: Number(e.target.value) || 0 }))}
                 step="0.01"
                 min="0"
               />
+              {temDescontoNosItens && (
+                <span className="text-xs text-destructive ml-2">
+                  Zere os descontos dos itens para usar desconto no total
+                </span>
+              )}
               <div className="inline-flex rounded-md border border-border overflow-hidden">
                 <button
                   type="button"
