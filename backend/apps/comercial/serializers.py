@@ -1366,6 +1366,13 @@ class ItemPedidoCompraSerializer(serializers.ModelSerializer):
     )
     produto_nome = serializers.SerializerMethodField(read_only=True)
     saldo_pendente = serializers.SerializerMethodField(read_only=True)
+    desconto_tipo = serializers.ChoiceField(
+        choices=[('valor', 'R$'), ('percentual', '%')],
+        required=False,
+        default='valor',
+        help_text='Tipo do desconto do item: valor em R$ ou percentual (%).',
+    )
+    desconto_valor_calculado = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = ItemPedidoCompra
@@ -1394,6 +1401,8 @@ class ItemPedidoCompraSerializer(serializers.ModelSerializer):
             'icms_st_percentual',
             'icms_st_valor',
             'desconto_valor',
+            'desconto_tipo',
+            'desconto_valor_calculado',
             'frete_valor',
             'outras_despesas_valor',
             'valor_produtos',
@@ -1410,6 +1419,13 @@ class ItemPedidoCompraSerializer(serializers.ModelSerializer):
         if saldo < 0:
             saldo = Decimal('0')
         return float(saldo)
+
+    def get_desconto_valor_calculado(self, obj):
+        q = _dec(obj.quantidade_negociada) or _dec(obj.quantidade)
+        preco = _dec(obj.preco_por_unidade_negociada) or _dec(obj.valor_unitario)
+        if obj.desconto_tipo == 'percentual':
+            return _round(q * preco * obj.desconto_valor / Decimal('100'))
+        return _round(obj.desconto_valor)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -1469,6 +1485,7 @@ class ItemPedidoCompraSerializer(serializers.ModelSerializer):
 
         qn = _dec(attrs.get('quantidade_negociada', quantidade_neg))
         pr = _dec(attrs.get('preco_por_unidade_negociada', preco))
+        dtipo = attrs.get('desconto_tipo', self.instance.desconto_tipo if self.instance else 'valor')
         fin = calcular_financeiro_item_pedido_compra(
             quantidade_negociada=qn,
             preco_por_unidade_negociada=pr,
@@ -1476,6 +1493,7 @@ class ItemPedidoCompraSerializer(serializers.ModelSerializer):
             ipi_valor_informado=gv('ipi_valor'),
             icms_st_percentual=gv('icms_st_percentual'),
             icms_st_valor_informado=gv('icms_st_valor'),
+            desconto_tipo=dtipo,
             desconto_valor=gv('desconto_valor'),
             frete_valor=gv('frete_valor'),
             outras_despesas_valor=gv('outras_despesas_valor'),
@@ -1548,7 +1566,13 @@ class PedidoCompraSerializer(serializers.ModelSerializer):
             sub += _dec(it.valor_produtos)
             ipi += _dec(it.ipi_valor)
             st += _dec(it.icms_st_valor)
-            desc += _dec(it.desconto_valor)
+            q = _dec(it.quantidade_negociada) or _dec(it.quantidade)
+            preco = _dec(it.preco_por_unidade_negociada) or _dec(it.valor_unitario)
+            if it.desconto_tipo == 'percentual':
+                item_desconto = _round(q * preco * it.desconto_valor / Decimal('100'))
+            else:
+                item_desconto = _round(it.desconto_valor)
+            desc += item_desconto
             frete += _dec(it.frete_valor)
             outras += _dec(it.outras_despesas_valor)
 

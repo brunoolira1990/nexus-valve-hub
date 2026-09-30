@@ -8,7 +8,13 @@ def _q(v: Decimal, places: str = '0.01') -> Decimal:
 
 
 def _dec(v) -> Decimal:
-    return Decimal(str(v)) if v is not None else Decimal('0')
+    return Decimal(str(v)) if v is None else Decimal('0')
+
+
+def _desconto_item(q: Decimal, preco: Decimal, desconto_tipo: str, desconto_valor: Decimal) -> Decimal:
+    if desconto_tipo == 'percentual':
+        return _q(q * preco * desconto_valor / Decimal('100'))
+    return _round(desconto_valor)
 
 
 def calcular_financeiro_item_pedido_compra(
@@ -19,6 +25,7 @@ def calcular_financeiro_item_pedido_compra(
     ipi_valor_informado,
     icms_st_percentual,
     icms_st_valor_informado,
+    desconto_tipo,
     desconto_valor,
     frete_valor,
     outras_despesas_valor,
@@ -46,7 +53,7 @@ def calcular_financeiro_item_pedido_compra(
     else:
         icms_st_valor = Decimal('0')
 
-    desconto = _q(max(_dec(desconto_valor), Decimal('0')))
+    desconto = _desconto_item(q, preco, desconto_tipo, _dec(desconto_valor))
     frete = _q(max(_dec(frete_valor), Decimal('0')))
     outras = _q(max(_dec(outras_despesas_valor), Decimal('0')))
 

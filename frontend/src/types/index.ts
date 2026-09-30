@@ -2151,6 +2151,7 @@ export interface ItemPedido {
   icms_st_percentual?: number;
   icms_st_valor?: number;
   desconto_valor?: number;
+  desconto_tipo?: 'valor' | 'percentual';
   frete_valor?: number;
   outras_despesas_valor?: number;
   valor_produtos?: number;

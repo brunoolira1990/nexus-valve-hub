@@ -678,6 +678,12 @@ class ItemPedidoCompra(models.Model):
     preco_por_metro = models.DecimalField(max_digits=14, decimal_places=4, default=Decimal('0'))
     fator_conversao = models.DecimalField(max_digits=14, decimal_places=6, default=Decimal('0'))
     snapshot_produto = models.JSONField(default=dict, blank=True)
+    desconto_tipo = models.CharField(
+        max_length=12,
+        choices=TipoDescontoCabecalho.choices,
+        default=TipoDescontoCabecalho.VALOR,
+        help_text='Tipo do desconto do item: valor em R$ ou percentual (%).',
+    )
     ipi_percentual = models.DecimalField(max_digits=7, decimal_places=4, default=Decimal('0'))
     ipi_valor = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
     icms_st_percentual = models.DecimalField(max_digits=7, decimal_places=4, default=Decimal('0'))

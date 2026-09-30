@@ -28,6 +28,7 @@ export function calcularFinanceiroItemPedidoCompra(
     | 'icms_st_percentual'
     | 'icms_st_valor'
     | 'desconto_valor'
+    | 'desconto_tipo'
     | 'frete_valor'
     | 'outras_despesas_valor'
   >,
@@ -48,7 +49,13 @@ export function calcularFinanceiroItemPedidoCompra(
   if (stValInf > 0) valorIcmsSt = Math.round(stValInf * 100) / 100;
   else if (stPct > 0) valorIcmsSt = Math.round(((valorProdutos * stPct) / 100) * 100) / 100;
 
-  const desconto = Math.max(0, n(item.desconto_valor));
+  let desconto = n(item.desconto_valor);
+  if (item.desconto_tipo === 'percentual') {
+    desconto = Math.max(0, Math.round((q * preco * desconto) / 100));
+  } else {
+    desconto = Math.max(0, desconto);
+  }
+
   const frete = Math.max(0, n(item.frete_valor));
   const outras = Math.max(0, n(item.outras_despesas_valor));
 

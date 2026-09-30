@@ -198,6 +198,7 @@ export default function PedidoCompraWorkspace({ pedido, onClose }: PedidoCompraW
         icms_st_percentual: it.icms_st_percentual ?? 0,
         icms_st_valor: it.icms_st_valor ?? 0,
         desconto_valor: it.desconto_valor ?? 0,
+        desconto_tipo: it.desconto_tipo ?? 'valor',
         frete_valor: it.frete_valor ?? 0,
         outras_despesas_valor: it.outras_despesas_valor ?? 0,
       }));
@@ -1157,6 +1158,35 @@ export default function PedidoCompraWorkspace({ pedido, onClose }: PedidoCompraW
                                 <label className="text-xs text-muted-foreground">Desconto (R$)</label>
                                 <DiscountInput className="erp-input mt-1 w-full" value={item.desconto_valor ?? 0} onChange={(value) => updateItem(idx, { desconto_valor: value })} />
                               </div>
+                              <div className="flex items-center justify-between gap-2 mt-1">
+                                <button
+                                  type="button"
+                                  className={`px-2 py-1 text-xs font-medium transition-colors rounded-md border border-border ${
+                                    item.desconto_tipo === 'valor'
+                                      ? 'bg-primary text-primary-foreground'
+                                      : 'bg-background text-muted-foreground hover:bg-muted'
+                                  }`}
+                                  onClick={() => updateItem(idx, { desconto_tipo: 'valor' })}
+                                >
+                                  R$
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`px-2 py-1 text-xs font-medium transition-colors rounded-md border-l border-border ${
+                                    item.desconto_tipo === 'percentual'
+                                      ? 'bg-primary text-primary-foreground'
+                                      : 'bg-background text-muted-foreground hover:bg-muted'
+                                  }`}
+                                  onClick={() => updateItem(idx, { desconto_tipo: 'percentual' })}
+                                >
+                                  %
+                                </button>
+                              </div>
+                              {item.desconto_tipo === 'percentual' && item.desconto_valor > 0 && (
+                                <div className="text-xs text-muted-foreground">
+                                  = -{formatMoneyBRL(Math.round(item.quantidade_negociada ?? item.quantidade * (item.preco_por_unidade_negociada ?? item.valor_unitario ?? 0) * item.desconto_valor / 100))}
+                                </div>
+                              )}
                               <div>
                                 <label className="text-xs text-muted-foreground">Frete (R$)</label>
                                 <MoneyInput className="erp-input mt-1 w-full" value={item.frete_valor ?? 0} onChange={(value) => updateItem(idx, { frete_valor: value })} />
