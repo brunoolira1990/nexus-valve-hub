@@ -8,7 +8,7 @@ def _q(v: Decimal, places: str = '0.01') -> Decimal:
 
 
 def _dec(v) -> Decimal:
-    return Decimal(str(v)) if v is None else Decimal('0')
+    return Decimal('0') if v is None else Decimal(str(v))
 
 
 def _desconto_item(q: Decimal, preco: Decimal, desconto_tipo: str, desconto_valor: Decimal) -> Decimal:
