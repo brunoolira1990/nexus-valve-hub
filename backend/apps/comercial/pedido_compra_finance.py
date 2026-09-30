@@ -31,7 +31,7 @@ def calcular_rateio_desconto_cabecalho(pedido) -> dict[int, Decimal]:
     Vazio se nao ha desconto de cabecalho ou se ja ha desconto em item."""
     if not pedido:
         return {}
-    itens = list(pedido.itens.exclude(status_item='CANCELADO'))
+    itens = list(pedido.itens.all())
     if not itens:
         return {}
     if any((it.desconto_valor or Decimal('0')) > Decimal('0') for it in itens):
