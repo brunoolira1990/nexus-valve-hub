@@ -1158,32 +1158,34 @@ export default function PedidoCompraWorkspace({ pedido, onClose }: PedidoCompraW
                                 <label className="text-xs text-muted-foreground">
                                   Desconto {item.desconto_tipo === 'percentual' ? '(%)' : '(R$)'}
                                 </label>
-                                <div className="flex items-center gap-1 mt-1 min-w-0">
-                                  <DiscountInput className="erp-input flex-1" value={item.desconto_valor ?? 0} onChange={(value) => updateItem(idx, { desconto_valor: value })} />
-                                  <div className="inline-flex rounded-md border border-border overflow-hidden shrink-0">
-                                    <button
-                                      type="button"
-                                      className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                                        item.desconto_tipo === 'valor'
-                                          ? 'bg-primary text-primary-foreground'
-                                          : 'bg-background text-muted-foreground hover:bg-muted'
-                                      }`}
-                                      onClick={() => updateItem(idx, { desconto_tipo: 'valor' })}
-                                    >
-                                      R$
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className={`px-2.5 py-1.5 text-xs font-medium transition-colors border-l border-border ${
-                                        item.desconto_tipo === 'percentual'
-                                          ? 'bg-primary text-primary-foreground'
-                                          : 'bg-background text-muted-foreground hover:bg-muted'
-                                      }`}
-                                      onClick={() => updateItem(idx, { desconto_tipo: 'percentual' })}
-                                    >
-                                      %
-                                    </button>
-                                  </div>
+                                <div className="flex items-stretch mt-1 w-full max-w-[240px] rounded-md border border-border overflow-hidden focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1">
+                                  <DiscountInput
+                                    className="erp-input flex-1 min-w-0 border-0 rounded-none focus:ring-0 focus:ring-offset-0"
+                                    value={item.desconto_valor ?? 0}
+                                    onChange={(value) => updateItem(idx, { desconto_valor: value })}
+                                  />
+                                  <button
+                                    type="button"
+                                    className={`px-3 text-xs font-medium transition-colors border-l border-border shrink-0 ${
+                                      item.desconto_tipo === 'valor'
+                                        ? 'bg-primary text-primary-foreground'
+                                        : 'bg-background text-muted-foreground hover:bg-muted'
+                                    }`}
+                                    onClick={() => updateItem(idx, { desconto_tipo: 'valor' })}
+                                  >
+                                    R$
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={`px-3 text-xs font-medium transition-colors border-l border-border shrink-0 ${
+                                      item.desconto_tipo === 'percentual'
+                                        ? 'bg-primary text-primary-foreground'
+                                        : 'bg-background text-muted-foreground hover:bg-muted'
+                                    }`}
+                                    onClick={() => updateItem(idx, { desconto_tipo: 'percentual' })}
+                                  >
+                                    %
+                                  </button>
                                 </div>
                               </div>
                               {item.desconto_tipo === 'percentual' && item.desconto_valor > 0 && (
