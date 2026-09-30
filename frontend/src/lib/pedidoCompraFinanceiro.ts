@@ -1,5 +1,12 @@
 import type { ItemPedido } from '@/types';
 
+/** Helper: converte para numero seguro (0 se null/undefined/NaN). */
+const n = (v: unknown): number => {
+  if (v == null || v === '') return 0;
+  const num = Number(v);
+  return Number.isFinite(num) ? num : 0;
+};
+
 export type CalculoFinanceiroItemPedido = {
   valorProdutos: number;
   valorIpi: number;
