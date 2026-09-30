@@ -1158,7 +1158,7 @@ export default function PedidoCompraWorkspace({ pedido, onClose }: PedidoCompraW
                                 <label className="text-xs text-muted-foreground">
                                   Desconto {item.desconto_tipo === 'percentual' ? '(%)' : '(R$)'}
                                 </label>
-                                <div className="flex items-center gap-1 mt-1">
+                                <div className="flex items-center gap-1 mt-1 min-w-0">
                                   <DiscountInput className="erp-input flex-1" value={item.desconto_valor ?? 0} onChange={(value) => updateItem(idx, { desconto_valor: value })} />
                                   <div className="inline-flex rounded-md border border-border overflow-hidden shrink-0">
                                     <button
