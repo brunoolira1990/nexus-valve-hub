@@ -132,9 +132,62 @@ def _desconto_proporcional(item: ItemPedidoVenda, quantidade: Decimal) -> Decima
     return _round_money(_dec(item.desconto) * (quantidade / pedida))
 
 
-def _valor_item_faturamento(item: ItemPedidoVenda, quantidade: Decimal) -> tuple[Decimal, Decimal, Decimal]:
+def _valor_desconto_cabecalho_total(pedido: PedidoVenda) -> Decimal:
+    """Valor em R$ do desconto do cabecalho (aplica % sobre base bruta se for percentual)."""
+    if pedido is None:
+        return Decimal('0')
+    desc_bruto = _dec(getattr(pedido, 'desconto_cabecalho', None) or Decimal('0'))
+    if desc_bruto <= 0:
+        return Decimal('0')
+    base = Decimal('0')
+    for it in pedido.itens.exclude(status_item=ItemPedidoVenda.StatusItem.CANCELADO):
+        base += quantidade_pedida_item(it) * preco_unitario_item(it)
+    if base <= 0:
+        return Decimal('0')
+    if getattr(pedido, 'desconto_cabecalho_tipo', 'valor') == 'percentual':
+        valor = _round_money(base * desc_bruto / Decimal('100'))
+    else:
+        valor = _round_money(desc_bruto)
+    return max(Decimal('0'), min(valor, base))
+
+
+def _base_rateio_desconto_cabecalho(pedido: PedidoVenda) -> Decimal:
+    """Soma (qtd * preco) dos itens ativos = base para o rateio do desconto do cabecalho."""
+    if pedido is None:
+        return Decimal('0')
+    base = Decimal('0')
+    for it in pedido.itens.exclude(status_item=ItemPedidoVenda.StatusItem.CANCELADO):
+        base += quantidade_pedida_item(it) * preco_unitario_item(it)
+    return base
+
+
+def _desconto_cabecalho_proporcional(
+    pedido: PedidoVenda,
+    quantidade_faturada: Decimal,
+    preco: Decimal,
+) -> Decimal:
+    """Rateio do desconto do cabecalho proporcional ao valor bruto faturado no item."""
+    valor_total_desc = _valor_desconto_cabecalho_total(pedido)
+    if valor_total_desc <= 0:
+        return Decimal('0')
+    base = _base_rateio_desconto_cabecalho(pedido)
+    if base <= 0:
+        return Decimal('0')
+    valor_item_bruto = quantidade_faturada * preco
+    return _round_money(valor_total_desc * valor_item_bruto / base)
+
+
+def _valor_item_faturamento(
+    item: ItemPedidoVenda,
+    quantidade: Decimal,
+    pedido: PedidoVenda | None = None,
+) -> tuple[Decimal, Decimal, Decimal]:
+    if pedido is None:
+        pedido = item.pedido
     preco = preco_unitario_item(item)
-    desconto = _desconto_proporcional(item, quantidade)
+    desconto_item = _desconto_proporcional(item, quantidade)
+    desconto_cab = _desconto_cabecalho_proporcional(pedido, quantidade, preco)
+    desconto = desconto_item + desconto_cab
     valor = _round_money(quantidade * preco - desconto)
     return preco, desconto, valor
 
