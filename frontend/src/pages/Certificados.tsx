@@ -1966,15 +1966,15 @@ const Certificados = () => {
                     ) : null}
                     {dividindoCorridas[idx] && dividindoCorridas[idx].length > 0 ? (
                       <div className="overflow-auto max-h-[200px]">
-                        <div className="grid grid-cols-6 gap-2 text-xs border-b border-border pb-2">
-                          <div className="col-span-2">Corrida</div>
-                          <div>Lote</div>
-                          <div>Quantidade</div>
-                          <div className="col-span-2">Ações</div>
+                        <div className="grid grid-cols-12 gap-2 text-xs border-b border-border pb-2 px-1 items-center">
+                          <div className="col-span-5">Corrida</div>
+                          <div className="col-span-3">Lote</div>
+                          <div className="col-span-2">Quantidade</div>
+                          <div className="col-span-2 text-right">Ações</div>
                         </div>
                         {dividindoCorridas[idx].map((linha, linhaIdx) => (
-                          <div key={linhaIdx} className="grid grid-cols-6 gap-2 py-2 border-b border-border">
-                            <div className="col-span-3">
+                          <div key={linhaIdx} className="grid grid-cols-12 gap-2 py-2 border-b border-border items-center px-1">
+                            <div className="col-span-5">
                               <select
                                 className="erp-select"
                                 value={linha.valorSelecao || ''}
@@ -2022,19 +2022,32 @@ const Certificados = () => {
                                 })()}
                               </select>
                             </div>
-                            <div className="col-span-1">
+                            <div className="col-span-3">
                               <input
-                                className="erp-input mt-1 w-full"
+                                className="erp-input w-full"
+                                placeholder="Lote (opcional)"
+                                value={linha.lote || ''}
+                                onChange={(e) => updateLinhaCorrida(idx, linhaIdx, { lote: e.target.value })}
+                              />
+                            </div>
+                            <div className="col-span-2">
+                              <input
+                                className="erp-input w-full"
                                 inputMode="decimal"
+                                placeholder="0,000"
                                 value={linha.quantidade}
                                 onChange={(e) => updateLinhaCorrida(idx, linhaIdx, { quantidade: e.target.value })}
                               />
                             </div>
-                            <div className="col-span-1">
-                              <span className="erp-btn-outline erp-btn-sm" onClick={() => removeLinhaCorrida(idx, linhaIdx)}>✕</span>
-                            </div>
-                            <div className="col-span-2">
-                              <span className="text-xs text-muted-foreground">({linha.corrida} / {linha.lote})</span>
+                            <div className="col-span-2 flex justify-end">
+                              <button
+                                type="button"
+                                className="erp-btn-outline erp-btn-sm"
+                                onClick={() => removeLinhaCorrida(idx, linhaIdx)}
+                                title="Remover linha"
+                              >
+                                ✕
+                              </button>
                             </div>
                           </div>
                         ))}
