@@ -159,8 +159,13 @@ def recalcular_valor_nf_entrada(nf: NFeEntrada) -> None:
 
 
 def recalcular_valor_nf_saida(nf: NFeSaida) -> None:
-    total = sum((_dec(it.valor) * _dec(it.quantidade) for it in nf.itens.all()), Decimal('0'))
-    nf.valor_total = total
+    total = Decimal('0')
+    for it in nf.itens.all():
+        subtotal = _dec(it.valor) * _dec(it.quantidade)
+        snap_c = it.snapshot_comercial or {}
+        desconto = _dec(snap_c.get('desconto', 0) or 0)
+        total += subtotal - desconto
+    nf.valor_total = _round_money(total)
     nf.save(update_fields=['valor_total'])
 
 
