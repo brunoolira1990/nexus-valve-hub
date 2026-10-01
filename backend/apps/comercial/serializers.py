@@ -1651,13 +1651,15 @@ class PedidoCompraSerializer(serializers.ModelSerializer):
         desc_cabecalho = _dec(attrs.get('desconto_cabecalho', self.instance.desconto_cabecalho if self.instance else Decimal('0')) or Decimal('0'))
         tem_desconto_cabecalho = desc_cabecalho > Decimal('0')
         tem_desconto_em_item = any(
-            (_dec(item.get('desconto_valor', item.get('desconto_valor', Decimal('0')))) or Decimal('0')) > Decimal('0')
+            (_dec(item.get('desconto_valor', Decimal('0'))) or Decimal('0')) > Decimal('0')
             for item in (itens or [])
         )
         if tem_desconto_cabecalho and tem_desconto_em_item:
             raise serializers.ValidationError(
                 {'detail': 'Nao e possivel usar desconto no item e no cabecalho ao mesmo tempo.'}
             )
+
+        return attrs
 
     def create(self, validated_data):
         itens_data = validated_data.pop('itens')
