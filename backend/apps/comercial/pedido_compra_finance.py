@@ -7,6 +7,10 @@ def _q(v: Decimal, places: str = '0.01') -> Decimal:
     return v.quantize(Decimal(places))
 
 
+def _round(v) -> Decimal:
+    return Decimal(str(v or 0)).quantize(Decimal('0.01'))
+
+
 def _dec(v) -> Decimal:
     return Decimal('0') if v is None else Decimal(str(v))
 
