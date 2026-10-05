@@ -194,7 +194,18 @@ def _buscar_entrada_existente(
     nfe_historica: NFeSaidaHistoricaImportada | None = None,
     chave: str = '',
 ) -> NFeEntrada | None:
-    qs = NFeEntrada.objects.filter(tipo_origem=NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_EMITIDA)
+    qs = (
+        NFeEntrada.objects
+        .filter(tipo_origem=NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_EMITIDA)
+        .exclude(
+            status_operacional__in=[
+                'INUTILIZADA_HOMOLOGACAO',
+                'INUTILIZADA_PRODUCAO',
+                'CANCELADA_HOMOLOGACAO',
+                'CANCELADA_PRODUCAO',
+            ]
+        )
+    )
     if nfe_saida is not None:
         por_fk = qs.filter(nfe_saida_origem_id=nfe_saida.pk).order_by('-id').first()
         if por_fk:
