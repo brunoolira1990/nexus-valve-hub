@@ -276,6 +276,34 @@ class NFeEntradaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         nf = self.get_object()
         return response.Response(montar_dados_contexto_cancelamento(nf, usuario=request.user))
 
+    @action(detail=True, methods=['post'], url_path='reconstruir-xml-autorizado')
+    def reconstruir_xml_autorizado(self, request, pk=None):
+        """Remonta <nfeProc> localmente a partir do xml_assinado + protocolo."""
+        import logging
+
+        from apps.fiscal.nfe_entrada_xml_autorizado import (
+            NFeEntradaXmlAutorizadoError,
+            aplicar_reconstrucao_xml_autorizado,
+        )
+
+        log = logging.getLogger(__name__)
+        nf = self.get_object()
+        dh_recbto = request.data.get('dh_recbto') if hasattr(request, 'data') else None
+        try:
+            payload = aplicar_reconstrucao_xml_autorizado(nf, dh_recbto=dh_recbto)
+        except NFeEntradaXmlAutorizadoError as exc:
+            return response.Response(
+                {'ok': False, 'mensagem': str(exc), 'etapa': getattr(exc, 'etapa', 'VALIDACAO')},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception:
+            log.exception('Erro técnico reconstruir XML autorizado entrada_id=%s', pk)
+            return response.Response(
+                {'ok': False, 'mensagem': 'Erro técnico ao reconstruir XML autorizado.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        return response.Response(payload, status=status.HTTP_200_OK)
+
     @action(detail=True, methods=['post'], url_path='consultar-situacao-sefaz')
     def consultar_situacao_sefaz(self, request, pk=None):
         """Consulta situação da NF-e de entrada na SEFAZ (read-only)."""

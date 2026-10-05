@@ -465,6 +465,10 @@ class NFeEntradaSerializer(serializers.ModelSerializer):
             'nome_arquivo',
             'nfe_saida_origem_id',
             'nfe_saida_historica_origem_id',
+            'protocolo_autorizacao',
+            'cstat_autorizacao',
+            'motivo_autorizacao',
+            'xml_autorizado',
         )
         read_only_fields = (
             'tipo_origem',
