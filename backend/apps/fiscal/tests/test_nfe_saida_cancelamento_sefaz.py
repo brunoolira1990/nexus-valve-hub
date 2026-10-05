@@ -22,7 +22,7 @@ from apps.fiscal.nfe_emissao.cancelamento_sefaz import (
     validar_justificativa_cancelamento,
 )
 from apps.fiscal.nfe_saida_financeiro import montar_flags_financeiro_nfe
-from apps.fiscal.tests.test_nfe_saida_40143_gerar_contas_receber import _autorizar_nf_producao
+from apps.fiscal.tests.test_nfe_saida_40143_gerar_contas_receber import _autorizar_nf
 from apps.fiscal.tests.test_nfe_saida_402_emissao_homologacao import _pedido_nf
 
 
@@ -66,7 +66,7 @@ class NFeCancelamentoSefazTests(TestCase):
         self.pedido, self.item, self.nf_homolog = _pedido_nf()
         self.nf_homolog = _autorizar_homolog(self.nf_homolog)
         _, _, self.nf_prod = _pedido_nf()
-        self.nf_prod = _autorizar_nf_producao(self.nf_prod)
+        self.nf_prod = _autorizar_nf(self.nf_prod)
 
     def test_justificativa_minima(self):
         with self.assertRaises(NFeCancelamentoError):
