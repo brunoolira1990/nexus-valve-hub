@@ -276,6 +276,38 @@ class NFeEntradaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         nf = self.get_object()
         return response.Response(montar_dados_contexto_cancelamento(nf, usuario=request.user))
 
+    @action(detail=True, methods=['post'], url_path='consultar-situacao-sefaz')
+    def consultar_situacao_sefaz(self, request, pk=None):
+        """Consulta situação da NF-e de entrada na SEFAZ (read-only)."""
+        import logging
+
+        from apps.fiscal.nfe_emissao.consulta_situacao import (
+            NFeConsultaSituacaoError,
+            consulta_situacao_nfe_entrada,
+        )
+
+        log = logging.getLogger(__name__)
+        nf = self.get_object()
+        try:
+            payload = consulta_situacao_nfe_entrada(nf, usuario=request.user)
+        except NFeConsultaSituacaoError as exc:
+            etapa = getattr(exc, 'etapa', '')
+            code = status.HTTP_400_BAD_REQUEST if etapa in (
+                'CERTIFICADO', 'EMITENTE', 'VALIDACAO', 'COMUNICACAO_SEFAZ',
+            ) else status.HTTP_422_UNPROCESSABLE_ENTITY
+            return response.Response(
+                {'ok': False, 'mensagem': str(exc), 'etapa': etapa},
+                status=code,
+            )
+        except Exception:
+            log.exception('Erro técnico consulta situação entrada_id=%s', pk)
+            return response.Response(
+                {'ok': False, 'mensagem': 'Erro técnico ao consultar SEFAZ.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        code = status.HTTP_200_OK if payload.get('ok') else status.HTTP_422_UNPROCESSABLE_ENTITY
+        return response.Response(payload, status=code)
+
     @action(detail=True, methods=['post'], url_path='cancelar')
     def cancelar(self, request, pk=None):
         import logging

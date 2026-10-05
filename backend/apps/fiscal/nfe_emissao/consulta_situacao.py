@@ -8,7 +8,7 @@ from typing import Any
 from django.db import transaction
 from django.utils import timezone
 
-from apps.fiscal.models import NFeSaida, NFeSaidaEvento
+from apps.fiscal.models import NFeEntrada, NFeSaida, NFeSaidaEvento
 from apps.fiscal.nfe_emissao.empresa_emitente import resolver_empresa_emitente_nfe
 from apps.fiscal.nfe_emissao.resposta_consulta import montar_resposta_consulta_situacao
 from apps.fiscal.nfe_integracao.adapters.certificado_a1 import carregar_certificado_empresa
@@ -202,3 +202,149 @@ def consultar_situacao_nfe_saida(nfe_saida: NFeSaida, *, usuario=None) -> dict[s
         ok=resultado.ok,
         status_local_atualizado=status_atualizado,
     )
+
+
+# ============================================================================
+# Consulta situação — NF-e de Entrada Própria (não emite, não cancela)
+# ============================================================================
+
+
+def _lock_nfe_entrada(nfe_id: int) -> NFeEntrada:
+    return NFeEntrada.objects.select_for_update().get(pk=nfe_id)
+
+
+def pode_consultar_situacao_sefaz_entrada(nf: NFeEntrada) -> tuple[bool, str]:
+    chave = (nf.chave_acesso or '').strip()
+    if len(chave) != 44:
+        return False, MSG_SEM_CHAVE
+    sefaz = (nf.status_emissao_sefaz or '').strip().upper()
+    autorizada_homolog = sefaz == NFeEntrada.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO
+    autorizada_producao = sefaz == NFeEntrada.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO
+    if autorizada_homolog or autorizada_producao:
+        return True, ''
+    return False, MSG_STATUS_INCOMPATIVEL
+
+
+def _homologacao_da_nfe_entrada(nf: NFeEntrada) -> bool:
+    return (nf.ambiente_emissao or '').strip().lower() == 'homologacao'
+
+
+def _sincronizar_status_local_entrada(nf: NFeEntrada, resultado: ResultadoConsultaSituacaoSefaz) -> bool:
+    """Atualiza status local da entrada quando a SEFAZ indica situação inequívoca."""
+    cstat = resultado.c_stat
+    if not cstat:
+        return False
+
+    update_fields: list[str] = []
+    sefaz_ant = nf.status_emissao_sefaz or ''
+    op_ant = nf.status_operacional or ''
+    homolog = _homologacao_da_nfe_entrada(nf)
+
+    if cstat in CSTAT_AUTORIZADO:
+        if resultado.protocolo and resultado.protocolo != (nf.protocolo_autorizacao or ''):
+            nf.protocolo_autorizacao = resultado.protocolo
+            update_fields.append('protocolo_autorizacao')
+        if resultado.x_motivo and resultado.x_motivo != (nf.motivo_autorizacao or ''):
+            nf.motivo_autorizacao = resultado.x_motivo
+            update_fields.append('motivo_autorizacao')
+        if cstat != (nf.cstat_autorizacao or ''):
+            nf.cstat_autorizacao = cstat
+            update_fields.append('cstat_autorizacao')
+        alvo_sefaz = (
+            NFeEntrada.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO
+            if homolog
+            else NFeEntrada.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO
+        )
+        alvo_op = (
+            NFeEntrada.StatusOperacional.AUTORIZADA_HOMOLOGACAO
+            if homolog
+            else NFeEntrada.StatusOperacional.AUTORIZADA_PRODUCAO
+        )
+        if sefaz_ant != alvo_sefaz:
+            nf.status_emissao_sefaz = alvo_sefaz
+            update_fields.append('status_emissao_sefaz')
+        if op_ant != alvo_op:
+            nf.status_operacional = alvo_op
+            update_fields.append('status_operacional')
+    elif cstat in CSTAT_CANCELADO:
+        nf.cstat_autorizacao = cstat
+        nf.motivo_autorizacao = resultado.x_motivo or nf.motivo_autorizacao
+        update_fields.extend(['cstat_autorizacao', 'motivo_autorizacao'])
+        alvo_sefaz = (
+            NFeEntrada.StatusEmissaoSefaz.CANCELADA_HOMOLOGACAO
+            if homolog
+            else NFeEntrada.StatusEmissaoSefaz.CANCELADA_PRODUCAO
+        )
+        alvo_op = (
+            NFeEntrada.StatusOperacional.CANCELADA_HOMOLOGACAO
+            if homolog
+            else NFeEntrada.StatusOperacional.CANCELADA_PRODUCAO
+        )
+        if sefaz_ant != alvo_sefaz:
+            nf.status_emissao_sefaz = alvo_sefaz
+            update_fields.append('status_emissao_sefaz')
+        if op_ant != alvo_op:
+            nf.status_operacional = alvo_op
+            update_fields.append('status_operacional')
+    elif cstat in CSTAT_DENEGADO:
+        if cstat != (nf.cstat_autorizacao or ''):
+            nf.cstat_autorizacao = cstat
+            update_fields.append('cstat_autorizacao')
+        if resultado.x_motivo and resultado.x_motivo != (nf.motivo_autorizacao or ''):
+            nf.motivo_autorizacao = resultado.x_motivo
+            update_fields.append('motivo_autorizacao')
+
+    if update_fields:
+        nf.save(update_fields=list(dict.fromkeys(update_fields)))
+        return True
+    return False
+
+
+@transaction.atomic
+def consulta_situacao_nfe_entrada(nfe_entrada: NFeEntrada, *, usuario=None) -> dict[str, Any]:
+    nf = _lock_nfe_entrada(nfe_entrada.pk)
+    pode, motivo = pode_consultar_situacao_sefaz_entrada(nf)
+    if not pode:
+        raise NFeConsultaSituacaoError(motivo)
+
+    chave = (nf.chave_acesso or '').strip()
+    empresa = resolver_empresa_emitente_nfe(nf)
+    homolog = _homologacao_da_nfe_entrada(nf)
+    ambiente_label = 'homologacao' if homolog else 'producao'
+
+    try:
+        cert = carregar_certificado_empresa(empresa)
+    except CertificadoA1Error as exc:
+        raise NFeConsultaSituacaoError(str(exc), etapa='CERTIFICADO') from exc
+
+    senha = (empresa.senha_certificado or '').strip()
+    uf = (empresa.uf or 'SP').strip()
+
+    logger.info(
+        'CONSULTA_SITUACAO_SEFAZ_ENTRADA_INICIO nfe_id=%s chave=%s ambiente=%s',
+        nf.pk, chave, ambiente_label,
+    )
+
+    try:
+        comunicacao = criar_comunicacao_sefaz(uf, cert.caminho, senha, homologacao=homolog)
+        resposta_bruta = consulta_situacao_nfe(comunicacao, chave)
+        xml_retorno = extrair_xml_resposta(resposta_bruta)
+        resultado = parse_consulta_situacao_resposta(xml_retorno)
+    except PyNFeComunicacaoError as exc:
+        logger.warning('CONSULTA_SITUACAO_SEFAZ_ENTRADA_ERRO nfe_id=%s msg=%s', nf.pk, exc)
+        raise NFeConsultaSituacaoError(str(exc), etapa='COMUNICACAO_SEFAZ') from exc
+
+    status_atualizado = _sincronizar_status_local_entrada(nf, resultado)
+    nf.refresh_from_db()
+
+    logger.info(
+        'CONSULTA_SITUACAO_SEFAZ_ENTRADA_OK nfe_id=%s cStat=%s protocolo=%s status_atualizado=%s',
+        nf.pk, resultado.c_stat, resultado.protocolo, status_atualizado,
+    )
+
+    payload = montar_resposta_consulta_situacao(
+        nf, resultado, ok=resultado.ok, status_local_atualizado=status_atualizado,
+    )
+    payload['nfe_entrada_id'] = nf.pk
+    payload.pop('nfe_saida_id', None)
+    return payload
