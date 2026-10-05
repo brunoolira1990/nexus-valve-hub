@@ -214,15 +214,18 @@ def _lock_nfe_entrada(nfe_id: int) -> NFeEntrada:
 
 
 def pode_consultar_situacao_sefaz_entrada(nf: NFeEntrada) -> tuple[bool, str]:
+    """Permite consulta com chave válida, exceto em estados terminais (inutilizada/cancelada).
+
+    Diferente da saída, a entrada aceita consulta em REJEITADA_* — é exatamente o
+    caso onde a resposta SEFAZ se perdeu e o status local ficou errado.
+    """
     chave = (nf.chave_acesso or '').strip()
     if len(chave) != 44:
         return False, MSG_SEM_CHAVE
     sefaz = (nf.status_emissao_sefaz or '').strip().upper()
-    autorizada_homolog = sefaz == NFeEntrada.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO
-    autorizada_producao = sefaz == NFeEntrada.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO
-    if autorizada_homolog or autorizada_producao:
-        return True, ''
-    return False, MSG_STATUS_INCOMPATIVEL
+    if sefaz.startswith('INUTILIZADA') or sefaz.startswith('CANCELADA'):
+        return False, MSG_STATUS_INCOMPATIVEL
+    return True, ''
 
 
 def _homologacao_da_nfe_entrada(nf: NFeEntrada) -> bool:
