@@ -236,7 +236,23 @@ class NFeSaida(models.Model):
     cliente = models.ForeignKey(
         'cadastros.Cliente',
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name='nf_saidas',
+    )
+    fornecedor = models.ForeignKey(
+        'cadastros.Fornecedor',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='nf_saidas',
+    )
+    nfe_entrada_conferencia_origem = models.ForeignKey(
+        'fiscal.NFeEntradaConferencia',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='nf_saidas_devolucao_compra',
     )
     data = models.DateField()
     valor_total = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
@@ -509,6 +525,17 @@ class NFeSaida(models.Model):
     class Meta:
         ordering = ['-data', 'numero']
         verbose_name = 'NF saída'
+        constraints = [
+            models.CheckConstraint(
+                name='nf_saida_exatamente_um_de_cliente_fornecedor',
+                condition=(
+                    (models.Q(cliente__isnull=False)
+                     & models.Q(fornecedor__isnull=True))
+                    | (models.Q(cliente__isnull=True)
+                       & models.Q(fornecedor__isnull=False))
+                ),
+            ),
+        ]
 
 
 class NFeSaidaEvento(models.Model):
