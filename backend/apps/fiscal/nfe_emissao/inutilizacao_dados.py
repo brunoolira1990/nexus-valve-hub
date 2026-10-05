@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from apps.core.pdf.formatters import fmt_cnpj
-from apps.fiscal.models import NFeNumeracaoConfiguracao, NFeSaida
+from apps.fiscal.models import NFeEntrada, NFeNumeracaoConfiguracao, NFeSaida
 from apps.fiscal.nfe_emissao.inutilizacao_sefaz import (
     pode_inutilizar_faixa_numeracao,
     pode_inutilizar_numero_nfe,
@@ -56,11 +56,12 @@ def montar_dados_contexto_inutilizacao_config(
     }
 
 
-def montar_dados_contexto_inutilizacao_nfe(nf: NFeSaida, *, usuario=None) -> dict[str, Any]:
+def montar_dados_contexto_inutilizacao_nfe(nf: NFeSaida | NFeEntrada, *, usuario=None) -> dict[str, Any]:
     pode, motivo, cfg = pode_inutilizar_numero_nfe(nf, usuario=usuario)
     faixa = sugerir_faixa_inutilizacao_nfe(nf)
     base: dict[str, Any] = {
-        'nfe_saida_id': nf.pk,
+        'nfe_saida_id': nf.pk if isinstance(nf, NFeSaida) else None,
+        'nfe_entrada_id': nf.pk if isinstance(nf, NFeEntrada) else None,
         'pode_inutilizar': pode,
         'motivo_bloqueio': motivo,
         'numero_inicial_sugerido': faixa.get('numero_inicial'),
@@ -79,7 +80,7 @@ def montar_dados_contexto_inutilizacao_nfe(nf: NFeSaida, *, usuario=None) -> dic
             'id': nf.pk,
             'numero_nfe': faixa.get('numero_exibicao') or nf.numero_nfe or '',
             'serie_nfe': nf.serie_nfe or '',
-            'status': nf.status or '',
+            'status': getattr(nf, 'status', '') or getattr(nf, 'status_operacional', ''),
             'status_emissao_sefaz': nf.status_emissao_sefaz or '',
             'chave_acesso': nf.chave_acesso or '',
         },

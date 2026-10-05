@@ -22,6 +22,7 @@ def montar_resposta_inutilizacao(
     justificativa: str = '',
     inutilizacao_id: int | None = None,
     nfs_afetadas: list[int] | None = None,
+    nfe_entradas_afetadas: list[int] | None = None,
 ) -> dict[str, Any]:
     sucesso = ok if ok is not None else resultado.ok
     msg = mensagem or (
@@ -41,6 +42,7 @@ def montar_resposta_inutilizacao(
         'justificativa': justificativa,
         'inutilizacao_id': inutilizacao_id,
         'nfs_afetadas': nfs_afetadas or [],
+        'nfe_entradas_afetadas': nfe_entradas_afetadas or [],
         'cstat': resultado.c_stat,
         'cStat': resultado.c_stat,
         'xmotivo': resultado.x_motivo,

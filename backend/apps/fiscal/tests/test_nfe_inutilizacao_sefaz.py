@@ -8,9 +8,10 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from apps.fiscal.models import NFeInutilizacaoSefaz, NFeNumeracaoConfiguracao, NFeSaida, NFeSaidaEvento
+from apps.fiscal.models import NFeEntrada, NFeInutilizacaoSefaz, NFeNumeracaoConfiguracao, NFeSaida, NFeSaidaEvento
 from apps.fiscal.nfe_emissao.inutilizacao_sefaz import (
     NFeInutilizacaoError,
+    emitir_inutilizacao_nfe_entrada,
     emitir_inutilizacao_nfe_saida,
     pode_inutilizar_faixa_numeracao,
     pode_inutilizar_numero_nfe,
@@ -95,6 +96,23 @@ class NFeInutilizacaoSefazTests(TestCase):
         self.assertTrue(res.data['pode_inutilizar'])
         self.assertEqual(res.data['numero_inicial_sugerido'], 88)
 
+    def test_get_inutilizacao_dados_entrada_propria(self):
+        nf_entrada = NFeEntrada.objects.create(
+            numero='EP-88',
+            data=self.nf.data,
+            empresa_emitente=self.nf.empresa_emitente,
+            ambiente_emissao=NFeEntrada.AmbienteEmissao.HOMOLOGACAO,
+            status_operacional=NFeEntrada.StatusOperacional.REJEITADA,
+            status_emissao_sefaz='REJEITADA_HOMOLOGACAO',
+            serie_nfe='0',
+            numero_nfe='000000088',
+        )
+        res = self.client.get(f'/api/nf-entradas/{nf_entrada.pk}/inutilizacao/dados/')
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.data['pode_inutilizar'])
+        self.assertEqual(res.data['nfe_entrada_id'], nf_entrada.pk)
+        self.assertIsNone(res.data['nfe_saida_id'])
+
     def test_get_inutilizacao_dados_config(self):
         res = self.client.get(
             f'/api/nfe-numeracoes/{self.cfg.pk}/inutilizacao/dados/',
@@ -124,6 +142,40 @@ class NFeInutilizacaoSefazTests(TestCase):
             ).exists(),
         )
         self.assertTrue(NFeInutilizacaoSefaz.objects.filter(configuracao=self.cfg, sefaz_ok=True).exists())
+
+    @patch('apps.fiscal.nfe_emissao.inutilizacao_sefaz.transmitir_inutilizacao_nfe')
+    @patch('apps.fiscal.nfe_emissao.inutilizacao_sefaz.carregar_certificado_empresa')
+    def test_inutilizacao_considera_e_marca_saida_e_entrada_compartilhadas(self, mock_cert, mock_tx):
+        mock_cert.return_value = type('C', (), {'caminho': '/tmp/fake.pfx'})()
+        mock_tx.return_value = MagicMockInutResponse()
+        nf_entrada = NFeEntrada.objects.create(
+            numero='EP-88',
+            data=self.nf.data,
+            empresa_emitente=self.nf.empresa_emitente,
+            ambiente_emissao=NFeEntrada.AmbienteEmissao.HOMOLOGACAO,
+            fin_nfe='4',
+            status_emissao_sefaz='REJEITADA_HOMOLOGACAO',
+            status_operacional=NFeEntrada.StatusOperacional.REJEITADA,
+            serie_nfe='0',
+            numero_nfe='000000088',
+        )
+
+        pode, motivo, _ = pode_inutilizar_numero_nfe(nf_entrada, usuario=self.user)
+        self.assertTrue(pode, motivo)
+        payload = emitir_inutilizacao_nfe_entrada(
+            nf_entrada,
+            justificativa='Numero rejeitado sem uso fiscal na homologacao.',
+            usuario=self.user,
+        )
+
+        self.assertTrue(payload['ok'])
+        nf_entrada.refresh_from_db()
+        self.nf.refresh_from_db()
+        self.assertEqual(nf_entrada.status_emissao_sefaz, 'INUTILIZADA_HOMOLOGACAO')
+        self.assertEqual(nf_entrada.status_operacional, 'INUTILIZADA_HOMOLOGACAO')
+        self.assertEqual(self.nf.status, 'INUTILIZADA_HOMOLOGACAO')
+        self.assertEqual(payload['nfe_entradas_afetadas'], [nf_entrada.pk])
+        self.assertEqual(mock_tx.call_count, 1)
 
     @patch('apps.fiscal.nfe_emissao.inutilizacao_sefaz.transmitir_inutilizacao_nfe')
     @patch('apps.fiscal.nfe_emissao.inutilizacao_sefaz.carregar_certificado_empresa')

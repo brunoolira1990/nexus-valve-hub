@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from apps.core.pdf.formatters import fmt_cnpj
-from apps.fiscal.models import NFeSaida, NFeSaidaEvento
-from apps.fiscal.nfe_emissao.cancelamento_sefaz import pode_cancelar_nfe_sefaz
+from apps.fiscal.models import NFeEntrada, NFeSaida, NFeSaidaEvento
+from apps.fiscal.nfe_emissao.cancelamento_sefaz import pode_cancelar_nfe_entrada, pode_cancelar_nfe_sefaz
 from apps.fiscal.nfe_emissao.consulta_situacao import _homologacao_da_nfe
 from apps.fiscal.nfe_emissao.empresa_emitente import resolver_empresa_emitente_nfe
 from apps.fiscal.nfe_saida_bloqueio import nf_cancelada_operacional
@@ -77,15 +77,27 @@ def montar_resumo_cancelamento_nfe_saida(nf: NFeSaida) -> dict[str, Any]:
     }
 
 
-def montar_dados_contexto_cancelamento(nf: NFeSaida, *, usuario=None) -> dict[str, Any]:
-    pode, motivo = pode_cancelar_nfe_sefaz(nf, usuario=usuario)
-    homolog = _homologacao_da_nfe(nf)
+def montar_dados_contexto_cancelamento(nf: NFeSaida | NFeEntrada, *, usuario=None) -> dict[str, Any]:
+    entrada = isinstance(nf, NFeEntrada)
+    pode, motivo = (
+        pode_cancelar_nfe_entrada(nf, usuario=usuario)
+        if entrada
+        else pode_cancelar_nfe_sefaz(nf, usuario=usuario)
+    )
+    homolog = (
+        nf.ambiente_emissao == NFeEntrada.AmbienteEmissao.HOMOLOGACAO
+        if entrada
+        else _homologacao_da_nfe(nf)
+    )
     ambiente = 'homologacao' if homolog else 'producao'
-    empresa = resolver_empresa_emitente_nfe(nf)
-    financeiro = montar_flags_financeiro_nfe(nf)
+    empresa = nf.empresa_emitente if entrada else resolver_empresa_emitente_nfe(nf)
+    financeiro = {} if entrada else montar_flags_financeiro_nfe(nf)
     cliente_nome = ''
-    if nf.cliente_id and nf.cliente:
+    fornecedor_nome = ''
+    if not entrada and nf.cliente_id and nf.cliente:
         cliente_nome = nf.cliente.razao_social or ''
+    if entrada and nf.fornecedor_id and nf.fornecedor:
+        fornecedor_nome = nf.fornecedor.razao_social or ''
 
     return {
         'ok': pode,
@@ -117,12 +129,13 @@ def montar_dados_contexto_cancelamento(nf: NFeSaida, *, usuario=None) -> dict[st
             'protocolo_autorizacao': nf.protocolo_autorizacao or '',
             'valor_total': float(nf.valor_total or 0),
             'cliente_nome': cliente_nome,
-            'status': nf.status or '',
+            'fornecedor_nome': fornecedor_nome,
+            'status': getattr(nf, 'status', '') or getattr(nf, 'status_operacional', ''),
             'status_emissao_sefaz': nf.status_emissao_sefaz or '',
         },
         'emitente': {
-            'nome': (empresa.razao_social or empresa.nome_fantasia or '').strip(),
-            'cnpj': fmt_cnpj(empresa.cnpj or ''),
-            'uf': (empresa.uf or '').strip(),
+            'nome': ((empresa.razao_social or empresa.nome_fantasia or '').strip() if empresa else ''),
+            'cnpj': fmt_cnpj(empresa.cnpj or '') if empresa else '',
+            'uf': (empresa.uf or '').strip() if empresa else '',
         },
     }

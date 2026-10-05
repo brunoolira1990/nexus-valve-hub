@@ -10,7 +10,7 @@ from typing import Any
 from django.db import transaction
 from django.utils import timezone
 
-from apps.fiscal.models import NFeSaida, NFeSaidaEvento
+from apps.fiscal.models import NFeEntrada, NFeSaida, NFeSaidaEvento
 from apps.fiscal.nfe_emissao.config_producao import (
     NFeProducaoConfirmacaoError,
     NFeProducaoDesabilitadaError,
@@ -153,6 +153,41 @@ def pode_cancelar_nfe_sefaz(nf: NFeSaida, *, usuario=None) -> tuple[bool, str]:
         except PermissionError as exc:
             return False, str(exc)
 
+    return True, ''
+
+
+def pode_cancelar_nfe_entrada(nf: NFeEntrada, *, usuario=None) -> tuple[bool, str]:
+    status_sefaz = (nf.status_emissao_sefaz or '').strip().upper()
+    if status_sefaz.startswith('CANCELADA'):
+        return False, MSG_JA_CANCELADA
+    if status_sefaz not in (
+        NFeEntrada.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO,
+        NFeEntrada.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO,
+    ):
+        return False, MSG_STATUS_INCOMPATIVEL
+
+    chave = (nf.chave_acesso or '').strip()
+    if len(chave) != 44:
+        return False, MSG_SEM_CHAVE
+    if not (nf.protocolo_autorizacao or '').strip():
+        return False, MSG_SEM_PROTOCOLO
+    if not (nf.xml_autorizado or '').strip():
+        return False, MSG_SEM_XML
+
+    ambiente = (nf.ambiente_emissao or '').strip().lower()
+    if ambiente not in (
+        NFeEntrada.AmbienteEmissao.HOMOLOGACAO,
+        NFeEntrada.AmbienteEmissao.PRODUCAO,
+    ):
+        return False, MSG_AMBIENTE_INDEFINIDO
+    if ambiente == NFeEntrada.AmbienteEmissao.PRODUCAO:
+        try:
+            exigir_producao_habilitada()
+            exigir_permissao_usuario_producao(usuario)
+        except NFeProducaoDesabilitadaError as exc:
+            return False, str(exc)
+        except PermissionError as exc:
+            return False, str(exc)
     return True, ''
 
 
@@ -336,4 +371,115 @@ def emitir_cancelamento_nfe_saida(
         ok=resultado.ok,
         justificativa=texto,
         evento_id=evento.pk,
+    )
+
+
+@transaction.atomic
+def emitir_cancelamento_nfe_entrada(
+    nfe_entrada: NFeEntrada,
+    *,
+    justificativa: str,
+    usuario=None,
+    confirmacao_payload: dict | None = None,
+) -> dict[str, Any]:
+    nf = NFeEntrada.objects.select_for_update().filter(pk=nfe_entrada.pk).first()
+    if nf is None:
+        raise NFeCancelamentoError('NF-e entrada própria não encontrada.')
+    texto = validar_justificativa_cancelamento(justificativa)
+    pode, motivo = pode_cancelar_nfe_entrada(nf, usuario=usuario)
+    if not pode:
+        raise NFeCancelamentoError(motivo)
+
+    homolog = nf.ambiente_emissao == NFeEntrada.AmbienteEmissao.HOMOLOGACAO
+    if not homolog:
+        try:
+            exigir_producao_habilitada()
+            exigir_permissao_usuario_producao(usuario)
+            validar_confirmacao_cancelamento_producao(confirmacao_payload)
+        except NFeProducaoDesabilitadaError as exc:
+            raise NFeCancelamentoError(str(exc), etapa='PERMISSAO') from exc
+        except NFeProducaoConfirmacaoError as exc:
+            raise NFeCancelamentoError(str(exc), etapa='CONFIRMACAO') from exc
+        except PermissionError as exc:
+            raise NFeCancelamentoError(str(exc), etapa='PERMISSAO') from exc
+
+    empresa = nf.empresa_emitente
+    if empresa is None:
+        raise NFeCancelamentoError('Empresa emitente da entrada própria não encontrada.', etapa='EMITENTE')
+    chave = (nf.chave_acesso or '').strip()
+    protocolo = (nf.protocolo_autorizacao or '').strip()
+    uf = (empresa.uf or 'SP').strip()
+    cnpj = _somente_digitos(empresa.cnpj or '')
+    if len(cnpj) not in (11, 14):
+        raise NFeCancelamentoError('CNPJ/CPF do emitente inválido para cancelamento.', etapa='EMITENTE')
+    if not uf:
+        raise NFeCancelamentoError('UF do emitente não cadastrada.', etapa='EMITENTE')
+    try:
+        cert = carregar_certificado_empresa(empresa)
+    except CertificadoA1Error as exc:
+        raise NFeCancelamentoError(str(exc), etapa='CERTIFICADO') from exc
+    senha = (empresa.senha_certificado or '').strip()
+    if not senha:
+        raise NFeCancelamentoError('Senha do certificado não cadastrada.', etapa='CERTIFICADO')
+
+    status_anterior = nf.status_emissao_sefaz or ''
+    logger.info(
+        'CANCELAMENTO_ENTRADA_INICIO nf_entrada_id=%s chave=%s ambiente=%s',
+        nf.pk,
+        chave,
+        nf.ambiente_emissao,
+    )
+    try:
+        xml_assinado = _montar_assinar_evento_cancelamento(
+            cnpj=cnpj,
+            chave=chave,
+            uf=uf,
+            protocolo=protocolo,
+            justificativa=texto,
+            cert_path=cert.caminho,
+            senha=senha,
+            homologacao=homolog,
+        )
+        xml_enviado = _xml_para_str(xml_assinado)
+        comunicacao = criar_comunicacao_sefaz(uf, cert.caminho, senha, homologacao=homolog)
+        resposta_bruta = transmitir_evento_nfe(comunicacao, xml_assinado, id_lote=nf.pk)
+        xml_retorno = extrair_xml_resposta(resposta_bruta)
+        resultado = parse_cancelamento_resposta(xml_retorno)
+    except PyNFeComunicacaoError as exc:
+        logger.warning('CANCELAMENTO_ENTRADA_ERRO nf_entrada_id=%s msg=%s', nf.pk, exc)
+        raise NFeCancelamentoError(str(exc), etapa='COMUNICACAO_SEFAZ') from exc
+
+    if resultado.ok:
+        status_novo = (
+            NFeEntrada.StatusEmissaoSefaz.CANCELADA_HOMOLOGACAO
+            if homolog
+            else NFeEntrada.StatusEmissaoSefaz.CANCELADA_PRODUCAO
+        )
+        nf.status_emissao_sefaz = status_novo
+        nf.status_operacional = status_novo
+        nf.save(update_fields=['status_emissao_sefaz', 'status_operacional'])
+        # TODO: create NFeEntradaEvento to persist cancellation protocol/XML and event history.
+    else:
+        status_novo = status_anterior
+
+    logger.info(
+        'CANCELAMENTO_ENTRADA_EVENTO nf_entrada_id=%s status_anterior=%s status_novo=%s '
+        'justificativa=%s cStat=%s xMotivo=%s protocolo=%s id_evento=%s xml_enviado=%s xml_retorno=%s',
+        nf.pk,
+        status_anterior,
+        status_novo,
+        texto,
+        resultado.c_stat,
+        resultado.x_motivo,
+        resultado.protocolo,
+        resultado.id_evento,
+        xml_enviado,
+        resultado.xml_retorno,
+    )
+    return montar_resposta_cancelamento(
+        nf,
+        resultado,
+        ok=resultado.ok,
+        justificativa=texto,
+        evento_id=None,
     )

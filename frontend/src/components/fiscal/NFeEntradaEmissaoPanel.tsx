@@ -23,6 +23,8 @@ import {
 import { nfeEntradasService } from '@/services/api/fiscal';
 import { apiErrorMessage } from '@/services/api/config';
 import type { NFeEntrada } from '@/types';
+import { NFeInutilizacaoModal } from '@/components/fiscal/NFeInutilizacaoModal';
+import { NFeCancelamentoModal } from '@/components/fiscal/NFeCancelamentoModal';
 
 type Checklist = {
   pronta?: boolean;
@@ -44,10 +46,15 @@ export function NFeEntradaEmissaoPanel({ nfe, onAtualizado }: Props) {
   const [modalProd, setModalProd] = useState(false);
   const [checkboxOk, setCheckboxOk] = useState(false);
   const [textoConfirmacao, setTextoConfirmacao] = useState('');
+  const [showInutilizar, setShowInutilizar] = useState(false);
+  const [showCancelar, setShowCancelar] = useState(false);
 
   const autorizadaHomolog = nfe.status_emissao_sefaz === 'AUTORIZADA_HOMOLOGACAO';
   const autorizadaProd = nfe.status_emissao_sefaz === 'AUTORIZADA_PRODUCAO';
-  const bloqueada = autorizadaHomolog || autorizadaProd;
+  const encerrada = ['CANCELADA_HOMOLOGACAO', 'CANCELADA_PRODUCAO', 'INUTILIZADA_HOMOLOGACAO', 'INUTILIZADA_PRODUCAO'].includes(
+    nfe.status_emissao_sefaz || '',
+  );
+  const bloqueada = autorizadaHomolog || autorizadaProd || encerrada;
   const temNumeracaoReservada = Boolean(
     (nfe.serie_nfe || '').trim() && (nfe.numero_nfe || '').trim() && (nfe.chave_acesso || '').trim(),
   );
@@ -187,6 +194,47 @@ export function NFeEntradaEmissaoPanel({ nfe, onAtualizado }: Props) {
           <dd className="font-mono">{nfe.protocolo_autorizacao || '—'}</dd>
         </div>
       </dl>
+
+      <div className="flex flex-wrap gap-2">
+        {['REJEITADA_PRODUCAO', 'REJEITADA_HOMOLOGACAO', 'ERRO_TRANSMISSAO'].includes(
+          nfe.status_emissao_sefaz || '',
+        ) ? (
+          <button type="button" className="erp-btn-outline erp-btn-sm text-xs" onClick={() => setShowInutilizar(true)}>
+            Inutilizar nº
+          </button>
+        ) : null}
+        {['AUTORIZADA_PRODUCAO', 'AUTORIZADA_HOMOLOGACAO'].includes(nfe.status_emissao_sefaz || '') ? (
+          <button type="button" className="erp-btn-destructive erp-btn-sm text-xs" onClick={() => setShowCancelar(true)}>
+            Cancelar NF-e
+          </button>
+        ) : null}
+      </div>
+
+      {showInutilizar ? (
+        <NFeInutilizacaoModal
+          mode="nfe"
+          open
+          endpointBase="nf-entradas"
+          nfeId={nfe.id}
+          onClose={() => setShowInutilizar(false)}
+          onInutilizada={() => {
+            setShowInutilizar(false);
+            void onAtualizado();
+          }}
+        />
+      ) : null}
+      {showCancelar ? (
+        <NFeCancelamentoModal
+          open
+          endpointBase="nf-entradas"
+          nfeId={nfe.id}
+          onClose={() => setShowCancelar(false)}
+          onCancelada={() => {
+            setShowCancelar(false);
+            void onAtualizado();
+          }}
+        />
+      ) : null}
 
       {resultado ? <p className="text-xs border border-border rounded p-2 bg-muted/30">{resultado}</p> : null}
 
@@ -362,17 +410,21 @@ export function NFeEntradaEmissaoPanel({ nfe, onAtualizado }: Props) {
       ) : (
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground">
-            NF-e já autorizada ({autorizadaProd ? 'produção' : 'homologação'}). Emissão encerrada.
+            {encerrada
+              ? `NF-e encerrada (${nfe.status_emissao_sefaz}).`
+              : `NF-e já autorizada (${autorizadaProd ? 'produção' : 'homologação'}). Emissão encerrada.`}
           </p>
-          <button
-            type="button"
-            className="erp-btn-outline erp-btn-sm text-xs inline-flex items-center gap-1"
-            disabled={!!busy}
-            onClick={() => void abrirDanfe('autorizado')}
-          >
-            <FileText className="h-3.5 w-3.5" />
-            {busy === 'DANFE autorizado' ? 'Gerando…' : 'Ver DANFE autorizado'}
-          </button>
+          {autorizadaHomolog || autorizadaProd ? (
+            <button
+              type="button"
+              className="erp-btn-outline erp-btn-sm text-xs inline-flex items-center gap-1"
+              disabled={!!busy}
+              onClick={() => void abrirDanfe('autorizado')}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              {busy === 'DANFE autorizado' ? 'Gerando…' : 'Ver DANFE autorizado'}
+            </button>
+          ) : null}
         </div>
       )}
 

@@ -4,7 +4,12 @@ import { Modal } from '@/components/Modal';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { formatMoneyBRL } from '@/lib/money';
-import { nfeSaidasService, type NFeCancelamentoDadosResponse, type NFeCancelamentoResponse } from '@/services/api/fiscal';
+import {
+  nfeEntradasService,
+  nfeSaidasService,
+  type NFeCancelamentoDadosResponse,
+  type NFeCancelamentoResponse,
+} from '@/services/api/fiscal';
 import { apiErrorMessage } from '@/services/api/config';
 
 export const TAMANHO_MINIMO_JUSTIFICATIVA = 15;
@@ -17,6 +22,7 @@ type Props = {
   nfeId: number | null;
   onClose: () => void;
   onCancelada?: (res: NFeCancelamentoResponse) => void;
+  endpointBase?: 'nf-saidas' | 'nf-entradas';
 };
 
 function CampoResumo({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
@@ -28,7 +34,13 @@ function CampoResumo({ label, value, mono }: { label: string; value: string; mon
   );
 }
 
-export function NFeCancelamentoModal({ open, nfeId, onClose, onCancelada }: Props) {
+export function NFeCancelamentoModal({
+  open,
+  nfeId,
+  onClose,
+  onCancelada,
+  endpointBase = 'nf-saidas',
+}: Props) {
   const [etapa, setEtapa] = useState<Etapa>('formulario');
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -51,8 +63,10 @@ export function NFeCancelamentoModal({ open, nfeId, onClose, onCancelada }: Prop
     }
     setLoading(true);
     setErro(null);
-    void nfeSaidasService
-      .cancelamentoDados(nfeId)
+    const load = endpointBase === 'nf-entradas'
+      ? nfeEntradasService.cancelamentoDadosEntrada(nfeId)
+      : nfeSaidasService.cancelamentoDados(nfeId);
+    void load
       .then((payload) => {
         setDados(payload);
         if (!payload.pode_cancelar) {
@@ -63,7 +77,7 @@ export function NFeCancelamentoModal({ open, nfeId, onClose, onCancelada }: Prop
         setErro(apiErrorMessage(e, { fallback: 'Não foi possível carregar dados do cancelamento.' }));
       })
       .finally(() => setLoading(false));
-  }, [open, nfeId]);
+  }, [open, nfeId, endpointBase]);
 
   const justificativaValida = justificativa.trim().length >= TAMANHO_MINIMO_JUSTIFICATIVA;
   const confirmacaoProducaoOk = useMemo(() => {
@@ -82,11 +96,14 @@ export function NFeCancelamentoModal({ open, nfeId, onClose, onCancelada }: Prop
     setEtapa('transmitindo');
     setErro(null);
     try {
-      const res = await nfeSaidasService.cancelarNfe(nfeId, {
+      const payload = {
         justificativa: justificativa.trim(),
         confirmar_cancelamento_producao: dados.exige_confirmacao_producao ? true : undefined,
         confirmar_texto: dados.exige_confirmacao_producao ? textoConfirmacao.trim() : undefined,
-      });
+      };
+      const res = endpointBase === 'nf-entradas'
+        ? await nfeEntradasService.cancelarEntrada(nfeId, payload)
+        : await nfeSaidasService.cancelarNfe(nfeId, payload);
       setResultado(res);
       if (res.ok) {
         setEtapa('resultado');
@@ -186,7 +203,7 @@ export function NFeCancelamentoModal({ open, nfeId, onClose, onCancelada }: Prop
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-md border p-3">
             <CampoResumo label="NF-e" value={dados.nfe.numero_nfe} />
             <CampoResumo label="Série" value={dados.nfe.serie_nfe} />
-            <CampoResumo label="Cliente" value={dados.nfe.cliente_nome} />
+            <CampoResumo label={endpointBase === 'nf-entradas' ? 'Fornecedor' : 'Cliente'} value={endpointBase === 'nf-entradas' ? dados.nfe.fornecedor_nome || '' : dados.nfe.cliente_nome} />
             <CampoResumo label="Valor total" value={formatMoneyBRL(dados.nfe.valor_total)} />
             <CampoResumo label="Protocolo autorização" value={dados.nfe.protocolo_autorizacao} mono />
             <CampoResumo label="Chave" value={dados.nfe.chave_acesso} mono />

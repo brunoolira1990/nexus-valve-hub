@@ -10,13 +10,14 @@ from rest_framework.test import APIClient
 
 from apps.financeiro.models import TituloFinanceiro
 from apps.financeiro.services.titulo import criar_titulo_financeiro
-from apps.fiscal.models import NFeSaida
+from apps.fiscal.models import NFeEntrada, NFeSaida
 from apps.fiscal.nfe_emissao.carta_correcao import pode_emitir_carta_correcao
 from apps.fiscal.nfe_emissao.cancelamento_sefaz import (
     MSG_JA_CANCELADA,
     NFeCancelamentoError,
     cancelamento_sefaz_ja_registrado,
     emitir_cancelamento_nfe_saida,
+    emitir_cancelamento_nfe_entrada,
     pode_cancelar_nfe_sefaz,
     validar_justificativa_cancelamento,
 )
@@ -181,3 +182,60 @@ class NFeCancelamentoSefazTests(TestCase):
         body = res.json()
         self.assertTrue(body['pode_cancelar'])
         self.assertEqual(body['ambiente'], 'homologacao')
+
+    def test_endpoint_dados_cancelamento_entrada(self):
+        nf = NFeEntrada.objects.create(
+            numero='EP-99',
+            data=self.nf_homolog.data,
+            empresa_emitente=self.nf_homolog.empresa_emitente,
+            ambiente_emissao=NFeEntrada.AmbienteEmissao.HOMOLOGACAO,
+            status_operacional=NFeEntrada.StatusOperacional.AUTORIZADA_HOMOLOGACAO,
+            status_emissao_sefaz=NFeEntrada.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO,
+            serie_nfe='0',
+            numero_nfe='000000099',
+            chave_acesso=self.nf_homolog.chave_acesso,
+            protocolo_autorizacao=self.nf_homolog.protocolo_autorizacao,
+            xml_autorizado=self.nf_homolog.xml_autorizado,
+        )
+        res = self.client.get(f'/api/nf-entradas/{nf.pk}/cancelamento/dados/')
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.data['pode_cancelar'])
+        self.assertEqual(res.data['nfe']['fornecedor_nome'], '')
+
+    @patch('apps.fiscal.nfe_emissao.cancelamento_sefaz.transmitir_evento_nfe')
+    @patch('apps.fiscal.nfe_emissao.cancelamento_sefaz._montar_assinar_evento_cancelamento')
+    @patch('apps.fiscal.nfe_emissao.cancelamento_sefaz.carregar_certificado_empresa')
+    def test_emitir_mock_homolog_entrada_atualiza_status_sem_evento_saida(
+        self,
+        mock_cert,
+        mock_assinar,
+        mock_transmit,
+    ):
+        mock_cert.return_value = type('C', (), {'caminho': '/tmp/fake.pfx'})()
+        mock_assinar.return_value = '<evento/>'
+        mock_transmit.return_value = MagicMockResponse()
+        nf = NFeEntrada.objects.create(
+            numero='EP-99',
+            data=self.nf_homolog.data,
+            empresa_emitente=self.nf_homolog.empresa_emitente,
+            ambiente_emissao=NFeEntrada.AmbienteEmissao.HOMOLOGACAO,
+            status_operacional=NFeEntrada.StatusOperacional.AUTORIZADA_HOMOLOGACAO,
+            status_emissao_sefaz=NFeEntrada.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO,
+            serie_nfe='0',
+            numero_nfe='000000099',
+            chave_acesso=self.nf_homolog.chave_acesso,
+            protocolo_autorizacao=self.nf_homolog.protocolo_autorizacao,
+            xml_autorizado='<?xml version="1.0"?><nfeProc><NFe/></nfeProc>',
+        )
+
+        res = emitir_cancelamento_nfe_entrada(
+            nf,
+            justificativa='Cancelamento de teste homologação com justificativa.',
+            usuario=self.user,
+        )
+
+        self.assertTrue(res['ok'])
+        nf.refresh_from_db()
+        self.assertEqual(nf.status_emissao_sefaz, NFeEntrada.StatusEmissaoSefaz.CANCELADA_HOMOLOGACAO)
+        self.assertEqual(nf.status_operacional, NFeEntrada.StatusOperacional.CANCELADA_HOMOLOGACAO)
+        self.assertIsNone(res['evento_id'])

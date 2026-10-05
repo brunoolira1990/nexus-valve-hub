@@ -14,6 +14,7 @@ from apps.fiscal.models import (
     NFeInutilizacaoSefaz,
     NFeNumeracaoConfiguracao,
     NFeNumeracaoNumeroLiberado,
+    NFeEntrada,
     NFeSaida,
     NFeSaidaEvento,
 )
@@ -48,7 +49,7 @@ MSG_CONFIRMACAO_PRODUCAO = (
     'Confirmação obrigatória para inutilização em produção: '
     'confirmar_inutilizacao_producao=true e confirmar_texto="INUTILIZAR".'
 )
-MSG_TIPO_OPERACAO = 'Inutilização disponível apenas para numeração de NF-e saída.'
+MSG_TIPO_OPERACAO = 'Inutilização disponível para NF-e saída e entrada própria (numeração compartilhada).'
 MSG_FAIXA_INVALIDA = 'Faixa de numeração inválida (número inicial deve ser ≤ final e ≥ 1).'
 MSG_NUMERO_AUTORIZADO = 'Não é possível inutilizar número já autorizado na SEFAZ — use cancelamento se aplicável.'
 MSG_NUMERO_CANCELADO = 'Número pertence a NF-e cancelada na SEFAZ.'
@@ -59,6 +60,12 @@ _STATUS_AUTORIZADO = frozenset(
     {
         NFeSaida.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO,
         NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO,
+    },
+)
+_STATUS_AUTORIZADO_ENTRADA = frozenset(
+    {
+        NFeEntrada.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO,
+        NFeEntrada.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO,
     },
 )
 
@@ -159,7 +166,40 @@ def _nfs_por_numero(
     return por_numero
 
 
-def _motivo_bloqueio_numero(nf: NFeSaida) -> str | None:
+def _entradas_por_numero(
+    cfg: NFeNumeracaoConfiguracao,
+    *,
+    numero_inicial: int,
+    numero_final: int,
+) -> dict[int, NFeEntrada]:
+    serie_norm = _serie_digits(cfg.serie)
+    por_numero: dict[int, NFeEntrada] = {}
+    qs = NFeEntrada.objects.filter(
+        empresa_emitente_id=cfg.empresa_id,
+        ambiente_emissao=cfg.ambiente,
+    ).exclude(numero_nfe='')
+    for nf in qs:
+        if _serie_digits(nf.serie_nfe or '') != serie_norm:
+            continue
+        n = _numero_int(nf.numero_nfe)
+        if n is None or n < numero_inicial or n > numero_final:
+            continue
+        por_numero[n] = nf
+    return por_numero
+
+
+def _motivo_bloqueio_numero(nf: NFeSaida | NFeEntrada) -> str | None:
+    if isinstance(nf, NFeEntrada):
+        status_sefaz = (nf.status_emissao_sefaz or '').strip().upper()
+        if status_sefaz.startswith('INUTILIZADA'):
+            return MSG_NUMERO_JA_INUTILIZADO
+        if status_sefaz.startswith('CANCELADA'):
+            return MSG_NUMERO_CANCELADO
+        status_operacional = (nf.status_operacional or '').strip().upper()
+        if status_sefaz in _STATUS_AUTORIZADO_ENTRADA or status_operacional.startswith('AUTORIZADA'):
+            return MSG_NUMERO_AUTORIZADO
+        return None
+
     if nf_inutilizada_operacional(nf):
         return MSG_NUMERO_JA_INUTILIZADO
     if nf_cancelada_operacional(nf):
@@ -182,7 +222,11 @@ def pode_inutilizar_faixa_numeracao(
     numero_final: int,
     usuario=None,
 ) -> tuple[bool, str, dict[str, Any]]:
-    detalhes: dict[str, Any] = {'numeros_bloqueados': [], 'nfs_na_faixa': []}
+    detalhes: dict[str, Any] = {
+        'numeros_bloqueados': [],
+        'nfs_na_faixa': [],
+        'nfe_entradas_na_faixa': [],
+    }
     if cfg.tipo_operacao != NFeNumeracaoConfiguracao.TipoOperacao.SAIDA:
         return False, MSG_TIPO_OPERACAO, detalhes
     if not cfg.ativo:
@@ -218,6 +262,22 @@ def pode_inutilizar_faixa_numeracao(
         )
         if motivo:
             detalhes['numeros_bloqueados'].append({'numero': n, 'motivo': motivo, 'nfe_saida_id': nf.pk})
+
+    entradas = _entradas_por_numero(cfg, numero_inicial=numero_inicial, numero_final=numero_final)
+    for n, nf_e in sorted(entradas.items()):
+        motivo = _motivo_bloqueio_numero(nf_e)
+        detalhes['nfe_entradas_na_faixa'].append(
+            {
+                'nfe_entrada_id': nf_e.pk,
+                'numero': n,
+                'status_operacional': nf_e.status_operacional,
+                'status_emissao_sefaz': nf_e.status_emissao_sefaz,
+            },
+        )
+        if motivo:
+            detalhes['numeros_bloqueados'].append(
+                {'numero': n, 'motivo': motivo, 'nfe_entrada_id': nf_e.pk},
+            )
     if detalhes['numeros_bloqueados']:
         primeiro = detalhes['numeros_bloqueados'][0]
         return False, f"Número {primeiro['numero']}: {primeiro['motivo']}", detalhes
@@ -225,7 +285,7 @@ def pode_inutilizar_faixa_numeracao(
     return True, '', detalhes
 
 
-def sugerir_faixa_inutilizacao_nfe(nf: NFeSaida) -> dict[str, Any]:
+def sugerir_faixa_inutilizacao_nfe(nf: NFeSaida | NFeEntrada) -> dict[str, Any]:
     n = _numero_int(nf.numero_nfe)
     return {
         'numero_inicial': n,
@@ -236,7 +296,7 @@ def sugerir_faixa_inutilizacao_nfe(nf: NFeSaida) -> dict[str, Any]:
 
 
 def pode_inutilizar_numero_nfe(
-    nf: NFeSaida,
+    nf: NFeSaida | NFeEntrada,
     *,
     usuario=None,
 ) -> tuple[bool, str, NFeNumeracaoConfiguracao | None]:
@@ -281,9 +341,10 @@ def _aplicar_inutilizacao_local(
     justificativa: str,
     resultado,
     usuario,
-) -> list[int]:
+) -> tuple[list[int], list[int]]:
     status_novo = _status_inutilizada(cfg.ambiente)
     nfs_afetadas: list[int] = []
+    entradas_afetadas: list[int] = []
     por_numero = _nfs_por_numero(cfg, numero_inicial=numero_inicial, numero_final=numero_final)
 
     for n in range(numero_inicial, numero_final + 1):
@@ -318,6 +379,30 @@ def _aplicar_inutilizacao_local(
         )
         nfs_afetadas.append(nf_locked.pk)
 
+    entradas = _entradas_por_numero(cfg, numero_inicial=numero_inicial, numero_final=numero_final)
+    for n, nf_e in entradas.items():
+        nf_e_locked = NFeEntrada.objects.select_for_update().filter(pk=nf_e.pk).first()
+        if nf_e_locked is None or _motivo_bloqueio_numero(nf_e_locked):
+            continue
+        status_anterior = nf_e_locked.status_emissao_sefaz or ''
+        nf_e_locked.status_emissao_sefaz = status_novo
+        nf_e_locked.status_operacional = status_novo
+        nf_e_locked.save(update_fields=['status_emissao_sefaz', 'status_operacional'])
+        # TODO: add NFeEntradaEvento for durable per-document SEFAZ event history.
+        logger.info(
+            'INUTILIZACAO_ENTRADA_REGISTRADA nf_entrada_id=%s numero=%s ambiente=%s '
+            'status_anterior=%s status_novo=%s justificativa=%s cStat=%s protocolo=%s',
+            nf_e_locked.pk,
+            n,
+            cfg.ambiente,
+            status_anterior,
+            status_novo,
+            justificativa,
+            resultado.c_stat,
+            resultado.protocolo,
+        )
+        entradas_afetadas.append(nf_e_locked.pk)
+
     NFeNumeracaoNumeroLiberado.objects.filter(
         configuracao=cfg,
         consumido_em__isnull=True,
@@ -325,7 +410,7 @@ def _aplicar_inutilizacao_local(
         numero__lte=numero_final,
     ).update(consumido_em=timezone.now())
 
-    return nfs_afetadas
+    return nfs_afetadas, entradas_afetadas
 
 
 @transaction.atomic
@@ -414,8 +499,9 @@ def emitir_inutilizacao_numeracao(
         raise NFeInutilizacaoError(str(exc), etapa='COMUNICACAO_SEFAZ') from exc
 
     nfs_afetadas: list[int] = []
+    entradas_afetadas: list[int] = []
     if resultado.ok:
-        nfs_afetadas = _aplicar_inutilizacao_local(
+        nfs_afetadas, entradas_afetadas = _aplicar_inutilizacao_local(
             cfg,
             numero_inicial=ini,
             numero_final=fim,
@@ -446,7 +532,7 @@ def emitir_inutilizacao_numeracao(
         resultado.c_stat,
         resultado.protocolo,
         resultado.ok,
-        len(nfs_afetadas),
+        len(nfs_afetadas) + len(entradas_afetadas),
     )
 
     return montar_resposta_inutilizacao(
@@ -460,6 +546,7 @@ def emitir_inutilizacao_numeracao(
         justificativa=texto,
         inutilizacao_id=registro.pk,
         nfs_afetadas=nfs_afetadas,
+        nfe_entradas_afetadas=entradas_afetadas,
     )
 
 
@@ -472,6 +559,34 @@ def emitir_inutilizacao_nfe_saida(
     confirmacao_payload: dict | None = None,
 ) -> dict[str, Any]:
     nf = _lock_nfe_saida(nfe_saida.pk)
+    pode, motivo, cfg = pode_inutilizar_numero_nfe(nf, usuario=usuario)
+    if not pode or cfg is None:
+        raise NFeInutilizacaoError(motivo)
+    faixa = sugerir_faixa_inutilizacao_nfe(nf)
+    n = faixa['numero_inicial']
+    if n is None:
+        raise NFeInutilizacaoError('Número fiscal inválido para inutilização.')
+    return emitir_inutilizacao_numeracao(
+        cfg,
+        numero_inicial=n,
+        numero_final=n,
+        justificativa=justificativa,
+        usuario=usuario,
+        confirmacao_payload=confirmacao_payload,
+    )
+
+
+@transaction.atomic
+def emitir_inutilizacao_nfe_entrada(
+    nfe_entrada: NFeEntrada,
+    *,
+    justificativa: str,
+    usuario=None,
+    confirmacao_payload: dict | None = None,
+) -> dict[str, Any]:
+    nf = NFeEntrada.objects.select_for_update().filter(pk=nfe_entrada.pk).first()
+    if nf is None:
+        raise NFeInutilizacaoError('NF-e de entrada própria não encontrada.')
     pode, motivo, cfg = pode_inutilizar_numero_nfe(nf, usuario=usuario)
     if not pode or cfg is None:
         raise NFeInutilizacaoError(motivo)

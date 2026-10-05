@@ -201,6 +201,141 @@ class NFeEntradaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
             '-id',
         )
 
+    @action(detail=True, methods=['get'], url_path='inutilizacao/dados')
+    def inutilizacao_dados(self, request, pk=None):
+        from apps.fiscal.nfe_emissao.inutilizacao_dados import montar_dados_contexto_inutilizacao_nfe
+
+        nf = self.get_object()
+        return response.Response(montar_dados_contexto_inutilizacao_nfe(nf, usuario=request.user))
+
+    @action(detail=True, methods=['post'], url_path='inutilizar')
+    def inutilizar(self, request, pk=None):
+        import logging
+
+        from apps.fiscal.nfe_emissao.inutilizacao_sefaz import NFeInutilizacaoError, emitir_inutilizacao_nfe_entrada
+        from apps.fiscal.nfe_emissao.resposta_inutilizacao import montar_resposta_inutilizacao
+        from apps.fiscal.nfe_integracao.adapters.inutilizacao_parser import ResultadoInutilizacaoSefaz
+        from apps.fiscal.nfe_integracao.adapters.exceptions import CertificadoA1Error
+
+        log = logging.getLogger(__name__)
+        nf = self.get_object()
+        justificativa = request.data.get('justificativa', request.data.get('motivo', ''))
+
+        def _payload_erro(msg: str) -> dict:
+            return montar_resposta_inutilizacao(
+                configuracao_id=0,
+                serie=nf.serie_nfe or '',
+                ambiente=nf.ambiente_emissao or 'homologacao',
+                numero_inicial=0,
+                numero_final=0,
+                resultado=ResultadoInutilizacaoSefaz(
+                    ok=False,
+                    c_stat='',
+                    x_motivo=msg,
+                    protocolo='',
+                    serie='',
+                    numero_inicial='',
+                    numero_final='',
+                    ano='',
+                    tp_amb='',
+                    dh_recbto='',
+                    xml_retorno='',
+                ),
+                ok=False,
+                mensagem=msg,
+                justificativa=str(justificativa or '').strip(),
+            )
+
+        try:
+            payload = emitir_inutilizacao_nfe_entrada(
+                nf,
+                justificativa=justificativa,
+                usuario=request.user,
+                confirmacao_payload=request.data,
+            )
+        except NFeInutilizacaoError as exc:
+            payload = _payload_erro(str(exc))
+            if getattr(exc, 'etapa', '') in ('CERTIFICADO', 'EMITENTE', 'VALIDACAO', 'CONFIRMACAO', 'PERMISSAO'):
+                return response.Response(payload, status=status.HTTP_400_BAD_REQUEST)
+            return response.Response(payload, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        except CertificadoA1Error as exc:
+            return response.Response(_payload_erro(str(exc)), status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            log.exception('Erro técnico inutilização NF-e entrada id=%s', pk)
+            return response.Response(
+                _payload_erro('Erro técnico ao transmitir inutilização. Tente novamente ou contate o suporte.'),
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        code = status.HTTP_200_OK if payload.get('ok') else status.HTTP_422_UNPROCESSABLE_ENTITY
+        return response.Response(payload, status=code)
+
+    @action(detail=True, methods=['get'], url_path='cancelamento/dados')
+    def cancelamento_dados(self, request, pk=None):
+        from apps.fiscal.nfe_emissao.cancelamento_dados import montar_dados_contexto_cancelamento
+
+        nf = self.get_object()
+        return response.Response(montar_dados_contexto_cancelamento(nf, usuario=request.user))
+
+    @action(detail=True, methods=['post'], url_path='cancelar')
+    def cancelar(self, request, pk=None):
+        import logging
+
+        from apps.fiscal.nfe_emissao.cancelamento_sefaz import NFeCancelamentoError, emitir_cancelamento_nfe_entrada
+        from apps.fiscal.nfe_emissao.resposta_cancelamento import montar_resposta_cancelamento
+        from apps.fiscal.nfe_integracao.adapters.cancelamento_parser import ResultadoCancelamentoSefaz
+        from apps.fiscal.nfe_integracao.adapters.exceptions import CertificadoA1Error
+
+        log = logging.getLogger(__name__)
+        nf = self.get_object()
+        justificativa = request.data.get('justificativa', request.data.get('motivo', ''))
+
+        def _payload_erro(msg: str) -> dict:
+            nf.refresh_from_db()
+            return montar_resposta_cancelamento(
+                nf,
+                ResultadoCancelamentoSefaz(
+                    ok=False,
+                    c_stat_lote='',
+                    x_motivo_lote=msg,
+                    c_stat_evento='',
+                    x_motivo_evento='',
+                    protocolo='',
+                    chave_acesso=nf.chave_acesso or '',
+                    n_seq_evento='1',
+                    tp_evento='110111',
+                    dh_reg_evento='',
+                    tp_amb='',
+                    id_evento='',
+                    xml_retorno='',
+                ),
+                ok=False,
+                mensagem=msg,
+                justificativa=str(justificativa or '').strip(),
+            )
+
+        try:
+            payload = emitir_cancelamento_nfe_entrada(
+                nf,
+                justificativa=justificativa,
+                usuario=request.user,
+                confirmacao_payload=request.data,
+            )
+        except NFeCancelamentoError as exc:
+            payload = _payload_erro(str(exc))
+            if getattr(exc, 'etapa', '') in ('CERTIFICADO', 'EMITENTE', 'VALIDACAO', 'CONFIRMACAO', 'PERMISSAO'):
+                return response.Response(payload, status=status.HTTP_400_BAD_REQUEST)
+            return response.Response(payload, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        except CertificadoA1Error as exc:
+            return response.Response(_payload_erro(str(exc)), status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            log.exception('Erro técnico cancelamento NF-e entrada id=%s', pk)
+            return response.Response(
+                _payload_erro('Erro técnico ao transmitir cancelamento. Tente novamente ou contate o suporte.'),
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        code = status.HTTP_200_OK if payload.get('ok') else status.HTTP_422_UNPROCESSABLE_ENTITY
+        return response.Response(payload, status=code)
+
     def perform_destroy(self, instance):
         if instance.tipo_origem == NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_IMPORTADA:
             instance.delete()

@@ -4,6 +4,7 @@ import { Modal } from '@/components/Modal';
 import { Textarea } from '@/components/ui/textarea';
 import {
   nfeNumeracoesService,
+  nfeEntradasService,
   nfeSaidasService,
   type NFeInutilizacaoDadosResponse,
   type NFeInutilizacaoResponse,
@@ -22,6 +23,7 @@ type Props =
       configuracaoId: number | null;
       onClose: () => void;
       onInutilizada?: (res: NFeInutilizacaoResponse) => void;
+      endpointBase?: 'nf-saidas' | 'nf-entradas';
       nfeId?: never;
     }
   | {
@@ -30,11 +32,13 @@ type Props =
       nfeId: number | null;
       onClose: () => void;
       onInutilizada?: (res: NFeInutilizacaoResponse) => void;
+      endpointBase?: 'nf-saidas' | 'nf-entradas';
       configuracaoId?: never;
     };
 
 export function NFeInutilizacaoModal(props: Props) {
   const { open, onClose, onInutilizada, mode } = props;
+  const endpointBase = mode === 'nfe' ? props.endpointBase ?? 'nf-saidas' : 'nf-saidas';
   const entityId = mode === 'config' ? props.configuracaoId : props.nfeId;
 
   const [etapa, setEtapa] = useState<Etapa>('formulario');
@@ -66,7 +70,9 @@ export function NFeInutilizacaoModal(props: Props) {
     const load =
       mode === 'config'
         ? nfeNumeracoesService.inutilizacaoDados(entityId)
-        : nfeSaidasService.inutilizacaoDados(entityId);
+        : endpointBase === 'nf-entradas'
+          ? nfeEntradasService.inutilizacaoDadosEntrada(entityId)
+          : nfeSaidasService.inutilizacaoDados(entityId);
     void load
       .then((payload) => {
         setDados(payload);
@@ -82,7 +88,7 @@ export function NFeInutilizacaoModal(props: Props) {
         setErro(apiErrorMessage(e, { fallback: 'Não foi possível carregar dados da inutilização.' }));
       })
       .finally(() => setLoading(false));
-  }, [open, entityId, mode]);
+  }, [open, entityId, mode, endpointBase]);
 
   const justificativaValida = justificativa.trim().length >= TAMANHO_MINIMO_JUSTIFICATIVA_INUT;
   const faixaValida = useMemo(() => {
@@ -119,7 +125,9 @@ export function NFeInutilizacaoModal(props: Props) {
       const res =
         mode === 'config'
           ? await nfeNumeracoesService.inutilizar(entityId, body)
-          : await nfeSaidasService.inutilizarNfe(entityId, body);
+          : endpointBase === 'nf-entradas'
+            ? await nfeEntradasService.inutilizarEntrada(entityId, body)
+            : await nfeSaidasService.inutilizarNfe(entityId, body);
       setResultado(res);
       if (res.ok) {
         setEtapa('resultado');

@@ -109,6 +109,40 @@ export const nfeEntradasService = {
       })
     ).data;
   },
+  inutilizacaoDadosEntrada: async (id: number) =>
+    (await api.get<NFeInutilizacaoDadosResponse>(`${nfEnt}${id}/inutilizacao/dados/`)).data,
+  inutilizarEntrada: async (
+    id: number,
+    payload: {
+      justificativa: string;
+      numero_inicial?: number;
+      numero_final?: number;
+      confirmar_inutilizacao_producao?: boolean;
+      confirmar_texto?: string;
+    },
+  ) => {
+    const res = await api.post<NFeInutilizacaoResponse>(`${nfEnt}${id}/inutilizar/`, payload, {
+      timeout: 120_000,
+      validateStatus: (s) => s >= 200 && s < 500,
+    });
+    return res.data;
+  },
+  cancelamentoDadosEntrada: async (id: number) =>
+    (await api.get<NFeCancelamentoDadosResponse>(`${nfEnt}${id}/cancelamento/dados/`)).data,
+  cancelarEntrada: async (
+    id: number,
+    payload: {
+      justificativa: string;
+      confirmar_cancelamento_producao?: boolean;
+      confirmar_texto?: string;
+    },
+  ) => {
+    const res = await api.post<NFeCancelamentoResponse>(`${nfEnt}${id}/cancelar/`, payload, {
+      timeout: 120_000,
+      validateStatus: (s) => s >= 200 && s < 500,
+    });
+    return res.data;
+  },
   validarEmissaoHomologacao: async (id: number) =>
     (
       await api.get<{
@@ -762,6 +796,7 @@ export type NFeCancelamentoDadosResponse = {
     protocolo_autorizacao: string;
     valor_total: number;
     cliente_nome: string;
+    fornecedor_nome?: string;
     status: string;
     status_emissao_sefaz: string;
   };
@@ -776,6 +811,7 @@ export type NFeCancelamentoResponse = {
   ok: boolean;
   mensagem?: string;
   nfe_saida_id?: number;
+  nfe_entrada_id?: number | null;
   evento_id?: number;
   ambiente?: string;
   ambiente_label?: string;
@@ -828,8 +864,19 @@ export type NFeInutilizacaoDadosResponse = {
     status_emissao_sefaz: string;
     chave_acesso: string;
   };
-  numeros_bloqueados?: Array<{ numero: number; motivo: string; nfe_saida_id?: number }>;
+  numeros_bloqueados?: Array<{
+    numero: number;
+    motivo: string;
+    nfe_saida_id?: number;
+    nfe_entrada_id?: number;
+  }>;
   nfs_na_faixa?: Array<{ nfe_saida_id: number; numero: number; status: string; status_emissao_sefaz: string }>;
+  nfe_entradas_na_faixa?: Array<{
+    nfe_entrada_id: number;
+    numero: number;
+    status_operacional: string;
+    status_emissao_sefaz: string;
+  }>;
 };
 
 export type NFeInutilizacaoResponse = {
@@ -838,6 +885,7 @@ export type NFeInutilizacaoResponse = {
   configuracao_id?: number;
   inutilizacao_id?: number;
   nfs_afetadas?: number[];
+  nfe_entradas_afetadas?: number[];
   ambiente?: string;
   ambiente_label?: string;
   serie?: string;
@@ -1067,6 +1115,7 @@ export const nfeSaidasService = {
     pedido_venda_id?: number;
     faturamento_id?: number;
     nfe_saida_id?: number;
+    nfe_entrada_id?: number;
   }) =>
     (await api.post<NFeChecklistHomologacaoResponse>(`${nfSai}checklist-homologacao/`, payload)).data,
   emitirHomologacao: async (id: number) => {

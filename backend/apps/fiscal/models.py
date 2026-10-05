@@ -33,6 +33,10 @@ class NFeEntrada(models.Model):
         AUTORIZADA_PRODUCAO = 'AUTORIZADA_PRODUCAO', 'Autorizada produção'
         REJEITADA = 'REJEITADA', 'Rejeitada'
         ERRO_TRANSMISSAO = 'ERRO_TRANSMISSAO', 'Erro transmissão'
+        INUTILIZADA_HOMOLOGACAO = 'INUTILIZADA_HOMOLOGACAO', 'Inutilizada homologação'
+        INUTILIZADA_PRODUCAO = 'INUTILIZADA_PRODUCAO', 'Inutilizada produção'
+        CANCELADA_HOMOLOGACAO = 'CANCELADA_HOMOLOGACAO', 'Cancelada homologação'
+        CANCELADA_PRODUCAO = 'CANCELADA_PRODUCAO', 'Cancelada produção'
         IMPORTADA_PENDENTE_CONFERENCIA = (
             'IMPORTADA_PENDENTE_CONFERENCIA',
             'Importada — pendente conferência',
@@ -52,6 +56,10 @@ class NFeEntrada(models.Model):
         ENVIADA_PRODUCAO = 'ENVIADA_PRODUCAO', 'Enviada produção'
         AUTORIZADA_PRODUCAO = 'AUTORIZADA_PRODUCAO', 'Autorizada produção'
         REJEITADA_PRODUCAO = 'REJEITADA_PRODUCAO', 'Rejeitada produção'
+        INUTILIZADA_HOMOLOGACAO = 'INUTILIZADA_HOMOLOGACAO', 'Inutilizada homologação'
+        INUTILIZADA_PRODUCAO = 'INUTILIZADA_PRODUCAO', 'Inutilizada produção'
+        CANCELADA_HOMOLOGACAO = 'CANCELADA_HOMOLOGACAO', 'Cancelada homologação'
+        CANCELADA_PRODUCAO = 'CANCELADA_PRODUCAO', 'Cancelada produção'
         ERRO_TRANSMISSAO = 'ERRO_TRANSMISSAO', 'Erro transmissão'
 
     numero = models.CharField(max_length=64)

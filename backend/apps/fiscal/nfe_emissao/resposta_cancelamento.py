@@ -6,12 +6,12 @@ from typing import Any
 
 from django.utils import timezone
 
-from apps.fiscal.models import NFeSaida
+from apps.fiscal.models import NFeEntrada, NFeSaida
 from apps.fiscal.nfe_integracao.adapters.cancelamento_parser import ResultadoCancelamentoSefaz
 
 
 def montar_resposta_cancelamento(
-    nf: NFeSaida,
+    nf: NFeSaida | NFeEntrada,
     resultado: ResultadoCancelamentoSefaz,
     *,
     ok: bool | None = None,
@@ -30,7 +30,8 @@ def montar_resposta_cancelamento(
     return {
         'ok': sucesso,
         'mensagem': msg,
-        'nfe_saida_id': nf.pk,
+        'nfe_saida_id': nf.pk if isinstance(nf, NFeSaida) else None,
+        'nfe_entrada_id': nf.pk if isinstance(nf, NFeEntrada) else None,
         'ambiente': ambiente,
         'ambiente_label': 'Homologação' if ambiente == 'homologacao' else 'Produção',
         'chave_acesso': nf.chave_acesso or resultado.chave_acesso,
@@ -43,7 +44,7 @@ def montar_resposta_cancelamento(
         'protocolo': resultado.protocolo,
         'protocolo_cancelamento': resultado.protocolo,
         'emitido_em': emitido_em,
-        'status': nf.status or '',
+        'status': getattr(nf, 'status', '') or getattr(nf, 'status_operacional', ''),
         'status_emissao_sefaz': nf.status_emissao_sefaz or '',
         'etapa': 'CANCELAMENTO',
         'evento_sefaz': {
