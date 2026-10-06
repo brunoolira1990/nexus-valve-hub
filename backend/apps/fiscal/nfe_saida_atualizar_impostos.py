@@ -563,6 +563,22 @@ def _descricao_item(item: ItemNFeSaida) -> str:
     return f'Item #{item.pk}'
 
 
+def _snapshot_dev_vem_do_xml(nf: NFeSaida, item: ItemNFeSaida) -> bool:
+    """True se e devolucao ao fornecedor e o snapshot veio do XML da compra.
+
+    Nesse caso, o snapshot do XML deve prevalecer sobre a RegraFiscalSaida —
+    devolucao espelha CST/aliquotas da NF-e original (exigencia SEFAZ).
+    """
+    if (getattr(nf, 'fin_nfe', '1') or '1').strip() != '4':
+        return False
+    snap = item.snapshot_fiscal or {}
+    meta = snap.get('_meta') if isinstance(snap.get('_meta'), dict) else {}
+    if meta.get('origem') == 'xml_compra':
+        return True
+    # fallback: tem CFOP e CSTs (veio de algum XML), entao tambem respeita
+    return bool(snap.get('cfop') and (snap.get('icms') or {}).get('cst'))
+
+
 def _processar_item_preview(
     nf: NFeSaida,
     item: ItemNFeSaida,
@@ -607,7 +623,30 @@ def _processar_item_preview(
             'diagnostico': diagnostico,
         }
 
-    snap_depois = montar_snapshot_fiscal_de_regra_atual(nf, item, busca, regra)
+    if _snapshot_dev_vem_do_xml(nf, item):
+        # Devolucao: preserva CST/aliquotas do XML da compra.
+        # Atualiza somente metadados da regra para o cenario nao acusar
+        # "sem cobertura".
+        snap_depois = deepcopy(snap_antes)
+        snap_depois['origem_regra_fiscal_saida'] = busca['origem']
+        snap_depois['regra_fiscal_saida_id'] = busca.get('regra_id')
+        snap_depois['regra_fiscal_legada_id'] = busca.get('regra_legada_id')
+        if regra is not None:
+            snap_depois['regra_fiscal_saida_nome'] = _text(regra.nome) or _text(regra.descricao_cenario)
+            snap_depois['cenario_fiscal_saida_id'] = regra.cenario_id
+            if regra.cenario_id:
+                snap_depois['cenario_fiscal_saida_nome'] = _text(regra.cenario.nome) if regra.cenario else ''
+        snap_depois['atualizado_por_acao'] = 'ATUALIZAR_IMPOSTOS_NFE_DEVOLUCAO'
+        snap_depois['atualizado_em'] = timezone.now().isoformat()
+        snap_depois['fonte'] = 'XML_COMPRA_DEVOLUCAO'
+        snap_depois['_meta'] = {
+            **(snap_antes.get('_meta') if isinstance(snap_antes.get('_meta'), dict) else {}),
+            'preservado_do_xml': True,
+            'regra_apenas_para_cobertura': True,
+        }
+        snap_depois = normalize_snapshot_fiscal_for_nfe(snap_depois)
+    else:
+        snap_depois = montar_snapshot_fiscal_de_regra_atual(nf, item, busca, regra)
     alteracoes = _diff_snapshots(snap_antes, snap_depois)
     if busca.get('mensagens'):
         item_alertas.extend(busca['mensagens'])

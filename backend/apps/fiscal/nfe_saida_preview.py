@@ -507,6 +507,7 @@ def gerar_dados_preview_nfe_saida(
             'v_nf': _dec_str(nf.valor_total),
         },
         'transporte': montar_transporte_dados_nfe(nf),
+        'devolucao_ref': _montar_devolucao_ref(nf),
         'origem': {
             'pedido_venda_id': nf.pedido_venda_id,
             'faturamento_id': nf.faturamento_pedido_venda_id,
@@ -616,6 +617,62 @@ def _build_imposto_det(imposto: ET.Element, snap: dict, linha: dict) -> None:
 
     if snap.get('reforma_tributaria') or snap.get('ibs_cbs'):
         _sub(imposto, 'infAdProd', 'Bloco Reforma Tributária (prévia preparatória)')
+
+
+def _montar_devolucao_ref(nf) -> dict[str, Any] | None:
+    """Dados da NF-e de compra referenciada (devolucao ao fornecedor)."""
+    fin = (getattr(nf, 'fin_nfe', '1') or '1').strip()
+    if fin != '4':
+        return None
+    chave = (getattr(nf, 'chave_nfe_referenciada', '') or '').strip()
+    if not chave:
+        return None
+
+    numero = ''
+    serie = ''
+    dh = ''
+    conf_id = getattr(nf, 'nfe_entrada_conferencia_origem_id', None)
+    if conf_id:
+        try:
+            conf = nf.nfe_entrada_conferencia_origem
+            hist = getattr(conf, 'nf_entrada_historica', None)
+            if hist is not None:
+                numero = str(getattr(hist, 'numero', '') or '')
+                serie = str(getattr(hist, 'serie', '') or '')
+                dh_emissao = getattr(hist, 'dh_emissao', None)
+                if dh_emissao:
+                    dh = dh_emissao.isoformat()
+        except Exception:
+            pass
+
+    return {
+        'chave': chave,
+        'numero': numero,
+        'serie': serie,
+        'dh_emissao': dh,
+    }
+
+
+def _texto_ref_nfe(dados_ref: dict[str, Any]) -> str:
+    """Texto padronizado da NF-e referenciada (devolucao)."""
+    numero = dados_ref.get('numero') or '—'
+    serie = dados_ref.get('serie') or '—'
+    chave = dados_ref.get('chave') or ''
+    dh = dados_ref.get('dh_emissao') or ''
+    data_fmt = ''
+    if dh:
+        try:
+            from datetime import datetime
+            dt = datetime.fromisoformat(dh.replace('Z', '+00:00'))
+            data_fmt = dt.strftime('%d/%m/%Y')
+        except Exception:
+            data_fmt = ''
+    partes = [f'Devolucao ref. NF-e nº {numero} serie {serie}']
+    if data_fmt:
+        partes.append(f'emitida em {data_fmt}')
+    if chave:
+        partes.append(f'chave de acesso {chave}')
+    return ' '.join(partes)
 
 
 def _xml_preview_string(dados: dict[str, Any]) -> str:
@@ -785,6 +842,9 @@ def _xml_preview_string(dados: dict[str, Any]) -> str:
         'Rascunho não autorizado',
         'Sem protocolo SEFAZ',
     ]
+    dev_ref = dados.get('devolucao_ref')
+    if isinstance(dev_ref, dict) and dev_ref.get('chave'):
+        inf_cpl.append(_texto_ref_nfe(dev_ref))
     if dados.get('observacoes'):
         inf_cpl.append(dados['observacoes'])
     for av in dados.get('avisos') or []:
