@@ -1170,9 +1170,37 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
                 item.save(update_fields=update_fields)
 
     def _persist_itens_imediato(self, nf: NFeSaida, itens_data: list[dict]) -> None:
-        nf.itens.all().delete()
+        """Persiste itens preservando os existentes quando o payload so traz
+        metadados (id + campos editaveis), sem quantidade/produto/valor.
+
+        Diferente de `delete + create`, isto:
+        - mantem snapshot_fiscal e vinculos ItemDevolucaoCompra (devolucao
+          ao fornecedor) intactos;
+        - aplica update in-place quando o item tem id conhecido.
+
+        Quando o payload traz todos os campos (fluxo de faturamento/venda),
+        cai para delete + create como antes — sem regressao.
+        """
+        payload_completo = all(
+            'produto_id' in item and 'quantidade' in item and 'valor' in item
+            for item in itens_data
+        )
+        if payload_completo:
+            nf.itens.all().delete()
+            for item in itens_data:
+                ItemNFeSaida.objects.create(nf=nf, **self._item_sem_id(item))
+            return
+
+        # Payload so com metadados: update in-place
+        ids_payload = {item['id'] for item in itens_data if item.get('id')}
+        nf.itens.exclude(id__in=ids_payload).delete()
         for item in itens_data:
-            ItemNFeSaida.objects.create(nf=nf, **self._item_sem_id(item))
+            item_id = item.get('id')
+            if item_id:
+                ItemNFeSaida.objects.filter(id=item_id, nf=nf).update(**self._item_sem_id(item))
+            else:
+                # Item novo sem id: exige campos obrigatorios
+                ItemNFeSaida.objects.create(nf=nf, **self._item_sem_id(item))
 
     def _persist_itens_antecipado(self, nf: NFeSaida, itens_data: list[dict]) -> None:
         sync_itens_nf_saida_antecipada(
