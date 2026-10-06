@@ -856,6 +856,8 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
     def get_cliente_nome(self, obj):
         if obj.cliente_id:
             return obj.cliente.razao_social
+        if obj.fornecedor_id:
+            return obj.fornecedor.razao_social
         return ''
 
     def get_fornecedor_nome(self, obj):
@@ -1369,6 +1371,8 @@ class NFeSaidaListSerializer(serializers.ModelSerializer):
     def get_cliente_nome(self, obj):
         if obj.cliente_id:
             return obj.cliente.razao_social
+        if obj.fornecedor_id:
+            return obj.fornecedor.razao_social
         return ''
 
     def get_listagem_resumo(self, obj):
