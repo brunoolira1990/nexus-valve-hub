@@ -3464,3 +3464,47 @@ class CadastrarFornecedorEntradaSerializer(serializers.Serializer):
     uf = serializers.CharField(required=False, allow_blank=True, max_length=2)
     cep = serializers.CharField(required=False, allow_blank=True, max_length=16)
     ativo = serializers.BooleanField(required=False, default=True)
+
+
+class GerarSaidaDevolucaoCompraSerializer(serializers.Serializer):
+    """Body do POST /nf-entradas-conferencias/{pk}/gerar-saida-devolucao-compra/."""
+
+    itens = serializers.ListField(
+        child=serializers.DictField(),
+        required=False,
+        allow_empty=True,
+    )
+    motivo = serializers.ChoiceField(
+        choices=[
+            'NAO_CONFORME',
+            'DEFEITO',
+            'ERRO_PEDIDO',
+            'AVARIA_TRANSPORTE',
+            'OUTRO',
+        ],
+    )
+    observacao = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=2000,
+        default='',
+    )
+
+    def validate_itens(self, value):
+        if not value:
+            return []
+        for idx, item in enumerate(value):
+            if not isinstance(item, dict):
+                raise serializers.ValidationError(f'Item {idx} deve ser objeto.')
+            if 'item_conferencia_id' not in item:
+                raise serializers.ValidationError(f'Item {idx} sem item_conferencia_id.')
+            if 'quantidade' not in item:
+                raise serializers.ValidationError(f'Item {idx} sem quantidade.')
+        return value
+
+    def validate(self, attrs):
+        if attrs.get('motivo') == 'OUTRO' and not (attrs.get('observacao') or '').strip():
+            raise serializers.ValidationError(
+                {'observacao': 'Motivo OUTRO exige observacao preenchida.'}
+            )
+        return attrs

@@ -3141,6 +3141,54 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
                 return resp
             raise
 
+    @action(detail=True, methods=['post'], url_path='conferencia/gerar-saida-devolucao-compra')
+    def gerar_saida_devolucao_compra(self, request, pk=None):
+        """Gera rascunho de NFeSaida de devolucao ao fornecedor a partir da conferencia."""
+        import logging
+
+        from apps.fiscal.nfe_saida_from_entrada_devolucao import (
+            NFeSaidaFromEntradaError,
+            gerar_saida_devolucao_compra as gerar_servico,
+        )
+        from apps.fiscal.serializers import GerarSaidaDevolucaoCompraSerializer
+
+        log = logging.getLogger(__name__)
+
+        serializer = GerarSaidaDevolucaoCompraSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        dados = serializer.validated_data
+
+        try:
+            nf = self.get_queryset().get(pk=pk)
+            conferencia = self._get_or_build_conferencia(nf)
+        except Exception:
+            log.exception('Falha ao carregar conferencia pk=%s', pk)
+            return response.Response(
+                {'ok': False, 'mensagem': 'Conferencia nao encontrada.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        try:
+            payload = gerar_servico(
+                conferencia,
+                itens=dados.get('itens') or None,
+                motivo=dados['motivo'],
+                observacao=dados.get('observacao', ''),
+                usuario=request.user,
+            )
+        except NFeSaidaFromEntradaError as exc:
+            return response.Response(
+                {'ok': False, 'mensagem': str(exc), 'etapa': 'VALIDACAO'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception:
+            log.exception('Erro tecnico gerar devolucao compra conferencia_id=%s', pk)
+            return response.Response(
+                {'ok': False, 'mensagem': 'Erro tecnico ao gerar devolucao.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        return response.Response(payload, status=status.HTTP_201_CREATED)
+
     def _salvar_conferencia(self, request, pk=None):
         try:
             return self._salvar_conferencia_impl(request, pk)
