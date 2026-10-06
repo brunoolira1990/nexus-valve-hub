@@ -722,7 +722,20 @@ def _gerar_ou_atualizar_certificado(nf: NFeSaida) -> None:
 
 
 class NFeSaidaSerializer(serializers.ModelSerializer):
-    cliente_id = serializers.PrimaryKeyRelatedField(queryset=Cliente.objects.all(), source='cliente')
+    cliente_id = serializers.PrimaryKeyRelatedField(
+        queryset=Cliente.objects.all(),
+        source='cliente',
+        required=False,
+        allow_null=True,
+    )
+    fornecedor_id = serializers.PrimaryKeyRelatedField(
+        queryset=Fornecedor.objects.all(),
+        source='fornecedor',
+        required=False,
+        allow_null=True,
+    )
+    fornecedor_nome = serializers.SerializerMethodField(read_only=True)
+    nfe_entrada_conferencia_origem = serializers.PrimaryKeyRelatedField(read_only=True)
     pedido_venda_id = serializers.PrimaryKeyRelatedField(
         queryset=PedidoVenda.objects.all(),
         source='pedido_venda',
@@ -820,6 +833,9 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
             'ind_pres',
             'indicadores_fiscais_confirmados',
             'itens',
+            'fornecedor_id',
+            'fornecedor_nome',
+            'nfe_entrada_conferencia_origem',
         )
         read_only_fields = (
             'status_conferencia',
@@ -839,6 +855,11 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
 
     def get_cliente_nome(self, obj):
         return obj.cliente.razao_social
+
+    def get_fornecedor_nome(self, obj):
+        if obj.fornecedor:
+            return obj.fornecedor.razao_social
+        return ''
 
     def get_modo_atendimento_estoque_display(self, obj):
         labels = {
@@ -967,6 +988,23 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
             )
 
     def validate(self, attrs):
+        # XOR cliente/fornecedor: exatamente um preenchido.
+        # Exceto em rascunhos de devolucao de compra (nfe_entrada_conferencia_origem
+        # preenchido pelo backend), onde o fornecedor e definido pelo servico.
+        _inst = getattr(self, 'instance', None)
+        _skip_xor = bool(_inst and _inst.nfe_entrada_conferencia_origem)
+        if not _skip_xor:
+            _cli = attrs.get('cliente')
+            _forn = attrs.get('fornecedor')
+            if _cli is not None and _forn is not None:
+                raise serializers.ValidationError(
+                    {'non_field_errors': 'Nao e possivel preencher tanto cliente quanto fornecedor.'},
+                )
+            if _cli is None and _forn is None:
+                raise serializers.ValidationError(
+                    {'non_field_errors': 'Exatamente um entre cliente ou fornecedor deve ser preenchido.'},
+                )
+
         instance = getattr(self, 'instance', None)
         cliente = attrs.get('cliente', instance.cliente if instance else None)
         nf_ctx = instance or NFeSaida(
