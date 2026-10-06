@@ -563,6 +563,38 @@ def _descricao_item(item: ItemNFeSaida) -> str:
     return f'Item #{item.pk}'
 
 
+def _reconstruir_snapshot_devolucao(nf: NFeSaida, item: ItemNFeSaida) -> dict[str, Any]:
+    """Re-extrai o snapshot fiscal do XML da NF-e de compra.
+
+    Chamado quando a NFeSaida e devolucao ao fornecedor (fin_nfe=4) com
+    snapshot originado do XML. Corrige snapshots em formato nested antigo
+    para o formato FLAT esperado por snapshot_fiscal_helpers.
+
+    Cai para o snapshot atual se o vinculo com a conferencia ou XML nao
+    existir (defensivo).
+    """
+    try:
+        from apps.fiscal.nfe_saida_from_entrada_devolucao import (
+            _montar_snapshot_fiscal_via_xml_compra,
+        )
+        dc = getattr(item, 'devolucao_compra', None)
+        item_conf = getattr(dc, 'item_conferencia', None) if dc else None
+        if item_conf is None:
+            return deepcopy(item.snapshot_fiscal or {})
+        empresa = getattr(nf, 'empresa_emitente', None)
+        fornecedor = getattr(nf, 'fornecedor', None)
+        novo = _montar_snapshot_fiscal_via_xml_compra(
+            item_conf=item_conf,
+            empresa=empresa,
+            fornecedor=fornecedor,
+        )
+        if novo is None:
+            return deepcopy(item.snapshot_fiscal or {})
+        return novo
+    except Exception:
+        return deepcopy(item.snapshot_fiscal or {})
+
+
 def _snapshot_dev_vem_do_xml(nf: NFeSaida, item: ItemNFeSaida) -> bool:
     """True se e devolucao ao fornecedor e o snapshot veio do XML da compra.
 
@@ -624,12 +656,11 @@ def _processar_item_preview(
         }
 
     if _snapshot_dev_vem_do_xml(nf, item):
-        # Devolucao: preserva CST/aliquotas do XML da compra.
-        # Atualiza somente metadados da regra para o cenario nao acusar
-        # "sem cobertura".
-        snap_depois = deepcopy(snap_antes)
-        # Mantem 'XML_COMPRA_DEVOLUCAO' para a UI nao exibir 'CENARIO_SAIDA'
-        # num snapshot que na verdade veio do XML da compra.
+        # Devolucao: re-extrai o snapshot do XML da compra para garantir
+        # formato FLAT (compativel com snapshot_fiscal_helpers) — corrige
+        # inclusive snapshots antigos em formato nested.
+        snap_depois = _reconstruir_snapshot_devolucao(nf, item)
+        # Metadados da regra (para o cenario nao acusar 'sem cobertura')
         snap_depois['origem_regra_fiscal_saida'] = 'XML_COMPRA_DEVOLUCAO'
         snap_depois['regra_fiscal_saida_id'] = busca.get('regra_id')
         snap_depois['regra_fiscal_legada_id'] = busca.get('regra_legada_id')
@@ -641,8 +672,10 @@ def _processar_item_preview(
         snap_depois['atualizado_por_acao'] = 'ATUALIZAR_IMPOSTOS_NFE_DEVOLUCAO'
         snap_depois['atualizado_em'] = timezone.now().isoformat()
         snap_depois['fonte'] = 'XML_COMPRA_DEVOLUCAO'
+        meta_base = snap_antes.get('_meta') if isinstance(snap_antes.get('_meta'), dict) else {}
         snap_depois['_meta'] = {
-            **(snap_antes.get('_meta') if isinstance(snap_antes.get('_meta'), dict) else {}),
+            **meta_base,
+            **(snap_depois.get('_meta') if isinstance(snap_depois.get('_meta'), dict) else {}),
             'preservado_do_xml': True,
             'regra_apenas_para_cobertura': True,
         }
