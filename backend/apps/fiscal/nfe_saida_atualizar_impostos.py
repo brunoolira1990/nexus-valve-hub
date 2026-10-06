@@ -628,7 +628,9 @@ def _processar_item_preview(
         # Atualiza somente metadados da regra para o cenario nao acusar
         # "sem cobertura".
         snap_depois = deepcopy(snap_antes)
-        snap_depois['origem_regra_fiscal_saida'] = busca['origem']
+        # Mantem 'XML_COMPRA_DEVOLUCAO' para a UI nao exibir 'CENARIO_SAIDA'
+        # num snapshot que na verdade veio do XML da compra.
+        snap_depois['origem_regra_fiscal_saida'] = 'XML_COMPRA_DEVOLUCAO'
         snap_depois['regra_fiscal_saida_id'] = busca.get('regra_id')
         snap_depois['regra_fiscal_legada_id'] = busca.get('regra_legada_id')
         if regra is not None:
