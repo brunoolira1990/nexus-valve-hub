@@ -501,7 +501,6 @@ def gerar_saida_devolucao_compra(
             valor=_dec(item_conf.valor_unitario_nf),
             snapshot_produto=snap_prod,
             snapshot_fiscal=snapshot_fiscal,
-            observacao_item=f'Devolucao do item conferencia {item_conf.pk}',
         )
         ItemDevolucaoCompra.objects.create(
             item_nf_saida=item_saida,

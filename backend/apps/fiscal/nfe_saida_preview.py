@@ -346,10 +346,24 @@ def gerar_dados_preview_nfe_saida(
     recs = rec_info['recomendacoes']
 
     pedido = nf.pedido_venda
-    emp = pedido.empresa_emitente if pedido and pedido.empresa_emitente_id else None
+    # Emitente: prioriza nf.empresa_emitente (devolucao ao fornecedor nao
+    # tem pedido_venda); fallback para pedido.empresa_emitente (venda normal).
+    emp = getattr(nf, 'empresa_emitente', None) or None
+    if emp is None and pedido and pedido.empresa_emitente_id:
+        emp = pedido.empresa_emitente
+    if emp is None:
+        from apps.cadastros.models import Empresa
+
+        emp = Empresa.objects.order_by('pk').first()
+
+    # Destinatario: cliente (venda) ou fornecedor (devolucao de compra).
     cli = nf.cliente
+    from apps.fiscal.nfe_destinatario_fiscal import eh_devolucao_ao_fornecedor
+
+    if cli is None and eh_devolucao_ao_fornecedor(nf):
+        cli = getattr(nf, 'fornecedor', None)
     uf_origem = _text(emp.uf) if emp else ''
-    uf_destino = _text(cli.uf) if cli else ''
+    uf_destino = _text(getattr(cli, 'uf', '')) if cli else ''
     from apps.fiscal.nfe_destinatario_fiscal import resolver_perfil_destinatario_nf
 
     perfil_dest = resolver_perfil_destinatario_nf(nf)
