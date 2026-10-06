@@ -253,6 +253,8 @@ def _montar_snapshot_fiscal_via_xml_compra(
     vipi = _rate(ipi.get('vIPI')) or Decimal('0.00')
     vpis = _rate(pis.get('vPIS')) or Decimal('0.00')
     vcofins = _rate(cof.get('vCOFINS')) or Decimal('0.00')
+    vbc_pis = _rate(pis.get('vBC'))
+    vbc_cofins = _rate(cof.get('vBC'))
 
     # Formato FLAT — e o que snapshot_fiscal_helpers.get_*_snapshot espera.
     # Nao usar 'icms': {...} nested porque esses helpers so olham top-level.
@@ -280,12 +282,12 @@ def _montar_snapshot_fiscal_via_xml_compra(
         'valor_ipi': str(vipi),
         # PIS
         'cst_pis': str(pis.get('CST') or ''),
-        'base_pis': str(vbc_icms) if vbc_icms is not None else None,
+        'base_pis': str(vbc_pis) if vbc_pis is not None else None,
         'aliquota_pis': pis.get('pPIS'),
         'valor_pis': str(vpis),
         # COFINS
         'cst_cofins': str(cof.get('CST') or ''),
-        'base_cofins': str(vbc_icms) if vbc_icms is not None else None,
+        'base_cofins': str(vbc_cofins) if vbc_cofins is not None else None,
         'aliquota_cofins': cof.get('pCOFINS'),
         'valor_cofins': str(vcofins),
         # Trilha / origem
