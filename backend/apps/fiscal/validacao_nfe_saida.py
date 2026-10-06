@@ -296,13 +296,24 @@ def validar_nfe_saida_para_emissao(
 
     # --- Cliente ---
     if not nf.cliente_id:
-        _add(
-            grupos,
-            tipo=TIPO_PENDENCIA,
-            codigo='CLIENTE_NAO_INFORMADO',
-            grupo='cliente',
-            mensagem='Cliente não informado na NF-e.',
-        )
+        # Devolucao ao fornecedor: destinatario e o fornecedor (contribuinte).
+        # Nao exige cadastro de cliente.
+        if not eh_devolucao_ao_fornecedor(nf):
+            _add(
+                grupos,
+                tipo=TIPO_PENDENCIA,
+                codigo='CLIENTE_NAO_INFORMADO',
+                grupo='cliente',
+                mensagem='Cliente não informado na NF-e.',
+            )
+        elif not nf.fornecedor_id:
+            _add(
+                grupos,
+                tipo=TIPO_PENDENCIA,
+                codigo='FORNECEDOR_NAO_INFORMADO',
+                grupo='cliente',
+                mensagem='Fornecedor não informado na devolução.',
+            )
     else:
         cli = nf.cliente
         if not _text(cli.razao_social):
@@ -353,7 +364,10 @@ def validar_nfe_saida_para_emissao(
                 grupo='cliente',
                 mensagem='Cliente sem inscrição estadual (IE); confira contribuinte ICMS.',
             )
-        from apps.fiscal.nfe_destinatario_fiscal import resolver_perfil_destinatario_nf
+        from apps.fiscal.nfe_destinatario_fiscal import (
+    eh_devolucao_ao_fornecedor,
+    resolver_perfil_destinatario_nf,
+)
 
         perfil_cli = resolver_perfil_destinatario_nf(nf)
         for inc in perfil_cli.inconsistencias:
@@ -733,7 +747,10 @@ def validar_nfe_saida_para_emissao(
                         item_id=item.pk,
                     )
             from apps.fiscal.nfe_difal_calculo import validar_parametros_difal_regra
-            from apps.fiscal.nfe_destinatario_fiscal import resolver_perfil_destinatario_nf
+            from apps.fiscal.nfe_destinatario_fiscal import (
+    eh_devolucao_ao_fornecedor,
+    resolver_perfil_destinatario_nf,
+)
             from apps.regras_fiscais.models import RegraFiscalSaida
 
             perfil_nf = resolver_perfil_destinatario_nf(nf)

@@ -59,6 +59,7 @@ from apps.fiscal.nfe_difal_calculo import (
     validar_parametros_difal_regra,
 )
 from apps.fiscal.nfe_destinatario_fiscal import (
+    eh_devolucao_ao_fornecedor,
     resolver_perfil_destinatario_nf,
     tipo_operacao_fiscal_nfe_saida,
 )
@@ -198,6 +199,11 @@ def _uf_destino_nf(nf: NFeSaida, endereco_result: EnderecoFiscalResult | None = 
         uf = _text(cliente.uf).upper()[:2]
         if len(uf) == 2:
             return uf
+    # Devolucao ao fornecedor: cliente_id nulo, destinatario e o fornecedor
+    if eh_devolucao_ao_fornecedor(nf) and nf.fornecedor_id:
+        uf_forn = _text(getattr(nf.fornecedor, 'uf', '')).upper()[:2]
+        if len(uf_forn) == 2:
+            return uf_forn
     return ''
 
 
@@ -662,15 +668,23 @@ def preparar_atualizacao_impostos_nfe(nf: NFeSaida, *, usuario=None) -> dict[str
 
     cep_cache: dict[str, dict[str, str] | None] = {}
     cliente = _cliente_nf(nf)
-    endereco_result = (
-        validar_endereco_fiscal(cliente, consultar_cep=True, cep_cache=cep_cache)
-        if cliente
-        else EnderecoFiscalResult(
-            consistente=False,
-            bloqueio_fiscal=True,
-            pendencias=['Cliente não informado na NF-e.'],
+    if eh_devolucao_ao_fornecedor(nf):
+        # Devolucao ao fornecedor: nao ha cliente a validar. Endereco neutro.
+        endereco_result = EnderecoFiscalResult(
+            consistente=True,
+            bloqueio_fiscal=False,
+            uf_destino=_text(getattr(nf.fornecedor, 'uf', '')).upper()[:2],
         )
-    )
+    else:
+        endereco_result = (
+            validar_endereco_fiscal(cliente, consultar_cep=True, cep_cache=cep_cache)
+            if cliente
+            else EnderecoFiscalResult(
+                consistente=False,
+                bloqueio_fiscal=True,
+                pendencias=['Cliente não informado na NF-e.'],
+            )
+        )
     contexto_fiscal = _montar_contexto_fiscal_nf(nf, endereco_result=endereco_result)
 
     itens_rows: list[dict[str, Any]] = []
@@ -846,11 +860,19 @@ def aplicar_atualizacao_impostos_nfe(
             .get(pk=nf_locked.pk)
         )
         cliente_locked = _cliente_nf(nf_locked)
-        endereco_locked = (
-            validar_endereco_fiscal(cliente_locked, consultar_cep=True)
-            if cliente_locked
-            else EnderecoFiscalResult(bloqueio_fiscal=True)
-        )
+        if eh_devolucao_ao_fornecedor(nf_locked):
+            # Devolucao ao fornecedor: nao ha cliente a validar.
+            endereco_locked = EnderecoFiscalResult(
+                consistente=True,
+                bloqueio_fiscal=False,
+                uf_destino=_text(getattr(nf_locked.fornecedor, 'uf', '')).upper()[:2],
+            )
+        else:
+            endereco_locked = (
+                validar_endereco_fiscal(cliente_locked, consultar_cep=True)
+                if cliente_locked
+                else EnderecoFiscalResult(bloqueio_fiscal=True)
+            )
         if endereco_locked.bloqueio_fiscal:
             raise ValueError(
                 mensagem_endereco_inconsistente_nf(cliente_locked, endereco_locked)
