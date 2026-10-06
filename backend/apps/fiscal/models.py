@@ -254,6 +254,17 @@ class NFeSaida(models.Model):
         blank=True,
         related_name='nf_saidas_devolucao_compra',
     )
+    fin_nfe = models.CharField(
+        max_length=1,
+        blank=True,
+        default='1',
+        help_text='finalidade da NF-e (1=normal, 4=devolução). Default: 1.',
+    )
+    chave_nfe_referenciada = models.CharField(
+        max_length=44,
+        blank=True,
+        help_text='Chave da NF-e referenciada (obrigatória quando fin_nfe=4).',
+    )
     data = models.DateField()
     valor_total = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0'))
     modo_atendimento_estoque = models.CharField(

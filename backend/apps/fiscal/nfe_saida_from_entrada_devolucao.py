@@ -427,6 +427,8 @@ def gerar_saida_devolucao_compra(
         data=date.today(),
         valor_total=Decimal('0'),
         status='RASCUNHO',
+        fin_nfe='4',
+        chave_nfe_referenciada=chave_compra,
         observacoes_nfe=obs_final,
     )
 

@@ -450,13 +450,18 @@ def montar_tnfe_oficial(dados: dict[str, Any], *, nfe_saida: NFeSaida | None = N
         tpEmis='1',
         cDV='0',
         tpAmb='2',
-        finNFe='1',
+        finNFe=_text(ide_map.get('fin_nfe')) or '1',
         indFinal='1',
         indPres='1',
         indIntermed='0',
         procEmi='0',
         verProc='NexusERP-4.0.1',
     )
+
+    # <NFref> — obrigatorio quando finNFe=4 (devolucao)
+    _chave_ref = _text(ide_map.get('chave_nfe_referenciada'))
+    if _text(ide_map.get('fin_nfe')) == '4' and len(_chave_ref) == 44:
+        inf.ide.NFref = [nfe.Tnfe.InfNfe.Ide.Nfref(refNFe=_chave_ref)]
 
     emit = dados['emitente']
     inf.emit = nfe.Tnfe.InfNfe.Emit(

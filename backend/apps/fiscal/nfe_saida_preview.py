@@ -485,12 +485,18 @@ def gerar_dados_preview_nfe_saida(
         },
         'ide': {
             'c_uf': UF_IBGE.get(uf_origem, '35'),
-            'nat_op': 'Venda de mercadoria',
+            'nat_op': (
+                'Devolução de mercadoria'
+                if (getattr(nf, 'fin_nfe', '1') == '4')
+                else 'Venda de mercadoria'
+            ),
             'mod': '55',
             'serie': 'PREVIEW',
             'n_nf': nf.numero,
             'dh_emi': timezone.localtime(timezone.now()).isoformat(),
             'tp_nf': '1',
+            'fin_nfe': getattr(nf, 'fin_nfe', '1') or '1',
+            'chave_nfe_referenciada': getattr(nf, 'chave_nfe_referenciada', '') or '',
             'id_dest': id_dest,
             'c_mun_fg': _codigo_municipio_preview(uf_origem, emp.cidade if emp else ''),
         },
@@ -629,6 +635,7 @@ def _xml_preview_string(dados: dict[str, Any]) -> str:
         ('tpNF', 'tp_nf'),
         ('idDest', 'id_dest'),
         ('cMunFG', 'c_mun_fg'),
+        ('finNFe', 'fin_nfe'),
     ):
         if key is None and tag == 'natOp':
             _sub(ide, tag, ide_map.get('nat_op'))
@@ -636,6 +643,12 @@ def _xml_preview_string(dados: dict[str, Any]) -> str:
             _sub(ide, tag, dados['numero'])
         else:
             _sub(ide, tag, ide_map.get(key))
+
+    # <NFref> — obrigatorio quando finNFe=4 (devolucao)
+    chave_ref = _text(ide_map.get('chave_nfe_referenciada'))
+    if _text(ide_map.get('fin_nfe')) == '4' and chave_ref:
+        nfref = ET.SubElement(ide, 'NFref')
+        _sub(nfref, 'refNFe', chave_ref)
 
     emit = dados['emitente']
     emit_el = ET.SubElement(inf, 'emit')

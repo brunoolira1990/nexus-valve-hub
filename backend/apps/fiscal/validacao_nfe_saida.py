@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Any, TypedDict
 
 from apps.fiscal.models import AtendimentoEstoque, ItemNFeSaida, NFeSaida
+from apps.fiscal.nfe_destinatario_fiscal import eh_devolucao_ao_fornecedor
 from apps.fiscal.nfe_saida_from_faturamento import STATUS_NFE_RASCUNHO
 
 TOLERANCIA_VALOR = Decimal('0.02')
@@ -294,6 +295,22 @@ def validar_nfe_saida_para_emissao(
             mensagem='NF-e em rascunho — validação preparatória para emissão futura.',
         )
 
+    # --- Devolucao (finNFe=4) ---
+    fin_nfe = (getattr(nf, 'fin_nfe', '1') or '1').strip()
+    chave_ref = (getattr(nf, 'chave_nfe_referenciada', '') or '').strip()
+    if fin_nfe == '4':
+        if len(chave_ref) != 44 or not chave_ref.isdigit():
+            _add(
+                grupos,
+                tipo=TIPO_PENDENCIA,
+                codigo='DEVOLUCAO_SEM_NF_REFERENCIADA',
+                grupo='fiscal',
+                mensagem=(
+                    'Devolucao (finNFe=4) exige chave da NF-e original '
+                    '(44 digitos) para gerar <refNFe>.'
+                ),
+            )
+
     # --- Cliente ---
     if not nf.cliente_id:
         # Devolucao ao fornecedor: destinatario e o fornecedor (contribuinte).
@@ -364,10 +381,7 @@ def validar_nfe_saida_para_emissao(
                 grupo='cliente',
                 mensagem='Cliente sem inscrição estadual (IE); confira contribuinte ICMS.',
             )
-        from apps.fiscal.nfe_destinatario_fiscal import (
-    eh_devolucao_ao_fornecedor,
-    resolver_perfil_destinatario_nf,
-)
+        from apps.fiscal.nfe_destinatario_fiscal import resolver_perfil_destinatario_nf
 
         perfil_cli = resolver_perfil_destinatario_nf(nf)
         for inc in perfil_cli.inconsistencias:
@@ -747,10 +761,7 @@ def validar_nfe_saida_para_emissao(
                         item_id=item.pk,
                     )
             from apps.fiscal.nfe_difal_calculo import validar_parametros_difal_regra
-            from apps.fiscal.nfe_destinatario_fiscal import (
-    eh_devolucao_ao_fornecedor,
-    resolver_perfil_destinatario_nf,
-)
+            from apps.fiscal.nfe_destinatario_fiscal import resolver_perfil_destinatario_nf
             from apps.regras_fiscais.models import RegraFiscalSaida
 
             perfil_nf = resolver_perfil_destinatario_nf(nf)

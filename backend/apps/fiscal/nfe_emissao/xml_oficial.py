@@ -113,13 +113,19 @@ def montar_tnfe_emissao(
         tpEmis='1',
         cDV=chave.digito_verificador,
         tpAmb=tp_amb,
-        finNFe='1',
+        finNFe=_text(getattr(nfe_saida, 'fin_nfe', '1')) or '1',
         indFinal=normalizar_ind_final(nfe_saida.ind_final),
         indPres=normalizar_ind_pres(nfe_saida.ind_pres),
         indIntermed=normalizar_ind_intermed(getattr(nfe_saida, 'ind_intermed', None)),
         procEmi='0',
         verProc=VERSAO_PROC,
     )
+
+    # <NFref> — obrigatorio quando finNFe=4 (devolucao)
+    _fin_nfe = _text(getattr(nfe_saida, 'fin_nfe', '1')) or '1'
+    _chave_ref = _text(getattr(nfe_saida, 'chave_nfe_referenciada', ''))
+    if _fin_nfe == '4' and len(_chave_ref) == 44:
+        inf.ide.NFref = [nfe.Tnfe.InfNfe.Ide.Nfref(refNFe=_chave_ref)]
 
     emit = dados['emitente']
     ie_emit = normalizar_ie_xml(emit.get('ie'), permitir_isento=False)
