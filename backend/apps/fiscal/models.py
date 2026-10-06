@@ -700,6 +700,40 @@ class ItemNFeSaida(models.Model):
         ordering = ['id']
 
 
+class ItemDevolucaoCompra(models.Model):
+    """Vínculo item a item entre NFeSaida de devolução e ItemNFeEntradaConferencia.
+
+    Controla quantidade devolvida para impedir devolver mais do que foi recebido.
+    """
+
+    item_nf_saida = models.OneToOneField(
+        ItemNFeSaida,
+        on_delete=models.CASCADE,
+        related_name='devolucao_compra',
+    )
+    item_conferencia = models.ForeignKey(
+        'ItemNFeEntradaConferencia',
+        on_delete=models.PROTECT,
+        related_name='devolucoes_compra',
+    )
+    quantidade_devolvida = models.DecimalField(
+        max_digits=14,
+        decimal_places=3,
+        help_text='Quantidade (na unidade de estoque da conferência) devolvida.',
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Item de devolução de compra'
+        verbose_name_plural = 'Itens de devolução de compra'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['item_conferencia', 'item_nf_saida'],
+                name='item_devolucao_compra_unico_por_item_saida',
+            ),
+        ]
+
+
 class AtendimentoEstoque(models.Model):
     class OrigemTipo(models.TextChoices):
         NF_SAIDA = 'NF_SAIDA', 'NF de saída'
