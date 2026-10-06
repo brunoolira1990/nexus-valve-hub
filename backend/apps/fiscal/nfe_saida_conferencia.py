@@ -667,7 +667,7 @@ def montar_conferencia_nfe_saida(
                 'dias_parcelas': list(nf.dias_parcelas or []),
                 'duplicatas_nfe': duplicatas_nfe_para_api(nf),
                 'cliente_id': nf.cliente_id,
-                'cliente_nome': nf.cliente.razao_social,
+                'cliente_nome': nf.cliente.razao_social if nf.cliente_id else '',
                 'pedido_venda_id': nf.pedido_venda_id,
                 'pedido_venda_numero': pedido.numero if pedido else '',
                 'faturamento_pedido_venda_id': nf.faturamento_pedido_venda_id,

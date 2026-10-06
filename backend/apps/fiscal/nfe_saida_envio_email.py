@@ -282,7 +282,7 @@ def montar_mensagem_sugerida(nf: NFeSaida, *, homolog: bool) -> str:
     nome_empresa = (getattr(empresa, 'razao_social', None) or 'Nexus Válvulas').strip()
     cliente = ''
     if nf.cliente_id and nf.cliente:
-        cliente = (nf.cliente.razao_social or '').strip()
+        cliente = (nf.cliente.razao_social if nf.cliente_id else '').strip()
 
     linhas = [
         f'Prezado(a) {cliente or "cliente"},' if cliente else 'Prezado(a),',
@@ -335,7 +335,7 @@ def montar_dados_envio_email_danfe_xml(nf: NFeSaida, *, usuario=None) -> dict[st
     ultimo = nf.envios_email.order_by('-enviado_em', '-id').first()
     cliente_nome = ''
     if nf.cliente_id and nf.cliente:
-        cliente_nome = (nf.cliente.razao_social or '').strip()
+        cliente_nome = (nf.cliente.razao_social if nf.cliente_id else '').strip()
 
     destinatarios_sugeridos = montar_destinatarios_sugeridos(nf)
     legado = resolver_destinatario_email_cliente_nfe(nf)

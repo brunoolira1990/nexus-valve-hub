@@ -214,7 +214,7 @@ def montar_dados_contexto_cce(nf: NFeSaida) -> dict[str, Any]:
     emit = montar_identidade_emitente(nf)
     destinatario = ''
     if nf.cliente_id and getattr(nf, 'cliente', None):
-        destinatario = (nf.cliente.razao_social or '').strip()
+        destinatario = ((nf.cliente.razao_social if nf.cliente_id else '') or '').strip()
     anteriores = listar_cce_anteriores(nf)
     vigente = obter_ultima_cce_vigente(anteriores)
     texto_base = str(vigente.get('texto_correcao') or '') if vigente else ''
@@ -277,7 +277,7 @@ def montar_dados_comprovante_cce(evento: NFeSaidaEvento) -> dict[str, Any]:
     emit = montar_identidade_emitente(nf)
     destinatario = ''
     if nf.cliente_id and getattr(nf, 'cliente', None):
-        destinatario = (nf.cliente.razao_social or '').strip()
+        destinatario = ((nf.cliente.razao_social if nf.cliente_id else '') or '').strip()
     seq_raw = resumo.get('sequencia_evento') or resumo.get('n_seq_evento') or ''
     try:
         sequencia = int(seq_raw)

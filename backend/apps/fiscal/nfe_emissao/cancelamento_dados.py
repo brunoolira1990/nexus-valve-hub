@@ -95,7 +95,7 @@ def montar_dados_contexto_cancelamento(nf: NFeSaida | NFeEntrada, *, usuario=Non
     cliente_nome = ''
     fornecedor_nome = ''
     if not entrada and nf.cliente_id and nf.cliente:
-        cliente_nome = nf.cliente.razao_social or ''
+        cliente_nome = (nf.cliente.razao_social if nf.cliente_id else '') or ''
     if entrada and nf.fornecedor_id and nf.fornecedor:
         fornecedor_nome = nf.fornecedor.razao_social or ''
 
