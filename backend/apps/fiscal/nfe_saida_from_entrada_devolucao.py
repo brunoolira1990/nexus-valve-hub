@@ -179,6 +179,7 @@ def _montar_snapshot_fiscal_via_xml_compra(
     item_conf: ItemNFeEntradaConferencia,
     empresa,
     fornecedor,
+    qtd: Decimal | None = None,
 ) -> dict[str, Any] | None:
     """Espelha os impostos do XML da NF-e de compra (fonte primaria fiscal).
 
@@ -233,6 +234,26 @@ def _montar_snapshot_fiscal_via_xml_compra(
             ncm = str(sp.get('ncm') or sp.get('NCM') or '').strip()
     ncm = ''.join(c for c in ncm if c.isdigit())[:8]
 
+    # Rateio proporcional (Ajuste SINIEF 07/05): devolucao espelha base e
+    # valor do documento original na proporcao da quantidade devolvida.
+    qtd_orig = _dec(item_conf.quantidade_nf)
+    qtd_dev = qtd if qtd is not None else _dec(item_conf.quantidade_estoque_calculada)
+    fator = (qtd_dev / qtd_orig) if (qtd_orig > 0 and qtd_dev > 0) else Decimal('1')
+
+    def _rate(val) -> Decimal | None:
+        if val in (None, ''):
+            return None
+        return (_dec(val) * fator).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+    vbc_icms = _rate(icms.get('vBC'))
+    vicms = _rate(icms.get('vICMS')) or Decimal('0.00')
+    vbcst = _rate(icms.get('vBCST'))
+    vicmsst = _rate(icms.get('vICMSST'))
+    vbc_ipi = _rate(ipi.get('vBC'))
+    vipi = _rate(ipi.get('vIPI')) or Decimal('0.00')
+    vpis = _rate(pis.get('vPIS')) or Decimal('0.00')
+    vcofins = _rate(cof.get('vCOFINS')) or Decimal('0.00')
+
     # Formato FLAT — e o que snapshot_fiscal_helpers.get_*_snapshot espera.
     # Nao usar 'icms': {...} nested porque esses helpers so olham top-level.
     snapshot: dict[str, Any] = {
@@ -245,25 +266,28 @@ def _montar_snapshot_fiscal_via_xml_compra(
         'csosn': str(icms.get('CSOSN') or ''),
         'origem_mercadoria': str(icms.get('orig') or '0'),
         'modalidade_bc_icms': str(icms.get('modBC') or ''),
-        'base_icms': None,   # recalculado pelo XML de saida
+        'base_icms': str(vbc_icms) if vbc_icms is not None else None,
         'aliquota_icms': icms.get('pICMS'),
-        'valor_icms': None,
+        'valor_icms': str(vicms),
         'reducao_bc_icms': None,
+        'base_icms_st': str(vbcst) if vbcst is not None else None,
+        'aliquota_icms_st': icms.get('pICMSST'),
+        'valor_icms_st': str(vicmsst) if vicmsst is not None else None,
         # IPI
         'cst_ipi': str(ipi.get('CST') or ''),
-        'base_ipi': None,
+        'base_ipi': str(vbc_ipi) if vbc_ipi is not None else None,
         'aliquota_ipi': ipi.get('pIPI'),
-        'valor_ipi': None,
+        'valor_ipi': str(vipi),
         # PIS
         'cst_pis': str(pis.get('CST') or ''),
-        'base_pis': None,
+        'base_pis': str(vbc_icms) if vbc_icms is not None else None,
         'aliquota_pis': pis.get('pPIS'),
-        'valor_pis': None,
+        'valor_pis': str(vpis),
         # COFINS
         'cst_cofins': str(cof.get('CST') or ''),
-        'base_cofins': None,
+        'base_cofins': str(vbc_icms) if vbc_icms is not None else None,
         'aliquota_cofins': cof.get('pCOFINS'),
-        'valor_cofins': None,
+        'valor_cofins': str(vcofins),
         # Trilha / origem
         'origem_regra_fiscal_saida': 'XML_COMPRA_DEVOLUCAO',
         'fonte': 'XML_COMPRA_DEVOLUCAO',
@@ -455,6 +479,7 @@ def gerar_saida_devolucao_compra(
             item_conf=item_conf,
             empresa=empresa,
             fornecedor=fornecedor,
+            qtd=qtd,
         )
         if snapshot_fiscal is None:
             snapshot_fiscal = _montar_snapshot_fiscal_via_regra(

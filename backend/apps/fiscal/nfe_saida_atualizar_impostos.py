@@ -583,10 +583,13 @@ def _reconstruir_snapshot_devolucao(nf: NFeSaida, item: ItemNFeSaida) -> dict[st
             return deepcopy(item.snapshot_fiscal or {})
         empresa = getattr(nf, 'empresa_emitente', None)
         fornecedor = getattr(nf, 'fornecedor', None)
+        from decimal import Decimal as _D
+
         novo = _montar_snapshot_fiscal_via_xml_compra(
             item_conf=item_conf,
             empresa=empresa,
             fornecedor=fornecedor,
+            qtd=_D(str(item.quantidade or '0')),
         )
         if novo is None:
             return deepcopy(item.snapshot_fiscal or {})
