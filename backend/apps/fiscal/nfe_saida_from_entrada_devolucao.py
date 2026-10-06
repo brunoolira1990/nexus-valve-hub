@@ -298,6 +298,7 @@ def gerar_saida_devolucao_compra(
         numero=_gerar_numero_interno(chave_compra=chave_compra),
         cliente=None,
         fornecedor=fornecedor,
+        empresa_emitente=empresa,
         nfe_entrada_conferencia_origem=conf,
         data=date.today(),
         valor_total=Decimal('0'),

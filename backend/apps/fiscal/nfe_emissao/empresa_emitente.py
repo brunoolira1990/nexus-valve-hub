@@ -15,8 +15,6 @@ def resolver_empresa_emitente_nfe(nf: NFeSaida) -> Empresa:
     if pedido and pedido.empresa_emitente_id:
         if getattr(pedido, 'empresa_emitente', None):
             return pedido.empresa_emitente
-        from apps.cadastros.models import Empresa
-
         return Empresa.objects.get(pk=pedido.empresa_emitente_id)
     emp = Empresa.objects.order_by('pk').first()
     if not emp:
