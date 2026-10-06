@@ -79,7 +79,66 @@ def resolver_perfil_destinatario_cliente(
     )
 
 
+def resolver_perfil_destinatario_fornecedor(
+    fornecedor,
+    *,
+    consumidor_final: bool = False,
+) -> PerfilDestinatarioFiscal:
+    """Perfil do destinatario quando a NF-e de Saida e devolucao ao fornecedor.
+
+    Fornecedor PJ sempre e contribuinte ICMS; nunca e consumidor final.
+    Se o cadastro do fornecedor nao tiver IE valida, ainda assim marcamos
+    como CONTRIBUINTE — devolucao nao se aplica a nao-contribuinte.
+    """
+    inconsistencias: list[str] = []
+    if fornecedor is None:
+        return PerfilDestinatarioFiscal(
+            destinatario_contribuinte='',
+            ind_ie_dest='9',
+            consumidor_final=consumidor_final,
+            inconsistencias=['Fornecedor não informado.'],
+        )
+
+    if not _text(getattr(fornecedor, 'uf', '')):
+        inconsistencias.append('Fornecedor sem UF de destino.')
+
+    return PerfilDestinatarioFiscal(
+        destinatario_contribuinte=RegraFiscalSaida.DestinatarioContribuinte.CONTRIBUINTE,
+        ind_ie_dest='1',
+        consumidor_final=consumidor_final,
+        inconsistencias=inconsistencias,
+    )
+
+
+def eh_devolucao_ao_fornecedor(nf) -> bool:
+    """True quando a NFeSaida e devolucao de compra (destinatario=fornecedor).
+
+    Criterio: veio de uma conferencia de entrada, sem cliente, com fornecedor.
+    """
+    return bool(
+        getattr(nf, 'nfe_entrada_conferencia_origem_id', None)
+        and getattr(nf, 'fornecedor_id', None)
+        and not getattr(nf, 'cliente_id', None)
+    )
+
+
+def tipo_operacao_fiscal_nfe_saida(nf) -> str:
+    """Tipo de operacao para o motor de regra fiscal de saida.
+
+    Devolucao ao fornecedor -> 'DEVOLUCAO'. Caso contrario -> 'VENDA'.
+    """
+    if eh_devolucao_ao_fornecedor(nf):
+        return 'DEVOLUCAO'
+    return 'VENDA'
+
+
 def resolver_perfil_destinatario_nf(nf) -> PerfilDestinatarioFiscal:
+    # Devolucao de compra ao fornecedor: destinatario e o fornecedor (PJ
+    # contribuinte ICMS; nunca consumidor final).
+    if eh_devolucao_ao_fornecedor(nf):
+        fornecedor = getattr(nf, 'fornecedor', None)
+        return resolver_perfil_destinatario_fornecedor(fornecedor, consumidor_final=False)
+
     cliente = None
     if getattr(nf, 'cliente_id', None) and getattr(nf, 'cliente', None):
         cliente = nf.cliente

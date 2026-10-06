@@ -139,7 +139,10 @@ def _regra_vigente_cenario_item(nf: NFeSaida, item: ItemNFeSaida) -> dict[str, A
         ncm_item = _text((item.snapshot_produto or {}).get('ncm'))
     if not ncm_item or len(_only_digits(ncm_item)) < 8:
         return sem_regra
-    from apps.fiscal.nfe_destinatario_fiscal import resolver_perfil_destinatario_nf
+    from apps.fiscal.nfe_destinatario_fiscal import (
+        resolver_perfil_destinatario_nf,
+        tipo_operacao_fiscal_nfe_saida,
+    )
     from apps.regras_fiscais.saida_fiscal import buscar_regra_fiscal_nfe_saida_rascunho
 
     perfil = resolver_perfil_destinatario_nf(nf)
@@ -152,7 +155,7 @@ def _regra_vigente_cenario_item(nf: NFeSaida, item: ItemNFeSaida) -> dict[str, A
         produto=item.produto if item.produto_id else None,
         destinatario_contribuinte=perfil.destinatario_contribuinte,
         consumidor_final=perfil.consumidor_final,
-        tipo_operacao='VENDA',
+        tipo_operacao=tipo_operacao_fiscal_nfe_saida(nf),
     )
     if regra is None or busca.get('origem') == 'NAO_ENCONTRADA':
         return sem_regra

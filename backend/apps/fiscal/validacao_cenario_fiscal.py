@@ -18,7 +18,10 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from apps.fiscal.nfe_destinatario_fiscal import resolver_perfil_destinatario_nf
+from apps.fiscal.nfe_destinatario_fiscal import (
+    resolver_perfil_destinatario_nf,
+    tipo_operacao_fiscal_nfe_saida,
+)
 from apps.fiscal.nfe_saida_atualizar_impostos import resolver_cenario_fiscal_saida_vigente
 
 
@@ -149,7 +152,7 @@ def validar_itens_contra_cenario_fiscal(
             produto=produto,
             destinatario_contribuinte=perfil_nf.destinatario_contribuinte,
             consumidor_final=perfil_nf.consumidor_final,
-            tipo_operacao='VENDA',
+            tipo_operacao=tipo_operacao_fiscal_nfe_saida(nf),
         )
 
         entrada['origem'] = busca.get('origem', 'NAO_ENCONTRADA')

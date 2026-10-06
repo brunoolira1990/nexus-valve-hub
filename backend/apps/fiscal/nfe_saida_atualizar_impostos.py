@@ -58,7 +58,10 @@ from apps.fiscal.nfe_difal_calculo import (
     deve_aplicar_difal,
     validar_parametros_difal_regra,
 )
-from apps.fiscal.nfe_destinatario_fiscal import resolver_perfil_destinatario_nf
+from apps.fiscal.nfe_destinatario_fiscal import (
+    resolver_perfil_destinatario_nf,
+    tipo_operacao_fiscal_nfe_saida,
+)
 
 MSG_BLOQUEIO_STATUS = 'Impostos só podem ser atualizados em NF-e rascunho.'
 
@@ -532,7 +535,7 @@ def _buscar_regra_para_item(
         produto=item.produto if item.produto_id else None,
         destinatario_contribuinte=perfil.destinatario_contribuinte,
         consumidor_final=perfil.consumidor_final,
-        tipo_operacao='VENDA',
+        tipo_operacao=tipo_operacao_fiscal_nfe_saida(nf),
     )
     if busca['origem'] == 'NAO_ENCONTRADA':
         alertas.append(_mensagem_regra_nao_encontrada(ncm_busca, ufo, ufd))
