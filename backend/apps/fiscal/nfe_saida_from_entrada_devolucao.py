@@ -225,29 +225,48 @@ def _montar_snapshot_fiscal_via_xml_compra(
     except Exception:
         pass
 
+    # NCM (extraido do prod_json ou snapshot_produto)
+    ncm = str(prod_json.get('NCM') or prod_json.get('ncm') or '').strip()
+    if not ncm:
+        sp = getattr(item_conf, 'snapshot_produto', None)
+        if isinstance(sp, dict):
+            ncm = str(sp.get('ncm') or sp.get('NCM') or '').strip()
+    ncm = ''.join(c for c in ncm if c.isdigit())[:8]
+
+    # Formato FLAT — e o que snapshot_fiscal_helpers.get_*_snapshot espera.
+    # Nao usar 'icms': {...} nested porque esses helpers so olham top-level.
     snapshot: dict[str, Any] = {
         'cfop': cfop_dev,
-        'icms': {
-            'cst': str(icms.get('CST') or icms.get('CSOSN') or ''),
-            'orig': str(icms.get('orig') or '0'),
-            'base': None,   # recalculado pelo XML de saida
-            'aliquota': icms.get('pICMS'),
-            'valor': None,
-            'modalidade_bc': str(icms.get('modBC') or ''),
-            'reducao_bc': None,
-        },
-        'pis': {
-            'cst': str(pis.get('CST') or ''),
-            'base': None,
-            'aliquota': pis.get('pPIS'),
-            'valor': None,
-        },
-        'cofins': {
-            'cst': str(cof.get('CST') or ''),
-            'base': None,
-            'aliquota': cof.get('pCOFINS'),
-            'valor': None,
-        },
+        'cfop_venda': cfop_dev,
+        'cfop_saida': cfop_dev,
+        'ncm': ncm,
+        # ICMS
+        'cst_icms': str(icms.get('CST') or icms.get('CSOSN') or ''),
+        'csosn': str(icms.get('CSOSN') or ''),
+        'origem_mercadoria': str(icms.get('orig') or '0'),
+        'modalidade_bc_icms': str(icms.get('modBC') or ''),
+        'base_icms': None,   # recalculado pelo XML de saida
+        'aliquota_icms': icms.get('pICMS'),
+        'valor_icms': None,
+        'reducao_bc_icms': None,
+        # IPI
+        'cst_ipi': str(ipi.get('CST') or ''),
+        'base_ipi': None,
+        'aliquota_ipi': ipi.get('pIPI'),
+        'valor_ipi': None,
+        # PIS
+        'cst_pis': str(pis.get('CST') or ''),
+        'base_pis': None,
+        'aliquota_pis': pis.get('pPIS'),
+        'valor_pis': None,
+        # COFINS
+        'cst_cofins': str(cof.get('CST') or ''),
+        'base_cofins': None,
+        'aliquota_cofins': cof.get('pCOFINS'),
+        'valor_cofins': None,
+        # Trilha / origem
+        'origem_regra_fiscal_saida': 'XML_COMPRA_DEVOLUCAO',
+        'fonte': 'XML_COMPRA_DEVOLUCAO',
         '_meta': {
             'origem': 'xml_compra',
             'chave_nfe_origem': chave_origem,
@@ -256,15 +275,6 @@ def _montar_snapshot_fiscal_via_xml_compra(
             'n_item': getattr(ih, 'n_item', None),
         },
     }
-
-    # IPI (opcional — so entra se a compra teve)
-    if ipi:
-        snapshot['ipi'] = {
-            'cst': str(ipi.get('CST') or ''),
-            'base': None,
-            'aliquota': ipi.get('pIPI'),
-            'valor': None,
-        }
 
     return snapshot
 
