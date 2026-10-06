@@ -37,6 +37,13 @@ MOTIVOS_LABEL = {
 STATUS_ITEM_DEVOLVIVEL = frozenset({'CONFERIDO', 'PRODUTO_VINCULADO'})
 STATUS_CONFERENCIA_PERMITIDO = frozenset({'CONFERIDA', 'PREPARADA'})
 
+_CFOP_DEVOLUCAO_COMPRA_PREFIXO = {
+    '1': '5',  # entrada mesma UF -> saida mesma UF
+    '2': '6',  # entrada interestadual -> saida interestadual
+    '3': '6',  # entrada do exterior -> saida interestadual
+}
+
+
 _CFOP_DEVOLUCAO_MAP = {
     '5102': '5202',
     '6102': '6202',
@@ -67,6 +74,18 @@ def _cfop_devolucao_saida(*, uf_empresa: str, uf_fornecedor: str) -> str:
     if ue and uf and ue == uf:
         return '5202'
     return '6202'
+
+
+def _cfop_devolucao_from_compra(cfop_compra: str, *, mesma_uf: bool) -> str:
+    """Traduz CFOP da NF-e de compra para CFOP de saida de devolucao.
+
+    1102 -> 5202, 2102 -> 6202, 1101 -> 5201, 2101 -> 6201.
+    Fallback por UF quando o CFOP nao for reconhecido.
+    """
+    cfop = (cfop_compra or '').strip()
+    if len(cfop) == 4 and cfop[0] in _CFOP_DEVOLUCAO_COMPRA_PREFIXO:
+        return _CFOP_DEVOLUCAO_COMPRA_PREFIXO[cfop[0]] + cfop[1:]
+    return '5202' if mesma_uf else '6202'
 
 
 def _traduzir_cfop_devolucao(cfop_venda: str) -> str:
@@ -143,6 +162,111 @@ def _montar_snapshot_fiscal(*, cfop: str) -> dict[str, Any]:
         'pis': {'cst': '', 'base': None, 'aliquota': None, 'valor': None},
         'cofins': {'cst': '', 'base': None, 'aliquota': None, 'valor': None},
     }
+
+
+def _primeiro_grupo_imposto(bloco: Any) -> dict[str, Any]:
+    """Pega o primeiro sub-dict de um bloco tipo {'ICMS10': {...}, 'ICMSST': {...}}."""
+    if not isinstance(bloco, dict):
+        return {}
+    for _k, v in bloco.items():
+        if isinstance(v, dict) and v:
+            return v
+    return {}
+
+
+def _montar_snapshot_fiscal_via_xml_compra(
+    *,
+    item_conf: ItemNFeEntradaConferencia,
+    empresa,
+    fornecedor,
+) -> dict[str, Any] | None:
+    """Espelha os impostos do XML da NF-e de compra (fonte primaria fiscal).
+
+    Extrai CST e aliquotas direto do imposto_json do fornecedor, traduz o CFOP
+    de entrada (prod_json.CFOP) para saida, e devolve um snapshot_fiscal no
+    shape compativel com o XML de saida.
+
+    Retorna None quando o item nao tem XML de origem (fallback para regra).
+    """
+    ih = getattr(item_conf, 'item_nfe_historico', None)
+    if ih is None:
+        return None
+
+    imposto_json = ih.imposto_json if isinstance(ih.imposto_json, dict) else {}
+    prod_json = ih.prod_json if isinstance(ih.prod_json, dict) else {}
+
+    if not imposto_json:
+        return None
+
+    icms = _primeiro_grupo_imposto(imposto_json.get('ICMS') or {})
+    pis = _primeiro_grupo_imposto(imposto_json.get('PIS') or {})
+    cof = _primeiro_grupo_imposto(imposto_json.get('COFINS') or {})
+    ipi_blk = imposto_json.get('IPI') if isinstance(imposto_json.get('IPI'), dict) else {}
+    # IPI costuma vir em IPITrib (tributado) ou IPINT (nao tributado)
+    ipi = _primeiro_grupo_imposto(ipi_blk) if ipi_blk else {}
+    if not ipi and isinstance(ipi_blk.get('IPITrib'), dict):
+        ipi = ipi_blk['IPITrib']
+    if not ipi and isinstance(ipi_blk.get('IPINT'), dict):
+        ipi = ipi_blk['IPINT']
+
+    # CFOP: traduz da compra (prod_json.CFOP) para devolucao
+    cfop_compra = str(prod_json.get('CFOP') or '').strip()
+    uf_emp = (getattr(empresa, 'uf', '') or '').strip().upper()
+    uf_forn = (getattr(fornecedor, 'uf', '') or '').strip().upper()
+    mesma_uf = bool(uf_emp and uf_forn and uf_emp == uf_forn)
+    cfop_dev = _cfop_devolucao_from_compra(cfop_compra, mesma_uf=mesma_uf)
+
+    # Chave da NF-e de compra (para rastreio)
+    chave_origem = ''
+    try:
+        chave_origem = (
+            item_conf.conferencia.nf_entrada_historica.chave_acesso or ''
+        ).strip()
+    except Exception:
+        pass
+
+    snapshot: dict[str, Any] = {
+        'cfop': cfop_dev,
+        'icms': {
+            'cst': str(icms.get('CST') or icms.get('CSOSN') or ''),
+            'orig': str(icms.get('orig') or '0'),
+            'base': None,   # recalculado pelo XML de saida
+            'aliquota': icms.get('pICMS'),
+            'valor': None,
+            'modalidade_bc': str(icms.get('modBC') or ''),
+            'reducao_bc': None,
+        },
+        'pis': {
+            'cst': str(pis.get('CST') or ''),
+            'base': None,
+            'aliquota': pis.get('pPIS'),
+            'valor': None,
+        },
+        'cofins': {
+            'cst': str(cof.get('CST') or ''),
+            'base': None,
+            'aliquota': cof.get('pCOFINS'),
+            'valor': None,
+        },
+        '_meta': {
+            'origem': 'xml_compra',
+            'chave_nfe_origem': chave_origem,
+            'cfop_compra': cfop_compra,
+            'item_historico_id': ih.pk,
+            'n_item': getattr(ih, 'n_item', None),
+        },
+    }
+
+    # IPI (opcional — so entra se a compra teve)
+    if ipi:
+        snapshot['ipi'] = {
+            'cst': str(ipi.get('CST') or ''),
+            'base': None,
+            'aliquota': ipi.get('pIPI'),
+            'valor': None,
+        }
+
+    return snapshot
 
 
 def _montar_snapshot_fiscal_via_regra(
@@ -315,13 +439,19 @@ def gerar_saida_devolucao_compra(
             if isinstance(item_conf.snapshot_produto, dict)
             else {}
         )
-        snapshot_fiscal = _montar_snapshot_fiscal_via_regra(
+        snapshot_fiscal = _montar_snapshot_fiscal_via_xml_compra(
             item_conf=item_conf,
-            produto=produto,
             empresa=empresa,
             fornecedor=fornecedor,
-            cfop_uf=cfop_uf,
         )
+        if snapshot_fiscal is None:
+            snapshot_fiscal = _montar_snapshot_fiscal_via_regra(
+                item_conf=item_conf,
+                produto=produto,
+                empresa=empresa,
+                fornecedor=fornecedor,
+                cfop_uf=cfop_uf,
+            )
         if cfop_primeiro_item == cfop_uf:
             cfop_primeiro_item = snapshot_fiscal.get('cfop') or cfop_uf
 
