@@ -854,7 +854,9 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
         return ''
 
     def get_cliente_nome(self, obj):
-        return obj.cliente.razao_social
+        if obj.cliente_id:
+            return obj.cliente.razao_social
+        return ''
 
     def get_fornecedor_nome(self, obj):
         if obj.fornecedor:
@@ -1365,7 +1367,9 @@ class NFeSaidaListSerializer(serializers.ModelSerializer):
         )
 
     def get_cliente_nome(self, obj):
-        return obj.cliente.razao_social
+        if obj.cliente_id:
+            return obj.cliente.razao_social
+        return ''
 
     def get_listagem_resumo(self, obj):
         from apps.fiscal.nfe_saida_listagem import montar_listagem_resumo_nfe
