@@ -413,6 +413,40 @@ export const CFOP_SAIDA_OPCOES: OpcaoCatalogo[] = [
   { value: '7101', label: '7101 — Venda de produção do estabelecimento' },
   { value: '7102', label: '7102 — Venda de mercadoria adquirida ou recebida de terceiros' },
   { value: '7949', label: '7949 — Outra saída de mercadoria ou prestação de serviço não especificado' },
+  // Devolução de compra — mesma UF (5xxx)
+  {
+    value: '5201',
+    label: '5201 — Devolução de compra para industrialização ou produção rural',
+  },
+  {
+    value: '5202',
+    label: '5202 — Devolução de compra para comercialização',
+  },
+  {
+    value: '5208',
+    label: '5208 — Devolução de mercadoria para conserto',
+  },
+  {
+    value: '5209',
+    label: '5209 — Devolução de mercadoria para conserto (não se aplica a mercadoria de venda)',
+  },
+  // Devolução de compra — interestadual (6xxx)
+  {
+    value: '6201',
+    label: '6201 — Devolução de compra para industrialização ou produção rural',
+  },
+  {
+    value: '6202',
+    label: '6202 — Devolução de compra para comercialização',
+  },
+  {
+    value: '6208',
+    label: '6208 — Devolução de mercadoria para conserto',
+  },
+  {
+    value: '6209',
+    label: '6209 — Devolução de mercadoria para conserto (não se aplica a mercadoria de venda)',
+  },
 ];
 
 export const HINT_CFOP_SAIDA =
