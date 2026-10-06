@@ -1799,7 +1799,7 @@ export function NFeEntradaConferenciaPanel({
 
       <NFeGerarDevolucaoCompraModal
         open={showDevolucaoCompra}
-        nfeHistoricaId={Number(id)}
+        nfeHistoricaId={nfId}
         itensConferencia={dados?.itens ?? []}
         onClose={() => setShowDevolucaoCompra(false)}
         onSuccess={(res) => {
