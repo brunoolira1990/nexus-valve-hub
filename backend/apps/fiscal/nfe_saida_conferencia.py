@@ -98,16 +98,25 @@ def _only_digits(value: str) -> str:
 
 
 def _uf_conferencia(nf: NFeSaida) -> tuple[str, str]:
-    """Resolve UF origem (emitente) e destino (cliente) do mesmo modo do\n    fluxo de atualização de impostos da NF-e."""
+    """Resolve UF origem (emitente) e destino (cliente OU fornecedor em devolucao)."""
     pedido = getattr(nf, 'pedido_venda', None)
-    emp = None
-    if pedido and getattr(pedido, 'empresa_emitente_id', None) and getattr(pedido, 'empresa_emitente', None):
-        emp = pedido.empresa_emitente
+    emp = getattr(nf, 'empresa_emitente', None) or None
+    if emp is None and pedido and getattr(pedido, 'empresa_emitente_id', None):
+        emp = getattr(pedido, 'empresa_emitente', None)
     if emp is None:
         from apps.cadastros.models import Empresa
 
         emp = Empresa.objects.order_by('pk').first()
     uf_origem = _text(getattr(emp, 'uf', None) if emp else '')
+
+    # Devolucao ao fornecedor: nao ha cliente — destinatario e o fornecedor
+    from apps.fiscal.nfe_destinatario_fiscal import eh_devolucao_ao_fornecedor
+
+    if eh_devolucao_ao_fornecedor(nf):
+        fornecedor = getattr(nf, 'fornecedor', None)
+        uf_forn = _text(getattr(fornecedor, 'uf', None)) if fornecedor else ''
+        return uf_origem[:2], uf_forn[:2]
+
     uf_destino = ''
     cliente = getattr(nf, 'cliente', None)
     if cliente is not None:
