@@ -15,7 +15,6 @@ from uuid import uuid4
 
 from django.db import transaction
 from django.db.models import Sum
-from django.utils import timezone
 
 from apps.fiscal.models import (
     ItemDevolucaoCompra,
@@ -24,6 +23,7 @@ from apps.fiscal.models import (
     NFeEntradaConferencia,
     NFeSaida,
 )
+from apps.regras_fiscais.saida_fiscal import buscar_regra_fiscal_saida
 
 
 MOTIVOS_LABEL = {
@@ -36,6 +36,13 @@ MOTIVOS_LABEL = {
 
 STATUS_ITEM_DEVOLVIVEL = frozenset({'CONFERIDO', 'PRODUTO_VINCULADO'})
 STATUS_CONFERENCIA_PERMITIDO = frozenset({'CONFERIDA', 'PREPARADA'})
+
+_CFOP_DEVOLUCAO_MAP = {
+    '5102': '5202',
+    '6102': '6202',
+    '5101': '5201',
+    '6101': '6201',
+}
 
 
 class NFeSaidaFromEntradaError(ValueError):
@@ -62,6 +69,11 @@ def _cfop_devolucao_saida(*, uf_empresa: str, uf_fornecedor: str) -> str:
     return '6202'
 
 
+def _traduzir_cfop_devolucao(cfop_venda: str) -> str:
+    """Traduz CFOP de venda para devolucao (5102->5202, 6102->6202, etc.)."""
+    return _CFOP_DEVOLUCAO_MAP.get((cfop_venda or '').strip(), cfop_venda)
+
+
 def _saldo_item(item_conf: ItemNFeEntradaConferencia) -> Decimal:
     devolvido = (
         ItemDevolucaoCompra.objects
@@ -77,12 +89,6 @@ def _resolver_quantidades(
     conferencia: NFeEntradaConferencia,
     itens: list[dict] | None,
 ) -> list[tuple[ItemNFeEntradaConferencia, Decimal]]:
-    """Retorna [(item_conferencia, quantidade_a_devolver)].
-
-    Se itens=None/vazio -> usa todos os itens devolviveis com saldo > 0.
-    Se itens preenchido -> valida cada entrada (pertence a conferencia, qtd > 0,
-    qtd <= saldo).
-    """
     if itens:
         selecionados: list[tuple[ItemNFeEntradaConferencia, Decimal]] = []
         ids_vistos: set[int] = set()
@@ -90,42 +96,32 @@ def _resolver_quantidades(
             item_id = entrada.get('item_conferencia_id')
             qtd = _dec(entrada.get('quantidade'))
             if item_id is None:
-                raise NFeSaidaFromEntradaError(
-                    'Item de devolucao sem "item_conferencia_id".'
-                )
+                raise NFeSaidaFromEntradaError('Item sem "item_conferencia_id".')
             if item_id in ids_vistos:
-                raise NFeSaidaFromEntradaError(
-                    f'Item {item_id} duplicado na selecao.'
-                )
+                raise NFeSaidaFromEntradaError(f'Item {item_id} duplicado.')
             ids_vistos.add(item_id)
             try:
                 item_conf = ItemNFeEntradaConferencia.objects.get(pk=item_id)
             except ItemNFeEntradaConferencia.DoesNotExist as exc:
-                raise NFeSaidaFromEntradaError(
-                    f'Item de conferencia {item_id} nao existe.'
-                ) from exc
+                raise NFeSaidaFromEntradaError(f'Item {item_id} nao existe.') from exc
             if item_conf.conferencia_id != conferencia.pk:
                 raise NFeSaidaFromEntradaError(
                     f'Item {item_id} nao pertence a conferencia {conferencia.pk}.'
                 )
             if item_conf.status not in STATUS_ITEM_DEVOLVIVEL:
                 raise NFeSaidaFromEntradaError(
-                    f'Item {item_id} com status {item_conf.status!r} nao pode ser devolvido.'
+                    f'Item {item_id} com status {item_conf.status!r} nao devolvivel.'
                 )
             if qtd <= 0:
-                raise NFeSaidaFromEntradaError(
-                    f'Quantidade invalida para item {item_id}: {qtd}.'
-                )
+                raise NFeSaidaFromEntradaError(f'Quantidade invalida item {item_id}: {qtd}.')
             saldo = _saldo_item(item_conf)
             if qtd > saldo:
                 raise NFeSaidaFromEntradaError(
-                    f'Item {item_id}: quantidade solicitada ({qtd}) maior que '
-                    f'saldo disponivel ({saldo}).'
+                    f'Item {item_id}: qtd solicitada ({qtd}) > saldo ({saldo}).'
                 )
             selecionados.append((item_conf, qtd))
         return selecionados
 
-    # Sem selecao explicita: pega tudo com saldo > 0
     qs = (
         ItemNFeEntradaConferencia.objects
         .filter(conferencia=conferencia, status__in=STATUS_ITEM_DEVOLVIVEL)
@@ -140,8 +136,7 @@ def _resolver_quantidades(
 
 
 def _montar_snapshot_fiscal(*, cfop: str) -> dict[str, Any]:
-    """Shape compativel com o esperado pelo XML de saida. CSTs serao preenchidos
-    pelo Commit 5 (RegraFiscalSaida). Aqui ficam placeholders neutros."""
+    """Fallback quando nao ha regra fiscal cadastrada."""
     return {
         'cfop': cfop,
         'icms': {'cst': '', 'orig': '0', 'base': None, 'aliquota': None, 'valor': None},
@@ -150,9 +145,85 @@ def _montar_snapshot_fiscal(*, cfop: str) -> dict[str, Any]:
     }
 
 
+def _montar_snapshot_fiscal_via_regra(
+    *,
+    item_conf: ItemNFeEntradaConferencia,
+    produto,
+    empresa,
+    fornecedor,
+    cfop_uf: str,
+) -> dict[str, Any]:
+    """Busca RegraFiscalSaida VENDA e traduz CFOP para devolucao.
+
+    Cai no fallback por UF quando nao encontra regra cadastrada.
+    """
+    produto_id = produto.pk if produto is not None else None
+    ncm = None
+    if isinstance(item_conf.snapshot_produto, dict):
+        ncm = item_conf.snapshot_produto.get('ncm')
+    if ncm is None and produto is not None:
+        ncm = getattr(produto, 'ncm', None)
+
+    regra = buscar_regra_fiscal_saida(
+        produto_id=produto_id,
+        ncm=ncm,
+        uf_origem=getattr(empresa, 'uf', '') or '',
+        uf_destino=getattr(fornecedor, 'uf', '') or '',
+        destinatario_contribuinte='CONTRIBUINTE',
+        consumidor_final=False,
+        tipo_operacao='VENDA',
+        cenario_id=None,
+    )
+
+    tem_regra = bool(regra) and regra.get('origem') != 'NAO_ENCONTRADA'
+
+    if not tem_regra:
+        snap = _montar_snapshot_fiscal(cfop=cfop_uf)
+        snap['_meta'] = {'aviso': 'Regra fiscal nao encontrada', 'cfop_uf': cfop_uf}
+        return snap
+
+    cfop_venda = (regra.get('cfop') or cfop_uf or '').strip()
+    cfop_dev = _traduzir_cfop_devolucao(cfop_venda)
+
+    return {
+        'cfop': cfop_dev,
+        'icms': {
+            'cst': regra.get('cst_icms', ''),
+            'orig': '0',
+            'base': None,
+            'aliquota': regra.get('aliquota_icms'),
+            'valor': None,
+            'modalidade_bc': regra.get('modalidade_bc_icms'),
+            'reducao_bc': regra.get('reducao_bc_icms'),
+        },
+        'pis': {
+            'cst': regra.get('cst_pis', ''),
+            'base': None,
+            'aliquota': regra.get('aliquota_pis'),
+            'valor': None,
+        },
+        'cofins': {
+            'cst': regra.get('cst_cofins', ''),
+            'base': None,
+            'aliquota': regra.get('aliquota_cofins'),
+            'valor': None,
+        },
+        'ipi': {
+            'cst': regra.get('cst_ipi', ''),
+            'base': None,
+            'aliquota': regra.get('aliquota_ipi'),
+            'valor': None,
+        },
+        '_meta': {
+            'cfop_venda_origem': cfop_venda,
+            'regra_id': regra.get('regra_id'),
+            'origem': regra.get('origem'),
+        },
+    }
+
+
 def _gerar_numero_interno(*, chave_compra: str) -> str:
     sufixo = (chave_compra or '')[-8:].strip() or 'SEMCHAVE'
-    # uuid4[:6] evita colisao em devolucoes simultaneas
     return f'DEV-{sufixo}-{uuid4().hex[:6]}'[:64]
 
 
@@ -168,25 +239,15 @@ def gerar_saida_devolucao_compra(
     observacao: str = '',
     usuario=None,
 ) -> dict[str, Any]:
-    """Cria rascunho de NFeSaida de devolucao ao fornecedor.
+    """Cria rascunho de NFeSaida de devolucao ao fornecedor."""
+    del usuario
 
-    itens: lista de {'item_conferencia_id': int, 'quantidade': str|Decimal}.
-           Se None/vazia, usa todos os itens conferidos com saldo > 0.
-    motivo: uma das chaves de MOTIVOS_LABEL.
-    """
-    del usuario  # reservado para trilha futura
-
-    # 1. Lock na conferencia (evita duas devolucoes simultaneas).
-    # Postgres recusa FOR UPDATE em outer join de FK nullable, então
-    # travamos só a linha de NFeEntradaConferencia (self) e carregamos os
-    # relacionados via lazy access logo abaixo.
     conf = (
         NFeEntradaConferencia.objects
         .select_for_update(of=('self',))
         .get(pk=conferencia.pk)
     )
 
-    # 2. Validacoes
     status_conf = (conf.status or '').strip().upper()
     if status_conf not in STATUS_CONFERENCIA_PERMITIDO:
         raise NFeSaidaFromEntradaError(
@@ -200,15 +261,11 @@ def gerar_saida_devolucao_compra(
 
     fornecedor = historica.fornecedor_emitente
     if fornecedor is None:
-        raise NFeSaidaFromEntradaError(
-            'NF-e de compra sem fornecedor_emitente vinculado.'
-        )
+        raise NFeSaidaFromEntradaError('NF-e de compra sem fornecedor_emitente.')
 
     empresa = historica.empresa_destinataria
     if empresa is None:
-        raise NFeSaidaFromEntradaError(
-            'NF-e de compra sem empresa_destinataria vinculada.'
-        )
+        raise NFeSaidaFromEntradaError('NF-e de compra sem empresa_destinataria.')
 
     motivo_norm = (motivo or '').strip().upper()
     if motivo_norm not in MOTIVOS_LABEL:
@@ -220,25 +277,18 @@ def gerar_saida_devolucao_compra(
 
     chave_compra = (historica.chave_acesso or '').strip()
     if len(chave_compra) != 44:
-        raise NFeSaidaFromEntradaError(
-            'NF-e historica sem chave de acesso valida (44 digitos).'
-        )
+        raise NFeSaidaFromEntradaError('NF-e historica sem chave valida (44 digitos).')
 
-    # 3. Selecao de itens
     pares = _resolver_quantidades(conferencia=conf, itens=itens)
     if not pares:
-        raise NFeSaidaFromEntradaError(
-            'Nenhum item elegivel para devolucao (saldo zerado ou nenhum conferido).'
-        )
+        raise NFeSaidaFromEntradaError('Nenhum item elegivel para devolucao.')
 
-    # 4. CFOP (por UF — Commit 5 refina via RegraFiscalSaida)
-    cfop = _cfop_devolucao_saida(
+    # CFOP base por UF (usado no fallback se regra fiscal nao casar)
+    cfop_uf = _cfop_devolucao_saida(
         uf_empresa=getattr(empresa, 'uf', '') or '',
         uf_fornecedor=getattr(fornecedor, 'uf', '') or '',
     )
-    snapshot_fiscal = _montar_snapshot_fiscal(cfop=cfop)
 
-    # 5. Criar NFeSaida
     motivo_label = MOTIVOS_LABEL[motivo_norm]
     obs_final = (
         f'Devolucao de compra - {motivo_label or "outro"}. {observacao.strip()}'
@@ -255,8 +305,8 @@ def gerar_saida_devolucao_compra(
         observacoes_nfe=obs_final,
     )
 
-    # 6. Criar itens + vinculos
     valor_total = Decimal('0')
+    cfop_primeiro_item = cfop_uf
     for item_conf, qtd in pares:
         produto = item_conf.produto
         snap_prod = (
@@ -264,13 +314,23 @@ def gerar_saida_devolucao_compra(
             if isinstance(item_conf.snapshot_produto, dict)
             else {}
         )
+        snapshot_fiscal = _montar_snapshot_fiscal_via_regra(
+            item_conf=item_conf,
+            produto=produto,
+            empresa=empresa,
+            fornecedor=fornecedor,
+            cfop_uf=cfop_uf,
+        )
+        if cfop_primeiro_item == cfop_uf:
+            cfop_primeiro_item = snapshot_fiscal.get('cfop') or cfop_uf
+
         item_saida = ItemNFeSaida.objects.create(
             nf=nf_saida,
             produto=produto,
             quantidade=qtd,
             valor=_dec(item_conf.valor_unitario_nf),
             snapshot_produto=snap_prod,
-            snapshot_fiscal=dict(snapshot_fiscal),
+            snapshot_fiscal=snapshot_fiscal,
             observacao_item=f'Devolucao do item conferencia {item_conf.pk}',
         )
         ItemDevolucaoCompra.objects.create(
@@ -280,7 +340,6 @@ def gerar_saida_devolucao_compra(
         )
         valor_total += qtd * _dec(item_conf.valor_unitario_nf)
 
-    # 7. Fechar total (2 casas — mesmo do Decimal(14,2) do model)
     nf_saida.valor_total = valor_total.quantize(
         Decimal('0.01'), rounding=ROUND_HALF_UP,
     )
@@ -293,7 +352,7 @@ def gerar_saida_devolucao_compra(
         'numero': nf_saida.numero,
         'valor_total': str(nf_saida.valor_total),
         'itens_criados': len(pares),
-        'cfop': cfop,
+        'cfop': cfop_primeiro_item,
         'mensagem': (
             'Rascunho de devolucao criado. Revise os dados e emita pela tela '
             'de NF-e de Saida.'
