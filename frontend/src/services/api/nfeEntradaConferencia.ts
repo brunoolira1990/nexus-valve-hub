@@ -98,4 +98,23 @@ export const nfeEntradaConferenciaService = {
         payload,
       )
     ).data,
+  gerarSaidaDevolucaoCompra: async (
+    nfeHistoricaId: number,
+    payload: {
+      itens?: Array<{ item_conferencia_id: number; quantidade: string }>;
+      motivo: 'NAO_CONFORME' | 'DEFEITO' | 'ERRO_PEDIDO' | 'AVARIA_TRANSPORTE' | 'OUTRO';
+      observacao?: string;
+    },
+  ) =>
+    (
+      await api.post<{
+        ok: boolean;
+        nf_saida_id: number;
+        numero: string;
+        valor_total: string;
+        itens_criados: number;
+        cfop: string;
+        mensagem: string;
+      }>(`${base}${nfeHistoricaId}/conferencia/gerar-saida-devolucao-compra/`, payload)
+    ).data,
 };

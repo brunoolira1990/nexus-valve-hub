@@ -2794,6 +2794,16 @@ export interface NFeEntradaConferencia {
   itens: ItemConferenciaNFeEntrada[];
 }
 
+export interface ResultadoGerarSaidaDevolucaoCompra {
+  ok: boolean;
+  nf_saida_id: number;
+  numero: string;
+  valor_total: string;
+  itens_criados: number;
+  cfop: string;
+  mensagem: string;
+}
+
 export interface ImpedimentoReaberturaEntradaFornecedor {
   codigo: string;
   mensagem: string;

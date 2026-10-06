@@ -7,6 +7,7 @@ import { GerarContasPagarNfeEntradaModal } from '@/components/fiscal/GerarContas
 import { FornecedorEntradaAcoes } from '@/components/fiscal/FornecedorEntradaAcoes';
 import { NFeEntradaFinanceiroAcoes } from '@/components/fiscal/NFeEntradaFinanceiroAcoes';
 import { NFeEntradaReabrirModal } from '@/components/fiscal/NFeEntradaReabrirModal';
+import { NFeGerarDevolucaoCompraModal } from '@/components/fiscal/NFeGerarDevolucaoCompraModal';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import {
   badgeClassStatusConferencia,
@@ -121,6 +122,7 @@ export function NFeEntradaConferenciaPanel({
   const [modalAplicarErro, setModalAplicarErro] = useState('');
   const [gerarCpOpen, setGerarCpOpen] = useState(false);
   const [reabrirOpen, setReabrirOpen] = useState(false);
+  const [showDevolucaoCompra, setShowDevolucaoCompra] = useState(false);
   const [sugestoesCorrelacaoIgnoradas, setSugestoesCorrelacaoIgnoradas] = useState<Set<number>>(
     () => new Set(),
   );
@@ -1618,6 +1620,16 @@ export function NFeEntradaConferenciaPanel({
         <button type="button" className="erp-btn-outline w-full sm:w-auto justify-center" onClick={() => setReabrirOpen(true)} disabled={busy}>
           Reabrir para correção
         </button>
+        {dados && (dados.status === 'CONFERIDA' || dados.status === 'PREPARADA') ? (
+          <button
+            type="button"
+            className="erp-btn-outline w-full sm:w-auto justify-center border-amber-500 text-amber-800 hover:bg-amber-50"
+            onClick={() => setShowDevolucaoCompra(true)}
+            disabled={busy}
+          >
+            Gerar devolução ao fornecedor
+          </button>
+        ) : null}
         <button type="button" className="erp-btn-outline w-full sm:w-auto justify-center" onClick={() => void salvar()} disabled={busy}>
           {dados?.financeiro?.possui_pendencias_operacionais
             ? 'Salvar com pendências'
@@ -1782,6 +1794,20 @@ export function NFeEntradaConferenciaPanel({
           if (!embedded) {
             navigate(`/nfe-entrada/${nfId}/conferencia`);
           }
+        }}
+      />
+
+      <NFeGerarDevolucaoCompraModal
+        open={showDevolucaoCompra}
+        nfeHistoricaId={Number(id)}
+        itensConferencia={dados?.itens ?? []}
+        onClose={() => setShowDevolucaoCompra(false)}
+        onSuccess={(res) => {
+          setShowDevolucaoCompra(false);
+          toast.success(
+            `Rascunho ${res.numero} criado (R$ ${res.valor_total}). NF-e de saída #${res.nf_saida_id}.`,
+          );
+          void load();
         }}
       />
 
