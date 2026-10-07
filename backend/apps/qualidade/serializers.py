@@ -19,6 +19,7 @@ from .models import (
     ItemCertificadoFornecedorEntrada,
     ItemCertificadoQualidade,
     ItemCertificadoQualidadeComponente,
+    ItemCertificadoQualidadeCorrida,
     _normalize_numero_cq,
     _split_numero_serie,
     normalizar_numero_cq_armazenamento,
@@ -78,8 +79,33 @@ class ItemCertificadoQualidadeComponenteSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class ItemCertificadoQualidadeCorridaSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False, allow_null=True)
+
+    class Meta:
+        model = ItemCertificadoQualidadeCorrida
+        fields = (
+            'id',
+            'ordem',
+            'corrida',
+            'lote',
+            'quantidade',
+            'composicao_json',
+            'ensaio_tracao_json',
+            'ensaio_impacto_json',
+            'criado_em',
+        )
+        read_only_fields = ('criado_em',)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        normalize_operational_fields(attrs, {'corrida', 'lote'})
+        return attrs
+
+
 class ItemCertificadoQualidadeSerializer(serializers.ModelSerializer):
     componentes = ItemCertificadoQualidadeComponenteSerializer(many=True, required=False)
+    corridas_adicionais = ItemCertificadoQualidadeCorridaSerializer(many=True, required=False)
     rastreabilidade_status = serializers.SerializerMethodField()
     rastreabilidade_label = serializers.SerializerMethodField()
     rastreabilidade_mensagens = serializers.SerializerMethodField()
@@ -136,6 +162,7 @@ class ItemCertificadoQualidadeSerializer(serializers.ModelSerializer):
             'tem_conferencia_origem',
             'estoque_aplicado_origem',
             'tem_corrida_lote',
+            'corridas_adicionais',
             'componentes',
         )
         read_only_fields = (
@@ -407,6 +434,7 @@ class CertificadoQualidadeSerializer(serializers.ModelSerializer):
         instance.itens.all().delete()
         for i, item in enumerate(itens_data, start=1):
             comps = item.pop('componentes', []) or []
+            corridas_extra = item.pop('corridas_adicionais', []) or []
             tem_cf = bool(
                 item.get('certificado_fornecedor_origem_id')
                 or item.get('item_certificado_fornecedor_origem_id')
@@ -423,6 +451,13 @@ class CertificadoQualidadeSerializer(serializers.ModelSerializer):
                     item_certificado=obj,
                     ordem=comp.get('ordem') or j,
                     **{k: v for k, v in comp.items() if k != 'ordem'},
+                )
+            for j, corrida in enumerate(corridas_extra, start=1):
+                corrida_data = {k: v for k, v in corrida.items() if k not in ('ordem', 'id')}
+                ItemCertificadoQualidadeCorrida.objects.create(
+                    item_certificado=obj,
+                    ordem=corrida.get('ordem') or j,
+                    **corrida_data,
                 )
 
     def create(self, validated_data):

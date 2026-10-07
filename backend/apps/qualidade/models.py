@@ -396,3 +396,24 @@ class SequenciaCertificadoQualidade(models.Model):
 
     def __str__(self):
         return f'CQ {self.data_referencia} → próximo {self.proximo_numero}'
+
+
+class ItemCertificadoQualidadeCorrida(models.Model):
+    """Corridas adicionais por item de certificado de qualidade (A1 feature)."""
+
+    item_certificado = models.ForeignKey(
+        ItemCertificadoQualidade,
+        on_delete=models.CASCADE,
+        related_name='corridas_adicionais',
+    )
+    ordem = models.PositiveSmallIntegerField(default=1)
+    corrida = models.CharField(max_length=64, blank=True)
+    lote = models.CharField(max_length=64, blank=True)
+    quantidade = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
+    composicao_json = models.JSONField(default=dict, blank=True)
+    ensaio_tracao_json = models.JSONField(default=dict, blank=True)
+    ensaio_impacto_json = models.JSONField(default=dict, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['ordem', 'id']

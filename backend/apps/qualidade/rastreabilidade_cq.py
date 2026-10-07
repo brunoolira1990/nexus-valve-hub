@@ -75,10 +75,59 @@ def _json_has_values(data: dict | None) -> bool:
     return any(_strip(v) for v in data.values())
 
 
-def _tem_corrida_lote(item: ItemCertificadoQualidade | Mapping[str, Any]) -> bool:
-    corrida = _strip(_get_attr(item, 'corrida')) or _strip(_get_attr(item, 'corrida_snapshot'))
-    lote = _strip(_get_attr(item, 'lote')) or _strip(_get_attr(item, 'lote_snapshot'))
-    return bool(corrida or lote)
+def _linha_tem_corrida_lote(obj: Any) -> bool:
+    """Checa corrida/lote em qualquer linha (item, adicional ou componente)."""
+    return bool(
+        _strip(_get_attr(obj, 'corrida'))
+        or _strip(_get_attr(obj, 'corrida_snapshot'))
+        or _strip(_get_attr(obj, 'lote'))
+        or _strip(_get_attr(obj, 'lote_snapshot'))
+    )
+
+
+def _corridas_adicionais_do_item(
+    item: ItemCertificadoQualidade | Mapping[str, Any],
+    corridas: list | None = None,
+) -> list:
+    """Corridas adicionais do item (modelo usa related manager; dict usa chave)."""
+    if corridas is not None:
+        return list(corridas)
+    if isinstance(item, ItemCertificadoQualidade):
+        return list(item.corridas_adicionais.all())
+    return list(_get_attr(item, 'corridas_adicionais') or [])
+
+
+def _tem_corrida_lote(
+    item: ItemCertificadoQualidade | Mapping[str, Any],
+    *,
+    componentes: list | None = None,
+    corridas_adicionais: list | None = None,
+) -> bool:
+    """Corrida/lote presente no item, em qualquer adicional, ou em todos os
+    componentes ativos nomeados (para VALVULA_COMPONENTES).
+
+    Para válvula, o critério é AND: todos os componentes ativos nomeados
+    precisam ter corrida. Para peça padrão, qualquer adicional basta.
+    """
+    if _linha_tem_corrida_lote(item):
+        return True
+
+    for extra in _corridas_adicionais_do_item(item, corridas_adicionais):
+        if _linha_tem_corrida_lote(extra):
+            return True
+
+    tipo = _get_attr(item, 'tipo_dados_tecnicos') or ItemCertificadoQualidade.TipoDadosTecnicos.PADRAO_ITEM
+    if tipo != ItemCertificadoQualidade.TipoDadosTecnicos.VALVULA_COMPONENTES:
+        return False
+
+    comps = [
+        c
+        for c in _componentes_ativos(item, componentes)
+        if _strip(_get_attr(c, 'nome_componente'))
+    ]
+    if not comps:
+        return False
+    return all(_linha_tem_corrida_lote(c) for c in comps)
 
 
 def _tem_produto(item: ItemCertificadoQualidade | Mapping[str, Any]) -> bool:
@@ -219,7 +268,7 @@ def avaliar_rastreabilidade_item_certificado_qualidade(
     parcial = False
 
     tem_produto = _tem_produto_ou_descricao(item)
-    tem_corrida_lote = _tem_corrida_lote(item)
+    tem_corrida_lote = _tem_corrida_lote(item, componentes=componentes)
     tem_dados_tecnicos = _tem_dados_tecnicos_minimos(item, componentes=componentes)
 
     item_cf = _carregar_item_cf(item, item_cf)

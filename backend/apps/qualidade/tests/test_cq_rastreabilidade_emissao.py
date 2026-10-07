@@ -30,6 +30,7 @@ from apps.qualidade.models import (
 )
 from apps.qualidade.rastreabilidade_cq import (
     AVISO_RASTREABILIDADE_FISICA,
+    _tem_corrida_lote,
     avaliar_rastreabilidade_item_certificado_qualidade,
     montar_resumo_rastreabilidade_certificado,
 )
@@ -265,6 +266,99 @@ class CQRastreabilidadeAvaliacaoTests(TestCase):
         resumo = montar_resumo_rastreabilidade_certificado([item])
         self.assertEqual(resumo['completos'], 1)
         self.assertTrue(resumo['pode_emitir'])
+
+
+class CQCorridaLoteMulticorridasTests(TestCase):
+    """Cobre _tem_corrida_lote com corridas adicionais e componentes (fix A1).
+
+    Os testes usam dicts conforme o contrato da função, que aceita tanto
+    ItemCertificadoQualidade quanto Mapping. Isso mantém os testes rápidos
+    (sem banco) e cobre exatamente a lógica corrigida.
+    """
+
+    def test_corrida_principal_retorna_true(self):
+        self.assertTrue(_tem_corrida_lote(_item_cq_padrao()))
+
+    def test_corridas_adicionais_retorna_true(self):
+        item = _item_cq_padrao(corrida='', lote='', corrida_snapshot='')
+        item['corridas_adicionais'] = [{'corrida': 'A'}, {'corrida': 'B'}]
+        self.assertTrue(_tem_corrida_lote(item))
+
+    def test_corridas_adicionais_vazio_retorna_false(self):
+        item = _item_cq_padrao(corrida='', lote='', corrida_snapshot='')
+        item['corridas_adicionais'] = []
+        self.assertFalse(_tem_corrida_lote(item))
+
+    def test_corrida_snapshot_retorna_true(self):
+        item = _item_cq_padrao(corrida='', lote='', corrida_snapshot='CR-SNAP')
+        self.assertTrue(_tem_corrida_lote(item))
+
+    def test_apenas_lote_retorna_true(self):
+        item = _item_cq_padrao(corrida='', corrida_snapshot='', lote='L1')
+        self.assertTrue(_tem_corrida_lote(item))
+
+    def test_valvula_todos_componentes_com_corrida(self):
+        item = _item_cq_padrao(
+            tipo_dados_tecnicos='VALVULA_COMPONENTES',
+            corrida='', lote='', corrida_snapshot='',
+        )
+        item['corridas_adicionais'] = []
+        comps = [
+            {'nome_componente': 'corpo', 'corrida': 'C1', 'ativo': True},
+            {'nome_componente': 'assento', 'corrida': 'C2', 'ativo': True},
+        ]
+        self.assertTrue(_tem_corrida_lote(item, componentes=comps))
+
+    def test_valvula_um_componente_sem_corrida(self):
+        item = _item_cq_padrao(
+            tipo_dados_tecnicos='VALVULA_COMPONENTES',
+            corrida='', lote='', corrida_snapshot='',
+        )
+        item['corridas_adicionais'] = []
+        comps = [
+            {'nome_componente': 'corpo', 'corrida': 'C1', 'ativo': True},
+            {'nome_componente': 'assento', 'corrida': '', 'ativo': True},
+        ]
+        self.assertFalse(_tem_corrida_lote(item, componentes=comps))
+
+    def test_valvula_componentes_inativos_ignorados(self):
+        item = _item_cq_padrao(
+            tipo_dados_tecnicos='VALVULA_COMPONENTES',
+            corrida='', lote='', corrida_snapshot='',
+        )
+        item['corridas_adicionais'] = []
+        # Corpo com corrida; assento inativo (não conta); sem nome (não conta).
+        # Só 'corpo' conta como componente ativo nomeado -> True.
+        comps = [
+            {'nome_componente': 'corpo', 'corrida': 'C1', 'ativo': True},
+            {'nome_componente': 'assento', 'corrida': '', 'ativo': False},
+            {'nome_componente': '', 'corrida': 'C2', 'ativo': True},
+        ]
+        self.assertTrue(_tem_corrida_lote(item, componentes=comps))
+
+    def test_valvula_sem_componente_valido_retorna_false(self):
+        item = _item_cq_padrao(
+            tipo_dados_tecnicos='VALVULA_COMPONENTES',
+            corrida='', lote='', corrida_snapshot='',
+        )
+        item['corridas_adicionais'] = []
+        comps = [
+            {'nome_componente': '', 'corrida': 'C1', 'ativo': True},
+            {'nome_componente': 'x', 'corrida': '', 'ativo': False},
+        ]
+        self.assertFalse(_tem_corrida_lote(item, componentes=comps))
+
+    def test_early_return_item_com_corrida(self):
+        item = _item_cq_padrao()  # já tem corrida='CR-001'
+        item['corridas_adicionais'] = [{'corrida': ''}]
+        self.assertTrue(_tem_corrida_lote(item))
+
+    def test_rastreabilidade_nao_marca_sem_corrida_com_adicionais(self):
+        """Regressão: item com corridas adicionais não deve ser marcado SEM_CORRIDA_LOTE."""
+        item = _item_cq_padrao(corrida='', lote='', corrida_snapshot='')
+        item['corridas_adicionais'] = [{'corrida': 'A'}, {'corrida': 'B'}]
+        av = avaliar_rastreabilidade_item_certificado_qualidade(item)
+        self.assertNotIn('SEM_CORRIDA_LOTE', av['motivos'])
 
 
 class CQRastreabilidadeEmissaoSerializerTests(TestCase):

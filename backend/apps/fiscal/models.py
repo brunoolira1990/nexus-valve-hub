@@ -803,15 +803,15 @@ class AtendimentoEstoque(models.Model):
         ]
         constraints = [
             models.CheckConstraint(
-                check=models.Q(quantidade_comprometida__gt=0),
+                condition=models.Q(quantidade_comprometida__gt=0),
                 name='ck_atend_estoque_qtd_comprometida_pos',
             ),
             models.CheckConstraint(
-                check=models.Q(quantidade_atendida__gte=0),
+                condition=models.Q(quantidade_atendida__gte=0),
                 name='ck_atend_estoque_qtd_atendida_nonneg',
             ),
             models.CheckConstraint(
-                check=models.Q(status='CANCELADO')
+                condition=models.Q(status='CANCELADO')
                 | models.Q(quantidade_atendida__lte=models.F('quantidade_comprometida')),
                 name='ck_atend_estoque_qtd_atend_lte_comp',
             ),
@@ -864,7 +864,7 @@ class AtendimentoEstoqueLinha(models.Model):
         ]
         constraints = [
             models.CheckConstraint(
-                check=models.Q(quantidade__gt=0),
+                condition=models.Q(quantidade__gt=0),
                 name='ck_atend_estoque_linha_qtd_pos',
             ),
         ]

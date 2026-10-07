@@ -82,3 +82,10 @@ tmp/
 *.njsproj
 *.sln
 *.sw?
+
+# Config local de ferramentas de agente
+.opencode/
+opencode.json
+
+# Backups locais do deploy
+deploy-backups/
