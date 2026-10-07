@@ -56,6 +56,7 @@ import CTeHistoricoImportado from "./pages/CTeHistoricoImportado";
 import Certificados from "./pages/Certificados";
 import CertificadosFornecedor from "./pages/CertificadosFornecedor";
 import CertificadoFornecedorDetalhe from "./pages/CertificadosFornecedor/CertificadoFornecedorDetalhe";
+import CertificadoQualidadeDetalhe from "./pages/CertificadosQualidade/CertificadoQualidadeDetalhe";
 import Estoque from './pages/Estoque';
 import KardexEstoque from './pages/KardexEstoque';
 import AtendimentosEstoque from "./pages/AtendimentosEstoque";
@@ -144,6 +145,8 @@ const App = () => (
         <Route path="certificados-fornecedor" element={<CertificadosFornecedor />} />
         <Route path="certificados-fornecedor/novo" element={<CertificadoFornecedorDetalhe />} />
         <Route path="certificados-fornecedor/:id" element={<CertificadoFornecedorDetalhe />} />
+        <Route path="certificados-qualidade/novo" element={<CertificadoQualidadeDetalhe />} />
+        <Route path="certificados-qualidade/:id" element={<CertificadoQualidadeDetalhe />} />
         <Route path="estoque" element={<Estoque />} />
         <Route path="estoque/kardex" element={<KardexEstoque />} />
         <Route path="atendimentos-estoque" element={<AtendimentosEstoque />} />
