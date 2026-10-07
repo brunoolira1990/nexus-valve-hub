@@ -296,6 +296,12 @@ class CertificadoQualidadeSerializer(serializers.ModelSerializer):
         return obj.numero_formatado
 
     def get_resumo_rastreabilidade(self, obj: CertificadoQualidade) -> dict:
+        # Congelamento: se o CQ foi emitido e tem snapshot, retorna o snapshot
+        if (
+            obj.status == CertificadoQualidade.Status.EMITIDO
+            and obj.rastreabilidade_status_snapshot
+        ):
+            return obj.rastreabilidade_status_snapshot
         itens = list(obj.itens.prefetch_related('componentes').all())
         return montar_resumo_rastreabilidade_certificado(itens)
 
@@ -430,11 +436,37 @@ class CertificadoQualidadeSerializer(serializers.ModelSerializer):
                 )
         return attrs
 
+    def _json_safe(value):
+        """Converte recursivamente valores para tipos JSON-serializaveis."""
+        if isinstance(value, dict):
+            return {str(k): CertificadoQualidadeSerializer._json_safe(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [CertificadoQualidadeSerializer._json_safe(v) for v in value]
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        return str(value)
+
+    def _gravar_snapshot_se_emitido(self, obj: CertificadoQualidade) -> None:
+        """Se o CQ esta emitido e ainda nao tem snapshot, calcula e grava."""
+        if obj.status != CertificadoQualidade.Status.EMITIDO:
+            return
+        if obj.rastreabilidade_status_snapshot:
+            return
+        itens = list(obj.itens.prefetch_related('componentes').all())
+        resumo = montar_resumo_rastreabilidade_certificado(itens)
+        obj.rastreabilidade_status_snapshot = self._json_safe(resumo)
+        obj.save(update_fields=['rastreabilidade_status_snapshot'])
+
     def _upsert_itens(self, instance: CertificadoQualidade, itens_data: list[dict]):
         instance.itens.all().delete()
         for i, item in enumerate(itens_data, start=1):
             comps = item.pop('componentes', []) or []
             corridas_extra = item.pop('corridas_adicionais', []) or []
+            # Merge de componentes do CF de origem (copia automatica ao vincular)
+            comps = _merge_componentes_cf_payload(
+                comps,
+                item.get('item_certificado_fornecedor_origem_id'),
+            )
             tem_cf = bool(
                 item.get('certificado_fornecedor_origem_id')
                 or item.get('item_certificado_fornecedor_origem_id')
@@ -466,6 +498,7 @@ class CertificadoQualidadeSerializer(serializers.ModelSerializer):
             validated_data['numero'] = gerar_numero_certificado_qualidade()
         obj = CertificadoQualidade.objects.create(**validated_data)
         self._upsert_itens(obj, itens)
+        self._gravar_snapshot_se_emitido(obj)
         return obj
 
     def update(self, instance, validated_data):
@@ -477,6 +510,7 @@ class CertificadoQualidadeSerializer(serializers.ModelSerializer):
         instance.save()
         if itens is not None:
             self._upsert_itens(instance, itens)
+        self._gravar_snapshot_se_emitido(instance)
         return instance
 
 
@@ -607,6 +641,95 @@ def _chave_corrida_lote_normalizada(corrida: str | None, lote: str | None) -> st
     if not c and not l:
         return ''
     return f'{c}\x1f{l}'
+
+
+def _chave_componente_dedup(nome: str | None, corrida: str | None) -> str:
+    """Chave de dedup para componentes: nome + corrida (normalizados)."""
+    nome_norm = re.sub(r"\s+", "", (nome or "").upper())
+    corrida_norm = re.sub(r"\s+", "", (corrida or "").upper())
+    if not nome_norm and not corrida_norm:
+        return ""
+    return f"{nome_norm}\x1f{corrida_norm}"
+
+
+def _componente_cf_para_dict(comp_cf) -> dict:
+    """Mapeia ComponenteCertificadoFornecedorEntrada para dict de payload do CQ.
+
+    Campos sem correspondencia direta (ex.: lote, que nao existe no componente
+    do CQ) sao ignorados. numero_certificado_fornecedor_componente do CF vira
+    numero_certificado_fornecedor_componente_snapshot no CQ.
+    """
+    return {
+        "ordem": comp_cf.ordem,
+        "nome_componente": comp_cf.nome_componente,
+        "descricao_componente": comp_cf.descricao_componente,
+        "norma": comp_cf.norma,
+        "corrida": comp_cf.corrida,
+        "revisao_corrida": comp_cf.revisao_corrida,
+        "numero_certificado_fornecedor_componente_snapshot": (
+            comp_cf.numero_certificado_fornecedor_componente
+        ),
+        "quantidade": comp_cf.quantidade,
+        "composicao_json": comp_cf.composicao_json,
+        "ensaio_tracao_json": comp_cf.ensaio_tracao_json,
+        "ensaio_impacto_json": comp_cf.ensaio_impacto_json,
+        "observacoes": comp_cf.observacoes,
+        "ativo": comp_cf.ativo,
+    }
+
+
+def _merge_componentes_cf_payload(
+    comps_payload: list | None,
+    item_cf_id: int | None,
+) -> list:
+    """Mescla componentes do CF de origem com os componentes do payload.
+
+    Regras:
+    - Sem item_cf_id: retorna apenas o payload (comportamento legado).
+    - Com item_cf_id: carrega componentes ativos do CF e faz merge com payload.
+    - Chave de dedup: (nome_componente, corrida) normalizados.
+    - Conflito: payload tem precedencia (o usuario pode ter editado).
+    - Ordenacao final: por ordem (ou 999 se ausente), depois por nome.
+    """
+    payload = list(comps_payload or [])
+
+    if not item_cf_id:
+        return payload
+
+    try:
+        item_cf = (
+            ItemCertificadoFornecedorEntrada.objects
+            .prefetch_related("componentes")
+            .get(pk=item_cf_id)
+        )
+    except ItemCertificadoFornecedorEntrada.DoesNotExist:
+        return payload
+
+    merged: dict[str, dict] = {}
+
+    for comp_cf in item_cf.componentes.all():
+        if not comp_cf.ativo:
+            continue
+        data = _componente_cf_para_dict(comp_cf)
+        chave = _chave_componente_dedup(
+            data.get("nome_componente"), data.get("corrida"),
+        )
+        if chave:
+            merged[chave] = data
+
+    for comp in payload:
+        if not isinstance(comp, dict):
+            continue
+        chave = _chave_componente_dedup(
+            comp.get("nome_componente"), comp.get("corrida"),
+        )
+        if chave:
+            merged[chave] = comp
+
+    return sorted(
+        merged.values(),
+        key=lambda c: (c.get("ordem") or 999, c.get("nome_componente") or ""),
+    )
 
 
 def _linha_adicional_legada_sem_quantidade(

@@ -83,6 +83,7 @@ class CertificadoQualidade(models.Model):
         RASCUNHO = 'rascunho', 'Rascunho'
         EMITIDO = 'emitido', 'Emitido'
         CANCELADO = 'cancelado', 'Cancelado'
+        SUBSTITUIDO = 'substituido', 'Substituído'
 
     class TipoCertificado(models.TextChoices):
         PADRAO_POR_NFE = 'PADRAO_POR_NFE', 'Padrão por NF-e'
@@ -123,6 +124,22 @@ class CertificadoQualidade(models.Model):
         max_length=32,
         choices=TipoCertificado.choices,
         default=TipoCertificado.PADRAO_POR_NFE,
+    )
+    rastreabilidade_status_snapshot = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            'Snapshot do status de rastreabilidade no momento da emissão. '
+            'Usado para congelar a avaliação em CQs emitidos.'
+        ),
+    )
+    substituido_por = models.ForeignKey(
+        'self',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='substitui',
+        help_text='Versão mais recente que substituiu este CQ (reemissão).',
     )
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
