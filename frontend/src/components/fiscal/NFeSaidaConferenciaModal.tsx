@@ -988,7 +988,9 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
           <TabsTrigger value="reforma">Reforma</TabsTrigger>
           <TabsTrigger value="transporte">Transporte</TabsTrigger>
           <TabsTrigger value="obs">Observações</TabsTrigger>
-          <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
+          {conf.nfe?.fin_nfe !== '4' ? (
+            <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
+          ) : null}
           <TabsTrigger value="validacao">Validação</TabsTrigger>
           <TabsTrigger value="historico">Histórico</TabsTrigger>
         </TabsList>
@@ -1574,6 +1576,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
             </div>
           </TabsContent>
 
+          {conf.nfe?.fin_nfe === '4' ? null : (
           <TabsContent value="financeiro" className="space-y-3 mt-0">
             <NFeFinanceiroPanel
               nfeId={nfeId}
@@ -1601,6 +1604,7 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
               onGerar={() => setGerarCrOpen(true)}
             />
           </TabsContent>
+          )}
 
           <TabsContent value="validacao" className="space-y-3 mt-0">
             <div className="rounded-md border border-border p-3 space-y-2 bg-muted/20">

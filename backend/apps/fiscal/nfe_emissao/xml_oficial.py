@@ -169,8 +169,9 @@ def montar_tnfe_emissao(
     tot = dados.get('totais') or {}
     inf.total = build_total_nfe_bindings(nfe, dados)
     duplicatas = duplicatas_para_xml(nfe_saida)
-    inf.pag = build_pag_bindings(nfe, tot, duplicatas=duplicatas)
-    cobr = build_cobr_bindings(nfe, tot, duplicatas, n_fat=numero_fatura_nfe(nfe_saida))
+    _fin_nfe = _text(getattr(nfe_saida, 'fin_nfe', '1')) or '1'
+    inf.pag = build_pag_bindings(nfe, tot, duplicatas=duplicatas, fin_nfe=_fin_nfe)
+    cobr = build_cobr_bindings(nfe, tot, duplicatas, n_fat=numero_fatura_nfe(nfe_saida), fin_nfe=_fin_nfe)
     if cobr is not None:
         inf.cobr = cobr
 

@@ -499,6 +499,7 @@ def gerar_dados_preview_nfe_saida(
         },
         'ide': {
             'c_uf': UF_IBGE.get(uf_origem, '35'),
+            'tp_amb': '1' if (getattr(nf, 'ambiente_emissao', '') or '').lower() == 'producao' else '2',
             'nat_op': (
                 'Devolução de mercadoria'
                 if (getattr(nf, 'fin_nfe', '1') == '4')

@@ -31,10 +31,16 @@ def get_empresa_logo_path_or_none(empresa: Empresa | None) -> str | None:
 
 
 def get_emitente_logo_nfe_saida(nfe_saida) -> str | None:
-    """Logo da empresa emitente vinculada ao pedido da NF-e."""
+    """Logo da empresa emitente vinculada a NFeSaida.
+
+    Prioriza nfe_saida.empresa_emitente (devolucao ao fornecedor nao tem
+    pedido_venda); fallback pedido_venda.empresa_emitente (venda normal).
+    """
     try:
-        pedido = getattr(nfe_saida, 'pedido_venda', None)
-        emp = getattr(pedido, 'empresa_emitente', None) if pedido else None
+        emp = getattr(nfe_saida, 'empresa_emitente', None)
+        if emp is None:
+            pedido = getattr(nfe_saida, 'pedido_venda', None)
+            emp = getattr(pedido, 'empresa_emitente', None) if pedido else None
         return get_empresa_logo_path_or_none(emp)
     except Exception as exc:
         logger.debug('logo NF-e %s: %s', getattr(nfe_saida, 'pk', None), exc)

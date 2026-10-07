@@ -125,11 +125,16 @@ def validar_higienizacao_xml_transmissao(
         add(TIPO_INFO, 'XML_IE_SEM_MASCARA', 'Inscrições Estaduais serializadas sem máscara.')
 
     if nfe_saida:
-        ok_ie, msg_ie = validar_ie_emitente_transmissao(
-            nfe_saida.pedido_venda.empresa_emitente.ie
-            if nfe_saida.pedido_venda_id and nfe_saida.pedido_venda.empresa_emitente_id
-            else None,
-        )
+        # Emitente: prioriza nfe_saida.empresa_emitente (devolucao ao fornecedor
+        # nao tem pedido_venda); fallback pedido_venda.empresa_emitente (venda normal).
+        _ie_emit = ''
+        _emp = getattr(nfe_saida, 'empresa_emitente', None)
+        if _emp is None:
+            _ped = getattr(nfe_saida, 'pedido_venda', None)
+            _emp = getattr(_ped, 'empresa_emitente', None) if _ped else None
+        if _emp is not None:
+            _ie_emit = _emp.ie or ''
+        ok_ie, msg_ie = validar_ie_emitente_transmissao(_ie_emit)
         if not ok_ie:
             add(TIPO_PENDENCIA, 'XML_IE_EMITENTE_INVALIDA', msg_ie)
 

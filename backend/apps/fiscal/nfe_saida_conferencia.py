@@ -679,6 +679,8 @@ def montar_conferencia_nfe_saida(
                 'dias_parcelas': list(nf.dias_parcelas or []),
                 'duplicatas_nfe': duplicatas_nfe_para_api(nf),
                 'cliente_id': nf.cliente_id,
+                'fin_nfe': (getattr(nf, 'fin_nfe', '1') or '1'),
+                'chave_nfe_referenciada': (getattr(nf, 'chave_nfe_referenciada', '') or ''),
                 'cliente_nome': (
                     nf.cliente.razao_social if nf.cliente_id
                     else (nf.fornecedor.razao_social if nf.fornecedor_id else '')

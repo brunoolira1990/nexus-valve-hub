@@ -310,9 +310,11 @@ def _build_ipi(snap: dict):
         return None
     wrap = layout.Tipi(cEnq='999')
     if cst in IPI_NT_CSTS:
-        wrap.ipint = layout.Tipi.Ipint(CST=cst)
+        # Campo do dataclass: IPINT (maiusculo); classe aninhada: Ipint
+        wrap.IPINT = layout.Tipi.Ipint(CST=cst)
     else:
-        wrap.ipitrib = layout.Tipi.Ipitrib(
+        # Campo do dataclass: IPITrib; classe aninhada: Ipitrib
+        wrap.IPITrib = layout.Tipi.Ipitrib(
             CST=cst or '50',
             vBC=_dec_field(ipi.get('base')),
             pIPI=_dec_field(ipi.get('aliquota'), 4),

@@ -271,7 +271,7 @@ def _montar_snapshot_fiscal_via_xml_compra(
         'base_icms': str(vbc_icms) if vbc_icms is not None else None,
         'aliquota_icms': icms.get('pICMS'),
         'valor_icms': str(vicms),
-        'reducao_bc_icms': None,
+        'reducao_bc_icms': icms.get('pRedBC'),
         'base_icms_st': str(vbcst) if vbcst is not None else None,
         'aliquota_icms_st': icms.get('pICMSST'),
         'valor_icms_st': str(vicmsst) if vicmsst is not None else None,
@@ -494,13 +494,23 @@ def gerar_saida_devolucao_compra(
         if cfop_primeiro_item == cfop_uf:
             cfop_primeiro_item = snapshot_fiscal.get('cfop') or cfop_uf
 
+        valor_unit = _dec(item_conf.valor_unitario_nf)
+        valor_total_item = (qtd * valor_unit).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        snap_com = {
+            'quantidade': str(qtd),
+            'valor_unitario': str(valor_unit),
+            'valor_total': str(valor_total_item),
+            'desconto': '0.00',
+        }
+
         item_saida = ItemNFeSaida.objects.create(
             nf=nf_saida,
             produto=produto,
             quantidade=qtd,
-            valor=_dec(item_conf.valor_unitario_nf),
+            valor=valor_unit,
             snapshot_produto=snap_prod,
             snapshot_fiscal=snapshot_fiscal,
+            snapshot_comercial=snap_com,
         )
         ItemDevolucaoCompra.objects.create(
             item_nf_saida=item_saida,

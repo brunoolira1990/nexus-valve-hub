@@ -148,8 +148,16 @@ def build_cobr_bindings(
     duplicatas: list[dict[str, Any]],
     *,
     n_fat: str = '',
+    fin_nfe: str | None = None,
 ) -> Any | None:
-    """Grupo cobr (fatura/duplicatas) quando há parcelas a prazo."""
+    """Grupo cobr (fatura/duplicatas) quando há parcelas a prazo.
+
+    Suprimido em finNFe 3 (ajuste) e 4 (devolução): a operação não gera
+    cobrança — leiaute SEFAZ rejeita <cobr> com tPag 90 (NT 2016.002).
+    """
+    fin = str(fin_nfe or '').strip()
+    if fin in ('3', '4'):
+        return None
     if not duplicatas:
         return None
 

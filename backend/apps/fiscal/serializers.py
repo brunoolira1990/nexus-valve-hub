@@ -1191,16 +1191,27 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
                 ItemNFeSaida.objects.create(nf=nf, **self._item_sem_id(item))
             return
 
-        # Payload so com metadados: update in-place
+        # Payload so com metadados: update in-place.
+        # Blindagem: NAO sobrescreve campos comerciais/fiscais com o que o
+        # frontend manda (que costuma vir vazio ou zerado). Esses so devem
+        # ser escritos pelo servico de criacao (gerar_saida_devolucao_compra,
+        # faturamento, etc).
+        CAMPOS_PROTEGIDOS = frozenset({
+            'valor', 'quantidade', 'produto', 'produto_id',
+            'snapshot_fiscal', 'snapshot_produto', 'snapshot_comercial',
+            'corrida', 'corrida_id',
+        })
         ids_payload = {item['id'] for item in itens_data if item.get('id')}
         nf.itens.exclude(id__in=ids_payload).delete()
         for item in itens_data:
             item_id = item.get('id')
+            dados = self._item_sem_id(item)
             if item_id:
-                ItemNFeSaida.objects.filter(id=item_id, nf=nf).update(**self._item_sem_id(item))
+                dados_seguros = {k: v for k, v in dados.items() if k not in CAMPOS_PROTEGIDOS}
+                if dados_seguros:
+                    ItemNFeSaida.objects.filter(id=item_id, nf=nf).update(**dados_seguros)
             else:
-                # Item novo sem id: exige campos obrigatorios
-                ItemNFeSaida.objects.create(nf=nf, **self._item_sem_id(item))
+                ItemNFeSaida.objects.create(nf=nf, **dados)
 
     def _persist_itens_antecipado(self, nf: NFeSaida, itens_data: list[dict]) -> None:
         sync_itens_nf_saida_antecipada(

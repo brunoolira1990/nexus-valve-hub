@@ -2454,6 +2454,12 @@ class NFeSaidaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
         from apps.fiscal.serializers import NFeGerarContasReceberSerializer
 
         nf = self.get_object()
+        # Devolucao ao fornecedor (finNFe=4) nao gera contas a receber.
+        if (getattr(nf, 'fin_nfe', '1') or '1').strip() == '4':
+            return response.Response(
+                {'detail': 'Devolucao ao fornecedor nao gera contas a receber.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         ser = NFeGerarContasReceberSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         data = ser.validated_data
