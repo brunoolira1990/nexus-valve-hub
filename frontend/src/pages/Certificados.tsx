@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AxiosError } from 'axios';
 import { FileText, Pencil } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
@@ -83,6 +84,7 @@ import {
  */
 
 const Certificados = () => {
+  const navigate = useNavigate();
   const [listForbidden, setListForbidden] = useState(false);
   const fetchCertificadosPage = useCallback(async (params: ListQueryParams) => {
     try {
@@ -357,63 +359,10 @@ const Certificados = () => {
   };
 
   const openNew = () => {
-    setEditing(null);
-    setForm(emptyForm());
-    setNfeOpcaoSelecionada(null);
-    setSaveError(null);
-    setRastreabilidadeErros([]);
-    setMensagens([]);
-    setFornecedorBuscaItemMsg({});
-    setModalOpen(true);
+    navigate('/certificados-qualidade/novo');
   };
   const openEdit = (c: CertificadoQualidade) => {
-    setEditing(c);
-    setForm({
-      ...c,
-      data_emissao: c.data_emissao || '',
-      observacoes: c.observacoes || '',
-      texto_padrao: c.texto_padrao || TEXTO_PADRAO,
-      pedido_cliente: c.pedido_cliente || '',
-      cliente_cnpj_snapshot: c.cliente_cnpj_snapshot || '',
-      itens: (c.itens || []).map((it) => ({
-        ...it,
-        tipo_dados_tecnicos: it.tipo_dados_tecnicos || 'PADRAO_ITEM',
-        incluir_no_certificado: it.incluir_no_certificado !== false,
-        motivo_nao_inclusao: it.motivo_nao_inclusao || '',
-        observacao_nao_inclusao: it.observacao_nao_inclusao || '',
-        composicao_json: ensureMap(it.composicao_json),
-        ensaio_tracao_json: ensureMap(it.ensaio_tracao_json),
-        ensaio_impacto_json: ensureMap(it.ensaio_impacto_json),
-        componentes: (it.componentes || []).map((cp, i) => ensureComp(cp, i + 1)),
-      })),
-    });
-    setNfeOpcaoSelecionada(null);
-    if (c.nota_fiscal) {
-      void certificadosQualidadeService.obterNfeOpcao(c.nota_fiscal).then((opt) => {
-        if (opt) setNfeOpcaoSelecionada(opt);
-        else {
-          setNfeOpcaoSelecionada({
-            id: c.nota_fiscal!,
-            label_principal: c.nota_fiscal_numero
-              ? `NF-e ${c.nota_fiscal_numero}`
-              : `NF-e vinculada #${c.nota_fiscal}`,
-            label_secundario: 'Documento legado — verifique elegibilidade',
-            ambiente_badge: null,
-            numero_nfe: '',
-            serie_nfe: '',
-            cliente_nome: c.cliente_nome_snapshot || '',
-            data_emissao: c.data_emissao || null,
-            status_emissao_sefaz: '',
-            elegivel: false,
-          });
-        }
-      });
-    }
-    setSaveError(null);
-    setRastreabilidadeErros([]);
-    setMensagens([]);
-    setFornecedorBuscaItemMsg({});
-    setModalOpen(true);
+    navigate(`/certificados-qualidade/${c.id}`);
   };
 
   const patchFornecedorBuscaItemMsg = (idx: number, v: { type: 'error' | 'info'; text: string } | null) => {
