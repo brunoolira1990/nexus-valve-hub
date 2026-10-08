@@ -17,6 +17,11 @@ import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ItemEditor, type LinhaDivisaoCorrida } from './ItemEditor';
 import { produtosService } from '@/services/api/produtos';
+import {
+  COMPONENTES_PADRAO,
+  ensureComp,
+  ensureMap,
+} from '@/lib/certificadoQualidadeConstants';
 import { baseItemIrmao } from '@/lib/cqCorridasCfUi';
 import { mesclarMensagensUnicas } from '@/lib/cqMensagensUi';
 import { coerceProdutoItemId } from '@/lib/certificadoQualidadeConstants';
@@ -40,6 +45,7 @@ import type {
   CertificadoQualidadeStatus,
   CorridaDisponivelCertificadoQualidade,
   ItemCertificadoQualidade,
+  ItemCertificadoQualidadeComponente,
   Produto,
 } from '@/types';
 
@@ -466,6 +472,91 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
     setProdutoResultados({});
   };
 
+  const updateComponente = (
+    idx: number,
+    compIdx: number,
+    patch: Partial<ItemCertificadoQualidadeComponente>,
+  ) =>
+    setForm((p) => {
+      const next = [...p.itens];
+      const comps = [...(next[idx].componentes || [])];
+      comps[compIdx] = { ...comps[compIdx], ...patch };
+      next[idx] = { ...next[idx], componentes: comps };
+      return { ...p, itens: next };
+    });
+
+  const updateCompJson = (
+    idx: number,
+    compIdx: number,
+    group: 'composicao_json' | 'ensaio_tracao_json' | 'ensaio_impacto_json',
+    key: string,
+    value: string,
+  ) =>
+    setForm((p) => {
+      const next = [...p.itens];
+      const comps = [...(next[idx].componentes || [])];
+      const map = ensureMap(comps[compIdx][group]);
+      map[key] = value;
+      comps[compIdx] = { ...comps[compIdx], [group]: map };
+      next[idx] = { ...next[idx], componentes: comps };
+      return { ...p, itens: next };
+    });
+
+  const addComponente = (idx: number, nome = '') =>
+    setForm((p) => {
+      const next = [...p.itens];
+      const comps = [...(next[idx].componentes || [])];
+      comps.push(ensureComp({ nome_componente: nome }, comps.length + 1));
+      next[idx] = { ...next[idx], componentes: comps };
+      return { ...p, itens: next };
+    });
+
+  const removeComponente = (idx: number, compIdx: number) =>
+    setForm((p) => {
+      const next = [...p.itens];
+      const comps = [...(next[idx].componentes || [])];
+      comps.splice(compIdx, 1);
+      next[idx] = {
+        ...next[idx],
+        componentes: comps.map((c, i) => ({ ...c, ordem: i + 1 })),
+      };
+      return { ...p, itens: next };
+    });
+
+  const duplicarComponente = (idx: number, compIdx: number) => {
+    const srcComp = ensureComp(form.itens[idx].componentes?.[compIdx], 1);
+    setForm((p) => {
+      const next = [...p.itens];
+      const comps = [...(next[idx].componentes || [])];
+      comps.push({ ...srcComp, ordem: comps.length + 1 });
+      next[idx] = { ...next[idx], componentes: comps };
+      return { ...p, itens: next };
+    });
+  };
+
+  const copiarComponenteAnterior = (idx: number, compIdx: number) => {
+    if (compIdx === 0) return;
+    const prev = ensureComp(form.itens[idx].componentes?.[compIdx - 1], compIdx);
+    setForm((p) => {
+      const next = [...p.itens];
+      const comps = [...(next[idx].componentes || [])];
+      comps[compIdx] = { ...comps[compIdx], ...prev, ordem: comps[compIdx].ordem };
+      next[idx] = { ...next[idx], componentes: comps };
+      return { ...p, itens: next };
+    });
+  };
+
+  const adicionarComponentesPadrao = (idx: number) =>
+    setForm((p) => {
+      const next = [...p.itens];
+      const comps = [...(next[idx].componentes || [])];
+      COMPONENTES_PADRAO.forEach((nome) => {
+        comps.push(ensureComp({ nome_componente: nome }, comps.length + 1));
+      });
+      next[idx] = { ...next[idx], componentes: comps };
+      return { ...p, itens: next };
+    });
+
   const salvar = async (novoStatus?: CertificadoQualidadeStatus) => {
     setSaving(true);
     setSaveError(null);
@@ -733,6 +824,18 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
                     onRemoveLinha: (linhaIdx) => removeLinhaCorrida(idx, linhaIdx),
                     onUpdateLinha: (linhaIdx, patch) => updateLinhaCorrida(idx, linhaIdx, patch),
                     onAplicarDistribuicao: () => aplicarDistribuicaoCorridas(idx),
+                  }}
+                  componentes={{
+                    lista: it.componentes || [],
+                    onAdd: (nome?: string) => addComponente(idx, nome),
+                    onAddPadrao: () => adicionarComponentesPadrao(idx),
+                    onRemove: (compIdx: number) => removeComponente(idx, compIdx),
+                    onDuplicar: (compIdx: number) => duplicarComponente(idx, compIdx),
+                    onCopiarAnterior: (compIdx: number) =>
+                      copiarComponenteAnterior(idx, compIdx),
+                    onUpdate: (compIdx, patch) => updateComponente(idx, compIdx, patch),
+                    onUpdateJson: (compIdx, group, key, value) =>
+                      updateCompJson(idx, compIdx, group, key, value),
                   }}
                 />
               ))}

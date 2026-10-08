@@ -17,6 +17,7 @@ import { useState } from 'react';
 import type {
   CorridaDisponivelCertificadoQualidade,
   ItemCertificadoQualidade,
+  ItemCertificadoQualidadeComponente,
   Produto,
 } from '@/types';
 import {
@@ -59,15 +60,42 @@ export type CorridasProps = {
   onAplicarDistribuicao: () => void;
 };
 
+export type ComponentesProps = {
+  lista: ItemCertificadoQualidadeComponente[];
+  onAdd: (nome?: string) => void;
+  onAddPadrao: () => void;
+  onRemove: (compIdx: number) => void;
+  onDuplicar: (compIdx: number) => void;
+  onCopiarAnterior: (compIdx: number) => void;
+  onUpdate: (
+    compIdx: number,
+    patch: Partial<ItemCertificadoQualidadeComponente>,
+  ) => void;
+  onUpdateJson: (
+    compIdx: number,
+    group: 'composicao_json' | 'ensaio_tracao_json' | 'ensaio_impacto_json',
+    key: string,
+    value: string,
+  ) => void;
+};
+
 type Props = {
   item: ItemCertificadoQualidade;
   idx: number;
   disabled?: boolean;
   onChange: (patch: Partial<ItemCertificadoQualidade>) => void;
   corridas?: CorridasProps;
+  componentes?: ComponentesProps;
 };
 
-export function ItemEditor({ item: it, idx, disabled, onChange, corridas }: Props) {
+export function ItemEditor({
+  item: it,
+  idx,
+  disabled,
+  onChange,
+  corridas,
+  componentes,
+}: Props) {
   const incl = it.incluir_no_certificado !== false;
   const [pasteCompOpen, setPasteCompOpen] = useState(false);
   const [pasteCompText, setPasteCompText] = useState('');
@@ -684,6 +712,177 @@ export function ItemEditor({ item: it, idx, disabled, onChange, corridas }: Prop
               )}
             </div>
           </>
+        ) : null}
+
+        {incl && it.tipo_dados_tecnicos === 'VALVULA_COMPONENTES' && componentes ? (
+          <div className="md:col-span-6 rounded border border-border p-2 bg-muted/10">
+            <div className="flex flex-wrap gap-2 items-center justify-between mb-2">
+              <p className="text-xs font-semibold">Componentes da valvula</p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="erp-btn-outline erp-btn-sm"
+                  disabled={disabled}
+                  onClick={componentes.onAddPadrao}
+                >
+                  Adicionar componentes padrao
+                </button>
+                <button
+                  type="button"
+                  className="erp-btn-outline erp-btn-sm"
+                  disabled={disabled}
+                  onClick={() => componentes.onAdd()}
+                >
+                  Adicionar componente
+                </button>
+              </div>
+            </div>
+            {componentes.lista.length === 0 ? (
+              <p className="text-xs text-amber-700 dark:text-amber-300">
+                Este item esta marcado como valvula, mas ainda nao possui componentes.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {componentes.lista.map((cp, cidx) => (
+                  <details key={cidx} className="rounded border border-border p-2" open>
+                    <summary className="cursor-pointer text-xs font-medium">
+                      Componente {cp.ordem} - {cp.nome_componente || 'Sem nome'}
+                    </summary>
+                    <div className="grid grid-cols-1 md:grid-cols-6 gap-2 mt-2">
+                      <div>
+                        <label className="erp-label">Ordem</label>
+                        <input
+                          className="erp-input mt-1"
+                          disabled={disabled}
+                          value={cp.ordem}
+                          onChange={(e) =>
+                            componentes.onUpdate(cidx, { ordem: +e.target.value })
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label className="erp-label">Componente</label>
+                        <input
+                          className="erp-input mt-1"
+                          disabled={disabled}
+                          value={cp.nome_componente}
+                          onChange={(e) =>
+                            componentes.onUpdate(cidx, { nome_componente: e.target.value })
+                          }
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="erp-label">Descricao</label>
+                        <input
+                          className="erp-input mt-1"
+                          disabled={disabled}
+                          value={cp.descricao_componente || ''}
+                          onChange={(e) =>
+                            componentes.onUpdate(cidx, { descricao_componente: e.target.value })
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label className="erp-label">Norma</label>
+                        <input
+                          className="erp-input mt-1"
+                          disabled={disabled}
+                          value={cp.norma || ''}
+                          onChange={(e) =>
+                            componentes.onUpdate(cidx, { norma: e.target.value })
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label className="erp-label">Corrida</label>
+                        <input
+                          className="erp-input mt-1"
+                          disabled={disabled}
+                          value={cp.corrida || ''}
+                          onChange={(e) =>
+                            componentes.onUpdate(cidx, { corrida: e.target.value })
+                          }
+                        />
+                      </div>
+                      <div className="md:col-span-6 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="erp-btn-outline erp-btn-sm"
+                          disabled={disabled || cidx === 0}
+                          onClick={() => componentes.onCopiarAnterior(cidx)}
+                        >
+                          Copiar componente anterior
+                        </button>
+                        <button
+                          type="button"
+                          className="erp-btn-outline erp-btn-sm"
+                          disabled={disabled}
+                          onClick={() => componentes.onDuplicar(cidx)}
+                        >
+                          Duplicar componente
+                        </button>
+                        <button
+                          type="button"
+                          className="erp-btn-outline erp-btn-sm"
+                          disabled={disabled}
+                          onClick={() => componentes.onRemove(cidx)}
+                        >
+                          Remover componente
+                        </button>
+                      </div>
+                      <div className="md:col-span-6 rounded border border-border p-2">
+                        <p className="text-xs font-semibold mb-2">Composicao quimica do componente</p>
+                        <div className="grid grid-cols-2 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                          {COMPOSICAO_FIELDS.map((el) => (
+                            <div key={el}>
+                              <label className="erp-label">{el}</label>
+                              <input
+                                className="erp-input mt-1"
+                                placeholder="***"
+                                disabled={disabled}
+                                value={ensureMap(cp.composicao_json)[el] || ''}
+                                onChange={(e) =>
+                                  componentes.onUpdateJson(
+                                    cidx,
+                                    'composicao_json',
+                                    el,
+                                    normNumeric(e.target.value),
+                                  )
+                                }
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="md:col-span-6 rounded border border-border p-2">
+                        <p className="text-xs font-semibold mb-2">Tracao do componente</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {TRACAO_FIELDS.map((f) => (
+                            <div key={f.key}>
+                              <label className="erp-label">{f.label}</label>
+                              <input
+                                className="erp-input mt-1"
+                                disabled={disabled}
+                                value={ensureMap(cp.ensaio_tracao_json)[f.key] || ''}
+                                onChange={(e) =>
+                                  componentes.onUpdateJson(
+                                    cidx,
+                                    'ensaio_tracao_json',
+                                    f.key,
+                                    normNumeric(e.target.value),
+                                  )
+                                }
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </details>
+                ))}
+              </div>
+            )}
+          </div>
         ) : null}
       </div>
     </details>
