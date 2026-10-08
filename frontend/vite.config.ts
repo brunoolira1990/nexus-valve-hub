@@ -7,6 +7,9 @@ const proxyTarget = process.env.VITE_PROXY_TARGET || "http://127.0.0.1:8000";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
+  // TEMPORARIO: bug do esbuild quebrando useState em closures async
+  // Investigar em: https://github.com/evanw/esbuild/issues
+  esbuild: mode === 'production' ? { minify: false } : undefined,
   server: {
     host: "0.0.0.0",
     allowedHosts: [
