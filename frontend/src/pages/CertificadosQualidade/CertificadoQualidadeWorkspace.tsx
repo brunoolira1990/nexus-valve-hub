@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ItemEditor } from './ItemEditor';
 import {
   certificadosQualidadeService,
   type NfeElegivelCqOpcao,
@@ -223,6 +224,12 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
   const nfeBloqueada = Boolean(editing && editing.status !== 'rascunho');
   const incluidosCount = form.itens.filter((it) => it.incluir_no_certificado !== false).length;
   const naoIncluidosCount = form.itens.length - incluidosCount;
+
+  const updateItem = (idx: number, patch: Partial<ItemCertificadoQualidade>) =>
+    setForm((p) => ({
+      ...p,
+      itens: p.itens.map((it, i) => (i === idx ? { ...it, ...patch } : it)),
+    }));
 
   const salvar = async (novoStatus?: CertificadoQualidadeStatus) => {
     setSaving(true);
@@ -469,74 +476,24 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
                 </p>
               ) : null}
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead className="border-b border-border text-muted-foreground">
-                  <tr>
-                    <th className="text-left py-1 pr-2">#</th>
-                    <th className="text-left py-1 pr-2">Código</th>
-                    <th className="text-left py-1 pr-2">Descrição</th>
-                    <th className="text-right py-1 pr-2">Qtd</th>
-                    <th className="text-left py-1 pr-2">Un</th>
-                    <th className="text-left py-1 pr-2">Norma</th>
-                    <th className="text-left py-1 pr-2">Lote</th>
-                    <th className="text-left py-1 pr-2">Rastreab.</th>
-                    <th className="text-left py-1">Incl.</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {form.itens.map((it, idx) => (
-                    <tr
-                      key={it.id ?? idx}
-                      className={
-                        it.incluir_no_certificado === false
-                          ? 'border-b border-border/50 bg-amber-50/30 dark:bg-amber-900/10'
-                          : 'border-b border-border/50'
-                      }
-                    >
-                      <td className="py-1 pr-2 tabular-nums">{it.ordem}</td>
-                      <td className="py-1 pr-2 font-mono">{it.codigo_produto}</td>
-                      <td className="py-1 pr-2">{it.descricao_material}</td>
-                      <td className="py-1 pr-2 text-right tabular-nums">{it.quantidade}</td>
-                      <td className="py-1 pr-2">{it.unidade}</td>
-                      <td className="py-1 pr-2">{it.norma}</td>
-                      <td className="py-1 pr-2">{it.lote || ''}</td>
-                      <td className="py-1 pr-2">
-                        {it.incluir_no_certificado !== false && it.rastreabilidade_status ? (
-                          <span
-                            className={
-                              it.rastreabilidade_status === 'COMPLETA'
-                                ? 'erp-badge-success text-[10px]'
-                                : it.rastreabilidade_status === 'PARCIAL'
-                                  ? 'erp-badge-warning text-[10px]'
-                                  : 'erp-badge-danger text-[10px]'
-                            }
-                          >
-                            {it.rastreabilidade_label || it.rastreabilidade_status}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="py-1">
-                        {it.incluir_no_certificado === false ? (
-                          <span className="text-amber-700 dark:text-amber-300">Não</span>
-                        ) : (
-                          <span className="text-emerald-700 dark:text-emerald-400">Sim</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="space-y-2">
+              {form.itens.map((it, idx) => (
+                <ItemEditor
+                  key={it.id ?? idx}
+                  item={it}
+                  idx={idx}
+                  disabled={nfeBloqueada || saving}
+                  onChange={(patch) => updateItem(idx, patch)}
+                />
+              ))}
             </div>
           </>
         )}
       </div>
 
       <div className="rounded border border-dashed p-4 text-center text-xs text-muted-foreground">
-        <p className="font-medium mb-1">Editor de item, corridas CF e rastreabilidade/PDF serão portados nas próximas etapas</p>
-        <p>Etapa 3c-2: prontidão/origem · Etapa 5: editor · Etapa 6: corridas CF · Etapa 7: rastreabilidade/PDF</p>
+        <p className="font-medium mb-1">Corrida/lote, composição, componentes, corridas CF e rastreabilidade/PDF serão portados nas próximas etapas</p>
+        <p>Etapa 3c-2: prontidão/origem · Etapa 5b-2/3/4: corrida/composição/componentes · Etapa 6: corridas CF · Etapa 7: rastreabilidade/PDF</p>
       </div>
         </TabsContent>
 
