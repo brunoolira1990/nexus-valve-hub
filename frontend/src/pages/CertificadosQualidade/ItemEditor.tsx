@@ -60,6 +60,9 @@ export type CorridasProps = {
   onUpdateLinha: (linhaIdx: number, patch: Partial<LinhaDivisaoCorrida>) => void;
   onAplicarDistribuicao: () => void;
   onAbrirModalCorridasCf: () => void;
+  onBuscarDadosFornecedor: () => void;
+  fornecedorBuscaLoading: boolean;
+  fornecedorBuscaMsg?: { type: 'error' | 'info'; text: string };
 };
 
 export type ComponentesProps = {
@@ -432,6 +435,33 @@ export function ItemEditor({
                 />
               </div>
             </div>
+            <div className="mt-2 flex flex-wrap gap-2 items-center">
+              <button
+                type="button"
+                className="erp-btn-outline erp-btn-sm"
+                disabled={disabled || corridas.fornecedorBuscaLoading}
+                title="Busca por produto + corrida/lote (e codigo/descricao do item). Itens do fornecedor sem produto vinculado exigem confirmacao antes de aplicar."
+                onClick={corridas.onBuscarDadosFornecedor}
+              >
+                {corridas.fornecedorBuscaLoading
+                  ? 'Buscando...'
+                  : 'Buscar dados do fornecedor'}
+              </button>
+            </div>
+            {corridas.fornecedorBuscaMsg ? (
+              <p
+                className={
+                  corridas.fornecedorBuscaMsg.type === 'error'
+                    ? 'text-sm text-destructive mt-2'
+                    : 'text-sm text-amber-800 dark:text-amber-200 mt-2'
+                }
+                role={
+                  corridas.fornecedorBuscaMsg.type === 'error' ? 'alert' : 'status'
+                }
+              >
+                {corridas.fornecedorBuscaMsg.text}
+              </p>
+            ) : null}
           </div>
         ) : null}
 

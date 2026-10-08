@@ -18,11 +18,19 @@ import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ItemEditor, type LinhaDivisaoCorrida } from './ItemEditor';
 import { ModalCorridasCertificadoFornecedor } from '@/components/qualidade/ModalCorridasCertificadoFornecedor';
+import { Modal } from '@/components/Modal';
 import { produtosService } from '@/services/api/produtos';
+import {
+  certificadosFornecedorService,
+  corridaLoteEfetivosResultadoFornecedor,
+  mensagemPrincipalBuscaDadosTecnicosFornecedor,
+} from '@/services/api/certificadosFornecedor';
 import {
   COMPONENTES_PADRAO,
   ensureComp,
   ensureMap,
+  fornecedorResultadoSemProdutoVinculado,
+  resolverCorridaLoteBuscaFornecedor,
 } from '@/lib/certificadoQualidadeConstants';
 import {
   aplicacaoSubstituiTecnicosDoItemAtual,
@@ -59,6 +67,7 @@ import type {
   CertificadoQualidade,
   CertificadoQualidadeStatus,
   CorridaDisponivelCertificadoQualidade,
+  DadosTecnicosFornecedorResultado,
   ItemCertificadoQualidade,
   ItemCertificadoQualidadeComponente,
   Produto,
@@ -103,6 +112,17 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
     quantidadeTotal: number;
     selecoesIniciais: SelecaoCorridaCfCq[];
   } | null>(null);
+  const [fornecedorMatches, setFornecedorMatches] = useState<
+    DadosTecnicosFornecedorResultado[]
+  >([]);
+  const [fornecedorTargetIdx, setFornecedorTargetIdx] = useState<number | null>(null);
+  const [fornecedorMatchModalOpen, setFornecedorMatchModalOpen] = useState(false);
+  const [fornecedorBuscaItemLoading, setFornecedorBuscaItemLoading] = useState<number | null>(
+    null,
+  );
+  const [fornecedorBuscaItemMsg, setFornecedorBuscaItemMsg] = useState<
+    Record<number, { type: 'error' | 'info'; text: string }>
+  >({});
 
   // Carrega CQ existente (ou reseta para novo)
   useEffect(() => {
@@ -719,6 +739,185 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
     return true;
   };
 
+  const patchFornecedorBuscaItemMsg = (
+    idx: number,
+    v: { type: 'error' | 'info'; text: string } | null,
+  ) =>
+    setFornecedorBuscaItemMsg((prev) => {
+      const next = { ...prev };
+      if (v == null) delete next[idx];
+      else next[idx] = v;
+      return next;
+    });
+
+  const componentePreenchido = (comp: ReturnType<typeof ensureComp>) =>
+    Boolean(
+      (comp.nome_componente || '').trim() ||
+        (comp.corrida || '').trim() ||
+        (comp.norma || '').trim() ||
+        Object.values(ensureMap(comp.composicao_json)).some(Boolean) ||
+        Object.values(ensureMap(comp.ensaio_tracao_json)).some(Boolean),
+    );
+
+  const aplicarDadosFornecedor = (idx: number, srcData: DadosTecnicosFornecedorResultado) => {
+    if (srcData.status_certificado_fornecedor === 'rascunho') {
+      const ok = window.confirm(
+        'O certificado fornecedor encontrado ainda esta em rascunho. Registre o certificado antes de usar os dados tecnicos. Deseja aplicar mesmo assim?',
+      );
+      if (!ok) return;
+    }
+    if (fornecedorResultadoSemProdutoVinculado(srcData)) {
+      const ok = window.confirm(
+        'Este dado tecnico veio de um certificado fornecedor cujo item nao esta vinculado a produto cadastrado. Confira codigo, descricao e corrida antes de aplicar. Deseja continuar?',
+      );
+      if (!ok) return;
+    }
+    const item = form.itens[idx];
+    const isValvula =
+      (srcData.tipo_dados_tecnicos || item.tipo_dados_tecnicos) === 'VALVULA_COMPONENTES';
+    const { corrida: crEf, lote: loEf } = corridaLoteEfetivosResultadoFornecedor(srcData);
+    const novosComponentes = (srcData.componentes || []).map((cp, i) => ({
+      ...ensureComp(cp, i + 1),
+      numero_certificado_fornecedor_componente_snapshot:
+        String(cp.numero_certificado_fornecedor_componente || '') ||
+        (srcData.numero_certificado_fornecedor_item ||
+          srcData.numero_certificado_fornecedor ||
+          ''),
+    }));
+    if (isValvula) {
+      const existentes = (item.componentes || []).map((c, i) => ensureComp(c, i + 1));
+      const existePreenchido = existentes.some(componentePreenchido);
+      if (existePreenchido && novosComponentes.length) {
+        const ok = window.confirm(
+          'Este item ja possui componentes preenchidos. Deseja substituir pelos dados do certificado fornecedor?',
+        );
+        if (!ok) return;
+      }
+      updateItem(idx, {
+        tipo_dados_tecnicos: 'VALVULA_COMPONENTES',
+        corrida: crEf || item.corrida,
+        lote: loEf || item.lote,
+        componentes: novosComponentes,
+        certificado_fornecedor_origem_id: srcData.certificado_fornecedor_id || null,
+        item_certificado_fornecedor_origem_id: srcData.id || null,
+        fornecedor_nome_snapshot: srcData.fornecedor_nome || '',
+        nf_entrada_snapshot: srcData.numero_nf_entrada || '',
+        codigo_item_fornecedor_snapshot: srcData.codigo_produto || '',
+        descricao_item_fornecedor_snapshot: srcData.descricao_material || '',
+        numero_certificado_fornecedor_item_snapshot:
+          srcData.numero_certificado_fornecedor_item ||
+          srcData.numero_certificado_fornecedor ||
+          '',
+        corrida_snapshot: crEf || item.corrida_snapshot || '',
+        lote_snapshot: loEf || item.lote_snapshot || '',
+        origem_rastreabilidade_tipo: 'certificado_fornecedor',
+        origem_status_tecnico: srcData.status_certificado_fornecedor || '',
+      });
+    } else {
+      updateItem(idx, {
+        norma: srcData.norma || item.norma,
+        corrida: crEf || item.corrida,
+        lote: loEf || item.lote || '',
+        composicao_json: ensureMap(srcData.composicao_json),
+        ensaio_tracao_json: ensureMap(srcData.ensaio_tracao_json),
+        ensaio_impacto_json: ensureMap(srcData.ensaio_impacto_json),
+        tipo_dados_tecnicos: srcData.tipo_dados_tecnicos || item.tipo_dados_tecnicos,
+        certificado_fornecedor_origem_id: srcData.certificado_fornecedor_id || null,
+        item_certificado_fornecedor_origem_id: srcData.id || null,
+        fornecedor_nome_snapshot: srcData.fornecedor_nome || '',
+        nf_entrada_snapshot: srcData.numero_nf_entrada || '',
+        codigo_item_fornecedor_snapshot: srcData.codigo_produto || '',
+        descricao_item_fornecedor_snapshot: srcData.descricao_material || '',
+        numero_certificado_fornecedor_item_snapshot:
+          srcData.numero_certificado_fornecedor_item ||
+          srcData.numero_certificado_fornecedor ||
+          '',
+        corrida_snapshot: crEf || item.corrida_snapshot || '',
+        lote_snapshot: loEf || item.lote_snapshot || '',
+        origem_rastreabilidade_tipo: 'certificado_fornecedor',
+        origem_status_tecnico: srcData.status_certificado_fornecedor || '',
+      });
+    }
+    const avisos: string[] = [];
+    if (srcData.aviso_divergencia_codigo) avisos.push(srcData.aviso_divergencia_codigo);
+    if (fornecedorResultadoSemProdutoVinculado(srcData)) {
+      avisos.push(
+        'Dados encontrados em certificado fornecedor sem produto vinculado. Confira codigo, descricao e corrida antes de aplicar.',
+      );
+    } else {
+      avisos.push('Dados tecnicos encontrados no certificado fornecedor.');
+    }
+    if (srcData.status_certificado_fornecedor === 'rascunho') {
+      avisos.push(
+        'O certificado fornecedor encontrado ainda esta em rascunho. Registre o certificado antes de usar os dados tecnicos.',
+      );
+    }
+    if (
+      srcData.aviso_sem_vinculo_produto &&
+      !fornecedorResultadoSemProdutoVinculado(srcData)
+    ) {
+      avisos.push(srcData.aviso_sem_vinculo_produto);
+    }
+    adicionarMensagensUnicas(avisos);
+    patchFornecedorBuscaItemMsg(idx, null);
+  };
+
+  const buscarDadosFornecedor = async (idx: number) => {
+    patchFornecedorBuscaItemMsg(idx, null);
+    const item = form.itens[idx];
+    if (!item) return;
+    const produtoId = coerceProdutoItemId(item.produto);
+    const isValvula =
+      (item.tipo_dados_tecnicos || 'PADRAO_ITEM') === 'VALVULA_COMPONENTES';
+    const { corrida: corridaBusca, lote: loteBusca } = resolverCorridaLoteBuscaFornecedor(item);
+    if (!corridaBusca && !loteBusca) {
+      patchFornecedorBuscaItemMsg(idx, {
+        type: 'error',
+        text: 'Informe a corrida ou o lote antes de buscar dados do certificado fornecedor.',
+      });
+      return;
+    }
+    setFornecedorBuscaItemLoading(idx);
+    try {
+      const { resultados: encontrados, dicas_busca: dicasBusca } =
+        await certificadosFornecedorService.buscarDadosTecnicos({
+          ...(produtoId ? { produto: produtoId } : {}),
+          corrida: corridaBusca || undefined,
+          lote: loteBusca || undefined,
+          codigo_produto: item.codigo_produto || undefined,
+          descricao: item.descricao_material || undefined,
+          tipo_dados_tecnicos: isValvula ? 'VALVULA_COMPONENTES' : 'PADRAO_ITEM',
+          norma: item.norma || undefined,
+          status: 'registrado',
+        });
+      if (!encontrados.length) {
+        const dicaMsg = mensagemPrincipalBuscaDadosTecnicosFornecedor(dicasBusca);
+        const text =
+          dicaMsg ||
+          'Nenhum certificado fornecedor registrado foi encontrado para esta corrida.';
+        patchFornecedorBuscaItemMsg(idx, { type: 'error', text });
+        return;
+      }
+      if (encontrados.length === 1) {
+        aplicarDadosFornecedor(idx, encontrados[0]);
+        return;
+      }
+      patchFornecedorBuscaItemMsg(idx, null);
+      setFornecedorTargetIdx(idx);
+      setFornecedorMatches(encontrados);
+      setFornecedorMatchModalOpen(true);
+    } catch (e) {
+      patchFornecedorBuscaItemMsg(idx, {
+        type: 'error',
+        text: apiErrorMessage(e, {
+          fallback: 'Falha ao buscar dados tecnicos de entrada.',
+        }),
+      });
+    } finally {
+      setFornecedorBuscaItemLoading(null);
+    }
+  };
+
   const salvar = async (novoStatus?: CertificadoQualidadeStatus) => {
     setSaving(true);
     setSaveError(null);
@@ -1038,6 +1237,9 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
                     onUpdateLinha: (linhaIdx, patch) => updateLinhaCorrida(idx, linhaIdx, patch),
                     onAplicarDistribuicao: () => aplicarDistribuicaoCorridas(idx),
                     onAbrirModalCorridasCf: () => void abrirModalCorridasCf(idx),
+                    onBuscarDadosFornecedor: () => void buscarDadosFornecedor(idx),
+                    fornecedorBuscaLoading: fornecedorBuscaItemLoading === idx,
+                    fornecedorBuscaMsg: fornecedorBuscaItemMsg[idx],
                   }}
                   componentes={{
                     lista: it.componentes || [],
@@ -1123,6 +1325,77 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
         }
         onAplicar={aplicarCorridasCfSelecionadas}
       />
+
+      <Modal
+        isOpen={fornecedorMatchModalOpen}
+        onClose={() => setFornecedorMatchModalOpen(false)}
+        title="Resultados de certificado de fornecedor"
+        size="xl"
+      >
+        <div className="space-y-2 max-h-[55vh] overflow-auto pr-1">
+          {fornecedorMatches.map((r) => (
+            <div
+              key={`${r.certificado_fornecedor_id}-${r.id}`}
+              className="rounded border border-border p-3"
+            >
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                {r.produto_match_tipo === 'sem_vinculo' ? (
+                  <span className="erp-badge-warning text-xs">
+                    Item CF sem produto vinculado
+                  </span>
+                ) : null}
+                {r.produto_match_tipo === 'vinculado' ? (
+                  <span className="erp-badge-success text-xs">
+                    Produto CF = produto CQ
+                  </span>
+                ) : null}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-1 text-sm">
+                <p><span className="font-medium">Fornecedor:</span> {r.fornecedor_nome || '\u2014'}</p>
+                <p><span className="font-medium">NF entrada:</span> {r.numero_nf_entrada || '\u2014'}</p>
+                <p><span className="font-medium">Certificado:</span> {r.numero_certificado_fornecedor || `#${r.certificado_fornecedor_id}`}</p>
+                <p><span className="font-medium">Status (fornecedor):</span> {r.status_certificado_fornecedor || '\u2014'}</p>
+                <p><span className="font-medium">Codigo item fornecedor:</span> {r.codigo_produto || '\u2014'}</p>
+                <p><span className="font-medium">Descricao:</span> {r.descricao_material || '\u2014'}</p>
+                <p><span className="font-medium">Corrida:</span> {r.corrida || '\u2014'}</p>
+                <p><span className="font-medium">Lote:</span> {r.lote || '\u2014'}</p>
+                <p><span className="font-medium">Norma:</span> {r.norma || '\u2014'}</p>
+                <p><span className="font-medium">Tipo tecnico:</span> {r.tipo_dados_tecnicos === 'VALVULA_COMPONENTES' ? 'Valvula por componentes' : 'Dados por item'}</p>
+                {r.tipo_dados_tecnicos === 'VALVULA_COMPONENTES' ? (
+                  <p className="md:col-span-2">
+                    <span className="font-medium">Componentes:</span> {(r.componentes || []).length}
+                    {(r.componentes || []).length
+                      ? ` (${(r.componentes || []).slice(0, 6).map((c) => c.nome_componente || 'Componente').join(', ')})`
+                      : ''}
+                  </p>
+                ) : null}
+              </div>
+              {r.aviso_sem_vinculo_produto ? (
+                <p className="text-xs text-amber-800 dark:text-amber-200 mt-2">{r.aviso_sem_vinculo_produto}</p>
+              ) : null}
+              {r.aviso_divergencia_codigo ? (
+                <p className="text-xs text-amber-700 dark:text-amber-300 mt-2">{r.aviso_divergencia_codigo}</p>
+              ) : null}
+              <div className="flex justify-end mt-2">
+                <button
+                  type="button"
+                  className="erp-btn-primary erp-btn-sm w-full sm:w-auto"
+                  onClick={() => {
+                    if (fornecedorTargetIdx == null) return;
+                    aplicarDadosFornecedor(fornecedorTargetIdx, r);
+                    setFornecedorMatchModalOpen(false);
+                  }}
+                >
+                  {r.tipo_dados_tecnicos === 'VALVULA_COMPONENTES' ? 'Usar estes componentes' : 'Usar estes dados'}
+                </button>
+              </div>
+            </div>
+          ))}
+          {!fornecedorMatches.length ? (
+            <p className="text-sm text-muted-foreground">Nenhum resultado.</p>
+          ) : null}
+        </div>
+      </Modal>
     </div>
   );
 }
