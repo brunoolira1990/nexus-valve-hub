@@ -12,7 +12,7 @@
  *  - Etapa 8:  ajustar Certificados.tsx para navegar em vez de modal
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ItemEditor, type LinhaDivisaoCorrida } from './ItemEditor';
@@ -25,6 +25,11 @@ import {
 import { baseItemIrmao } from '@/lib/cqCorridasCfUi';
 import { mesclarMensagensUnicas } from '@/lib/cqMensagensUi';
 import { coerceProdutoItemId } from '@/lib/certificadoQualidadeConstants';
+import {
+  origemFisicaCqBadge,
+  origemFisicaCqDescricao,
+  origemFisicaCqResumo,
+} from '@/lib/certificadoStatusUi';
 import {
   certificadosQualidadeService,
   type NfeElegivelCqOpcao,
@@ -47,6 +52,7 @@ import type {
   ItemCertificadoQualidade,
   ItemCertificadoQualidadeComponente,
   Produto,
+  ResumoRastreabilidadeCertificadoQualidade,
 } from '@/types';
 
 type Props = {
@@ -244,6 +250,52 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
   const nfeBloqueada = Boolean(editing && editing.status !== 'rascunho');
   const incluidosCount = form.itens.filter((it) => it.incluir_no_certificado !== false).length;
   const naoIncluidosCount = form.itens.length - incluidosCount;
+
+  const resumoRastreabilidade = useMemo(
+    (): ResumoRastreabilidadeCertificadoQualidade | null => {
+      if (form.resumo_rastreabilidade) return form.resumo_rastreabilidade;
+      const incl = form.itens.filter((it) => it.incluir_no_certificado !== false);
+      if (!incl.some((it) => it.rastreabilidade_status)) return null;
+      let completos = 0;
+      let parciais = 0;
+      let pendentes = 0;
+      incl.forEach((it) => {
+        if (it.rastreabilidade_status === 'COMPLETA') completos += 1;
+        else if (it.rastreabilidade_status === 'PARCIAL') parciais += 1;
+        else pendentes += 1;
+      });
+      return {
+        completos,
+        parciais,
+        pendentes,
+        pode_emitir: incl.length > 0 && parciais === 0 && pendentes === 0,
+      };
+    },
+    [form.resumo_rastreabilidade, form.itens],
+  );
+
+  const origemFisicaResumo = useMemo(
+    () => origemFisicaCqResumo(form.itens),
+    [form.itens],
+  );
+
+  const temAvisoRastreabilidadeFisica = useMemo(
+    () =>
+      form.itens.some(
+        (it) =>
+          it.incluir_no_certificado !== false &&
+          (it.rastreabilidade_motivos?.includes('SEM_CORRIDA_LOTE') ||
+            it.rastreabilidade_motivos?.includes('ESTOQUE_NAO_APLICADO') ||
+            it.rastreabilidade_motivos?.includes('SEM_CONFERENCIA_ORIGEM') ||
+            it.rastreabilidade_motivos?.includes('RASTREABILIDADE_FISICA_OPCIONAL') ||
+            it.rastreabilidade_avisos?.some((a) => a.includes('nao impede a emissao')) ||
+            (!it.tem_corrida_lote &&
+              !it.corrida &&
+              !it.lote &&
+              (it.rastreabilidade_status != null || form.itens.length > 0))),
+      ),
+    [form.itens],
+  );
 
   const updateItem = (idx: number, patch: Partial<ItemCertificadoQualidade>) =>
     setForm((p) => ({
@@ -781,6 +833,57 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
         </TabsContent>
 
         <TabsContent value="itens" className="mt-0 space-y-4">
+          {form.status !== 'cancelado' ? (
+            <div className="rounded border border-border p-3 bg-muted/10">
+              <p className="text-sm font-medium mb-2">Prontidão técnica</p>
+              {resumoRastreabilidade ? (
+                <div className="flex flex-wrap gap-2 text-xs mb-2">
+                  <span className="erp-badge-success">
+                    Completa: {resumoRastreabilidade.completos}
+                  </span>
+                  <span className="erp-badge-warning">
+                    Parcial: {resumoRastreabilidade.parciais}
+                  </span>
+                  <span className="erp-badge-danger">
+                    Pendente: {resumoRastreabilidade.pendentes}
+                  </span>
+                  {resumoRastreabilidade.pode_emitir ? (
+                    <span className="text-emerald-700 dark:text-emerald-400">
+                      Pronto para emissão definitiva
+                    </span>
+                  ) : (
+                    <span className="text-amber-800 dark:text-amber-300">
+                      Pendências de produto/descrição ou dados técnicos ainda impedem a emissão definitiva.
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground mb-2">
+                  Salve o certificado para calcular o resumo de rastreabilidade no servidor.
+                </p>
+              )}
+              <p className="text-[11px] text-muted-foreground mb-3">
+                A prontidão técnica indica apenas os dados exigidos para emissão do CQ; ela não comprova a origem física do material.
+              </p>
+              <p className="text-sm font-medium mb-2">Origem documental</p>
+              <div className="flex flex-wrap items-center gap-2 text-xs mb-1">
+                <span className={origemFisicaCqBadge(origemFisicaResumo).className}>
+                  {origemFisicaCqBadge(origemFisicaResumo).label}
+                </span>
+                <span className="text-muted-foreground">
+                  {origemFisicaCqDescricao(origemFisicaResumo)}
+                </span>
+              </div>
+              <p className="text-[11px] text-muted-foreground mb-1">
+                Este indicador confirma o vínculo documental com o Certificado de Fornecedor e os dados de corrida/lote registrados. Ele não comprova, nesta fase, a origem física da quantidade consumida no estoque ou na alocação da venda.
+              </p>
+              {temAvisoRastreabilidadeFisica ? (
+                <p className="text-xs text-sky-800 dark:text-sky-300">
+                  Rastreabilidade física não vinculada. Isso não impede a emissão do certificado.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
       <div className="rounded border border-border bg-muted/10 p-3">
         <p className="text-sm font-medium mb-2">Itens do certificado</p>
         {form.itens.length === 0 ? (
