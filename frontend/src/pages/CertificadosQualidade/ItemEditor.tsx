@@ -12,15 +12,23 @@
  *  - 5b-4: componentes de valvula
  *  - Etapa 6: corridas CF (via modal existente)
  */
+import { useState } from 'react';
+
 import type {
   CorridaDisponivelCertificadoQualidade,
   ItemCertificadoQualidade,
   Produto,
 } from '@/types';
 import {
+  COMPOSICAO_FIELDS,
+  IMPACTO_FIELDS,
   LABEL_OBRIGATORIO_EMITIR,
   MOTIVOS_NAO_INCLUSAO,
+  TRACAO_FIELDS,
   coerceProdutoItemId,
+  ensureMap,
+  normNumeric,
+  parseBlockValues,
 } from '@/lib/certificadoQualidadeConstants';
 import {
   origemFisicaCqBadge,
@@ -61,6 +69,29 @@ type Props = {
 
 export function ItemEditor({ item: it, idx, disabled, onChange, corridas }: Props) {
   const incl = it.incluir_no_certificado !== false;
+  const [pasteCompOpen, setPasteCompOpen] = useState(false);
+  const [pasteCompText, setPasteCompText] = useState('');
+
+  const updateJson = (
+    group: 'composicao_json' | 'ensaio_tracao_json' | 'ensaio_impacto_json',
+    key: string,
+    value: string,
+  ) => {
+    const current = ensureMap(it[group]);
+    onChange({ [group]: { ...current, [key]: value } });
+  };
+
+  const applyCompositionBlock = () => {
+    const values = parseBlockValues(pasteCompText);
+    if (!values.length) return;
+    const next = { ...ensureMap(it.composicao_json) };
+    COMPOSICAO_FIELDS.forEach((field, i) => {
+      if (values[i] != null) next[field] = normNumeric(values[i]);
+    });
+    onChange({ composicao_json: next });
+    setPasteCompOpen(false);
+    setPasteCompText('');
+  };
 
   return (
     <details
@@ -527,6 +558,133 @@ export function ItemEditor({ item: it, idx, disabled, onChange, corridas }: Prop
             </div>
           ) : null}
         </div>
+
+        {incl && it.tipo_dados_tecnicos !== 'VALVULA_COMPONENTES' ? (
+          <>
+            <div className="md:col-span-6 rounded border border-border p-2">
+              <div className="flex items-center justify-between mb-2 gap-2">
+                <p className="text-xs font-semibold">Composição química{LABEL_OBRIGATORIO_EMITIR}</p>
+                <button
+                  type="button"
+                  className="erp-btn-outline erp-btn-sm"
+                  disabled={disabled}
+                  onClick={() => {
+                    setPasteCompOpen((cur) => !cur);
+                    setPasteCompText('');
+                  }}
+                >
+                  Colar composição em bloco
+                </button>
+              </div>
+              {pasteCompOpen ? (
+                <div className="mb-2 rounded border border-border p-2 bg-muted/20">
+                  <p className="text-xs text-muted-foreground mb-1">
+                    Cole uma linha (Excel/tabulado) na ordem: {COMPOSICAO_FIELDS.join(', ')}.
+                  </p>
+                  <textarea
+                    className="erp-input h-16"
+                    value={pasteCompText}
+                    onChange={(e) => setPasteCompText(e.target.value)}
+                  />
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      type="button"
+                      className="erp-btn-outline erp-btn-sm"
+                      onClick={applyCompositionBlock}
+                    >
+                      Aplicar na grade
+                    </button>
+                    <button
+                      type="button"
+                      className="erp-btn-outline erp-btn-sm"
+                      onClick={() => {
+                        setPasteCompOpen(false);
+                        setPasteCompText('');
+                      }}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              <div className="grid grid-cols-2 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                {COMPOSICAO_FIELDS.map((el) => (
+                  <div key={el}>
+                    <label className="erp-label">{el}</label>
+                    <input
+                      className="erp-input mt-1"
+                      placeholder="***"
+                      disabled={disabled}
+                      value={ensureMap(it.composicao_json)[el] || ''}
+                      onChange={(e) => updateJson('composicao_json', el, normNumeric(e.target.value))}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="md:col-span-6 rounded border border-border p-2">
+              <p className="text-xs font-semibold mb-2">Teste de tração{LABEL_OBRIGATORIO_EMITIR}</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {TRACAO_FIELDS.map((f) => (
+                  <div key={f.key}>
+                    <label className="erp-label">{f.label}</label>
+                    <input
+                      className="erp-input mt-1"
+                      disabled={disabled}
+                      value={ensureMap(it.ensaio_tracao_json)[f.key] || ''}
+                      onChange={(e) => updateJson('ensaio_tracao_json', f.key, normNumeric(e.target.value))}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="md:col-span-6 rounded border border-border p-2">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-semibold">Teste de impacto</p>
+                <label className="text-xs flex items-center gap-1">
+                  <input
+                    type="checkbox"
+                    disabled={disabled}
+                    checked={ensureMap(it.ensaio_impacto_json).informar_impacto === 'true'}
+                    onChange={(e) => {
+                      const map = ensureMap(it.ensaio_impacto_json);
+                      map.informar_impacto = e.target.checked ? 'true' : '';
+                      if (!e.target.checked) {
+                        IMPACTO_FIELDS.forEach((f) => {
+                          map[f.key] = '';
+                        });
+                        map.nao_aplicavel = 'true';
+                      } else {
+                        map.nao_aplicavel = '';
+                      }
+                      onChange({ ensaio_impacto_json: map });
+                    }}
+                  />
+                  Informar teste de impacto
+                </label>
+              </div>
+              {ensureMap(it.ensaio_impacto_json).informar_impacto !== 'true' ? (
+                <p className="text-xs text-muted-foreground">
+                  Impacto oculto por padrão (não aplicável no uso diário).
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {IMPACTO_FIELDS.map((f) => (
+                    <div key={f.key}>
+                      <label className="erp-label">{f.label}</label>
+                      <input
+                        className="erp-input mt-1"
+                        disabled={disabled}
+                        value={ensureMap(it.ensaio_impacto_json)[f.key] || ''}
+                        onChange={(e) => updateJson('ensaio_impacto_json', f.key, normNumeric(e.target.value))}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        ) : null}
       </div>
     </details>
   );
