@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   certificadosQualidadeService,
   type NfeElegivelCqOpcao,
@@ -56,6 +57,7 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
   const [mensagens, setMensagens] = useState<string[]>([]);
   const [carregandoNfe, setCarregandoNfe] = useState(false);
   const [nfHistoricas, setNfHistoricas] = useState<NFeSaidaHistoricaList[]>([]);
+  const [abaAtiva, setAbaAtiva] = useState('dados');
 
   // Carrega CQ existente (ou reseta para novo)
   useEffect(() => {
@@ -259,6 +261,14 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
         <p className="text-sm text-destructive">{saveError}</p>
       ) : null}
 
+      <Tabs value={abaAtiva} onValueChange={setAbaAtiva}>
+        <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto whitespace-nowrap bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/90 border border-border border-b-0 rounded-t-lg px-3 pt-2.5 pb-1 sm:px-4">
+          <TabsTrigger value="dados">Dados</TabsTrigger>
+          <TabsTrigger value="itens">Itens</TabsTrigger>
+          <TabsTrigger value="observacoes">Observações</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="dados" className="mt-0 space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
         <div>
           <label className="erp-label">Número</label>
@@ -326,14 +336,6 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
             className="erp-input mt-1"
             value={form.pedido_cliente || ''}
             onChange={(e) => setF('pedido_cliente', e.target.value)}
-          />
-        </div>
-        <div className="md:col-span-4">
-          <label className="erp-label">Observações</label>
-          <textarea
-            className="erp-input mt-1 min-h-[60px]"
-            value={form.observacoes || ''}
-            onChange={(e) => setF('observacoes', e.target.value)}
           />
         </div>
         <div className="md:col-span-4">
@@ -443,7 +445,9 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
           </ul>
         ) : null}
       </div>
+        </TabsContent>
 
+        <TabsContent value="itens" className="mt-0 space-y-4">
       <div className="rounded border border-border bg-muted/10 p-3">
         <p className="text-sm font-medium mb-2">Itens do certificado</p>
         {form.itens.length === 0 ? (
@@ -534,6 +538,19 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
         <p className="font-medium mb-1">Editor de item, corridas CF e rastreabilidade/PDF serão portados nas próximas etapas</p>
         <p>Etapa 3c-2: prontidão/origem · Etapa 5: editor · Etapa 6: corridas CF · Etapa 7: rastreabilidade/PDF</p>
       </div>
+        </TabsContent>
+
+        <TabsContent value="observacoes" className="mt-0 space-y-4">
+          <div>
+            <label className="erp-label">Observações</label>
+            <textarea
+              className="erp-input mt-1 min-h-[120px]"
+              value={form.observacoes || ''}
+              onChange={(e) => setF('observacoes', e.target.value)}
+            />
+          </div>
+        </TabsContent>
+      </Tabs>
 
       <div className="flex justify-end gap-2">
         <button
