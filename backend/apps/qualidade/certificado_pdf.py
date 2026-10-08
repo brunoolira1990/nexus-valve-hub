@@ -462,6 +462,33 @@ def gerar_certificado_qualidade_pdf(cert: CertificadoQualidade, preview: bool = 
         )
         return t
 
+    # Estilo para celulas que quebram linha (descricao, norma, cert) — usado so na tabela de valvula
+    cell_wrap_style = ParagraphStyle(
+        'cell_wrap_cq',
+        fontName='Helvetica',
+        fontSize=PDF_THEME['body_size'],
+        leading=PDF_THEME['body_size'] + 1.2,
+        alignment=0,
+    )
+
+    def data_table_auto(data: list[list], col_widths: list[float]) -> Table:
+        """Tabela com altura de linha automatica (aceita Paragraph nas celulas)."""
+        t = Table(data, colWidths=col_widths, repeatRows=1 if len(data) > 1 else 0)
+        t.setStyle(TableStyle([
+            ('GRID', (0, 0), (-1, -1), 0.28, PDF_THEME['border']),
+            ('FONT', (0, 0), (-1, 0), 'Helvetica-Bold', 7.1),
+            ('FONT', (0, 1), (-1, -1), 'Helvetica', PDF_THEME['body_size']),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('BACKGROUND', (0, 0), (-1, 0), PDF_THEME['table_header_bg']),
+            ('LINEBELOW', (0, 0), (-1, 0), 0.85, PDF_THEME['brand_primary']),
+            ('TEXTCOLOR', (0, 0), (-1, -1), PDF_THEME['text']),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, PDF_THEME['row_alt']]),
+            ('LEFTPADDING', (0, 0), (-1, -1), 2),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+        ]))
+        return t
+
     def data_table(data: list[list[str]], col_widths: list[float], row_h: float) -> Table:
         rows = [row_h] * len(data)
         t = Table(data, colWidths=col_widths, rowHeights=rows, repeatRows=1 if len(data) > 1 else 0)
@@ -707,13 +734,16 @@ def gerar_certificado_qualidade_pdf(cert: CertificadoQualidade, preview: bool = 
             ], [
                 str(item_valvula.ordem),
                 item_valvula.codigo_produto or '—',
-                _cortar_descricao(item_valvula.descricao_material),
+                Paragraph(item_valvula.descricao_material or '—', cell_wrap_style),
                 _fmt_value(item_valvula.quantidade),
                 item_valvula.unidade or '—',
-                item_valvula.norma or '—',
-                item_valvula.numero_certificado_fornecedor_item_snapshot or '—',
+                Paragraph(item_valvula.norma or '—', cell_wrap_style),
+                Paragraph(
+                    item_valvula.numero_certificado_fornecedor_item_snapshot or '—',
+                    cell_wrap_style,
+                ),
             ]]
-            story.append(data_table(item_valvula_data, [10 * mm, 26 * mm, 118 * mm, 18 * mm, 15 * mm, 32 * mm, 52 * mm], row_h=7.2 * mm))
+            story.append(data_table_auto(item_valvula_data, [10 * mm, 26 * mm, 118 * mm, 18 * mm, 15 * mm, 32 * mm, 52 * mm]))
             story.append(Spacer(1, 1.8 * mm))
 
             if comp_chunk:
