@@ -83,27 +83,7 @@ type FormState = Omit<
 
 export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel }: Props) {
   const [editing, setEditing] = useState<CertificadoQualidade | null>(null);
-  const [form, setFormRaw] = useState<FormState>(emptyForm());
-  const setForm = (
-    updater: FormState | ((prev: FormState) => FormState),
-  ) => {
-    setFormRaw((prev) => {
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      const prevId = prev.itens?.[0]?.id;
-      const nextId = next.itens?.[0]?.id;
-      const prevComp = prev.itens?.[0]?.componentes?.length ?? 0;
-      const nextComp = next.itens?.[0]?.componentes?.length ?? 0;
-      if (prevComp > 0 && nextComp === 0) {
-        console.trace('[DBG-setForm ZEROU]', {
-          de_id: prevId,
-          para_id: nextId,
-          de_comp: prevComp,
-          para_comp: nextComp,
-        });
-      }
-      return next;
-    });
-  };
+  const [form, setForm] = useState<FormState>(emptyForm());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -165,7 +145,6 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
       .getById(certificadoId)
       .then((row) => {
         setEditing(row);
-        console.log('[DBG-load] row.itens.length=', row.itens?.length, ' itens[0].componentes=', row.itens?.[0]?.componentes);
         setForm({
           numero: row.numero || '',
           serie: row.serie || '',
@@ -210,24 +189,6 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
       .catch((e) => setSaveError(apiErrorMessage(e)))
       .finally(() => setLoading(false));
   }, [certificadoId]);
-
-  // DEBUG: monitor de mudanca em form.itens
-  useEffect(() => {
-    const c = form.itens?.[0]?.componentes;
-    console.log(
-      '[DBG-monitor] form.itens[0].componentes =',
-      c?.length ?? 'undefined',
-      '| it.id=', form.itens?.[0]?.id,
-    );
-    // Se zerou de 1+ para 0, captura o stack
-    if (
-      form.itens?.[0] &&
-      (form.itens[0].componentes?.length ?? 0) === 0 &&
-      form.itens[0].id === undefined
-    ) {
-      console.trace('[DBG-STACK] item zerou e ficou sem id!');
-    }
-  }, [form.itens]);
 
   // Carrega NF-e de saida historicas (uma vez no mount)
   useEffect(() => {
@@ -305,17 +266,21 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
         nota_fiscal: data.nota_fiscal ?? p.nota_fiscal,
         nota_fiscal_historica: data.nota_fiscal_historica ?? p.nota_fiscal_historica,
         data_emissao: data.data_emissao ?? p.data_emissao,
-        itens: ((data.itens as ItemCertificadoQualidade[]) ?? []).map((it) => ({
-          ...it,
-          tipo_dados_tecnicos: it.tipo_dados_tecnicos || 'PADRAO_ITEM',
-          incluir_no_certificado: it.incluir_no_certificado !== false,
-          motivo_nao_inclusao: it.motivo_nao_inclusao || '',
-          observacao_nao_inclusao: it.observacao_nao_inclusao || '',
-          composicao_json: ensureMap(it.composicao_json),
-          ensaio_tracao_json: ensureMap(it.ensaio_tracao_json),
-          ensaio_impacto_json: ensureMap(it.ensaio_impacto_json),
-          componentes: (it.componentes || []).map((cp, i) => ensureComp(cp, i + 1)),
-        })),
+        itens: ((data.itens as ItemCertificadoQualidade[]) ?? []).map((it, i) => {
+          const doBackend = (it.componentes || []).map((cp, j) => ensureComp(cp, j + 1));
+          const doForm = p.itens?.[i]?.componentes || [];
+          return {
+            ...it,
+            tipo_dados_tecnicos: it.tipo_dados_tecnicos || 'PADRAO_ITEM',
+            incluir_no_certificado: it.incluir_no_certificado !== false,
+            motivo_nao_inclusao: it.motivo_nao_inclusao || '',
+            observacao_nao_inclusao: it.observacao_nao_inclusao || '',
+            composicao_json: ensureMap(it.composicao_json),
+            ensaio_tracao_json: ensureMap(it.ensaio_tracao_json),
+            ensaio_impacto_json: ensureMap(it.ensaio_impacto_json),
+            componentes: doBackend.length > 0 ? doBackend : doForm,
+          };
+        }),
       }));
       if (data.nota_fiscal) {
         void certificadosQualidadeService.obterNfeOpcao(data.nota_fiscal).then((opt) => {
@@ -380,15 +345,11 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
     [form.itens],
   );
 
-  const updateItem = (idx: number, patch: Partial<ItemCertificadoQualidade>) => {
-    if (idx === 0) {
-      console.log('[DBG-updateItem idx=0] patch=', JSON.stringify(Object.keys(patch)), 'temComponentes=', 'componentes' in patch);
-    }
+  const updateItem = (idx: number, patch: Partial<ItemCertificadoQualidade>) =>
     setForm((p) => ({
       ...p,
       itens: p.itens.map((it, i) => (i === idx ? { ...it, ...patch } : it)),
     }));
-  };
 
   const adicionarMensagensUnicas = (novas: string | string[]) =>
     setMensagens((m) => mesclarMensagensUnicas(m, novas));
@@ -1424,6 +1385,7 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
               ))}
             </select>
           </div>
+          {!(editing?.id && form.itens.length > 0) ? (
           <div className="flex items-end md:col-span-3">
             <button
               type="button"
@@ -1438,6 +1400,7 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
               {carregandoNfe ? 'Carregando...' : 'Carregar dados da NF-e'}
             </button>
           </div>
+          ) : null}
         </div>
 
         {mensagens.length > 0 ? (
@@ -1526,9 +1489,7 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
               ) : null}
             </div>
             <div className="space-y-2">
-              {form.itens.map((it, idx) => {
-                console.log('[DBG-render] idx=', idx, 'it.componentes=', it.componentes?.length);
-                return (
+              {form.itens.map((it, idx) => (
                 <ItemEditor
                   key={`item-${idx}`}
                   item={it}
@@ -1576,8 +1537,7 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
                       .find(Boolean) || null,
                   }}
                 />
-                );
-              })}
+              ))}
             </div>
           </>
         )}
