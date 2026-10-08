@@ -13,16 +13,26 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AxiosError } from 'axios';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ItemEditor, type LinhaDivisaoCorrida } from './ItemEditor';
+import { ModalCorridasCertificadoFornecedor } from '@/components/qualidade/ModalCorridasCertificadoFornecedor';
 import { produtosService } from '@/services/api/produtos';
 import {
   COMPONENTES_PADRAO,
   ensureComp,
   ensureMap,
 } from '@/lib/certificadoQualidadeConstants';
-import { baseItemIrmao } from '@/lib/cqCorridasCfUi';
+import {
+  aplicacaoSubstituiTecnicosDoItemAtual,
+  aplicarDistribuicaoCorridasCfCq,
+  baseItemIrmao,
+  quantidadeTotalDistribuicaoCorridasCfCq,
+  selecoesExistentesCorridasCfCq,
+  type CorridasCfParaCqResponse,
+  type SelecaoCorridaCfCq,
+} from '@/lib/cqCorridasCfUi';
 import { mesclarMensagensUnicas } from '@/lib/cqMensagensUi';
 import { coerceProdutoItemId } from '@/lib/certificadoQualidadeConstants';
 import {
@@ -38,7 +48,7 @@ import {
   nfeHistoricaImportadaService,
   type NFeSaidaHistoricaList,
 } from '@/services/api/nfeHistoricaImportada';
-import { apiErrorMessage } from '@/services/api/config';
+import { apiErrorMessage, getApiErrorStatus } from '@/services/api/config';
 import {
   emptyForm,
   ensureComp,
@@ -85,6 +95,14 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
   const [dividindoCorridas, setDividindoCorridas] = useState<
     Record<number, LinhaDivisaoCorrida[]>
   >({});
+  const [corridasCfModal, setCorridasCfModal] = useState<{
+    itemIdx: number;
+    dados: CorridasCfParaCqResponse | null;
+    carregando: boolean;
+    erro: string | null;
+    quantidadeTotal: number;
+    selecoesIniciais: SelecaoCorridaCfCq[];
+  } | null>(null);
 
   // Carrega CQ existente (ou reseta para novo)
   useEffect(() => {
@@ -609,6 +627,98 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
       return { ...p, itens: next };
     });
 
+  const abrirModalCorridasCf = async (idx: number) => {
+    const item = form.itens[idx];
+    const cfId = item.certificado_fornecedor_origem_id;
+    const itemCfId = item.item_certificado_fornecedor_origem_id;
+    if (!cfId || !itemCfId) {
+      setSaveError(
+        'Vincule este item a um Certificado de Fornecedor e ao item exato do CF (via corrida disponivel ou busca de dados do fornecedor) antes de adicionar corridas.',
+      );
+      return;
+    }
+    setSaveError(null);
+    setCorridasCfModal({
+      itemIdx: idx,
+      dados: null,
+      carregando: true,
+      erro: null,
+      quantidadeTotal: Number(item.quantidade) || 0,
+      selecoesIniciais: [],
+    });
+    try {
+      const dados = await certificadosQualidadeService.corridasCertificadoFornecedor(cfId, itemCfId);
+      const itensAtuais = form.itens;
+      setCorridasCfModal({
+        itemIdx: idx,
+        dados,
+        carregando: false,
+        erro: null,
+        quantidadeTotal: quantidadeTotalDistribuicaoCorridasCfCq(
+          dados.linhas,
+          itensAtuais,
+          itensAtuais[idx],
+        ),
+        selecoesIniciais: selecoesExistentesCorridasCfCq(dados.linhas, itensAtuais),
+      });
+    } catch (e) {
+      const status = getApiErrorStatus(e);
+      const detail = (e as AxiosError<{ detail?: string }>)?.response?.data?.detail;
+      const erro =
+        status === 401 || status === 403
+          ? apiErrorMessage(e, {
+              fallback:
+                'Nao foi possivel carregar as corridas do Certificado de Fornecedor.',
+            })
+          : typeof detail === 'string' && detail.trim()
+            ? detail.trim()
+            : apiErrorMessage(e, {
+                fallback:
+                  'Nao foi possivel carregar as corridas do Certificado de Fornecedor.',
+              });
+      setCorridasCfModal({
+        itemIdx: idx,
+        dados: null,
+        carregando: false,
+        erro,
+        quantidadeTotal: Number(item.quantidade) || 0,
+        selecoesIniciais: [],
+      });
+    }
+  };
+
+  const aplicarCorridasCfSelecionadas = (selecoes: SelecaoCorridaCfCq[]) => {
+    const idx = corridasCfModal?.itemIdx;
+    const dados = corridasCfModal?.dados;
+    if (idx == null || !dados) return false;
+    const itemOriginal = form.itens[idx];
+    if (
+      aplicacaoSubstituiTecnicosDoItemAtual(itemOriginal, selecoes) &&
+      !window.confirm(
+        'O item atual ja possui dados tecnicos preenchidos. Aplicar esta distribuicao substituira os dados tecnicos da primeira origem selecionada. Deseja continuar?',
+      )
+    ) {
+      return false;
+    }
+    setForm((p) => {
+      const itens = aplicarDistribuicaoCorridasCfCq(p.itens, idx, dados.linhas, selecoes);
+      return { ...p, itens };
+    });
+    setCorridasCfModal(null);
+    adicionarMensagensUnicas(
+      [
+        `Corridas aplicadas do Certificado de Fornecedor: ${selecoes
+          .map(
+            (s) =>
+              `${s.linha.corrida}${s.linha.lote ? `/${s.linha.lote}` : ''} (${s.quantidade})`,
+          )
+          .join(', ')}.`,
+        dados.mensagem_origem_fisica || '',
+      ].filter(Boolean),
+    );
+    return true;
+  };
+
   const salvar = async (novoStatus?: CertificadoQualidadeStatus) => {
     setSaving(true);
     setSaveError(null);
@@ -927,6 +1037,7 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
                     onRemoveLinha: (linhaIdx) => removeLinhaCorrida(idx, linhaIdx),
                     onUpdateLinha: (linhaIdx, patch) => updateLinhaCorrida(idx, linhaIdx, patch),
                     onAplicarDistribuicao: () => aplicarDistribuicaoCorridas(idx),
+                    onAbrirModalCorridasCf: () => void abrirModalCorridasCf(idx),
                   }}
                   componentes={{
                     lista: it.componentes || [],
@@ -991,6 +1102,27 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
           {saving ? 'Salvando...' : 'Salvar'}
         </button>
       </div>
+
+      <ModalCorridasCertificadoFornecedor
+        isOpen={corridasCfModal != null}
+        onClose={() => setCorridasCfModal(null)}
+        dados={corridasCfModal?.dados ?? null}
+        carregando={corridasCfModal?.carregando ?? false}
+        erroCarregamento={corridasCfModal?.erro ?? null}
+        quantidadeTotalItem={corridasCfModal?.quantidadeTotal ?? 0}
+        selecoesIniciais={corridasCfModal?.selecoesIniciais ?? []}
+        contextoChave={
+          corridasCfModal
+            ? [
+                corridasCfModal.itemIdx,
+                form.itens[corridasCfModal.itemIdx]?.certificado_fornecedor_origem_id ?? '',
+                form.itens[corridasCfModal.itemIdx]?.item_certificado_fornecedor_origem_id ?? '',
+                form.itens[corridasCfModal.itemIdx]?.produto ?? '',
+              ].join(':')
+            : ''
+        }
+        onAplicar={aplicarCorridasCfSelecionadas}
+      />
     </div>
   );
 }

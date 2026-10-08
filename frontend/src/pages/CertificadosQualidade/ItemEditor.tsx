@@ -36,6 +36,7 @@ import {
   origemFisicaCqItem,
   rastreabilidadeCqBadge,
 } from '@/lib/certificadoStatusUi';
+import { TITULO_MODAL_CORRIDAS_CF_CQ } from '@/lib/cqCorridasCfUi';
 
 export type LinhaDivisaoCorrida = {
   corrida: string;
@@ -58,6 +59,7 @@ export type CorridasProps = {
   onRemoveLinha: (linhaIdx: number) => void;
   onUpdateLinha: (linhaIdx: number, patch: Partial<LinhaDivisaoCorrida>) => void;
   onAplicarDistribuicao: () => void;
+  onAbrirModalCorridasCf: () => void;
 };
 
 export type ComponentesProps = {
@@ -381,6 +383,26 @@ export function ItemEditor({
                   Nenhuma corrida/lote disponivel encontrada para este produto cadastrado.
                 </p>
               ) : null}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="erp-btn-outline erp-btn-sm"
+                disabled={
+                  disabled ||
+                  !it.certificado_fornecedor_origem_id ||
+                  !it.item_certificado_fornecedor_origem_id
+                }
+                title={
+                  !it.certificado_fornecedor_origem_id ||
+                  !it.item_certificado_fornecedor_origem_id
+                    ? 'Vincule este item ao Certificado de Fornecedor e ao item exato do CF antes de adicionar corridas.'
+                    : 'Distribui este item em uma linha por corrida do CF vinculado, com quantidade e dados tecnicos por corrida.'
+                }
+                onClick={corridas.onAbrirModalCorridasCf}
+              >
+                {TITULO_MODAL_CORRIDAS_CF_CQ}
+              </button>
             </div>
             <div className="flex flex-col sm:flex-row gap-2 mt-2">
               <div className="flex-1">
