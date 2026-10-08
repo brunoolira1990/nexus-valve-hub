@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+"""Etapa 5b-2b (A) — bloco 'dividir item em varias corridas' no ItemEditor."""
+import shutil, sys, pathlib, datetime
+
+TARGET = pathlib.Path("src/pages/CertificadosQualidade/ItemEditor.tsx")
+if not TARGET.exists():
+    sys.exit(f"nao encontrei {TARGET}")
+
+src = TARGET.read_text(encoding="utf-8")
+orig = src
+
+def replace_once(text, old, new, tag):
+    n = text.count(old)
+    if n != 1:
+        sys.exit(f"[{tag}] esperava 1 ocorrencia, achei {n}")
+    print(f"  ok: {tag}")
+    return text.replace(old, new, 1)
+
+# 1. estende CorridasProps com os campos de 5b-2b
+src = replace_once(
+    src,
+    "export type CorridasProps = {\n"
+    "  produtoBusca?: string;\n"
+    "  produtoResultados: Produto[];\n"
+    "  corridasDisponiveis: CorridaDisponivelCertificadoQualidade[];\n"
+    "  onBuscarProdutos: (term: string) => void;\n"
+    "  onVincularProduto: (p: Produto) => void;\n"
+    "  onCarregarCorridas: () => void;\n"
+    "  onAplicarCorrida: (valorSelecao: string) => void;\n"
+    "};\n",
+    "export type LinhaDivisaoCorrida = {\n"
+    "  corrida: string;\n"
+    "  lote: string;\n"
+    "  quantidade: string;\n"
+    "  valorSelecao: string;\n"
+    "};\n"
+    "\n"
+    "export type CorridasProps = {\n"
+    "  produtoBusca?: string;\n"
+    "  produtoResultados: Produto[];\n"
+    "  corridasDisponiveis: CorridaDisponivelCertificadoQualidade[];\n"
+    "  onBuscarProdutos: (term: string) => void;\n"
+    "  onVincularProduto: (p: Produto) => void;\n"
+    "  onCarregarCorridas: () => void;\n"
+    "  onAplicarCorrida: (valorSelecao: string) => void;\n"
+    "  dividindo: LinhaDivisaoCorrida[];\n"
+    "  temCorridaDuplicada: boolean;\n"
+    "  onAddLinha: () => void;\n"
+    "  onRemoveLinha: (linhaIdx: number) => void;\n"
+    "  onUpdateLinha: (linhaIdx: number, patch: Partial<LinhaDivisaoCorrida>) => void;\n"
+    "  onAplicarDistribuicao: () => void;\n"
+    "};\n",
+    "props-2b",
+)
+
+# 2. insere bloco JSX depois do bloco corrida/lote e antes do incluir_no_certificado
+OLD = (
+    "            </div>\n"
+    "          </div>\n"
+    "        ) : null}\n"
+    "\n"
+    "        <div className=\"md:col-span-6 rounded border border-border p-2\">\n"
+    "          <label className=\"inline-flex items-center gap-2 text-sm\">\n"
+)
+NEW = (
+    "            </div>\n"
+    "          </div>\n"
+    "        ) : null}\n"
+    "\n"
+    "        {corridas ? (\n"
+    "          <div className=\"md:col-span-6 rounded border border-border p-3 bg-muted/20\">\n"
+    "            <p className=\"text-sm font-semibold mb-2\">Dividir item em varias corridas</p>\n"
+    "            {corridas.dividindo.length > 0 ? (\n"
+    "              <p className=\"text-xs text-amber-800 dark:text-amber-300 mb-2\">\n"
+    "                Este item sera substituido por {corridas.dividindo.length} itens, um por corrida.\n"
+    "              </p>\n"
+    "            ) : null}\n"
+    "            {corridas.dividindo.length === 0 && !it.tem_corrida_lote ? (\n"
+    "              <div className=\"grid grid-cols-1 md:grid-cols-2 gap-3 mb-3\">\n"
+    "                <button\n"
+    "                  type=\"button\"\n"
+    "                  className=\"erp-btn-outline erp-btn-sm w-full\"\n"
+    "                  disabled={disabled}\n"
+    "                  onClick={corridas.onAddLinha}\n"
+    "                >\n"
+    "                  + Adicionar corrida a lista\n"
+    "                </button>\n"
+    "              </div>\n"
+    "            ) : null}\n"
+    "            {corridas.dividindo.length > 0 ? (\n"
+    "              <>\n"
+    "                <div className=\"overflow-auto max-h-[200px]\">\n"
+    "                  <div className=\"grid grid-cols-12 gap-2 text-xs border-b border-border pb-2 px-1 items-center\">\n"
+    "                    <div className=\"col-span-5\">Corrida</div>\n"
+    "                    <div className=\"col-span-3\">Lote</div>\n"
+    "                    <div className=\"col-span-2\">Quantidade</div>\n"
+    "                    <div className=\"col-span-2 text-right\">Acoes</div>\n"
+    "                  </div>\n"
+    "                  {corridas.dividindo.map((linha, linhaIdx) => (\n"
+    "                    <div\n"
+    "                      key={linhaIdx}\n"
+    "                      className=\"grid grid-cols-12 gap-2 py-2 border-b border-border items-center px-1\"\n"
+    "                    >\n"
+    "                      <div className=\"col-span-5\">\n"
+    "                        <select\n"
+    "                          className=\"erp-select\"\n"
+    "                          value={linha.valorSelecao || ''}\n"
+    "                          disabled={disabled}\n"
+    "                          onChange={(e) =>\n"
+    "                            corridas.onUpdateLinha(linhaIdx, { valorSelecao: e.target.value })\n"
+    "                          }\n"
+    "                        >\n"
+    "                          <option value=\"\">Selecione...</option>\n"
+    "                          {corridas.corridasDisponiveis.map((c) => (\n"
+    "                            <option\n"
+    "                              key={c.valor_selecao || `${c.corrida}-${c.lote || ''}`}\n"
+    "                              value={c.valor_selecao || `${c.corrida}||${c.lote || ''}`}\n"
+    "                            >\n"
+    "                              {c.corrida}\n"
+    "                              {c.lote ? `/${c.lote}` : ''}\n"
+    "                              {c.saldo ? ` - Saldo: ${c.saldo} ${c.unidade || ''}` : ''}\n"
+    "                              {c.fornecedor ? ` - ${c.fornecedor}` : ''}\n"
+    "                            </option>\n"
+    "                          ))}\n"
+    "                        </select>\n"
+    "                      </div>\n"
+    "                      <div className=\"col-span-3\">\n"
+    "                        <input\n"
+    "                          className=\"erp-input w-full\"\n"
+    "                          placeholder=\"Lote (opcional)\"\n"
+    "                          value={linha.lote || ''}\n"
+    "                          disabled={disabled}\n"
+    "                          onChange={(e) =>\n"
+    "                            corridas.onUpdateLinha(linhaIdx, { lote: e.target.value })\n"
+    "                          }\n"
+    "                        />\n"
+    "                      </div>\n"
+    "                      <div className=\"col-span-2\">\n"
+    "                        <input\n"
+    "                          className=\"erp-input w-full\"\n"
+    "                          inputMode=\"decimal\"\n"
+    "                          placeholder=\"0,000\"\n"
+    "                          value={linha.quantidade}\n"
+    "                          disabled={disabled}\n"
+    "                          onChange={(e) =>\n"
+    "                            corridas.onUpdateLinha(linhaIdx, { quantidade: e.target.value })\n"
+    "                          }\n"
+    "                        />\n"
+    "                      </div>\n"
+    "                      <div className=\"col-span-2 flex justify-end\">\n"
+    "                        <button\n"
+    "                          type=\"button\"\n"
+    "                          className=\"erp-btn-outline erp-btn-sm\"\n"
+    "                          disabled={disabled}\n"
+    "                          onClick={() => corridas.onRemoveLinha(linhaIdx)}\n"
+    "                          title=\"Remover linha\"\n"
+    "                        >\n"
+    "                          \u2715\n"
+    "                        </button>\n"
+    "                      </div>\n"
+    "                    </div>\n"
+    "                  ))}\n"
+    "                </div>\n"
+    "                <div className=\"mt-3 p-3 rounded border border-border bg-muted/20\">\n"
+    "                  {(() => {\n"
+    "                    const soma = corridas.dividindo.reduce(\n"
+    "                      (s, l) => s + parseFloat(l.quantidade || '0'),\n"
+    "                      0,\n"
+    "                    );\n"
+    "                    const total = it.quantidade || 0;\n"
+    "                    const saldo = total - soma;\n"
+    "                    const somaOk = Math.abs(saldo) < 0.001;\n"
+    "                    return (\n"
+    "                      <>\n"
+    "                        <div className=\"flex flex-col sm:flex-row justify-between items-center text-sm gap-2\">\n"
+    "                          <span>Total do item: {total}</span>\n"
+    "                          <span>Soma: {soma.toFixed(3)}</span>\n"
+    "                          <span className={somaOk ? '' : 'text-red-600'}>\n"
+    "                            Saldo: {saldo.toFixed(3)}\n"
+    "                          </span>\n"
+    "                        </div>\n"
+    "                        <button\n"
+    "                          type=\"button\"\n"
+    "                          className=\"erp-btn-primary w-full mt-2\"\n"
+    "                          disabled={!somaOk || corridas.temCorridaDuplicada || disabled}\n"
+    "                          onClick={corridas.onAplicarDistribuicao}\n"
+    "                        >\n"
+    "                          Aplicar distribuicao\n"
+    "                        </button>\n"
+    "                      </>\n"
+    "                    );\n"
+    "                  })()}\n"
+    "                </div>\n"
+    "              </>\n"
+    "            ) : null}\n"
+    "          </div>\n"
+    "        ) : null}\n"
+    "\n"
+    "        <div className=\"md:col-span-6 rounded border border-border p-2\">\n"
+    "          <label className=\"inline-flex items-center gap-2 text-sm\">\n"
+)
+src = replace_once(src, OLD, NEW, "bloco-divisao")
+
+if src == orig:
+    sys.exit("nada mudou — abortar")
+
+stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+backup = TARGET.with_suffix(f".tsx.bak_{stamp}")
+shutil.copyfile(TARGET, backup)
+TARGET.write_text(src, encoding="utf-8")
+print(f"\nbackup: {backup}")
+print(f"escrito: {TARGET} ({len(src)} bytes, {src.count(chr(10))+1} linhas)")

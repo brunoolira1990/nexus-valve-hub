@@ -28,6 +28,13 @@ import {
   rastreabilidadeCqBadge,
 } from '@/lib/certificadoStatusUi';
 
+export type LinhaDivisaoCorrida = {
+  corrida: string;
+  lote: string;
+  quantidade: string;
+  valorSelecao: string;
+};
+
 export type CorridasProps = {
   produtoBusca?: string;
   produtoResultados: Produto[];
@@ -36,6 +43,12 @@ export type CorridasProps = {
   onVincularProduto: (p: Produto) => void;
   onCarregarCorridas: () => void;
   onAplicarCorrida: (valorSelecao: string) => void;
+  dividindo: LinhaDivisaoCorrida[];
+  temCorridaDuplicada: boolean;
+  onAddLinha: () => void;
+  onRemoveLinha: (linhaIdx: number) => void;
+  onUpdateLinha: (linhaIdx: number, patch: Partial<LinhaDivisaoCorrida>) => void;
+  onAplicarDistribuicao: () => void;
 };
 
 type Props = {
@@ -338,6 +351,135 @@ export function ItemEditor({ item: it, idx, disabled, onChange, corridas }: Prop
                 />
               </div>
             </div>
+          </div>
+        ) : null}
+
+        {corridas ? (
+          <div className="md:col-span-6 rounded border border-border p-3 bg-muted/20">
+            <p className="text-sm font-semibold mb-2">Dividir item em varias corridas</p>
+            {corridas.dividindo.length > 0 ? (
+              <p className="text-xs text-amber-800 dark:text-amber-300 mb-2">
+                Este item sera substituido por {corridas.dividindo.length} itens, um por corrida.
+              </p>
+            ) : null}
+            {corridas.dividindo.length === 0 && !it.tem_corrida_lote ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                <button
+                  type="button"
+                  className="erp-btn-outline erp-btn-sm w-full"
+                  disabled={disabled}
+                  onClick={corridas.onAddLinha}
+                >
+                  + Adicionar corrida a lista
+                </button>
+              </div>
+            ) : null}
+            {corridas.dividindo.length > 0 ? (
+              <>
+                <div className="overflow-auto max-h-[200px]">
+                  <div className="grid grid-cols-12 gap-2 text-xs border-b border-border pb-2 px-1 items-center">
+                    <div className="col-span-5">Corrida</div>
+                    <div className="col-span-3">Lote</div>
+                    <div className="col-span-2">Quantidade</div>
+                    <div className="col-span-2 text-right">Acoes</div>
+                  </div>
+                  {corridas.dividindo.map((linha, linhaIdx) => (
+                    <div
+                      key={linhaIdx}
+                      className="grid grid-cols-12 gap-2 py-2 border-b border-border items-center px-1"
+                    >
+                      <div className="col-span-5">
+                        <select
+                          className="erp-select"
+                          value={linha.valorSelecao || ''}
+                          disabled={disabled}
+                          onChange={(e) =>
+                            corridas.onUpdateLinha(linhaIdx, { valorSelecao: e.target.value })
+                          }
+                        >
+                          <option value="">Selecione...</option>
+                          {corridas.corridasDisponiveis.map((c) => (
+                            <option
+                              key={c.valor_selecao || `${c.corrida}-${c.lote || ''}`}
+                              value={c.valor_selecao || `${c.corrida}||${c.lote || ''}`}
+                            >
+                              {c.corrida}
+                              {c.lote ? `/${c.lote}` : ''}
+                              {c.saldo ? ` - Saldo: ${c.saldo} ${c.unidade || ''}` : ''}
+                              {c.fornecedor ? ` - ${c.fornecedor}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="col-span-3">
+                        <input
+                          className="erp-input w-full"
+                          placeholder="Lote (opcional)"
+                          value={linha.lote || ''}
+                          disabled={disabled}
+                          onChange={(e) =>
+                            corridas.onUpdateLinha(linhaIdx, { lote: e.target.value })
+                          }
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <input
+                          className="erp-input w-full"
+                          inputMode="decimal"
+                          placeholder="0,000"
+                          value={linha.quantidade}
+                          disabled={disabled}
+                          onChange={(e) =>
+                            corridas.onUpdateLinha(linhaIdx, { quantidade: e.target.value })
+                          }
+                        />
+                      </div>
+                      <div className="col-span-2 flex justify-end">
+                        <button
+                          type="button"
+                          className="erp-btn-outline erp-btn-sm"
+                          disabled={disabled}
+                          onClick={() => corridas.onRemoveLinha(linhaIdx)}
+                          title="Remover linha"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 p-3 rounded border border-border bg-muted/20">
+                  {(() => {
+                    const soma = corridas.dividindo.reduce(
+                      (s, l) => s + parseFloat(l.quantidade || '0'),
+                      0,
+                    );
+                    const total = it.quantidade || 0;
+                    const saldo = total - soma;
+                    const somaOk = Math.abs(saldo) < 0.001;
+                    return (
+                      <>
+                        <div className="flex flex-col sm:flex-row justify-between items-center text-sm gap-2">
+                          <span>Total do item: {total}</span>
+                          <span>Soma: {soma.toFixed(3)}</span>
+                          <span className={somaOk ? '' : 'text-red-600'}>
+                            Saldo: {saldo.toFixed(3)}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className="erp-btn-primary w-full mt-2"
+                          disabled={!somaOk || corridas.temCorridaDuplicada || disabled}
+                          onClick={corridas.onAplicarDistribuicao}
+                        >
+                          Aplicar distribuicao
+                        </button>
+                      </>
+                    );
+                  })()}
+                </div>
+              </>
+            ) : null}
           </div>
         ) : null}
 

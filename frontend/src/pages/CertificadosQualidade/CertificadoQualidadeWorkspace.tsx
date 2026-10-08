@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ItemEditor } from './ItemEditor';
+import { ItemEditor, type LinhaDivisaoCorrida } from './ItemEditor';
 import { produtosService } from '@/services/api/produtos';
 import { baseItemIrmao } from '@/lib/cqCorridasCfUi';
 import { mesclarMensagensUnicas } from '@/lib/cqMensagensUi';
@@ -69,6 +69,9 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
   const [produtoResultados, setProdutoResultados] = useState<Record<number, Produto[]>>({});
   const [corridasDisponiveisPorItem, setCorridasDisponiveisPorItem] = useState<
     Record<number, CorridaDisponivelCertificadoQualidade[]>
+  >({});
+  const [dividindoCorridas, setDividindoCorridas] = useState<
+    Record<number, LinhaDivisaoCorrida[]>
   >({});
 
   // Carrega CQ existente (ou reseta para novo)
@@ -355,6 +358,114 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
     }
   };
 
+  const addLinhaCorrida = (idx: number) =>
+    setDividindoCorridas((prev) => ({
+      ...prev,
+      [idx]: [
+        ...(prev[idx] || []),
+        { corrida: '', lote: '', quantidade: '', valorSelecao: '' },
+      ],
+    }));
+
+  const removeLinhaCorrida = (idx: number, linhaIdx: number) =>
+    setDividindoCorridas((prev) => {
+      const linhas = prev[idx] || [];
+      const next = [...linhas];
+      next.splice(linhaIdx, 1);
+      const out: Record<number, LinhaDivisaoCorrida[]> = { ...prev };
+      if (next.length > 0) out[idx] = next;
+      else delete out[idx];
+      return out;
+    });
+
+  const updateLinhaCorrida = (
+    idx: number,
+    linhaIdx: number,
+    patch: Partial<LinhaDivisaoCorrida>,
+  ) =>
+    setDividindoCorridas((prev) => {
+      const linhas = prev[idx] || [];
+      const next = [...linhas];
+      next[linhaIdx] = { ...next[linhaIdx], ...patch };
+      return { ...prev, [idx]: next };
+    });
+
+  const hasCorridaDuplicada = (idx: number): boolean => {
+    const linhas = dividindoCorridas[idx] || [];
+    const chaves = new Set<string>();
+    for (const l of linhas) {
+      const chave = (l.valorSelecao || '').trim().toUpperCase();
+      if (!chave) continue;
+      if (chaves.has(chave)) return true;
+      chaves.add(chave);
+    }
+    return false;
+  };
+
+  const aplicarDistribuicaoCorridas = (idx: number) => {
+    const linhas = dividindoCorridas[idx] || [];
+    if (!linhas.length) return;
+
+    const linhasInvalidas = linhas.some(
+      (l) => !l.valorSelecao || !l.quantidade || parseFloat(l.quantidade) <= 0,
+    );
+    if (linhasInvalidas) {
+      adicionarMensagensUnicas(['Informe corrida e quantidade > 0 para todas as linhas.']);
+      return;
+    }
+
+    const quantidadeOriginal = form.itens[idx].quantidade || 0;
+    const somaTotal = linhas.reduce((sum, l) => sum + parseFloat(l.quantidade), 0);
+    if (Math.abs(somaTotal - quantidadeOriginal) > 0.001) {
+      adicionarMensagensUnicas([
+        `A soma das quantidades (${somaTotal}) deve ser igual a quantidade do item original (${quantidadeOriginal}).`,
+      ]);
+      return;
+    }
+
+    const chaves = new Set<string>();
+    for (const l of linhas) {
+      const chave = (l.valorSelecao || '').trim().toUpperCase();
+      if (chaves.has(chave)) {
+        adicionarMensagensUnicas(['A mesma corrida nao pode ser adicionada duas vezes.']);
+        return;
+      }
+      chaves.add(chave);
+    }
+
+    const novosItens: ItemCertificadoQualidade[] = [];
+    for (const l of linhas) {
+      const source = (corridasDisponiveisPorItem[idx] || []).find(
+        (c) =>
+          (c.valor_selecao && c.valor_selecao === l.valorSelecao) ||
+          `${c.corrida}||${c.lote || ''}` === l.valorSelecao,
+      );
+      if (!source) continue;
+      const itemIrmao = construirItemIrmaoDeCorrida(idx, source, l.quantidade);
+      itemIrmao.corrida = source.corrida || '';
+      itemIrmao.lote = source.lote || '';
+      itemIrmao.quantidade = parseFloat(l.quantidade);
+      novosItens.push(itemIrmao);
+    }
+
+    const itemOriginal = form.itens[idx];
+    const novosItensOrdenados = novosItens.map((it, i) => ({
+      ...it,
+      ordem: (itemOriginal.ordem || idx + 1) + i,
+    }));
+
+    setForm((p) => {
+      const next = [...p.itens];
+      next.splice(idx, 1, ...novosItensOrdenados);
+      return { ...p, itens: next };
+    });
+
+    setDividindoCorridas({});
+    setCorridasDisponiveisPorItem({});
+    setProdutoBusca({});
+    setProdutoResultados({});
+  };
+
   const salvar = async (novoStatus?: CertificadoQualidadeStatus) => {
     setSaving(true);
     setSaveError(null);
@@ -616,6 +727,12 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
                     onVincularProduto: (p) => void vincularProdutoAoItem(idx, p),
                     onCarregarCorridas: () => void carregarCorridasDoItem(idx),
                     onAplicarCorrida: (v) => aplicarCorridaDisponivel(idx, v),
+                    dividindo: dividindoCorridas[idx] || [],
+                    temCorridaDuplicada: hasCorridaDuplicada(idx),
+                    onAddLinha: () => addLinhaCorrida(idx),
+                    onRemoveLinha: (linhaIdx) => removeLinhaCorrida(idx, linhaIdx),
+                    onUpdateLinha: (linhaIdx, patch) => updateLinhaCorrida(idx, linhaIdx, patch),
+                    onAplicarDistribuicao: () => aplicarDistribuicaoCorridas(idx),
                   }}
                 />
               ))}
