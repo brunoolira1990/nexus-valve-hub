@@ -83,7 +83,27 @@ type FormState = Omit<
 
 export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel }: Props) {
   const [editing, setEditing] = useState<CertificadoQualidade | null>(null);
-  const [form, setForm] = useState<FormState>(emptyForm());
+  const [form, setFormRaw] = useState<FormState>(emptyForm());
+  const setForm = (
+    updater: FormState | ((prev: FormState) => FormState),
+  ) => {
+    setFormRaw((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      const prevId = prev.itens?.[0]?.id;
+      const nextId = next.itens?.[0]?.id;
+      const prevComp = prev.itens?.[0]?.componentes?.length ?? 0;
+      const nextComp = next.itens?.[0]?.componentes?.length ?? 0;
+      if (prevComp > 0 && nextComp === 0) {
+        console.trace('[DBG-setForm ZEROU]', {
+          de_id: prevId,
+          para_id: nextId,
+          de_comp: prevComp,
+          para_comp: nextComp,
+        });
+      }
+      return next;
+    });
+  };
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
