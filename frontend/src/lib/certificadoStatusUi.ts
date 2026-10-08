@@ -57,6 +57,13 @@ export function rastreabilidadeCqResumoLabel(resumo?: {
  */
 export type OrigemFisicaCqStatus = 'CONFIRMADA' | 'PARCIAL' | 'NAO_CONFIRMADA' | 'MANUAL';
 
+export interface ItemOrigemFisicaCqComponente {
+  nome_componente?: string;
+  corrida?: string;
+  lote?: string;
+  ativo?: boolean;
+}
+
 export interface ItemOrigemFisicaCq {
   incluir_no_certificado?: boolean;
   corrida?: string;
@@ -64,11 +71,13 @@ export interface ItemOrigemFisicaCq {
   corrida_snapshot?: string;
   lote_snapshot?: string;
   norma?: string;
+  tipo_dados_tecnicos?: string;
   certificado_fornecedor_origem_id?: number | null;
   item_certificado_fornecedor_origem_id?: number | null;
   tem_certificado_fornecedor?: boolean;
   rastreabilidade_motivos?: string[];
   rastreabilidade_avisos?: string[];
+  componentes?: ItemOrigemFisicaCqComponente[];
 }
 
 /** Vínculo documental já exposto pela API (CF de origem ou flag do backend). */
@@ -80,15 +89,52 @@ export function itemCqTemOrigemDocumental(item: ItemOrigemFisicaCq): boolean {
   );
 }
 
+/** Componentes ativos com nome — replica o filtro do backend (_componentes_ativos + nome). */
+function componentesValidosParaRastreabilidade(
+  item: ItemOrigemFisicaCq,
+): ItemOrigemFisicaCqComponente[] {
+  return (item.componentes || []).filter(
+    (c) => c.ativo !== false && (c.nome_componente || '').trim().length > 0,
+  );
+}
+
+/** Replica o criterio AND do backend: em valvula, TODOS os componentes ativos
+ * nomeados precisam ter corrida OU lote para a origem documental ser completa. */
+function temCorridaOuLoteEmTodosComponentes(item: ItemOrigemFisicaCq): boolean {
+  const comps = componentesValidosParaRastreabilidade(item);
+  if (!comps.length) return false;
+  return comps.every(
+    (c) => (c.corrida || '').trim().length > 0 || (c.lote || '').trim().length > 0,
+  );
+}
+
+function algumComponenteComCorridaOuLote(item: ItemOrigemFisicaCq): boolean {
+  return componentesValidosParaRastreabilidade(item).some(
+    (c) => (c.corrida || '').trim().length > 0 || (c.lote || '').trim().length > 0,
+  );
+}
+
 export function origemFisicaCqItem(item: ItemOrigemFisicaCq): OrigemFisicaCqStatus {
   const origemDocumental = itemCqTemOrigemDocumental(item);
   const marcadoManual = item.rastreabilidade_motivos?.includes('CF_NAO_VINCULADO_MANUAL') ?? false;
+  const isValvula = item.tipo_dados_tecnicos === 'VALVULA_COMPONENTES';
+
   if (!origemDocumental || marcadoManual) {
-    const dadosDigitados = Boolean(
-      (item.corrida || '').trim() || (item.lote || '').trim() || (item.norma || '').trim(),
-    );
+    const dadosDigitados = isValvula
+      ? algumComponenteComCorridaOuLote(item)
+      : Boolean(
+          (item.corrida || '').trim() ||
+            (item.lote || '').trim() ||
+            (item.norma || '').trim(),
+        );
     return dadosDigitados ? 'MANUAL' : 'NAO_CONFIRMADA';
   }
+
+  if (isValvula) {
+    if (!temCorridaOuLoteEmTodosComponentes(item)) return 'PARCIAL';
+    return (item.rastreabilidade_avisos?.length ?? 0) > 0 ? 'PARCIAL' : 'CONFIRMADA';
+  }
+
   const corridaLoteDaOrigem = Boolean(
     (item.corrida_snapshot || '').trim() || (item.lote_snapshot || '').trim(),
   );
