@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -163,6 +164,8 @@ def build_cobr_bindings(
 
     v_nf = _dec_str(tot.get('v_nf'))
     v_desc = _dec_str(tot.get('v_desc'))
+    # Fatura: vOrig = valor BRUTO (vNF + desconto), vLiq = vNF (liquido)
+    v_orig = _dec_str(Decimal(v_nf) + Decimal(v_desc))
     Fat = nfe_module.Tnfe.InfNfe.Cobr.Fat
     Dup = nfe_module.Tnfe.InfNfe.Cobr.Dup
 
@@ -187,7 +190,7 @@ def build_cobr_bindings(
     return nfe_module.Tnfe.InfNfe.Cobr(
         fat=Fat(
             nFat=(n_fat or '1')[:60],
-            vOrig=v_nf,
+            vOrig=v_orig,
             vDesc=v_desc,
             vLiq=v_nf,
         ),

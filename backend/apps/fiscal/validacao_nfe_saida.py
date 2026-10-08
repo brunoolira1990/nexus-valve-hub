@@ -134,13 +134,10 @@ def _descricao_item(item: ItemNFeSaida) -> str:
 
 
 def _valor_linha_item(item: ItemNFeSaida) -> Decimal:
-    snap_c = item.snapshot_comercial or {}
-    if snap_c.get('valor_total') not in (None, ''):
-        return _dec(snap_c['valor_total'])
+    """Valor BRUTO do item (qtd * valor_unitario). Desconto vai em ICMSTot.vDesc."""
     qtd = _dec(item.quantidade)
     unit = _dec(item.valor)
-    desconto = _dec(snap_c.get('desconto', 0))
-    return qtd * unit - desconto
+    return qtd * unit
 
 
 def _impostos_negativos(snapshot_fiscal: dict) -> list[str]:
@@ -974,14 +971,19 @@ def validar_nfe_saida_para_emissao(
             grupo='valores',
             mensagem='Valor total da NF-e é zero ou negativo.',
         )
-    if itens and abs(soma_itens - total_nf) > TOLERANCIA_VALOR:
+    # Soma liquida = soma bruta - descontos dos itens (vDesc do total)
+    desconto_itens_total = sum(
+        _dec((i.snapshot_comercial or {}).get('desconto', 0)) for i in itens
+    )
+    soma_liquida = soma_itens - desconto_itens_total
+    if itens and abs(soma_liquida - total_nf) > TOLERANCIA_VALOR:
         _add(
             grupos,
             tipo=TIPO_PENDENCIA,
             codigo='NFE_TOTAL_DIVERGENTE_ITENS',
             grupo='valores',
             mensagem=(
-                f'Soma dos itens ({soma_itens}) diverge do total da NF-e ({total_nf}); '
+                f'Soma dos itens com desconto ({soma_liquida}) diverge do total da NF-e ({total_nf}); '
                 f'tolerância {TOLERANCIA_VALOR}.'
             ),
         )
@@ -1179,7 +1181,11 @@ def validar_nfe_saida_para_emissao(
             )
 
     # --- Totais ---
-    soma_itens = sum(_dec(it.quantidade) * _dec(it.valor) for it in itens)
+    soma_itens_bruto = sum(_dec(it.quantidade) * _dec(it.valor) for it in itens)
+    desconto_itens_val = sum(
+        _dec((it.snapshot_comercial or {}).get('desconto', 0)) for it in itens
+    )
+    soma_itens = soma_itens_bruto - desconto_itens_val
     if abs(soma_itens - _dec(nf.valor_total)) > TOLERANCIA_VALOR and itens:
         _add(
             grupos,
@@ -1187,7 +1193,7 @@ def validar_nfe_saida_para_emissao(
             codigo='TOTAL_NF_DIVERGENTE_ITENS',
             grupo='totais',
             mensagem=(
-                f'Total da NF ({nf.valor_total}) diverge da soma dos itens ({soma_itens}), '
+                f'Total da NF ({nf.valor_total}) diverge da soma dos itens com desconto ({soma_itens}), '
                 f'tolerância {TOLERANCIA_VALOR}.'
             ),
         )

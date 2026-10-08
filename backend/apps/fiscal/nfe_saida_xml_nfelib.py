@@ -344,6 +344,10 @@ def _build_det(linha: dict) -> Any:
         cEANTrib='SEM GTIN',
         indTot='1',
     )
+    # vDesc do item (obrigatorio p/ SEFAZ quando ha vDesc no total)
+    v_desc_item = _dec(linha.get('v_desc') or 0)
+    if v_desc_item > 0:
+        prod.vDesc = v_desc_item
     cest = _digits(linha.get('cest'), max_len=7)
     if cest:
         prod.CEST = cest

@@ -135,10 +135,19 @@ def validar_dados_para_xml_preliminar(nfe_saida: NFeSaida, dados: dict[str, Any]
             erros.append(f'Item {idx}: CST/CSOSN ICMS obrigatório.')
         soma_itens += _dec(linha.get('v_prod'))
 
-    v_nf = _dec((dados.get('totais') or {}).get('v_nf'))
-    if v_nf and abs(soma_itens - v_nf) > Decimal('0.05'):
+    tot = dados.get('totais') or {}
+    v_nf    = _dec(tot.get('v_nf'))
+    v_desc  = _dec(tot.get('v_desc'))
+    v_frete = _dec(tot.get('v_frete'))
+    v_seg   = _dec(tot.get('v_seg'))
+    v_outro = _dec(tot.get('v_outro'))
+    # Fórmula SEFAZ: vNF = vProd − vDesc + vFrete + vSeg + vOutro
+    v_nf_esperado = soma_itens - v_desc + v_frete + v_seg + v_outro
+    if v_nf and abs(v_nf_esperado - v_nf) > Decimal('0.05'):
         erros.append(
-            f'Total da NF-e ({v_nf}) diverge da soma dos itens ({soma_itens}).',
+            f'Total da NF-e ({v_nf}) diverge do esperado ({v_nf_esperado} = '
+            f'itens {soma_itens} − vDesc {v_desc} + frete {v_frete} '
+            f'+ seg {v_seg} + outras {v_outro}).',
         )
     return erros
 

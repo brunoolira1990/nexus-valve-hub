@@ -214,14 +214,10 @@ def _unidade_item(item: ItemNFeSaida) -> str:
 
 
 def _valor_linha(item: ItemNFeSaida) -> Decimal:
+    """Valor BRUTO do item (qtd * valor_unitario). Desconto vai apenas em ICMSTot.vDesc."""
     from decimal import ROUND_HALF_UP
 
-    snap_c = item.snapshot_comercial or {}
-    if snap_c.get('valor_total') not in (None, ''):
-        return dec(snap_c['valor_total']).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
     total = dec(item.quantidade) * dec(item.valor)
-    if snap_c.get('desconto') not in (None, ''):
-        total -= dec(snap_c['desconto'])
     return total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
 
@@ -404,6 +400,7 @@ def gerar_dados_preview_nfe_saida(
                 'q_com': str(item.quantidade),
                 'v_un_com': _v_un_com_str(item.valor),
                 'v_prod': _dec_str(v_prod),
+                'v_desc': _dec_str(desconto),
                 'cest': _text(snap_f.get('cest')),
                 'icms': {
                     'cst': _text(snap_f.get('cst_icms')),
