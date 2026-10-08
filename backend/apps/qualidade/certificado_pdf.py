@@ -294,6 +294,18 @@ def _item_sources(cert: CertificadoQualidade):
     return rows
 
 
+def _cortar_descricao(desc: str, max_len: int = 100) -> str:
+    """Corta descricao longa preferindo quebrar em espaco (nao no meio da palavra)."""
+    if not desc:
+        return '—'
+    if len(desc) <= max_len:
+        return desc
+    corte = desc.rfind(' ', 0, max_len)
+    if corte < int(max_len * 0.7):
+        corte = max_len
+    return desc[:corte].rstrip()
+
+
 def _draw_section_title(c: canvas.Canvas, text: str, x: float, y: float, w: float):
     c.setFillColor(PDF_THEME['table_header_bg'])
     c.rect(x, y - 5.8 * mm, w, 5.8 * mm, fill=1, stroke=0)
@@ -695,13 +707,13 @@ def gerar_certificado_qualidade_pdf(cert: CertificadoQualidade, preview: bool = 
             ], [
                 str(item_valvula.ordem),
                 item_valvula.codigo_produto or '—',
-                (item_valvula.descricao_material or '—')[:74],
+                _cortar_descricao(item_valvula.descricao_material),
                 _fmt_value(item_valvula.quantidade),
                 item_valvula.unidade or '—',
                 item_valvula.norma or '—',
                 item_valvula.numero_certificado_fornecedor_item_snapshot or '—',
             ]]
-            story.append(data_table(item_valvula_data, [12 * mm, 30 * mm, 95 * mm, 22 * mm, 18 * mm, 36 * mm, 58 * mm], row_h=7.2 * mm))
+            story.append(data_table(item_valvula_data, [10 * mm, 26 * mm, 118 * mm, 18 * mm, 15 * mm, 32 * mm, 52 * mm], row_h=7.2 * mm))
             story.append(Spacer(1, 1.8 * mm))
 
             if comp_chunk:
