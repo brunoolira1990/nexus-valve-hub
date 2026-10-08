@@ -18,6 +18,10 @@ import {
   certificadosQualidadeService,
   type NfeElegivelCqOpcao,
 } from '@/services/api/qualidade';
+import {
+  nfeHistoricaImportadaService,
+  type NFeSaidaHistoricaList,
+} from '@/services/api/nfeHistoricaImportada';
 import { apiErrorMessage } from '@/services/api/config';
 import { emptyForm, LABEL_OBRIGATORIO_EMITIR } from '@/lib/certificadoQualidadeConstants';
 import type {
@@ -45,6 +49,7 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
   const [nfeOpcaoSelecionada, setNfeOpcaoSelecionada] = useState<NfeElegivelCqOpcao | null>(null);
   const [mensagens, setMensagens] = useState<string[]>([]);
   const [carregandoNfe, setCarregandoNfe] = useState(false);
+  const [nfHistoricas, setNfHistoricas] = useState<NFeSaidaHistoricaList[]>([]);
 
   // Carrega CQ existente (ou reseta para novo)
   useEffect(() => {
@@ -105,6 +110,14 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
       .catch((e) => setSaveError(apiErrorMessage(e)))
       .finally(() => setLoading(false));
   }, [certificadoId]);
+
+  // Carrega NF-e de saida historicas (uma vez no mount)
+  useEffect(() => {
+    nfeHistoricaImportadaService
+      .list()
+      .then((r) => setNfHistoricas(r))
+      .catch(() => setNfHistoricas([]));
+  }, []);
 
   const setF = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -370,7 +383,29 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
               </p>
             )}
           </div>
-          <div className="flex items-end">
+          <div>
+            <label className="erp-label">NF-e saída histórica</label>
+            <select
+              className="erp-select mt-1 w-full"
+              value={form.nota_fiscal_historica || ''}
+              disabled={nfeBloqueada}
+              onChange={(e) => {
+                const histId = e.target.value ? +e.target.value : null;
+                setNfeOpcaoSelecionada(null);
+                setF('nota_fiscal_historica', histId);
+                setF('nota_fiscal', null);
+                setMensagens([]);
+              }}
+            >
+              <option value="">Selecione...</option>
+              {nfHistoricas.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.numero}/{n.serie} - {n.cliente_nome} - {n.dh_emissao.slice(0, 10)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-end md:col-span-3">
             <button
               type="button"
               className="erp-btn-outline w-full md:w-auto"
