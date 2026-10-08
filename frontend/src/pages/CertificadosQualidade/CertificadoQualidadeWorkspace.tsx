@@ -866,6 +866,69 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
     patchFornecedorBuscaItemMsg(idx, null);
     const item = form.itens[idx];
     if (!item) return;
+
+    // Se o item ja tem vinculo com CF/item exatos, puxa direto pelo getById
+    // (nao exige corrida — os componentes vem preenchidos pelo vinculo).
+    const cfIdVinculado = item.certificado_fornecedor_origem_id;
+    const itemCfIdVinculado = item.item_certificado_fornecedor_origem_id;
+    if (cfIdVinculado && itemCfIdVinculado) {
+      setFornecedorBuscaItemLoading(idx);
+      try {
+        const cf = await certificadosFornecedorService.getById(cfIdVinculado);
+        const itemCf = (cf.itens || []).find((it) => it.id === itemCfIdVinculado);
+        if (!itemCf) {
+          patchFornecedorBuscaItemMsg(idx, {
+            type: 'error',
+            text: 'Item vinculado nao foi encontrado no certificado fornecedor.',
+          });
+          return;
+        }
+        const resultado: DadosTecnicosFornecedorResultado = {
+          id: itemCf.id!,
+          certificado_fornecedor_id: cf.id,
+          fornecedor: cf.fornecedor ?? null,
+          fornecedor_nome: cf.fornecedor_nome_snapshot || '',
+          numero_nf_entrada: cf.numero_nf_entrada || '',
+          data_nf_entrada: cf.data_nf_entrada ?? undefined,
+          numero_certificado_fornecedor: cf.numero_certificado_fornecedor || '',
+          numero_certificado_fornecedor_item:
+            itemCf.numero_certificado_fornecedor_item || '',
+          status_certificado_fornecedor: cf.status,
+          produto: itemCf.produto ?? null,
+          codigo_produto: itemCf.codigo_produto || '',
+          descricao_material: itemCf.descricao_material || '',
+          norma: itemCf.norma || '',
+          corrida: itemCf.corrida || '',
+          lote: itemCf.lote || '',
+          tipo_dados_tecnicos:
+            (itemCf.tipo_dados_tecnicos as
+              | 'PADRAO_ITEM'
+              | 'VALVULA_COMPONENTES') || 'PADRAO_ITEM',
+          composicao_json: (
+            itemCf as unknown as { composicao_json?: Record<string, unknown> }
+          ).composicao_json,
+          ensaio_tracao_json: (
+            itemCf as unknown as { ensaio_tracao_json?: Record<string, unknown> }
+          ).ensaio_tracao_json,
+          ensaio_impacto_json: (
+            itemCf as unknown as { ensaio_impacto_json?: Record<string, unknown> }
+          ).ensaio_impacto_json,
+          componentes: itemCf.componentes || [],
+        };
+        aplicarDadosFornecedor(idx, resultado);
+      } catch (e) {
+        patchFornecedorBuscaItemMsg(idx, {
+          type: 'error',
+          text: apiErrorMessage(e, {
+            fallback: 'Falha ao carregar dados do CF vinculado.',
+          }),
+        });
+      } finally {
+        setFornecedorBuscaItemLoading(null);
+      }
+      return;
+    }
+
     const produtoId = coerceProdutoItemId(item.produto);
     const isValvula =
       (item.tipo_dados_tecnicos || 'PADRAO_ITEM') === 'VALVULA_COMPONENTES';

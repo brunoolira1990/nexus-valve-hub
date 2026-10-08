@@ -321,6 +321,7 @@ export function ItemEditor({
                 </button>
               </div>
             </div>
+            {it.tipo_dados_tecnicos !== 'VALVULA_COMPONENTES' ? (
             <div className="mt-2">
               <label className="erp-label">Corrida/Lote disponivel</label>
               <select
@@ -387,6 +388,7 @@ export function ItemEditor({
                 </p>
               ) : null}
             </div>
+            ) : null}
             <div className="mt-2 flex flex-wrap gap-2">
               <button
                 type="button"
@@ -407,6 +409,7 @@ export function ItemEditor({
                 {TITULO_MODAL_CORRIDAS_CF_CQ}
               </button>
             </div>
+            {it.tipo_dados_tecnicos !== 'VALVULA_COMPONENTES' ? (
             <div className="flex flex-col sm:flex-row gap-2 mt-2">
               <div className="flex-1">
                 <label className="erp-label">Corrida manual{LABEL_OBRIGATORIO_EMITIR}</label>
@@ -435,6 +438,7 @@ export function ItemEditor({
                 />
               </div>
             </div>
+            ) : null}
             <div className="mt-2 flex flex-wrap gap-2 items-center">
               <button
                 type="button"
@@ -445,7 +449,10 @@ export function ItemEditor({
               >
                 {corridas.fornecedorBuscaLoading
                   ? 'Buscando...'
-                  : 'Buscar dados do fornecedor'}
+                  : it.certificado_fornecedor_origem_id &&
+                      it.item_certificado_fornecedor_origem_id
+                    ? 'Puxar dados do CF vinculado'
+                    : 'Buscar dados do fornecedor'}
               </button>
             </div>
             {corridas.fornecedorBuscaMsg ? (
