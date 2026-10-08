@@ -16,6 +16,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ItemEditor } from './ItemEditor';
+import { produtosService } from '@/services/api/produtos';
+import { baseItemIrmao } from '@/lib/cqCorridasCfUi';
+import { mesclarMensagensUnicas } from '@/lib/cqMensagensUi';
+import { coerceProdutoItemId } from '@/lib/certificadoQualidadeConstants';
 import {
   certificadosQualidadeService,
   type NfeElegivelCqOpcao,
@@ -34,7 +38,9 @@ import {
 import type {
   CertificadoQualidade,
   CertificadoQualidadeStatus,
+  CorridaDisponivelCertificadoQualidade,
   ItemCertificadoQualidade,
+  Produto,
 } from '@/types';
 
 type Props = {
@@ -59,6 +65,11 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
   const [carregandoNfe, setCarregandoNfe] = useState(false);
   const [nfHistoricas, setNfHistoricas] = useState<NFeSaidaHistoricaList[]>([]);
   const [abaAtiva, setAbaAtiva] = useState('dados');
+  const [produtoBusca, setProdutoBusca] = useState<Record<number, string>>({});
+  const [produtoResultados, setProdutoResultados] = useState<Record<number, Produto[]>>({});
+  const [corridasDisponiveisPorItem, setCorridasDisponiveisPorItem] = useState<
+    Record<number, CorridaDisponivelCertificadoQualidade[]>
+  >({});
 
   // Carrega CQ existente (ou reseta para novo)
   useEffect(() => {
@@ -230,6 +241,119 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
       ...p,
       itens: p.itens.map((it, i) => (i === idx ? { ...it, ...patch } : it)),
     }));
+
+  const adicionarMensagensUnicas = (novas: string | string[]) =>
+    setMensagens((m) => mesclarMensagensUnicas(m, novas));
+
+  const buscarProdutosParaItem = async (idx: number, termo: string) => {
+    setProdutoBusca((p) => ({ ...p, [idx]: termo }));
+    const query = termo.trim();
+    if (query.length < 2) {
+      setProdutoResultados((p) => ({ ...p, [idx]: [] }));
+      return;
+    }
+    try {
+      const encontrados = await produtosService.search(query, 20);
+      setProdutoResultados((p) => ({ ...p, [idx]: encontrados }));
+    } catch {
+      setProdutoResultados((p) => ({ ...p, [idx]: [] }));
+    }
+  };
+
+  const vincularProdutoAoItem = async (idx: number, produto: Produto) => {
+    updateItem(idx, {
+      produto: produto.id,
+      produto_codigo: produto.codigo_completo,
+      produto_descricao: produto.descricao,
+      produto_ncm_efetivo: produto.ncm_efetivo?.codigo || produto.ncm || '',
+      status_vinculo_produto: 'VINCULADO',
+      origem_observacoes: '',
+    });
+    setProdutoBusca((p) => ({ ...p, [idx]: `${produto.codigo_completo} - ${produto.descricao}` }));
+    setProdutoResultados((p) => ({ ...p, [idx]: [] }));
+    try {
+      const corridas = await certificadosQualidadeService.corridasDisponiveisPorProduto(produto.id);
+      setCorridasDisponiveisPorItem((p) => ({ ...p, [idx]: corridas }));
+      if (!corridas.length) {
+        adicionarMensagensUnicas('Nenhuma corrida/lote disponivel para este produto.');
+      }
+    } catch {
+      setCorridasDisponiveisPorItem((p) => ({ ...p, [idx]: [] }));
+    }
+  };
+
+  const carregarCorridasDoItem = async (idx: number) => {
+    const produtoId = coerceProdutoItemId(form.itens[idx]?.produto);
+    if (!produtoId) return;
+    try {
+      const corridas = await certificadosQualidadeService.corridasDisponiveisPorProduto(produtoId);
+      setCorridasDisponiveisPorItem((p) => ({ ...p, [idx]: corridas }));
+    } catch (e) {
+      setSaveError(apiErrorMessage(e));
+    }
+  };
+
+  const construirItemIrmaoDeCorrida = (
+    idx: number,
+    source: CorridaDisponivelCertificadoQualidade,
+    quantidade: string,
+  ): ItemCertificadoQualidade => {
+    const item = form.itens[idx];
+    return {
+      ...baseItemIrmao(item),
+      corrida: source.corrida || item.corrida,
+      lote: source.lote || item.lote || '',
+      quantidade: parseFloat(quantidade) || 0,
+      norma: source.norma || item.norma,
+      ncm: source.ncm || item.ncm || '',
+      composicao_json: ensureMap(source.composicao_json),
+      ensaio_tracao_json: ensureMap(source.ensaio_tracao_json),
+      ensaio_impacto_json: ensureMap(source.ensaio_impacto_json),
+      certificado_fornecedor_origem_id:
+        source.certificado_fornecedor_origem_id ?? source.certificado_fornecedor_id ?? null,
+      item_certificado_fornecedor_origem_id:
+        source.item_certificado_fornecedor_origem_id ?? source.item_certificado_fornecedor_id ?? null,
+      fornecedor_nome_snapshot: source.fornecedor || '',
+      nf_entrada_snapshot: source.nf_entrada || '',
+      numero_certificado_fornecedor_item_snapshot:
+        source.numero_certificado_fornecedor_item || source.certificado_fornecedor || '',
+      corrida_snapshot: source.corrida || '',
+      lote_snapshot: source.lote || '',
+      origem_rastreabilidade_tipo: source.origem || 'manual',
+      origem_status_tecnico:
+        source.status_origem_tecnica ||
+        (source.tem_dados_tecnicos ? 'dados_tecnicos' : 'sem_dados_tecnicos'),
+      origem_observacoes: source.observacoes_origem || '',
+    };
+  };
+
+  const aplicarCorridaDisponivel = (idx: number, valorSelecao: string) => {
+    const item = form.itens[idx];
+    const source = (corridasDisponiveisPorItem[idx] || []).find(
+      (c) =>
+        (c.valor_selecao && c.valor_selecao === valorSelecao) ||
+        `${c.corrida}||${c.lote || ''}` === valorSelecao,
+    );
+    if (!source) return;
+    if (source.status_certificado_fornecedor === 'rascunho') {
+      const ok = window.confirm(
+        'Dados tecnicos encontrados em certificado fornecedor em rascunho. Use com confirmacao ou registre o certificado fornecedor antes de emitir. Deseja aplicar estes dados?',
+      );
+      if (!ok) return;
+    }
+    const alertas = [...(source.alertas || [])];
+    const existeDivergenciaNcm = Boolean(item.ncm && source.ncm && item.ncm !== source.ncm);
+    if (existeDivergenciaNcm) {
+      alertas.push(
+        'A corrida foi encontrada, mas ha divergencia entre descricao/NCM/norma da origem e do item de saida. Confira antes de aplicar.',
+      );
+    }
+    const quantidadeItem = item.quantidade || 0;
+    updateItem(idx, construirItemIrmaoDeCorrida(idx, source, String(quantidadeItem)));
+    if (alertas.length) {
+      adicionarMensagensUnicas(alertas);
+    }
+  };
 
   const salvar = async (novoStatus?: CertificadoQualidadeStatus) => {
     setSaving(true);
@@ -484,6 +608,15 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
                   idx={idx}
                   disabled={nfeBloqueada || saving}
                   onChange={(patch) => updateItem(idx, patch)}
+                  corridas={{
+                    produtoBusca: produtoBusca[idx],
+                    produtoResultados: produtoResultados[idx] || [],
+                    corridasDisponiveis: corridasDisponiveisPorItem[idx] || [],
+                    onBuscarProdutos: (term) => void buscarProdutosParaItem(idx, term),
+                    onVincularProduto: (p) => void vincularProdutoAoItem(idx, p),
+                    onCarregarCorridas: () => void carregarCorridasDoItem(idx),
+                    onAplicarCorrida: (v) => aplicarCorridaDisponivel(idx, v),
+                  }}
                 />
               ))}
             </div>
