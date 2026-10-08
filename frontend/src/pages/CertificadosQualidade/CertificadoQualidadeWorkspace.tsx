@@ -355,19 +355,21 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
     }
   };
 
-  const abrirPreviaPdf = async () => {
+  const abrirPdfModal = async () => {
     if (!editing?.id) return;
     setPdfBusy('preview');
     setSaveError(null);
     try {
-      const blob = await certificadosQualidadeService.obterPdfBlob(editing.id, true);
+      const preview = editing.status === 'rascunho';
+      const blob = await certificadosQualidadeService.obterPdfBlob(editing.id, preview);
       const url = URL.createObjectURL(blob);
       setPreviewPdfUrl((old) => {
         if (old) URL.revokeObjectURL(old);
         return url;
       });
+      const prefixo = editing.status === 'rascunho' ? 'Previa' : 'PDF';
       setPreviewPdfTitulo(
-        `Previa PDF \u2014 ${editing.numero_formatado || editing.numero || 'CQ'}`,
+        `${prefixo} \u2014 ${editing.numero_formatado || editing.numero || 'CQ'}`,
       );
     } catch (e) {
       setSaveError(
@@ -1645,20 +1647,29 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
       <div className="flex flex-wrap justify-end gap-2">
         {editing?.id ? (
           <>
-            <button
-              type="button"
-              className="erp-btn-outline"
-              onClick={() => void abrirPreviaPdf()}
-              disabled={pdfBusy !== null || editing.status !== 'rascunho'}
-              title={
-                editing.status !== 'rascunho'
-                  ? 'Previa disponivel apenas para rascunho.'
-                  : 'Gera previa do PDF a partir do rascunho atual.'
-              }
-            >
-              <FileText className="h-4 w-4 mr-1" />
-              {pdfBusy === 'preview' ? 'Gerando previa...' : 'Previa PDF (rascunho)'}
-            </button>
+            {editing.status === 'rascunho' ? (
+              <button
+                type="button"
+                className="erp-btn-outline"
+                onClick={() => void abrirPdfModal()}
+                disabled={pdfBusy !== null}
+                title="Gera previa do PDF a partir do rascunho atual."
+              >
+                <FileText className="h-4 w-4 mr-1" />
+                {pdfBusy === 'preview' ? 'Gerando previa...' : 'Previa PDF (rascunho)'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="erp-btn-outline"
+                onClick={() => void abrirPdfModal()}
+                disabled={pdfBusy !== null}
+                title="Abrir PDF do certificado."
+              >
+                <FileText className="h-4 w-4 mr-1" />
+                {pdfBusy === 'preview' ? 'Gerando...' : 'Ver PDF'}
+              </button>
+            )}
             <button
               type="button"
               className="erp-btn-outline"
