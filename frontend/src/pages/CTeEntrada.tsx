@@ -1,65 +1,167 @@
-import { useState, useEffect } from 'react';
-import { Pencil, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ExternalLink } from 'lucide-react';
+import { CTeHistoricoDetalheModal } from '@/components/fiscal/CTeHistoricoDetalheModal';
+import { DfeClassificacaoBadges } from '@/components/fiscal/DfeClassificacaoBadges';
 import { PageHeader } from '@/components/PageHeader';
-import { Modal } from '@/components/Modal';
+import { NexusButton } from '@/components/nexus';
+import { StatusBadge } from '@/components/nexus/StatusBadge';
 import { cteEntradasService } from '@/services/api/fiscal';
 import type { CTeEntrada } from '@/types';
+import { usePaginatedList } from '@/hooks/usePaginatedList';
+import { PaginationControls } from '@/components/list/PaginationControls';
+import { ErrorState } from '@/components/list/ListStates';
+import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
+import { TableSkeleton } from '@/components/nexus/Skeleton';
+import { formatDateBr } from '@/lib/dateBr';
+import {formatMoneyBRL} from '@/lib/numberFields';
+
+const BASE_CTE_IMPORTADA_PATH = '/cte-historico-importado';
+
+const fmtMoney = (v: unknown): string => {
+  const n = Number(v ?? 0);
+  return formatMoneyBRL(n);
+};
 
 const CTeEntrada = () => {
-  const [items, setItems] = useState<CTeEntrada[]>([]);
-  const [search, setSearch] = useState('');
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<CTeEntrada | null>(null);
-  const [form, setForm] = useState({ numero:'', transportadora_id:1, transportadora_nome:'Transportes Rápido Ltda', tomador_id:1, tomador_nome:'Nexus Válvulas Ltda', valor_frete:0, data:'', nfe_ids:[] as number[] });
-
-  const load = async () => setItems(await cteEntradasService.getAll());
-  useEffect(() => { load(); }, []);
-
-  const openNew = () => { setEditing(null); setForm({ numero:'',transportadora_id:1,transportadora_nome:'',tomador_id:1,tomador_nome:'',valor_frete:0,data:'',nfe_ids:[] }); setModalOpen(true); };
-  const openEdit = (e: CTeEntrada) => { setEditing(e); setForm(e); setModalOpen(true); };
-  const handleDelete = async (id: number) => { if (confirm('Excluir?')) { await cteEntradasService.delete(id); load(); } };
-  const handleSave = async () => {
-    if (editing) await cteEntradasService.update(editing.id, form);
-    else await cteEntradasService.create(form as Omit<CTeEntrada, 'id'>);
-    setModalOpen(false); load();
-  };
-
-  const filtered = items.filter(i => i.numero.includes(search));
+  const navigate = useNavigate();
+  const [detalheId, setDetalheId] = useState<number | null>(null);
+  const {
+    items,
+    count,
+    page,
+    pageSize,
+    totalPages,
+    search,
+    setSearch,
+    setPage,
+    setPageSize,
+    loading,
+    error,
+    reload,
+  } = usePaginatedList<CTeEntrada>({ fetchPage: cteEntradasService.listPaginated });
 
   return (
     <div>
-      <PageHeader title="CT-e Entrada" onAdd={openNew} addLabel="Novo CT-e" searchValue={search} onSearch={setSearch} />
-      <div className="erp-card overflow-x-auto">
-        <table className="erp-table">
-          <thead><tr><th>Número</th><th>Transportadora</th><th>Tomador</th><th>Valor Frete</th><th>Data</th><th className="w-24">Ações</th></tr></thead>
-          <tbody>
-            {filtered.map(e => (
-              <tr key={e.id}>
-                <td className="font-medium">{e.numero}</td><td>{e.transportadora_nome}</td><td>{e.tomador_nome}</td>
-                <td>R$ {e.valor_frete.toFixed(2)}</td><td>{e.data}</td>
-                <td><div className="flex gap-1">
-                  <button onClick={() => openEdit(e)} className="erp-btn-ghost erp-btn-sm"><Pencil className="h-4 w-4" /></button>
-                  <button onClick={() => handleDelete(e.id)} className="erp-btn-ghost erp-btn-sm text-destructive"><Trash2 className="h-4 w-4" /></button>
-                </div></td>
+      <PageHeader
+        title="CT-e Entrada"
+        description="Conhecimentos conferidos para uso operacional (frete, impostos e NF-es). No detalhe: rateio assistido e geração explícita de Contas a Pagar — a conferência sozinha não gera financeiro."
+        searchValue={search}
+        onSearch={setSearch}
+        searchPlaceholder="Digite parte do número do CT-e."
+        actions={
+          <NexusButton type="button" variant="outline" className="w-full sm:w-auto" onClick={() => navigate(BASE_CTE_IMPORTADA_PATH)}>
+            <ExternalLink className="h-4 w-4" />
+            Ir para Base CT-e Importada
+          </NexusButton>
+        }
+      />
+      {error ? <ErrorState onRetry={() => void reload()} /> : null}
+      {loading ? <TableSkeleton rows={6} cols={9} /> : null}
+      {!loading && !error ? (
+        <DataTableShell>
+          <DataTable mobileMode="cards">
+            <thead>
+              <tr>
+                <th>Número</th>
+                <th>Transportadora</th>
+                <th>Tomador</th>
+                <th>Valor Frete</th>
+                <th>ICMS</th>
+                <th>NF-es</th>
+                <th>Data</th>
+                <th>Status</th>
+                <th className="w-24">Ações</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar CT-e' : 'Novo CT-e'} size="md">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div><label className="erp-label">Número</label><input className="erp-input mt-1" value={form.numero} onChange={e => setForm(p => ({...p,numero:e.target.value}))} /></div>
-          <div><label className="erp-label">Transportadora</label><select className="erp-select mt-1" value={form.transportadora_id} onChange={e => setForm(p => ({...p,transportadora_id:+e.target.value}))}><option value={1}>Transportes Rápido Ltda</option></select></div>
-          <div><label className="erp-label">Tomador</label><select className="erp-select mt-1" value={form.tomador_id} onChange={e => setForm(p => ({...p,tomador_id:+e.target.value}))}><option value={1}>Nexus Válvulas Ltda</option><option value={2}>Nexus Válvulas Filial SP</option></select></div>
-          <div><label className="erp-label">Valor Frete</label><input type="number" step="0.01" className="erp-input mt-1" value={form.valor_frete} onChange={e => setForm(p => ({...p,valor_frete:+e.target.value}))} /></div>
-          <div><label className="erp-label">Data</label><input type="date" className="erp-input mt-1" value={form.data} onChange={e => setForm(p => ({...p,data:e.target.value}))} /></div>
-          <div><label className="erp-label">NF(s) vinculada(s)</label><input className="erp-input mt-1" placeholder="IDs separados por vírgula" /></div>
-        </div>
-        <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
-          <button onClick={() => setModalOpen(false)} className="erp-btn-outline">Cancelar</button>
-          <button onClick={handleSave} className="erp-btn-primary">Salvar</button>
-        </div>
-      </Modal>
+            </thead>
+            <tbody>
+              {items.length === 0 ? (
+                <tr>
+                  <td colSpan={9}>
+                    <div className="py-10 px-4 text-center">
+                      <p className="text-sm font-medium text-foreground">Nenhum CT-e operacional encontrado.</p>
+                      <p className="text-sm text-muted-foreground mt-2 max-w-xl mx-auto">
+                        Importe XMLs na Base CT-e Importada e confira os documentos para uso operacional. A conferência
+                        não gera contas a pagar, expedição ou rateio.
+                      </p>
+                      <NexusButton
+                        type="button"
+                        className="mt-4"
+                        onClick={() => navigate(BASE_CTE_IMPORTADA_PATH)}
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        Ir para Base CT-e Importada
+                      </NexusButton>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                items.map((e) => (
+                  <tr key={e.id}>
+                    <td className="font-medium">
+                      {e.numero}
+                      {e.serie ? `/${e.serie}` : ''}
+                      {e.cfop ? (
+                        <div className="text-xs text-muted-foreground font-normal">CFOP {e.cfop}</div>
+                      ) : null}
+                    </td>
+                    <td>{e.transportadora_nome}</td>
+                    <td>{e.tomador_nome}</td>
+                    <td className="nexus-numeric">{fmtMoney(e.valor_frete)}</td>
+                    <td className="text-xs tabular-nums whitespace-nowrap">
+                      <div>{fmtMoney(e.impostos?.icms_valor)}</div>
+                      {(e.impostos?.cbs_valor || e.impostos?.ibs_valor) ? (
+                        <div className="text-muted-foreground">
+                          CBS {fmtMoney(e.impostos?.cbs_valor)} · IBS {fmtMoney(e.impostos?.ibs_valor)}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="tabular-nums">{e.qtd_nfe_referenciadas ?? 0}</td>
+                    <td>{e.data ? formatDateBr(e.data) : '—'}</td>
+                    <td>
+                      <div className="flex flex-col gap-1 items-start">
+                        {e.status_conferencia ? (
+                          <StatusBadge status={e.status_conferencia.toLowerCase()} />
+                        ) : (
+                          <StatusBadge status="conferido" />
+                        )}
+                        <DfeClassificacaoBadges classificacao={e.classificacao_dfe} max={4} />
+                      </div>
+                    </td>
+                    <td>
+                      <NexusButton
+                        type="button"
+                        variant="outline"
+                        className="erp-btn-sm w-full sm:w-auto"
+                        onClick={() => setDetalheId(e.cte_historico_id ?? e.id)}
+                      >
+                        Detalhes
+                      </NexusButton>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </DataTable>
+          {count > 0 ? (
+            <PaginationControls
+              page={page}
+              pageSize={pageSize}
+              count={count}
+              totalPages={totalPages}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          ) : null}
+        </DataTableShell>
+      ) : null}
+
+      <CTeHistoricoDetalheModal
+        open={detalheId != null}
+        cteId={detalheId}
+        onClose={() => setDetalheId(null)}
+        onConferenciaAtualizada={() => void reload()}
+      />
     </div>
   );
 };

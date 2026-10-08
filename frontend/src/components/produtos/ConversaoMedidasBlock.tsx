@@ -61,6 +61,10 @@ type Props = {
   onDensidadeChange: (v: number | null) => void;
   observacoes: string;
   onObservacoesChange: (v: string) => void;
+  controlaComposicaoFisica?: boolean;
+  onControlaComposicaoFisicaChange?: (v: boolean) => void;
+  tipoComposicaoFisica?: string;
+  onTipoComposicaoFisicaChange?: (v: string) => void;
   /** Herança família → produto (opcional) */
   heranca?: {
     isOverride: (campo: CampoHeranca) => boolean;
@@ -68,6 +72,8 @@ type Props = {
     valorFamiliaTexto: (campo: CampoHeranca) => string | null;
   };
   rotulos?: { limparUnidades?: string };
+  /** Oculta unidade fiscal quando editada em outra aba (ex.: Fiscal). */
+  ocultarUnidadeFiscal?: boolean;
 };
 
 function BadgeHeranca({ texto, variante }: { texto: string; variante: 'familia' | 'override' }) {
@@ -193,6 +199,11 @@ export function ConversaoMedidasBlock({
   onObservacoesChange,
   heranca,
   rotulos,
+  ocultarUnidadeFiscal = false,
+  controlaComposicaoFisica = false,
+  onControlaComposicaoFisicaChange,
+  tipoComposicaoFisica = 'BARRA_M',
+  onTipoComposicaoFisicaChange,
 }: Props) {
   const limparUnidades = rotulos?.limparUnidades ?? 'Limpar (herdar da família no produto)';
   const vis = visibilidadePorTipoFisico(tipoFisicoEfetivo, usaConversao);
@@ -249,6 +260,36 @@ export function ConversaoMedidasBlock({
           <input type="checkbox" checked={usaConversao} onChange={(e) => onUsaConversaoChange(e.target.checked)} />
           Usa conversão dimensional?
         </label>
+        {onControlaComposicaoFisicaChange ? (
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={controlaComposicaoFisica}
+              onChange={(e) => onControlaComposicaoFisicaChange(e.target.checked)}
+            />
+            Controla composição física na conferência NF-e
+          </label>
+        ) : null}
+        {controlaComposicaoFisica && onTipoComposicaoFisicaChange ? (
+          <div className="space-y-1">
+            <label className="erp-label text-sm">Tipo de composição física</label>
+            <select
+              className="erp-select w-full max-w-md"
+              value={tipoComposicaoFisica || 'BARRA_M'}
+              onChange={(e) => onTipoComposicaoFisicaChange(e.target.value)}
+            >
+              <option value="BARRA_M">Barra — comprimento em metros (tubo)</option>
+              <option value="PECA_KG">Peça/chapa — peso real em kg</option>
+            </select>
+          </div>
+        ) : null}
+        {controlaComposicaoFisica ? (
+          <p className="text-[11px] text-muted-foreground">
+            {tipoComposicaoFisica === 'PECA_KG'
+              ? 'Na conferência, informe o peso real de cada peça/chapa. O estoque base fica em KG.'
+              : 'Na conferência, informe quantidade de barras e comprimento unitário em metros. O estoque base fica em M.'}
+          </p>
+        ) : null}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <LinhaHeranca campo="tipo_fisico" heranca={heranca}>
             <label className="erp-label">Tipo físico</label>
@@ -299,10 +340,12 @@ export function ConversaoMedidasBlock({
             <label className="erp-label">Unidade de compra padrão</label>
             {selUnidade(unidadeCompra, onUnidadeCompraChange)}
           </LinhaHeranca>
-          <LinhaHeranca campo="unidade_fiscal" heranca={heranca}>
-            <label className="erp-label">Unidade fiscal</label>
-            {selUnidade(unidadeFiscal, onUnidadeFiscalChange)}
-          </LinhaHeranca>
+          {!ocultarUnidadeFiscal ? (
+            <LinhaHeranca campo="unidade_fiscal" heranca={heranca}>
+              <label className="erp-label">Unidade fiscal</label>
+              {selUnidade(unidadeFiscal, onUnidadeFiscalChange)}
+            </LinhaHeranca>
+          ) : null}
         </div>
         <LinhaHeranca campo="unidades_venda" heranca={heranca}>
           <GrupoCheckboxesUnidades

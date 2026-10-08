@@ -1,16 +1,24 @@
 import api from './config';
 import type { Cliente } from '@/types';
+import {
+  buildListParams,
+  type ListQueryParams,
+  type PaginatedResponse,
+  unwrapListResults,
+} from '@/lib/apiList';
 
 const path = 'clientes/';
-type ListResponse<T> = T[] | { results?: T[] };
 
 export const clientesService = {
-  getAll: async () => {
-    const response = await api.get<ListResponse<Cliente>>(path);
-    const payload = response.data;
-    if (Array.isArray(payload)) return payload;
-    if (payload && Array.isArray(payload.results)) return payload.results;
-    throw new Error('Resposta inesperada da API de clientes.');
+  listPaginated: async (params?: ListQueryParams) => {
+    const response = await api.get<PaginatedResponse<Cliente>>(path, { params: buildListParams(params) });
+    return response.data;
+  },
+  getAll: async (params?: ListQueryParams) => {
+    const response = await api.get<Cliente[] | PaginatedResponse<Cliente>>(path, {
+      params: buildListParams(params?.page ? params : { ...params, limit: params?.limit ?? 100 }),
+    });
+    return unwrapListResults(response.data);
   },
   getById: async (id: number) => (await api.get<Cliente>(`${path}${id}/`)).data,
   create: async (data: Omit<Cliente, 'id'>) => (await api.post<Cliente>(path, data)).data,
@@ -20,10 +28,9 @@ export const clientesService = {
     await api.delete(`${path}${id}/`);
   },
   search: async (term: string, limit = 20) => {
-    const response = await api.get<ListResponse<Cliente>>(path, { params: { search: term, limit } });
-    const payload = response.data;
-    if (Array.isArray(payload)) return payload;
-    if (payload && Array.isArray(payload.results)) return payload.results;
-    throw new Error('Resposta inesperada da API de clientes.');
+    const response = await api.get<Cliente[] | PaginatedResponse<Cliente>>(path, {
+      params: { search: term, limit },
+    });
+    return unwrapListResults(response.data);
   },
 };

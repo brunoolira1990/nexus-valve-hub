@@ -1,13 +1,32 @@
 import * as React from "react";
 
+import { useMobileTableLabels, type MobileTableMode } from "@/hooks/useMobileTableLabels";
 import { cn } from "@/lib/utils";
 
-const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement>>(
-  ({ className, ...props }, ref) => (
-    <div className="relative w-full overflow-auto">
-      <table ref={ref} className={cn("w-full caption-bottom text-sm", className)} {...props} />
-    </div>
-  ),
+type TableProps = React.HTMLAttributes<HTMLTableElement> & {
+  mobileMode?: MobileTableMode;
+};
+
+const Table = React.forwardRef<HTMLTableElement, TableProps>(
+  ({ className, children, mobileMode = "auto", ...props }, ref) => {
+    const tableRef = React.useRef<HTMLTableElement>(null);
+    const resolvedMobileMode = useMobileTableLabels(tableRef, mobileMode, children);
+
+    React.useImperativeHandle(ref, () => tableRef.current as HTMLTableElement);
+
+    return (
+      <div className="relative w-full overflow-x-auto" data-mobile-table-mode={resolvedMobileMode}>
+        <table
+          ref={tableRef}
+          className={cn("w-full caption-bottom text-sm", className)}
+          data-mobile-table-mode={resolvedMobileMode}
+          {...props}
+        >
+          {children}
+        </table>
+      </div>
+    );
+  },
 );
 Table.displayName = "Table";
 

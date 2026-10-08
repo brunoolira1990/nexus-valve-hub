@@ -14,9 +14,20 @@ import {
   SelectField,
   TextareaField,
 } from '@/components/ui/cadastro';
+import { ConsultaCnpjSugestoesPanel } from '@/components/cadastros/ConsultaCnpjSugestoesPanel';
+import { ConsultaIeSefazControls } from '@/components/cadastros/ConsultaIeSefazControls';
+import { useConsultaIeSefaz } from '@/hooks/useConsultaIeSefaz';
 import { consultaCep, consultaCnpj } from '@/services/api/consulta';
 import { apiErrorMessage } from '@/services/api/config';
+import {
+  aplicarConsultaCnpjCamposVazios,
+  MAPEAMENTO_CNPJ_FORNECEDOR,
+  mensagemSucessoConsultaCnpj,
+  montarSugestoesCnpj,
+  type CampoSugestaoCnpj,
+} from '@/lib/consultaCnpjCadastro';
 import { isValidCnpj, normalizeCnpj } from '@/lib/cnpj';
+import { digitsOnly, formatCnpj, formatCep, formatPhone } from '@/lib/masks';
 import { parsePaymentCondition } from '@/lib/paymentTerms';
 import type { Fornecedor, Transportadora } from '@/types';
 import { REGIMES_CADASTRO, TIPOS_CONTA, UFS } from '@/types';
@@ -29,7 +40,7 @@ const schema = z.object({
   cnpj: z
     .string()
     .min(1, 'Obrigatório')
-    .refine((v) => normalizeCnpj(v).length === 14, 'CNPJ deve ter 14 dígitos')
+    .refine((v) => normalizeCnpj(v).length === 14, 'CNPJ deve ter 14 caracteres')
     .refine((v) => isValidCnpj(v), 'CNPJ inválido'),
   ddd: z.string(),
   ie: z.string(),
@@ -88,7 +99,7 @@ function toApiPayload(values: FornecedorFormInput): Omit<Fornecedor, 'id'> {
   return {
     razao_social: values.razao_social,
     nome_fantasia: values.nome_fantasia,
-    cnpj: values.cnpj,
+    cnpj: normalizeCnpj(values.cnpj),
     ie: values.ie,
     logradouro: values.logradouro,
     numero: values.numero,
@@ -126,7 +137,7 @@ export function fornecedorToFormValues(f: Partial<Fornecedor>): FornecedorFormIn
   return {
     razao_social: f.razao_social ?? '',
     nome_fantasia: f.nome_fantasia ?? '',
-    cnpj: f.cnpj ?? '',
+    cnpj: formatCnpj(f.cnpj ?? ''),
     ddd: f.ddd ?? '',
     ie: f.ie ?? '',
     inscricao_municipal: f.inscricao_municipal ?? '',
@@ -177,6 +188,11 @@ export function FornecedorForm({
 }: Props) {
   const [tab, setTab] = useState<string>(TAB_ITEMS[0].id);
   const [contactOpen, setContactOpen] = useState(false);
+  const [cnpjLookupLoading, setCnpjLookupLoading] = useState(false);
+  const consultaIe = useConsultaIeSefaz();
+  const [cnpjLookupMessage, setCnpjLookupMessage] = useState<string | null>(null);
+  const [cnpjSugestoes, setCnpjSugestoes] = useState<CampoSugestaoCnpj<keyof FornecedorFormInput>[]>([]);
+  const [lastLookupCnpj, setLastLookupCnpj] = useState<string | null>(null);
   const [contactDraft, setContactDraft] = useState({
     ddd: '',
     telefone: '',
@@ -199,6 +215,9 @@ export function FornecedorForm({
     resolver: zodResolver(schema),
     defaultValues,
   });
+  const aplicarIeNoFormulario = (valor: string) => {
+    setValue('ie', valor, { shouldDirty: true, shouldValidate: true });
+  };
 
   const openContactModal = () => {
     const v = getValues();
@@ -255,25 +274,67 @@ export function FornecedorForm({
     }
   };
 
-  const onCnpjBlur = async (e: FocusEvent<HTMLInputElement>) => {
-    const cnpj = normalizeCnpj(e.target.value);
-    if (cnpj.length !== 14) return;
+  const runCnpjLookup = async (rawValue: string, force = false) => {
+    const cnpj = normalizeCnpj(rawValue);
+    if (cnpj.length !== 14) {
+      if (digitsOnly(rawValue, 14)) {
+        setCnpjLookupMessage('CNPJ inválido. Informe 14 dígitos.');
+      }
+      return;
+    }
+    if (!isValidCnpj(cnpj)) {
+      setCnpjSugestoes([]);
+      setCnpjLookupMessage('CNPJ inválido. Verifique os dígitos verificadores.');
+      return;
+    }
+    if (cnpjLookupLoading) return;
+    if (!force && lastLookupCnpj === cnpj) return;
+
     clearErrors('root');
+    setCnpjLookupMessage(null);
+    setCnpjSugestoes([]);
+    setCnpjLookupLoading(true);
     try {
       const { data } = await consultaCnpj(cnpj);
-      if (data.razao_social) setValue('razao_social', data.razao_social);
-      if (data.nome_fantasia) setValue('nome_fantasia', data.nome_fantasia);
-      setValue('logradouro', data.logradouro || '');
-      setValue('numero', data.numero || '');
-      setValue('complemento', data.complemento || '');
-      setValue('bairro', data.bairro || '');
-      setValue('cidade', data.cidade || '');
-      setValue('uf', data.uf || '');
-      setValue('cep', data.cep || '');
-      setValue('telefone', data.telefone || '');
+      const valoresAtuais = getValues();
+      const updates = aplicarConsultaCnpjCamposVazios(valoresAtuais, data, MAPEAMENTO_CNPJ_FORNECEDOR);
+      for (const [campo, valor] of Object.entries(updates) as [keyof FornecedorFormInput, string][]) {
+        setValue(campo, valor);
+      }
+      setCnpjSugestoes(montarSugestoesCnpj(valoresAtuais, data, MAPEAMENTO_CNPJ_FORNECEDOR));
+      setLastLookupCnpj(cnpj);
+      setCnpjLookupMessage(mensagemSucessoConsultaCnpj(data));
+      await consultaIe.tryAutoConsultaIe(
+        getValues('cnpj'),
+        getValues('uf') || data.uf || '',
+        getValues('ie'),
+        aplicarIeNoFormulario,
+      );
     } catch (err) {
-      setError('root', { message: apiErrorMessage(err) });
+      const msg = apiErrorMessage(err, {
+        fallback: 'Não foi possível consultar o CNPJ agora. Você pode preencher os dados manualmente.',
+      });
+      setCnpjLookupMessage(msg);
+      setError('root', { message: msg });
+    } finally {
+      setCnpjLookupLoading(false);
     }
+  };
+
+  const onCnpjBlur = async (e: FocusEvent<HTMLInputElement>) => {
+    await runCnpjLookup(e.target.value);
+  };
+
+  const aplicarSugestaoCnpj = (campo: keyof FornecedorFormInput, valor: string) => {
+    setValue(campo, valor);
+    setCnpjSugestoes((prev) => prev.filter((item) => item.campo !== campo));
+  };
+
+  const aplicarTodasSugestoesCnpj = () => {
+    for (const item of cnpjSugestoes) {
+      setValue(item.campo, item.sugerido);
+    }
+    setCnpjSugestoes([]);
   };
 
   const transportadoraOptions = transportadoras.map((t) => ({ value: String(t.id), label: t.razao_social }));
@@ -292,20 +353,23 @@ export function FornecedorForm({
           <InputField label="Razão Social *" operationalUpper {...register('razao_social')} error={errors.razao_social?.message} />
           <InputField label="Nome Fantasia" operationalUpper {...register('nome_fantasia')} />
           <div className="md:col-span-2 flex flex-col gap-2">
-            <InputField label="CNPJ *" {...register('cnpj')} onBlur={onCnpjBlur} error={errors.cnpj?.message} />
-            <div className="flex flex-wrap gap-2">
-              <CadastroButton
-                type="button"
-                variant="outline"
-                onClick={() => window.alert('Consulta SEFAZ simulada')}
-              >
-                Pesquisar SEFAZ
-              </CadastroButton>
-              <CadastroButton type="button" variant="secondary" onClick={openContactModal}>
+            <InputField label="CNPJ *" {...register('cnpj')} onBlur={onCnpjBlur} error={errors.cnpj?.message} onChange={(e) => setValue('cnpj', formatCnpj(e.target.value))} />
+            <div className="flex flex-col items-stretch gap-2 text-xs sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+              <span className="min-w-0 break-words text-muted-foreground">
+                {cnpjLookupLoading
+                  ? 'Consultando CNPJ...'
+                  : cnpjLookupMessage ?? 'A consulta ocorre automaticamente ao sair do campo.'}
+              </span>
+              <CadastroButton className="w-full sm:w-auto" type="button" variant="secondary" onClick={openContactModal}>
                 Alterar dados de contato
               </CadastroButton>
             </div>
           </div>
+          <ConsultaCnpjSugestoesPanel
+            sugestoes={cnpjSugestoes}
+            onAplicarCampo={aplicarSugestaoCnpj}
+            onAplicarTodas={aplicarTodasSugestoesCnpj}
+          />
         </>
       )}
 
@@ -313,9 +377,9 @@ export function FornecedorForm({
         <>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <div className="flex-1">
-              <InputField label="CEP" {...register('cep')} onBlur={onCepBlur} />
+              <InputField label="CEP" {...register('cep')} onBlur={onCepBlur} onChange={(e) => setValue('cep', formatCep(e.target.value))} />
             </div>
-            <CadastroButton type="button" variant="outline" className="shrink-0" onClick={() => void runCepLookup()}>
+            <CadastroButton type="button" variant="outline" className="w-full shrink-0 sm:w-auto" onClick={() => void runCepLookup()}>
               Pesquisar CEP
             </CadastroButton>
           </div>
@@ -333,9 +397,9 @@ export function FornecedorForm({
       {tab === 'telefones' && (
         <>
           <InputField label="DDD" {...register('ddd')} maxLength={4} />
-          <InputField label="Telefone" {...register('telefone')} />
-          <InputField label="Telefone alternativo" {...register('telefone_alternativo')} />
-          <InputField label="Celular" {...register('celular')} />
+          <InputField label="Telefone" {...register('telefone')} onChange={(e) => setValue('telefone', formatPhone(e.target.value))} />
+          <InputField label="Telefone alternativo" {...register('telefone_alternativo')} onChange={(e) => setValue('telefone_alternativo', formatPhone(e.target.value))} />
+          <InputField label="Celular" {...register('celular')} onChange={(e) => setValue('celular', formatPhone(e.target.value))} />
           <InputField label="E-mail" type="email" {...register('email')} error={errors.email?.message} />
           <InputField
             label="E-mail NF"
@@ -364,6 +428,13 @@ export function FornecedorForm({
       {tab === 'fiscal' && (
         <>
           <InputField label="Inscrição Estadual (IE)" operationalUpper {...register('ie')} />
+          <ConsultaIeSefazControls
+            consultaIe={consultaIe}
+            getCnpj={() => getValues('cnpj')}
+            getUf={() => getValues('uf')}
+            getIeAtual={() => getValues('ie')}
+            onAplicarIe={aplicarIeNoFormulario}
+          />
           <InputField label="Inscrição Municipal (IM)" operationalUpper {...register('inscricao_municipal')} />
           <InputField label="Suframa" operationalUpper {...register('suframa')} />
           <InputField label="CNAE" operationalUpper {...register('cnae')} />
@@ -374,6 +445,7 @@ export function FornecedorForm({
       {tab === 'integracao' && (
         <TextareaField
           label="Integrações / observações de integração"
+          className="min-h-[140px] md:col-span-2"
           placeholder="Ex.: enviar NF por e-mail, integrar com CRM…"
           operationalUpper
           {...register('integracao_texto')}
@@ -415,7 +487,12 @@ export function FornecedorForm({
       )}
 
       {tab === 'recomendacoes' && (
-        <TextareaField label="Observações / recomendações" operationalUpper {...register('observacoes')} />
+        <TextareaField
+          label="Observações / recomendações"
+          className="min-h-[140px] md:col-span-2"
+          operationalUpper
+          {...register('observacoes')}
+        />
       )}
     </CadastroSection>
   );
@@ -438,11 +515,11 @@ export function FornecedorForm({
           {panel}
         </CadastroTabs>
 
-        <div className="flex justify-end gap-2 pt-4 border-t border-border">
-          <CadastroButton type="button" variant="outline" onClick={onCancel} disabled={saving}>
+        <div className="flex flex-col items-stretch gap-2 pt-4 border-t border-border sm:flex-row sm:justify-end">
+          <CadastroButton className="w-full sm:w-auto" type="button" variant="outline" onClick={onCancel} disabled={saving}>
             Cancelar
           </CadastroButton>
-          <CadastroButton type="submit" disabled={saving}>
+          <CadastroButton className="w-full sm:w-auto" type="submit" disabled={saving}>
             {saving ? 'Salvando…' : 'Salvar'}
           </CadastroButton>
         </div>
@@ -485,11 +562,11 @@ export function FornecedorForm({
             onChange={(e) => setContactDraft((d) => ({ ...d, contato_responsavel: e.target.value }))}
           />
         </div>
-        <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
-          <CadastroButton type="button" variant="outline" onClick={() => setContactOpen(false)}>
+        <div className="flex flex-col items-stretch gap-2 mt-6 pt-4 border-t border-border sm:flex-row sm:justify-end">
+          <CadastroButton className="w-full sm:w-auto" type="button" variant="outline" onClick={() => setContactOpen(false)}>
             Fechar
           </CadastroButton>
-          <CadastroButton type="button" onClick={applyContactModal}>
+          <CadastroButton className="w-full sm:w-auto" type="button" onClick={applyContactModal}>
             Aplicar
           </CadastroButton>
         </div>

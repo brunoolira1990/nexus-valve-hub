@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiErrorMessage } from '@/services/api/config';
 import { login, persistTokens } from '@/services/api/auth';
+import { clearAppContextoCache } from '@/hooks/useAppContexto';
 
 const Login = () => {
   const [username, setUsername] = useState('');
@@ -17,6 +18,7 @@ const Login = () => {
     try {
       const tokens = await login(username.trim(), senha);
       persistTokens(tokens);
+      clearAppContextoCache();
       navigate('/dashboard');
     } catch (err) {
       setErro(apiErrorMessage(err));
@@ -30,7 +32,7 @@ const Login = () => {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary text-primary-foreground font-bold text-2xl mb-4">NV</div>
-          <h1 className="text-2xl font-bold text-foreground">Nexus Válvulas</h1>
+          <h1 className="text-2xl font-bold text-foreground">NEXUS APP</h1>
           <p className="text-sm text-muted-foreground mt-1">Sistema de Gestão Empresarial</p>
         </div>
         <form onSubmit={handleLogin} className="erp-card p-6 space-y-4">

@@ -1,5 +1,11 @@
 import api from './config';
 import type { Empresa } from '@/types';
+import {
+  buildListParams,
+  type ListQueryParams,
+  type PaginatedResponse,
+  unwrapListResults,
+} from '@/lib/apiList';
 
 const path = 'empresas/';
 
@@ -27,7 +33,16 @@ function buildFormData(data: Partial<Empresa>, files?: { cert?: File | null; log
 }
 
 export const empresasService = {
-  getAll: async () => (await api.get<Empresa[]>(path)).data,
+  listPaginated: async (params?: ListQueryParams) => {
+    const response = await api.get<PaginatedResponse<Empresa>>(path, { params: buildListParams(params) });
+    return response.data;
+  },
+  getAll: async (params?: ListQueryParams) => {
+    const response = await api.get<Empresa[] | PaginatedResponse<Empresa>>(path, {
+      params: buildListParams(params?.page ? params : { ...params, limit: params?.limit ?? 100 }),
+    });
+    return unwrapListResults(response.data);
+  },
   getById: async (id: number) => (await api.get<Empresa>(`${path}${id}/`)).data,
   create: async (data: Omit<Empresa, 'id'>, files?: { cert?: File | null; logo?: File | null }) => {
     const fd = buildFormData(data, files);

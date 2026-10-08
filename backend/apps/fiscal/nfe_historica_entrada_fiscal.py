@@ -16,6 +16,7 @@ from typing import Any
 from django.db.models import QuerySet
 
 from .models import NFeEntradaHistoricaImportada
+from .nfe_entrada_data_entrada import data_competencia_entrada_nf
 from .nfe_historica_fiscal import (
     _money_float,
     _pct,
@@ -68,7 +69,9 @@ class LinhaConsolidadaEntrada:
 
 
 def queryset_compras_nf_entrada_historica(qs: QuerySet[NFeEntradaHistoricaImportada]) -> QuerySet[NFeEntradaHistoricaImportada]:
-    return qs.filter(empresa_destinataria__isnull=False)
+    from apps.fiscal.dfe_classificacao import filtrar_queryset_precificacao_historica_entrada
+
+    return filtrar_queryset_precificacao_historica_entrada(qs.filter(empresa_destinataria__isnull=False))
 
 
 def consolidar_queryset_entrada(qs: QuerySet[NFeEntradaHistoricaImportada]) -> LinhaConsolidadaEntrada:
@@ -114,8 +117,8 @@ def separar_totais_e_indicadores_entrada(
 
 def agrupar_por_mes_entrada(qs: QuerySet[NFeEntradaHistoricaImportada]) -> list[dict[str, Any]]:
     buckets: dict[str, LinhaConsolidadaEntrada] = defaultdict(LinhaConsolidadaEntrada)
-    for nf in qs.iterator(chunk_size=500):
-        d: date = nf.dh_emissao.date()
+    for nf in qs.select_related('conferencia').iterator(chunk_size=500):
+        d: date = data_competencia_entrada_nf(nf)
         key = f'{d.year:04d}-{d.month:02d}'
         buckets[key].add_nota(nf)
     out = []
@@ -128,8 +131,8 @@ def agrupar_por_mes_entrada(qs: QuerySet[NFeEntradaHistoricaImportada]) -> list[
 
 def agrupar_por_trimestre_entrada(qs: QuerySet[NFeEntradaHistoricaImportada]) -> list[dict[str, Any]]:
     buckets: dict[tuple[int, int], LinhaConsolidadaEntrada] = defaultdict(LinhaConsolidadaEntrada)
-    for nf in qs.iterator(chunk_size=500):
-        d = nf.dh_emissao.date()
+    for nf in qs.select_related('conferencia').iterator(chunk_size=500):
+        d = data_competencia_entrada_nf(nf)
         tri = (d.month - 1) // 3 + 1
         buckets[(d.year, tri)].add_nota(nf)
     out = []

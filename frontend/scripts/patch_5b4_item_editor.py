@@ -1,0 +1,291 @@
+#!/usr/bin/env python3
+"""Etapa 5b-4 (A) — componentes de valvula no ItemEditor."""
+import shutil, sys, pathlib, datetime
+
+TARGET = pathlib.Path("src/pages/CertificadosQualidade/ItemEditor.tsx")
+if not TARGET.exists():
+    sys.exit(f"nao encontrei {TARGET}")
+
+src = TARGET.read_text(encoding="utf-8")
+orig = src
+
+def replace_once(text, old, new, tag):
+    n = text.count(old)
+    if n != 1:
+        sys.exit(f"[{tag}] esperava 1 ocorrencia, achei {n}")
+    print(f"  ok: {tag}")
+    return text.replace(old, new, 1)
+
+# 1. import do tipo ItemCertificadoQualidadeComponente
+src = replace_once(
+    src,
+    "import type {\n"
+    "  CorridaDisponivelCertificadoQualidade,\n"
+    "  ItemCertificadoQualidade,\n"
+    "  Produto,\n"
+    "} from '@/types';\n",
+    "import type {\n"
+    "  CorridaDisponivelCertificadoQualidade,\n"
+    "  ItemCertificadoQualidade,\n"
+    "  ItemCertificadoQualidadeComponente,\n"
+    "  Produto,\n"
+    "} from '@/types';\n",
+    "import-tipo-componente",
+)
+
+# 2. tipo ComponentesProps + prop nas Props
+src = replace_once(
+    src,
+    "type Props = {\n"
+    "  item: ItemCertificadoQualidade;\n"
+    "  idx: number;\n"
+    "  disabled?: boolean;\n"
+    "  onChange: (patch: Partial<ItemCertificadoQualidade>) => void;\n"
+    "  corridas?: CorridasProps;\n"
+    "};\n",
+    "export type ComponentesProps = {\n"
+    "  lista: ItemCertificadoQualidadeComponente[];\n"
+    "  onAdd: (nome?: string) => void;\n"
+    "  onAddPadrao: () => void;\n"
+    "  onRemove: (compIdx: number) => void;\n"
+    "  onDuplicar: (compIdx: number) => void;\n"
+    "  onCopiarAnterior: (compIdx: number) => void;\n"
+    "  onUpdate: (\n"
+    "    compIdx: number,\n"
+    "    patch: Partial<ItemCertificadoQualidadeComponente>,\n"
+    "  ) => void;\n"
+    "  onUpdateJson: (\n"
+    "    compIdx: number,\n"
+    "    group: 'composicao_json' | 'ensaio_tracao_json' | 'ensaio_impacto_json',\n"
+    "    key: string,\n"
+    "    value: string,\n"
+    "  ) => void;\n"
+    "};\n"
+    "\n"
+    "type Props = {\n"
+    "  item: ItemCertificadoQualidade;\n"
+    "  idx: number;\n"
+    "  disabled?: boolean;\n"
+    "  onChange: (patch: Partial<ItemCertificadoQualidade>) => void;\n"
+    "  corridas?: CorridasProps;\n"
+    "  componentes?: ComponentesProps;\n"
+    "};\n",
+    "props-componentes",
+)
+
+src = replace_once(
+    src,
+    "export function ItemEditor({ item: it, idx, disabled, onChange, corridas }: Props) {\n",
+    "export function ItemEditor({\n"
+    "  item: it,\n"
+    "  idx,\n"
+    "  disabled,\n"
+    "  onChange,\n"
+    "  corridas,\n"
+    "  componentes,\n"
+    "}: Props) {\n",
+    "destructure-componentes",
+)
+
+# 3. bloco JSX: adicionar depois do bloco impacto (que fecha com `</>` `) : null}`)
+# Ancora: o bloco anterior termina com '          </>\n        ) : null}\n'
+ANCHOR = (
+    "            </div>\n"
+    "          </>\n"
+    "        ) : null}\n"
+    "      </div>\n"
+    "    </details>\n"
+    "  );\n"
+    "}\n"
+)
+NEW = (
+    "            </div>\n"
+    "          </>\n"
+    "        ) : null}\n"
+    "\n"
+    "        {incl && it.tipo_dados_tecnicos === 'VALVULA_COMPONENTES' && componentes ? (\n"
+    "          <div className=\"md:col-span-6 rounded border border-border p-2 bg-muted/10\">\n"
+    "            <div className=\"flex flex-wrap gap-2 items-center justify-between mb-2\">\n"
+    "              <p className=\"text-xs font-semibold\">Componentes da valvula</p>\n"
+    "              <div className=\"flex gap-2\">\n"
+    "                <button\n"
+    "                  type=\"button\"\n"
+    "                  className=\"erp-btn-outline erp-btn-sm\"\n"
+    "                  disabled={disabled}\n"
+    "                  onClick={componentes.onAddPadrao}\n"
+    "                >\n"
+    "                  Adicionar componentes padrao\n"
+    "                </button>\n"
+    "                <button\n"
+    "                  type=\"button\"\n"
+    "                  className=\"erp-btn-outline erp-btn-sm\"\n"
+    "                  disabled={disabled}\n"
+    "                  onClick={() => componentes.onAdd()}\n"
+    "                >\n"
+    "                  Adicionar componente\n"
+    "                </button>\n"
+    "              </div>\n"
+    "            </div>\n"
+    "            {componentes.lista.length === 0 ? (\n"
+    "              <p className=\"text-xs text-amber-700 dark:text-amber-300\">\n"
+    "                Este item esta marcado como valvula, mas ainda nao possui componentes.\n"
+    "              </p>\n"
+    "            ) : (\n"
+    "              <div className=\"space-y-2\">\n"
+    "                {componentes.lista.map((cp, cidx) => (\n"
+    "                  <details key={cidx} className=\"rounded border border-border p-2\" open>\n"
+    "                    <summary className=\"cursor-pointer text-xs font-medium\">\n"
+    "                      Componente {cp.ordem} - {cp.nome_componente || 'Sem nome'}\n"
+    "                    </summary>\n"
+    "                    <div className=\"grid grid-cols-1 md:grid-cols-6 gap-2 mt-2\">\n"
+    "                      <div>\n"
+    "                        <label className=\"erp-label\">Ordem</label>\n"
+    "                        <input\n"
+    "                          className=\"erp-input mt-1\"\n"
+    "                          disabled={disabled}\n"
+    "                          value={cp.ordem}\n"
+    "                          onChange={(e) =>\n"
+    "                            componentes.onUpdate(cidx, { ordem: +e.target.value })\n"
+    "                          }\n"
+    "                        />\n"
+    "                      </div>\n"
+    "                      <div>\n"
+    "                        <label className=\"erp-label\">Componente</label>\n"
+    "                        <input\n"
+    "                          className=\"erp-input mt-1\"\n"
+    "                          disabled={disabled}\n"
+    "                          value={cp.nome_componente}\n"
+    "                          onChange={(e) =>\n"
+    "                            componentes.onUpdate(cidx, { nome_componente: e.target.value })\n"
+    "                          }\n"
+    "                        />\n"
+    "                      </div>\n"
+    "                      <div className=\"md:col-span-2\">\n"
+    "                        <label className=\"erp-label\">Descricao</label>\n"
+    "                        <input\n"
+    "                          className=\"erp-input mt-1\"\n"
+    "                          disabled={disabled}\n"
+    "                          value={cp.descricao_componente || ''}\n"
+    "                          onChange={(e) =>\n"
+    "                            componentes.onUpdate(cidx, { descricao_componente: e.target.value })\n"
+    "                          }\n"
+    "                        />\n"
+    "                      </div>\n"
+    "                      <div>\n"
+    "                        <label className=\"erp-label\">Norma</label>\n"
+    "                        <input\n"
+    "                          className=\"erp-input mt-1\"\n"
+    "                          disabled={disabled}\n"
+    "                          value={cp.norma || ''}\n"
+    "                          onChange={(e) =>\n"
+    "                            componentes.onUpdate(cidx, { norma: e.target.value })\n"
+    "                          }\n"
+    "                        />\n"
+    "                      </div>\n"
+    "                      <div>\n"
+    "                        <label className=\"erp-label\">Corrida</label>\n"
+    "                        <input\n"
+    "                          className=\"erp-input mt-1\"\n"
+    "                          disabled={disabled}\n"
+    "                          value={cp.corrida || ''}\n"
+    "                          onChange={(e) =>\n"
+    "                            componentes.onUpdate(cidx, { corrida: e.target.value })\n"
+    "                          }\n"
+    "                        />\n"
+    "                      </div>\n"
+    "                      <div className=\"md:col-span-6 flex flex-wrap gap-2\">\n"
+    "                        <button\n"
+    "                          type=\"button\"\n"
+    "                          className=\"erp-btn-outline erp-btn-sm\"\n"
+    "                          disabled={disabled || cidx === 0}\n"
+    "                          onClick={() => componentes.onCopiarAnterior(cidx)}\n"
+    "                        >\n"
+    "                          Copiar componente anterior\n"
+    "                        </button>\n"
+    "                        <button\n"
+    "                          type=\"button\"\n"
+    "                          className=\"erp-btn-outline erp-btn-sm\"\n"
+    "                          disabled={disabled}\n"
+    "                          onClick={() => componentes.onDuplicar(cidx)}\n"
+    "                        >\n"
+    "                          Duplicar componente\n"
+    "                        </button>\n"
+    "                        <button\n"
+    "                          type=\"button\"\n"
+    "                          className=\"erp-btn-outline erp-btn-sm\"\n"
+    "                          disabled={disabled}\n"
+    "                          onClick={() => componentes.onRemove(cidx)}\n"
+    "                        >\n"
+    "                          Remover componente\n"
+    "                        </button>\n"
+    "                      </div>\n"
+    "                      <div className=\"md:col-span-6 rounded border border-border p-2\">\n"
+    "                        <p className=\"text-xs font-semibold mb-2\">Composicao quimica do componente</p>\n"
+    "                        <div className=\"grid grid-cols-2 md:grid-cols-6 lg:grid-cols-8 gap-2\">\n"
+    "                          {COMPOSICAO_FIELDS.map((el) => (\n"
+    "                            <div key={el}>\n"
+    "                              <label className=\"erp-label\">{el}</label>\n"
+    "                              <input\n"
+    "                                className=\"erp-input mt-1\"\n"
+    "                                placeholder=\"***\"\n"
+    "                                disabled={disabled}\n"
+    "                                value={ensureMap(cp.composicao_json)[el] || ''}\n"
+    "                                onChange={(e) =>\n"
+    "                                  componentes.onUpdateJson(\n"
+    "                                    cidx,\n"
+    "                                    'composicao_json',\n"
+    "                                    el,\n"
+    "                                    normNumeric(e.target.value),\n"
+    "                                  )\n"
+    "                                }\n"
+    "                              />\n"
+    "                            </div>\n"
+    "                          ))}\n"
+    "                        </div>\n"
+    "                      </div>\n"
+    "                      <div className=\"md:col-span-6 rounded border border-border p-2\">\n"
+    "                        <p className=\"text-xs font-semibold mb-2\">Tracao do componente</p>\n"
+    "                        <div className=\"grid grid-cols-1 md:grid-cols-2 gap-2\">\n"
+    "                          {TRACAO_FIELDS.map((f) => (\n"
+    "                            <div key={f.key}>\n"
+    "                              <label className=\"erp-label\">{f.label}</label>\n"
+    "                              <input\n"
+    "                                className=\"erp-input mt-1\"\n"
+    "                                disabled={disabled}\n"
+    "                                value={ensureMap(cp.ensaio_tracao_json)[f.key] || ''}\n"
+    "                                onChange={(e) =>\n"
+    "                                  componentes.onUpdateJson(\n"
+    "                                    cidx,\n"
+    "                                    'ensaio_tracao_json',\n"
+    "                                    f.key,\n"
+    "                                    normNumeric(e.target.value),\n"
+    "                                  )\n"
+    "                                }\n"
+    "                              />\n"
+    "                            </div>\n"
+    "                          ))}\n"
+    "                        </div>\n"
+    "                      </div>\n"
+    "                    </div>\n"
+    "                  </details>\n"
+    "                ))}\n"
+    "              </div>\n"
+    "            )}\n"
+    "          </div>\n"
+    "        ) : null}\n"
+    "      </div>\n"
+    "    </details>\n"
+    "  );\n"
+    "}\n"
+)
+src = replace_once(src, ANCHOR, NEW, "bloco-componentes")
+
+if src == orig:
+    sys.exit("nada mudou — abortar")
+
+stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+backup = TARGET.with_suffix(f".tsx.bak_{stamp}")
+shutil.copyfile(TARGET, backup)
+TARGET.write_text(src, encoding="utf-8")
+print(f"\nbackup: {backup}")
+print(f"escrito: {TARGET} ({len(src)} bytes, {src.count(chr(10))+1} linhas)")

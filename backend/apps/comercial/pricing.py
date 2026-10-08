@@ -18,6 +18,19 @@ def ncm_fiscal_valido(ncm: str) -> bool:
     return len(normalize_ncm(ncm)) >= 8
 
 
+def find_regra_fiscal_saida_com_fallback(
+    ncm: str,
+    uf_origem: str,
+    uf_destino: str,
+    operacao: str = 'Saída',
+    **kwargs,
+):
+    """Delega ao motor de saída (cenário + fallback legado conforme settings)."""
+    from apps.regras_fiscais.saida_fiscal import find_regra_fiscal_saida_com_fallback as _buscar
+
+    return _buscar(ncm, uf_origem, uf_destino, operacao, **kwargs)
+
+
 def find_regra_fiscal(
     ncm: str,
     uf_origem: str,

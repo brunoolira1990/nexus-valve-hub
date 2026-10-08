@@ -1,5 +1,11 @@
 import api from './config';
-import type { FamiliaProduto, Polegada, Produto, RoscaConexao, ScheduleEspessura } from '@/types';
+import {
+  buildListParams,
+  type ListQueryParams,
+  type PaginatedResponse,
+  unwrapListResults,
+} from '@/lib/apiList';
+import type { FamiliaProduto, Polegada, Produto, ProdutoPainelResumo, ProdutoRastreabilidade, RoscaConexao, ScheduleEspessura } from '@/types';
 
 const path = 'produtos/';
 const famPath = 'familias-produto/';
@@ -32,10 +38,26 @@ export type PreviewCodigoPayload = {
   schedule_ref_id?: number | null;
   polegada_principal_ref_id?: number | null;
   polegada_secundaria_ref_id?: number | null;
+  od_mm?: number | null;
+  espessura_mm?: number | null;
+  comprimento_mm?: number | null;
+  dim_espessura_mm?: number | null;
+  dim_largura_mm?: number | null;
+  dim_comprimento_mm?: number | null;
+  dim_altura_mm?: number | null;
+  dim_furo_mm?: number | null;
+  dim_aba_mm?: number | null;
+  dim_aba_polegada_ref_id?: number | null;
+  dim_espessura_polegada_ref_id?: number | null;
+  dimensao_codigo?: string;
+  dimensao_descricao?: string;
+  dimensoes_json?: Record<string, number | string | null>;
 };
 
 export type PreviewCodigoResponse = {
   codigo: string;
+  codigo_base?: string;
+  sequencia_tecnica?: boolean;
   descricao_sugerida: string;
   mensagem: string;
   ncm_efetivo?: string;
@@ -65,21 +87,29 @@ export type ConverterMedidaResponse = {
   mensagem?: string;
 };
 
-export type ProdutosListParams = {
-  search?: string;
-  limit?: number;
+export type ProdutosListParams = ListQueryParams & {
+  sem_ncm?: string;
+  material?: string;
 };
 
 export const produtosService = {
+  listPaginated: async (params?: ProdutosListParams) => {
+    const response = await api.get<PaginatedResponse<Produto>>(path, { params: buildListParams(params) });
+    return response.data;
+  },
   getAll: async (params?: ProdutosListParams) => {
-    const q: Record<string, string> = {};
-    const s = params?.search?.trim();
-    if (s) q.search = s;
-    if (params?.limit != null) q.limit = String(params.limit);
-    const response = await api.get<ListResponse<Produto>>(path, { params: Object.keys(q).length ? q : undefined });
+    const response = await api.get<ListResponse<Produto>>(path, {
+      params: buildListParams(
+        params?.page ? params : { ...params, limit: params?.limit ?? (params?.search ? 50 : 100) },
+      ),
+    });
     return unwrapList(response.data);
   },
   getById: async (id: number) => (await api.get<Produto>(`${path}${id}/`)).data,
+  getPainelResumo: async (id: number) =>
+    (await api.get<ProdutoPainelResumo>(`${path}${id}/painel/resumo/`)).data,
+  getPainelRastreabilidade: async (id: number) =>
+    (await api.get<ProdutoRastreabilidade>(`${path}${id}/painel/rastreabilidade/`)).data,
   create: async (data: Omit<Produto, 'id'>) => (await api.post<Produto>(path, stripReadOnly(data))).data,
   update: async (id: number, data: Partial<Produto>) =>
     (await api.patch<Produto>(`${path}${id}/`, stripReadOnly(data))).data,
@@ -104,6 +134,9 @@ export const familiasProdutoService = {
   create: async (data: Omit<FamiliaProduto, 'id'>) => (await api.post<FamiliaProduto>(famPath, data)).data,
   update: async (id: number, data: Partial<FamiliaProduto>) =>
     (await api.patch<FamiliaProduto>(`${famPath}${id}/`, data)).data,
+  delete: async (id: number) => {
+    await api.delete(`${famPath}${id}/`);
+  },
   search: async (term: string, limit = 20) => {
     const response = await api.get<ListResponse<FamiliaProduto>>(famPath, { params: { search: term, limit, apenas_ativas: '1' } });
     return unwrapList(response.data);
@@ -141,8 +174,10 @@ export const polegadasService = {
     const response = await api.get<ListResponse<Polegada>>(polPath);
     return unwrapList(response.data);
   },
-  search: async (term: string, limit = 20) => {
-    const response = await api.get<ListResponse<Polegada>>(polPath, { params: { search: term, limit } });
+  search: async (term: string, limit = 20, tipo_medida?: 'NPS' | 'OD') => {
+    const response = await api.get<ListResponse<Polegada>>(polPath, {
+      params: { search: term, limit, tipo_medida: tipo_medida || undefined },
+    });
     return unwrapList(response.data);
   },
   create: async (data: Partial<Polegada>) => (await api.post<Polegada>(polPath, data)).data,
@@ -166,8 +201,14 @@ export const ncmApiService = {
 export const familiaVariacoesService = {
   addPolegadaPermitida: async (payload: { familia: number; polegada: number; tipo: 'principal' | 'secundaria' | 'ambas'; ordem?: number; ativo?: boolean }) =>
     (await api.post(famPolPath, payload)).data,
+  removePolegadaPermitida: async (permitidaId: number) => {
+    await api.delete(`${famPolPath}${permitidaId}/`);
+  },
   addRoscaPermitida: async (payload: { familia: number; rosca_conexao: number; padrao_da_familia?: boolean; ativo?: boolean }) =>
     (await api.post(famRoscaPath, payload)).data,
   addSchedulePermitido: async (payload: { familia: number; schedule: number; padrao_da_familia?: boolean; ativo?: boolean }) =>
     (await api.post(famSchedPath, payload)).data,
+  removeSchedulePermitido: async (permitidoId: number) => {
+    await api.delete(`${famSchedPath}${permitidoId}/`);
+  },
 };

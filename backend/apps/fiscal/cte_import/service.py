@@ -6,7 +6,10 @@ from django.db import transaction
 
 from apps.cadastros.models import Empresa, Fornecedor, Transportadora
 
+from ..cte_historico_conferencia import _status_inicial_importacao
 from ..models import CTeHistoricoImportado
+from ..services.reforma_tributaria import enriquecer_reforma_e_outros_json_cte
+from apps.fiscal.xml_armazenamento import ORIGEM_IMPORTACAO_MANUAL, persistir_xml_cte
 from .parser import parse_cte_xml
 
 
@@ -54,13 +57,9 @@ def _resolve_empresa_from_party(party: dict[str, Any]) -> Empresa | None:
 
 
 def _resolve_fornecedor_from_party(party: dict[str, Any]) -> Fornecedor | None:
-    doc = _norm_digits(party.get('CNPJ') or party.get('CPF') or '')
-    if len(doc) != 14:
-        return None
-    for forn in Fornecedor.objects.only('id', 'cnpj'):
-        if _norm_digits(forn.cnpj) == doc:
-            return forn
-    return None
+    from apps.fiscal.nfe_historica_classificacao import resolve_fornecedor_from_party
+
+    return resolve_fornecedor_from_party(party)
 
 
 def importar_arquivos_cte(arquivos: list[tuple[str, bytes]]) -> dict[str, Any]:
@@ -76,25 +75,55 @@ def importar_arquivos_cte(arquivos: list[tuple[str, bytes]]) -> dict[str, Any]:
             continue
 
         if CTeHistoricoImportado.objects.filter(chave_acesso=parsed.chave_acesso).exists():
-            duplicados.append(
-                {
-                    'arquivo': nome,
-                    'chave_acesso': parsed.chave_acesso,
-                    'mensagem': 'Esta chave de CT-e já foi importada.',
-                }
-            )
+            existente = CTeHistoricoImportado.objects.get(chave_acesso=parsed.chave_acesso)
+            if persistir_xml_cte(
+                existente,
+                conteudo,
+                origem=ORIGEM_IMPORTACAO_MANUAL,
+                nome_arquivo=nome,
+            ):
+                duplicados.append(
+                    {
+                        'arquivo': nome,
+                        'chave_acesso': parsed.chave_acesso,
+                        'mensagem': 'XML completo armazenado para registro já existente.',
+                    },
+                )
+            else:
+                duplicados.append(
+                    {
+                        'arquivo': nome,
+                        'chave_acesso': parsed.chave_acesso,
+                        'mensagem': 'Esta chave de CT-e já foi importada.',
+                    },
+                )
             continue
 
         try:
             with transaction.atomic():
                 empresa_tomadora = _resolve_empresa_tomadora(parsed.tomador_json)
+                if not empresa_tomadora:
+                    erros.append(
+                        {
+                            'arquivo': nome,
+                            'chave_acesso': parsed.chave_acesso,
+                            'mensagem': (
+                                'CT-e não importado: nenhuma Empresa do ERP é tomadora deste frete. '
+                                'Só entram CT-e em que você é o tomador.'
+                            ),
+                        },
+                    )
+                    continue
+
                 empresa_destinataria = _resolve_empresa_from_party(parsed.dest_json)
                 empresa_recebedora = _resolve_empresa_from_party(parsed.receb_json)
                 fornecedor_remetente = _resolve_fornecedor_from_party(parsed.rem_json)
-                papel_empresa = ''
-                if empresa_tomadora:
-                    papel_empresa = 'tomador'
+                papel_empresa = 'tomador'
 
+                st_conf = _status_inicial_importacao(
+                    cancelado=bool(parsed.cancelado),
+                    cstat=(parsed.cstat or '')[:8],
+                )
                 cte = CTeHistoricoImportado.objects.create(
                     chave_acesso=parsed.chave_acesso,
                     numero=(parsed.numero or '')[:16],
@@ -134,7 +163,9 @@ def importar_arquivos_cte(arquivos: list[tuple[str, bytes]]) -> dict[str, Any]:
                     totais_json=parsed.totais_json,
                     imposto_json=parsed.imposto_json,
                     prot_json=parsed.prot_json,
-                    reforma_e_outros_json=parsed.reforma_e_outros_json,
+                    reforma_e_outros_json=enriquecer_reforma_e_outros_json_cte(
+                        parsed.imposto_json, parsed.reforma_e_outros_json
+                    ),
                     chaves_nfe_vinculadas=parsed.chaves_nfe_vinculadas,
                     transportadora=_resolve_transportadora(parsed.emit_json),
                     empresa_tomadora=empresa_tomadora,
@@ -143,6 +174,16 @@ def importar_arquivos_cte(arquivos: list[tuple[str, bytes]]) -> dict[str, Any]:
                     fornecedor_remetente=fornecedor_remetente,
                     papel_empresa_no_documento=papel_empresa,
                     nome_arquivo=nome[:255],
+                    status_conferencia=st_conf,
+                    apto_operacional=False,
+                    ignorado_operacionalmente=False,
+                )
+                persistir_xml_cte(
+                    cte,
+                    conteudo,
+                    origem=ORIGEM_IMPORTACAO_MANUAL,
+                    nome_arquivo=nome,
+                    forcar=True,
                 )
         except Exception as e:
             erros.append({'arquivo': nome, 'mensagem': f'Falha ao gravar: {e}'})

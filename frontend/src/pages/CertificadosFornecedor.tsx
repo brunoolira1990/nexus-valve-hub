@@ -1,28 +1,65 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useState, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { AxiosError } from 'axios';
 import { Pencil } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
 import { formatApiErrors } from '@/lib/apiErrors';
-import { certificadosFornecedorService } from '@/services/api/certificadosFornecedor';
+import { certificadoFornecedorStatusBadge } from '@/lib/certificadoStatusUi';
+import {
+  AVISO_DADOS_HERDADOS_CORRIDA_CF,
+  MSG_MULTIPLOS_CERTIFICADOS_COMPATIVEIS_CF,
+  TEXTO_EXPLICATIVO_CORRIDAS_ADICIONAIS_CF,
+  TITULO_CORRIDAS_ADICIONAIS_CF,
+  avisosCorridasAdicionaisItemCf,
+  errosCorridasAdicionaisItemCf,
+  resumoQuantidadesCorridasItemCf,
+} from '@/lib/cfCorridasAdicionaisUi';
+import {
+  certificadosFornecedorService,
+  corridaLoteEfetivosResultadoFornecedor,
+  mensagemPrincipalBuscaDadosTecnicosFornecedor,
+} from '@/services/api/certificadosFornecedor';
+import { apiErrorMessage } from '@/services/api/config';
 import { nfeEntradasService } from '@/services/api/fiscal';
 import { nfeEntradaHistoricaImportadaService, type NFeEntradaHistoricaList } from '@/services/api/nfeEntradaHistoricaImportada';
 import type {
   CertificadoFornecedorEntrada,
+  CertificadoFornecedorStatus,
   DadosTecnicosFornecedorResultado,
+  ItemCertificadoFornecedorCorrida,
   ItemCertificadoFornecedorEntrada,
   NFeEntrada,
 } from '@/types';
+import { usePaginatedList } from '@/hooks/usePaginatedList';
+import { PaginationControls } from '@/components/list/PaginationControls';
+import { EmptyState, ErrorState } from '@/components/list/ListStates';
+import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
+import { StatusBadge } from '@/components/nexus/StatusBadge';
+import { TableSkeleton } from '@/components/nexus/Skeleton';
+import type { ListQueryParams } from '@/lib/apiList';
+
+/**
+ * Fase E.4 (Qualidade): permissões só no backend; JWT sem codenames Django.
+ * «Novo» some apenas se o GET da lista for 403. Erros de gravação usam `formatApiErrors`
+ * (403 → mensagem de permissão). Evolução: /me/permissions ou claims no token.
+ */
 
 const COMPOSICAO_FIELDS = ['C', 'Mn', 'P', 'S', 'Si', 'Ni', 'Cr', 'Mo', 'Cu', 'V', 'Nb', 'Al', 'Ti', 'N', 'Zn', 'Fe', 'Sn', 'Pb', 'Ca', 'Ta', 'W', 'Li', 'Co'] as const;
 const TRACAO_FIELDS = [
   { key: 'limite_escoamento', label: 'Limite de escoamento' },
-  { key: 'limite_resistencia', label: 'Limite de resistencia' },
+  { key: 'limite_resistencia', label: 'Limite de resistência' },
   { key: 'alongamento', label: 'Alongamento' },
-  { key: 'estriccao', label: 'Estriccao' },
+  { key: 'estriccao', label: 'Estricção' },
   { key: 'dureza', label: 'Dureza' },
-  { key: 'tratamento_termico', label: 'Tratamento termico' },
+  { key: 'tratamento_termico', label: 'Tratamento térmico' },
 ] as const;
 const COMPONENTES_PADRAO_VALVULA = ['CORPO', 'ESFERA', 'HASTE', 'PORCA', 'PRISIONEIRO', 'TAMPA', 'SEDE', 'VEDAÇÃO', 'OUTROS'] as const;
+
+const CONFIRMAR_CANCELAMENTO_CERTIFICADO_FORNECEDOR =
+  'Cancelar este certificado de fornecedor?\n\n'
+  + 'O registro permanece no sistema para rastreabilidade e consulta.\n\n'
+  + 'Deseja continuar?';
 
 type JsonFieldProps = {
   values: Record<string, string>;
@@ -71,12 +108,177 @@ type NFeResumo = {
   chaveAcesso?: string;
 };
 
+type OrigemRastreabilidadeResumo = {
+  temVinculo: boolean;
+  produtoNaConferencia: boolean;
+  origemCompleta: boolean;
+  nfNumero: string;
+  nfSerie: string;
+  itemNf: string;
+  statusConferenciaLabel: string;
+  corridaHerdada: string;
+  loteHerdado: string;
+  pedidoNumero: string;
+  itemPedidoId: string;
+  produtoPedidoCodigo: string;
+  produtoPedidoDescricao: string;
+  quantidadePedido: string;
+  unidadePedido: string;
+  mensagem: string;
+  badgeClass: string;
+  badgeText: string;
+};
+
+const LABEL_STATUS_CONFERENCIA: Record<string, string> = {
+  PENDENTE_PRODUTO: 'Pendente produto',
+  PRODUTO_VINCULADO: 'Produto vinculado',
+  CONFERIDO: 'Conferido',
+  DIVERGENTE: 'Divergente',
+  IGNORADO: 'Ignorado',
+};
+
+function labelStatusConferencia(status: string | null | undefined): string {
+  if (!status) return '—';
+  return LABEL_STATUS_CONFERENCIA[status] || status;
+}
+
+function resumoOrigemItemCf(
+  it: ItemCertificadoFornecedorEntrada,
+  form: Pick<CertificadoFornecedorEntrada, 'numero_nf_entrada' | 'serie_nf_entrada'>,
+): OrigemRastreabilidadeResumo {
+  const temVinculo = Boolean(it.item_conferencia_id);
+  const produtoNaConferencia = Boolean(it.origem_produto_vinculado);
+  const nfNumero = it.origem_nfe_numero || form.numero_nf_entrada || '—';
+  const nfSerie = it.origem_nfe_serie || form.serie_nf_entrada || '—';
+  const itemNf = it.origem_nfe_item_numero != null ? String(it.origem_nfe_item_numero) : '—';
+  const corridaHerdada = (it.corrida || '').trim();
+  const loteHerdado = (it.lote || '').trim();
+  const statusConferenciaLabel = labelStatusConferencia(it.origem_conferencia_status);
+  const origemCompleta = Boolean(it.origem_rastreabilidade_completa);
+  const pedidoNumero = it.pedido_compra_numero || it.item_pedido_resumo?.pedido_numero || '—';
+  const itemPedidoId = it.item_pedido_compra_id != null ? String(it.item_pedido_compra_id) : '—';
+  const produtoPedidoCodigo = it.produto_pedido_codigo || it.item_pedido_resumo?.codigo || '—';
+  const produtoPedidoDescricao = it.produto_pedido_descricao || it.item_pedido_resumo?.descricao || '—';
+  const quantidadePedido = it.quantidade_pedido || it.item_pedido_resumo?.quantidade || '—';
+  const unidadePedido = it.unidade_pedido || it.item_pedido_resumo?.unidade || '—';
+
+  const base = {
+    nfNumero,
+    nfSerie,
+    itemNf,
+    statusConferenciaLabel,
+    corridaHerdada,
+    loteHerdado,
+    pedidoNumero,
+    itemPedidoId,
+    produtoPedidoCodigo,
+    produtoPedidoDescricao,
+    quantidadePedido,
+    unidadePedido,
+  };
+
+  if (!temVinculo) {
+    return {
+      ...base,
+      temVinculo: false,
+      produtoNaConferencia: false,
+      origemCompleta: false,
+      statusConferenciaLabel: '—',
+      mensagem: 'Item sem vínculo com linha da NF/conferência.',
+      badgeClass: 'erp-badge-warning',
+      badgeText: 'Sem rastreio NF',
+    };
+  }
+
+  if (origemCompleta) {
+    return {
+      ...base,
+      temVinculo: true,
+      produtoNaConferencia,
+      origemCompleta: true,
+      mensagem: 'Rastreável pela conferência da NF e pelo Pedido de Compra.',
+      badgeClass: 'erp-badge-success',
+      badgeText: 'Rastreável NF + Pedido',
+    };
+  }
+
+  if (!produtoNaConferencia) {
+    return {
+      ...base,
+      temVinculo: true,
+      produtoNaConferencia: false,
+      origemCompleta: false,
+      mensagem: 'Origem vinculada à NF, mas produto ainda não foi vinculado na conferência.',
+      badgeClass: 'erp-badge-warning',
+      badgeText: 'NF vinculada · sem produto',
+    };
+  }
+
+  return {
+    ...base,
+    temVinculo: true,
+    produtoNaConferencia: true,
+    origemCompleta: false,
+    mensagem: 'Origem vinculada à NF, mas sem item do pedido.',
+    badgeClass: 'erp-badge-success',
+    badgeText: 'Rastreável NF',
+  };
+}
+
 const ensureMap = (v: unknown): Record<string, string> => {
   if (!v || typeof v !== 'object') return {};
   return Object.entries(v as Record<string, unknown>).reduce<Record<string, string>>((acc, [k, val]) => {
     acc[k] = val == null ? '' : String(val);
     return acc;
   }, {});
+};
+
+const ensureCorridaAdicional = (raw: unknown, ordem = 1): ItemCertificadoFornecedorCorrida => {
+  const obj = (raw && typeof raw === 'object') ? (raw as Record<string, unknown>) : {};
+  return {
+    ...(obj.id != null ? { id: Number(obj.id) } : {}),
+    ordem: Number(obj.ordem || ordem),
+    corrida: String(obj.corrida || ''),
+    lote: String(obj.lote || ''),
+    quantidade: obj.quantidade == null || obj.quantidade === '' ? null : Number(obj.quantidade),
+    composicao_json: obj.composicao_json || {},
+    ensaio_tracao_json: obj.ensaio_tracao_json || {},
+    ensaio_impacto_json: obj.ensaio_impacto_json || {},
+    ...(obj.criado_em ? { criado_em: String(obj.criado_em) } : {}),
+  };
+};
+
+const mergeCorridasAdicionais = (
+  existentesRaw: ItemCertificadoFornecedorCorrida[] | undefined,
+  novasRaw: ItemCertificadoFornecedorCorrida[] | undefined,
+): ItemCertificadoFornecedorCorrida[] => {
+  const existentes = (existentesRaw || []).map((ca, i) => ensureCorridaAdicional(ca, i + 1));
+  const novas = (novasRaw || []).map((ca, i) => ensureCorridaAdicional(ca, i + 1));
+  if (!existentes.length && !novas.length) return [];
+
+  const chave = (c: ItemCertificadoFornecedorCorrida) => {
+    const corrida = (c.corrida || '').trim().toUpperCase();
+    const lote = (c.lote || '').trim().toUpperCase();
+    return `${corrida}||${lote}`;
+  };
+
+  const usados = new Set(existentes.map(chave));
+  const resultado: ItemCertificadoFornecedorCorrida[] = [...existentes];
+
+  for (const nova of novas) {
+    const k = chave(nova);
+    if (!k || usados.has(k)) continue;
+    usados.add(k);
+    resultado.push({
+      ...nova,
+      id: nova.id,
+    });
+  }
+
+  return resultado.map((c, idx) => ({
+    ...c,
+    ordem: idx + 1,
+  }));
 };
 
 const ensureComp = (raw: unknown, ordem = 1) => {
@@ -117,13 +319,39 @@ const emptyForm = (): Omit<CertificadoFornecedorEntrada, 'id' | 'criado_em' | 'a
 });
 
 const CertificadosFornecedor = () => {
-  const [items, setItems] = useState<CertificadoFornecedorEntrada[]>([]);
+  const [listForbidden, setListForbidden] = useState(false);
+  const fetchCertificadosPage = useCallback(async (params: ListQueryParams) => {
+    try {
+      const result = await certificadosFornecedorService.listPaginated(params);
+      setListForbidden(false);
+      return result;
+    } catch (e) {
+      if ((e as AxiosError).response?.status === 403) setListForbidden(true);
+      throw e;
+    }
+  }, []);
+  const {
+    items,
+    count,
+    page,
+    pageSize,
+    totalPages,
+    search,
+    setSearch,
+    setPage,
+    setPageSize,
+    loading: listLoading,
+    error: listError,
+    reload: reloadList,
+  } = usePaginatedList<CertificadoFornecedorEntrada>({ fetchPage: fetchCertificadosPage });
   const [nfEntradas, setNfEntradas] = useState<NFeEntrada[]>([]);
   const [nfHistoricas, setNfHistoricas] = useState<NFeEntradaHistoricaList[]>([]);
-  const [search, setSearch] = useState('');
+  const [nfOperacionalCache, setNfOperacionalCache] = useState<NFeEntrada | null>(null);
+  const [nfHistoricaCache, setNfHistoricaCache] = useState<NFeEntradaHistoricaList | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<CertificadoFornecedorEntrada | null>(null);
   const [form, setForm] = useState(emptyForm());
+  const navigate = useNavigate();
   const [saveErrors, setSaveErrors] = useState<string[]>([]);
   const [buscaNfOperacional, setBuscaNfOperacional] = useState('');
   const [buscaNfHistorica, setBuscaNfHistorica] = useState('');
@@ -136,18 +364,64 @@ const CertificadosFornecedor = () => {
   const [includeRascunhoBusca, setIncludeRascunhoBusca] = useState(false);
   const [mensagemInfo, setMensagemInfo] = useState<string | null>(null);
 
-  const load = async () => setItems(await certificadosFornecedorService.getAll());
+  // Busca no servidor (lista paginada ~100 itens não contém todas as NF-e).
   useEffect(() => {
-    void load();
-    nfeEntradasService.getAll().then(setNfEntradas).catch(() => setNfEntradas([]));
-    nfeEntradaHistoricaImportadaService.list().then(setNfHistoricas).catch(() => setNfHistoricas([]));
-  }, []);
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      const q = buscaNfOperacional.trim();
+      nfeEntradasService
+        .getAll({ search: q || undefined, limit: 50 })
+        .then((rows) => {
+          if (!cancelled) setNfEntradas(rows);
+        })
+        .catch(() => {
+          if (!cancelled) setNfEntradas([]);
+        });
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [buscaNfOperacional]);
 
-  const filtered = useMemo(
-    () => items.filter((x) =>
-      `${x.fornecedor_nome_snapshot} ${x.numero_nf_entrada || ''} ${x.numero_certificado_fornecedor || ''}`.toLowerCase().includes(search.toLowerCase())),
-    [items, search],
-  );
+  useEffect(() => {
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      const q = buscaNfHistorica.trim();
+      nfeEntradaHistoricaImportadaService
+        .list({ search: q || undefined, limit: 50 })
+        .then((rows) => {
+          if (!cancelled) setNfHistoricas(rows);
+        })
+        .catch(() => {
+          if (!cancelled) setNfHistoricas([]);
+        });
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [buscaNfHistorica]);
+
+  const labelSalvarFornecedorSemRegistrar = (): string => {
+    if (form.status === 'cancelado') {
+      return editing?.status === 'cancelado' ? 'Salvar cancelamento' : 'Confirmar cancelamento';
+    }
+    if (form.status === 'registrado') return 'Salvar como registrado';
+    return 'Salvar rascunho';
+  };
+
+  const titleSalvarFornecedorSemRegistrar = (): string => {
+    if (form.status === 'cancelado') {
+      return editing?.status === 'cancelado'
+        ? 'Grava alterações no cadastro cancelado (o status permanece cancelado).'
+        : 'Confirma o cancelamento: o registro permanece para rastreabilidade e consulta.';
+    }
+    if (form.status === 'registrado') {
+      return 'Grava alterações mantendo o status registrado. Use “Registrar certificado” para validar itens e formalizar o registro.';
+    }
+    return 'Grava sem registrar formalmente (permanece em rascunho).';
+  };
 
   const formatDate = (iso?: string) => {
     if (!iso) return '—';
@@ -193,67 +467,24 @@ const CertificadosFornecedor = () => {
     chaveAcesso: n.chave_acesso || '',
   });
 
-  const nfOperacionaisFiltradas = useMemo(() => {
-    const q = buscaNfOperacional.trim().toLowerCase();
-    if (!q) return nfEntradas;
-    return nfEntradas.filter((n) => {
-      const r = toResumoOperacional(n);
-      const hay = `${r.numero} ${r.serie} ${r.fornecedor} ${r.fornecedorCnpj} ${r.emissao} ${r.valorTotal ?? ''} ${r.chaveAcesso}`.toLowerCase();
-      return hay.includes(q);
-    });
-  }, [nfEntradas, buscaNfOperacional]);
+  /** Mantém a NF já escolhida na lista mesmo se a busca atual não a trouxer. */
+  const nfOperacionaisOpcoes = useMemo(() => {
+    const id = form.nf_entrada_operacional;
+    if (!id || !nfOperacionalCache || nfOperacionalCache.id !== id) return nfEntradas;
+    if (nfEntradas.some((n) => n.id === id)) return nfEntradas;
+    return [nfOperacionalCache, ...nfEntradas];
+  }, [nfEntradas, form.nf_entrada_operacional, nfOperacionalCache]);
 
-  const nfHistoricasFiltradas = useMemo(() => {
-    const q = buscaNfHistorica.trim().toLowerCase();
-    if (!q) return nfHistoricas;
-    return nfHistoricas.filter((n) => {
-      const r = toResumoHistorica(n);
-      const hay = `${r.numero} ${r.serie} ${r.fornecedor} ${r.fornecedorCnpj} ${r.emissao} ${r.valorTotal ?? ''} ${r.chaveAcesso}`.toLowerCase();
-      return hay.includes(q);
-    });
-  }, [nfHistoricas, buscaNfHistorica]);
+  const nfHistoricasOpcoes = useMemo(() => {
+    const id = form.nf_entrada_historica;
+    if (!id || !nfHistoricaCache || nfHistoricaCache.id !== id) return nfHistoricas;
+    if (nfHistoricas.some((n) => n.id === id)) return nfHistoricas;
+    return [nfHistoricaCache, ...nfHistoricas];
+  }, [nfHistoricas, form.nf_entrada_historica, nfHistoricaCache]);
 
-  const openNew = () => {
-    setEditing(null);
-    setForm(emptyForm());
-    setSaveErrors([]);
-    setBuscaNfOperacional('');
-    setBuscaNfHistorica('');
-    setNfeSelecionadaResumo(null);
-    setModalOpen(true);
-  };
+  const openNew = () => navigate('/certificados-fornecedor/novo');
 
-  const openEdit = (row: CertificadoFornecedorEntrada) => {
-    setEditing(row);
-    setForm({
-      ...row,
-      itens: (row.itens || []).map((it) => ({
-        ...it,
-        tipo_dados_tecnicos: it.tipo_dados_tecnicos || 'PADRAO_ITEM',
-        numero_certificado_fornecedor_item: it.numero_certificado_fornecedor_item || '',
-        data_certificado_fornecedor_item: it.data_certificado_fornecedor_item || '',
-        pagina_certificado_fornecedor: it.pagina_certificado_fornecedor || '',
-        observacao_origem_certificado: it.observacao_origem_certificado || '',
-        composicao_json: ensureMap(it.composicao_json),
-        ensaio_tracao_json: ensureMap(it.ensaio_tracao_json),
-        ensaio_impacto_json: ensureMap(it.ensaio_impacto_json),
-        componentes: (it.componentes || []).map((cp, i) => ensureComp(cp, i + 1)),
-      })),
-    });
-    setSaveErrors([]);
-    setBuscaNfOperacional('');
-    setBuscaNfHistorica('');
-    setNfeSelecionadaResumo({
-      numero: row.numero_nf_entrada || '',
-      serie: row.serie_nf_entrada || '',
-      fornecedor: row.fornecedor_nome_snapshot || '',
-      fornecedorCnpj: row.fornecedor_cnpj_snapshot || '',
-      emissao: row.data_nf_entrada || '',
-      valorTotal: undefined,
-      chaveAcesso: '',
-    });
-    setModalOpen(true);
-  };
+  const openEdit = (row: CertificadoFornecedorEntrada) => navigate(`/certificados-fornecedor/${row.id}`);
 
   const setF = (k: keyof typeof form, v: unknown) => setForm((p) => ({ ...p, [k]: v }));
   const norm = (v: string) => v.replace(',', '.');
@@ -300,18 +531,33 @@ const CertificadosFornecedor = () => {
       setForm((p) => ({
         ...p,
         ...data,
-        itens: ((data.itens as ItemCertificadoFornecedorEntrada[]) || []).map((it) => ({
-          ...it,
-          tipo_dados_tecnicos: it.tipo_dados_tecnicos || 'PADRAO_ITEM',
-          numero_certificado_fornecedor_item: it.numero_certificado_fornecedor_item || '',
-          data_certificado_fornecedor_item: it.data_certificado_fornecedor_item || '',
-          pagina_certificado_fornecedor: it.pagina_certificado_fornecedor || '',
-          observacao_origem_certificado: it.observacao_origem_certificado || '',
-          composicao_json: ensureMap(it.composicao_json),
-          ensaio_tracao_json: ensureMap(it.ensaio_tracao_json),
-          ensaio_impacto_json: ensureMap(it.ensaio_impacto_json),
-          componentes: (it.componentes || []).map((cp, i) => ensureComp(cp, i + 1)),
-        })),
+        itens: ((data.itens as ItemCertificadoFornecedorEntrada[]) || []).map((it) => {
+          const anterioresPorConferencia = new Map<number, ItemCertificadoFornecedorEntrada>();
+          (p.itens || []).forEach((oldIt) => {
+            if (oldIt.item_conferencia_id != null) {
+              anterioresPorConferencia.set(oldIt.item_conferencia_id, oldIt);
+            }
+          });
+          const existente = it.item_conferencia_id != null
+            ? anterioresPorConferencia.get(it.item_conferencia_id)
+            : undefined;
+          const corridasExistentes = existente?.corridas_adicionais || [];
+          const corridasNovas = (it.corridas_adicionais || []).map((ca, i) => ensureCorridaAdicional(ca, i + 1));
+
+          return {
+            ...it,
+            tipo_dados_tecnicos: it.tipo_dados_tecnicos || 'PADRAO_ITEM',
+            numero_certificado_fornecedor_item: it.numero_certificado_fornecedor_item || '',
+            data_certificado_fornecedor_item: it.data_certificado_fornecedor_item || '',
+            pagina_certificado_fornecedor: it.pagina_certificado_fornecedor || '',
+            observacao_origem_certificado: it.observacao_origem_certificado || '',
+            composicao_json: ensureMap(it.composicao_json),
+            ensaio_tracao_json: ensureMap(it.ensaio_tracao_json),
+            ensaio_impacto_json: ensureMap(it.ensaio_impacto_json),
+            componentes: (it.componentes || []).map((cp, i) => ensureComp(cp, i + 1)),
+            corridas_adicionais: mergeCorridasAdicionais(corridasExistentes, corridasNovas),
+          };
+        }),
       }));
       setNfeSelecionadaResumo((prev) => ({
         numero: String(data.numero_nf_entrada || prev?.numero || form.numero_nf_entrada || ''),
@@ -330,6 +576,27 @@ const CertificadosFornecedor = () => {
   const salvar = async (registrar = false) => {
     setSaveErrors([]);
     setMensagemInfo(null);
+    if (registrar && form.status === 'cancelado') {
+      setSaveErrors(['Não é possível registrar no status cancelado. Altere o status no campo Status antes de registrar.']);
+      return;
+    }
+    if (!registrar && form.status === 'cancelado') {
+      const anterior = editing?.status;
+      if (anterior !== 'cancelado') {
+        const ok = window.confirm(CONFIRMAR_CANCELAMENTO_CERTIFICADO_FORNECEDOR);
+        if (!ok) return;
+      }
+    }
+    const errosCorridasAdicionais: string[] = [];
+    form.itens.forEach((it, idx) => {
+      errosCorridasAdicionaisItemCf(it).forEach((msg) => {
+        errosCorridasAdicionais.push(`Item ${idx + 1}: ${msg}`);
+      });
+    });
+    if (errosCorridasAdicionais.length) {
+      setSaveErrors(errosCorridasAdicionais);
+      return;
+    }
     if (registrar) {
       const errosFrontend: string[] = [];
       form.itens.forEach((it, idx) => {
@@ -347,7 +614,7 @@ const CertificadosFornecedor = () => {
       if (editing) await certificadosFornecedorService.update(editing.id, payload);
       else await certificadosFornecedorService.create(payload);
       setModalOpen(false);
-      void load();
+      void reloadList();
     } catch (e) {
       setSaveErrors(formatApiErrors(e));
     }
@@ -394,6 +661,50 @@ const CertificadosFornecedor = () => {
     });
   };
 
+  const updateCorridaAdicional = (
+    itemIdx: number,
+    corridaIdx: number,
+    patch: Partial<ItemCertificadoFornecedorCorrida>,
+  ) => {
+    setForm((p) => {
+      const itemsNext = [...p.itens];
+      const corridas = [...(itemsNext[itemIdx].corridas_adicionais || [])];
+      corridas[corridaIdx] = { ...corridas[corridaIdx], ...patch };
+      itemsNext[itemIdx] = { ...itemsNext[itemIdx], corridas_adicionais: corridas };
+      return { ...p, itens: itemsNext };
+    });
+  };
+
+  const addCorridaAdicional = (itemIdx: number) => {
+    setForm((p) => {
+      const itemsNext = [...p.itens];
+      const item = itemsNext[itemIdx];
+      const corridas = [...(item.corridas_adicionais || [])];
+      // Nova corrida herda dados tecnicos do item principal (evita bloqueio de validacao
+      // e replica o comportamento historico do badge "Dados herdados")
+      const nova = ensureCorridaAdicional({}, corridas.length + 1);
+      nova.composicao_json = { ...(item.composicao_json || {}) };
+      nova.ensaio_tracao_json = { ...(item.ensaio_tracao_json || {}) };
+      nova.ensaio_impacto_json = { ...(item.ensaio_impacto_json || {}) };
+      corridas.push(nova);
+      itemsNext[itemIdx] = { ...itemsNext[itemIdx], corridas_adicionais: corridas };
+      return { ...p, itens: itemsNext };
+    });
+  };
+
+  const removeCorridaAdicional = (itemIdx: number, corridaIdx: number) => {
+    setForm((p) => {
+      const itemsNext = [...p.itens];
+      const corridas = [...(itemsNext[itemIdx].corridas_adicionais || [])];
+      corridas.splice(corridaIdx, 1);
+      itemsNext[itemIdx] = {
+        ...itemsNext[itemIdx],
+        corridas_adicionais: corridas.map((c, i) => ({ ...c, ordem: i + 1 })),
+      };
+      return { ...p, itens: itemsNext };
+    });
+  };
+
   const adicionarComponentesPadraoValvula = (itemIdx: number) => {
     setForm((p) => {
       const itemsNext = [...p.itens];
@@ -428,12 +739,13 @@ const CertificadosFornecedor = () => {
 
   const aplicarDadosTecnicosExistentes = (idx: number, src: DadosTecnicosFornecedorResultado, compIdx?: number) => {
     const item = form.itens[idx];
+    const { corrida: crEf, lote: loEf } = corridaLoteEfetivosResultadoFornecedor(src);
     if (compIdx != null) {
       const compAtual = ensureComp(item.componentes?.[compIdx], compIdx + 1);
       updateComponente(idx, compIdx, {
         norma: src.norma || compAtual.norma,
-        corrida: src.corrida || compAtual.corrida,
-        lote: src.lote || compAtual.lote,
+        corrida: crEf || compAtual.corrida,
+        lote: loEf || compAtual.lote,
         composicao_json: ensureMap(src.composicao_json),
         ensaio_tracao_json: ensureMap(src.ensaio_tracao_json),
         ensaio_impacto_json: ensureMap(src.ensaio_impacto_json),
@@ -445,8 +757,8 @@ const CertificadosFornecedor = () => {
     }
     updateItem(idx, {
       norma: src.norma || item.norma,
-      corrida: src.corrida || item.corrida,
-      lote: src.lote || item.lote,
+      corrida: crEf || item.corrida,
+      lote: loEf || item.lote,
       numero_certificado_fornecedor_item:
         src.numero_certificado_fornecedor_item || src.numero_certificado_fornecedor || item.numero_certificado_fornecedor_item,
       tipo_dados_tecnicos: src.tipo_dados_tecnicos || item.tipo_dados_tecnicos,
@@ -470,7 +782,10 @@ const CertificadosFornecedor = () => {
     const fornecedor = form.fornecedor || undefined;
     if (!corrida && !lote) return;
     try {
-      const found = await certificadosFornecedorService.buscarDadosTecnicos({
+      const debugBusca =
+        typeof window !== 'undefined' &&
+        new URLSearchParams(window.location.search).get('debug') === '1';
+      const { resultados: found, dicas_busca } = await certificadosFornecedorService.buscarDadosTecnicos({
         corrida,
         lote,
         fornecedor,
@@ -481,9 +796,13 @@ const CertificadosFornecedor = () => {
         tipo_dados_tecnicos: item.tipo_dados_tecnicos || 'PADRAO_ITEM',
         status: 'registrado',
         include_rascunho: includeRascunhoBusca,
+        ...(debugBusca ? { debug: true } : {}),
       });
       if (!found.length) {
-        if (!auto) setMensagemInfo('Nenhum dado técnico existente encontrado para essa corrida/lote.');
+        if (!auto) {
+          const dicaMsg = mensagemPrincipalBuscaDadosTecnicosFornecedor(dicas_busca);
+          setMensagemInfo(dicaMsg || 'Nenhum dado técnico existente encontrado para essa corrida/lote.');
+        }
         return;
       }
       setFornecedorTargetIdx(idx);
@@ -508,7 +827,10 @@ const CertificadosFornecedor = () => {
       return;
     }
     try {
-      const found = await certificadosFornecedorService.buscarDadosTecnicos({
+      const debugBusca =
+        typeof window !== 'undefined' &&
+        new URLSearchParams(window.location.search).get('debug') === '1';
+      const { resultados: found, dicas_busca } = await certificadosFornecedorService.buscarDadosTecnicos({
         corrida,
         lote,
         fornecedor,
@@ -518,9 +840,11 @@ const CertificadosFornecedor = () => {
         tipo_dados_tecnicos: 'VALVULA_COMPONENTES',
         certificado_fornecedor: comp.numero_certificado_fornecedor_componente || item.numero_certificado_fornecedor_item || form.numero_certificado_fornecedor || '',
         status: 'registrado',
+        ...(debugBusca ? { debug: true } : {}),
       });
       if (!found.length) {
-        setMensagemInfo('Nenhum dado técnico encontrado para a corrida do componente.');
+        const dicaMsg = mensagemPrincipalBuscaDadosTecnicosFornecedor(dicas_busca);
+        setMensagemInfo(dicaMsg || 'Nenhum dado técnico encontrado para a corrida do componente.');
         return;
       }
       setFornecedorTargetIdx(itemIdx);
@@ -534,470 +858,80 @@ const CertificadosFornecedor = () => {
 
   return (
     <div>
-      <PageHeader title="Certificados de Fornecedor" onAdd={openNew} addLabel="Novo Certificado" searchValue={search} onSearch={setSearch} />
-      <div className="erp-card overflow-x-auto">
-        <table className="erp-table">
-          <thead><tr><th>Fornecedor</th><th>NF entrada</th><th>Data</th><th>Certificado</th><th>Itens</th><th>Status</th><th>Acoes</th></tr></thead>
+      <PageHeader
+        title="Certificados de Fornecedor"
+        description="Controle de certificados recebidos de fornecedores e vínculos com produtos, lotes e entradas."
+        onAdd={listForbidden ? undefined : openNew}
+        addLabel="Novo certificado"
+        searchValue={search}
+        onSearch={setSearch}
+      />
+      {listError ? <ErrorState onRetry={() => void reloadList()} /> : null}
+      {listLoading ? <TableSkeleton rows={6} cols={7} /> : null}
+      {!listLoading && !listError ? (
+        <DataTableShell>
+        <DataTable className="text-sm" mobileMode="cards">
+          <thead>
+            <tr>
+              <th>Fornecedor</th>
+              <th className="whitespace-nowrap">NF entrada</th>
+              <th className="whitespace-nowrap">Data</th>
+              <th>Certificado</th>
+              <th className="whitespace-nowrap text-right">Itens</th>
+              <th className="whitespace-nowrap">Status</th>
+              <th className="w-20 text-right whitespace-nowrap">Ações</th>
+            </tr>
+          </thead>
           <tbody>
-            {filtered.map((c) => (
-              <tr key={c.id}>
-                <td>{c.fornecedor_nome_snapshot || '—'}</td>
-                <td>{c.numero_nf_entrada || '—'}</td>
-                <td>{c.data_nf_entrada || '—'}</td>
-                <td>{c.numero_certificado_fornecedor || '—'}</td>
-                <td>{c.quantidade_itens ?? c.itens.length}</td>
-                <td>{c.status}</td>
-                <td><button type="button" className="erp-btn-ghost erp-btn-sm" onClick={() => openEdit(c)}><Pencil className="h-4 w-4" /></button></td>
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan={7}>
+                  <EmptyState
+                    message="Nenhum certificado de fornecedor encontrado."
+                    actionLabel={listForbidden ? undefined : 'Novo certificado'}
+                    onAction={listForbidden ? undefined : openNew}
+                  />
+                </td>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Certificado de Fornecedor' : 'Novo Certificado de Fornecedor'} size="xl">
-        {saveErrors.length ? (
-          <div className="mb-2 rounded border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-            <p className="font-medium mb-1">Não foi possível registrar o certificado:</p>
-            {saveErrors.map((msg) => <p key={msg}>- {msg}</p>)}
-          </div>
-        ) : null}
-        {mensagemInfo ? <p className="text-sm text-emerald-700 dark:text-emerald-300 mb-2">{mensagemInfo}</p> : null}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div><label className="erp-label">Numero certificado fornecedor</label><input className="erp-input mt-1" value={form.numero_certificado_fornecedor || ''} onChange={(e) => setF('numero_certificado_fornecedor', e.target.value)} /></div>
-          <div><label className="erp-label">Fornecedor</label><input className="erp-input mt-1" value={form.fornecedor_nome_snapshot} onChange={(e) => setF('fornecedor_nome_snapshot', e.target.value)} /></div>
-          <div><label className="erp-label">CNPJ fornecedor</label><input className="erp-input mt-1" value={form.fornecedor_cnpj_snapshot || ''} onChange={(e) => setF('fornecedor_cnpj_snapshot', e.target.value)} /></div>
-          <div><label className="erp-label">Status</label><select className="erp-select mt-1 w-full" value={form.status} onChange={(e) => setF('status', e.target.value)}><option value="rascunho">Rascunho</option><option value="registrado">Registrado</option><option value="cancelado">Cancelado</option></select></div>
-        </div>
-        <div className="mt-2">
-          <button type="button" className="erp-btn-outline erp-btn-sm" onClick={aplicarNumeroCabecalhoEmTodosOsItens}>
-            Copiar número do cabeçalho para todos os itens
-          </button>
-        </div>
-
-        <div className="mt-4 p-3 rounded border border-border bg-muted/20">
-          <p className="text-sm font-medium">Selecionar NF-e de entrada</p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-2">
-            <div>
-              <label className="erp-label">NF-e entrada operacional</label>
-              <input
-                className="erp-input mt-1"
-                placeholder="Buscar por numero, serie, fornecedor, CNPJ, data, valor..."
-                value={buscaNfOperacional}
-                onChange={(e) => setBuscaNfOperacional(e.target.value)}
-              />
-              <select className="erp-select mt-1 w-full" value={form.nf_entrada_operacional || ''} onChange={(e) => {
-                const id = e.target.value ? +e.target.value : null;
-                setF('nf_entrada_operacional', id);
-                setF('nf_entrada_historica', null);
-                if (id) {
-                  const n = nfEntradas.find((x) => x.id === id);
-                  if (n) {
-                    const r = toResumoOperacional(n);
-                    setNfeSelecionadaResumo(r);
-                    setF('fornecedor_nome_snapshot', r.fornecedor);
-                    setF('fornecedor_cnpj_snapshot', r.fornecedorCnpj);
-                    setF('numero_nf_entrada', r.numero);
-                    setF('serie_nf_entrada', r.serie || '');
-                    setF('data_nf_entrada', r.emissao || '');
-                  }
-                }
-              }}>
-                <option value="">Selecione...</option>
-                {nfOperacionaisFiltradas.map((n) => {
-                  const r = toResumoOperacional(n);
-                  return <option key={n.id} value={n.id} title={labelNfCompleta(r)}>{labelNfCompacta(r)}</option>;
-                })}
-              </select>
-            </div>
-            <div>
-              <label className="erp-label">NF-e entrada historica</label>
-              <input
-                className="erp-input mt-1"
-                placeholder="Buscar por numero, serie, fornecedor, CNPJ, chave, data, valor..."
-                value={buscaNfHistorica}
-                onChange={(e) => setBuscaNfHistorica(e.target.value)}
-              />
-              <select className="erp-select mt-1 w-full" value={form.nf_entrada_historica || ''} onChange={(e) => {
-                const id = e.target.value ? +e.target.value : null;
-                setF('nf_entrada_historica', id);
-                setF('nf_entrada_operacional', null);
-                if (id) {
-                  const n = nfHistoricas.find((x) => x.id === id);
-                  if (n) {
-                    const r = toResumoHistorica(n);
-                    setNfeSelecionadaResumo(r);
-                    setF('fornecedor', n.fornecedor_id || null);
-                    setF('fornecedor_nome_snapshot', r.fornecedor);
-                    setF('fornecedor_cnpj_snapshot', r.fornecedorCnpj);
-                    setF('numero_nf_entrada', r.numero);
-                    setF('serie_nf_entrada', r.serie || '');
-                    setF('data_nf_entrada', r.emissao || '');
-                  }
-                }
-              }}>
-                <option value="">Selecione...</option>
-                {nfHistoricasFiltradas.map((n) => {
-                  const r = toResumoHistorica(n);
-                  return <option key={n.id} value={n.id} title={labelNfCompleta(r)}>{labelNfCompacta(r)}</option>;
-                })}
-              </select>
-            </div>
-            <div className="flex items-end">
-              <button type="button" className="erp-btn-outline w-full" onClick={() => void carregarItens()}>Carregar itens da NF-e</button>
-            </div>
-          </div>
-        </div>
-
-        {nfeSelecionadaResumo ? (
-          <div className="mt-4 rounded border border-border p-3 bg-muted/20">
-            <p className="text-sm font-medium mb-2">NF-e selecionada</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
-              <p><span className="font-medium">Fornecedor:</span> {nfeSelecionadaResumo.fornecedor || '—'}</p>
-              <p><span className="font-medium">CNPJ:</span> {nfeSelecionadaResumo.fornecedorCnpj || '—'}</p>
-              <p><span className="font-medium">NF/Série:</span> {nfeSelecionadaResumo.numero || '—'} / {nfeSelecionadaResumo.serie || '—'}</p>
-              <p><span className="font-medium">Emissão:</span> {formatDate(nfeSelecionadaResumo.emissao)}</p>
-              <p><span className="font-medium">Valor:</span> {formatCurrency(nfeSelecionadaResumo.valorTotal)}</p>
-              <p><span className="font-medium">Chave:</span> {nfeSelecionadaResumo.chaveAcesso || '—'}</p>
-            </div>
-          </div>
-        ) : null}
-
-        <div className="mt-4 space-y-3 max-h-[45vh] overflow-auto pr-1">
-          {form.itens.map((it, idx) => (
-            <details key={idx} className="rounded border border-border p-3" open>
-              <summary className="cursor-pointer text-sm font-medium">
-                <span className="inline-flex flex-wrap items-center gap-2">
-                  <span>Item {it.ordem || idx + 1} - {it.codigo_produto || 'Sem codigo'} - {it.descricao_material || 'Sem descricao'}</span>
-                  <span className={(it.tipo_dados_tecnicos || 'PADRAO_ITEM') === 'VALVULA_COMPONENTES' ? 'erp-badge-warning' : 'erp-badge-success'}>
-                    {(it.tipo_dados_tecnicos || 'PADRAO_ITEM') === 'VALVULA_COMPONENTES' ? 'Válvula por componentes' : 'Dados por item'}
-                  </span>
-                  {numeroEfetivoItem(it).numero ? (
-                    <span className="erp-badge-success">
-                      Nº efetivo: {numeroEfetivoItem(it).numero} — origem: {numeroEfetivoItem(it).origem}
-                    </span>
-                  ) : (
-                    <span className="erp-badge-warning">Sem número de certificado</span>
-                  )}
-                </span>
-              </summary>
-              <div className="grid grid-cols-1 md:grid-cols-6 gap-2 mt-2">
-                <div><label className="erp-label">Codigo</label><input className="erp-input mt-1" value={it.codigo_produto} onChange={(e) => updateItem(idx, { codigo_produto: e.target.value })} /></div>
-                <div className="md:col-span-2"><label className="erp-label">Descricao</label><input className="erp-input mt-1" value={it.descricao_material} onChange={(e) => updateItem(idx, { descricao_material: e.target.value })} /></div>
-                <div className="md:col-span-3">
-                  <label className="erp-label">Tipo de dados técnicos</label>
-                  <select
-                    className="erp-select mt-1 w-full"
-                    value={it.tipo_dados_tecnicos || 'PADRAO_ITEM'}
-                    onChange={(e) => updateItem(idx, { tipo_dados_tecnicos: e.target.value as 'PADRAO_ITEM' | 'VALVULA_COMPONENTES' })}
-                  >
-                    <option value="PADRAO_ITEM">Dados por item</option>
-                    <option value="VALVULA_COMPONENTES">Válvula por componentes</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="erp-label">Nº certificado fornecedor do item</label>
-                  <input
-                    className="erp-input mt-1"
-                    value={it.numero_certificado_fornecedor_item || ''}
-                    onChange={(e) => updateItem(idx, { numero_certificado_fornecedor_item: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="erp-label">Data certificado do item</label>
-                  <input
-                    type="date"
-                    className="erp-input mt-1"
-                    value={it.data_certificado_fornecedor_item || ''}
-                    onChange={(e) => updateItem(idx, { data_certificado_fornecedor_item: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="erp-label">Página / origem no PDF</label>
-                  <input
-                    className="erp-input mt-1"
-                    value={it.pagina_certificado_fornecedor || ''}
-                    onChange={(e) => updateItem(idx, { pagina_certificado_fornecedor: e.target.value })}
-                  />
-                </div>
-                <div className="md:col-span-3">
-                  <label className="erp-label">Observação da origem do certificado</label>
-                  <input
-                    className="erp-input mt-1"
-                    value={it.observacao_origem_certificado || ''}
-                    onChange={(e) => updateItem(idx, { observacao_origem_certificado: e.target.value })}
-                  />
-                </div>
-                {(it.tipo_dados_tecnicos || 'PADRAO_ITEM') === 'PADRAO_ITEM' ? (
-                  <>
-                    <div><label className="erp-label">Norma</label><input className="erp-input mt-1" value={it.norma} onChange={(e) => updateItem(idx, { norma: e.target.value })} /></div>
-                    <div>
-                      <label className="erp-label">Corrida</label>
-                      <input
-                        className="erp-input mt-1"
-                        value={it.corrida}
-                        onChange={(e) => updateItem(idx, { corrida: e.target.value })}
-                        onBlur={() => void buscarDadosCorridaExistente(idx, true)}
-                      />
-                    </div>
-                    <div>
-                      <label className="erp-label">Lote</label>
-                      <input
-                        className="erp-input mt-1"
-                        value={it.lote || ''}
-                        onChange={(e) => updateItem(idx, { lote: e.target.value })}
-                        onBlur={() => void buscarDadosCorridaExistente(idx, true)}
-                      />
-                    </div>
-                    <div className="md:col-span-6 flex flex-wrap gap-2 mt-1">
-                      <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => void buscarDadosCorridaExistente(idx, false)}>
-                        Buscar dados existentes da corrida
+            ) : (
+              items.map((c) => (
+                  <tr key={c.id}>
+                    <td>{c.fornecedor_nome_snapshot || '—'}</td>
+                    <td>{c.numero_nf_entrada || '—'}</td>
+                    <td>{c.data_nf_entrada || '—'}</td>
+                    <td className="font-mono text-xs">{c.numero_certificado_fornecedor || '—'}</td>
+                    <td className="text-right tabular-nums">{c.quantidade_itens ?? c.itens.length}</td>
+                    <td>
+                      <StatusBadge status={c.status || 'pendente'} />
+                    </td>
+                    <td className="text-right">
+                      <button
+                        type="button"
+                        className="erp-btn-ghost erp-btn-sm"
+                        onClick={() => openEdit(c)}
+                        title="Abrir cadastro do certificado de fornecedor"
+                      >
+                        <Pencil className="h-4 w-4" />
                       </button>
-                      <label className="text-xs flex items-center gap-1">
-                        <input
-                          type="checkbox"
-                          checked={includeRascunhoBusca}
-                          onChange={(e) => setIncludeRascunhoBusca(e.target.checked)}
-                        />
-                        Incluir certificados em rascunho
-                      </label>
-                    </div>
-                    <div className="md:col-span-6 rounded border border-border p-2">
-                      <p className="text-xs font-semibold mb-2">Composicao quimica</p>
-                      <ComposicaoQuimicaFields
-                        idPrefix={`item-${idx}`}
-                        values={ensureMap(it.composicao_json)}
-                        onChange={(key, value) =>
-                          updateItem(idx, {
-                            composicao_json: {
-                              ...ensureMap(it.composicao_json),
-                              [key]: norm(value),
-                            },
-                          })
-                        }
-                      />
-                    </div>
-                    <div className="md:col-span-6 rounded border border-border p-2">
-                      <p className="text-xs font-semibold mb-2">Tracao / propriedades mecanicas</p>
-                      <PropriedadesMecanicasFields
-                        idPrefix={`item-${idx}`}
-                        values={ensureMap(it.ensaio_tracao_json)}
-                        onChange={(key, value) =>
-                          updateItem(idx, {
-                            ensaio_tracao_json: {
-                              ...ensureMap(it.ensaio_tracao_json),
-                              [key]: norm(value),
-                            },
-                          })
-                        }
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <div className="md:col-span-6 rounded border border-border p-2 bg-muted/10">
-                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                      <p className="text-xs font-semibold">Componentes da válvula</p>
-                      <div className="flex gap-2">
-                        <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => adicionarComponentesPadraoValvula(idx)}>
-                          Usar componentes padrão de válvula
-                        </button>
-                        <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => addComponente(idx)}>
-                          Adicionar componente
-                        </button>
-                      </div>
-                    </div>
-                    {(it.componentes || []).length === 0 ? (
-                      <p className="text-xs text-amber-700 dark:text-amber-300">Informe ao menos um componente para válvula por componentes.</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {(it.componentes || []).map((cp, cidx) => (
-                          <details key={cidx} className="rounded border border-border p-2" open>
-                            <summary className="cursor-pointer text-xs font-medium">
-                              <span className="inline-flex flex-wrap items-center gap-2">
-                                <span>Componente {cp.ordem} - {cp.nome_componente || `Componente ${cidx + 1}`}</span>
-                                <span className="erp-badge-success">
-                                  Nº efetivo componente: {numeroEfetivoComponente(it, cp).numero || '—'} — origem: {numeroEfetivoComponente(it, cp).origem}
-                                </span>
-                                {componenteStatus(it, ensureComp(cp, cidx + 1)) === 'Completo' ? (
-                                  <span className="erp-badge-success">Completo</span>
-                                ) : (
-                                  <span className="erp-badge-warning">{componenteStatus(it, ensureComp(cp, cidx + 1))}</span>
-                                )}
-                              </span>
-                            </summary>
-                            <div className="grid grid-cols-1 md:grid-cols-6 gap-2 mt-2">
-                              <div><label className="erp-label">Componente</label><input className="erp-input mt-1" value={cp.nome_componente} onChange={(e) => updateComponente(idx, cidx, { nome_componente: e.target.value })} /></div>
-                              <div>
-                                <label className="erp-label">Nº certificado do componente</label>
-                                <input className="erp-input mt-1" value={cp.numero_certificado_fornecedor_componente || ''} onChange={(e) => updateComponente(idx, cidx, { numero_certificado_fornecedor_componente: e.target.value })} />
-                              </div>
-                              <div className="md:col-span-2 text-xs flex items-end">
-                                {numeroEfetivoComponente(it, cp).numero ? (
-                                  <span className="erp-badge-success">Nº efetivo componente: {numeroEfetivoComponente(it, cp).numero} — origem: {numeroEfetivoComponente(it, cp).origem}</span>
-                                ) : (
-                                  <span className="erp-badge-warning">Sem número de certificado</span>
-                                )}
-                              </div>
-                              <div><label className="erp-label">Corrida</label><input className="erp-input mt-1" value={cp.corrida || ''} onChange={(e) => updateComponente(idx, cidx, { corrida: e.target.value })} /></div>
-                              <div><label className="erp-label">Lote</label><input className="erp-input mt-1" value={cp.lote || ''} onChange={(e) => updateComponente(idx, cidx, { lote: e.target.value })} /></div>
-                              <div><label className="erp-label">Norma</label><input className="erp-input mt-1" value={cp.norma || ''} onChange={(e) => updateComponente(idx, cidx, { norma: e.target.value })} /></div>
-                              <div className="md:col-span-6 rounded border border-border p-2">
-                                <p className="text-xs font-semibold mb-2">Composição química do componente</p>
-                                <ComposicaoQuimicaFields
-                                  idPrefix={`item-${idx}-comp-${cidx}`}
-                                  values={ensureMap(cp.composicao_json)}
-                                  onChange={(key, value) =>
-                                    updateComponente(idx, cidx, {
-                                      composicao_json: {
-                                        ...ensureMap(cp.composicao_json),
-                                        [key]: norm(value),
-                                      },
-                                    })
-                                  }
-                                />
-                              </div>
-                              <div className="md:col-span-6 rounded border border-border p-2">
-                                <p className="text-xs font-semibold mb-2">Propriedades mecânicas / tração do componente</p>
-                                <PropriedadesMecanicasFields
-                                  idPrefix={`item-${idx}-comp-${cidx}`}
-                                  values={ensureMap(cp.ensaio_tracao_json)}
-                                  onChange={(key, value) =>
-                                    updateComponente(idx, cidx, {
-                                      ensaio_tracao_json: {
-                                        ...ensureMap(cp.ensaio_tracao_json),
-                                        [key]: norm(value),
-                                      },
-                                    })
-                                  }
-                                />
-                              </div>
-                              <div className="md:col-span-6">
-                                <label className="erp-label">Impacto (opcional)</label>
-                                <input
-                                  className="erp-input mt-1"
-                                  placeholder="Opcional"
-                                  value={ensureMap(cp.ensaio_impacto_json).media || ''}
-                                  onChange={(e) =>
-                                    updateComponente(idx, cidx, {
-                                      ensaio_impacto_json: {
-                                        ...ensureMap(cp.ensaio_impacto_json),
-                                        media: norm(e.target.value),
-                                      },
-                                    })
-                                  }
-                                />
-                              </div>
-                              <div className="md:col-span-6">
-                                <label className="erp-label">Observações do componente</label>
-                                <input
-                                  className="erp-input mt-1"
-                                  value={cp.observacoes || ''}
-                                  onChange={(e) => updateComponente(idx, cidx, { observacoes: e.target.value })}
-                                />
-                              </div>
-                              <div className="md:col-span-6 flex flex-wrap gap-2">
-                                <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => void buscarDadosCorridaComponente(idx, cidx)}>
-                                  Buscar dados existentes da corrida
-                                </button>
-                                <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => removeComponente(idx, cidx)}>
-                                  Remover componente
-                                </button>
-                              </div>
-                            </div>
-                          </details>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </details>
-          ))}
-        </div>
+                    </td>
+                  </tr>
+                ))
+            )}
+          </tbody>
+        </DataTable>
+          {count > 0 ? (
+          <PaginationControls
+            page={page}
+            pageSize={pageSize}
+            count={count}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        ) : null}
+        </DataTableShell>
+      ) : null}
 
-        <div className="mt-4"><label className="erp-label">Observacoes</label><textarea className="erp-input mt-1 h-20" value={form.observacoes || ''} onChange={(e) => setF('observacoes', e.target.value)} /></div>
-        <div className="mt-4 flex justify-end gap-2">
-          <button type="button" className="erp-btn-outline" onClick={() => setModalOpen(false)}>Voltar</button>
-          <button type="button" className="erp-btn-outline" onClick={() => void salvar(false)}>Salvar rascunho</button>
-          <button type="button" className="erp-btn-primary" onClick={() => void salvar(true)}>Registrar certificado</button>
-        </div>
-      </Modal>
-
-      <Modal
-        isOpen={fornecedorMatchModalOpen}
-        onClose={() => setFornecedorMatchModalOpen(false)}
-        title="Resultados de dados técnicos por corrida"
-        size="xl"
-      >
-        <div className="space-y-2 max-h-[55vh] overflow-auto pr-1">
-          {fornecedorMatches.map((r) => (
-            <div key={`${r.certificado_fornecedor_id}-${r.id}`} className="rounded border border-border p-3">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-1 text-sm">
-                <p><span className="font-medium">Fornecedor:</span> {r.fornecedor_nome || '—'}</p>
-                <p><span className="font-medium">NF entrada:</span> {r.numero_nf_entrada || '—'} {r.data_nf_entrada ? `(${formatDate(r.data_nf_entrada)})` : ''}</p>
-                <p><span className="font-medium">Certificado (item):</span> {r.numero_certificado_fornecedor_item || r.numero_certificado_fornecedor || `#${r.certificado_fornecedor_id}`}</p>
-                <p><span className="font-medium">Status:</span> {r.status_certificado_fornecedor || '—'}</p>
-                <p><span className="font-medium">Código item:</span> {r.codigo_produto || '—'}</p>
-                <p><span className="font-medium">Descrição:</span> {r.descricao_material || '—'}</p>
-                <p><span className="font-medium">Corrida:</span> {r.corrida || '—'}</p>
-                <p><span className="font-medium">Lote:</span> {r.lote || '—'}</p>
-                <p><span className="font-medium">Norma:</span> {r.norma || '—'}</p>
-                <p><span className="font-medium">Tipo técnico:</span> {r.tipo_dados_tecnicos === 'VALVULA_COMPONENTES' ? 'Válvula/componentes' : 'Item padrão'}</p>
-                <p><span className="font-medium">Confiança:</span> {r.confianca_correspondencia || '—'}</p>
-                <p><span className="font-medium">Classificação:</span> {r.tipo_correspondencia || '—'}</p>
-              </div>
-              {r.mensagem_contexto ? <p className="text-xs text-muted-foreground mt-2">{r.mensagem_contexto}</p> : null}
-              {[r.aviso_divergencia_item, r.aviso_divergencia_dados_tecnicos, r.aviso_certificado_rascunho]
-                .filter(Boolean)
-                .map((a) => (
-                  <p key={a} className="text-xs text-amber-700 dark:text-amber-300 mt-1">{a}</p>
-                ))}
-              <div className="mt-2">
-                <button
-                  type="button"
-                  className="erp-btn-outline erp-btn-sm"
-                  onClick={() => setFornecedorComparacaoVisible((p) => ({ ...p, [`${r.certificado_fornecedor_id}-${r.id}`]: !p[`${r.certificado_fornecedor_id}-${r.id}`] }))}
-                >
-                  Ver detalhes
-                </button>
-              </div>
-              {fornecedorComparacaoVisible[`${r.certificado_fornecedor_id}-${r.id}`] ? (
-                <div className="mt-2 rounded border border-border p-2 text-xs">
-                  <p><span className="font-medium">Comparação rápida:</span></p>
-                  <p>Produto encontrado: {r.codigo_produto || '—'} - {r.descricao_material || '—'}</p>
-                  <p>Norma encontrada: {r.norma || '—'}</p>
-                  <p>Norma/material compatível: {r.norma_compativel ? 'Sim' : 'Conferir'}</p>
-                  <p>Produto tecnicamente relacionado: {r.produto_relacionado ? 'Sim' : 'Conferir'}</p>
-                </div>
-              ) : null}
-              <div className="flex justify-end mt-2">
-                <button
-                  type="button"
-                  className="erp-btn-outline erp-btn-sm mr-2"
-                  onClick={() => setFornecedorMatchModalOpen(false)}
-                >
-                  Ignorar
-                </button>
-                <button
-                  type="button"
-                  className="erp-btn-primary erp-btn-sm"
-                  onClick={() => {
-                    if (fornecedorTargetIdx == null) return;
-                    aplicarDadosTecnicosExistentes(
-                      fornecedorTargetIdx,
-                      r,
-                      fornecedorTargetCompIdx == null ? undefined : fornecedorTargetCompIdx,
-                    );
-                    setFornecedorMatchModalOpen(false);
-                  }}
-                >
-                  Usar estes dados técnicos
-                </button>
-              </div>
-            </div>
-          ))}
-          {!fornecedorMatches.length ? <p className="text-sm text-muted-foreground">Nenhum resultado.</p> : null}
-        </div>
-      </Modal>
     </div>
   );
 };

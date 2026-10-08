@@ -1,0 +1,568 @@
+"""Montagem de infCpl, infAdProd e xPed/nItemPed para XML NF-e / DANFE BFR."""
+
+from __future__ import annotations
+
+import re
+from typing import Any
+
+from apps.fiscal.models import ItemNFeSaida, NFeSaida
+from apps.fiscal.nfe_informacoes_adicionais import (
+    chave_deduplicacao_texto,
+    deduplicar_blocos_texto,
+    dividir_blocos_texto,
+    normalizar_espacos_linha,
+)
+
+_MAX_INF_CPL_XML_CHARS = 5000
+_MAX_INF_CPL_DANFE_CHARS = 420
+
+_TERMOS_STATUS_DANFE = (
+    'nf-e de conferência',
+    'nfe de conferencia',
+    'sem valor fiscal',
+    'sem protocolo',
+    'sem protocolo de autorização',
+    'documento ainda não autorizado',
+    'nao autorizado pela sefaz',
+    'não autorizado pela sefaz',
+)
+
+_TERMOS_EXCLUIR = _TERMOS_STATUS_DANFE + (
+    'xml preliminar',
+    'não transmitir',
+    'nao transmitir',
+    'rascunho-fat',
+    'ref. interna erp',
+    'condição de pagamento',
+    'condicao de pagamento',
+    'prazo de pagamento',
+    'prazo de entrega',
+    'secret interno',
+    'nao imprimir',
+    'não deve sair',
+    'nfepreview',
+    'nfelib',
+    'cst/csosn icms',
+    'cst icms',
+    'csosn icms',
+)
+
+
+def _text(val: Any) -> str:
+    return (str(val) if val is not None else '').strip()
+
+
+def _normalizar_espacos(texto: str) -> str:
+    return normalizar_espacos_linha(texto)
+
+
+def _preservar_linhas_inf_cpl(texto: str) -> str:
+    """Colapsa espaços por linha, mantendo quebras explícitas entre mensagens."""
+    linhas: list[str] = []
+    for segmento in (texto or '').replace('\r\n', '\n').replace('\r', '\n').split('\n'):
+        linha = _normalizar_espacos(segmento)
+        if linha:
+            linhas.append(linha)
+    return '\n'.join(linhas)
+
+
+def _para_maiusculas(texto: str) -> str:
+    return _normalizar_espacos(texto).upper()
+
+
+def _normalizar_chave_dedup(texto: str) -> str:
+    return chave_deduplicacao_texto(texto)
+
+
+def _contem_termo_bloqueado(texto: str) -> bool:
+    low = _normalizar_chave_dedup(texto)
+    return any(term in low for term in _TERMOS_EXCLUIR)
+
+
+def _texto_permitido_inf_cpl(texto: str, *, max_len: int = 2000) -> bool:
+    t = _text(texto)
+    if not t or len(t) > max_len:
+        return False
+    return not _contem_termo_bloqueado(t)
+
+
+def deduplicar_textos_inf_cpl(partes: list[str]) -> list[str]:
+    """Remove duplicados exatos e por normalização de espaços/quebras (sem fuzzy)."""
+    # Expande cada parte em blocos/linhas e deduplica preservando ordem global.
+    expandido: list[str] = []
+    for raw in partes:
+        t = _text(raw)
+        if not t:
+            continue
+        blocos = dividir_blocos_texto(t)
+        if blocos:
+            expandido.extend(blocos)
+        else:
+            expandido.append(t)
+    return deduplicar_blocos_texto(expandido)
+
+
+def _coletar_regras_fiscais_nfe(nfe_saida: NFeSaida) -> list[Any]:
+    from apps.fiscal.nfe_saida_atualizar_impostos import _buscar_regra_para_item
+    from apps.regras_fiscais.models import RegraFiscalSaida
+
+    vistos: dict[int, RegraFiscalSaida] = {}
+    for item in nfe_saida.itens.select_related('produto'):
+        _busca, regra, _alertas, _filtros = _buscar_regra_para_item(nfe_saida, item)
+        if regra and regra.pk not in vistos:
+            vistos[regra.pk] = regra
+    return list(vistos.values())
+
+
+def _bloco_inf_cpl(texto: str) -> str:
+    """Normaliza, valida e devolve bloco em maiúsculas (uma linha lógica)."""
+    t = _para_maiusculas(texto)
+    if not t or not _texto_permitido_inf_cpl(t):
+        return ''
+    return t
+
+
+def _linhas_inf_cpl_de_blocos(blocos: list[str]) -> list[str]:
+    """
+    Cada fonte/bloco vira uma ou mais linhas do infCpl.
+    Quebras explícitas (\\n) dentro do texto também geram linhas separadas.
+    """
+    linhas: list[str] = []
+    for bloco in blocos:
+        for segmento in re.split(r'\r?\n', _text(bloco)):
+            linha = _bloco_inf_cpl(segmento)
+            if linha:
+                linhas.append(linha)
+    return deduplicar_textos_inf_cpl(linhas)
+
+
+_SEPARADOR_INF_CPL_XML = ' '
+_SEPARADOR_INF_CPL_DANFE = '\n'
+
+
+def _resolver_contexto_inf_cpl(
+    nfe_saida: NFeSaida,
+    dados: dict[str, Any] | None,
+    itens_db: dict[int, ItemNFeSaida] | None,
+) -> tuple[dict[str, Any], dict[int, ItemNFeSaida], list[dict[str, Any]]]:
+    """Garante payload de itens/snapshots para DIFAL e demais blocos do infCpl."""
+    if itens_db is None:
+        itens_db = {it.pk: it for it in nfe_saida.itens.all()}
+    linhas_payload = (dados or {}).get('itens') or []
+    if not linhas_payload:
+        from apps.fiscal.nfe_saida_preview import gerar_dados_preview_nfe_saida
+
+        dados = gerar_dados_preview_nfe_saida(nfe_saida, incluir_validacao_emissao=False)
+        linhas_payload = list(dados.get('itens') or [])
+    elif dados is None:
+        dados = {'itens': linhas_payload}
+    return dados, itens_db, linhas_payload
+
+
+def _juntar_linhas_inf_cpl(linhas: list[str], *, separador: str = _SEPARADOR_INF_CPL_XML) -> str:
+    return separador.join(linhas)[:_MAX_INF_CPL_XML_CHARS].strip()
+
+
+def _textos_regra_fiscal(regras: list[Any]) -> list[str]:
+    partes: list[str] = []
+    for regra in regras:
+        t = _text(getattr(regra, 'informacoes_complementares', ''))
+        if t:
+            partes.append(t)
+    return deduplicar_textos_inf_cpl(partes)
+
+
+def _cliente_nfe(nfe_saida: NFeSaida):
+    if not nfe_saida.cliente_id:
+        return None
+    cliente = getattr(nfe_saida, 'cliente', None)
+    if cliente is not None:
+        return cliente
+    from apps.cadastros.models import Cliente
+
+    return Cliente.objects.filter(pk=nfe_saida.cliente_id).first()
+
+
+def _texto_cliente_complementar(nfe_saida: NFeSaida) -> str:
+    cliente = _cliente_nfe(nfe_saida)
+    if not cliente:
+        return ''
+    return _text(getattr(cliente, 'informacoes_complementares_nfe', ''))
+
+
+def _texto_nf_manual(nfe_saida: NFeSaida) -> str:
+    return _text(nfe_saida.informacoes_adicionais)
+
+
+def _pedido_ja_citado(textos: list[str], pedido: str) -> bool:
+    ped_norm = _normalizar_chave_dedup(pedido)
+    if not ped_norm:
+        return False
+    rotulos = (
+        f'pedido de compra: {pedido}',
+        f'pedido de compra do cliente: {pedido}',
+        f'ordem de compra: {pedido}',
+        f'pedido do cliente: {pedido}',
+        f'pedido do cliente {pedido}',
+        pedido,
+    )
+    for bloco in textos:
+        chave = _normalizar_chave_dedup(bloco)
+        for rotulo in rotulos:
+            if _normalizar_chave_dedup(rotulo) in chave or ped_norm in chave:
+                return True
+    return False
+
+
+def _normalizar_itens_db(
+    itens_db: dict[int, ItemNFeSaida] | list[ItemNFeSaida] | None,
+) -> dict[int, ItemNFeSaida]:
+    if not itens_db:
+        return {}
+    if isinstance(itens_db, dict):
+        return itens_db
+    return {it.pk: it for it in itens_db}
+
+
+def _texto_pedido_cliente_cabecalho(
+    nfe_saida: NFeSaida,
+    itens_db: dict[int, ItemNFeSaida] | list[ItemNFeSaida] | None,
+    linhas: list[dict[str, Any]],
+) -> str:
+    ped = _text(nfe_saida.pedido_cliente_numero)
+    if not ped:
+        return ''
+    return f'PEDIDO DE COMPRA: {ped.upper()}'
+
+
+def _nitemped_distinto_do_pedido(pc_num: str, pc_item: str) -> str:
+    """nItemPed só quando for linha do pedido, não repetição/truncamento do número do pedido."""
+    if not pc_item:
+        return ''
+    num = pc_item.strip()
+    ped = pc_num.strip()
+    if not ped:
+        return num[:6]
+    if num == ped:
+        return ''
+    # linhas curtas (ex.: 1, 10) são válidas — não usar startswith genérico
+    if len(num) >= 5 and ped.startswith(num):
+        return ''
+    if len(num) >= 5 and len(ped) >= 6 and num == ped[:6]:
+        return ''
+    if len(num) >= 5 and len(ped) >= 6 and ped[:6] == num[:6]:
+        return ''
+    return num[:6]
+
+
+def _linhas_pedido_equivalentes(linha_a: str, linha_b: str) -> bool:
+    a = (linha_a or '').strip()
+    b = (linha_b or '').strip()
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    if a.isdigit() and b.isdigit():
+        return int(a) == int(b)
+    return False
+
+
+def _resolver_linha_pedido_item(
+    pc_num: str,
+    pc_item: str,
+    *,
+    observacao_item: str = '',
+) -> str:
+    linha = _nitemped_distinto_do_pedido(pc_num, pc_item)
+    if linha:
+        return linha
+    obs = _text(observacao_item)
+    if obs and len(obs) <= 6:
+        return _nitemped_distinto_do_pedido(pc_num, obs)
+    return ''
+
+
+def _texto_pedido_compra_item(x_ped: str, n_item: str) -> str:
+    """Texto legível abaixo do item no DANFE (via infAdProd)."""
+    if x_ped and n_item:
+        return f'Pedido de compra: {x_ped} — Item: {n_item}'
+    if x_ped:
+        return f'Pedido de compra: {x_ped}'
+    return ''
+
+
+def montar_linhas_inf_cpl_nfe(
+    nfe_saida: NFeSaida,
+    dados: dict[str, Any] | None = None,
+    *,
+    itens_db: dict[int, ItemNFeSaida] | None = None,
+) -> list[str]:
+    """
+    Blocos lógicos do infCpl, nesta ordem, em maiúsculas:
+
+    1. Informações complementares (NF) da regra fiscal
+    2. Pedido de compra do cliente (cabeçalho)
+    3. Informações complementares do cliente (cadastro)
+    4. Informações adicionais manuais da NF-e (conferência)
+    5. Totais DIFAL/FCP (quando aplicável)
+    """
+    dados, itens_db, linhas_payload = _resolver_contexto_inf_cpl(nfe_saida, dados, itens_db)
+    regras = _coletar_regras_fiscais_nfe(nfe_saida)
+
+    partes: list[str] = []
+    partes.extend(_textos_regra_fiscal(regras))
+
+    ped = _texto_pedido_cliente_cabecalho(nfe_saida, itens_db, linhas_payload)
+    if ped and not _pedido_ja_citado(partes, _text(nfe_saida.pedido_cliente_numero)):
+        partes.append(ped)
+
+    cli = _texto_cliente_complementar(nfe_saida)
+    if cli:
+        partes.append(cli)
+
+    manual = _texto_nf_manual(nfe_saida)
+    if manual:
+        partes.append(manual)
+
+    blocos = deduplicar_textos_inf_cpl(partes)
+    from apps.fiscal.nfe_difal_calculo import agregar_totais_difal, texto_difal_inf_complementar
+    from apps.fiscal.snapshot_fiscal_helpers import get_difal_snapshot
+
+    difal_totais = agregar_totais_difal(
+        [
+            get_difal_snapshot(
+                (itens_db or {}).get(linha.get('item_id')).snapshot_fiscal
+                if itens_db and linha.get('item_id') in itens_db
+                else linha.get('snapshot_fiscal')
+            )
+            for linha in linhas_payload
+        ],
+    )
+    texto_difal = texto_difal_inf_complementar(difal_totais)
+    if texto_difal:
+        blocos.append(texto_difal)
+    blocos = deduplicar_textos_inf_cpl(blocos)
+    return _linhas_inf_cpl_de_blocos(blocos)
+
+
+def montar_inf_cpl_nfe(
+    nfe_saida: NFeSaida,
+    dados: dict[str, Any] | None = None,
+    *,
+    itens_db: dict[int, ItemNFeSaida] | None = None,
+) -> tuple[str, str]:
+    """infCpl para XML/SEFAZ — blocos unidos por espaço (sem quebra de linha)."""
+    linhas = montar_linhas_inf_cpl_nfe(nfe_saida, dados, itens_db=itens_db)
+    inf_cpl = _juntar_linhas_inf_cpl(linhas, separador=_SEPARADOR_INF_CPL_XML)
+    inf_fisco = _para_maiusculas(nfe_saida.informacoes_fisco)[:2000]
+    if inf_fisco and len(inf_fisco) > 200:
+        inf_fisco = inf_fisco[:197] + '...'
+    return inf_cpl, inf_fisco
+
+
+def montar_inf_cpl_para_danfe(
+    nfe_saida: NFeSaida,
+    dados: dict[str, Any] | None = None,
+    *,
+    itens_db: dict[int, ItemNFeSaida] | None = None,
+) -> str:
+    """infCpl apenas para exibição no DANFE — blocos em linhas separadas."""
+    linhas = montar_linhas_inf_cpl_nfe(nfe_saida, dados, itens_db=itens_db)
+    return _juntar_linhas_inf_cpl(linhas, separador=_SEPARADOR_INF_CPL_DANFE)
+
+
+def _normalizar_n_item_ped_xml(valor: str) -> str:
+    """nItemPed XSD: [0-9]{1,6} — preserva dígitos informados pelo usuário."""
+    bruto = _text(valor)
+    if not bruto:
+        return ''
+    if bruto.isdigit():
+        return bruto[:6]
+    digits = ''.join(c for c in bruto if c.isdigit())
+    return digits[:6] if digits else ''
+
+
+def resolver_xped_nitemped_item(
+    item_db: ItemNFeSaida | None,
+    linha: dict[str, Any] | None = None,
+    *,
+    pedido_cabecalho: str = '',
+) -> tuple[str, str]:
+    """
+    xPed: número do pedido de compra do cliente (item ou cabeçalho da NF-e).
+    nItemPed: linha do pedido no item — não herda do cabeçalho.
+    """
+    linha = linha or {}
+    pc_num = (
+        _text(item_db.pedido_cliente_numero if item_db else '')
+        or _text(linha.get('pedido_cliente_numero'))
+        or _text(pedido_cabecalho)
+    )
+    pc_item_raw = _text(item_db.pedido_cliente_item if item_db else '') or _text(
+        linha.get('pedido_cliente_item'),
+    )
+    obs_item = _text(item_db.observacao_item if item_db else '') or _text(
+        linha.get('observacao_item'),
+    )
+    n_item = _resolver_linha_pedido_item(pc_num, pc_item_raw, observacao_item=obs_item)
+    n_item = _normalizar_n_item_ped_xml(n_item)
+    return (pc_num[:15] if pc_num else ''), n_item
+
+
+def montar_inf_ad_prod_item(
+    nfe_saida: NFeSaida,
+    linha: dict[str, Any],
+    item_db: ItemNFeSaida | None = None,
+    *,
+    pedido_cabecalho: str = '',
+) -> str:
+    """infAdProd — pedido de compra primeiro; depois observações do item."""
+    partes: list[str] = []
+    pedido_cab = pedido_cabecalho or _text(nfe_saida.pedido_cliente_numero)
+
+    x_ped, n_item = resolver_xped_nitemped_item(
+        item_db,
+        linha,
+        pedido_cabecalho=pedido_cab,
+    )
+    pedido_txt = _texto_pedido_compra_item(x_ped, n_item)
+    if pedido_txt:
+        partes.append(pedido_txt)
+
+    obs_usada_como_item = n_item and item_db and _linhas_pedido_equivalentes(
+        _text(item_db.observacao_item),
+        n_item,
+    )
+
+    if item_db:
+        if _texto_permitido_inf_cpl(item_db.observacao_item, max_len=500) and not obs_usada_como_item:
+            t = _text(item_db.observacao_item)
+            if t not in partes:
+                partes.append(t)
+        if _texto_permitido_inf_cpl(item_db.informacao_adicional_item, max_len=500):
+            t = _text(item_db.informacao_adicional_item)
+            if t not in partes:
+                partes.append(t)
+
+    snap = linha.get('snapshot_fiscal') or {}
+    obs_item = _text(snap.get('observacao_item') or snap.get('informacao_adicional_item'))
+    if obs_item and _texto_permitido_inf_cpl(obs_item, max_len=500) and obs_item not in partes:
+        partes.append(obs_item)
+
+    if not partes:
+        return ''
+    return _SEPARADOR_INF_CPL_XML.join(deduplicar_textos_inf_cpl(partes))[:500]
+
+
+def enriquecer_linhas_xml_nfe(
+    nfe_saida: NFeSaida,
+    dados: dict[str, Any],
+) -> dict[int, ItemNFeSaida]:
+    linhas = list(dados.get('itens') or [])
+    itens_db = {it.pk: it for it in nfe_saida.itens.all()}
+    pedido_cab = _text(nfe_saida.pedido_cliente_numero)
+    for linha in linhas:
+        item_pk = linha.get('item_id')
+        item_db = itens_db.get(item_pk) if item_pk else None
+        if not _text(linha.get('pedido_cliente_numero')):
+            linha['pedido_cliente_numero'] = (
+                _text(item_db.pedido_cliente_numero if item_db else '')
+                or pedido_cab
+            )
+        if not _text(linha.get('pedido_cliente_item')) and item_db:
+            linha['pedido_cliente_item'] = _text(item_db.pedido_cliente_item)
+        x_ped, n_item = resolver_xped_nitemped_item(
+            item_db,
+            linha,
+            pedido_cabecalho=pedido_cab,
+        )
+        linha['x_ped'] = x_ped
+        linha['n_item_ped'] = n_item
+        linha['inf_ad_prod'] = montar_inf_ad_prod_item(
+            nfe_saida,
+            linha,
+            item_db,
+            pedido_cabecalho=pedido_cab,
+        )
+    return itens_db
+
+
+def inf_cpl_xml_para_exibicao_danfe(texto_xml: str) -> str:
+    """
+    Converte infCpl do XML (linha única com espaços) em blocos com quebras — somente DANFE.
+    O XML transmitido permanece sem \\n (exigência XSD).
+    """
+    texto = _preservar_linhas_inf_cpl(texto_xml)
+    if not texto or '\n' in texto:
+        return texto
+    marcadores = (
+        'PEDIDO DE COMPRA:',
+        'VALOR ICMS UF DESTINO',
+        'VALOR FCP UF DESTINO',
+    )
+    for marcador in marcadores:
+        texto = re.sub(
+            rf'([.!?])\s+({re.escape(marcador)})',
+            rf'\1\n\2',
+            texto,
+            flags=re.IGNORECASE,
+        )
+        texto = re.sub(
+            rf'(?<=\S)\s+({re.escape(marcador)})',
+            r'\n\1',
+            texto,
+            flags=re.IGNORECASE,
+        )
+    return '\n'.join(ln.strip() for ln in texto.split('\n') if ln.strip())
+
+
+def inf_cpl_prioriza_pedido_para_danfe(
+    inf_cpl: str,
+    *,
+    max_len: int | None = None,
+) -> str:
+    """
+    Normaliza infCpl para exibição no DANFE.
+
+    Por padrão não trunca o XML. No PDF (DANFE), o bloco Dados Adicionais usa auto-shrink
+    e clip visual na 1ª página — sem alterar o infCpl transmitido.
+    Use max_len apenas em cenários legados que exijam limite explícito.
+    """
+    texto = _preservar_linhas_inf_cpl(inf_cpl)
+    if not texto:
+        return ''
+    limite = max_len if max_len is not None else _MAX_INF_CPL_XML_CHARS
+    if len(texto) <= limite:
+        return texto
+    linhas = texto.split('\n')
+    m_idx = next(
+        (i for i, ln in enumerate(linhas) if re.search(r'PEDIDO DE COMPRA', ln, re.I)),
+        None,
+    )
+    if m_idx is None:
+        return texto[: limite - 3].rstrip() + '...'
+    pedido_linha = linhas[m_idx]
+    outras = [ln for i, ln in enumerate(linhas) if i != m_idx]
+    resto = '\n'.join(outras)
+    espaco_resto = limite - len(pedido_linha) - 1
+    if espaco_resto <= 0:
+        return pedido_linha[:limite]
+    prefixo = resto[:espaco_resto].rstrip()
+    return f'{prefixo}\n{pedido_linha}'.strip()[:limite]
+
+
+def montar_informacoes_complementares_danfe(
+    nfe_saida: NFeSaida,
+    dados: dict[str, Any] | None = None,
+    *,
+    incluir_cabecalho_conferencia: bool = False,
+) -> tuple[str, str]:
+    """Monta infCpl para DANFE (com quebras de linha) e infAdFisco."""
+    itens_db = None
+    if dados and dados.get('itens'):
+        itens_db = {it.pk: it for it in nfe_saida.itens.all()}
+    inf_cpl = montar_inf_cpl_para_danfe(nfe_saida, dados, itens_db=itens_db)
+    inf_fisco = _para_maiusculas(nfe_saida.informacoes_fisco)[:2000]
+    if inf_fisco and len(inf_fisco) > 200:
+        inf_fisco = inf_fisco[:197] + '...'
+    return inf_cpl, inf_fisco

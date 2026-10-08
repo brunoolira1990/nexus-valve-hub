@@ -1,0 +1,140 @@
+import type { CentralDfeDocumento } from '@/services/api/centralDfe';
+import type { StatusXmlDestinada } from '@/services/api/manifestacaoDestinatario';
+import {
+  LABEL_MANIFESTACAO_NAO_APLICAVEL,
+  LABEL_XML_DISPONIVEL,
+  LABEL_XML_ERRO,
+  LABEL_XML_NAO_APLICAVEL,
+  LABEL_XML_PENDENTE,
+  LABEL_XML_ARMAZENADO,
+  badgeXml,
+  isNfeFornecedorAplicavel,
+} from '@/lib/manifestacaoDestinatarioUi';
+
+export const LABEL_IMPORTAR_XML_NFE = 'Importar XML';
+export const LABEL_IMPORTAR_XML_CTE = 'Importar XML CT-e';
+export const LABEL_BAIXAR_XML = 'Baixar XML';
+export const LABEL_IMPRIMIR_DANFE = 'Imprimir DANFE';
+export const LABEL_IMPRIMIR_DACTE = 'Imprimir DACTE';
+export const LABEL_ABRIR_BASE_NFE = 'Abrir NF-e';
+export const LABEL_ABRIR_BASE_CTE = 'Abrir CT-e';
+export const LABEL_ARMAZENAR_XML_CTE = LABEL_IMPORTAR_XML_CTE;
+export const LABEL_VER_CTE = 'Ver CT-e';
+export const LABEL_CONFERIR_CTE = 'Conferir CT-e';
+export const TOOLTIP_ABRIR_BASE_NFE = 'Abrir na Base NF-e Entrada Importada';
+export const TOOLTIP_ABRIR_BASE_CTE = 'Abrir na Base CT-e Importada';
+export const TOOLTIP_VER_CTE = 'Ver detalhes do CT-e na Central DF-e';
+export const TOOLTIP_CONFERIR_CTE = 'Conferir, marcar divergente ou ignorar CT-e';
+export const TOOLTIP_IMPORTAR_XML_NFE =
+  'Baixar e armazenar XML na Base NF-e Entrada Importada';
+export const TOOLTIP_IMPORTAR_XML_CTE =
+  'Armazenar XML na Base CT-e Importada';
+export const TOOLTIP_BAIXAR_XML = 'Exportar XML armazenado localmente (sem nova consulta SEFAZ)';
+export const TOOLTIP_IMPRIMIR_DANFE = 'Abrir DANFE em nova aba a partir do XML armazenado';
+export const TOOLTIP_IMPRIMIR_DACTE = 'Abrir DACTE em nova aba a partir do XML armazenado';
+/** @deprecated use TOOLTIP_IMPORTAR_XML_NFE */
+export const TOOLTIP_ARMAZENAR_XML_NFE = TOOLTIP_IMPORTAR_XML_NFE;
+/** @deprecated use TOOLTIP_IMPORTAR_XML_CTE */
+export const TOOLTIP_ARMAZENAR_XML_CTE = TOOLTIP_IMPORTAR_XML_CTE;
+
+export function labelStatusXmlManifestacao(status: StatusXmlDestinada | string): string {
+  const map: Record<string, string> = {
+    BAIXADO: LABEL_XML_ARMAZENADO,
+    DISPONIVEL: LABEL_XML_DISPONIVEL,
+    RESUMO: LABEL_XML_PENDENTE,
+    PENDENTE: LABEL_XML_PENDENTE,
+    ERRO: LABEL_XML_ERRO,
+  };
+  return map[status] || LABEL_XML_PENDENTE;
+}
+
+export function statusXmlCteExibicao(row: CentralDfeDocumento): { label: string; badge: string } {
+  if (row.tipo_documento !== 'CTE') {
+    return { label: LABEL_XML_NAO_APLICAVEL, badge: 'pendente' };
+  }
+  if (row.xml_status === 'ERRO') {
+    return { label: LABEL_XML_ERRO, badge: 'erro' };
+  }
+  if (row.xml_armazenado || row.xml_status === 'ARMAZENADO') {
+    return { label: LABEL_XML_ARMAZENADO, badge: 'conferida' };
+  }
+  return { label: LABEL_XML_PENDENTE, badge: 'pendente' };
+}
+
+export function statusManifestacaoCteExibicao(): { label: string; badge: string } {
+  return { label: LABEL_MANIFESTACAO_NAO_APLICAVEL, badge: 'inativo' };
+}
+
+export function podeArmazenarXmlCte(row: CentralDfeDocumento): boolean {
+  return row.tipo_documento === 'CTE' && !row.xml_armazenado && row.xml_status !== 'ARMAZENADO';
+}
+
+export function podeAbrirBaseImportada(row: CentralDfeDocumento): boolean {
+  return Boolean(row.xml_armazenado || row.xml_status === 'ARMAZENADO');
+}
+
+/** @deprecated use podeAbrirBaseImportada */
+export const podeVerXmlArmazenado = podeAbrirBaseImportada;
+
+export function rotaAbrirBaseImportada(row: CentralDfeDocumento): string {
+  if (row.tipo_documento === 'NFE_ENTRADA') {
+    return row.detalhe_rota || `/nfe-entrada-historica-importada?id=${row.id}`;
+  }
+  if (row.tipo_documento === 'CTE') {
+    return row.detalhe_rota || `/cte-historico-importado?id=${row.id}`;
+  }
+  return row.detalhe_rota || '';
+}
+
+/** @deprecated use rotaAbrirBaseImportada */
+export const rotaVerXml = rotaAbrirBaseImportada;
+
+export function labelAbrirBaseImportada(row: CentralDfeDocumento): string {
+  return row.tipo_documento === 'CTE' ? LABEL_ABRIR_BASE_CTE : LABEL_ABRIR_BASE_NFE;
+}
+
+export function tooltipAbrirBaseImportada(row: CentralDfeDocumento): string {
+  return row.tipo_documento === 'CTE' ? TOOLTIP_ABRIR_BASE_CTE : TOOLTIP_ABRIR_BASE_NFE;
+}
+
+export function xmlBadgeFromManifestacaoStatus(status: StatusXmlDestinada | string): string {
+  if (status === 'BAIXADO' || status === 'ARMAZENADO') return 'conferida';
+  if (status === 'ERRO') return 'erro';
+  return badgeXml(status);
+}
+
+export function isCteTransportadora(row: Pick<CentralDfeDocumento, 'tipo_documento'>): boolean {
+  return row.tipo_documento === 'CTE';
+}
+
+export function isNfeFornecedor(row: Pick<CentralDfeDocumento, 'tipo_documento'>): boolean {
+  return isNfeFornecedorAplicavel(row);
+}
+
+/** Espelha o filtro `search` de `_match_filtros_pos_query` (central_dfe/service.py). */
+export function documentoCentralMatchBusca(
+  row: Pick<
+    CentralDfeDocumento,
+    | 'numero'
+    | 'chave_acesso'
+    | 'emitente_nome'
+    | 'tipo_label'
+    | 'status_entrada_label'
+    | 'estado_consolidado_label'
+  >,
+  termo: string,
+): boolean {
+  const t = termo.trim().toLowerCase();
+  if (!t) return true;
+  const blob = [
+    row.numero ?? '',
+    row.chave_acesso ?? '',
+    row.emitente_nome ?? '',
+    row.tipo_label ?? '',
+    row.status_entrada_label ?? '',
+    row.estado_consolidado_label ?? '',
+  ]
+    .join(' ')
+    .toLowerCase();
+  return blob.includes(t);
+}

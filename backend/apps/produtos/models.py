@@ -29,8 +29,13 @@ class Ncm(models.Model):
 class Polegada(models.Model):
     """Cadastro mestre de polegadas com código oficial operacional."""
 
-    codigo = models.CharField(max_length=4, unique=True)
-    codigo_oficial = models.CharField(max_length=8, unique=True, null=True, blank=True)
+    class TipoMedida(models.TextChoices):
+        NPS = 'NPS', 'NPS / nominal'
+        OD = 'OD', 'OD / diâmetro externo real'
+
+    tipo_medida = models.CharField(max_length=8, choices=TipoMedida.choices, default=TipoMedida.OD, db_index=True)
+    codigo = models.CharField(max_length=4)
+    codigo_oficial = models.CharField(max_length=8, null=True, blank=True)
     descricao = models.CharField(max_length=64)
     valor_decimal = models.DecimalField(max_digits=10, decimal_places=6, null=True, blank=True)
     valor_mm = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
@@ -40,8 +45,18 @@ class Polegada(models.Model):
     observacoes = models.CharField(max_length=255, blank=True)
 
     class Meta:
-        ordering = ['valor_decimal', 'codigo_oficial']
+        ordering = ['tipo_medida', 'valor_decimal', 'codigo_oficial']
         verbose_name = 'Polegada'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['tipo_medida', 'codigo_oficial'],
+                name='uq_polegada_tipo_codigo_oficial',
+            ),
+            models.UniqueConstraint(
+                fields=['tipo_medida', 'descricao'],
+                name='uq_polegada_tipo_descricao',
+            ),
+        ]
 
     def __str__(self):
         return f'{self.codigo_oficial} — {self.descricao}'
@@ -78,20 +93,73 @@ class RoscaConexao(models.Model):
 
 
 class ScheduleEspessura(models.Model):
+    class Aplicacao(models.TextChoices):
+        CARBONO = 'CARBONO', 'Carbono'
+        INOX = 'INOX', 'Inox'
+        AMBOS = 'AMBOS', 'Ambos'
+        OUTRO = 'OUTRO', 'Outro'
+
     codigo_schedule = models.CharField(max_length=32, unique=True)
+    codigo = models.CharField(max_length=32, blank=True, db_index=True)
     descricao = models.CharField(max_length=128, blank=True)
+    aplicacao = models.CharField(max_length=16, choices=Aplicacao.choices, default=Aplicacao.AMBOS)
+    ordem = models.PositiveIntegerField(null=True, blank=True)
     ativo = models.BooleanField(default=True)
+    observacoes = models.CharField(max_length=255, blank=True)
 
     class Meta:
-        ordering = ['codigo_schedule']
+        ordering = ['ordem', 'codigo_schedule']
         verbose_name = 'Schedule / Espessura'
 
     def __str__(self):
         return f'{self.codigo_schedule} — {self.descricao}'
 
+    def save(self, *args, **kwargs):
+        if not self.codigo:
+            self.codigo = self.codigo_schedule
+        super().save(*args, **kwargs)
+
 
 class FamiliaProduto(models.Model):
     """Família / figura base para geração de código interno."""
+    class CategoriaProduto(models.TextChoices):
+        PRODUTO_TECNICO = 'PRODUTO_TECNICO', 'Produto técnico'
+        MATERIAL_DIMENSIONAL = 'MATERIAL_DIMENSIONAL', 'Material dimensional'
+        MANUAL_FABRICANTE = 'MANUAL_FABRICANTE', 'Produto manual/fabricante'
+
+    class TipoDimensional(models.TextChoices):
+        SIMPLES = 'SIMPLES', 'Simples (somente regra de código)'
+        NPS = 'NPS', 'NPS — polegada nominal'
+        NPS_SCHEDULE = 'NPS_SCHEDULE', 'NPS + Schedule (SCH)'
+        REDUCAO_NPS = 'REDUCAO_NPS', 'Redução NPS + Schedule'
+        ROSCA = 'ROSCA', 'Rosca / conexão (orientação)'
+        ROSCA_X_ROSCA = 'ROSCA_X_ROSCA', 'Rosca x Rosca (orientação)'
+        NPS_X_ROSCA = 'NPS_X_ROSCA', 'NPS x Rosca'
+        OD_POLEGADA = 'OD_POLEGADA', 'OD em polegada (não é NPS/SCH)'
+        OD_POLEGADA_X_ESPESSURA = 'OD_POLEGADA_X_ESPESSURA', 'OD em polegada + espessura mm'
+        OD_POLEGADA_X_ROSCA = 'OD_POLEGADA_X_ROSCA', 'OD em polegada x Rosca'
+        OD_MM = 'OD_MM', 'OD em mm (tubo / dimensional)'
+        DN_MM = 'DN_MM', 'DN / medida em mm (PVC, CPVC, PPR, etc.)'
+        DN_MM_REDUCAO = 'DN_MM_REDUCAO', 'DN mm × DN mm (redução)'
+        BITOLA_POLEGADA = 'BITOLA_POLEGADA', 'Bitola em polegada (condulete / elétrico; tabela oficial)'
+        OD_MM_REDUCAO = 'OD_MM_REDUCAO', 'OD mm maior × menor (PU / pneumático)'
+        OD_MM_X_ROSCA = 'OD_MM_X_ROSCA', 'OD mm × rosca ou bitola (PU / push-in)'
+        OD_MM_X_ESPESSURA = 'OD_MM_X_ESPESSURA', 'OD mm + espessura mm'
+        OD_MM_X_ESPESSURA_X_COMPRIMENTO = 'OD_MM_X_ESPESSURA_X_COMPRIMENTO', 'OD mm + espessura + comprimento'
+        CHAPA_MM = 'CHAPA_MM', 'Chapa em mm (espessura x largura x comprimento)'
+        CHAPA_FURO_MM = 'CHAPA_FURO_MM', 'Chapa com furo em mm (furo x espessura x largura x comprimento)'
+        BARRA_CHATA_MM = 'BARRA_CHATA_MM', 'Barra chata em mm (largura x espessura [x comprimento])'
+        METALON_MM = 'METALON_MM', 'Metalon em mm (altura x largura x espessura)'
+        CANTONEIRA_MM = 'CANTONEIRA_MM', 'Cantoneira em mm (aba x espessura [x comprimento])'
+        CANTONEIRA_POLEGADA = 'CANTONEIRA_POLEGADA', 'Cantoneira em polegada (aba x espessura)'
+        PERFIL_RETANGULAR_MM = 'PERFIL_RETANGULAR_MM', 'Perfil retangular em mm (altura x largura x espessura)'
+        DIMENSIONAL_LIVRE_CONTROLADO = 'DIMENSIONAL_LIVRE_CONTROLADO', 'Dimensional livre controlado'
+        FLANGE = 'FLANGE', 'Flange (orientação)'
+        ESPIGAO_X_FLANGE = 'ESPIGAO_X_FLANGE', 'Espigão x Flange (duas NPS + texto flange na base)'
+        VALVULA = 'VALVULA', 'Válvula (orientação)'
+        MANOMETRO = 'MANOMETRO', 'Manômetro (descrição técnica)'
+        MANUAL = 'MANUAL', 'Dimensional manual / sem padrão automático'
+        LEGADO = 'LEGADO', 'Legado / misto (orientação)'
 
     class TipoRegraCodigo(models.TextChoices):
         BASE_POLEGADA = 'BASE_POLEGADA', 'Base + polegada principal'
@@ -106,6 +174,18 @@ class FamiliaProduto(models.Model):
             'Base + rosca + schedule + duas polegadas',
         )
         UNDERSCORE_POLEGADA = 'UNDERSCORE_POLEGADA', 'Base + underscore + ID polegada (3 dígitos)'
+        BASE_OD_MM_ESPESSURA = 'BASE_OD_MM_ESPESSURA', 'Base + OD mm + espessura mm (ex.: 6119OD.1002)'
+        BASE_OD_POLEGADA_ESPESSURA = (
+            'BASE_OD_POLEGADA_ESPESSURA',
+            'Base + OD polegada + espessura mm (ex.: 6119OD.040150)',
+        )
+        BASE_DN_MM = 'BASE_DN_MM', 'Base + DN/mm (3 dígitos)'
+        BASE_DN_MM_REDUCAO = 'BASE_DN_MM_REDUCAO', 'Base + DN maior × menor (3+3 dígitos)'
+        BASE_BITOLA_POLEGADA = 'BASE_BITOLA_POLEGADA', 'Base + bitola (código da tabela de polegadas)'
+        BASE_OD_MM = 'BASE_OD_MM', 'Base + OD mm (3 dígitos; PU / pneumático)'
+        BASE_OD_MM_REDUCAO = 'BASE_OD_MM_REDUCAO', 'Base + OD mm maior × menor (3+3 dígitos)'
+        BASE_OD_MM_X_ROSCA = 'BASE_OD_MM_X_ROSCA', 'Base + OD mm + rosca e/ou bitola'
+        BASE_ESPIGAO_FLANGE_NPS = 'BASE_ESPIGAO_FLANGE_NPS', 'Base + espigão NPS + flange NPS'
         MANUAL_FABRICANTE = 'MANUAL_FABRICANTE', 'Manual / fabricante (sem código automático por família)'
 
     class TipoControleUnidade(models.TextChoices):
@@ -131,12 +211,28 @@ class FamiliaProduto(models.Model):
         CANTONEIRA = 'CANTONEIRA', 'Cantoneira'
         OUTRO = 'OUTRO', 'Outro'
 
+    class TipoComposicaoFisica(models.TextChoices):
+        BARRA_M = 'BARRA_M', 'Barra (comprimento em metros)'
+        PECA_KG = 'PECA_KG', 'Peça/chapa (peso em kg)'
+
     codigo_figura = models.CharField(max_length=32, unique=True)
     descricao_base = models.CharField(max_length=512)
     tipo_regra_codigo = models.CharField(
         max_length=48,
         choices=TipoRegraCodigo.choices,
         default=TipoRegraCodigo.BASE_POLEGADA,
+    )
+    categoria_produto = models.CharField(
+        max_length=32,
+        choices=CategoriaProduto.choices,
+        default=CategoriaProduto.PRODUTO_TECNICO,
+    )
+    tipo_dimensional = models.CharField(
+        max_length=48,
+        choices=TipoDimensional.choices,
+        default=TipoDimensional.SIMPLES,
+        help_text='Significado dimensional dos campos (rótulos, obrigatoriedade, descrição). '
+        'A montagem do código continua definida apenas por tipo_regra_codigo.',
     )
     usa_rosca_conexao = models.BooleanField(default=False)
     usa_schedule = models.BooleanField(default=False)
@@ -178,6 +274,16 @@ class FamiliaProduto(models.Model):
     peso_por_chapa_kg = models.DecimalField(max_digits=14, decimal_places=6, null=True, blank=True)
     densidade = models.DecimalField(max_digits=14, decimal_places=6, null=True, blank=True)
     usa_conversao_dimensional = models.BooleanField(default=False)
+    controla_composicao_fisica = models.BooleanField(
+        default=False,
+        help_text='Exige composição física na conferência (barra em metros ou peça/chapa em kg).',
+    )
+    tipo_composicao_fisica = models.CharField(
+        max_length=16,
+        choices=TipoComposicaoFisica.choices,
+        default=TipoComposicaoFisica.BARRA_M,
+        help_text='BARRA_M: estoque base em metros por barra. PECA_KG: estoque base em kg por peça/chapa.',
+    )
     observacoes_conversao = models.CharField(max_length=512, blank=True)
 
     class Meta:
@@ -283,6 +389,45 @@ class Produto(models.Model):
     peso_por_chapa_kg = models.DecimalField(max_digits=14, decimal_places=6, null=True, blank=True)
     densidade = models.DecimalField(max_digits=14, decimal_places=6, null=True, blank=True)
     usa_conversao_dimensional = models.BooleanField(default=False)
+    controla_composicao_fisica = models.BooleanField(default=False)
+    tipo_composicao_fisica = models.CharField(
+        max_length=16,
+        choices=FamiliaProduto.TipoComposicaoFisica.choices,
+        blank=True,
+        help_text='Vazio herda da família. BARRA_M: metros por barra. PECA_KG: kg por peça/chapa.',
+    )
+    od_mm = models.DecimalField(
+        max_digits=10,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        help_text='OD externo em mm (tubo / dimensional; não confundir com NPS).',
+    )
+    espessura_mm = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    comprimento_mm = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
+    dimensoes_json = models.JSONField(default=dict, blank=True)
+    dim_espessura_mm = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    dim_largura_mm = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    dim_comprimento_mm = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
+    dim_altura_mm = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    dim_furo_mm = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    dim_aba_mm = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    dim_aba_polegada_ref = models.ForeignKey(
+        Polegada,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='produtos_dim_aba',
+    )
+    dim_espessura_polegada_ref = models.ForeignKey(
+        Polegada,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='produtos_dim_espessura',
+    )
+    dimensao_codigo = models.CharField(max_length=64, blank=True)
+    dimensao_descricao = models.CharField(max_length=256, blank=True)
 
     class Meta:
         ordering = ['codigo_completo']
@@ -306,8 +451,34 @@ class Produto(models.Model):
 
     def save(self, *args, **kwargs):
         from apps.produtos.codigo_produto import produto_aplicar_codigo_completo
+        from apps.produtos.manometro_sku import (
+            familia_e_manometro,
+            produto_e_manometro_interno,
+            reservar_codigo_manometro,
+        )
 
-        produto_aplicar_codigo_completo(self)
+        anterior = None
+        if self.pk:
+            anterior = type(self).objects.select_related('familia').filter(pk=self.pk).first()
+        if anterior and familia_e_manometro(anterior.familia):
+            mudou_estrutura = (
+                self.familia_id != anterior.familia_id
+                or self.rosca_conexao_id != anterior.rosca_conexao_id
+                or self.polegada_principal_ref_id != anterior.polegada_principal_ref_id
+            )
+            if mudou_estrutura:
+                raise ValueError(
+                    'Família, rosca ou polegada alteram a identidade estrutural deste SKU. '
+                    'Cadastre um novo Produto para essa nova configuração.',
+                )
+            if produto_e_manometro_interno(self) and anterior.modo_codigo == self.ModoCodigo.INTERNO:
+                self.codigo_completo = anterior.codigo_completo
+            else:
+                produto_aplicar_codigo_completo(self)
+        elif produto_e_manometro_interno(self):
+            self.codigo_completo = reservar_codigo_manometro(self)
+        else:
+            produto_aplicar_codigo_completo(self)
         super().save(*args, **kwargs)
 
     def _fallback_familia_attr(self, attr: str):
@@ -378,6 +549,26 @@ class Produto(models.Model):
         if self.familia_id:
             return bool(self.familia.usa_conversao_dimensional)
         return False
+
+    def get_controla_composicao_fisica_efetivo(self) -> bool:
+        if self.controla_composicao_fisica:
+            return True
+        if self.familia_id:
+            return bool(self.familia.controla_composicao_fisica)
+        return False
+
+    def get_tipo_composicao_fisica_efetivo(self) -> str:
+        if (self.tipo_composicao_fisica or '').strip():
+            return self.tipo_composicao_fisica
+        if self.familia_id and (self.familia.tipo_composicao_fisica or '').strip():
+            return self.familia.tipo_composicao_fisica
+        return FamiliaProduto.TipoComposicaoFisica.BARRA_M
+
+    def get_unidade_base_composicao_fisica(self) -> str:
+        """Unidade base do estoque físico da composição: M para barra, KG para peça."""
+        if self.get_tipo_composicao_fisica_efetivo() == FamiliaProduto.TipoComposicaoFisica.PECA_KG:
+            return 'KG'
+        return 'M'
 
     def get_ncm_efetivo(self):
         codigo = (self.ncm or '').strip()
@@ -493,3 +684,53 @@ class FamiliaProdutoSchedulePermitido(models.Model):
 
     def __str__(self):
         return f'{self.familia.codigo_figura} - {self.schedule.codigo_schedule}'
+
+
+class ProdutoManometroSkuSequencia(models.Model):
+    """Sequência transacional isolada por variante estrutural de MANOMETRO."""
+
+    codigo_base = models.CharField(max_length=128, unique=True, db_index=True)
+    familia = models.ForeignKey(FamiliaProduto, on_delete=models.PROTECT, related_name='sequencias_sku_manometro')
+    rosca_conexao = models.ForeignKey(RoscaConexao, on_delete=models.PROTECT, related_name='sequencias_sku_manometro')
+    polegada_principal = models.ForeignKey(Polegada, on_delete=models.PROTECT, related_name='sequencias_sku_manometro')
+    proximo_numero = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(proximo_numero__gte=1),
+                name='ck_manometro_sku_seq_proximo_ge_1',
+            ),
+        ]
+
+
+class FamiliaProdutoCodigoSequencia(models.Model):
+    """
+    Mutex / marca d'água para geração automática de codigo_figura (padrão NNNN).
+
+    Com PREFIXO_GLOBAL_UNICIDADE a busca do menor livre começa em 0001; este
+    registro serializa reservas via SELECT FOR UPDATE e guarda proximo_numero
+    como último reservado+1 (nunca reduz). Não é SEQUENCE nativa do PostgreSQL.
+
+    Rollback: reverter migration 0027 remove esta tabela; códigos já gerados
+    em FamiliaProduto permanecem e não devem ser renumerados.
+    """
+
+    proximo_numero = models.PositiveIntegerField(
+        default=1,
+        help_text='Próximo inteiro a formatar como codigo_figura (4 dígitos). Não reutiliza excluídos.',
+    )
+
+    class Meta:
+        verbose_name = 'Sequência código figura (família)'
+        verbose_name_plural = 'Sequência código figura (família)'
+
+
+from apps.produtos.models_equivalencia import (  # noqa: E402, F401
+    FornecedorComposicaoEquivalencia,
+    FornecedorComposicaoEquivalenciaItem,
+    FornecedorProdutoEquivalencia,
+    ProcessoMontagem,
+    ProdutoComposicao,
+    ProdutoComposicaoItem,
+)

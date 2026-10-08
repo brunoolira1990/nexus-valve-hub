@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from rest_framework import serializers
 
 from apps.produtos.codigo_produto import (
@@ -8,10 +8,41 @@ from apps.produtos.codigo_produto import (
     montar_codigo_interno,
     montar_descricao_sugerida,
 )
-from apps.produtos.familia_regra import aplicar_flags_derivadas_no_dict, flags_por_tipo_regra
+from apps.produtos.dimensional_regra import (
+    comprimento_mm_efetivo,
+    familia_espigao_x_flange_nps,
+    requisitos_efetivos_produto,
+    tipo_medida_esperado_por_campo,
+    validar_campos_obrigatorios_produto_interno,
+    validar_tipo_dimensional_x_regra,
+)
+from apps.produtos.familia_regra import aplicar_flags_derivadas_no_dict
+from apps.produtos.familia_codigo import FamiliaCodigoConfigError, FamiliaCodigoEsgotadoError, reservar_codigo_figura
+from apps.produtos.manometro_sku import (
+    MENSAGEM_ALTERACAO_ESTRUTURAL,
+    familia_e_manometro,
+    montar_codigo_base_manometro,
+    proximo_codigo_manometro_sugerido,
+)
+from apps.produtos.familia_duplicidade import (
+    buscar_familia_duplicada_descricao_modelo,
+    chave_descricao_duplicidade_familia,
+    garantir_unicidade_descricao_modelo_na_tx,
+    payload_erro_duplicidade_descricao_modelo,
+)
 from apps.produtos.conversao_medidas import ConversaoErro, converter_quantidade_produto
 from apps.produtos.polegadas import aliases_for_polegada, normalize_polegada_label, parse_polegada_to_decimal
 from apps.text_normalize import normalize_operational_fields, to_operational_upper
+from apps.auditoria.servico import (
+    registrar_produto,
+    snapshot_produto,
+    usuario_do_contexto,
+)
+from apps.produtos.descricao_norm import normalizar_descricao_produto
+from apps.produtos.material import (
+    material_canonico_de_entrada,
+    material_label_de_valor,
+)
 from apps.produtos.models import (
     FamiliaProdutoPolegadaPermitida,
     FamiliaProdutoRoscaConexaoPermitida,
@@ -23,6 +54,60 @@ from apps.produtos.models import (
     RoscaConexao,
     ScheduleEspessura,
 )
+
+
+def _msg_polegada_tipo_incompativel(esperado: str) -> str:
+    return f'Use uma polegada da tabela oficial com tipo {esperado} neste campo.'
+
+
+def _decimal_from_dim(raw):
+    if raw in (None, ''):
+        return None
+    if isinstance(raw, str):
+        raw = raw.strip().replace(',', '.')
+    try:
+        return Decimal(str(raw))
+    except Exception:
+        return None
+
+
+def _validar_dimensional_materiais(familia: FamiliaProduto, dims: dict) -> dict[str, str]:
+    td = familia.tipo_dimensional
+    errs: dict[str, str] = {}
+    reqs: dict[str, list[str]] = {
+        FamiliaProduto.TipoDimensional.CHAPA_MM: ['espessura_mm', 'largura_mm', 'comprimento_mm'],
+        FamiliaProduto.TipoDimensional.CHAPA_FURO_MM: ['furo_mm', 'espessura_mm', 'largura_mm', 'comprimento_mm'],
+        FamiliaProduto.TipoDimensional.METALON_MM: ['altura_mm', 'largura_mm', 'espessura_mm'],
+        FamiliaProduto.TipoDimensional.PERFIL_RETANGULAR_MM: ['altura_mm', 'largura_mm', 'espessura_mm'],
+        FamiliaProduto.TipoDimensional.BARRA_CHATA_MM: ['largura_mm', 'espessura_mm'],
+        FamiliaProduto.TipoDimensional.CANTONEIRA_MM: ['aba_mm', 'espessura_mm'],
+    }
+    labels = {
+        'furo_mm': 'Informe o Furo em mm.',
+        'espessura_mm': 'Informe a Espessura em mm.',
+        'largura_mm': 'Informe a Largura em mm.',
+        'comprimento_mm': 'Informe o Comprimento em mm.',
+        'altura_mm': 'Informe a Altura em mm.',
+        'aba_mm': 'Informe a Aba em mm.',
+    }
+    for key in reqs.get(td, []):
+        if _decimal_from_dim((dims or {}).get(key)) is None:
+            errs[f'dimensoes_json.{key}'] = labels[key]
+    if td == FamiliaProduto.TipoDimensional.CANTONEIRA_POLEGADA:
+        if not (dims or {}).get('aba_polegada_ref_id'):
+            errs['dim_aba_polegada_ref_id'] = 'Informe a Aba em polegada.'
+        if not (dims or {}).get('espessura_polegada_ref_id'):
+            errs['dim_espessura_polegada_ref_id'] = 'Informe a Espessura em polegada.'
+    if td == FamiliaProduto.TipoDimensional.DIMENSIONAL_LIVRE_CONTROLADO:
+        codigo = to_operational_upper(str((dims or {}).get('dimensao_codigo') or '').strip())
+        desc = to_operational_upper(str((dims or {}).get('dimensao_descricao') or '').strip())
+        if not codigo:
+            errs['dimensao_codigo'] = 'Informe o código dimensional.'
+        elif not all(c.isalnum() or c in {'_', '-', '.', 'X', 'P'} for c in codigo):
+            errs['dimensao_codigo'] = 'Use apenas letras, números, X, P, ponto, hífen ou underscore.'
+        if not desc:
+            errs['dimensao_descricao'] = 'Informe a descrição dimensional.'
+    return errs
 
 
 class NcmSerializer(serializers.ModelSerializer):
@@ -45,7 +130,7 @@ class PolegadaSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
-        normalize_operational_fields(attrs, {'codigo', 'codigo_oficial', 'descricao', 'origem', 'observacoes'})
+        normalize_operational_fields(attrs, {'codigo', 'codigo_oficial', 'descricao', 'origem', 'observacoes', 'tipo_medida'})
         desc = attrs.get('descricao', getattr(self.instance, 'descricao', ''))
         normalized_desc = normalize_polegada_label(desc)
         if normalized_desc:
@@ -70,7 +155,9 @@ class PolegadaSerializer(serializers.ModelSerializer):
         return attrs
 
     def get_label(self, obj: Polegada):
-        return f'{obj.codigo_oficial} — {obj.descricao} — {obj.valor_mm} mm'
+        tipo = obj.tipo_medida or ''
+        mm = f' — {obj.valor_mm} mm' if obj.valor_mm is not None else ''
+        return f'{tipo} {obj.codigo_oficial} — {obj.descricao}{mm}'.strip()
 
 
 class RoscaConexaoSerializer(serializers.ModelSerializer):
@@ -91,11 +178,33 @@ class ScheduleEspessuraSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
-        normalize_operational_fields(attrs, {'codigo_schedule', 'descricao'})
+        normalize_operational_fields(attrs, {'codigo_schedule', 'codigo', 'descricao', 'aplicacao', 'observacoes'})
+        if not attrs.get('codigo_schedule'):
+            attrs['codigo_schedule'] = attrs.get('codigo') or getattr(self.instance, 'codigo_schedule', '')
+        if not attrs.get('codigo'):
+            attrs['codigo'] = attrs.get('codigo_schedule') or getattr(self.instance, 'codigo_schedule', '')
         return attrs
 
 
 class FamiliaProdutoSerializer(serializers.ModelSerializer):
+    """
+    Contrato de criação (modo_codigo não é persistido):
+    - modo_codigo=AUTOMATICO: gera NNNN; código enviado é ignorado.
+    - modo_codigo=MANUAL: exige codigo_figura; não altera o contador.
+    - modo_codigo ausente: fallback AUTOMATICO (compatível com a UI atual).
+      Se codigo_figura vier preenchido sem modo_codigo → erro explícito
+      (não interpreta silenciosamente o código como automático nem como manual).
+    """
+
+    MODO_CODIGO_AUTOMATICO = 'AUTOMATICO'
+    MODO_CODIGO_MANUAL = 'MANUAL'
+    MSG_CODIGO_DUPLICADO = 'Já existe uma Família/Figura com este código.'
+    MSG_CODIGO_MANUAL_OBRIGATORIO = 'Informe o código da Família/Figura.'
+    MSG_MODO_COM_CODIGO = (
+        'Informe modo_codigo=MANUAL para cadastrar com o código informado, '
+        'ou omita codigo_figura para gerar automaticamente (modo_codigo=AUTOMATICO).'
+    )
+
     ncm_padrao_id = serializers.PrimaryKeyRelatedField(
         queryset=Ncm.objects.all(),
         source='ncm_padrao',
@@ -108,10 +217,49 @@ class FamiliaProdutoSerializer(serializers.ModelSerializer):
     schedules_permitidos = serializers.SerializerMethodField(read_only=True)
     rosca_padrao_id = serializers.SerializerMethodField(read_only=True)
     schedule_padrao_id = serializers.SerializerMethodField(read_only=True)
+    # Decisão de cadastro apenas — não é campo do model.
+    modo_codigo = serializers.ChoiceField(
+        choices=[('AUTOMATICO', 'AUTOMATICO'), ('MANUAL', 'MANUAL')],
+        required=False,
+        allow_null=True,
+        write_only=True,
+    )
 
     class Meta:
         model = FamiliaProduto
         fields = '__all__'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Garante que o DRF ChoiceField use sempre as choices atuais do model (evita lista defasada em reload).
+        tr = self.fields.get('tipo_regra_codigo')
+        if tr is not None and hasattr(tr, 'choices'):
+            tr.choices = FamiliaProduto.TipoRegraCodigo.choices
+        td = self.fields.get('tipo_dimensional')
+        if td is not None and hasattr(td, 'choices'):
+            td.choices = FamiliaProduto.TipoDimensional.choices
+        if self.instance is None:
+            codigo = self.fields.get('codigo_figura')
+            if codigo is not None:
+                codigo.required = False
+                codigo.allow_blank = True
+                # Unicidade tratada em validate()/create() com mensagem amigável.
+                codigo.validators = [
+                    v
+                    for v in getattr(codigo, 'validators', [])
+                    if not v.__class__.__name__.endswith('UniqueValidator')
+                ]
+
+    def to_internal_value(self, data):
+        if hasattr(data, 'copy') and hasattr(data, 'get'):
+            data = data.copy()
+            tr = data.get('tipo_regra_codigo')
+            if isinstance(tr, str):
+                data['tipo_regra_codigo'] = tr.strip()
+            modo = data.get('modo_codigo')
+            if isinstance(modo, str):
+                data['modo_codigo'] = modo.strip().upper()
+        return super().to_internal_value(data)
 
     def validate(self, attrs):
         inst = self.instance
@@ -133,8 +281,14 @@ class FamiliaProdutoSerializer(serializers.ModelSerializer):
                 'unidade_compra_padrao',
                 'unidade_fiscal_padrao',
                 'observacoes_conversao',
+                'tipo_dimensional',
+                'categoria_produto',
             },
         )
+        if attrs.get('descricao_base'):
+            # Persistido e comparado com a mesma chave operacional.
+            attrs['descricao_base'] = chave_descricao_duplicidade_familia(attrs['descricao_base'])
+
         tipo = attrs.get('tipo_regra_codigo')
         if tipo is None and inst is not None:
             tipo = inst.tipo_regra_codigo
@@ -142,6 +296,93 @@ class FamiliaProdutoSerializer(serializers.ModelSerializer):
             tipo = FamiliaProduto.TipoRegraCodigo.BASE_POLEGADA
             attrs['tipo_regra_codigo'] = tipo
         aplicar_flags_derivadas_no_dict(attrs, tipo)
+
+        td = attrs.get('tipo_dimensional')
+        if td is None and inst is not None:
+            td = inst.tipo_dimensional
+        if td is None:
+            td = FamiliaProduto.TipoDimensional.SIMPLES
+            attrs['tipo_dimensional'] = td
+
+        msg = validar_tipo_dimensional_x_regra(tipo_dimensional=td, tipo_regra_codigo=tipo)
+        if msg:
+            raise serializers.ValidationError({'tipo_dimensional': msg})
+        if attrs.get('controla_composicao_fisica'):
+            tipo_comp = (
+                (attrs.get('tipo_composicao_fisica') or getattr(inst, 'tipo_composicao_fisica', '') or '')
+                .strip()
+                .upper()
+            ) or FamiliaProduto.TipoComposicaoFisica.BARRA_M
+            unidade_base = 'KG' if tipo_comp == FamiliaProduto.TipoComposicaoFisica.PECA_KG else 'M'
+            unidade_est = (
+                (attrs.get('unidade_estoque_padrao') or getattr(inst, 'unidade_estoque_padrao', '') or '')
+                .strip()
+                .upper()
+            )
+            if unidade_est and unidade_est != unidade_base:
+                raise serializers.ValidationError(
+                    {
+                        'unidade_estoque_padrao': (
+                            f'Composição física {tipo_comp} exige unidade de estoque {unidade_base}.'
+                        ),
+                    },
+                )
+            if not unidade_est:
+                attrs['unidade_estoque_padrao'] = unidade_base
+            if tipo_comp == FamiliaProduto.TipoComposicaoFisica.BARRA_M:
+                attrs['usa_conversao_dimensional'] = True
+
+        if self.instance is None:
+            modo = attrs.get('modo_codigo')
+            codigo_bruto = attrs.get('codigo_figura')
+            codigo_enviado = (str(codigo_bruto).strip() if codigo_bruto is not None else '')
+            if modo is None:
+                if codigo_enviado:
+                    raise serializers.ValidationError({'modo_codigo': self.MSG_MODO_COM_CODIGO})
+                attrs['modo_codigo'] = self.MODO_CODIGO_AUTOMATICO
+            elif modo == self.MODO_CODIGO_MANUAL:
+                if not codigo_enviado:
+                    raise serializers.ValidationError({'codigo_figura': self.MSG_CODIGO_MANUAL_OBRIGATORIO})
+                if any(ord(ch) < 32 for ch in codigo_enviado):
+                    raise serializers.ValidationError(
+                        {
+                            'codigo_figura': (
+                                'O código da Família/Figura não pode conter '
+                                'caracteres de controle ou quebras de linha.'
+                            ),
+                        },
+                    )
+                if len(codigo_enviado) > 32:
+                    raise serializers.ValidationError(
+                        {'codigo_figura': 'O código da Família/Figura deve ter no máximo 32 caracteres.'},
+                    )
+                # Normalização operacional: strip + upper (não é salvamento byte a byte).
+                # Sem acrescentar/remover OD, STD ou outros complementos.
+                attrs['codigo_figura'] = codigo_enviado
+                if FamiliaProduto.objects.filter(codigo_figura=codigo_enviado).exists():
+                    raise serializers.ValidationError({'codigo_figura': self.MSG_CODIGO_DUPLICADO})
+            else:
+                # AUTOMATICO: valor enviado de codigo_figura será descartado em create().
+                attrs.pop('codigo_figura', None)
+        else:
+            attrs.pop('modo_codigo', None)
+
+        # Duplicidade descrição+modelo: antes de reservar código automático (create).
+        desc_eff = attrs.get('descricao_base')
+        if desc_eff is None and inst is not None:
+            desc_eff = inst.descricao_base
+        tipo_eff = attrs.get('tipo_regra_codigo')
+        if tipo_eff is None and inst is not None:
+            tipo_eff = inst.tipo_regra_codigo
+        if desc_eff:
+            existente = buscar_familia_duplicada_descricao_modelo(
+                descricao_base=desc_eff,
+                tipo_regra_codigo=tipo_eff,
+                excluir_id=inst.pk if inst is not None else None,
+            )
+            if existente is not None:
+                raise serializers.ValidationError(payload_erro_duplicidade_descricao_modelo(existente))
+
         return attrs
 
     def get_ncm_padrao_info(self, obj: FamiliaProduto):
@@ -156,9 +397,12 @@ class FamiliaProdutoSerializer(serializers.ModelSerializer):
     def get_polegadas_permitidas(self, obj: FamiliaProduto):
         return [
             {
+                'permitida_id': rel.id,
                 'id': rel.polegada_id,
+                'polegada_id': rel.polegada_id,
                 'codigo': rel.polegada.codigo,
                 'descricao': rel.polegada.descricao,
+                'tipo_medida': rel.polegada.tipo_medida,
                 'tipo': rel.tipo,
             }
             for rel in obj.polegadas_permitidas.select_related('polegada').filter(ativo=True)
@@ -178,9 +422,13 @@ class FamiliaProdutoSerializer(serializers.ModelSerializer):
     def get_schedules_permitidos(self, obj: FamiliaProduto):
         return [
             {
+                'permitido_id': rel.id,
                 'id': rel.schedule_id,
+                'schedule_id': rel.schedule_id,
                 'codigo_schedule': rel.schedule.codigo_schedule,
+                'codigo': rel.schedule.codigo,
                 'descricao': rel.schedule.descricao,
+                'aplicacao': rel.schedule.aplicacao,
                 'padrao_da_familia': rel.padrao_da_familia,
             }
             for rel in obj.schedules_permitidos.select_related('schedule').filter(ativo=True)
@@ -194,11 +442,70 @@ class FamiliaProdutoSerializer(serializers.ModelSerializer):
         rel = obj.schedules_permitidos.filter(ativo=True, padrao_da_familia=True).first()
         return rel.schedule_id if rel else None
 
+    def get_requisitos_produto(self, obj: FamiliaProduto):
+        return requisitos_efetivos_produto(obj)
+
+    def create(self, validated_data):
+        modo = validated_data.pop('modo_codigo', self.MODO_CODIGO_AUTOMATICO) or self.MODO_CODIGO_AUTOMATICO
+        with transaction.atomic():
+            # Lock + recheck sob a mesma TX do INSERT/reserva (evita corrida).
+            garantir_unicidade_descricao_modelo_na_tx(
+                descricao_base=validated_data.get('descricao_base'),
+                tipo_regra_codigo=validated_data.get('tipo_regra_codigo'),
+                excluir_id=None,
+            )
+            if modo == self.MODO_CODIGO_MANUAL:
+                codigo = (validated_data.get('codigo_figura') or '').strip()
+                if not codigo:
+                    raise serializers.ValidationError({'codigo_figura': self.MSG_CODIGO_MANUAL_OBRIGATORIO})
+                validated_data['codigo_figura'] = codigo
+                try:
+                    # Savepoint: IntegrityError no PG não derruba a TX externa.
+                    with transaction.atomic():
+                        return super().create(validated_data)
+                except IntegrityError as exc:
+                    raise serializers.ValidationError({'codigo_figura': self.MSG_CODIGO_DUPLICADO}) from exc
+
+            # AUTOMATICO — só reserva depois do lock/recheck (perdedor não consome código).
+            validated_data.pop('codigo_figura', None)
+            ultimo_erro: Exception | None = None
+            for _ in range(3):
+                try:
+                    # Cada tentativa em savepoint: retry após colisão de codigo_figura.
+                    with transaction.atomic():
+                        dados = dict(validated_data)
+                        dados['codigo_figura'] = reservar_codigo_figura()
+                        return super().create(dados)
+                except (FamiliaCodigoEsgotadoError, FamiliaCodigoConfigError) as exc:
+                    raise serializers.ValidationError({'codigo_figura': str(exc)}) from exc
+                except IntegrityError as exc:
+                    ultimo_erro = exc
+                    continue
+            raise serializers.ValidationError({'codigo_figura': self.MSG_CODIGO_DUPLICADO}) from ultimo_erro
+
+    def update(self, instance, validated_data):
+        validated_data.pop('codigo_figura', None)
+        validated_data.pop('modo_codigo', None)
+        with transaction.atomic():
+            desc_eff = validated_data.get('descricao_base', instance.descricao_base)
+            tipo_eff = validated_data.get('tipo_regra_codigo', instance.tipo_regra_codigo)
+            if desc_eff:
+                # Bloqueia o par de destino (e a origem se diferente), em ordem determinística.
+                garantir_unicidade_descricao_modelo_na_tx(
+                    descricao_base=desc_eff,
+                    tipo_regra_codigo=tipo_eff,
+                    excluir_id=instance.pk,
+                    descricao_origem=instance.descricao_base,
+                    tipo_regra_origem=instance.tipo_regra_codigo,
+                )
+            return super().update(instance, validated_data)
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data['ncm_padrao'] = instance.ncm_padrao_id
         data['ncm_padrao_id'] = instance.ncm_padrao_id
         data['ncm_padrao_info'] = self.get_ncm_padrao_info(instance)
+        data['requisitos_produto'] = self.get_requisitos_produto(instance)
         return data
 
 
@@ -206,6 +513,46 @@ class FamiliaProdutoPolegadaPermitidaSerializer(serializers.ModelSerializer):
     class Meta:
         model = FamiliaProdutoPolegadaPermitida
         fields = '__all__'
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        familia = attrs.get('familia') or getattr(self.instance, 'familia', None)
+        polegada = attrs.get('polegada') or getattr(self.instance, 'polegada', None)
+        tipo = attrs.get('tipo') or (getattr(self.instance, 'tipo', None) if self.instance else None)
+        if not familia or not polegada or not tipo:
+            return attrs
+        expected = tipo_medida_esperado_por_campo(familia)
+        exp_p = expected.get('polegada_principal_ref_id')
+        exp_s = expected.get('polegada_secundaria_ref_id')
+        pm = polegada.tipo_medida or Polegada.TipoMedida.NPS
+        if tipo in ('principal', 'ambas') and exp_p and pm != exp_p:
+            raise serializers.ValidationError(
+                {
+                    'polegada': (
+                        f'Para esta família a medida principal deve ser {exp_p}; '
+                        f'a polegada selecionada está como {pm}.'
+                    ),
+                },
+            )
+        if tipo in ('secundaria', 'ambas') and exp_s and pm != exp_s:
+            raise serializers.ValidationError(
+                {
+                    'polegada': (
+                        f'Para esta família a medida secundária deve ser {exp_s}; '
+                        f'a polegada selecionada está como {pm}.'
+                    ),
+                },
+            )
+        if tipo == 'ambas' and exp_p and exp_s and exp_p != exp_s:
+            raise serializers.ValidationError(
+                {
+                    'tipo': (
+                        'Para este tipo dimensional use cadastros separados (principal e secundária) '
+                        'ou apenas polegadas compatíveis com ambos os campos.'
+                    ),
+                },
+            )
+        return attrs
 
 
 class FamiliaProdutoRoscaConexaoPermitidaSerializer(serializers.ModelSerializer):
@@ -302,6 +649,22 @@ class ProdutoSerializer(serializers.ModelSerializer):
             'peso_por_chapa_kg',
             'densidade',
             'usa_conversao_dimensional',
+            'controla_composicao_fisica',
+            'tipo_composicao_fisica',
+            'od_mm',
+            'espessura_mm',
+            'comprimento_mm',
+            'dimensoes_json',
+            'dim_espessura_mm',
+            'dim_largura_mm',
+            'dim_comprimento_mm',
+            'dim_altura_mm',
+            'dim_furo_mm',
+            'dim_aba_mm',
+            'dim_aba_polegada_ref',
+            'dim_espessura_polegada_ref',
+            'dimensao_codigo',
+            'dimensao_descricao',
         )
 
     def validate(self, attrs):
@@ -333,8 +696,18 @@ class ProdutoSerializer(serializers.ModelSerializer):
                 'unidade_compra_padrao',
                 'unidade_fiscal',
                 'observacoes_conversao',
+                'dimensao_codigo',
+                'dimensao_descricao',
             },
         )
+        for _k in ('descricao', 'dimensao_descricao'):
+            if attrs.get(_k):
+                attrs[_k] = normalizar_descricao_produto(attrs[_k])
+
+        if inst and 'material' in attrs and not (attrs.get('material') or '').strip():
+            attrs.pop('material', None)
+        elif 'material' in attrs:
+            attrs['material'] = material_canonico_de_entrada(attrs.get('material'))
 
         def pick(name: str):
             if name in attrs:
@@ -344,6 +717,14 @@ class ProdutoSerializer(serializers.ModelSerializer):
         modo = pick('modo_codigo') or Produto.ModoCodigo.LEGADO
         familia = pick('familia')
         codigo_in = to_operational_upper(pick('codigo_completo')) or ''
+        familia_anterior = getattr(inst, 'familia', None) if inst else None
+        if inst and familia_e_manometro(familia_anterior):
+            if (
+                getattr(familia, 'pk', None) != inst.familia_id
+                or getattr(pick('rosca_conexao'), 'pk', None) != inst.rosca_conexao_id
+                or getattr(pick('polegada_principal_ref'), 'pk', None) != inst.polegada_principal_ref_id
+            ):
+                raise serializers.ValidationError({'non_field_errors': [MENSAGEM_ALTERACAO_ESTRUTURAL]})
 
         if modo == Produto.ModoCodigo.MANUAL:
             if not codigo_in:
@@ -356,9 +737,15 @@ class ProdutoSerializer(serializers.ModelSerializer):
             if qs.filter(codigo_completo=codigo_in).exists():
                 raise serializers.ValidationError({'codigo_completo': 'Já existe produto com este código.'})
             attrs['codigo_completo'] = codigo_in
+            if attrs.get('descricao'):
+                attrs['descricao'] = normalizar_descricao_produto(attrs['descricao'])
+            self._validar_composicao_fisica_produto(attrs, inst)
             return attrs
 
         if modo == Produto.ModoCodigo.LEGADO:
+            if attrs.get('descricao'):
+                attrs['descricao'] = normalizar_descricao_produto(attrs['descricao'])
+            self._validar_composicao_fisica_produto(attrs, inst)
             return attrs
 
         # INTERNO
@@ -376,99 +763,123 @@ class ProdutoSerializer(serializers.ModelSerializer):
                 },
             )
 
-        req = flags_por_tipo_regra(familia.tipo_regra_codigo)
+        req = requisitos_efetivos_produto(familia)
         rosca = pick('rosca_conexao')
         schedule = pick('schedule_ref')
         pp = pick('polegada_principal_ref')
         ps = pick('polegada_secundaria_ref')
+        dim_aba_pol = pick('dim_aba_polegada_ref')
+        dim_esp_pol = pick('dim_espessura_polegada_ref')
+        od_mm = pick('od_mm')
+        esp_mm = pick('espessura_mm')
+        td_f = familia.tipo_dimensional
+        if (
+            td_f in (FamiliaProduto.TipoDimensional.DN_MM_REDUCAO, FamiliaProduto.TipoDimensional.OD_MM_REDUCAO)
+            and od_mm is not None
+            and esp_mm is not None
+            and od_mm != esp_mm
+        ):
+            a, b = (od_mm, esp_mm) if od_mm >= esp_mm else (esp_mm, od_mm)
+            attrs['od_mm'] = a
+            attrs['espessura_mm'] = b
+            od_mm, esp_mm = a, b
+        comp_in = pick('comprimento_mm')
+        dimensoes_json = pick('dimensoes_json') or {}
+        dim_values = {
+            **(dimensoes_json if isinstance(dimensoes_json, dict) else {}),
+            'espessura_mm': pick('dim_espessura_mm'),
+            'largura_mm': pick('dim_largura_mm'),
+            'comprimento_mm': pick('dim_comprimento_mm'),
+            'altura_mm': pick('dim_altura_mm'),
+            'furo_mm': pick('dim_furo_mm'),
+            'aba_mm': pick('dim_aba_mm'),
+            'aba_polegada_ref_id': pick('dim_aba_polegada_ref').id if pick('dim_aba_polegada_ref') else None,
+            'espessura_polegada_ref_id': pick('dim_espessura_polegada_ref').id if pick('dim_espessura_polegada_ref') else None,
+            'dimensao_codigo': pick('dimensao_codigo'),
+            'dimensao_descricao': pick('dimensao_descricao'),
+        }
+        pp_eff = dim_aba_pol if familia.tipo_dimensional == FamiliaProduto.TipoDimensional.CANTONEIRA_POLEGADA else pp
+        ps_eff = dim_esp_pol if familia.tipo_dimensional == FamiliaProduto.TipoDimensional.CANTONEIRA_POLEGADA else ps
+        comp_resolved = comprimento_mm_efetivo(comprimento_mm=comp_in, familia=familia)
 
         f = familia
-        if req['usa_polegada_principal'] and not pp:
-            raise serializers.ValidationError(
-                {'polegada_principal_ref_id': 'Polegada principal obrigatória para esta família.'},
-            )
-        if req['usa_polegada_secundaria'] and not ps:
-            raise serializers.ValidationError(
-                {'polegada_secundaria_ref_id': 'Polegada secundária obrigatória para esta família.'},
-            )
-        if req['usa_rosca_conexao'] and rosca is None:
-            raise serializers.ValidationError(
-                {'rosca_conexao_id': 'Rosca / conexão obrigatória para esta família (inclua BSP/padrão se aplicável).'},
-            )
-        if req['usa_schedule'] and schedule is None:
-            raise serializers.ValidationError(
-                {'schedule_ref_id': 'Schedule / espessura obrigatório para esta família.'},
-            )
+        ferr = validar_campos_obrigatorios_produto_interno(
+            familia,
+            rosca=rosca,
+            schedule=schedule,
+            polegada_principal=pp,
+            polegada_secundaria=ps,
+            od_mm=od_mm,
+            espessura_mm=esp_mm,
+            comprimento_mm_resolvido=comp_resolved,
+        )
+        if ferr:
+            raise serializers.ValidationError({k: [v] for k, v in ferr.items()})
+        ferr_dim = _validar_dimensional_materiais(familia, dim_values)
+        if ferr_dim:
+            raise serializers.ValidationError({k: [v] for k, v in ferr_dim.items()})
+
+        if comp_in is None and comp_resolved is not None and familia.comprimento_padrao_barra_m:
+            attrs['comprimento_mm'] = comp_resolved
+
         if not req['usa_rosca_conexao'] and rosca is not None:
             raise serializers.ValidationError({'rosca_conexao_id': 'Esta família não utiliza rosca / conexão.'})
         if not req['usa_schedule'] and schedule is not None:
-            raise serializers.ValidationError({'schedule_ref_id': 'Esta família não utiliza schedule.'})
+            raise serializers.ValidationError({'schedule_ref_id': 'Esta família não utiliza schedule (OD não é NPS/SCH).'})
         if not req['usa_polegada_principal'] and pp is not None:
-            raise serializers.ValidationError({'polegada_principal_ref_id': 'Esta família não utiliza polegada principal.'})
+            raise serializers.ValidationError({'polegada_principal_ref_id': 'Esta família não utiliza esta medida como polegada principal.'})
         if not req['usa_polegada_secundaria'] and ps is not None:
             raise serializers.ValidationError({'polegada_secundaria_ref_id': 'Esta família não utiliza polegada secundária.'})
+        if not req['exige_od_mm'] and od_mm is not None:
+            raise serializers.ValidationError({'od_mm': 'Esta família não utiliza OD em mm no produto.'})
+        if not req['exige_espessura_mm'] and esp_mm is not None:
+            raise serializers.ValidationError({'espessura_mm': 'Esta família não utiliza espessura em mm no produto.'})
+        if not req['exige_comprimento_mm'] and pick('comprimento_mm') is not None:
+            raise serializers.ValidationError({'comprimento_mm': 'Esta família não utiliza comprimento em mm no produto.'})
 
-        polegadas_rel = familia.polegadas_permitidas.filter(ativo=True)
-        if req['usa_polegada_principal']:
-            allowed_principal_ids = set(
-                polegadas_rel.filter(tipo__in=[
-                    FamiliaProdutoPolegadaPermitida.TipoPolegada.PRINCIPAL,
-                    FamiliaProdutoPolegadaPermitida.TipoPolegada.AMBAS,
-                ]).values_list('polegada_id', flat=True),
-            )
-            if not allowed_principal_ids:
-                raise serializers.ValidationError(
-                    {'polegada_principal_ref_id': 'Configure as polegadas permitidas desta família antes de criar produtos.'},
-                )
-            if pp and pp.id not in allowed_principal_ids:
-                raise serializers.ValidationError(
-                    {'polegada_principal_ref_id': f'A polegada {pp.descricao} não está permitida para esta família.'},
-                )
-        if req['usa_polegada_secundaria']:
-            allowed_sec_ids = set(
-                polegadas_rel.filter(tipo__in=[
-                    FamiliaProdutoPolegadaPermitida.TipoPolegada.SECUNDARIA,
-                    FamiliaProdutoPolegadaPermitida.TipoPolegada.AMBAS,
-                ]).values_list('polegada_id', flat=True),
-            )
-            if not allowed_sec_ids:
-                raise serializers.ValidationError(
-                    {'polegada_secundaria_ref_id': 'Configure polegadas secundárias permitidas nesta família.'},
-                )
-            if ps and ps.id not in allowed_sec_ids:
-                raise serializers.ValidationError(
-                    {'polegada_secundaria_ref_id': f'A polegada {ps.descricao} não está permitida para esta família.'},
-                )
-        if req['usa_rosca_conexao']:
-            allowed_rosc_ids = set(
-                familia.roscas_permitidas.filter(ativo=True).values_list('rosca_conexao_id', flat=True),
-            )
-            if not allowed_rosc_ids:
-                raise serializers.ValidationError(
-                    {'rosca_conexao_id': 'Configure as roscas/conexões permitidas desta família antes de criar produtos.'},
-                )
-            if rosca and rosca.id not in allowed_rosc_ids:
-                raise serializers.ValidationError(
-                    {'rosca_conexao_id': f'A rosca/conexão {rosca.descricao} não está permitida para esta família.'},
-                )
-        if req['usa_schedule']:
-            allowed_sched_ids = set(
-                familia.schedules_permitidos.filter(ativo=True).values_list('schedule_id', flat=True),
-            )
-            if not allowed_sched_ids:
-                raise serializers.ValidationError(
-                    {'schedule_ref_id': 'Configure os schedules permitidos desta família antes de criar produtos.'},
-                )
-            if schedule and schedule.id not in allowed_sched_ids:
-                raise serializers.ValidationError(
-                    {'schedule_ref_id': f'O schedule {schedule.codigo_schedule} não está permitido para esta família.'},
-                )
-
-        codigo = montar_codigo_interno(f, rosca=rosca, schedule=schedule, polegada_principal=pp, polegada_secundaria=ps)
+        expected_types = tipo_medida_esperado_por_campo(familia)
+        if pp is not None:
+            expected_principal = expected_types.get('polegada_principal_ref_id')
+            if expected_principal and pp.tipo_medida != expected_principal:
+                if familia_espigao_x_flange_nps(familia):
+                    msg = 'Informe a medida do espigão.'
+                elif expected_principal == Polegada.TipoMedida.OD:
+                    msg = _msg_polegada_tipo_incompativel('OD')
+                else:
+                    msg = _msg_polegada_tipo_incompativel('NPS')
+                raise serializers.ValidationError({'polegada_principal_ref_id': msg})
+        if ps is not None:
+            expected_sec = expected_types.get('polegada_secundaria_ref_id')
+            if expected_sec and ps.tipo_medida != expected_sec:
+                if familia_espigao_x_flange_nps(familia):
+                    msg = 'Informe a medida da flange.'
+                elif familia.tipo_dimensional == FamiliaProduto.TipoDimensional.OD_POLEGADA_X_ROSCA:
+                    msg = 'Informe a medida da rosca.'
+                elif expected_sec == Polegada.TipoMedida.OD:
+                    msg = _msg_polegada_tipo_incompativel('OD')
+                else:
+                    msg = _msg_polegada_tipo_incompativel('NPS')
+                raise serializers.ValidationError({'polegada_secundaria_ref_id': msg})
+        codigo = montar_codigo_interno(
+            f,
+            rosca=rosca,
+            schedule=schedule,
+            polegada_principal=pp_eff,
+            polegada_secundaria=ps_eff,
+            od_mm=od_mm,
+            espessura_mm=esp_mm,
+            dimensoes=dimensoes_json if isinstance(dimensoes_json, dict) else {},
+        )
         if not codigo_interno_valido(codigo):
             raise serializers.ValidationError(
                 {'non_field_errors': ['Código será gerado após preencher os campos obrigatórios da família.']},
             )
+
+        if familia_e_manometro(familia):
+            if inst and modo == Produto.ModoCodigo.INTERNO and familia_e_manometro(familia_anterior):
+                codigo = inst.codigo_completo
+            else:
+                codigo = proximo_codigo_manometro_sugerido(codigo, excluir_pk=inst.pk if inst else None)
 
         qs = Produto.objects.exclude(pk=inst.pk) if inst else Produto.objects.all()
         if qs.filter(codigo_completo=codigo).exists():
@@ -487,7 +898,17 @@ class ProdutoSerializer(serializers.ModelSerializer):
             desc_merged = inst.descricao
         desc_merged = (desc_merged or '').strip()
         if not desc_merged:
-            sug = montar_descricao_sugerida(f, rosca=rosca, schedule=schedule, polegada_principal=pp, polegada_secundaria=ps)
+            sug = montar_descricao_sugerida(
+                f,
+                rosca=rosca,
+                schedule=schedule,
+                polegada_principal=pp_eff,
+                polegada_secundaria=ps_eff,
+                od_mm=od_mm,
+                espessura_mm=esp_mm,
+                comprimento_mm=comp_resolved,
+                dimensoes=dimensoes_json if isinstance(dimensoes_json, dict) else {},
+            )
             if sug:
                 attrs['descricao'] = sug
 
@@ -512,19 +933,96 @@ class ProdutoSerializer(serializers.ModelSerializer):
         if not (attrs.get('conexao') or '').strip() and (familia.conexao_base or '').strip():
             attrs['conexao'] = familia.conexao_base.strip()
 
+        # Sempre persiste descrição comercial sem acento (merge payload + instância + sugestão acima).
+        eff_desc = (attrs.get('descricao') or '').strip()
+        if not eff_desc and inst:
+            eff_desc = (getattr(inst, 'descricao', None) or '').strip()
+        if eff_desc:
+            attrs['descricao'] = normalizar_descricao_produto(eff_desc)
+        eff_dim = (attrs.get('dimensao_descricao') or '').strip()
+        if not eff_dim and inst:
+            eff_dim = (getattr(inst, 'dimensao_descricao', None) or '').strip()
+        if eff_dim:
+            attrs['dimensao_descricao'] = normalizar_descricao_produto(eff_dim)
+
+        self._validar_composicao_fisica_produto(attrs, inst)
         return attrs
 
+    @staticmethod
+    def _validar_composicao_fisica_produto(attrs: dict, inst) -> None:
+        controla = attrs.get('controla_composicao_fisica')
+        if controla is None and inst is not None:
+            controla = inst.controla_composicao_fisica
+        if not controla and inst is not None and inst.familia_id and inst.familia.controla_composicao_fisica:
+            if 'controla_composicao_fisica' not in attrs:
+                controla = True
+        if not controla:
+            return
+        tipo_comp = (
+            (attrs.get('tipo_composicao_fisica') or getattr(inst, 'tipo_composicao_fisica', '') or '')
+            .strip()
+            .upper()
+        )
+        if not tipo_comp and inst and inst.familia_id:
+            tipo_comp = (inst.familia.tipo_composicao_fisica or '').strip().upper()
+        tipo_comp = tipo_comp or FamiliaProduto.TipoComposicaoFisica.BARRA_M
+        unidade_base = 'KG' if tipo_comp == FamiliaProduto.TipoComposicaoFisica.PECA_KG else 'M'
+        unidade_est = (
+            (attrs.get('unidade_estoque') or getattr(inst, 'unidade_estoque', '') or '')
+            .strip()
+            .upper()
+        )
+        if not unidade_est and inst and inst.familia_id:
+            unidade_est = (
+                (inst.familia.unidade_estoque_padrao or inst.familia.unidade_padrao or '')
+                .strip()
+                .upper()
+            )
+        if unidade_est and unidade_est != unidade_base:
+            raise serializers.ValidationError(
+                {
+                    'unidade_estoque': (
+                        f'Composição física {tipo_comp} exige unidade de estoque {unidade_base}.'
+                    ),
+                },
+            )
+        if not (attrs.get('unidade_estoque') or getattr(inst, 'unidade_estoque', '')).strip():
+            attrs['unidade_estoque'] = unidade_base
+        if tipo_comp == FamiliaProduto.TipoComposicaoFisica.BARRA_M:
+            attrs['usa_conversao_dimensional'] = True
+
     def create(self, validated_data):
+        usuario = usuario_do_contexto(self)
         try:
-            return super().create(validated_data)
+            with transaction.atomic():
+                produto = super().create(validated_data)
+                registrar_produto(
+                    usuario=usuario,
+                    produto=produto,
+                    operacao='CREATE',
+                    estado_anterior={},
+                    estado_posterior=snapshot_produto(produto),
+                )
+                return produto
         except IntegrityError as e:
             if 'codigo_completo' in str(e).lower() or 'unique' in str(e).lower():
                 raise serializers.ValidationError({'codigo_completo': 'Código já cadastrado.'}) from e
             raise
 
     def update(self, instance, validated_data):
+        usuario = usuario_do_contexto(self)
+        antes = snapshot_produto(instance)
         try:
-            return super().update(instance, validated_data)
+            with transaction.atomic():
+                produto = super().update(instance, validated_data)
+                registrar_produto(
+                    usuario=usuario,
+                    produto=produto,
+                    operacao='UPDATE',
+                    estado_anterior=antes,
+                    estado_posterior=snapshot_produto(produto),
+                )
+                return produto
         except IntegrityError as e:
             if 'codigo_completo' in str(e).lower() or 'unique' in str(e).lower():
                 raise serializers.ValidationError({'codigo_completo': 'Código já cadastrado.'}) from e
@@ -540,6 +1038,9 @@ class ProdutoSerializer(serializers.ModelSerializer):
         data['schedule_ref_id'] = instance.schedule_ref_id
         data['polegada_principal_ref_id'] = instance.polegada_principal_ref_id
         data['polegada_secundaria_ref_id'] = instance.polegada_secundaria_ref_id
+        for k in ('od_mm', 'espessura_mm', 'comprimento_mm'):
+            if k in data and data[k] is not None:
+                data[k] = float(Decimal(str(data[k])))
         ncm_efetivo = instance.get_ncm_efetivo()
         data['ncm_efetivo'] = (
             {
@@ -560,13 +1061,27 @@ class ProdutoSerializer(serializers.ModelSerializer):
         data['unidade_venda_efetiva'] = instance.get_unidade_venda_efetiva()
         data['unidade_compra_efetiva'] = instance.get_unidade_compra_efetiva()
         data['unidade_fiscal_efetiva'] = instance.get_unidade_fiscal_efetiva()
+        data['peso_por_metro_kg_efetivo'] = instance.get_peso_por_metro_kg_efetivo()
+        data['comprimento_padrao_barra_m_efetivo'] = instance.get_comprimento_padrao_barra_m_efetivo()
         data['unidades_venda_permitidas_efetivas'] = instance.get_unidades_venda_permitidas_efetivas()
+        data['unidades_compra_permitidas_efetivas'] = instance.get_unidades_compra_permitidas_efetivas()
         data['usa_conversao_dimensional_efetivo'] = instance.get_usa_conversao_dimensional_efetivo()
+        data['controla_composicao_fisica_efetivo'] = instance.get_controla_composicao_fisica_efetivo()
+        data['tipo_composicao_fisica_efetivo'] = instance.get_tipo_composicao_fisica_efetivo()
+        data['unidade_base_composicao_fisica'] = instance.get_unidade_base_composicao_fisica()
         data['alertas'] = (
             ['Este produto usa NCM diferente do padrão da família.']
             if (instance.ncm_especifico or '').strip()
             else []
         )
+        if data.get('descricao'):
+            data['descricao'] = normalizar_descricao_produto(data['descricao'])
+        if data.get('dimensao_descricao'):
+            data['dimensao_descricao'] = normalizar_descricao_produto(data['dimensao_descricao'])
+        mat_raw = (instance.material or '').strip()
+        data['material'] = mat_raw or None
+        label = material_label_de_valor(mat_raw)
+        data['material_label'] = label or None
         return data
 
 
@@ -592,6 +1107,20 @@ class PreviewCodigoSerializer(serializers.Serializer):
         allow_null=True,
         required=False,
     )
+    od_mm = serializers.DecimalField(max_digits=10, decimal_places=3, allow_null=True, required=False)
+    espessura_mm = serializers.DecimalField(max_digits=10, decimal_places=3, allow_null=True, required=False)
+    comprimento_mm = serializers.DecimalField(max_digits=14, decimal_places=3, allow_null=True, required=False)
+    dimensoes_json = serializers.JSONField(required=False)
+    dim_espessura_mm = serializers.DecimalField(max_digits=10, decimal_places=3, allow_null=True, required=False)
+    dim_largura_mm = serializers.DecimalField(max_digits=10, decimal_places=3, allow_null=True, required=False)
+    dim_comprimento_mm = serializers.DecimalField(max_digits=14, decimal_places=3, allow_null=True, required=False)
+    dim_altura_mm = serializers.DecimalField(max_digits=10, decimal_places=3, allow_null=True, required=False)
+    dim_furo_mm = serializers.DecimalField(max_digits=10, decimal_places=3, allow_null=True, required=False)
+    dim_aba_mm = serializers.DecimalField(max_digits=10, decimal_places=3, allow_null=True, required=False)
+    dim_aba_polegada_ref_id = serializers.PrimaryKeyRelatedField(queryset=Polegada.objects.filter(tipo_medida=Polegada.TipoMedida.OD), allow_null=True, required=False)
+    dim_espessura_polegada_ref_id = serializers.PrimaryKeyRelatedField(queryset=Polegada.objects.filter(tipo_medida=Polegada.TipoMedida.OD), allow_null=True, required=False)
+    dimensao_codigo = serializers.CharField(max_length=64, allow_blank=True, required=False)
+    dimensao_descricao = serializers.CharField(max_length=256, allow_blank=True, required=False)
 
     def validate(self, attrs):
         f: FamiliaProduto = attrs['familia_id']
@@ -601,69 +1130,111 @@ class PreviewCodigoSerializer(serializers.Serializer):
             attrs['_mensagem'] = 'Esta família não gera código automático. Use o produto em modo "Código manual / fabricante".'
             return attrs
 
-        req = flags_por_tipo_regra(f.tipo_regra_codigo)
+        req = requisitos_efetivos_produto(f)
         rosca = attrs.get('rosca_conexao_id')
         schedule = attrs.get('schedule_ref_id')
         pp = attrs.get('polegada_principal_ref_id')
         ps = attrs.get('polegada_secundaria_ref_id')
+        dim_aba_pol = attrs.get('dim_aba_polegada_ref_id')
+        dim_esp_pol = attrs.get('dim_espessura_polegada_ref_id')
+        od_mm = attrs.get('od_mm')
+        esp_mm = attrs.get('espessura_mm')
+        comp_in = attrs.get('comprimento_mm')
+        dimensoes_json = attrs.get('dimensoes_json') or {}
+        dim_values = {
+            **(dimensoes_json if isinstance(dimensoes_json, dict) else {}),
+            'espessura_mm': attrs.get('dim_espessura_mm'),
+            'largura_mm': attrs.get('dim_largura_mm'),
+            'comprimento_mm': attrs.get('dim_comprimento_mm'),
+            'altura_mm': attrs.get('dim_altura_mm'),
+            'furo_mm': attrs.get('dim_furo_mm'),
+            'aba_mm': attrs.get('dim_aba_mm'),
+            'aba_polegada_ref_id': attrs.get('dim_aba_polegada_ref_id').id if attrs.get('dim_aba_polegada_ref_id') else None,
+            'espessura_polegada_ref_id': attrs.get('dim_espessura_polegada_ref_id').id if attrs.get('dim_espessura_polegada_ref_id') else None,
+            'dimensao_codigo': attrs.get('dimensao_codigo'),
+            'dimensao_descricao': attrs.get('dimensao_descricao'),
+        }
+        pp_eff = dim_aba_pol if f.tipo_dimensional == FamiliaProduto.TipoDimensional.CANTONEIRA_POLEGADA else pp
+        ps_eff = dim_esp_pol if f.tipo_dimensional == FamiliaProduto.TipoDimensional.CANTONEIRA_POLEGADA else ps
+        comp_resolved = comprimento_mm_efetivo(comprimento_mm=comp_in, familia=f)
 
-        if req['usa_polegada_principal'] and not pp:
-            raise serializers.ValidationError({'polegada_principal_ref_id': 'Obrigatório para esta família.'})
-        if req['usa_polegada_secundaria'] and not ps:
-            raise serializers.ValidationError({'polegada_secundaria_ref_id': 'Obrigatório para esta família.'})
-        if req['usa_rosca_conexao'] and rosca is None:
-            raise serializers.ValidationError({'rosca_conexao_id': 'Obrigatório para esta família.'})
-        if req['usa_schedule'] and schedule is None:
-            raise serializers.ValidationError({'schedule_ref_id': 'Obrigatório para esta família.'})
+        ferr = validar_campos_obrigatorios_produto_interno(
+            f,
+            rosca=rosca,
+            schedule=schedule,
+            polegada_principal=pp,
+            polegada_secundaria=ps,
+            od_mm=od_mm,
+            espessura_mm=esp_mm,
+            comprimento_mm_resolvido=comp_resolved,
+        )
+        if ferr:
+            raise serializers.ValidationError({k: [v] for k, v in ferr.items()})
+        ferr_dim = _validar_dimensional_materiais(f, dim_values)
+        if ferr_dim:
+            raise serializers.ValidationError({k: [v] for k, v in ferr_dim.items()})
+
         if not req['usa_rosca_conexao'] and rosca is not None:
             raise serializers.ValidationError({'rosca_conexao_id': 'Esta família não utiliza rosca/conexão.'})
         if not req['usa_schedule'] and schedule is not None:
             raise serializers.ValidationError({'schedule_ref_id': 'Esta família não utiliza schedule.'})
+        if not req['usa_polegada_principal'] and pp is not None:
+            raise serializers.ValidationError({'polegada_principal_ref_id': 'Polegada principal não aplicável.'})
+        if not req['usa_polegada_secundaria'] and ps is not None:
+            raise serializers.ValidationError({'polegada_secundaria_ref_id': 'Polegada secundária não aplicável.'})
+        if not req['exige_od_mm'] and od_mm is not None:
+            raise serializers.ValidationError({'od_mm': 'OD em mm não aplicável.'})
+        if not req['exige_espessura_mm'] and esp_mm is not None:
+            raise serializers.ValidationError({'espessura_mm': 'Espessura em mm não aplicável.'})
+        if not req['exige_comprimento_mm'] and comp_in is not None:
+            raise serializers.ValidationError({'comprimento_mm': 'Comprimento em mm não aplicável.'})
 
-        polegadas_rel = f.polegadas_permitidas.filter(ativo=True)
-        if req['usa_polegada_principal']:
-            allowed_pp = set(
-                polegadas_rel.filter(tipo__in=[
-                    FamiliaProdutoPolegadaPermitida.TipoPolegada.PRINCIPAL,
-                    FamiliaProdutoPolegadaPermitida.TipoPolegada.AMBAS,
-                ]).values_list('polegada_id', flat=True),
-            )
-            if not allowed_pp:
-                raise serializers.ValidationError(
-                    {'polegada_principal_ref_id': 'Configure as polegadas permitidas desta família antes de criar produtos.'},
-                )
-            if pp and pp.id not in allowed_pp:
-                raise serializers.ValidationError({'polegada_principal_ref_id': f'A polegada {pp.descricao} não está permitida para esta família.'})
-        if req['usa_polegada_secundaria']:
-            allowed_ps = set(
-                polegadas_rel.filter(tipo__in=[
-                    FamiliaProdutoPolegadaPermitida.TipoPolegada.SECUNDARIA,
-                    FamiliaProdutoPolegadaPermitida.TipoPolegada.AMBAS,
-                ]).values_list('polegada_id', flat=True),
-            )
-            if not allowed_ps:
-                raise serializers.ValidationError(
-                    {'polegada_secundaria_ref_id': 'Configure polegadas secundárias permitidas nesta família.'},
-                )
-            if ps and ps.id not in allowed_ps:
-                raise serializers.ValidationError({'polegada_secundaria_ref_id': f'A polegada {ps.descricao} não está permitida para esta família.'})
-        if req['usa_rosca_conexao']:
-            allowed_rosca = set(f.roscas_permitidas.filter(ativo=True).values_list('rosca_conexao_id', flat=True))
-            if not allowed_rosca:
-                raise serializers.ValidationError({'rosca_conexao_id': 'Configure roscas/conexões permitidas desta família.'})
-            if rosca and rosca.id not in allowed_rosca:
-                raise serializers.ValidationError({'rosca_conexao_id': f'A rosca/conexão {rosca.descricao} não está permitida para esta família.'})
-        if req['usa_schedule']:
-            allowed_sched = set(f.schedules_permitidos.filter(ativo=True).values_list('schedule_id', flat=True))
-            if not allowed_sched:
-                raise serializers.ValidationError({'schedule_ref_id': 'Configure schedules permitidos desta família.'})
-            if schedule and schedule.id not in allowed_sched:
-                raise serializers.ValidationError({'schedule_ref_id': f'O schedule {schedule.codigo_schedule} não está permitido para esta família.'})
-
-        codigo = montar_codigo_interno(f, rosca=rosca, schedule=schedule, polegada_principal=pp, polegada_secundaria=ps)
+        expected_types = tipo_medida_esperado_por_campo(f)
+        if pp is not None:
+            expected_principal = expected_types.get('polegada_principal_ref_id')
+            if expected_principal and pp.tipo_medida != expected_principal:
+                if familia_espigao_x_flange_nps(f):
+                    msg = 'Informe a medida do espigão.'
+                elif expected_principal == Polegada.TipoMedida.OD:
+                    msg = _msg_polegada_tipo_incompativel('OD')
+                else:
+                    msg = _msg_polegada_tipo_incompativel('NPS')
+                raise serializers.ValidationError({'polegada_principal_ref_id': msg})
+        if ps is not None:
+            expected_sec = expected_types.get('polegada_secundaria_ref_id')
+            if expected_sec and ps.tipo_medida != expected_sec:
+                if familia_espigao_x_flange_nps(f):
+                    msg = 'Informe a medida da flange.'
+                elif f.tipo_dimensional == FamiliaProduto.TipoDimensional.OD_POLEGADA_X_ROSCA:
+                    msg = 'Informe a medida da rosca.'
+                elif expected_sec == Polegada.TipoMedida.OD:
+                    msg = _msg_polegada_tipo_incompativel('OD')
+                else:
+                    msg = _msg_polegada_tipo_incompativel('NPS')
+                raise serializers.ValidationError({'polegada_secundaria_ref_id': msg})
+        codigo = montar_codigo_interno(
+            f,
+            rosca=rosca,
+            schedule=schedule,
+            polegada_principal=pp_eff,
+            polegada_secundaria=ps_eff,
+            od_mm=od_mm,
+            espessura_mm=esp_mm,
+            dimensoes=dimensoes_json if isinstance(dimensoes_json, dict) else {},
+        )
+        desc_kwargs = dict(
+            rosca=rosca,
+            schedule=schedule,
+            polegada_principal=pp_eff,
+            polegada_secundaria=ps_eff,
+            od_mm=od_mm,
+            espessura_mm=esp_mm,
+            comprimento_mm=comp_resolved,
+            dimensoes=dimensoes_json if isinstance(dimensoes_json, dict) else {},
+        )
         if not codigo_interno_valido(codigo):
             attrs['_codigo'] = ''
-            attrs['_descricao'] = montar_descricao_sugerida(f, rosca=rosca, schedule=schedule, polegada_principal=pp, polegada_secundaria=ps)
+            attrs['_descricao'] = normalizar_descricao_produto(montar_descricao_sugerida(f, **desc_kwargs))
             attrs['_mensagem'] = 'Código será gerado após preencher os campos obrigatórios da família.'
             attrs['_ncm_efetivo'] = (f.ncm_padrao.codigo if f.ncm_padrao_id else '')
             attrs['_unidade_efetiva'] = (f.unidade_padrao or '').strip()
@@ -672,8 +1243,15 @@ class PreviewCodigoSerializer(serializers.Serializer):
             attrs['_mensagens'] = [attrs['_mensagem']]
             return attrs
 
+        codigo_base = codigo
+        sequencia_tecnica = False
+        if f.tipo_dimensional == FamiliaProduto.TipoDimensional.MANOMETRO:
+            codigo = proximo_codigo_manometro_sugerido(codigo_base)
+            sequencia_tecnica = codigo != codigo_base
         attrs['_codigo'] = codigo
-        attrs['_descricao'] = montar_descricao_sugerida(f, rosca=rosca, schedule=schedule, polegada_principal=pp, polegada_secundaria=ps)
+        attrs['_codigo_base'] = codigo_base
+        attrs['_sequencia_tecnica'] = sequencia_tecnica
+        attrs['_descricao'] = normalizar_descricao_produto(montar_descricao_sugerida(f, **desc_kwargs))
         attrs['_mensagem'] = ''
         attrs['_ncm_efetivo'] = (f.ncm_padrao.codigo if f.ncm_padrao_id else '')
         attrs['_unidade_efetiva'] = (f.unidade_padrao or '').strip()

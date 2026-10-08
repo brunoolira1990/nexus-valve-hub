@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { FileUp, FileCheck, Copy, AlertCircle } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { FileUp, FileCheck, Copy, ClipboardList, Printer } from 'lucide-react';
+import { toast } from 'sonner';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
 import { apiErrorMessage } from '@/services/api/config';
@@ -13,31 +14,162 @@ import {
   type NFeEntradaHistoricaList,
 } from '@/services/api/nfeHistoricaEntradaImportada';
 import type { Empresa, Fornecedor } from '@/types';
+import {
+  copiarTextoParaAreaDeTransferencia,
+  montarTextoDiagnosticoNfeEntradaXml,
+  normalizarFalhaImportacaoXml,
+} from '@/utils/nfeXmlImportDiagnostico';
+import { usePaginatedList } from '@/hooks/usePaginatedList';
+import { PaginationControls } from '@/components/list/PaginationControls';
+import { EmptyState, ErrorState } from '@/components/list/ListStates';
+import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
+import { StatusBadge } from '@/components/nexus/StatusBadge';
+import { DfeClassificacaoBadges } from '@/components/fiscal/DfeClassificacaoBadges';
+import { NFeEntradaReabrirModal } from '@/components/fiscal/NFeEntradaReabrirModal';
+import { NexusCard } from '@/components/nexus/NexusCard';
+import { NexusButton } from '@/components/nexus';
+import { TableSkeleton } from '@/components/nexus/Skeleton';
+import { chaveNfeResumida } from '@/lib/chaveNfeResumida';
+import { openBlobInNewTab } from '@/lib/downloadBlobFile';
+import {
+  aplicarCompetenciaMmAaaa,
+  competenciaDeDataIso,
+  competenciaMesAtualMmAaaa,
+  intervaloMesAnterior,
+  intervaloMesAtual,
+  labelPeriodoFiltro,
+  PERIODO_ATALHO_JUN_2026,
+} from '@/lib/periodoFiltroFiscal';
+import {
+  labelBotaoPrincipalConferenciaNfeEntradaHistorica,
+  labelStatusOperacionalNfeEntradaHistorica,
+  rotaConferenciaNfeEntradaHistorica,
+  STATUS_CONFERENCIA_FILTRO_OPCOES,
+  statusBadgeTokenNfeEntradaHistorica,
+} from '@/lib/nfeEntradaHistoricaImportadaUi';
+
+const TIPO_DATA_STORAGE_KEY = 'nfe_entrada_hist_tipo_data';
+
+function lerTipoDataPersistido(): 'emissao' | 'entrada' {
+  try {
+    const stored = localStorage.getItem(TIPO_DATA_STORAGE_KEY);
+    if (stored === 'entrada' || stored === 'emissao') return stored;
+  } catch {
+    /* ignore */
+  }
+  return 'emissao';
+}
 
 const NFeHistoricaEntradaImportada = () => {
   const navigate = useNavigate();
-  const [lista, setLista] = useState<NFeEntradaHistoricaList[]>([]);
-  const [search, setSearch] = useState('');
+  const tipoDataInicial = lerTipoDataPersistido();
+  const mesAtualInicial = intervaloMesAtual();
+  const [tipoData, setTipoDataState] = useState<'emissao' | 'entrada'>(tipoDataInicial);
+  const [competencia, setCompetencia] = useState(competenciaMesAtualMmAaaa);
+  const [chaveFiltro, setChaveFiltro] = useState('');
+  const {
+    items,
+    count,
+    page,
+    pageSize,
+    totalPages,
+    search,
+    setSearch,
+    setPage,
+    setPageSize,
+    filters,
+    setFilter,
+    setFilters,
+    loading,
+    error: loadError,
+    reload,
+  } = usePaginatedList<NFeEntradaHistoricaList>({
+    fetchPage: nfeHistoricaEntradaImportadaService.listPaginated,
+    initialFilters: {
+      data_inicio: mesAtualInicial.inicio,
+      data_fim: mesAtualInicial.fim,
+      ...(tipoDataInicial === 'entrada' ? { tipo_data: 'entrada' } : {}),
+    },
+  });
+  const empresaId = filters.empresa_destinataria_id || '';
+  const fornecedorId = filters.fornecedor_id || '';
+  const dataInicio = filters.data_inicio || '';
+  const dataFim = filters.data_fim || '';
+  const statusConferencia = filters.status_conferencia || '';
+
+  const setTipoData = useCallback(
+    (value: 'emissao' | 'entrada') => {
+      setTipoDataState(value);
+      try {
+        localStorage.setItem(TIPO_DATA_STORAGE_KEY, value);
+      } catch {
+        /* ignore */
+      }
+      setFilter('tipo_data', value === 'emissao' ? '' : value);
+    },
+    [setFilter],
+  );
+
+  const aplicarPeriodo = useCallback(
+    (inicio: string, fim: string) => {
+      setCompetencia(competenciaDeDataIso(inicio) || '');
+      setFilters((prev) => {
+        const next = { ...prev };
+        if (inicio) next.data_inicio = inicio;
+        else delete next.data_inicio;
+        if (fim) next.data_fim = fim;
+        else delete next.data_fim;
+        return next;
+      });
+    },
+    [setFilters],
+  );
+
+  const limparPeriodo = useCallback(() => {
+    setCompetencia('');
+    setFilters((prev) => {
+      const next = { ...prev };
+      delete next.data_inicio;
+      delete next.data_fim;
+      return next;
+    });
+  }, [setFilters]);
+
+  const aplicarCompetencia = useCallback(() => {
+    const periodo = aplicarCompetenciaMmAaaa(competencia);
+    if (!periodo) {
+      toast.error('Informe a competência no formato mm/aaaa.');
+      return;
+    }
+    setFilters((prev) => ({
+      ...prev,
+      data_inicio: periodo.inicio,
+      data_fim: periodo.fim,
+    }));
+  }, [competencia, setFilters]);
+
+  const periodoFiltroLabel = useMemo(
+    () => labelPeriodoFiltro({ dataInicio, dataFim, competencia }),
+    [dataInicio, dataFim, competencia],
+  );
+
+  // Chave dedicada alimenta a busca textual (API já filtra por chave_acesso).
+  useEffect(() => {
+    const digits = chaveFiltro.replace(/\D/g, '');
+    if (!digits) return;
+    setSearch(digits);
+  }, [chaveFiltro, setSearch]);
+
   const [busy, setBusy] = useState(false);
   const [resultado, setResultado] = useState<NFeEntradaHistoricaImportResultado | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [detalhe, setDetalhe] = useState<NFeEntradaHistoricaDetalhe | null>(null);
   const [modal, setModal] = useState(false);
-  const [empresaId, setEmpresaId] = useState('');
-  const [fornecedorId, setFornecedorId] = useState('');
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
-
-  const load = useCallback(async () => {
-    const qs = new URLSearchParams();
-    if (empresaId) qs.set('empresa_destinataria_id', empresaId);
-    if (fornecedorId) qs.set('fornecedor_id', fornecedorId);
-    setLista(await nfeHistoricaEntradaImportadaService.list(qs));
-  }, [empresaId, fornecedorId]);
-
-  useEffect(() => {
-    void load().catch((e) => setErro(apiErrorMessage(e)));
-  }, [load]);
+  const [diagCopiado, setDiagCopiado] = useState(false);
+  const [reabrirId, setReabrirId] = useState<number | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
     void (async () => {
@@ -47,6 +179,30 @@ const NFeHistoricaEntradaImportada = () => {
     })().catch((e) => setErro(apiErrorMessage(e)));
   }, []);
 
+  useEffect(() => {
+    const raw = (searchParams.get('id') || '').trim();
+    if (!raw) return;
+    const id = Number(raw);
+    if (!Number.isFinite(id) || id <= 0) return;
+    let cancelled = false;
+    void nfeHistoricaEntradaImportadaService
+      .getById(id)
+      .then((d) => {
+        if (cancelled) return;
+        setDetalhe(d);
+        setModal(true);
+        const next = new URLSearchParams(searchParams);
+        next.delete('id');
+        setSearchParams(next, { replace: true });
+      })
+      .catch((e) => {
+        if (!cancelled) setErro(apiErrorMessage(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, setSearchParams]);
+
   const onFiles = async (files: FileList | null) => {
     if (!files?.length) return;
     setErro(null);
@@ -54,7 +210,7 @@ const NFeHistoricaEntradaImportada = () => {
     try {
       const res = await nfeHistoricaEntradaImportadaService.importarXmls(Array.from(files));
       setResultado(res);
-      await load();
+      void reload();
     } catch (e) {
       setErro(apiErrorMessage(e));
     } finally {
@@ -62,84 +218,409 @@ const NFeHistoricaEntradaImportada = () => {
     }
   };
 
-  const filtrados = lista.filter((x) => x.chave_acesso.includes(search) || `${x.numero}/${x.serie}`.includes(search) || (x.fornecedor_nome || '').toLowerCase().includes(search.toLowerCase()));
+  const falhasEntrada = resultado?.erros?.length
+    ? resultado.erros.map((raw) => normalizarFalhaImportacaoXml(raw))
+    : [];
+
+  const copiarDiagnosticoEntrada = async () => {
+    if (!resultado) return;
+    await copiarTextoParaAreaDeTransferencia(montarTextoDiagnosticoNfeEntradaXml(resultado));
+    setDiagCopiado(true);
+    window.setTimeout(() => setDiagCopiado(false), 2500);
+  };
+
+  const imprimirDanfe = async (row: NFeEntradaHistoricaList) => {
+    try {
+      const blob = await nfeHistoricaEntradaImportadaService.danfeBlob(row.id);
+      openBlobInNewTab(blob, `DANFE_NFe_Entrada_${row.id}.pdf`);
+    } catch (e) {
+      setErro(apiErrorMessage(e, { fallback: 'Não foi possível gerar o DANFE.' }));
+    }
+  };
 
   return (
     <div>
-      <PageHeader title="NF-e entrada histórica (importação XML)" searchValue={search} onSearch={setSearch} />
+      <PageHeader
+        title="Base de NF-e Entrada Importada"
+        description="XMLs de entrada usados para apuração fiscal, base contábil, relatórios e precificação. Não geram estoque, contas a pagar ou conciliação operacional automaticamente."
+      />
 
-      <div className="erp-card p-6 mb-6 border-dashed border-2 border-border">
+      <NexusCard variant="action" className="mb-6">
         <div className="flex flex-col md:flex-row md:items-center gap-4">
           <div className="flex-1">
-            <h2 className="font-semibold text-foreground flex items-center gap-2"><FileUp className="h-5 w-5" />Importar XMLs de NF-e de entrada</h2>
-            <p className="text-sm text-muted-foreground mt-1">Base histórica fiscal/gerencial, sem gerar movimentação operacional.</p>
+            <h2 className="nexus-heading-md flex items-center gap-2">
+              <FileUp className="h-5 w-5" />
+              Importar XMLs de NF-e de entrada
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Alimenta apuração, contábil, BI e precificação. Sem efeito operacional automático (estoque, financeiro, pedido).
+            </p>
           </div>
-          <label className="erp-btn-primary cursor-pointer shrink-0">
-            <input type="file" accept=".xml,application/xml,text/xml" multiple className="hidden" disabled={busy} onChange={(e) => { void onFiles(e.target.files); e.target.value = ''; }} />
-            {busy ? 'Importando…' : 'Selecionar XMLs'}
-          </label>
+          <NexusButton asChild disabled={busy}>
+            <label className="w-full md:w-auto justify-center cursor-pointer shrink-0">
+              <input
+                type="file"
+                accept=".xml,application/xml,text/xml"
+                multiple
+                className="hidden"
+                disabled={busy}
+                onChange={(e) => {
+                  void onFiles(e.target.files);
+                  e.target.value = '';
+                }}
+              />
+              {busy ? 'Importando…' : 'Selecionar XMLs'}
+            </label>
+          </NexusButton>
         </div>
-        {erro && <p className="text-sm text-destructive mt-3">{erro}</p>}
-      </div>
+        {erro ? <p className="text-sm text-destructive mt-3">{erro}</p> : null}
+      </NexusCard>
 
       {resultado && (
-        <div className="erp-card p-4 mb-4 grid md:grid-cols-3 gap-3">
-          <div><div className="text-xs text-muted-foreground">Importadas</div><div className="text-xl font-semibold">{resultado.resumo.importadas}</div></div>
-          <div><div className="text-xs text-muted-foreground">Duplicadas</div><div className="text-xl font-semibold">{resultado.resumo.duplicadas}</div></div>
-          <div><div className="text-xs text-muted-foreground">Erros</div><div className="text-xl font-semibold">{resultado.resumo.erros}</div></div>
-          {resultado.importadas.slice(0, 5).map((r) => <div key={r.id} className="text-xs text-muted-foreground"><FileCheck className="inline h-3 w-3 mr-1 text-success" />{r.arquivo}</div>)}
-          {resultado.duplicadas.slice(0, 5).map((r) => <div key={`${r.arquivo}-${r.chave_acesso}`} className="text-xs text-muted-foreground"><Copy className="inline h-3 w-3 mr-1" />{r.arquivo}</div>)}
-          {resultado.erros.slice(0, 5).map((r) => <div key={r.arquivo} className="text-xs text-destructive"><AlertCircle className="inline h-3 w-3 mr-1" />{r.arquivo}: {r.mensagem}</div>)}
+        <div className="erp-card p-4 mb-4 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:justify-between gap-3 items-start">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1 w-full">
+              <div>
+                <div className="text-xs text-muted-foreground">Importadas</div>
+                <div className="text-xl font-semibold">{resultado.resumo.importadas}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Duplicadas</div>
+                <div className="text-xl font-semibold">{resultado.resumo.duplicadas}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Falhas</div>
+                <div className="text-xl font-semibold">{resultado.resumo.erros}</div>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="erp-btn-outline erp-btn-sm w-full sm:w-auto justify-center inline-flex items-center gap-1 shrink-0"
+              onClick={() => void copiarDiagnosticoEntrada()}
+            >
+              <ClipboardList className="h-4 w-4" />
+              {diagCopiado ? 'Copiado!' : 'Copiar diagnóstico'}
+            </button>
+          </div>
+          {resultado.importadas.slice(0, 5).map((r) => (
+            <div key={r.id} className="text-xs text-muted-foreground">
+              <FileCheck className="inline h-3 w-3 mr-1 text-success" />
+              {r.arquivo}
+            </div>
+          ))}
+          {resultado.duplicadas.slice(0, 5).map((r) => (
+            <div key={`${r.arquivo}-${r.chave_acesso}`} className="text-xs text-muted-foreground">
+              <Copy className="inline h-3 w-3 mr-1" />
+              {r.arquivo}
+            </div>
+          ))}
+          {falhasEntrada.length > 0 && (
+            <div className="overflow-x-auto border border-border rounded-md max-h-80 overflow-y-auto">
+              <table className="erp-table text-xs" data-mobile-table-mode="cards">
+                <thead>
+                  <tr>
+                    <th>Arquivo</th>
+                    <th>Chave</th>
+                    <th>Tipo doc.</th>
+                    <th>Tipo erro</th>
+                    <th>Mensagem</th>
+                    <th>Ação sugerida</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {falhasEntrada.map((row, idx) => (
+                    <tr key={`${row.arquivo}-${idx}`}>
+                      <td className="font-mono max-w-[120px] truncate" title={row.arquivo}>
+                        {row.arquivo}
+                      </td>
+                      <td className="font-mono whitespace-nowrap">{row.chave || '—'}</td>
+                      <td>{row.tipoDocumento}</td>
+                      <td>{row.tipoErro}</td>
+                      <td className="max-w-md whitespace-pre-wrap break-words">{row.mensagemCompleta}</td>
+                      <td className="max-w-xs text-muted-foreground">{row.acaoSugerida}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
-      <div className="erp-card p-3 mb-4 flex flex-wrap gap-3">
-        <select className="erp-select" value={empresaId} onChange={(e) => setEmpresaId(e.target.value)}>
-          <option value="">Empresa destinatária (todas)</option>
-          {empresas.map((e) => <option key={e.id} value={e.id}>{e.razao_social}</option>)}
-        </select>
-        <select className="erp-select" value={fornecedorId} onChange={(e) => setFornecedorId(e.target.value)}>
-          <option value="">Fornecedor emitente (todos)</option>
-          {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.razao_social}</option>)}
-        </select>
-        <button type="button" className="erp-btn-outline" onClick={() => void load()}>Atualizar</button>
-      </div>
+      <NexusCard className="p-4 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:flex xl:flex-wrap gap-3 items-end">
+          <div>
+            <label className="erp-label">{tipoData === 'entrada' ? 'Entrada de' : 'Emissão de'}</label>
+            <input
+              type="date"
+              className="erp-input mt-1 w-full xl:w-auto"
+              value={dataInicio}
+              onChange={(e) => {
+                setCompetencia('');
+                setFilter('data_inicio', e.target.value);
+              }}
+            />
+          </div>
+          <div>
+            <label className="erp-label">{tipoData === 'entrada' ? 'Entrada até' : 'Emissão até'}</label>
+            <input
+              type="date"
+              className="erp-input mt-1 w-full xl:w-auto"
+              value={dataFim}
+              onChange={(e) => {
+                setCompetencia('');
+                setFilter('data_fim', e.target.value);
+              }}
+            />
+          </div>
+          <div>
+            <label className="erp-label">Competência (mm/aaaa)</label>
+            <div className="flex flex-col sm:flex-row gap-2 mt-1">
+              <input
+                className="erp-input w-full sm:w-28"
+                value={competencia}
+                onChange={(e) => setCompetencia(e.target.value)}
+                placeholder="06/2026"
+              />
+              <button type="button" className="erp-btn-outline erp-btn-sm w-full sm:w-auto justify-center" onClick={aplicarCompetencia}>
+                Aplicar
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 items-end">
+            <button
+              type="button"
+              className="erp-btn-outline erp-btn-sm w-full sm:w-auto justify-center"
+              onClick={() => {
+                const p = intervaloMesAtual();
+                aplicarPeriodo(p.inicio, p.fim);
+              }}
+            >
+              Este mês
+            </button>
+            <button
+              type="button"
+              className="erp-btn-outline erp-btn-sm w-full sm:w-auto justify-center"
+              onClick={() => {
+                const p = intervaloMesAnterior();
+                aplicarPeriodo(p.inicio, p.fim);
+              }}
+            >
+              Mês anterior
+            </button>
+            <button
+              type="button"
+              className="erp-btn-outline erp-btn-sm w-full sm:w-auto justify-center"
+              onClick={() => aplicarPeriodo(PERIODO_ATALHO_JUN_2026.inicio, PERIODO_ATALHO_JUN_2026.fim)}
+            >
+              Jun/2026
+            </button>
+            <button type="button" className="erp-btn-ghost erp-btn-sm w-full sm:w-auto justify-center" onClick={limparPeriodo}>
+              Limpar período
+            </button>
+          </div>
+          <div className="w-full xl:min-w-[220px]">
+            <label className="erp-label">Chave de acesso</label>
+            <input
+              className="erp-input mt-1 w-full font-mono text-sm"
+              value={chaveFiltro}
+              onChange={(e) => setChaveFiltro(e.target.value)}
+              placeholder="44 dígitos"
+            />
+          </div>
+          <div className="w-full xl:flex-1 xl:min-w-[200px]">
+            <label className="erp-label">Busca</label>
+            <input
+              className="erp-input mt-1 w-full"
+              value={search}
+              onChange={(e) => {
+                setChaveFiltro('');
+                setSearch(e.target.value);
+              }}
+              placeholder="Número, fornecedor, chave…"
+            />
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground mt-3">
+          Filtro ativo: {periodoFiltroLabel}
+          {tipoData === 'entrada' ? ' (por data de entrada na conferência)' : ' (por data de emissão)'}.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:flex xl:flex-wrap gap-3 items-end mt-3 pt-3 border-t border-border/60">
+          <select className="erp-select w-full xl:w-auto" value={empresaId} onChange={(e) => setFilter('empresa_destinataria_id', e.target.value)}>
+            <option value="">Empresa destinatária (todas)</option>
+            {empresas.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.razao_social}
+              </option>
+            ))}
+          </select>
+          <select className="erp-select w-full xl:w-auto" value={fornecedorId} onChange={(e) => setFilter('fornecedor_id', e.target.value)}>
+            <option value="">Fornecedor emitente (todos)</option>
+            {fornecedores.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.razao_social}
+              </option>
+            ))}
+          </select>
+          <select
+            className="erp-select w-full xl:w-auto"
+            value={statusConferencia}
+            onChange={(e) => setFilter('status_conferencia', e.target.value)}
+          >
+            {STATUS_CONFERENCIA_FILTRO_OPCOES.map((opt) => (
+              <option key={opt.value || 'todos'} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <select
+            className="erp-select w-full xl:w-auto"
+            value={tipoData}
+            onChange={(e) => setTipoData(e.target.value === 'entrada' ? 'entrada' : 'emissao')}
+            title="Tipo de data para o filtro de período"
+          >
+            <option value="emissao">Data de emissão</option>
+            <option value="entrada">Data de entrada</option>
+          </select>
+          <NexusButton type="button" variant="outline" className="w-full sm:w-auto justify-center" onClick={() => void reload()}>
+            Atualizar
+          </NexusButton>
+        </div>
+      </NexusCard>
 
-      <div className="erp-card overflow-x-auto">
-        <table className="erp-table">
-          <thead><tr><th>Emissão</th><th>NF</th><th>Fornecedor</th><th>Empresa (ERP)</th><th>Valor</th><th>Ações</th></tr></thead>
+      {loadError ? <ErrorState onRetry={() => void reload()} /> : null}
+      {loading ? <TableSkeleton rows={6} cols={7} /> : null}
+      {!loading && !loadError ? (
+        <DataTableShell>
+        <DataTable mobileMode="cards">
+          <thead>
+            <tr>
+              <th>Chave</th>
+              <th>Fornecedor</th>
+              <th>Número</th>
+              <th>Emissão</th>
+              <th>Importado em</th>
+              <th>Status</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
           <tbody>
-            {filtrados.map((r) => (
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan={7}>
+                  <EmptyState message="Nenhuma NF-e de entrada importada encontrada para os filtros atuais." />
+                </td>
+              </tr>
+            ) : (
+            items.map((r) => (
               <tr key={r.id}>
-                <td>{r.dh_emissao?.slice(0, 16).replace('T', ' ')}</td>
-                <td>{r.numero}/{r.serie}</td>
+                <td className="font-mono text-xs" title={r.chave_acesso}>{chaveNfeResumida(r.chave_acesso)}</td>
                 <td>{r.fornecedor_nome || '—'}</td>
-                <td>{r.empresa_nome ? `${r.empresa_nome} (${r.papel_empresa || 'destinatario'})` : '—'}</td>
-                <td>R$ {Number(r.valor_total_nf || 0).toFixed(2)}</td>
+                <td>{r.numero}/{r.serie}</td>
+                <td>{r.dh_emissao?.slice(0, 16).replace('T', ' ') ?? '—'}</td>
+                <td>{r.importado_em?.slice(0, 16).replace('T', ' ') ?? '—'}</td>
                 <td>
-                  <div className="flex gap-2">
-                    <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => {
-                      void nfeHistoricaEntradaImportadaService.getById(r.id).then((d) => { setDetalhe(d); setModal(true); }).catch((e) => setErro(apiErrorMessage(e)));
-                    }}>Detalhes</button>
-                    <button type="button" className="erp-btn-outline erp-btn-sm" onClick={() => navigate(`/nfe-entrada/${r.id}/conferencia`)}>Conferir entrada</button>
+                  <div className="flex flex-col gap-1">
+                    <StatusBadge
+                      status={statusBadgeTokenNfeEntradaHistorica(r)}
+                      label={labelStatusOperacionalNfeEntradaHistorica(r)}
+                    />
+                    <DfeClassificacaoBadges classificacao={r.classificacao_dfe} max={3} />
+                  </div>
+                </td>
+                <td>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <NexusButton
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full sm:w-auto justify-center"
+                      onClick={() => {
+                        void nfeHistoricaEntradaImportadaService.getById(r.id).then((d) => { setDetalhe(d); setModal(true); }).catch((e) => setErro(apiErrorMessage(e)));
+                      }}
+                    >
+                      Detalhes
+                    </NexusButton>
+                    {r.tem_xml_conteudo ? (
+                      <NexusButton
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="w-full sm:w-auto justify-center"
+                        title="Imprimir DANFE"
+                        aria-label="Imprimir DANFE"
+                        onClick={() => void imprimirDanfe(r)}
+                      >
+                        <Printer className="h-4 w-4" />
+                      </NexusButton>
+                    ) : null}
+                    <NexusButton
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full sm:w-auto justify-center"
+                      onClick={() => navigate(rotaConferenciaNfeEntradaHistorica(r.id, r))}
+                    >
+                      {labelBotaoPrincipalConferenciaNfeEntradaHistorica(r)}
+                    </NexusButton>
+                    <NexusButton
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full sm:w-auto justify-center"
+                      onClick={() => setReabrirId(r.id)}
+                    >
+                      Reabrir entrada para correção
+                    </NexusButton>
                   </div>
                 </td>
               </tr>
-            ))}
+            ))
+            )}
           </tbody>
-        </table>
-      </div>
+        </DataTable>
+          {count > 0 ? (
+          <PaginationControls
+            page={page}
+            pageSize={pageSize}
+            count={count}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        ) : null}
+        </DataTableShell>
+      ) : null}
 
       <Modal isOpen={modal} onClose={() => setModal(false)} title="NF-e de entrada importada (histórico)" size="xl">
         {detalhe && (
           <div className="space-y-3 text-sm">
-            <p><strong>Chave:</strong> {detalhe.chave_acesso}</p>
-            <p><strong>Empresa (ERP):</strong> {detalhe.empresa_nome || '—'} {detalhe.papel_empresa ? `(${detalhe.papel_empresa})` : ''}</p>
-            <p><strong>Fornecedor:</strong> {detalhe.fornecedor_nome || '—'}</p>
-            <p><strong>Status XML:</strong> {detalhe.cstat || '—'} {detalhe.xmotivo ? `- ${detalhe.xmotivo}` : ''}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <p className="min-w-0"><strong>Chave:</strong> <span className="font-mono text-xs break-all">{detalhe.chave_acesso}</span></p>
+              <p className="min-w-0"><strong>Empresa (ERP):</strong> {detalhe.empresa_nome || '—'} {detalhe.papel_empresa ? `(${detalhe.papel_empresa})` : ''}</p>
+              <p className="min-w-0"><strong>Fornecedor:</strong> {detalhe.fornecedor_nome || '—'}</p>
+              <p className="min-w-0"><strong>Status XML:</strong> {detalhe.cstat || '—'} {detalhe.xmotivo ? `- ${detalhe.xmotivo}` : ''}</p>
+            </div>
+            <NexusButton type="button" variant="outline" size="sm" className="w-full sm:w-auto justify-center" onClick={() => setReabrirId(detalhe.id)}>
+
+              Reabrir entrada para correção
+            </NexusButton>
           </div>
         )}
       </Modal>
+      <NFeEntradaReabrirModal
+        open={reabrirId !== null}
+        nfeHistoricaId={reabrirId}
+        onOpenChange={(open) => {
+          if (!open) setReabrirId(null);
+        }}
+        onSuccess={(resultado) => {
+          toast.success(resultado.mensagem);
+          setModal(false);
+          void reload();
+          navigate(`/nfe-entrada/${resultado.conferencia.nf_entrada_historica}/conferencia`);
+        }}
+      />
     </div>
   );
 };

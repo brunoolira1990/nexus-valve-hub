@@ -2,10 +2,15 @@ import logging
 import re
 
 from django.db import models
+from django.db.models import Q
 from django.http import HttpResponse
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
+
+from nexus_erp.list_mixins import AutocompleteOrPaginationMixin, aplicar_ordering
+from nexus_erp.pagination import NexusPageNumberPagination
 
 from apps.produtos.snapshot import build_produto_snapshot
 from apps.fiscal.models import (
@@ -19,10 +24,151 @@ from apps.fiscal.models import (
     NFeSaidaHistoricaImportada,
 )
 from .certificado_pdf import gerar_certificado_qualidade_pdf
+from .corridas_disponiveis import listar_corridas_disponiveis_produto
+from .conferencia_bridge import get_or_build_conferencia_for_nf_historica, map_itens_conferencia_por_n_item
 from .models import Certificado, CertificadoFornecedorEntrada, CertificadoQualidade, ItemCertificadoFornecedorEntrada
-from .serializers import CertificadoFornecedorEntradaSerializer, CertificadoQualidadeSerializer, CertificadoSerializer
+from .serializers import (
+    CertificadoFornecedorEntradaSerializer,
+    CertificadoQualidadeSerializer,
+    CertificadoSerializer,
+    _origem_pedido_compra_de_item_cf,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _corrida_lote_e_corridas_adicionais_de_conferencia(
+    ic: ItemNFeEntradaConferencia | None,
+) -> tuple[str, str, list[dict]]:
+    """Corrida principal + corridas adicionais a partir dos splits da conferência."""
+    if not ic:
+        return '', '', []
+
+    splits = list(ic.corridas_split.order_by('ordem', 'id'))
+    if splits:
+        primeiro = splits[0]
+        corrida = (primeiro.corrida or '').strip()
+        lote = (primeiro.lote or '').strip()
+        adicionais: list[dict] = []
+        for idx, split_row in enumerate(splits[1:], start=1):
+            corrida_split = (split_row.corrida or '').strip()
+            lote_split = (split_row.lote or '').strip()
+            if not corrida_split and not lote_split:
+                continue
+            adicionais.append(
+                {
+                    'ordem': idx,
+                    'corrida': corrida_split,
+                    'lote': lote_split,
+                    'quantidade': split_row.quantidade,
+                },
+            )
+        return corrida, lote, adicionais
+
+    return (ic.corrida or '').strip(), (ic.lote or '').strip(), []
+
+
+# --- Fase E.3: permissões mínimas (Django model permissions + IsAuthenticated) ---
+#
+# Decisões em relação à matriz em docs/qualidade-certificados.md (secção 8):
+# - PDF, corridas-disponiveis e preencher-por-nfe: a matriz prevê condicionantes de
+#   negócio (ex.: PDF só emitido para consulta). Aqui só há controlo por codename;
+#   regras por status permanecem nos serializers / fluxo existente.
+# - corridas-disponiveis e preencher-por-nfe (CQ) e buscar-dados-tecnicos /
+#   preencher-por-nfe-entrada (CF): exige change_* (não basta view_*), alinhado ao
+#   perfil Operador na matriz e aos testes de “ações auxiliares” com permissão de
+#   alteração.
+
+
+class CertificadoLegacyPermissions(BasePermission):
+    """Legado `Certificado`: leitura com view_certificado (superuser ignora)."""
+
+    def has_permission(self, request, view):
+        u = request.user
+        if not u.is_authenticated:
+            return False
+        if u.is_superuser:
+            return True
+        return u.has_perm('qualidade.view_certificado')
+
+
+class CertificadoQualidadePermissions(BasePermission):
+    """CQ: view/add/change/delete por ação; auxiliares sensíveis exigem change."""
+
+    def has_permission(self, request, view):
+        u = request.user
+        if not u.is_authenticated:
+            return False
+        if u.is_superuser:
+            return True
+        action = getattr(view, 'action', None) or ''
+        if action in ('list', 'retrieve'):
+            return u.has_perm('qualidade.view_certificadoqualidade')
+        if action == 'create':
+            return u.has_perm('qualidade.add_certificadoqualidade')
+        if action in ('update', 'partial_update'):
+            return u.has_perm('qualidade.change_certificadoqualidade')
+        if action == 'destroy':
+            return u.has_perm('qualidade.delete_certificadoqualidade')
+        if action == 'pdf':
+            return u.has_perm('qualidade.view_certificadoqualidade') or u.has_perm(
+                'qualidade.change_certificadoqualidade'
+            )
+        if action in (
+            'corridas_disponiveis',
+            'corridas_certificado_fornecedor',
+            'preencher_por_nfe',
+            'nfes_elegiveis',
+        ):
+            return u.has_perm('qualidade.change_certificadoqualidade')
+        return False
+
+
+class CertificadoFornecedorEntradaPermissions(BasePermission):
+    """CF entrada: view/add/change/delete; buscas/preencher NF exigem change."""
+
+    def has_permission(self, request, view):
+        u = request.user
+        if not u.is_authenticated:
+            return False
+        if u.is_superuser:
+            return True
+        action = getattr(view, 'action', None) or ''
+        if action in ('list', 'retrieve'):
+            return u.has_perm('qualidade.view_certificadofornecedorentrada')
+        if action == 'create':
+            return u.has_perm('qualidade.add_certificadofornecedorentrada')
+        if action in ('update', 'partial_update'):
+            return u.has_perm('qualidade.change_certificadofornecedorentrada')
+        if action == 'destroy':
+            return u.has_perm('qualidade.delete_certificadofornecedorentrada')
+        if action in ('buscar_dados_tecnicos', 'preencher_por_nfe_entrada'):
+            return u.has_perm('qualidade.change_certificadofornecedorentrada')
+        return False
+
+
+def _cf_status_canonical(status: str | None) -> str:
+    return str(status or '').strip().lower()
+
+
+def _cf_status_is_registrado(status: str | None) -> bool:
+    return _cf_status_canonical(status) == CertificadoFornecedorEntrada.Status.REGISTRADO
+
+
+def _filter_cf_items_por_status_certificado(qs, *, status_param: str, include_rascunho: bool):
+    """Filtro por status do certificado fornecedor (case-insensitive; legado ex.: REGISTRADO)."""
+    if status_param in {
+        CertificadoFornecedorEntrada.Status.RASCUNHO,
+        CertificadoFornecedorEntrada.Status.REGISTRADO,
+        CertificadoFornecedorEntrada.Status.CANCELADO,
+    }:
+        return qs.filter(certificado_fornecedor__status__iexact=status_param)
+    if include_rascunho:
+        return qs.filter(
+            models.Q(certificado_fornecedor__status__iexact=CertificadoFornecedorEntrada.Status.RASCUNHO)
+            | models.Q(certificado_fornecedor__status__iexact=CertificadoFornecedorEntrada.Status.REGISTRADO)
+        )
+    return qs.filter(certificado_fornecedor__status__iexact=CertificadoFornecedorEntrada.Status.REGISTRADO)
 
 
 def _bucket_key_corrida_lote(corrida: str, lote: str) -> str:
@@ -61,18 +207,256 @@ def _descricao_relacionada(a: str, b: str) -> bool:
     return len(inter) >= 2
 
 
-class CertificadoViewSet(viewsets.ReadOnlyModelViewSet):
+def _effective_corrida_lote_norms_cf_item(item: ItemCertificadoFornecedorEntrada) -> tuple[str, str]:
+    item_corrida_norm = _normalize_search_token(item.corrida)
+    item_lote_norm = _normalize_search_token(item.lote)
+    if not item_corrida_norm and not item_lote_norm:
+        for c in item.componentes.all():
+            cn = _normalize_search_token(getattr(c, 'corrida', '') or '')
+            ln = _normalize_search_token(getattr(c, 'lote', '') or '')
+            if cn:
+                item_corrida_norm = cn
+            if ln:
+                item_lote_norm = ln
+            if item_corrida_norm or item_lote_norm:
+                break
+    return item_corrida_norm, item_lote_norm
+
+
+def _display_corrida_lote_cf_item(item: ItemCertificadoFornecedorEntrada) -> tuple[str, str]:
+    """Corrida/lote para exibição e CQ: campos do item; completam-se pelos componentes se faltar um dos dois."""
+    corrida = (item.corrida or '').strip()
+    lote = (item.lote or '').strip()
+    if corrida and lote:
+        return corrida, lote
+    for c in item.componentes.all():
+        if not corrida:
+            corrida = (getattr(c, 'corrida', '') or '').strip() or corrida
+        if not lote:
+            lote = (getattr(c, 'lote', '') or '').strip() or lote
+        if corrida and lote:
+            break
+    return corrida, lote
+
+
+def _corrida_busca_match_cf_item(item: ItemCertificadoFornecedorEntrada, corrida_norm: str) -> bool:
+    if not corrida_norm:
+        return True
+    ic, il = _effective_corrida_lote_norms_cf_item(item)
+    if _contains_normalized(ic, corrida_norm) or _contains_normalized(il, corrida_norm):
+        return True
+    for c in item.componentes.all():
+        cn = _normalize_search_token(getattr(c, 'corrida', '') or '')
+        ln = _normalize_search_token(getattr(c, 'lote', '') or '')
+        if _contains_normalized(cn, corrida_norm) or _contains_normalized(ln, corrida_norm):
+            return True
+    return False
+
+
+def _passes_corrida_lote_cf_item(item: ItemCertificadoFornecedorEntrada, corrida_norm: str, lote_norm: str) -> bool:
+    ic, il = _effective_corrida_lote_norms_cf_item(item)
+    if corrida_norm:
+        if _contains_normalized(ic, corrida_norm) or _contains_normalized(il, corrida_norm):
+            pass
+        else:
+            comp_hit = False
+            for c in item.componentes.all():
+                cn = _normalize_search_token(getattr(c, 'corrida', '') or '')
+                ln = _normalize_search_token(getattr(c, 'lote', '') or '')
+                if _contains_normalized(cn, corrida_norm) or _contains_normalized(ln, corrida_norm):
+                    comp_hit = True
+                    break
+            if not comp_hit:
+                return False
+    if lote_norm:
+        if _contains_normalized(il, lote_norm) or _contains_normalized(ic, lote_norm):
+            pass
+        elif corrida_norm and il:
+            return False
+    return True
+
+
+def _match_corrida_adicional_cf_item(item: ItemCertificadoFornecedorEntrada, corrida_norm: str, lote_norm: str):
+    """Corrida adicional do item que casa com a busca (dados técnicos herdados do item principal).
+
+    Só considera adicionais quando há corrida/lote na busca — nunca por produto apenas.
+    """
+    if not corrida_norm and not lote_norm:
+        return None
+    for extra in item.corridas_adicionais.all():
+        extra_corrida_norm = _normalize_search_token(extra.corrida or '')
+        extra_lote_norm = _normalize_search_token(extra.lote or '')
+        if not extra_corrida_norm and not extra_lote_norm:
+            continue
+        if corrida_norm:
+            if not (
+                _contains_normalized(extra_corrida_norm, corrida_norm)
+                or _contains_normalized(extra_lote_norm, corrida_norm)
+            ):
+                continue
+        if lote_norm and extra_lote_norm:
+            if not _contains_normalized(extra_lote_norm, lote_norm):
+                continue
+        return extra
+    return None
+
+
+def _qs_items_cf_diag_base(*, fornecedor, nf_entrada, certificado_numero):
+    q = (
+        ItemCertificadoFornecedorEntrada.objects.filter(ativo=True)
+        .select_related('certificado_fornecedor', 'produto', 'certificado_fornecedor__fornecedor')
+        .prefetch_related('componentes')
+    )
+    if fornecedor:
+        q = q.filter(certificado_fornecedor__fornecedor_id=fornecedor)
+    if nf_entrada:
+        q = q.filter(certificado_fornecedor__numero_nf_entrada__icontains=nf_entrada)
+    if certificado_numero:
+        q = q.filter(
+            models.Q(certificado_fornecedor__numero_certificado_fornecedor__icontains=certificado_numero)
+            | models.Q(numero_certificado_fornecedor_item__icontains=certificado_numero)
+        )
+    return q
+
+
+def _build_dicas_busca_sem_resultado(
+    *,
+    produto_cq_id: int | None,
+    corrida_norm: str,
+    lote_norm: str,
+    fornecedor,
+    nf_entrada: str,
+    certificado_numero: str,
+) -> list[str]:
+    """Códigos estáveis para o CQ mapear mensagens sem expor dados sensíveis."""
+    if not corrida_norm and not lote_norm:
+        return []
+    dicas: list[str] = []
+    seen: set[str] = set()
+    base = _qs_items_cf_diag_base(
+        fornecedor=fornecedor,
+        nf_entrada=nf_entrada,
+        certificado_numero=certificado_numero,
+    ).order_by('-id')[:500]
+    for item in base:
+        if not _corrida_busca_match_cf_item(item, corrida_norm):
+            continue
+        cert = item.certificado_fornecedor
+        if produto_cq_id is not None and item.produto_id is not None and item.produto_id != produto_cq_id:
+            if 'PRODUTO_VINCULADO_DIFERENTE' not in seen:
+                dicas.append('PRODUTO_VINCULADO_DIFERENTE')
+                seen.add('PRODUTO_VINCULADO_DIFERENTE')
+            continue
+        if not _passes_corrida_lote_cf_item(item, corrida_norm, lote_norm):
+            if lote_norm and 'LOTE_DIVERGENTE' not in seen:
+                dicas.append('LOTE_DIVERGENTE')
+                seen.add('LOTE_DIVERGENTE')
+            continue
+        if not _cf_status_is_registrado(cert.status):
+            if 'CERTIFICADO_RASCUNHO' not in seen:
+                dicas.append('CERTIFICADO_RASCUNHO')
+                seen.add('CERTIFICADO_RASCUNHO')
+    return dicas
+
+
+def _build_diagnostico_superuser_busca(
+    *,
+    produto_cq_id: int | None,
+    corrida_norm: str,
+    lote_norm: str,
+    fornecedor,
+    nf_entrada: str,
+    certificado_numero: str,
+) -> dict:
+    amostra: list[dict] = []
+    base = _qs_items_cf_diag_base(
+        fornecedor=fornecedor,
+        nf_entrada=nf_entrada,
+        certificado_numero=certificado_numero,
+    ).order_by('-id')[:200]
+    for item in base:
+        if not _corrida_busca_match_cf_item(item, corrida_norm):
+            continue
+        cert = item.certificado_fornecedor
+        motivos: list[str] = []
+        if produto_cq_id is not None and item.produto_id is not None and item.produto_id != produto_cq_id:
+            motivos.append('produto_diferente')
+        if not _cf_status_is_registrado(cert.status):
+            motivos.append(f'status_{cert.status}')
+        if not _passes_corrida_lote_cf_item(item, corrida_norm, lote_norm):
+            motivos.append('lote_ou_corrida_incompativel')
+        if len(amostra) < 12:
+            amostra.append(
+                {
+                    'item_id': item.id,
+                    'certificado_id': cert.id,
+                    'certificado_status': cert.status,
+                    'produto_item_id': item.produto_id,
+                    'corrida': (item.corrida or '')[:48],
+                    'lote': (item.lote or '')[:48],
+                    'motivos': motivos or ['sem_bloqueio_obvio_revisar_limite_ou_filtros'],
+                }
+            )
+    return {'amostra': amostra, 'nota': 'Somente superuser + debug=1. Sem dados fiscais ou descrições completas.'}
+
+
+class CertificadoViewSet(AutocompleteOrPaginationMixin, viewsets.ReadOnlyModelViewSet):
+    permission_classes = [IsAuthenticated, CertificadoLegacyPermissions]
     queryset = Certificado.objects.select_related('nf_saida').all()
     serializer_class = CertificadoSerializer
+    pagination_class = NexusPageNumberPagination
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        search = (self.request.query_params.get('search') or '').strip()
+        if search:
+            from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+            qs = filtrar_queryset_por_numeros_documento(
+                qs,
+                search,
+                'nf_saida__numero',
+                q_extra=Q(nf_saida__cliente__razao_social__icontains=search),
+            )
+        return aplicar_ordering(qs, self.request.query_params.get('ordering'), {'gerado_em': 'gerado_em'}, '-gerado_em')
 
 
-class CertificadoQualidadeViewSet(viewsets.ModelViewSet):
+class CertificadoQualidadeViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated, CertificadoQualidadePermissions]
     queryset = (
         CertificadoQualidade.objects.select_related('cliente', 'nota_fiscal', 'nota_fiscal_historica')
-        .prefetch_related('itens')
+        .prefetch_related('itens__componentes')
         .all()
     )
     serializer_class = CertificadoQualidadeSerializer
+    pagination_class = NexusPageNumberPagination
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        search = (self.request.query_params.get('search') or '').strip()
+        if search:
+            from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+            qs = filtrar_queryset_por_numeros_documento(
+                qs,
+                search,
+                'numero',
+                'nota_fiscal_numero',
+                q_extra=(
+                    Q(cliente__razao_social__icontains=search)
+                    | Q(cliente_nome_snapshot__icontains=search)
+                    | Q(pedido_cliente__icontains=search)
+                ),
+            )
+        status_f = (self.request.query_params.get('status') or '').strip()
+        if status_f:
+            qs = qs.filter(status__icontains=status_f)
+        return aplicar_ordering(
+            qs,
+            self.request.query_params.get('ordering'),
+            {'numero': 'numero', 'data_emissao': 'data_emissao', 'criado_em': 'criado_em'},
+            '-id',
+        )
 
     @staticmethod
     def _sugerir_tipo_item(codigo: str, descricao: str, ncm: str) -> str:
@@ -86,8 +470,61 @@ class CertificadoQualidadeViewSet(viewsets.ModelViewSet):
     def _status_vinculo_item(produto_id: int | None) -> str:
         return 'VINCULADO' if produto_id else 'NAO_VINCULADO'
 
+    @action(detail=True, methods=['post'], url_path='reemitir')
+    def reemitir(self, request, pk=None):
+        """Cria novo CQ clonando este, incrementa serie e marca este como substituido."""
+        cq = self.get_object()
+        if cq.status != CertificadoQualidade.Status.EMITIDO:
+            return Response(
+                {'detail': 'Somente certificados emitidos podem ser reemitidos.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        novo = cq.reemitir()
+        serializer = self.get_serializer(novo)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['get'], url_path='nfes-elegiveis')
+    def nfes_elegiveis(self, request):
+        """Busca paginada de NF-e Saída autorizadas elegíveis para CQ (sem XML)."""
+        from apps.qualidade.nfe_elegivel_cq import (
+            buscar_nfes_elegiveis_cq,
+            nfe_elegivel_para_certificado_qualidade,
+            serializar_nfe_opcao_cq,
+        )
+
+        search = (request.query_params.get('search') or '').strip()
+        try:
+            limit = int(request.query_params.get('limit') or 20)
+        except (TypeError, ValueError):
+            limit = 20
+        resultados = buscar_nfes_elegiveis_cq(search=search, limit=limit)
+
+        incluir_id = (request.query_params.get('incluir_id') or '').strip()
+        if incluir_id.isdigit():
+            pk = int(incluir_id)
+            if not any(r['id'] == pk for r in resultados):
+                try:
+                    nf = NFeSaida.objects.select_related('cliente').get(pk=pk)
+                    resultados.insert(
+                        0,
+                        serializar_nfe_opcao_cq(
+                            nf,
+                            elegivel=nfe_elegivel_para_certificado_qualidade(nf),
+                        ),
+                    )
+                except NFeSaida.DoesNotExist:
+                    pass
+
+        return Response(resultados)
+
     @action(detail=False, methods=['post'], url_path='preencher-por-nfe')
     def preencher_por_nfe(self, request):
+        from apps.qualidade.nfe_elegivel_cq import (
+            MSG_NFE_INELEGIVEL_CQ,
+            nfe_elegivel_para_certificado_qualidade,
+            numero_fiscal_snapshot_cq,
+        )
+
         nf_saida_id = request.data.get('nf_saida_id')
         nf_saida_historica_id = request.data.get('nf_saida_historica_id')
         if not nf_saida_id and not nf_saida_historica_id:
@@ -101,6 +538,8 @@ class CertificadoQualidadeViewSet(viewsets.ModelViewSet):
                 nf = NFeSaida.objects.select_related('cliente', 'pedido_venda').prefetch_related('itens__produto').get(pk=nf_saida_id)
             except NFeSaida.DoesNotExist:
                 return Response({'detail': 'NF-e de saída não encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+            if not nfe_elegivel_para_certificado_qualidade(nf):
+                return Response({'detail': MSG_NFE_INELEGIVEL_CQ}, status=status.HTTP_400_BAD_REQUEST)
             itens = [
                 {
                     'ordem': idx + 1,
@@ -145,8 +584,8 @@ class CertificadoQualidadeViewSet(viewsets.ModelViewSet):
                 'cliente': nf.cliente_id,
                 'cliente_nome_snapshot': nf.cliente.razao_social,
                 'cliente_cnpj_snapshot': nf.cliente.cnpj,
-                'pedido_cliente': (str(nf.pedido_venda_id) if nf.pedido_venda_id else ''),
-                'nota_fiscal_numero': nf.numero,
+                'pedido_cliente': (nf.pedido_cliente_numero or '').strip(),
+                'nota_fiscal_numero': numero_fiscal_snapshot_cq(nf),
                 'nota_fiscal': nf.id,
                 'data_emissao': nf.data.isoformat(),
                 'itens': itens,
@@ -197,7 +636,7 @@ class CertificadoQualidadeViewSet(viewsets.ModelViewSet):
             'cliente': nf_hist.cliente_id,
             'cliente_nome_snapshot': nf_hist.cliente.razao_social if nf_hist.cliente_id else str(dest.get('xNome') or ''),
             'cliente_cnpj_snapshot': str(dest.get('CNPJ') or ''),
-            'pedido_cliente': '',
+            'pedido_cliente': getattr(nf_hist, 'pedido_cliente_numero', '') or '',
             'nota_fiscal_numero': nf_hist.numero,
             'nota_fiscal_historica': nf_hist.id,
             'data_emissao': nf_hist.dh_emissao.date().isoformat(),
@@ -219,186 +658,32 @@ class CertificadoQualidadeViewSet(viewsets.ModelViewSet):
         except ValueError:
             return Response({'detail': 'produto_id inválido.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        estoque_rows = (
-            EstoqueCorrida.objects
-            .select_related('corrida')
-            .filter(produto_id=produto_id_int)
-            .order_by('-saldo', '-id')
-        )
-        conf_rows = (
-            ItemNFeEntradaConferencia.objects
-            .select_related('conferencia__nf_entrada_historica', 'conferencia__nf_entrada_historica__fornecedor_emitente')
-            .filter(produto_id=produto_id_int)
-            .exclude(status=ItemNFeEntradaConferencia.Status.IGNORADO)
-            .order_by('-id')
-        )
-        cert_rows = (
-            ItemCertificadoFornecedorEntrada.objects
-            .select_related('certificado_fornecedor', 'certificado_fornecedor__fornecedor')
-            .filter(produto_id=produto_id_int, ativo=True)
-            .order_by('-id')
+        payload = listar_corridas_disponiveis_produto(produto_id_int)
+        return Response(payload, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'], url_path='corridas-certificado-fornecedor')
+    def corridas_certificado_fornecedor(self, request):
+        """Corridas do CF/item EXATOS vinculados ao item do CQ (nunca por produto)."""
+        from apps.qualidade.corridas_cf_para_cq import (
+            ItemCfNaoEncontradoError,
+            listar_corridas_cf_para_item_cq,
         )
 
-        resultados = {}
-        for est in estoque_rows:
-            key = _bucket_key_corrida_lote(est.corrida.numero or '', '')
-            if not key:
-                continue
-            resultados[key] = {
-                'corrida': est.corrida.numero,
-                'lote': '',
-                'saldo': f'{est.saldo:.3f}',
-                'unidade': (
-                    est.produto.get_unidade_estoque_efetiva()
-                    or est.produto.unidade
-                    or est.produto.unidade_especifica
-                    or ''
-                ),
-                'fornecedor': '',
-                'nf_entrada': '',
-                'certificado_fornecedor': '',
-                'certificado_fornecedor_id': None,
-                'item_certificado_fornecedor_id': None,
-                'status_certificado_fornecedor': '',
-                'status_origem_tecnica': 'somente_estoque',
-                'tem_dados_tecnicos': False,
-                'norma': '',
-                'ncm': est.produto.get_ncm_efetivo_codigo() or est.produto.ncm or '',
-                'origem': 'estoque',
-                'alertas': [],
-                'composicao_json': {},
-                'ensaio_tracao_json': {},
-                'ensaio_impacto_json': {},
-                'numero_certificado_fornecedor_item': '',
-                'observacoes_origem': '',
-            }
-
-        for conf in conf_rows:
-            corrida_conf = (conf.corrida or '').strip()
-            if not corrida_conf:
-                continue
-            key = _bucket_key_corrida_lote(corrida_conf, conf.lote or '')
-            if not key:
-                continue
-            item = resultados.get(key) or {
-                'corrida': corrida_conf,
-                'lote': conf.lote or '',
-                'saldo': '0.000',
-                'unidade': conf.unidade_estoque_calculada or conf.unidade_nf or '',
-                'fornecedor': '',
-                'nf_entrada': conf.conferencia.nf_entrada_historica.numero if conf.conferencia_id else '',
-                'certificado_fornecedor': '',
-                'certificado_fornecedor_id': None,
-                'item_certificado_fornecedor_id': None,
-                'status_certificado_fornecedor': '',
-                'status_origem_tecnica': 'somente_conferencia_entrada',
-                'tem_dados_tecnicos': False,
-                'norma': '',
-                'ncm': str((conf.item_nfe_historico.prod_json or {}).get('NCM') or ''),
-                'origem': 'conferencia_entrada',
-                'alertas': [],
-                'composicao_json': {},
-                'ensaio_tracao_json': {},
-                'ensaio_impacto_json': {},
-                'numero_certificado_fornecedor_item': '',
-                'observacoes_origem': conf.rastreabilidade_observacao or '',
-            }
-            if conf.lote and not item.get('lote'):
-                item['lote'] = conf.lote
-            if conf.conferencia_id and not item.get('nf_entrada'):
-                item['nf_entrada'] = conf.conferencia.nf_entrada_historica.numero
-            resultados[key] = item
-
-        for cert_item in cert_rows:
-            corrida_raw = (cert_item.corrida or '').strip()
-            lote_raw = (cert_item.lote or '').strip()
-            if not corrida_raw and lote_raw:
-                corrida_raw, lote_raw = lote_raw, ''
-            if not corrida_raw:
-                continue
-            key = _bucket_key_corrida_lote(corrida_raw, lote_raw)
-            if not key:
-                continue
-            cert = cert_item.certificado_fornecedor
-            item = resultados.get(key) or {
-                'corrida': corrida_raw,
-                'lote': lote_raw,
-                'saldo': '0.000',
-                'unidade': cert_item.unidade or '',
-                'fornecedor': cert.fornecedor_nome_snapshot or '',
-                'nf_entrada': cert.numero_nf_entrada or '',
-                'certificado_fornecedor': cert_item.numero_certificado_fornecedor_item or cert.numero_certificado_fornecedor or '',
-                'certificado_fornecedor_id': cert.id,
-                'item_certificado_fornecedor_id': cert_item.id,
-                'status_certificado_fornecedor': cert.status,
-                'status_origem_tecnica': (
-                    'certificado_fornecedor_registrado'
-                    if cert.status == CertificadoFornecedorEntrada.Status.REGISTRADO
-                    else 'certificado_fornecedor_rascunho'
-                ),
-                'tem_dados_tecnicos': bool(cert_item.composicao_json or cert_item.ensaio_tracao_json or cert_item.ensaio_impacto_json),
-                'norma': cert_item.norma or '',
-                'ncm': cert_item.ncm or '',
-                'origem': 'certificado_fornecedor',
-                'alertas': [],
-                'composicao_json': cert_item.composicao_json or {},
-                'ensaio_tracao_json': cert_item.ensaio_tracao_json or {},
-                'ensaio_impacto_json': cert_item.ensaio_impacto_json or {},
-                'numero_certificado_fornecedor_item': cert_item.numero_certificado_fornecedor_item or '',
-                'observacoes_origem': cert_item.observacao_origem_certificado or '',
-            }
-            item['corrida'] = corrida_raw or item.get('corrida') or ''
-            item['lote'] = lote_raw or item.get('lote') or ''
-            item['fornecedor'] = item.get('fornecedor') or cert.fornecedor_nome_snapshot or ''
-            item['nf_entrada'] = item.get('nf_entrada') or cert.numero_nf_entrada or ''
-            item['certificado_fornecedor'] = (
-                cert_item.numero_certificado_fornecedor_item
-                or cert.numero_certificado_fornecedor
-                or item.get('certificado_fornecedor')
-                or ''
+        try:
+            cf_id = int(str(request.query_params.get('certificado_fornecedor_id') or '').strip())
+            item_cf_id = int(str(request.query_params.get('item_certificado_fornecedor_id') or '').strip())
+        except (TypeError, ValueError):
+            return Response(
+                {'detail': 'Informe certificado_fornecedor_id e item_certificado_fornecedor_id.'},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-            item['certificado_fornecedor_id'] = cert.id
-            item['item_certificado_fornecedor_id'] = cert_item.id
-            item['status_certificado_fornecedor'] = cert.status
-            item['status_origem_tecnica'] = (
-                'certificado_fornecedor_registrado'
-                if cert.status == CertificadoFornecedorEntrada.Status.REGISTRADO
-                else 'certificado_fornecedor_rascunho'
+        try:
+            payload = listar_corridas_cf_para_item_cq(
+                certificado_fornecedor_id=cf_id,
+                item_certificado_fornecedor_id=item_cf_id,
             )
-            item['norma'] = cert_item.norma or item.get('norma') or ''
-            item['ncm'] = cert_item.ncm or item.get('ncm') or ''
-            item['composicao_json'] = cert_item.composicao_json or {}
-            item['ensaio_tracao_json'] = cert_item.ensaio_tracao_json or {}
-            item['ensaio_impacto_json'] = cert_item.ensaio_impacto_json or {}
-            item['numero_certificado_fornecedor_item'] = cert_item.numero_certificado_fornecedor_item or ''
-            item['tem_dados_tecnicos'] = bool(item['composicao_json'] or item['ensaio_tracao_json'] or item['ensaio_impacto_json'])
-            item['origem'] = 'certificado_fornecedor'
-            if cert.status == CertificadoFornecedorEntrada.Status.RASCUNHO:
-                item['alertas'] = list(dict.fromkeys([
-                    *item.get('alertas', []),
-                    'Dados técnicos encontrados em certificado fornecedor em rascunho. Confirme antes de usar.',
-                ]))
-            resultados[key] = item
-
-        for row in resultados.values():
-            if not row.get('tem_dados_tecnicos'):
-                alertas = list(row.get('alertas') or [])
-                msg = 'Corrida encontrada, porém sem dados técnicos vinculados.'
-                if msg not in alertas:
-                    alertas.append(msg)
-                row['alertas'] = alertas
-            c_disp = (row.get('corrida') or '').strip()
-            l_disp = (row.get('lote') or '').strip()
-            row['valor_selecao'] = f'{c_disp}||{l_disp}'
-
-        payload = sorted(
-            resultados.values(),
-            key=lambda r: (
-                0 if r.get('origem') == 'certificado_fornecedor' else 1,
-                -float(r.get('saldo') or 0),
-                (r.get('corrida') or ''),
-            ),
-        )
+        except ItemCfNaoEncontradoError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_404_NOT_FOUND)
         return Response(payload, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['get'], url_path='pdf')
@@ -412,7 +697,8 @@ class CertificadoQualidadeViewSet(viewsets.ModelViewSet):
         return resp
 
 
-class CertificadoFornecedorEntradaViewSet(viewsets.ModelViewSet):
+class CertificadoFornecedorEntradaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated, CertificadoFornecedorEntradaPermissions]
     queryset = (
         CertificadoFornecedorEntrada.objects.select_related(
             'fornecedor',
@@ -420,10 +706,45 @@ class CertificadoFornecedorEntradaViewSet(viewsets.ModelViewSet):
             'nf_entrada_operacional',
             'empresa_destinataria',
         )
-        .prefetch_related('itens__componentes')
+        .prefetch_related(
+            'itens__componentes',
+            'itens__corridas_adicionais',
+            'itens__item_conferencia__item_nfe_historico',
+            'itens__item_conferencia__conferencia__nf_entrada_historica',
+            'itens__item_conferencia__item_pedido_compra__pedido',
+            'itens__item_conferencia__item_pedido_compra__produto',
+            'itens__item_conferencia__produto',
+        )
         .all()
     )
     serializer_class = CertificadoFornecedorEntradaSerializer
+    pagination_class = NexusPageNumberPagination
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        search = (self.request.query_params.get('search') or '').strip()
+        if search:
+            from apps.core.document_numbering import filtrar_queryset_por_numeros_documento
+
+            qs = filtrar_queryset_por_numeros_documento(
+                qs,
+                search,
+                'numero_certificado_fornecedor',
+                'numero_nf_entrada',
+                q_extra=(
+                    Q(fornecedor__razao_social__icontains=search)
+                    | Q(fornecedor_nome_snapshot__icontains=search)
+                ),
+            )
+        status_f = (self.request.query_params.get('status') or '').strip()
+        if status_f:
+            qs = qs.filter(status__icontains=status_f)
+        return aplicar_ordering(
+            qs,
+            self.request.query_params.get('ordering'),
+            {'numero_certificado_fornecedor': 'numero_certificado_fornecedor', 'criado_em': 'criado_em'},
+            '-id',
+        )
 
     @staticmethod
     def _sugerir_tipo_item(codigo: str, descricao: str, ncm: str) -> str:
@@ -485,10 +806,76 @@ class CertificadoFornecedorEntradaViewSet(viewsets.ModelViewSet):
             )
 
         try:
-            nf_hist = NFeEntradaHistoricaImportada.objects.select_related('fornecedor_emitente', 'empresa_destinataria').get(pk=nf_hist_id)
+            nf_hist = (
+                NFeEntradaHistoricaImportada.objects.select_related('fornecedor_emitente', 'empresa_destinataria')
+                .prefetch_related('itens')
+                .get(pk=nf_hist_id)
+            )
         except NFeEntradaHistoricaImportada.DoesNotExist:
             return Response({'detail': 'NF-e de entrada histórica não encontrada.'}, status=status.HTTP_404_NOT_FOUND)
         emit = nf_hist.emit_json or {}
+        conferencia = get_or_build_conferencia_for_nf_historica(nf_hist)
+        conf_por_n_item = map_itens_conferencia_por_n_item(conferencia)
+        itens_payload = []
+        for idx, it in enumerate(nf_hist.itens.order_by('n_item')):
+            prod = it.prod_json or {}
+            ic = conf_por_n_item.get(it.n_item)
+            corrida_conf, lote_conf, corridas_adicionais_conf = _corrida_lote_e_corridas_adicionais_de_conferencia(ic)
+            row = {
+                'ordem': idx + 1,
+                'produto': ic.produto_id if ic and ic.produto_id else None,
+                'codigo_produto': str(prod.get('cProd') or ''),
+                'descricao_material': str(prod.get('xProd') or ''),
+                'quantidade': float(prod.get('qCom') or 0),
+                'unidade': str(prod.get('uCom') or ''),
+                'ncm': str(prod.get('NCM') or ''),
+                'norma': '',
+                'corrida': corrida_conf,
+                'lote': lote_conf,
+                'corridas_adicionais': corridas_adicionais_conf,
+                'numero_certificado_fornecedor_item': '',
+                'data_certificado_fornecedor_item': None,
+                'pagina_certificado_fornecedor': '',
+                'observacao_origem_certificado': '',
+                'tipo_dados_tecnicos': self._sugerir_tipo_item(
+                    str(prod.get('cProd') or ''),
+                    str(prod.get('xProd') or ''),
+                    str(prod.get('NCM') or ''),
+                ),
+                'composicao_json': {},
+                'ensaio_tracao_json': {},
+                'ensaio_impacto_json': {},
+                'observacoes_item': '',
+                'componentes': [],
+                'item_conferencia_id': ic.id if ic else None,
+                'origem_nfe_item_numero': it.n_item if ic else None,
+                'origem_nfe_numero': nf_hist.numero if ic else None,
+                'origem_nfe_serie': nf_hist.serie if ic else None,
+                'origem_display': (
+                    f'NF {nf_hist.numero}/{nf_hist.serie} · item {it.n_item} · Conferência' if ic else ''
+                ),
+                'origem_conferencia_status': ic.status if ic else None,
+                'origem_produto_vinculado': bool(ic.produto_id) if ic else False,
+                'origem_rastreabilidade_completa': False,
+            }
+            if ic:
+                pedido_ctx = _origem_pedido_compra_de_item_cf(ic)
+                if pedido_ctx:
+                    row.update(
+                        {
+                            'pedido_compra_id': pedido_ctx['pedido_compra_id'],
+                            'pedido_compra_numero': pedido_ctx['pedido_compra_numero'],
+                            'item_pedido_compra_id': pedido_ctx['item_pedido_compra_id'],
+                            'item_pedido_resumo': pedido_ctx['item_pedido_resumo'],
+                            'produto_pedido_codigo': pedido_ctx['produto_pedido_codigo'],
+                            'produto_pedido_descricao': pedido_ctx['produto_pedido_descricao'],
+                            'quantidade_pedido': pedido_ctx['quantidade_pedido'],
+                            'unidade_pedido': pedido_ctx['unidade_pedido'],
+                            'valor_unitario_pedido': pedido_ctx['valor_unitario_pedido'],
+                            'origem_rastreabilidade_completa': True,
+                        },
+                    )
+            itens_payload.append(row)
         return Response(
             {
                 'fornecedor': nf_hist.fornecedor_emitente_id,
@@ -499,36 +886,11 @@ class CertificadoFornecedorEntradaViewSet(viewsets.ModelViewSet):
                 'numero_nf_entrada': nf_hist.numero,
                 'serie_nf_entrada': nf_hist.serie,
                 'data_nf_entrada': nf_hist.dh_emissao.date().isoformat(),
-                'itens': [
-                    {
-                        'ordem': idx + 1,
-                        'produto': None,
-                        'codigo_produto': str((it.prod_json or {}).get('cProd') or ''),
-                        'descricao_material': str((it.prod_json or {}).get('xProd') or ''),
-                        'quantidade': float((it.prod_json or {}).get('qCom') or 0),
-                        'unidade': str((it.prod_json or {}).get('uCom') or ''),
-                        'ncm': str((it.prod_json or {}).get('NCM') or ''),
-                        'norma': '',
-                        'corrida': '',
-                        'lote': '',
-                            'numero_certificado_fornecedor_item': '',
-                            'data_certificado_fornecedor_item': None,
-                            'pagina_certificado_fornecedor': '',
-                            'observacao_origem_certificado': '',
-                        'tipo_dados_tecnicos': self._sugerir_tipo_item(
-                            str((it.prod_json or {}).get('cProd') or ''),
-                            str((it.prod_json or {}).get('xProd') or ''),
-                            str((it.prod_json or {}).get('NCM') or ''),
-                        ),
-                        'composicao_json': {},
-                        'ensaio_tracao_json': {},
-                        'ensaio_impacto_json': {},
-                        'observacoes_item': '',
-                        'componentes': [],
-                    }
-                    for idx, it in enumerate(ItemNFeEntradaHistoricaImportada.objects.filter(nf_id=nf_hist.id).order_by('n_item'))
+                'itens': itens_payload,
+                'mensagens': [
+                    'NF-e de entrada histórica carregada com vínculo à conferência quando disponível.',
+                    'Complete corrida/lote e dados técnicos conforme o certificado do fornecedor.',
                 ],
-                'mensagens': ['NF-e de entrada histórica carregada. Complete manualmente corrida/lote e dados técnicos.'],
             }
         )
 
@@ -542,26 +904,15 @@ class CertificadoFornecedorEntradaViewSet(viewsets.ModelViewSet):
         fornecedor = request.query_params.get('fornecedor')
         nf_entrada = (request.query_params.get('nf_entrada') or '').strip()
         certificado_numero = (request.query_params.get('certificado_fornecedor') or '').strip()
+        debug_busca = str(request.query_params.get('debug') or '').strip() == '1' and bool(
+            getattr(request.user, 'is_superuser', False)
+        )
         status_param = (request.query_params.get('status') or '').strip().lower()
         include_rascunho = str(request.query_params.get('include_rascunho', '')).lower() in {'1', 'true', 'sim'}
-        qs = ItemCertificadoFornecedorEntrada.objects.select_related('certificado_fornecedor', 'produto', 'certificado_fornecedor__fornecedor').prefetch_related('componentes').filter(
+        qs = ItemCertificadoFornecedorEntrada.objects.select_related('certificado_fornecedor', 'produto', 'certificado_fornecedor__fornecedor').prefetch_related('componentes', 'corridas_adicionais').filter(
             ativo=True,
         )
-        if status_param in {
-            CertificadoFornecedorEntrada.Status.RASCUNHO,
-            CertificadoFornecedorEntrada.Status.REGISTRADO,
-            CertificadoFornecedorEntrada.Status.CANCELADO,
-        }:
-            qs = qs.filter(certificado_fornecedor__status=status_param)
-        elif include_rascunho:
-            qs = qs.filter(
-                certificado_fornecedor__status__in=[
-                    CertificadoFornecedorEntrada.Status.RASCUNHO,
-                    CertificadoFornecedorEntrada.Status.REGISTRADO,
-                ]
-            )
-        else:
-            qs = qs.filter(certificado_fornecedor__status=CertificadoFornecedorEntrada.Status.REGISTRADO)
+        qs = _filter_cf_items_por_status_certificado(qs, status_param=status_param, include_rascunho=include_rascunho)
 
         if fornecedor:
             qs = qs.filter(certificado_fornecedor__fornecedor_id=fornecedor)
@@ -573,8 +924,19 @@ class CertificadoFornecedorEntradaViewSet(viewsets.ModelViewSet):
                 | models.Q(numero_certificado_fornecedor_item__icontains=certificado_numero)
             )
 
+        # Referência de produto no CQ: inclui itens do fornecedor com o mesmo produto OU
+        # sem produto vinculado (entrada real); exclui outro produto_id para não misturar lotes.
+        produto_cq_id = None
+        if produto:
+            try:
+                produto_cq_id = int(str(produto).strip())
+            except (TypeError, ValueError):
+                produto_cq_id = None
+        if produto_cq_id is not None:
+            qs = qs.filter(models.Q(produto_id=produto_cq_id) | models.Q(produto__isnull=True))
+
         if not any([corrida, lote, produto, codigo, descricao, fornecedor, nf_entrada, certificado_numero]):
-            return Response([], status=status.HTTP_200_OK)
+            return Response({'resultados': [], 'dicas_busca': []}, status=status.HTTP_200_OK)
 
         corrida_norm = _normalize_search_token(corrida)
         lote_norm = _normalize_search_token(lote)
@@ -583,26 +945,39 @@ class CertificadoFornecedorEntradaViewSet(viewsets.ModelViewSet):
         norma_ref = (request.query_params.get('norma') or '').strip().upper()
         tipo_tecnico_ref = (request.query_params.get('tipo_dados_tecnicos') or '').strip()
         filtered_items = []
+        corrida_adicional_por_item_id: dict[int, object] = {}
         for item in qs.order_by('-id')[:300]:
             score = 0
-            item_corrida_norm = _normalize_search_token(item.corrida)
-            item_lote_norm = _normalize_search_token(item.lote)
-            if corrida_norm:
-                if _contains_normalized(item_corrida_norm, corrida_norm):
+            corrida_adicional_match = None
+            if not _passes_corrida_lote_cf_item(item, corrida_norm, lote_norm):
+                corrida_adicional_match = _match_corrida_adicional_cf_item(item, corrida_norm, lote_norm)
+                if corrida_adicional_match is None:
+                    continue
+                corrida_adicional_por_item_id[item.id] = corrida_adicional_match
+            item_corrida_norm, item_lote_norm = _effective_corrida_lote_norms_cf_item(item)
+            if corrida_adicional_match is not None:
+                # Match por corrida adicional: pontua como corrida principal encontrada.
+                if corrida_norm:
                     score += 100
-                elif _contains_normalized(item_lote_norm, corrida_norm):
-                    score += 70
-                else:
-                    continue
-            if lote_norm:
-                if _contains_normalized(item_lote_norm, lote_norm):
+                if lote_norm and _contains_normalized(
+                    _normalize_search_token(corrida_adicional_match.lote or ''), lote_norm
+                ):
                     score += 80
-                elif _contains_normalized(item_corrida_norm, lote_norm):
-                    score += 50
-                elif corrida_norm:
-                    continue
-            if produto and item.produto_id and str(item.produto_id) == str(produto):
-                score += 15
+            else:
+                if corrida_norm:
+                    if _contains_normalized(item_corrida_norm, corrida_norm):
+                        score += 100
+                    elif _contains_normalized(item_lote_norm, corrida_norm):
+                        score += 70
+                    else:
+                        score += 95
+                if lote_norm:
+                    if _contains_normalized(item_lote_norm, lote_norm):
+                        score += 80
+                    elif _contains_normalized(item_corrida_norm, lote_norm):
+                        score += 50
+            if produto_cq_id is not None and item.produto_id == produto_cq_id:
+                score += 25
             if codigo_norm and _contains_normalized(_normalize_search_token(item.codigo_produto), codigo_norm):
                 score += 10
             if descricao_norm and descricao_norm in (item.descricao_material or '').lower():
@@ -629,15 +1004,42 @@ class CertificadoFornecedorEntradaViewSet(viewsets.ModelViewSet):
                     lote_norm,
                     CertificadoFornecedorEntrada.objects.filter(status=CertificadoFornecedorEntrada.Status.REGISTRADO).count(),
                 )
-            return Response([], status=status.HTTP_200_OK)
+            dicas = _build_dicas_busca_sem_resultado(
+                produto_cq_id=produto_cq_id,
+                corrida_norm=corrida_norm,
+                lote_norm=lote_norm,
+                fornecedor=fornecedor,
+                nf_entrada=nf_entrada,
+                certificado_numero=certificado_numero,
+            )
+            payload: dict = {'resultados': [], 'dicas_busca': dicas}
+            if debug_busca:
+                payload['diagnostico'] = _build_diagnostico_superuser_busca(
+                    produto_cq_id=produto_cq_id,
+                    corrida_norm=corrida_norm,
+                    lote_norm=lote_norm,
+                    fornecedor=fornecedor,
+                    nf_entrada=nf_entrada,
+                    certificado_numero=certificado_numero,
+                )
+            return Response(payload, status=status.HTTP_200_OK)
 
         filtered_items.sort(key=lambda x: (x[0], x[1].id), reverse=True)
         resultados = []
         corrida_bucket: dict[tuple[str, str], list[ItemCertificadoFornecedorEntrada]] = {}
+
+        def _bucket_corrida_lote_item(item: ItemCertificadoFornecedorEntrada) -> tuple[str, str]:
+            """Corrida/lote usados no agrupamento: a adicional encontrada, quando o match veio dela."""
+            extra = corrida_adicional_por_item_id.get(item.id)
+            if extra is not None:
+                return (extra.corrida or '').strip(), (extra.lote or '').strip()
+            return _display_corrida_lote_cf_item(item)
+
         for _, item in filtered_items:
+            dc, dl = _bucket_corrida_lote_item(item)
             key = (
                 str(item.certificado_fornecedor.fornecedor_id or ''),
-                _normalize_search_token(item.corrida or item.lote or ''),
+                _normalize_search_token(dc or dl or ''),
             )
             corrida_bucket.setdefault(key, []).append(item)
 
@@ -655,6 +1057,8 @@ class CertificadoFornecedorEntradaViewSet(viewsets.ModelViewSet):
 
         for score, item in filtered_items[:100]:
             cert = item.certificado_fornecedor
+            disp_corrida, disp_lote = _display_corrida_lote_cf_item(item)
+            corrida_adicional_match = corrida_adicional_por_item_id.get(item.id)
             codigo_divergente = bool(codigo_norm and _normalize_search_token(item.codigo_produto) != codigo_norm)
             desc_divergente = bool(descricao_norm and descricao_norm not in (item.descricao_material or '').lower())
             produto_relacionado = _descricao_relacionada(item.descricao_material or '', descricao or '')
@@ -697,13 +1101,35 @@ class CertificadoFornecedorEntradaViewSet(viewsets.ModelViewSet):
                     'Corrida encontrada, mas a norma/material é diferente. '
                     'Reutilize somente se tiver certeza.'
                 )
+            bucket_corrida, bucket_lote = _bucket_corrida_lote_item(item)
             key = (
                 str(cert.fornecedor_id or ''),
-                _normalize_search_token(item.corrida or item.lote or ''),
+                _normalize_search_token(bucket_corrida or bucket_lote or ''),
             )
             siblings = corrida_bucket.get(key, [])
             siblings_fp = {_fingerprint(s) for s in siblings}
             divergencia_dados = len(siblings_fp) > 1
+            produto_vinculado_resp = item.produto_id is not None
+            if produto_cq_id is not None:
+                if item.produto_id == produto_cq_id:
+                    produto_match_tipo = 'vinculado'
+                    aviso_sem_vinculo_produto = ''
+                elif item.produto_id is None:
+                    produto_match_tipo = 'sem_vinculo'
+                    aviso_sem_vinculo_produto = (
+                        'Item do certificado fornecedor sem produto vinculado. Confira código, descrição e corrida antes de aplicar.'
+                    )
+                else:
+                    produto_match_tipo = 'outro_produto'
+                    aviso_sem_vinculo_produto = ''
+            elif item.produto_id is None:
+                produto_match_tipo = 'sem_vinculo'
+                aviso_sem_vinculo_produto = (
+                    'Item do certificado fornecedor sem produto vinculado. Confira código, descrição e corrida antes de aplicar.'
+                )
+            else:
+                produto_match_tipo = None
+                aviso_sem_vinculo_produto = ''
             resultados.append(
                 {
                     'id': item.id,
@@ -716,13 +1142,35 @@ class CertificadoFornecedorEntradaViewSet(viewsets.ModelViewSet):
                         item.numero_certificado_fornecedor_item or cert.numero_certificado_fornecedor
                     ),
                     'numero_certificado_fornecedor_item': item.numero_certificado_fornecedor_item,
-                    'status_certificado_fornecedor': cert.status,
+                    'status_certificado_fornecedor': _cf_status_canonical(cert.status),
                     'produto': item.produto_id,
+                    'produto_vinculado': produto_vinculado_resp,
+                    'produto_match_tipo': produto_match_tipo,
+                    'aviso_sem_vinculo_produto': aviso_sem_vinculo_produto,
                     'codigo_produto': item.codigo_produto,
                     'descricao_material': item.descricao_material,
                     'norma': item.norma,
-                    'corrida': item.corrida,
-                    'lote': item.lote,
+                    'corrida': disp_corrida,
+                    'lote': disp_lote,
+                    'dados_tecnicos_herdados': corrida_adicional_match is not None,
+                    'origem_dados_tecnicos': (
+                        'item_principal_corrida_adicional' if corrida_adicional_match is not None else 'item_principal'
+                    ),
+                    'corrida_encontrada': (
+                        (corrida_adicional_match.corrida or '').strip() if corrida_adicional_match is not None else disp_corrida
+                    ),
+                    'lote_encontrado': (
+                        (corrida_adicional_match.lote or '').strip() if corrida_adicional_match is not None else disp_lote
+                    ),
+                    'quantidade_corrida_encontrada': (
+                        float(corrida_adicional_match.quantidade)
+                        if corrida_adicional_match is not None and corrida_adicional_match.quantidade is not None
+                        else None
+                    ),
+                    'mensagem_corrida_adicional': (
+                        'Esta corrida compartilha os dados técnicos do item principal.'
+                        if corrida_adicional_match is not None else ''
+                    ),
                     'tipo_dados_tecnicos': item.tipo_dados_tecnicos,
                     'confianca_correspondencia': confianca,
                     'tipo_correspondencia': tipo_correspondencia,
@@ -744,7 +1192,7 @@ class CertificadoFornecedorEntradaViewSet(viewsets.ModelViewSet):
                     ),
                     'aviso_certificado_rascunho': (
                         'Este dado técnico vem de um certificado ainda em rascunho.'
-                        if cert.status == CertificadoFornecedorEntrada.Status.RASCUNHO else ''
+                        if _cf_status_canonical(cert.status) == CertificadoFornecedorEntrada.Status.RASCUNHO else ''
                     ),
                     'composicao_json': item.composicao_json,
                     'ensaio_tracao_json': item.ensaio_tracao_json,
@@ -774,4 +1222,14 @@ class CertificadoFornecedorEntradaViewSet(viewsets.ModelViewSet):
                     ],
                 }
             )
-        return Response(resultados, status=status.HTTP_200_OK)
+        out: dict = {'resultados': resultados, 'dicas_busca': []}
+        if debug_busca:
+            out['diagnostico'] = _build_diagnostico_superuser_busca(
+                produto_cq_id=produto_cq_id,
+                corrida_norm=corrida_norm,
+                lote_norm=lote_norm,
+                fornecedor=fornecedor,
+                nf_entrada=nf_entrada,
+                certificado_numero=certificado_numero,
+            )
+        return Response(out, status=status.HTTP_200_OK)

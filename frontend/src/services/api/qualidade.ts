@@ -1,6 +1,13 @@
 import { AxiosError } from 'axios';
 import api, { apiErrorMessage } from './config';
+import {
+  buildListParams,
+  type ListQueryParams,
+  type PaginatedResponse,
+  unwrapListResults,
+} from '@/lib/apiList';
 import type { CertificadoQualidade, CorridaDisponivelCertificadoQualidade } from '@/types';
+import type { CorridasCfParaCqResponse } from '@/lib/cqCorridasCfUi';
 
 const base = 'certificados-qualidade/';
 
@@ -109,18 +116,64 @@ async function getPdfBlob(id: number, preview = false): Promise<Blob> {
   }
 }
 
+export type NfeElegivelCqOpcao = {
+  id: number;
+  label_principal: string;
+  label_secundario: string;
+  ambiente_badge: string | null;
+  numero_nfe: string;
+  serie_nfe: string;
+  cliente_nome: string;
+  data_emissao: string | null;
+  status_emissao_sefaz: string;
+  elegivel: boolean;
+};
+
 export const certificadosQualidadeService = {
-  getAll: async () => (await api.get<CertificadoQualidade[]>(base)).data,
+  listPaginated: async (params?: ListQueryParams) => {
+    const response = await api.get<PaginatedResponse<CertificadoQualidade>>(base, { params: buildListParams(params) });
+    return response.data;
+  },
+  getAll: async (params?: ListQueryParams) => {
+    const response = await api.get<CertificadoQualidade[] | PaginatedResponse<CertificadoQualidade>>(base, {
+      params: buildListParams(params?.page ? params : { ...params, limit: params?.limit ?? 100 }),
+    });
+    return unwrapListResults(response.data);
+  },
   getById: async (id: number) => (await api.get<CertificadoQualidade>(`${base}${id}/`)).data,
   create: async (payload: Omit<CertificadoQualidade, 'id' | 'criado_em' | 'atualizado_em' | 'numero_formatado'>) =>
     (await api.post<CertificadoQualidade>(base, payload)).data,
   update: async (id: number, payload: Partial<CertificadoQualidade>) =>
     (await api.patch<CertificadoQualidade>(`${base}${id}/`, payload)).data,
+  buscarNfesElegiveis: async (search: string, limit = 20, incluirId?: number | null) => {
+    const response = await api.get<NfeElegivelCqOpcao[]>(`${base}nfes-elegiveis/`, {
+      params: {
+        search,
+        limit,
+        ...(incluirId ? { incluir_id: incluirId } : {}),
+      },
+    });
+    return response.data;
+  },
+  obterNfeOpcao: async (id: number) => {
+    const list = await certificadosQualidadeService.buscarNfesElegiveis('', 1, id);
+    return list.find((o) => o.id === id) ?? null;
+  },
   preencherPorNfe: async (payload: PreencherPorNFePayload) =>
     (await api.post<PreencherPorNFeResponse>(`${base}preencher-por-nfe/`, payload)).data,
   corridasDisponiveisPorProduto: async (produtoId: number) =>
     (await api.get<CorridaDisponivelCertificadoQualidade[]>(`${base}corridas-disponiveis/`, { params: { produto_id: produtoId } })).data,
+  /** Corridas do CF/item EXATOS vinculados ao item do CQ (nunca busca por produto). */
+  corridasCertificadoFornecedor: async (certificadoFornecedorId: number, itemCertificadoFornecedorId: number) =>
+    (await api.get<CorridasCfParaCqResponse>(`${base}corridas-certificado-fornecedor/`, {
+      params: {
+        certificado_fornecedor_id: certificadoFornecedorId,
+        item_certificado_fornecedor_id: itemCertificadoFornecedorId,
+      },
+    })).data,
   obterPdfBlob: async (id: number, preview = false) => getPdfBlob(id, preview),
+  reemitir: async (id: number) =>
+    (await api.post<CertificadoQualidade>(`${base}${id}/reemitir/`)).data,
   buildPdfFilename,
   visualizarPdf: async (id: number, preview = false, input?: PdfFilenameInput) => {
     const blob = await getPdfBlob(id, preview);

@@ -5,6 +5,17 @@ django-cors-headers==4.6.0
 psycopg2-binary==2.9.10
 Pillow==11.0.0
 reportlab==4.2.5
-cryptography==44.0.0
+cryptography>=45.0.0,<46.0.0
 pypdf==5.4.0
 openpyxl==3.1.5
+nfelib>=2.5.0
+PyNFe>=0.6.5
+signxml>=5.0.0,<6.0.0
+lxml>=5.0.0
+# PyNFe 0.6.x não declara dependências no pip — necessárias para ComunicacaoSefaz
+requests>=2.31.0
+suds-py3>=1.4.5.0
+# DANFE oficial ERP 4.0.13.6.13A — BrazilFiscalReport (LGPL-3.0; ver docs/fiscal/brazil-fiscal-report-poc.md)
+BrazilFiscalReport==0.7.4
+# Dependência usada por brazilfiscalreport.dacte (não declarada no pacote BFR)
+qrcode[pil]>=7.4.2

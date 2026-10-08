@@ -1,10 +1,11 @@
 from decimal import Decimal
 
+from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
 from django.core.exceptions import ValidationError
 from django.db import models
 
-from .utils import validar_cnpj_django
+from .utils import normalizar_cnpj, validar_cnpj_django
 
 
 def _default_dias_parcelas():
@@ -12,12 +13,14 @@ def _default_dias_parcelas():
 
 
 def _norm_cnpj(val: str) -> str:
-    if val is None:
-        return ''
-    return ''.join(c for c in str(val) if c.isdigit())
+    return normalizar_cnpj(val)
 
 
 class Empresa(models.Model):
+    class NfeAmbiente(models.TextChoices):
+        HOMOLOGACAO = 'homologacao', 'Homologação'
+        PRODUCAO = 'producao', 'Produção'
+
     razao_social = models.CharField(max_length=255)
     nome_fantasia = models.CharField(max_length=255, blank=True)
     cnpj = models.CharField(max_length=20, unique=True, validators=[validar_cnpj_django])
@@ -45,6 +48,12 @@ class Empresa(models.Model):
     senha_certificado = models.CharField(max_length=128, blank=True)
     certificado_validade = models.DateField(null=True, blank=True)
     logotipo = models.ImageField(upload_to='logos/', null=True, blank=True)
+    nfe_ambiente = models.CharField(
+        max_length=16,
+        choices=NfeAmbiente.choices,
+        default=NfeAmbiente.HOMOLOGACAO,
+        help_text='Ambiente fiscal NF-e desejado para emissão desta empresa.',
+    )
     criado_em = models.DateTimeField(auto_now_add=True, null=True, blank=True)
     atualizado_em = models.DateTimeField(auto_now=True, null=True, blank=True)
 
@@ -60,6 +69,7 @@ class Empresa(models.Model):
             raise ValidationError({'cnpj': 'Informe um CNPJ válido ou deixe em branco.'})
 
     def save(self, *args, **kwargs):
+        self.cnpj = normalizar_cnpj(self.cnpj)
         if self.certificado_arquivo and self.senha_certificado:
             self._validar_certificado()
         super().save(*args, **kwargs)
@@ -94,6 +104,10 @@ class Cliente(models.Model):
     nome_fantasia = models.CharField(max_length=255, blank=True)
     cnpj = models.CharField(max_length=20, unique=True, validators=[validar_cnpj_django])
     ie = models.CharField(max_length=32, blank=True)
+    ie_isento = models.BooleanField(
+        default=False,
+        help_text='Cliente isento de Inscrição Estadual (indIEDest=2 na NF-e).',
+    )
     logradouro = models.CharField(max_length=255, blank=True)
     numero = models.CharField(max_length=32, blank=True)
     complemento = models.CharField(max_length=128, blank=True)
@@ -132,6 +146,14 @@ class Cliente(models.Model):
     cnae = models.CharField(max_length=20, blank=True)
     regime_tributario = models.CharField(max_length=64, blank=True)
     integracao_texto = models.TextField(blank=True)
+    informacoes_complementares_nfe = models.TextField(
+        blank=True,
+        default='',
+        help_text=(
+            'Informações recorrentes deste cliente para Dados Adicionais da NF-e/DANFE '
+            '(endereço de entrega, horário de recebimento, instruções externas).'
+        ),
+    )
 
     class Meta:
         ordering = ['razao_social']
@@ -143,6 +165,90 @@ class Cliente(models.Model):
         super().clean()
         if self.cnpj and _norm_cnpj(self.cnpj) == '':
             raise ValidationError({'cnpj': 'Informe um CNPJ válido ou deixe em branco.'})
+
+    def save(self, *args, **kwargs):
+        self.cnpj = normalizar_cnpj(self.cnpj)
+        super().save(*args, **kwargs)
+
+
+class EnderecoEntregaCliente(models.Model):
+    """
+    Endereços de entrega do cliente.
+
+    O endereço fiscal permanece nos campos embutidos de Cliente (logradouro, cep, etc.),
+    usados pelo <dest> da NF-e e por endereco_fiscal — sem migração de dados existentes.
+    """
+
+    cliente = models.ForeignKey(
+        Cliente,
+        on_delete=models.CASCADE,
+        related_name='enderecos_entrega',
+    )
+    identificacao = models.CharField(
+        max_length=120,
+        blank=True,
+        help_text='Apelido para diferenciar endereços (ex.: Filial Campinas).',
+    )
+    cep = models.CharField(max_length=16, blank=True)
+    logradouro = models.CharField(max_length=255, blank=True)
+    numero = models.CharField(max_length=32, blank=True)
+    complemento = models.CharField(max_length=128, blank=True)
+    bairro = models.CharField(max_length=128, blank=True)
+    cidade = models.CharField(max_length=128, blank=True)
+    uf = models.CharField(max_length=2, blank=True)
+    principal = models.BooleanField(
+        default=False,
+        help_text='Endereço de entrega padrão quando houver mais de um.',
+    )
+
+    class Meta:
+        ordering = ['-principal', 'id']
+        verbose_name = 'Endereço de entrega do cliente'
+        verbose_name_plural = 'Endereços de entrega do cliente'
+
+    def __str__(self):
+        rotulo = (self.identificacao or self.logradouro or '').strip()
+        return rotulo or f'Entrega #{self.pk}'
+
+
+class ContatoCliente(models.Model):
+    class Tipo(models.TextChoices):
+        COMERCIAL = 'COMERCIAL', 'Comercial'
+        FINANCEIRO = 'FINANCEIRO', 'Financeiro'
+        TECNICO = 'TECNICO', 'Técnico'
+        OUTRO = 'OUTRO', 'Outro'
+
+    cliente = models.ForeignKey(
+        Cliente,
+        on_delete=models.CASCADE,
+        related_name='contatos',
+    )
+    tipo = models.CharField(max_length=16, choices=Tipo.choices, default=Tipo.COMERCIAL)
+    nome = models.CharField(max_length=255, blank=True)
+    telefone = models.CharField(max_length=32, blank=True)
+    celular = models.CharField(max_length=32, blank=True)
+    email = models.EmailField(blank=True)
+    principal = models.BooleanField(
+        default=False,
+        help_text='Contato principal dentro do mesmo tipo.',
+    )
+    ativo = models.BooleanField(
+        default=True,
+        help_text='Contato inativo permanece cadastrado, mas não é elegível para envio fiscal.',
+    )
+    recebe_documentos_fiscais = models.BooleanField(
+        default=False,
+        help_text='Indica que o e-mail deste contato pode receber documentos fiscais (DANFE/XML).',
+    )
+
+    class Meta:
+        ordering = ['tipo', '-principal', 'id']
+        verbose_name = 'Contato do cliente'
+        verbose_name_plural = 'Contatos do cliente'
+
+    def __str__(self):
+        nome = (self.nome or '').strip()
+        return nome or f'{self.get_tipo_display()} #{self.pk}'
 
 
 class Fornecedor(models.Model):
@@ -198,11 +304,330 @@ class Fornecedor(models.Model):
         if self.cnpj and _norm_cnpj(self.cnpj) == '':
             raise ValidationError({'cnpj': 'Informe um CNPJ válido ou deixe em branco.'})
 
+    def save(self, *args, **kwargs):
+        self.cnpj = normalizar_cnpj(self.cnpj)
+        super().save(*args, **kwargs)
+
+
+class Colaborador(models.Model):
+    """Pessoa interna do ERP (vendedor, comprador, responsáveis por área)."""
+
+    nome = models.CharField(max_length=255)
+    codigo = models.CharField(max_length=32, blank=True, db_index=True)
+    email = models.EmailField(blank=True)
+    telefone = models.CharField(max_length=32, blank=True)
+    ativo = models.BooleanField(default=True)
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='colaborador_vinculado',
+    )
+    eh_vendedor = models.BooleanField(default=False)
+    eh_comprador = models.BooleanField(default=False)
+    eh_responsavel_fiscal = models.BooleanField(default=False)
+    eh_responsavel_financeiro = models.BooleanField(default=False)
+    eh_responsavel_estoque = models.BooleanField(default=False)
+    eh_responsavel_qualidade = models.BooleanField(default=False)
+    eh_administrador = models.BooleanField(default=False)
+    cargo = models.CharField(max_length=120, blank=True)
+    departamento = models.CharField(max_length=120, blank=True)
+    observacoes = models.TextField(blank=True)
+    # ─── Identificação complementar ───
+    nome_social = models.CharField(max_length=255, blank=True)
+    tipo_pessoa = models.CharField(
+        max_length=10,
+        choices=[('FISICA', 'Pessoa Física'), ('JURIDICA', 'Pessoa Jurídica')],
+        default='FISICA',
+    )
+    cpf = models.CharField(max_length=14, blank=True, null=True, unique=True, db_index=True)
+    cnpj = models.CharField(max_length=18, blank=True, null=True, unique=True, db_index=True)
+
+    # ─── Identidade ───
+    identidade_tipo = models.CharField(
+        max_length=10,
+        choices=[('', 'Não informado'), ('RG', 'RG (legado)'), ('CIN', 'CIN'), ('OUTRO', 'Outro')],
+        blank=True,
+    )
+    identidade_numero = models.CharField(max_length=32, blank=True)
+    identidade_orgao = models.CharField(max_length=32, blank=True)
+    identidade_uf = models.CharField(max_length=2, blank=True)
+    identidade_emissao = models.DateField(null=True, blank=True)
+    identidade_validade = models.DateField(null=True, blank=True)
+
+    # ─── Dados pessoais ───
+    data_nascimento = models.DateField(null=True, blank=True)
+    sexo = models.CharField(
+        max_length=20,
+        choices=[('', 'Não informado'), ('M', 'Masculino'), ('F', 'Feminino'),
+                 ('OUTRO', 'Outro'), ('NAO_INFORMAR', 'Prefiro não informar')],
+        blank=True,
+    )
+    estado_civil = models.CharField(
+        max_length=20,
+        choices=[('', 'Não informado'), ('SOLTEIRO', 'Solteiro(a)'), ('CASADO', 'Casado(a)'),
+                 ('DIVORCIADO', 'Divorciado(a)'), ('VIUVO', 'Viúvo(a)'),
+                 ('UNIAO_ESTAVEL', 'União Estável')],
+        blank=True,
+    )
+    nacionalidade = models.CharField(max_length=80, blank=True, default='Brasileira')
+    naturalidade_cidade = models.CharField(max_length=120, blank=True)
+    naturalidade_uf = models.CharField(max_length=2, blank=True)
+    nome_mae = models.CharField(max_length=255, blank=True)
+    nome_pai = models.CharField(max_length=255, blank=True)
+
+    # ─── Contato complementar ───
+    celular = models.CharField(max_length=20, blank=True)
+    email_pessoal = models.EmailField(blank=True)
+    emergencia_nome = models.CharField(max_length=120, blank=True)
+    emergencia_telefone = models.CharField(max_length=32, blank=True)
+    emergencia_parentesco = models.CharField(max_length=60, blank=True)
+
+    # ─── Endereço ───
+    cep = models.CharField(max_length=16, blank=True)
+    logradouro = models.CharField(max_length=255, blank=True)
+    numero = models.CharField(max_length=32, blank=True)
+    complemento = models.CharField(max_length=128, blank=True)
+    bairro = models.CharField(max_length=128, blank=True)
+    cidade = models.CharField(max_length=128, blank=True)
+    uf = models.CharField(max_length=2, blank=True)
+
+    # ─── Documentos pessoais ───
+    ctps_numero = models.CharField(max_length=20, blank=True)
+    ctps_serie = models.CharField(max_length=10, blank=True)
+    ctps_uf = models.CharField(max_length=2, blank=True)
+    ctps_emissao = models.DateField(null=True, blank=True)
+    pis_pasep = models.CharField(max_length=20, blank=True)
+    titulo_numero = models.CharField(max_length=20, blank=True)
+    titulo_zona = models.CharField(max_length=10, blank=True)
+    titulo_secao = models.CharField(max_length=10, blank=True)
+    titulo_uf = models.CharField(max_length=2, blank=True)
+    cnh_numero = models.CharField(max_length=20, blank=True)
+    cnh_categoria = models.CharField(max_length=5, blank=True)
+    cnh_validade = models.DateField(null=True, blank=True)
+    reservista_numero = models.CharField(max_length=30, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['nome']
+        verbose_name = 'Colaborador'
+        verbose_name_plural = 'Colaboradores'
+        permissions = [
+            ('ver_salario_colaborador', 'Pode ver salário e dados bancários'),
+        ]
+
+    def __str__(self):
+        return self.nome or self.codigo or str(self.pk)
+
+    def save(self, *args, **kwargs):
+        if not (self.codigo or '').strip():
+            if self.cpf:
+                self.codigo = self.cpf
+            elif self.cnpj:
+                self.codigo = self.cnpj
+        super().save(*args, **kwargs)
+        from apps.cadastros.colaborador_sync import sincronizar_vendedor_colaborador
+        sincronizar_vendedor_colaborador(self)
+
+
+class Vinculo(models.Model):
+    """Contrato de trabalho — cada recontratação vira um novo Vínculo."""
+
+    colaborador = models.ForeignKey(
+        Colaborador,
+        on_delete=models.CASCADE,
+        related_name='vinculos',
+    )
+    empresa = models.ForeignKey(
+        'cadastros.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='vinculos',
+        help_text='Preparado para multi-company. Null = empresa única.',
+    )
+
+    # ─── Contrato ───
+    tipo_contrato = models.CharField(
+        max_length=20,
+        choices=[('', 'Não informado'), ('CLT', 'CLT'), ('PJ', 'PJ'),
+                 ('ESTAGIO', 'Estágio'), ('SOCIO', 'Sócio'),
+                 ('AUTONOMO', 'Autônomo'), ('TEMPORARIO', 'Temporário'),
+                 ('APRENDIZ', 'Aprendiz')],
+        blank=True,
+    )
+    matricula = models.CharField(max_length=32, blank=True, db_index=True)
+    data_admissao = models.DateField(null=True, blank=True)
+    data_demissao = models.DateField(null=True, blank=True)
+    motivo_demissao = models.CharField(max_length=255, blank=True)
+
+    # ─── Posição ───
+    cargo = models.CharField(max_length=120, blank=True)
+    departamento = models.CharField(max_length=120, blank=True)
+    cbo = models.CharField(max_length=10, blank=True)
+    local_trabalho = models.CharField(max_length=120, blank=True)
+    gestor = models.ForeignKey(
+        Colaborador,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='subordinados',
+    )
+
+    # ─── Jornada ───
+    jornada_horas = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    jornada_turno = models.CharField(
+        max_length=20,
+        choices=[('', 'Não informado'), ('MANHA', 'Manhã'), ('TARDE', 'Tarde'),
+                 ('NOITE', 'Noite'), ('INTEGRAL', 'Integral'),
+                 ('COMERCIAL', 'Comercial')],
+        blank=True,
+    )
+
+    # ─── Remuneração ───
+    salario_base = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    salario_tipo = models.CharField(
+        max_length=20,
+        choices=[('', 'Não informado'), ('MENSAL', 'Mensal'), ('HORISTA', 'Horista'),
+                 ('DIARIO', 'Diário'), ('COMISSAO', 'Por comissão')],
+        blank=True,
+    )
+
+    # ─── Funções operacionais ───
+    eh_vendedor = models.BooleanField(default=False)
+    eh_comprador = models.BooleanField(default=False)
+    eh_responsavel_fiscal = models.BooleanField(default=False)
+    eh_responsavel_financeiro = models.BooleanField(default=False)
+    eh_responsavel_estoque = models.BooleanField(default=False)
+    eh_responsavel_qualidade = models.BooleanField(default=False)
+    eh_administrador = models.BooleanField(default=False)
+
+    # ─── Bancário ───
+    banco_codigo = models.CharField(max_length=10, blank=True)
+    banco_nome = models.CharField(max_length=120, blank=True)
+    agencia = models.CharField(max_length=20, blank=True)
+    conta = models.CharField(max_length=30, blank=True)
+    conta_digito = models.CharField(max_length=5, blank=True)
+    conta_tipo = models.CharField(
+        max_length=20,
+        choices=[('', 'Não informado'), ('CORRENTE', 'Corrente'),
+                 ('POUPANCA', 'Poupança'), ('SALARIO', 'Salário')],
+        blank=True,
+    )
+    pix_tipo = models.CharField(
+        max_length=20,
+        choices=[('', 'Não informado'), ('CPF', 'CPF'), ('CNPJ', 'CNPJ'),
+                 ('EMAIL', 'E-mail'), ('TELEFONE', 'Telefone'),
+                 ('ALEATORIA', 'Chave aleatória')],
+        blank=True,
+    )
+    pix_chave = models.CharField(max_length=120, blank=True)
+    forma_pagamento = models.CharField(
+        max_length=20,
+        choices=[('', 'Não informado'), ('DEPOSITO', 'Depósito'), ('PIX', 'PIX'),
+                 ('DINHEIRO', 'Dinheiro'), ('CHEQUE', 'Cheque')],
+        blank=True,
+    )
+
+    # ─── Preparado para eSocial ───
+    codigo_categoria_esocial = models.CharField(max_length=10, blank=True)
+    grau_instrucao = models.CharField(max_length=50, blank=True)
+    natureza_atividade = models.CharField(max_length=20, blank=True)
+
+    observacoes = models.TextField(blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-data_admissao', '-pk']
+        verbose_name = 'Vínculo'
+        verbose_name_plural = 'Vínculos'
+
+    def __str__(self):
+        return f'{self.colaborador.nome} · {self.cargo or "—"} · {self.data_admissao or "—"}'
+
+    @property
+    def ativo(self):
+        return self.data_demissao is None
+
+
+class EventoVinculo(models.Model):
+    """Histórico de mudanças dentro de um vínculo (promoção, aumento, etc)."""
+
+    TIPO_CHOICES = [
+        ('ADMISSAO', 'Admissão'),
+        ('PROMOCAO', 'Promoção'),
+        ('AUMENTO', 'Aumento salarial'),
+        ('TRANSFERENCIA', 'Transferência'),
+        ('MUDANCA_JORNADA', 'Mudança de jornada'),
+        ('MUDANCA_GESTOR', 'Mudança de gestor'),
+        ('AFASTAMENTO', 'Afastamento'),
+        ('RETORNO', 'Retorno de afastamento'),
+        ('ENCERRAMENTO', 'Encerramento'),
+        ('OUTRO', 'Outro'),
+    ]
+
+    vinculo = models.ForeignKey(
+        Vinculo,
+        on_delete=models.CASCADE,
+        related_name='eventos',
+    )
+    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES)
+    data_efetiva = models.DateField()
+    motivo = models.CharField(max_length=255, blank=True)
+    observacao = models.TextField(blank=True)
+    dados_antes = models.JSONField(null=True, blank=True)
+    dados_depois = models.JSONField(null=True, blank=True)
+    registrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='eventos_vinculo_registrados',
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-data_efetiva', '-pk']
+        verbose_name = 'Evento de vínculo'
+        verbose_name_plural = 'Eventos de vínculo'
+
+    def __str__(self):
+        return f'{self.get_tipo_display()} · {self.data_efetiva}'
+
+
+class Dependente(models.Model):
+    """Dependente de colaborador (IR, plano de saúde)."""
+
+    colaborador = models.ForeignKey(
+        Colaborador,
+        on_delete=models.CASCADE,
+        related_name='dependentes',
+    )
+    nome = models.CharField(max_length=120)
+    cpf = models.CharField(max_length=14, blank=True)
+    data_nascimento = models.DateField(null=True, blank=True)
+    parentesco = models.CharField(max_length=60, blank=True)
+    dependente_ir = models.BooleanField(default=False)
+    dependente_saude = models.BooleanField(default=False)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['nome']
+        verbose_name = 'Dependente'
+        verbose_name_plural = 'Dependentes'
+
+    def __str__(self):
+        return f'{self.nome} ({self.parentesco})'
+
 
 class Transportadora(models.Model):
     razao_social = models.CharField(max_length=255)
     nome_fantasia = models.CharField(max_length=255, blank=True)
-    cnpj = models.CharField(max_length=20, unique=True)
+    cnpj = models.CharField(max_length=20, unique=True, validators=[validar_cnpj_django])
     ie = models.CharField(max_length=32, blank=True)
     inscricao_municipal = models.CharField(max_length=20, blank=True)
     logradouro = models.CharField(max_length=255, blank=True)
@@ -242,3 +667,7 @@ class Transportadora(models.Model):
         super().clean()
         if self.cnpj and _norm_cnpj(self.cnpj) == '':
             raise ValidationError({'cnpj': 'Informe um CNPJ válido ou deixe em branco.'})
+
+    def save(self, *args, **kwargs):
+        self.cnpj = normalizar_cnpj(self.cnpj)
+        super().save(*args, **kwargs)

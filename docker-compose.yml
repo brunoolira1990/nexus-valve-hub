@@ -1,6 +1,7 @@
 services:
   db:
     image: postgres:15
+    restart: unless-stopped
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
@@ -23,7 +24,22 @@ services:
 
   backend:
     build: ./backend
-    command: sh -c "python manage.py migrate && python manage.py criar_usuario_inicial && python manage.py runserver 0.0.0.0:8000"
+    # Em WSL/volumes bind mount o autoreload do runserver pode reiniciar o processo
+    # repetidamente, aparentando "queda" do backend. Por isso usamos --noreload.
+    # IMPORTANTE: alterações em rotas (apps/api_urls.py, views) só entram após reiniciar:
+    #   docker compose restart backend
+    command: sh -c "python scripts/wait_for_db.py && python manage.py fix_migration_history && python manage.py migrate && python manage.py criar_usuario_inicial && python manage.py runserver 0.0.0.0:8000 --noreload"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import socket; s=socket.create_connection(('127.0.0.1',8000),3); s.close()\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
     volumes:
       - ./backend:/app
     ports:
@@ -31,21 +47,40 @@ services:
       - "${BACKEND_PORT:-8000}:8000"
     env_file:
       - .env
+    environment:
+      # Evita proxy do host/WSL desviar chamadas SEFAZ para página HTML em dev/local.
+      NO_PROXY: ${NO_PROXY:-.fazenda.gov.br,.fazenda.sp.gov.br,.sefaz.rs.gov.br,localhost,127.0.0.1,backend,db}
+      no_proxy: ${no_proxy:-.fazenda.gov.br,.fazenda.sp.gov.br,.sefaz.rs.gov.br,localhost,127.0.0.1,backend,db}
     depends_on:
       db:
         condition: service_healthy
 
-  # Host: padrão 5174 — a 5173 costuma estar ocupada por `npm run dev` (Vite) no Windows/WSL.
-  # Para publicar na 5173: no .env use FRONTEND_PORT=5173 e liberte a porta (pare o outro processo/container).
-  frontend:
+  # Build estático para o Caddy (produção). Roda uma vez e encerra; saída em frontend_dist.
+  # Rebuild após mudanças no front: docker compose up -d --build frontend-build && docker compose restart caddy
+  frontend-build:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.build
+      args:
+        VITE_API_URL: /api
+    restart: "no"
+    volumes:
+      - frontend_dist:/srv/frontend
+    environment:
+      VITE_API_URL: /api
+
+  # Vite dev server — só com profile dev (hot reload). Não usado pelo Caddy em produção.
+  # Uso: docker compose --profile dev up -d
+  frontend-dev:
+    profiles: [dev]
     build: ./frontend
+    restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-5174}:5173"
     volumes:
       - ./frontend:/app
       - /app/node_modules
     environment:
-      # Mesma origem no browser: Vite faz proxy de /api e /media para o backend (VITE_PROXY_TARGET).
       VITE_API_URL: /api
       VITE_PROXY_TARGET: http://backend:8000
       VITE_HMR_HOST: localhost
@@ -55,5 +90,26 @@ services:
     depends_on:
       - backend
 
+  caddy:
+    image: caddy:2
+    container_name: nexus_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - frontend_dist:/srv/frontend:ro
+    depends_on:
+      backend:
+        condition: service_started
+      frontend-build:
+        condition: service_completed_successfully
+
 volumes:
   postgres_data:
+  caddy_data:
+  caddy_config:
+  frontend_dist:

@@ -7,10 +7,12 @@ from apps.produtos.models import (
     FamiliaProdutoPolegadaPermitida,
     FamiliaProdutoRoscaConexaoPermitida,
     FamiliaProdutoSchedulePermitido,
+    Ncm,
     Polegada,
     RoscaConexao,
     ScheduleEspessura,
 )
+from apps.produtos.roscas_conexao_base import seed_roscas_conexao_canonicas
 
 POLEGADAS_OFICIAIS = [
     ('01', '1/8"'),
@@ -61,43 +63,29 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         for codigo, descricao in POLEGADAS_OFICIAIS:
-            Polegada.objects.update_or_create(codigo=codigo, defaults={'descricao': descricao})
+            Polegada.objects.update_or_create(
+                tipo_medida=Polegada.TipoMedida.NPS,
+                codigo_oficial=codigo,
+                defaults={'codigo': codigo, 'descricao': descricao, 'origem': 'SEED_BASES_NPS'},
+            )
         self.stdout.write(self.style.SUCCESS(f'Polegadas: {len(POLEGADAS_OFICIAIS)} registros garantidos.'))
 
-        for codigo, desc in [
-            ('40', 'SCH 40'),
-            ('80', 'SCH 80'),
-            ('160', 'SCH 160'),
-            ('10S', '10S'),
-            ('SCH40', 'Schedule 40'),
-            ('SCH80', 'Schedule 80'),
-            ('SCH160', 'Schedule 160'),
+        for codigo, desc, aplicacao, ordem in [
+            ('40', 'SCH 40', ScheduleEspessura.Aplicacao.CARBONO, 50),
+            ('80', 'SCH 80', ScheduleEspessura.Aplicacao.CARBONO, 70),
+            ('160', 'SCH 160', ScheduleEspessura.Aplicacao.CARBONO, 110),
+            ('10S', 'SCH 10S', ScheduleEspessura.Aplicacao.INOX, 160),
+            ('SCH40', 'Schedule 40', ScheduleEspessura.Aplicacao.OUTRO, 900),
+            ('SCH80', 'Schedule 80', ScheduleEspessura.Aplicacao.OUTRO, 910),
+            ('SCH160', 'Schedule 160', ScheduleEspessura.Aplicacao.OUTRO, 920),
         ]:
             ScheduleEspessura.objects.update_or_create(
                 codigo_schedule=codigo,
-                defaults={'descricao': desc, 'ativo': True},
+                defaults={'codigo': codigo, 'descricao': desc, 'aplicacao': aplicacao, 'ordem': ordem, 'ativo': True},
             )
         self.stdout.write(self.style.SUCCESS('Schedules: OK.'))
 
-        roscas = [
-            ('', 'BSP / padrão da família', ''),
-            ('N', 'NPT', ''),
-            ('S', 'SW', ''),
-            ('OD', 'OD / dupla anilha', ''),
-            ('ODN', 'OD + NPT', ''),
-            ('U', 'UNF', ''),
-            ('JN', 'JIC x NPT', ''),
-            ('FN', 'Fêmea NPT', ''),
-            ('FMN', 'Fêmea-macho NPT', ''),
-            ('MFU', 'Macho-fêmea UNF x BSP', ''),
-            ('FF', 'Fêmea-fêmea', ''),
-            ('MMN', 'Macho-macho NPT', ''),
-        ]
-        for codigo, desc, obs in roscas:
-            RoscaConexao.objects.update_or_create(
-                codigo=codigo,
-                defaults={'descricao': desc, 'observacao': obs, 'ativo': True},
-            )
+        seed_roscas_conexao_canonicas()
         self.stdout.write(self.style.SUCCESS('Roscas / conexões: OK.'))
 
         t = FamiliaProduto.TipoRegraCodigo
@@ -107,7 +95,7 @@ class Command(BaseCommand):
                 descricao_base='VALVULA ESFERA TRIPARTIDA TOTAL INOX 304 TP BSP',
                 tipo_regra_codigo=t.BASE_POLEGADA,
                 separador_base_medidas='.',
-                ncm_padrao='8481.80.95',
+                ncm_padrao_codigo='8481.80.95',
                 unidade_padrao='PC',
             ),
             dict(
@@ -115,7 +103,7 @@ class Command(BaseCommand):
                 descricao_base='VALVULA ESFERA TRIPARTIDA WCB PP TP',
                 tipo_regra_codigo=t.BASE_ROSCA_POLEGADA,
                 separador_base_medidas='.',
-                ncm_padrao='8481.80.95',
+                ncm_padrao_codigo='8481.80.95',
                 unidade_padrao='PC',
             ),
             dict(
@@ -149,11 +137,27 @@ class Command(BaseCommand):
         ]
         rosca_bsp = RoscaConexao.objects.filter(codigo='').first()
         schedule_40 = ScheduleEspessura.objects.filter(codigo_schedule='40').first()
-        polegadas_map = {p.codigo: p for p in Polegada.objects.all()}
+        polegadas_map = {
+            p.codigo: p
+            for p in Polegada.objects.filter(tipo_medida=Polegada.TipoMedida.NPS)
+        }
         for row in familias:
+            payload = {k: v for k, v in row.items() if k not in ('codigo_figura', 'ncm_padrao_codigo')}
+            ncm_codigo = row.get('ncm_padrao_codigo')
+            if ncm_codigo:
+                ncm = Ncm.objects.filter(codigo=ncm_codigo).first()
+                if ncm:
+                    payload['ncm_padrao'] = ncm
+                else:
+                    self.stdout.write(
+                        self.style.WARNING(
+                            f'Família {row["codigo_figura"]}: NCM {ncm_codigo} não encontrado; '
+                            'ncm_padrao não será definido.',
+                        ),
+                    )
             obj, _ = FamiliaProduto.objects.update_or_create(
                 codigo_figura=row['codigo_figura'],
-                defaults={**{k: v for k, v in row.items() if k != 'codigo_figura'}, 'ativo': True},
+                defaults={**payload, 'ativo': True},
             )
             obj.save()
             # relações iniciais mínimas para viabilizar cadastro guiado.

@@ -1,11 +1,26 @@
 import { isAxiosError } from 'axios';
 import api from './config';
 import type { RegraFiscal } from '@/types';
+import {
+  buildListParams,
+  type ListQueryParams,
+  type PaginatedResponse,
+  unwrapListResults,
+} from '@/lib/apiList';
 
 const path = 'regras-fiscais/';
 
 export const regrasFiscaisService = {
-  getAll: async () => (await api.get<RegraFiscal[]>(path)).data,
+  listPaginated: async (params?: ListQueryParams) => {
+    const response = await api.get<PaginatedResponse<RegraFiscal>>(path, { params: buildListParams(params) });
+    return response.data;
+  },
+  getAll: async (params?: ListQueryParams) => {
+    const response = await api.get<RegraFiscal[] | PaginatedResponse<RegraFiscal>>(path, {
+      params: buildListParams(params?.page ? params : { ...params, limit: params?.limit ?? 500 }),
+    });
+    return unwrapListResults(response.data);
+  },
   getById: async (id: number) => (await api.get<RegraFiscal>(`${path}${id}/`)).data,
   create: async (data: Omit<RegraFiscal, 'id'>) => (await api.post<RegraFiscal>(path, data)).data,
   update: async (id: number, data: Partial<RegraFiscal>) =>
@@ -13,7 +28,6 @@ export const regrasFiscaisService = {
   delete: async (id: number) => {
     await api.delete(`${path}${id}/`);
   },
-  /** Retorna a regra fiscal ou `null` se não houver match (404). */
   buscar: async (params: { ncm: string; uf_origem: string; uf_destino: string; operacao: string }) => {
     try {
       return (await api.get<RegraFiscal>(`${path}buscar/`, { params })).data;
@@ -22,4 +36,15 @@ export const regrasFiscaisService = {
       throw e;
     }
   },
+  checklistProducao: async () =>
+    (await api.get<{
+      checklist_fiscal?: { item: string; ok: boolean; nota?: string }[];
+      checklist_saida?: { item: string; ok: boolean; nota?: string }[];
+      checklist_entrada?: { item: string; ok: boolean; nota?: string }[];
+      metricas?: Record<string, number | string | boolean>;
+      criticos?: { mensagem: string }[];
+      avisos?: { mensagem: string }[];
+      avisos_entrada?: { mensagem: string }[];
+      bloqueios_por_fluxo?: { nfe_entrada?: string[] };
+    }>(`${path}checklist-producao/`)).data,
 };

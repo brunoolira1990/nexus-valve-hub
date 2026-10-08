@@ -1,0 +1,842 @@
+"""Selector read-only — DF-e recebidos contra o CNPJ da empresa (caixa de entrada fiscal)."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date, datetime, time, timedelta, timezone as dt_timezone
+from decimal import Decimal
+from typing import Any
+
+from django.db.models import Q
+from django.utils import timezone
+
+from apps.cadastros.models import Empresa
+from apps.fiscal.dfe_classificacao import (
+    eh_documento_homologacao,
+    q_excluir_homologacao_cte,
+    q_excluir_homologacao_historica_entrada,
+)
+from apps.fiscal.inbox_fiscal.estado_consolidado import (
+    EstadoConsolidadoInbox,
+    derivar_estado_cte,
+    derivar_estado_nfe_fornecedor_historica,
+    derivar_estado_nfe_fornecedor_resumo,
+)
+from apps.fiscal.nfe_integracao.nfe_chave_acesso import extrair_serie_numero_da_chave_dfe
+from apps.fiscal.models import (
+    CTeHistoricoImportado,
+    NFeDestinadaManifestacao,
+    NFeEntrada,
+    NFeEntradaHistoricaImportada,
+)
+
+TIPO_NFE_ENTRADA = 'NFE_ENTRADA'
+TIPO_CTE = 'CTE'
+
+ROTAS_DETALHE = {
+    TIPO_NFE_ENTRADA: '/nfe-entrada-historica-importada',
+    TIPO_CTE: '/cte-historico-importado',
+}
+
+TIPO_LABELS = {
+    TIPO_NFE_ENTRADA: 'NF-e Fornecedor',
+    TIPO_CTE: 'CT-e Transportadora',
+}
+
+STATUS_ENTRADA_LABELS = {
+    'PENDENTE_ENTRADA': 'Pendente de entrada',
+    'IMPORTADO_BASE': 'Importado — base DF-e',
+    'CONFERIDO': 'Conferido',
+    'PREPARADO': 'Preparado',
+    'DIVERGENTE': 'Divergente',
+    'IGNORADO': 'Ignorado',
+    'JA_LANCADO': 'Já lançado no ERP',
+}
+
+LABEL_BASE_NFE_ENTRADA_IMPORTADA = 'Base NF-e Entrada Importada'
+
+# Visão principal: fila de entrada — sem lançamento operacional nem tratamento concluído.
+VISAO_PADRAO_STATUSES = frozenset({'PENDENTE_ENTRADA', 'IMPORTADO_BASE'})
+
+# Exibidos somente com incluir_tratados=true (status explícito na listagem).
+TRATADOS = frozenset({'JA_LANCADO', 'CONFERIDO', 'IGNORADO', 'PREPARADO', 'DIVERGENTE'})
+
+
+@dataclass
+class FiltrosCentralDfe:
+    empresa_id: int | None = None
+    tipo_documento: str = ''
+    status_entrada: str = ''
+    estado_consolidado: str = ''
+    incluir_tratados: bool = False
+    data_emissao_inicio: date | None = None
+    data_emissao_fim: date | None = None
+    data_importacao_inicio: date | None = None
+    data_importacao_fim: date | None = None
+    emitente_cnpj: str = ''
+    emitente_nome: str = ''
+    chave_acesso: str = ''
+    uf: str = ''
+    valor_min: Decimal | None = None
+    valor_max: Decimal | None = None
+    search: str = ''
+    ordering: str = '-data_emissao'
+
+
+@dataclass
+class DocumentoCentralDfe:
+    id: int
+    tipo_documento: str
+    chave_resumida: str
+    chave_acesso: str
+    numero: str
+    serie: str
+    data_emissao: datetime | date | None
+    data_importacao: datetime | None
+    emitente_nome: str
+    emitente_cnpj: str
+    uf: str
+    valor_total: Decimal
+    status_entrada: str
+    status_entrada_label: str
+    tipo_label: str
+    detalhe_rota: str
+    empresa_id: int | None = None
+    data_entrada: date | None = None
+    xml_status: str = 'ARMAZENADO'
+    xml_status_label: str = 'XML armazenado'
+    xml_armazenado: bool = True
+    manifestacao_aplicavel: bool = True
+    estado_consolidado: str = ''
+    estado_consolidado_label: str = ''
+    estado_consolidado_motivo: str = ''
+    estado_consolidado_detalhes: dict[str, Any] | None = None
+    nf_entrada_historica_id: int | None = None
+    manifestacao_id: int | None = None
+    numero_via_chave: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = {
+            'id': self.id,
+            'tipo_documento': self.tipo_documento,
+            'chave_resumida': self.chave_resumida,
+            'chave_acesso': self.chave_acesso,
+            'numero': self.numero,
+            'serie': self.serie,
+            'data_emissao': self._iso(self.data_emissao),
+            'data_importacao': self._iso(self.data_importacao),
+            'data_entrada': self._iso(self.data_entrada),
+            'emitente_nome': self.emitente_nome,
+            'emitente_cnpj': self.emitente_cnpj,
+            'uf': self.uf,
+            'valor_total': str(self.valor_total),
+            'status_entrada': self.status_entrada,
+            'status_entrada_label': self.status_entrada_label,
+            'tipo_label': self.tipo_label,
+            'detalhe_rota': self.detalhe_rota,
+            'empresa_id': self.empresa_id,
+            'xml_status': self.xml_status,
+            'xml_status_label': self.xml_status_label,
+            'xml_armazenado': self.xml_armazenado,
+            'manifestacao_aplicavel': self.manifestacao_aplicavel,
+            'estado_consolidado': self.estado_consolidado,
+            'estado_consolidado_label': self.estado_consolidado_label,
+            'nf_entrada_historica_id': self.nf_entrada_historica_id,
+            'manifestacao_id': self.manifestacao_id,
+            'numero_via_chave': self.numero_via_chave,
+        }
+        if self.estado_consolidado_motivo:
+            payload['estado_consolidado_motivo'] = self.estado_consolidado_motivo
+        if self.estado_consolidado_detalhes:
+            payload['estado_consolidado_detalhes'] = self.estado_consolidado_detalhes
+        return payload
+
+    @staticmethod
+    def _iso(value: datetime | date | None) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return value.isoformat()
+
+
+def normalizar_cnpj(valor: str | None) -> str:
+    return ''.join(c for c in str(valor or '') if c.isdigit())
+
+
+def _scalar_query_param(val: Any, default: str = '') -> str:
+    """Normaliza valor de QueryDict (dict() retorna listas por chave)."""
+    if val is None:
+        return default
+    if isinstance(val, list):
+        return str(val[0]).strip() if val else default
+    return str(val).strip()
+
+
+def normalizar_params_central_dfe(params: dict[str, Any]) -> dict[str, str]:
+    return {str(k): _scalar_query_param(v) for k, v in (params or {}).items()}
+
+
+class EmpresaCentralDfeError(Exception):
+    def __init__(self, mensagem: str, codigo: str = 'EMPRESA_INVALIDA') -> None:
+        super().__init__(mensagem)
+        self.mensagem = mensagem
+        self.codigo = codigo
+
+
+def resolver_empresa_central(params: dict[str, Any]) -> Empresa | None:
+    raw = _scalar_query_param(params.get('empresa_id'))
+    if raw:
+        try:
+            return Empresa.objects.get(pk=int(raw))
+        except Empresa.DoesNotExist as exc:
+            raise EmpresaCentralDfeError('Empresa não encontrada.') from exc
+        except (TypeError, ValueError) as exc:
+            raise EmpresaCentralDfeError('empresa_id inválido.') from exc
+    return Empresa.objects.order_by('pk').first()
+
+
+def parse_filtros_central_dfe(params: dict[str, Any]) -> FiltrosCentralDfe:
+    p = normalizar_params_central_dfe(params)
+
+    def _date(raw: str | None) -> date | None:
+        if not raw:
+            return None
+        try:
+            return date.fromisoformat(str(raw)[:10])
+        except ValueError:
+            return None
+
+    def _competencia(raw: str | None) -> tuple[date | None, date | None]:
+        """Aceita mm/aaaa, mmaaaa, aaaa-mm."""
+        if not raw:
+            return None, None
+        texto = str(raw).strip().replace('/', '').replace('-', '')
+        if len(texto) == 6 and texto.isdigit():
+            mes = int(texto[:2])
+            ano = int(texto[2:])
+            if 1 <= mes <= 12:
+                inicio = date(ano, mes, 1)
+                if mes == 12:
+                    fim = date(ano, 12, 31)
+                else:
+                    fim = date(ano, mes + 1, 1) - timedelta(days=1)
+                return inicio, fim
+        if len(texto) == 7 and texto[:4].isdigit() and texto[4:].isdigit():
+            ano = int(texto[:4])
+            mes = int(texto[4:])
+            if 1 <= mes <= 12:
+                inicio = date(ano, mes, 1)
+                if mes == 12:
+                    fim = date(ano, 12, 31)
+                else:
+                    fim = date(ano, mes + 1, 1) - timedelta(days=1)
+                return inicio, fim
+        return None, None
+
+    def _decimal(raw: str | None) -> Decimal | None:
+        if raw in (None, ''):
+            return None
+        try:
+            return Decimal(str(raw).replace(',', '.'))
+        except Exception:
+            return None
+
+    empresa_id = None
+    if p.get('empresa_id'):
+        try:
+            empresa_id = int(p.get('empresa_id'))
+        except (TypeError, ValueError):
+            empresa_id = None
+
+    incluir_tratados = p.get('incluir_tratados', '').lower() in {'1', 'true', 'sim'}
+    ordering = p.get('ordering') or '-data_emissao'
+
+    emissao_inicio = _date(p.get('data_emissao_inicio'))
+    emissao_fim = _date(p.get('data_emissao_fim'))
+    if not emissao_inicio and not emissao_fim:
+        comp_inicio, comp_fim = _competencia(p.get('competencia_emissao') or p.get('competencia'))
+        emissao_inicio = comp_inicio or emissao_inicio
+        emissao_fim = comp_fim or emissao_fim
+
+    return FiltrosCentralDfe(
+        empresa_id=empresa_id,
+        tipo_documento=(p.get('tipo_documento') or '').upper(),
+        status_entrada=(p.get('status_entrada') or '').upper(),
+        estado_consolidado=(p.get('estado_consolidado') or '').upper(),
+        incluir_tratados=incluir_tratados,
+        data_emissao_inicio=emissao_inicio,
+        data_emissao_fim=emissao_fim,
+        data_importacao_inicio=_date(p.get('data_importacao_inicio')),
+        data_importacao_fim=_date(p.get('data_importacao_fim')),
+        emitente_cnpj=normalizar_cnpj(p.get('emitente_cnpj') or p.get('participante_cnpj')),
+        emitente_nome=(p.get('emitente_nome') or p.get('participante_nome') or '').strip(),
+        chave_acesso=''.join(c for c in p.get('chave_acesso', '') if c.isdigit()),
+        uf=(p.get('uf') or '').upper()[:2],
+        valor_min=_decimal(p.get('valor_min')),
+        valor_max=_decimal(p.get('valor_max')),
+        search=(p.get('search') or '').strip(),
+        ordering=ordering,
+    )
+
+
+def chave_resumida(chave: str | None) -> str:
+    c = (chave or '').strip()
+    if not c:
+        return ''
+    if len(c) <= 12:
+        return c
+    return f'{c[:4]}…{c[-4:]}'
+
+
+def _resolver_numero_serie(
+    chave: str,
+    numero: str | None,
+    serie: str | None,
+) -> tuple[str, str, bool]:
+    """Preenche número/série a partir da chave quando o XML ainda não foi importado."""
+    num = (numero or '').strip()
+    ser = (serie or '').strip()
+    if num and num != '—':
+        return num, ser, False
+    ext = extrair_serie_numero_da_chave_dfe(chave)
+    if ext:
+        return ext.numero, ext.serie, True
+    return '—', '', False
+
+
+def _json_participante(payload: dict | None) -> tuple[str, str]:
+    data = payload or {}
+    nome = (data.get('xNome') or data.get('xFant') or '').strip()
+    doc = normalizar_cnpj(str(data.get('CNPJ') or data.get('CPF') or ''))
+    return nome, doc
+
+
+def _aplica_filtro_data_emissao(qs, campo: str, filtros: FiltrosCentralDfe):
+    tz = timezone.get_current_timezone()
+    if filtros.data_emissao_inicio:
+        inicio = timezone.make_aware(datetime.combine(filtros.data_emissao_inicio, time.min), tz)
+        qs = qs.filter(**{f'{campo}__gte': inicio})
+    if filtros.data_emissao_fim:
+        fim = timezone.make_aware(datetime.combine(filtros.data_emissao_fim, time.max), tz)
+        qs = qs.filter(**{f'{campo}__lte': fim})
+    return qs
+
+
+def _filtrar_queryset_fila_dfe_nfe(qs):
+    """Fila DF-e recebidos: produção, sem homologação; cStat 100 ou vazio (importação recente)."""
+    return qs.filter(q_excluir_homologacao_historica_entrada()).filter(
+        Q(cstat='100') | Q(cstat__iexact='100') | Q(cstat=''),
+    )
+
+
+def _filtrar_queryset_fila_dfe_cte(qs):
+    return qs.filter(q_excluir_homologacao_cte()).filter(cancelado=False).filter(
+        Q(cstat='100') | Q(cstat__iexact='100') | Q(cstat=''),
+    )
+
+
+def _aplica_filtro_data_importacao(qs, filtros: FiltrosCentralDfe):
+    if filtros.data_importacao_inicio:
+        qs = qs.filter(importado_em__date__gte=filtros.data_importacao_inicio)
+    if filtros.data_importacao_fim:
+        qs = qs.filter(importado_em__date__lte=filtros.data_importacao_fim)
+    return qs
+
+
+def _chaves_nfe_historica_importada(empresa_id: int) -> set[str]:
+    return {
+        c
+        for c in NFeEntradaHistoricaImportada.objects.filter(empresa_destinataria_id=empresa_id)
+        .exclude(chave_acesso='')
+        .values_list('chave_acesso', flat=True)
+        if c
+    }
+
+
+def _status_xml_manifestacao_label(status_xml: str) -> str:
+    st = (status_xml or '').upper()
+    labels = {
+        'RESUMO': 'Resumo DF-e',
+        'DISPONIVEL': 'XML disponível',
+        'BAIXADO': 'XML armazenado',
+        'PENDENTE': 'Pendente XML',
+        'ERRO': 'Erro XML',
+    }
+    return labels.get(st, st or 'Pendente XML')
+
+
+def _enriquecer_estado_consolidado(
+    row: DocumentoCentralDfe,
+    estado: EstadoConsolidadoInbox,
+) -> DocumentoCentralDfe:
+    meta = estado.to_dict()
+    row.estado_consolidado = meta['estado_consolidado']
+    row.estado_consolidado_label = meta['estado_consolidado_label']
+    row.estado_consolidado_motivo = meta.get('estado_consolidado_motivo', '')
+    row.estado_consolidado_detalhes = meta.get('estado_consolidado_detalhes')
+    return row
+
+
+def _coletar_nfe_resumo_destinada(
+    filtros: FiltrosCentralDfe,
+    empresa: Empresa,
+    chaves_lancadas: set[str],
+    chaves_historica: set[str],
+) -> list[DocumentoCentralDfe]:
+    """NF-e destinada com resumo/XML pendente ainda não importada na base histórica."""
+    if filtros.tipo_documento and filtros.tipo_documento not in {TIPO_NFE_ENTRADA}:
+        return []
+
+    qs = NFeDestinadaManifestacao.objects.filter(
+        empresa_id=empresa.pk,
+        ambiente=NFeDestinadaManifestacao.Ambiente.PRODUCAO,
+    )
+    qs = _aplica_filtro_data_emissao(qs, 'dh_emissao', filtros)
+    if filtros.chave_acesso:
+        qs = qs.filter(chave_acesso__icontains=filtros.chave_acesso)
+
+    rows: list[DocumentoCentralDfe] = []
+    for doc in qs.iterator(chunk_size=200):
+        chave = (doc.chave_acesso or '').strip()
+        if not chave or chave in chaves_historica:
+            continue
+        if not filtros.incluir_tratados and chave in chaves_lancadas:
+            continue
+
+        status_xml = (doc.status_xml or '').upper()
+        xml_armazenado = status_xml == NFeDestinadaManifestacao.StatusXml.BAIXADO
+        if xml_armazenado:
+            continue
+
+        status_entrada = 'IMPORTADO_BASE'
+        status_label = STATUS_ENTRADA_LABELS[status_entrada]
+        if not filtros.incluir_tratados and status_entrada not in VISAO_PADRAO_STATUSES:
+            continue
+
+        emit_cnpj = normalizar_cnpj(doc.cnpj_emitente)
+        numero, serie, numero_via_chave = _resolver_numero_serie(chave, '', '')
+        row = DocumentoCentralDfe(
+            id=doc.pk,
+            tipo_documento=TIPO_NFE_ENTRADA,
+            chave_resumida=chave_resumida(chave),
+            chave_acesso=chave,
+            numero=numero,
+            serie=serie,
+            data_emissao=doc.dh_emissao,
+            data_importacao=doc.consultado_em,
+            emitente_nome=doc.razao_social_emitente,
+            emitente_cnpj=emit_cnpj,
+            uf='',
+            valor_total=doc.valor_nf,
+            status_entrada=status_entrada,
+            status_entrada_label=status_label,
+            tipo_label=TIPO_LABELS[TIPO_NFE_ENTRADA],
+            detalhe_rota='',
+            empresa_id=empresa.pk,
+            xml_status=status_xml or 'PENDENTE',
+            xml_status_label=_status_xml_manifestacao_label(status_xml),
+            xml_armazenado=False,
+            manifestacao_aplicavel=True,
+            manifestacao_id=doc.pk,
+            numero_via_chave=numero_via_chave,
+        )
+        rows.append(_enriquecer_estado_consolidado(row, derivar_estado_nfe_fornecedor_resumo(doc)))
+    return rows
+
+
+def _chaves_nfe_entrada_lancadas() -> set[str]:
+    return {
+        c
+        for c in NFeEntrada.objects.exclude(chave_acesso='').values_list('chave_acesso', flat=True)
+        if c
+    }
+
+
+def _status_entrada_nfe(conf_status: str | None, chave: str, chaves_lancadas: set[str]) -> tuple[str, str]:
+    if chave and chave in chaves_lancadas:
+        return 'JA_LANCADO', STATUS_ENTRADA_LABELS['JA_LANCADO']
+    conf = (conf_status or '').upper()
+    if conf == 'CANCELADA':
+        return 'IGNORADO', STATUS_ENTRADA_LABELS['IGNORADO']
+    if conf == 'PREPARADA':
+        return 'PREPARADO', STATUS_ENTRADA_LABELS['PREPARADO']
+    if conf == 'CONFERIDA':
+        return 'CONFERIDO', STATUS_ENTRADA_LABELS['CONFERIDO']
+    if conf == 'PENDENTE' or not conf:
+        return 'PENDENTE_ENTRADA', STATUS_ENTRADA_LABELS['PENDENTE_ENTRADA']
+    return 'IMPORTADO_BASE', STATUS_ENTRADA_LABELS['IMPORTADO_BASE']
+
+
+def _xml_conteudo_armazenado(doc: NFeEntradaHistoricaImportada) -> bool:
+    return bool((getattr(doc, 'xml_conteudo', None) or '').strip())
+
+
+def _xml_status_nfe_historica(doc: NFeEntradaHistoricaImportada) -> tuple[str, str, bool]:
+    if _xml_conteudo_armazenado(doc):
+        return 'ARMAZENADO', 'XML armazenado', True
+    return 'PENDENTE', 'Pendente XML', False
+
+
+def _status_entrada_label_nfe_historica(status_entrada: str, *, xml_armazenado: bool) -> str:
+    if xml_armazenado:
+        return LABEL_BASE_NFE_ENTRADA_IMPORTADA
+    return STATUS_ENTRADA_LABELS.get(status_entrada, status_entrada)
+
+
+def documento_central_nfe_historica(
+    doc: NFeEntradaHistoricaImportada,
+    empresa: Empresa,
+    chaves_lancadas: set[str] | None = None,
+    manifestacao: NFeDestinadaManifestacao | None = None,
+) -> DocumentoCentralDfe | None:
+    """Monta linha da Central DF-e para NF-e na Base NF-e Entrada Importada."""
+    if eh_documento_homologacao(doc):
+        return None
+    chave = (doc.chave_acesso or '').strip()
+    lancadas = chaves_lancadas if chaves_lancadas is not None else _chaves_nfe_entrada_lancadas()
+    conf = getattr(doc, 'conferencia', None)
+    conf_status = conf.status if conf else ''
+    data_entrada = conf.data_entrada if conf else None
+    status_entrada, _ = _status_entrada_nfe(conf_status, chave, lancadas)
+    xml_status, xml_status_label, xml_armazenado = _xml_status_nfe_historica(doc)
+    status_label = _status_entrada_label_nfe_historica(status_entrada, xml_armazenado=xml_armazenado)
+    emit_nome = (
+        doc.fornecedor_emitente.razao_social if doc.fornecedor_emitente_id else _json_participante(doc.emit_json)[0]
+    )
+    emit_cnpj = (
+        doc.fornecedor_emitente.cnpj if doc.fornecedor_emitente_id else _json_participante(doc.emit_json)[1]
+    )
+    uf = (doc.dest_json or {}).get('UF') or (doc.emit_json or {}).get('UF') or ''
+    if manifestacao is None and chave:
+        manifestacao = (
+            NFeDestinadaManifestacao.objects.filter(empresa_id=empresa.pk, chave_acesso=chave).first()
+        )
+    numero, serie, numero_via_chave = _resolver_numero_serie(chave, doc.numero, doc.serie)
+    row = DocumentoCentralDfe(
+        id=doc.id,
+        tipo_documento=TIPO_NFE_ENTRADA,
+        chave_resumida=chave_resumida(chave),
+        chave_acesso=chave,
+        numero=numero,
+        serie=serie,
+        data_emissao=doc.dh_emissao,
+        data_importacao=doc.importado_em,
+        data_entrada=data_entrada,
+        emitente_nome=emit_nome,
+        emitente_cnpj=normalizar_cnpj(emit_cnpj),
+        uf=str(uf or '')[:2].upper(),
+        valor_total=doc.valor_total_nf,
+        status_entrada=status_entrada,
+        status_entrada_label=status_label,
+        tipo_label=TIPO_LABELS[TIPO_NFE_ENTRADA],
+        detalhe_rota=ROTAS_DETALHE[TIPO_NFE_ENTRADA] if xml_armazenado else '',
+        empresa_id=empresa.pk,
+        xml_status=xml_status,
+        xml_status_label=xml_status_label,
+        xml_armazenado=xml_armazenado,
+        manifestacao_aplicavel=True,
+        nf_entrada_historica_id=doc.id,
+        manifestacao_id=manifestacao.pk if manifestacao else None,
+        numero_via_chave=numero_via_chave,
+    )
+    estado = derivar_estado_nfe_fornecedor_historica(
+        doc,
+        conferencia=conf,
+        ja_lancado_operacional=bool(chave and chave in lancadas),
+        manifestacao=manifestacao,
+    )
+    return _enriquecer_estado_consolidado(row, estado)
+
+
+def _status_entrada_cte(status_conf: str | None) -> tuple[str, str]:
+    conf = (status_conf or 'IMPORTADO').upper()
+    if conf in {'IGNORADO', 'CANCELADO'}:
+        return 'IGNORADO', STATUS_ENTRADA_LABELS['IGNORADO']
+    if conf == 'DIVERGENTE':
+        return 'DIVERGENTE', STATUS_ENTRADA_LABELS['DIVERGENTE']
+    if conf == 'CONFERIDO':
+        return 'CONFERIDO', STATUS_ENTRADA_LABELS['CONFERIDO']
+    if conf == 'PREPARADO':
+        return 'PREPARADO', STATUS_ENTRADA_LABELS['PREPARADO']
+    if conf in {'IMPORTADO', 'PROCESSADO', ''}:
+        return 'PENDENTE_ENTRADA', STATUS_ENTRADA_LABELS['PENDENTE_ENTRADA']
+    return 'IMPORTADO_BASE', STATUS_ENTRADA_LABELS['IMPORTADO_BASE']
+
+
+def _coletar_nfe_entrada_recebida(
+    filtros: FiltrosCentralDfe,
+    empresa: Empresa,
+    chaves_lancadas: set[str],
+) -> list[DocumentoCentralDfe]:
+    if filtros.tipo_documento and filtros.tipo_documento not in {TIPO_NFE_ENTRADA}:
+        return []
+
+    qs = NFeEntradaHistoricaImportada.objects.select_related(
+        'fornecedor_emitente',
+        'empresa_destinataria',
+    ).select_related('conferencia')
+    qs = qs.filter(empresa_destinataria_id=empresa.pk)
+    qs = _filtrar_queryset_fila_dfe_nfe(qs)
+    qs = _aplica_filtro_data_emissao(qs, 'dh_emissao', filtros)
+    qs = _aplica_filtro_data_importacao(qs, filtros)
+    if filtros.chave_acesso:
+        qs = qs.filter(chave_acesso__icontains=filtros.chave_acesso)
+
+    empresa_cnpj = normalizar_cnpj(empresa.cnpj)
+    rows: list[DocumentoCentralDfe] = []
+    for doc in qs.iterator(chunk_size=200):
+        if empresa_cnpj:
+            emit_cnpj = (
+                doc.fornecedor_emitente.cnpj if doc.fornecedor_emitente_id else _json_participante(doc.emit_json)[1]
+            )
+            if normalizar_cnpj(emit_cnpj) == empresa_cnpj:
+                continue
+        chave = (doc.chave_acesso or '').strip()
+        if not filtros.incluir_tratados and chave and chave in chaves_lancadas:
+            continue
+        conf = getattr(doc, 'conferencia', None)
+        conf_status = conf.status if conf else ''
+        status_entrada, _ = _status_entrada_nfe(conf_status, chave, chaves_lancadas)
+        if not filtros.incluir_tratados and status_entrada not in VISAO_PADRAO_STATUSES:
+            continue
+        row = documento_central_nfe_historica(doc, empresa, chaves_lancadas)
+        if row is not None:
+            rows.append(row)
+    return rows
+
+
+def _coletar_cte_recebido(filtros: FiltrosCentralDfe, empresa: Empresa) -> list[DocumentoCentralDfe]:
+    if filtros.tipo_documento and filtros.tipo_documento not in {TIPO_CTE}:
+        return []
+
+    qs = CTeHistoricoImportado.objects.select_related(
+        'transportadora',
+        'empresa_tomadora',
+        'empresa_destinataria',
+        'empresa_recebedora',
+    )
+    qs = qs.filter(empresa_tomadora_id=empresa.pk)
+    qs = _filtrar_queryset_fila_dfe_cte(qs)
+    qs = _aplica_filtro_data_emissao(qs, 'dh_emissao', filtros)
+    qs = _aplica_filtro_data_importacao(qs, filtros)
+    if filtros.chave_acesso:
+        qs = qs.filter(chave_acesso__icontains=filtros.chave_acesso)
+    if filtros.uf:
+        qs = qs.filter(Q(uf_inicio__iexact=filtros.uf) | Q(uf_fim__iexact=filtros.uf))
+
+    empresa_cnpj = normalizar_cnpj(empresa.cnpj)
+    rows: list[DocumentoCentralDfe] = []
+    for doc in qs.iterator(chunk_size=200):
+        if eh_documento_homologacao(doc):
+            continue
+        status_entrada, status_label = _status_entrada_cte(doc.status_conferencia)
+        if not filtros.incluir_tratados and status_entrada not in VISAO_PADRAO_STATUSES:
+            continue
+        emit_nome = (
+            doc.transportadora.razao_social if doc.transportadora_id else _json_participante(doc.emit_json)[0]
+        )
+        emit_cnpj = doc.transportadora.cnpj if doc.transportadora_id else _json_participante(doc.emit_json)[1]
+        emit_cnpj_norm = normalizar_cnpj(emit_cnpj)
+        if empresa_cnpj and emit_cnpj_norm == empresa_cnpj:
+            continue
+        numero, serie, numero_via_chave = _resolver_numero_serie(doc.chave_acesso, doc.numero, doc.serie)
+        row = DocumentoCentralDfe(
+            id=doc.id,
+            tipo_documento=TIPO_CTE,
+            chave_resumida=chave_resumida(doc.chave_acesso),
+            chave_acesso=doc.chave_acesso,
+            numero=numero,
+            serie=serie,
+            data_emissao=doc.dh_emissao,
+            data_importacao=doc.importado_em,
+            emitente_nome=emit_nome,
+            emitente_cnpj=normalizar_cnpj(emit_cnpj),
+            uf=(doc.uf_fim or doc.uf_inicio or '')[:2].upper(),
+            valor_total=doc.valor_total_servico,
+            status_entrada=status_entrada,
+            status_entrada_label=status_label,
+            tipo_label=TIPO_LABELS[TIPO_CTE],
+            detalhe_rota=ROTAS_DETALHE[TIPO_CTE],
+            empresa_id=empresa.pk,
+            xml_status='ARMAZENADO',
+            xml_status_label='XML armazenado',
+            xml_armazenado=True,
+            manifestacao_aplicavel=False,
+            numero_via_chave=numero_via_chave,
+        )
+        rows.append(_enriquecer_estado_consolidado(row, derivar_estado_cte(doc)))
+    return rows
+
+
+def _match_filtros_pos_query(row: DocumentoCentralDfe, filtros: FiltrosCentralDfe) -> bool:
+    if not filtros.incluir_tratados and row.status_entrada not in VISAO_PADRAO_STATUSES:
+        return False
+    if filtros.status_entrada and row.status_entrada != filtros.status_entrada:
+        return False
+    if filtros.estado_consolidado and row.estado_consolidado != filtros.estado_consolidado:
+        return False
+    if filtros.uf and row.uf.upper() != filtros.uf:
+        return False
+    if filtros.valor_min is not None and row.valor_total < filtros.valor_min:
+        return False
+    if filtros.valor_max is not None and row.valor_total > filtros.valor_max:
+        return False
+    if filtros.emitente_cnpj and filtros.emitente_cnpj not in row.emitente_cnpj:
+        return False
+    if filtros.emitente_nome:
+        termo = filtros.emitente_nome.lower()
+        if termo not in (row.emitente_nome or '').lower():
+            return False
+    if filtros.search:
+        termo = filtros.search.lower()
+        blob = ' '.join(
+            [
+                row.numero or '',
+                row.chave_acesso or '',
+                row.emitente_nome or '',
+                row.tipo_label or '',
+                row.status_entrada_label or '',
+                row.estado_consolidado_label or '',
+            ],
+        ).lower()
+        if termo not in blob:
+            return False
+    return True
+
+
+def ordenar_documentos_central(rows: list[DocumentoCentralDfe], ordering: str) -> list[DocumentoCentralDfe]:
+    reverse = ordering.startswith('-')
+    campo = ordering.lstrip('-')
+
+    def _aware_min(value: datetime | date | None) -> datetime:
+        if value is None:
+            return datetime.min.replace(tzinfo=dt_timezone.utc)
+        if isinstance(value, date) and not isinstance(value, datetime):
+            return datetime.combine(value, time.min, tzinfo=dt_timezone.utc)
+        if isinstance(value, datetime) and value.tzinfo is None:
+            return value.replace(tzinfo=dt_timezone.utc)
+        return value
+
+    if campo == 'data_importacao':
+        key_fn = lambda r: _aware_min(r.data_importacao)
+    elif campo == 'valor_total':
+        key_fn = lambda r: r.valor_total
+    elif campo == 'tipo_documento':
+        key_fn = lambda r: r.tipo_documento
+    else:
+        key_fn = lambda r: (_aware_min(r.data_emissao), _aware_min(r.data_importacao))
+
+    return sorted(rows, key=key_fn, reverse=reverse)
+
+
+def calcular_resumo_central(rows: list[DocumentoCentralDfe]) -> dict[str, int]:
+    resumo = {
+        'total': len(rows),
+        'pendentes_entrada': 0,
+        'nfe_fornecedores': 0,
+        'cte_transportadoras': 0,
+        'divergentes': 0,
+        'ignorados': 0,
+        'ja_tratados': 0,
+    }
+    for row in rows:
+        if row.tipo_documento == TIPO_NFE_ENTRADA:
+            resumo['nfe_fornecedores'] += 1
+        elif row.tipo_documento == TIPO_CTE:
+            resumo['cte_transportadoras'] += 1
+        if row.status_entrada == 'PENDENTE_ENTRADA':
+            resumo['pendentes_entrada'] += 1
+        if row.status_entrada == 'DIVERGENTE':
+            resumo['divergentes'] += 1
+        if row.status_entrada == 'IGNORADO':
+            resumo['ignorados'] += 1
+        if row.status_entrada in TRATADOS:
+            resumo['ja_tratados'] += 1
+    return resumo
+
+
+def resumo_central_dfe_dashboard(empresa_id: int | None = None) -> dict[str, int | None]:
+    """Resumo leve da Central DF-e para alertas do dashboard fiscal."""
+    empresa: Empresa | None = None
+    if empresa_id:
+        empresa = Empresa.objects.filter(pk=empresa_id).first()
+    if empresa is None:
+        empresa = Empresa.objects.order_by('pk').first()
+    if empresa is None:
+        return {
+            'total': 0,
+            'pendentes_entrada': 0,
+            'nfe_fornecedores': 0,
+            'cte_transportadoras': 0,
+            'divergentes': 0,
+            'ignorados': 0,
+            'ja_tratados': 0,
+            'aguardando_manifestacao': 0,
+            'xml_pendente': 0,
+            'cte_pendentes': 0,
+            'empresa_id': None,
+        }
+
+    filtros = FiltrosCentralDfe(empresa_id=empresa.pk)
+    rows = coletar_documentos_central_dfe(filtros, empresa=empresa)
+    resumo = calcular_resumo_central(rows)
+    aguardando_manifestacao = NFeDestinadaManifestacao.objects.filter(
+        empresa_id=empresa.pk,
+        ambiente=NFeDestinadaManifestacao.Ambiente.PRODUCAO,
+        status_manifestacao=NFeDestinadaManifestacao.StatusManifestacao.PENDENTE,
+    ).count()
+    xml_pendente = sum(1 for row in rows if not row.xml_armazenado)
+    cte_pendentes = sum(
+        1
+        for row in rows
+        if row.tipo_documento == TIPO_CTE and row.status_entrada == 'PENDENTE_ENTRADA'
+    )
+    return {
+        **resumo,
+        'aguardando_manifestacao': aguardando_manifestacao,
+        'xml_pendente': xml_pendente,
+        'cte_pendentes': cte_pendentes,
+        'empresa_id': empresa.pk,
+    }
+
+
+def coletar_documentos_central_dfe(
+    filtros: FiltrosCentralDfe,
+    *,
+    empresa: Empresa | None = None,
+) -> list[DocumentoCentralDfe]:
+    if empresa is None:
+        return []
+    chaves_lancadas = _chaves_nfe_entrada_lancadas()
+    chaves_historica: set[str] = set()
+    if empresa is not None:
+        chaves_historica = _chaves_nfe_historica_importada(empresa.pk)
+    rows: list[DocumentoCentralDfe] = []
+    rows.extend(_coletar_nfe_entrada_recebida(filtros, empresa, chaves_lancadas))
+    rows.extend(_coletar_nfe_resumo_destinada(filtros, empresa, chaves_lancadas, chaves_historica))
+    rows.extend(_coletar_cte_recebido(filtros, empresa))
+    por_chave: dict[str, DocumentoCentralDfe] = {}
+    sem_chave: list[DocumentoCentralDfe] = []
+    for row in rows:
+        chave = (row.chave_acesso or '').strip()
+        if not chave:
+            sem_chave.append(row)
+            continue
+        atual = por_chave.get(chave)
+        if atual is None:
+            por_chave[chave] = row
+            continue
+        if row.xml_armazenado and not atual.xml_armazenado:
+            por_chave[chave] = row
+    dedup = list(por_chave.values()) + sem_chave
+    rows = [r for r in dedup if _match_filtros_pos_query(r, filtros)]
+    return ordenar_documentos_central(rows, filtros.ordering)
+
+
+def listar_documentos_central_dfe(
+    filtros: FiltrosCentralDfe,
+    *,
+    empresa: Empresa | None = None,
+) -> list[dict[str, Any]]:
+    return [r.to_dict() for r in coletar_documentos_central_dfe(filtros, empresa=empresa)]
