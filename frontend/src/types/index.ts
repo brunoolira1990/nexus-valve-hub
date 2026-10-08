@@ -743,7 +743,11 @@ export interface Corrida {
   impacto: Impacto;
 }
 
-export type CertificadoQualidadeStatus = 'rascunho' | 'emitido' | 'cancelado';
+export type CertificadoQualidadeStatus =
+  | 'rascunho'
+  | 'emitido'
+  | 'cancelado'
+  | 'substituido';
 export type CertificadoQualidadeTipo = 'PADRAO_POR_NFE' | 'VALVULA_COMPONENTES';
 export type RastreabilidadeCqStatus = 'COMPLETA' | 'PARCIAL' | 'PENDENTE';
 

@@ -172,6 +172,8 @@ export const certificadosQualidadeService = {
       },
     })).data,
   obterPdfBlob: async (id: number, preview = false) => getPdfBlob(id, preview),
+  reemitir: async (id: number) =>
+    (await api.post<CertificadoQualidade>(`${base}${id}/reemitir/`)).data,
   buildPdfFilename,
   visualizarPdf: async (id: number, preview = false, input?: PdfFilenameInput) => {
     const blob = await getPdfBlob(id, preview);

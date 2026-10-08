@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AxiosError } from 'axios';
+import { useNavigate } from 'react-router-dom';
 import { FileText } from 'lucide-react';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -132,6 +133,8 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
   >({});
   const [puxandoComponentes, setPuxandoComponentes] = useState<number | null>(null);
   const [pdfBusy, setPdfBusy] = useState<'preview' | 'download' | null>(null);
+  const [reemiting, setReemiting] = useState(false);
+  const navigate = useNavigate();
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [previewPdfTitulo, setPreviewPdfTitulo] = useState('Previa PDF');
 
@@ -301,6 +304,34 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
   };
 
   const nfeBloqueada = Boolean(editing && editing.status !== 'rascunho');
+
+  const reemitir = async () => {
+    if (!editing?.id) return;
+    if (editing.status !== 'emitido') return;
+    const numero = editing.numero_formatado || editing.numero || 'CQ';
+    const ok = window.confirm(
+      `Reemitir o certificado ${numero}?\n\n`
+        + 'Isto criara um NOVO certificado em rascunho, com serie incrementada, '
+        + 'e marcara este como SUBSTITUIDO (registro preservado para auditoria).\n\n'
+        + 'Deseja continuar?',
+    );
+    if (!ok) return;
+    setReemiting(true);
+    setSaveError(null);
+    try {
+      const novo = await certificadosQualidadeService.reemitir(editing.id);
+      adicionarMensagensUnicas([
+        `Certificado reemitido: ${novo.numero_formatado || novo.numero}.`,
+      ]);
+      navigate(`/certificados-qualidade/${novo.id}`);
+    } catch (e) {
+      setSaveError(
+        apiErrorMessage(e, { fallback: 'Nao foi possivel reemitir o certificado.' }),
+      );
+    } finally {
+      setReemiting(false);
+    }
+  };
 
   const pdfMeta = (): PdfFilenameInput => ({
     numero: editing?.numero_formatado || editing?.numero || form.numero,
@@ -1638,6 +1669,17 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
               <FileText className="h-4 w-4 mr-1" />
               {pdfBusy === 'download' ? 'Gerando...' : 'Baixar PDF'}
             </button>
+            {editing.status === 'emitido' ? (
+              <button
+                type="button"
+                className="erp-btn-outline"
+                onClick={() => void reemitir()}
+                disabled={reemiting || saving || pdfBusy !== null}
+                title="Cria um NOVO CQ em rascunho (serie incrementada) e marca este como SUBSTITUIDO."
+              >
+                {reemiting ? 'Reemitindo...' : 'Reemitir'}
+              </button>
+            ) : null}
           </>
         ) : null}
         <button

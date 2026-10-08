@@ -12,6 +12,8 @@ export function certificadoQualidadeStatusBadge(status?: string | null): StatusB
   if (s === 'rascunho') return { label: 'Rascunho', className: 'erp-badge-warning' };
   if (s === 'emitido') return { label: 'Emitido', className: 'erp-badge-success' };
   if (s === 'cancelado') return { label: 'Cancelado', className: 'erp-badge-danger' };
+  if (s === 'substituido')
+    return { label: 'Substituído', className: 'erp-badge-info' };
   if (!status) return unknownBadge;
   return { label: status, className: 'erp-badge-info' };
 }
