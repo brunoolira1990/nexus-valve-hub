@@ -68,7 +68,8 @@ export type CorridasProps = {
 export type ComponentesProps = {
   lista: ItemCertificadoQualidadeComponente[];
   onAdd: (nome?: string) => void;
-  onAddPadrao: () => void;
+  onPuxarComponentesDoCfVinculado: () => void;
+  puxandoComponentes?: boolean;
   onRemove: (compIdx: number) => void;
   onDuplicar: (compIdx: number) => void;
   onCopiarAnterior: (compIdx: number) => void;
@@ -780,15 +781,21 @@ export function ItemEditor({
           <div className="md:col-span-6 rounded border border-border p-2 bg-muted/10">
             <div className="flex flex-wrap gap-2 items-center justify-between mb-2">
               <p className="text-xs font-semibold">Componentes da valvula</p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  className="erp-btn-outline erp-btn-sm"
-                  disabled={disabled}
-                  onClick={componentes.onAddPadrao}
-                >
-                  Adicionar componentes padrao
-                </button>
+              <div className="flex flex-wrap gap-2">
+                {it.certificado_fornecedor_origem_id &&
+                it.item_certificado_fornecedor_origem_id ? (
+                  <button
+                    type="button"
+                    className="erp-btn-outline erp-btn-sm"
+                    disabled={disabled || componentes.puxandoComponentes}
+                    title="Cria e preenche os componentes deste item com os dados do Certificado de Fornecedor vinculado."
+                    onClick={componentes.onPuxarComponentesDoCfVinculado}
+                  >
+                    {componentes.puxandoComponentes
+                      ? 'Puxando...'
+                      : 'Puxar componentes do CF vinculado'}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="erp-btn-outline erp-btn-sm"

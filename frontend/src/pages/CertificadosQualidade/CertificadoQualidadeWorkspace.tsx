@@ -132,6 +132,7 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
   const [fornecedorBuscaCompMsg, setFornecedorBuscaCompMsg] = useState<
     Record<string, { type: 'error' | 'info'; text: string }>
   >({});
+  const [puxandoComponentes, setPuxandoComponentes] = useState<number | null>(null);
 
   // Carrega CQ existente (ou reseta para novo)
   useEffect(() => {
@@ -1005,6 +1006,71 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
     }
   };
 
+  const puxarComponentesDoCfVinculado = async (idx: number) => {
+    const item = form.itens[idx];
+    const cfId = item.certificado_fornecedor_origem_id;
+    const itemCfId = item.item_certificado_fornecedor_origem_id;
+    if (!cfId || !itemCfId) {
+      adicionarMensagensUnicas([
+        'Vincule o item a um CF antes de puxar componentes.',
+      ]);
+      return;
+    }
+    setPuxandoComponentes(idx);
+    try {
+      const cf = await certificadosFornecedorService.getById(cfId);
+      const itemCf = (cf.itens || []).find((it) => it.id === itemCfId);
+      if (!itemCf) {
+        adicionarMensagensUnicas([
+          'Item vinculado nao foi encontrado no certificado fornecedor.',
+        ]);
+        return;
+      }
+      const componentesCf = itemCf.componentes || [];
+      if (!componentesCf.length) {
+        adicionarMensagensUnicas([
+          'O CF vinculado nao possui componentes cadastrados para este item.',
+        ]);
+        return;
+      }
+      const existentes = (item.componentes || []).map((c, i) => ensureComp(c, i + 1));
+      const existePreenchido = existentes.some((c) =>
+        Boolean(
+          (c.nome_componente || '').trim() ||
+            (c.corrida || '').trim() ||
+            Object.values(ensureMap(c.composicao_json)).some(Boolean),
+        ),
+      );
+      if (existePreenchido) {
+        const ok = window.confirm(
+          'Este item ja possui componentes preenchidos. Deseja substituir pelos componentes do CF vinculado?',
+        );
+        if (!ok) return;
+      }
+      const novosComponentes = componentesCf.map((cp, i) => ({
+        ...ensureComp(cp, i + 1),
+        numero_certificado_fornecedor_componente_snapshot:
+          String(cp.numero_certificado_fornecedor_componente || '') ||
+          itemCf.numero_certificado_fornecedor_item ||
+          cf.numero_certificado_fornecedor ||
+          '',
+      }));
+      updateItem(idx, {
+        componentes: novosComponentes,
+        fornecedor_nome_snapshot: item.fornecedor_nome_snapshot || cf.fornecedor_nome_snapshot || '',
+      });
+      adicionarMensagensUnicas([
+        `${novosComponentes.length} componente(s) puxado(s) do CF vinculado.`,
+      ]);
+    } catch (e) {
+      adicionarMensagensUnicas([
+        apiErrorMessage(e, { fallback: 'Falha ao puxar componentes do CF.' }),
+      ]);
+    } finally {
+      setPuxandoComponentes(null);
+    }
+  };
+
   const buscarDadosFornecedor = async (idx: number) => {
     patchFornecedorBuscaItemMsg(idx, null);
     const item = form.itens[idx];
@@ -1450,7 +1516,9 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
                   componentes={{
                     lista: it.componentes || [],
                     onAdd: (nome?: string) => addComponente(idx, nome),
-                    onAddPadrao: () => adicionarComponentesPadrao(idx),
+                    onPuxarComponentesDoCfVinculado: () =>
+                      void puxarComponentesDoCfVinculado(idx),
+                    puxandoComponentes: puxandoComponentes === idx,
                     onRemove: (compIdx: number) => removeComponente(idx, compIdx),
                     onDuplicar: (compIdx: number) => duplicarComponente(idx, compIdx),
                     onCopiarAnterior: (compIdx: number) =>
