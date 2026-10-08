@@ -199,6 +199,14 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
       c?.length ?? 'undefined',
       '| it.id=', form.itens?.[0]?.id,
     );
+    // Se zerou de 1+ para 0, captura o stack
+    if (
+      form.itens?.[0] &&
+      (form.itens[0].componentes?.length ?? 0) === 0 &&
+      form.itens[0].id === undefined
+    ) {
+      console.trace('[DBG-STACK] item zerou e ficou sem id!');
+    }
   }, [form.itens]);
 
   // Carrega NF-e de saida historicas (uma vez no mount)
@@ -1502,7 +1510,7 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
                 console.log('[DBG-render] idx=', idx, 'it.componentes=', it.componentes?.length);
                 return (
                 <ItemEditor
-                  key={it.id ?? idx}
+                  key={`item-${idx}`}
                   item={it}
                   idx={idx}
                   disabled={nfeBloqueada || saving}
