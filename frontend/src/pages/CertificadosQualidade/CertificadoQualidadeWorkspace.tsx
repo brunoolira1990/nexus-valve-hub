@@ -123,6 +123,15 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
   const [fornecedorBuscaItemMsg, setFornecedorBuscaItemMsg] = useState<
     Record<number, { type: 'error' | 'info'; text: string }>
   >({});
+  const [fornecedorTargetCompIdx, setFornecedorTargetCompIdx] = useState<number | null>(
+    null,
+  );
+  const [fornecedorBuscaCompLoading, setFornecedorBuscaCompLoading] = useState<
+    number | null
+  >(null);
+  const [fornecedorBuscaCompMsg, setFornecedorBuscaCompMsg] = useState<
+    Record<string, { type: 'error' | 'info'; text: string }>
+  >({});
 
   // Carrega CQ existente (ou reseta para novo)
   useEffect(() => {
@@ -862,6 +871,140 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
     patchFornecedorBuscaItemMsg(idx, null);
   };
 
+  const aplicarDadosFornecedorComponente = (
+    idx: number,
+    compIdx: number,
+    srcData: DadosTecnicosFornecedorResultado,
+  ) => {
+    const item = form.itens[idx];
+    const comps = [...(item.componentes || [])];
+    if (!comps[compIdx]) return;
+    const compAlvo = ensureComp(comps[compIdx], compIdx + 1);
+    const corridaAlvo = (compAlvo.corrida || '').trim().toUpperCase();
+    const loteAlvo = (compAlvo.lote || '').trim().toUpperCase();
+    const listaSrc = srcData.componentes || [];
+    const match =
+      listaSrc.find((c) => {
+        const cCorrida = String(c.corrida || '').trim().toUpperCase();
+        const cLote = String(c.lote || '').trim().toUpperCase();
+        return cCorrida === corridaAlvo && cLote === loteAlvo;
+      }) || listaSrc[0];
+    if (!match) {
+      setFornecedorBuscaCompMsg((p) => ({
+        ...p,
+        [`${idx}:${compIdx}`]: {
+          type: 'error',
+          text: 'Nenhum componente compativel foi retornado pelo CF.',
+        },
+      }));
+      return;
+    }
+    comps[compIdx] = {
+      ...compAlvo,
+      corrida: String(match.corrida || compAlvo.corrida || ''),
+      lote: String(match.lote || compAlvo.lote || ''),
+      norma: String(match.norma || compAlvo.norma || ''),
+      descricao_componente:
+        String(match.descricao_componente || compAlvo.descricao_componente || ''),
+      numero_certificado_fornecedor_componente_snapshot:
+        String(match.numero_certificado_fornecedor_componente || '') ||
+        srcData.numero_certificado_fornecedor_item ||
+        srcData.numero_certificado_fornecedor ||
+        '',
+      composicao_json: ensureMap(match.composicao_json),
+      ensaio_tracao_json: ensureMap(match.ensaio_tracao_json),
+      ensaio_impacto_json: ensureMap(match.ensaio_impacto_json),
+    };
+    setForm((p) => {
+      const next = [...p.itens];
+      next[idx] = { ...next[idx], componentes: comps };
+      return { ...p, itens: next };
+    });
+    updateItem(idx, {
+      certificado_fornecedor_origem_id:
+        item.certificado_fornecedor_origem_id || srcData.certificado_fornecedor_id || null,
+      item_certificado_fornecedor_origem_id:
+        item.item_certificado_fornecedor_origem_id || srcData.id || null,
+    });
+    adicionarMensagensUnicas([
+      `Componente ${compAlvo.nome_componente || compIdx + 1}: dados do CF aplicados.`,
+    ]);
+    setFornecedorBuscaCompMsg((p) => {
+      const next = { ...p };
+      delete next[`${idx}:${compIdx}`];
+      return next;
+    });
+  };
+
+  const buscarDadosCorridaComponente = async (idx: number, compIdx: number) => {
+    const chave = `${idx}:${compIdx}`;
+    setFornecedorBuscaCompMsg((p) => {
+      const next = { ...p };
+      delete next[chave];
+      return next;
+    });
+    const item = form.itens[idx];
+    const comp = ensureComp(item.componentes?.[compIdx], compIdx + 1);
+    const corrida = (comp.corrida || '').trim();
+    const lote = (comp.lote || '').trim();
+    if (!corrida && !lote) {
+      setFornecedorBuscaCompMsg((p) => ({
+        ...p,
+        [chave]: {
+          type: 'error',
+          text: 'Informe a corrida ou o lote deste componente antes de buscar.',
+        },
+      }));
+      return;
+    }
+    setFornecedorBuscaCompLoading(compIdx);
+    try {
+      const { resultados: encontrados, dicas_busca: dicasBusca } =
+        await certificadosFornecedorService.buscarDadosTecnicos({
+          corrida: corrida || undefined,
+          lote: lote || undefined,
+          codigo_produto: item.codigo_produto || undefined,
+          descricao: comp.nome_componente || item.descricao_material || undefined,
+          norma: comp.norma || item.norma || undefined,
+          tipo_dados_tecnicos: 'VALVULA_COMPONENTES',
+          status: 'registrado',
+        });
+      if (!encontrados.length) {
+        const dicaMsg = mensagemPrincipalBuscaDadosTecnicosFornecedor(dicasBusca);
+        setFornecedorBuscaCompMsg((p) => ({
+          ...p,
+          [chave]: {
+            type: 'error',
+            text:
+              dicaMsg ||
+              'Nenhum dado tecnico encontrado para esta corrida do componente.',
+          },
+        }));
+        return;
+      }
+      if (encontrados.length === 1) {
+        aplicarDadosFornecedorComponente(idx, compIdx, encontrados[0]);
+        return;
+      }
+      setFornecedorTargetIdx(idx);
+      setFornecedorTargetCompIdx(compIdx);
+      setFornecedorMatches(encontrados);
+      setFornecedorMatchModalOpen(true);
+    } catch (e) {
+      setFornecedorBuscaCompMsg((p) => ({
+        ...p,
+        [chave]: {
+          type: 'error',
+          text: apiErrorMessage(e, {
+            fallback: 'Falha ao buscar dados tecnicos da corrida.',
+          }),
+        },
+      }));
+    } finally {
+      setFornecedorBuscaCompLoading(null);
+    }
+  };
+
   const buscarDadosFornecedor = async (idx: number) => {
     patchFornecedorBuscaItemMsg(idx, null);
     const item = form.itens[idx];
@@ -1315,6 +1458,13 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
                     onUpdate: (compIdx, patch) => updateComponente(idx, compIdx, patch),
                     onUpdateJson: (compIdx, group, key, value) =>
                       updateCompJson(idx, compIdx, group, key, value),
+                    onBuscarDadosCorrida: (compIdx) =>
+                      void buscarDadosCorridaComponente(idx, compIdx),
+                    fornecedorBuscaCompLoading,
+                    fornecedorBuscaCompMsg: Object.keys(fornecedorBuscaCompMsg)
+                      .filter((k) => k.startsWith(`${idx}:`))
+                      .map((k) => fornecedorBuscaCompMsg[k])
+                      .find(Boolean) || null,
                   }}
                 />
               ))}
@@ -1445,8 +1595,17 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
                   className="erp-btn-primary erp-btn-sm w-full sm:w-auto"
                   onClick={() => {
                     if (fornecedorTargetIdx == null) return;
-                    aplicarDadosFornecedor(fornecedorTargetIdx, r);
+                    if (fornecedorTargetCompIdx != null) {
+                      aplicarDadosFornecedorComponente(
+                        fornecedorTargetIdx,
+                        fornecedorTargetCompIdx,
+                        r,
+                      );
+                    } else {
+                      aplicarDadosFornecedor(fornecedorTargetIdx, r);
+                    }
                     setFornecedorMatchModalOpen(false);
+                    setFornecedorTargetCompIdx(null);
                   }}
                 >
                   {r.tipo_dados_tecnicos === 'VALVULA_COMPONENTES' ? 'Usar estes componentes' : 'Usar estes dados'}

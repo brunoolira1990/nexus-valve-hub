@@ -82,6 +82,9 @@ export type ComponentesProps = {
     key: string,
     value: string,
   ) => void;
+  onBuscarDadosCorrida: (compIdx: number) => void;
+  fornecedorBuscaCompLoading?: number | null;
+  fornecedorBuscaCompMsg?: { type: 'error' | 'info'; text: string } | null;
 };
 
 type Props = {
@@ -888,7 +891,37 @@ export function ItemEditor({
                         >
                           Remover componente
                         </button>
+                        <button
+                          type="button"
+                          className="erp-btn-outline erp-btn-sm"
+                          disabled={
+                            disabled ||
+                            componentes.fornecedorBuscaCompLoading === cidx
+                          }
+                          title="Busca dados do CF pela corrida/lote deste componente."
+                          onClick={() => componentes.onBuscarDadosCorrida(cidx)}
+                        >
+                          {componentes.fornecedorBuscaCompLoading === cidx
+                            ? 'Buscando...'
+                            : 'Buscar dados da corrida'}
+                        </button>
                       </div>
+                      {componentes.fornecedorBuscaCompMsg ? (
+                        <p
+                          className={
+                            componentes.fornecedorBuscaCompMsg.type === 'error'
+                              ? 'text-sm text-destructive'
+                              : 'text-sm text-amber-800 dark:text-amber-200'
+                          }
+                          role={
+                            componentes.fornecedorBuscaCompMsg.type === 'error'
+                              ? 'alert'
+                              : 'status'
+                          }
+                        >
+                          {componentes.fornecedorBuscaCompMsg.text}
+                        </p>
+                      ) : null}
                       <div className="md:col-span-6 rounded border border-border p-2">
                         <p className="text-xs font-semibold mb-2">Composicao quimica do componente</p>
                         <div className="grid grid-cols-2 md:grid-cols-6 lg:grid-cols-8 gap-2">
