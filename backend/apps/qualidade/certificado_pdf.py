@@ -730,34 +730,29 @@ def gerar_certificado_qualidade_pdf(cert: CertificadoQualidade, preview: bool = 
             story.append(section_title('Válvula / Componentes'))
 
             item_valvula_data = [[
-                'Item', 'Código', 'Descrição', 'Quantidade', 'Unidade', 'Certificado Fornecedor (snapshot)',
+                'Item', 'Código', 'Descrição', 'Quantidade', 'Unidade',
             ], [
                 str(item_valvula.ordem),
                 item_valvula.codigo_produto or '—',
                 Paragraph(item_valvula.descricao_material or '—', cell_wrap_style),
                 _fmt_value(item_valvula.quantidade),
                 item_valvula.unidade or '—',
-                Paragraph(
-                    item_valvula.numero_certificado_fornecedor_item_snapshot or '—',
-                    cell_wrap_style,
-                ),
             ]]
-            story.append(data_table_auto(item_valvula_data, [10 * mm, 28 * mm, 148 * mm, 20 * mm, 17 * mm, 48 * mm]))
+            story.append(data_table_auto(item_valvula_data, [12 * mm, 30 * mm, 185 * mm, 24 * mm, 20 * mm]))
             story.append(Spacer(1, 1.8 * mm))
 
             if comp_chunk:
-                comp_rows = [['Comp.', 'Corrida', 'Lote', 'Norma', 'Certificado Fornecedor', 'Observação']]
+                comp_rows = [['Comp.', 'Corrida', 'Lote', 'Norma', 'Observação']]
                 for cp in comp_chunk:
                     comp_rows.append([
                         cp.nome_componente or '—',
                         cp.corrida or '—',
                         getattr(cp, 'lote', '') or item_valvula.lote_snapshot or '—',
                         cp.norma or '—',
-                        cp.numero_certificado_fornecedor_componente_snapshot or item_valvula.numero_certificado_fornecedor_item_snapshot or '—',
-                        (cp.observacoes or '—')[:38],
+                        (cp.observacoes or '—')[:60],
                     ])
                 story.append(section_title('Componentes da válvula'))
-                story.append(data_table(comp_rows, [42 * mm, 30 * mm, 24 * mm, 40 * mm, 48 * mm, 87 * mm], row_h=6.7 * mm))
+                story.append(data_table(comp_rows, [45 * mm, 35 * mm, 28 * mm, 45 * mm, 118 * mm], row_h=6.7 * mm))
                 story.append(Spacer(1, 1.8 * mm))
 
                 composicao_componentes = [['Comp.', 'QTD'] + COMPOSICAO_COLS]
