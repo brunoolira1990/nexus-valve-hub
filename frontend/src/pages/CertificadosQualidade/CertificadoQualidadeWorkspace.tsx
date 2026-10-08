@@ -27,6 +27,9 @@ import {
 } from '@/services/api/certificadosFornecedor';
 import {
   COMPONENTES_PADRAO,
+  LABEL_OBRIGATORIO_EMITIR,
+  coerceProdutoItemId,
+  emptyForm,
   ensureComp,
   ensureMap,
   fornecedorResultadoSemProdutoVinculado,
@@ -42,7 +45,6 @@ import {
   type SelecaoCorridaCfCq,
 } from '@/lib/cqCorridasCfUi';
 import { mesclarMensagensUnicas } from '@/lib/cqMensagensUi';
-import { coerceProdutoItemId } from '@/lib/certificadoQualidadeConstants';
 import {
   origemFisicaCqBadge,
   origemFisicaCqDescricao,
@@ -57,12 +59,6 @@ import {
   type NFeSaidaHistoricaList,
 } from '@/services/api/nfeHistoricaImportada';
 import { apiErrorMessage, getApiErrorStatus } from '@/services/api/config';
-import {
-  emptyForm,
-  ensureComp,
-  ensureMap,
-  LABEL_OBRIGATORIO_EMITIR,
-} from '@/lib/certificadoQualidadeConstants';
 import type {
   CertificadoQualidade,
   CertificadoQualidadeStatus,
@@ -149,6 +145,7 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
       .getById(certificadoId)
       .then((row) => {
         setEditing(row);
+        console.log('[DBG-load] row.itens.length=', row.itens?.length, ' itens[0].componentes=', row.itens?.[0]?.componentes);
         setForm({
           numero: row.numero || '',
           serie: row.serie || '',
@@ -1487,7 +1484,9 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
               ) : null}
             </div>
             <div className="space-y-2">
-              {form.itens.map((it, idx) => (
+              {form.itens.map((it, idx) => {
+                console.log('[DBG-render] idx=', idx, 'it.componentes=', it.componentes?.length);
+                return (
                 <ItemEditor
                   key={it.id ?? idx}
                   item={it}
@@ -1535,7 +1534,8 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
                       .find(Boolean) || null,
                   }}
                 />
-              ))}
+                );
+              })}
             </div>
           </>
         )}
