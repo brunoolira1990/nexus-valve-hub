@@ -450,10 +450,8 @@ def gerar_certificado_qualidade_pdf(cert: CertificadoQualidade, preview: bool = 
         )
         return t
 
-    def data_table(
-        data: list[list], col_widths: list[float], row_h: float | None = None
-    ) -> Table:
-        rows = [row_h] * len(data) if row_h is not None else None
+    def data_table(data: list[list[str]], col_widths: list[float], row_h: float) -> Table:
+        rows = [row_h] * len(data)
         t = Table(data, colWidths=col_widths, rowHeights=rows, repeatRows=1 if len(data) > 1 else 0)
         t.setStyle(
             TableStyle(
@@ -512,15 +510,6 @@ def gerar_certificado_qualidade_pdf(cert: CertificadoQualidade, preview: bool = 
         canv.setStrokeColor(PDF_THEME['border_frame'])
         canv.setLineWidth(0.45)
         canv.rect(7 * mm, footer_y, width - 14 * mm, footer_h, stroke=1, fill=1)
-        # Estilo para celulas com texto longo (descricao, norma, cert) — permite quebra de linha
-        cell_wrap_style = ParagraphStyle(
-            'cell_wrap_cq',
-            fontName='Helvetica',
-            fontSize=PDF_THEME['body_size'],
-            leading=PDF_THEME['body_size'] + 1.2,
-            alignment=0,
-        )
-
         footer_style = ParagraphStyle(
             'footer',
             fontName='Helvetica',
@@ -706,16 +695,13 @@ def gerar_certificado_qualidade_pdf(cert: CertificadoQualidade, preview: bool = 
             ], [
                 str(item_valvula.ordem),
                 item_valvula.codigo_produto or '—',
-                Paragraph(item_valvula.descricao_material or '—', cell_wrap_style),
+                (item_valvula.descricao_material or '—')[:74],
                 _fmt_value(item_valvula.quantidade),
                 item_valvula.unidade or '—',
-                Paragraph(item_valvula.norma or '—', cell_wrap_style),
-                Paragraph(
-                    item_valvula.numero_certificado_fornecedor_item_snapshot or '—',
-                    cell_wrap_style,
-                ),
+                item_valvula.norma or '—',
+                item_valvula.numero_certificado_fornecedor_item_snapshot or '—',
             ]]
-            story.append(data_table(item_valvula_data, [12 * mm, 30 * mm, 95 * mm, 22 * mm, 18 * mm, 36 * mm, 58 * mm]))
+            story.append(data_table(item_valvula_data, [12 * mm, 30 * mm, 95 * mm, 22 * mm, 18 * mm, 36 * mm, 58 * mm], row_h=7.2 * mm))
             story.append(Spacer(1, 1.8 * mm))
 
             if comp_chunk:
