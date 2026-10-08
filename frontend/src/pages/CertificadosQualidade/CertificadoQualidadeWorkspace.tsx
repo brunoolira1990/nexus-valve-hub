@@ -23,10 +23,16 @@ import {
   type NFeSaidaHistoricaList,
 } from '@/services/api/nfeHistoricaImportada';
 import { apiErrorMessage } from '@/services/api/config';
-import { emptyForm, LABEL_OBRIGATORIO_EMITIR } from '@/lib/certificadoQualidadeConstants';
+import {
+  emptyForm,
+  ensureComp,
+  ensureMap,
+  LABEL_OBRIGATORIO_EMITIR,
+} from '@/lib/certificadoQualidadeConstants';
 import type {
   CertificadoQualidade,
   CertificadoQualidadeStatus,
+  ItemCertificadoQualidade,
 } from '@/types';
 
 type Props = {
@@ -187,20 +193,24 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
         nota_fiscal: data.nota_fiscal ?? p.nota_fiscal,
         nota_fiscal_historica: data.nota_fiscal_historica ?? p.nota_fiscal_historica,
         data_emissao: data.data_emissao ?? p.data_emissao,
+        itens: ((data.itens as ItemCertificadoQualidade[]) ?? []).map((it) => ({
+          ...it,
+          tipo_dados_tecnicos: it.tipo_dados_tecnicos || 'PADRAO_ITEM',
+          incluir_no_certificado: it.incluir_no_certificado !== false,
+          motivo_nao_inclusao: it.motivo_nao_inclusao || '',
+          observacao_nao_inclusao: it.observacao_nao_inclusao || '',
+          composicao_json: ensureMap(it.composicao_json),
+          ensaio_tracao_json: ensureMap(it.ensaio_tracao_json),
+          ensaio_impacto_json: ensureMap(it.ensaio_impacto_json),
+          componentes: (it.componentes || []).map((cp, i) => ensureComp(cp, i + 1)),
+        })),
       }));
       if (data.nota_fiscal) {
         void certificadosQualidadeService.obterNfeOpcao(data.nota_fiscal).then((opt) => {
           if (opt) setNfeOpcaoSelecionada(opt);
         });
       }
-      const msg = [...(data.mensagens || [])];
-      const nItens = Array.isArray((data as { itens?: unknown[] }).itens) ? ((data as { itens?: unknown[] }).itens as unknown[]).length : 0;
-      if (nItens > 0) {
-        msg.push(
-          `${nItens} item(ns) retornado(s) pela NF-e. A tabela de itens sera portada na Etapa 4.`,
-        );
-      }
-      setMensagens(msg);
+      setMensagens(data.mensagens || []);
     } catch (e) {
       setSaveError(apiErrorMessage(e));
     } finally {
@@ -209,6 +219,8 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
   };
 
   const nfeBloqueada = Boolean(editing && editing.status !== 'rascunho');
+  const incluidosCount = form.itens.filter((it) => it.incluir_no_certificado !== false).length;
+  const naoIncluidosCount = form.itens.length - incluidosCount;
 
   const salvar = async (novoStatus?: CertificadoQualidadeStatus) => {
     setSaving(true);
@@ -432,9 +444,95 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
         ) : null}
       </div>
 
+      <div className="rounded border border-border bg-muted/10 p-3">
+        <p className="text-sm font-medium mb-2">Itens do certificado</p>
+        {form.itens.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            Nenhum item carregado. Vincule uma NF-e acima e clique em «Carregar dados da NF-e».
+          </p>
+        ) : (
+          <>
+            <div className="mb-2 text-xs">
+              <span className="text-muted-foreground">
+                Itens: {form.itens.length} total | {incluidosCount} incluídos
+                {naoIncluidosCount > 0
+                  ? ` | ${naoIncluidosCount} não incluído${naoIncluidosCount > 1 ? 's' : ''}`
+                  : ''}
+              </span>
+              {incluidosCount === 0 ? (
+                <p className="mt-1 text-amber-700 dark:text-amber-300">
+                  Nenhum item incluído no certificado. Para emitir, inclua pelo menos um item.
+                </p>
+              ) : null}
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="border-b border-border text-muted-foreground">
+                  <tr>
+                    <th className="text-left py-1 pr-2">#</th>
+                    <th className="text-left py-1 pr-2">Código</th>
+                    <th className="text-left py-1 pr-2">Descrição</th>
+                    <th className="text-right py-1 pr-2">Qtd</th>
+                    <th className="text-left py-1 pr-2">Un</th>
+                    <th className="text-left py-1 pr-2">Norma</th>
+                    <th className="text-left py-1 pr-2">Lote</th>
+                    <th className="text-left py-1 pr-2">Rastreab.</th>
+                    <th className="text-left py-1">Incl.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {form.itens.map((it, idx) => (
+                    <tr
+                      key={it.id ?? idx}
+                      className={
+                        it.incluir_no_certificado === false
+                          ? 'border-b border-border/50 bg-amber-50/30 dark:bg-amber-900/10'
+                          : 'border-b border-border/50'
+                      }
+                    >
+                      <td className="py-1 pr-2 tabular-nums">{it.ordem}</td>
+                      <td className="py-1 pr-2 font-mono">{it.codigo_produto}</td>
+                      <td className="py-1 pr-2">{it.descricao_material}</td>
+                      <td className="py-1 pr-2 text-right tabular-nums">{it.quantidade}</td>
+                      <td className="py-1 pr-2">{it.unidade}</td>
+                      <td className="py-1 pr-2">{it.norma}</td>
+                      <td className="py-1 pr-2">{it.lote || ''}</td>
+                      <td className="py-1 pr-2">
+                        {it.incluir_no_certificado !== false && it.rastreabilidade_status ? (
+                          <span
+                            className={
+                              it.rastreabilidade_status === 'COMPLETA'
+                                ? 'erp-badge-success text-[10px]'
+                                : it.rastreabilidade_status === 'PARCIAL'
+                                  ? 'erp-badge-warning text-[10px]'
+                                  : 'erp-badge-danger text-[10px]'
+                            }
+                          >
+                            {it.rastreabilidade_label || it.rastreabilidade_status}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="py-1">
+                        {it.incluir_no_certificado === false ? (
+                          <span className="text-amber-700 dark:text-amber-300">Não</span>
+                        ) : (
+                          <span className="text-emerald-700 dark:text-emerald-400">Sim</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
+
       <div className="rounded border border-dashed p-4 text-center text-xs text-muted-foreground">
-        <p className="font-medium mb-1">Itens, prontidão técnica e rastreabilidade serão portados nas próximas etapas</p>
-        <p>Etapa 3c: prontidão/origem · Etapa 4: tabela de itens · Etapa 5: editor · Etapa 7: rastreabilidade/PDF</p>
+        <p className="font-medium mb-1">Editor de item, corridas CF e rastreabilidade/PDF serão portados nas próximas etapas</p>
+        <p>Etapa 3c-2: prontidão/origem · Etapa 5: editor · Etapa 6: corridas CF · Etapa 7: rastreabilidade/PDF</p>
       </div>
 
       <div className="flex justify-end gap-2">
