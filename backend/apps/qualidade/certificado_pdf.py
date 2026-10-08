@@ -730,20 +730,19 @@ def gerar_certificado_qualidade_pdf(cert: CertificadoQualidade, preview: bool = 
             story.append(section_title('Válvula / Componentes'))
 
             item_valvula_data = [[
-                'Item', 'Código', 'Descrição', 'Quantidade', 'Unidade', 'Norma', 'Certificado Fornecedor (snapshot)',
+                'Item', 'Código', 'Descrição', 'Quantidade', 'Unidade', 'Certificado Fornecedor (snapshot)',
             ], [
                 str(item_valvula.ordem),
                 item_valvula.codigo_produto or '—',
                 Paragraph(item_valvula.descricao_material or '—', cell_wrap_style),
                 _fmt_value(item_valvula.quantidade),
                 item_valvula.unidade or '—',
-                Paragraph(item_valvula.norma or '—', cell_wrap_style),
                 Paragraph(
                     item_valvula.numero_certificado_fornecedor_item_snapshot or '—',
                     cell_wrap_style,
                 ),
             ]]
-            story.append(data_table_auto(item_valvula_data, [10 * mm, 26 * mm, 118 * mm, 18 * mm, 15 * mm, 32 * mm, 52 * mm]))
+            story.append(data_table_auto(item_valvula_data, [10 * mm, 28 * mm, 148 * mm, 20 * mm, 17 * mm, 48 * mm]))
             story.append(Spacer(1, 1.8 * mm))
 
             if comp_chunk:
