@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AxiosError } from 'axios';
+import { FileText } from 'lucide-react';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ItemEditor, type LinhaDivisaoCorrida } from './ItemEditor';
@@ -53,6 +54,7 @@ import {
 import {
   certificadosQualidadeService,
   type NfeElegivelCqOpcao,
+  type PdfFilenameInput,
 } from '@/services/api/qualidade';
 import {
   nfeHistoricaImportadaService,
@@ -129,6 +131,9 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
     Record<string, { type: 'error' | 'info'; text: string }>
   >({});
   const [puxandoComponentes, setPuxandoComponentes] = useState<number | null>(null);
+  const [pdfBusy, setPdfBusy] = useState<'preview' | 'download' | null>(null);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
+  const [previewPdfTitulo, setPreviewPdfTitulo] = useState('Previa PDF');
 
   // Carrega CQ existente (ou reseta para novo)
   useEffect(() => {
@@ -296,6 +301,51 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
   };
 
   const nfeBloqueada = Boolean(editing && editing.status !== 'rascunho');
+
+  const pdfMeta = (): PdfFilenameInput => ({
+    numero: editing?.numero_formatado || editing?.numero || form.numero,
+    cliente: form.cliente_nome_snapshot,
+    nf: form.nota_fiscal_numero,
+  });
+
+  const baixarPdf = async () => {
+    if (!editing?.id) return;
+    setPdfBusy('download');
+    setSaveError(null);
+    try {
+      const preview = editing.status === 'rascunho';
+      await certificadosQualidadeService.baixarPdf(editing.id, preview, pdfMeta());
+    } catch (e) {
+      setSaveError(
+        apiErrorMessage(e, { fallback: 'Nao foi possivel gerar o PDF.' }),
+      );
+    } finally {
+      setPdfBusy(null);
+    }
+  };
+
+  const abrirPreviaPdf = async () => {
+    if (!editing?.id) return;
+    setPdfBusy('preview');
+    setSaveError(null);
+    try {
+      const blob = await certificadosQualidadeService.obterPdfBlob(editing.id, true);
+      const url = URL.createObjectURL(blob);
+      setPreviewPdfUrl((old) => {
+        if (old) URL.revokeObjectURL(old);
+        return url;
+      });
+      setPreviewPdfTitulo(
+        `Previa PDF \u2014 ${editing.numero_formatado || editing.numero || 'CQ'}`,
+      );
+    } catch (e) {
+      setSaveError(
+        apiErrorMessage(e, { fallback: 'Nao foi possivel gerar a previa do PDF.' }),
+      );
+    } finally {
+      setPdfBusy(null);
+    }
+  };
   const incluidosCount = form.itens.filter((it) => it.incluir_no_certificado !== false).length;
   const naoIncluidosCount = form.itens.length - incluidosCount;
 
@@ -1544,8 +1594,8 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
       </div>
 
       <div className="rounded border border-dashed p-4 text-center text-xs text-muted-foreground">
-        <p className="font-medium mb-1">Corrida/lote, composição, componentes, corridas CF e rastreabilidade/PDF serão portados nas próximas etapas</p>
-        <p>Etapa 3c-2: prontidão/origem · Etapa 5b-2/3/4: corrida/composição/componentes · Etapa 6: corridas CF · Etapa 7: rastreabilidade/PDF</p>
+        <p className="font-medium mb-1">Rastreabilidade física por item será portada na próxima etapa</p>
+        <p>Etapa 8: rastreabilidade física por item</p>
       </div>
         </TabsContent>
 
@@ -1561,7 +1611,35 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
         </TabsContent>
       </Tabs>
 
-      <div className="flex justify-end gap-2">
+      <div className="flex flex-wrap justify-end gap-2">
+        {editing?.id ? (
+          <>
+            <button
+              type="button"
+              className="erp-btn-outline"
+              onClick={() => void abrirPreviaPdf()}
+              disabled={pdfBusy !== null || editing.status !== 'rascunho'}
+              title={
+                editing.status !== 'rascunho'
+                  ? 'Previa disponivel apenas para rascunho.'
+                  : 'Gera previa do PDF a partir do rascunho atual.'
+              }
+            >
+              <FileText className="h-4 w-4 mr-1" />
+              {pdfBusy === 'preview' ? 'Gerando previa...' : 'Previa PDF (rascunho)'}
+            </button>
+            <button
+              type="button"
+              className="erp-btn-outline"
+              onClick={() => void baixarPdf()}
+              disabled={pdfBusy !== null}
+              title="Baixar PDF conforme o status atual."
+            >
+              <FileText className="h-4 w-4 mr-1" />
+              {pdfBusy === 'download' ? 'Gerando...' : 'Baixar PDF'}
+            </button>
+          </>
+        ) : null}
         <button
           type="button"
           className="erp-btn-outline"
@@ -1687,6 +1765,26 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
             <p className="text-sm text-muted-foreground">Nenhum resultado.</p>
           ) : null}
         </div>
+      </Modal>
+
+      <Modal
+        isOpen={previewPdfUrl != null}
+        onClose={() => {
+          if (previewPdfUrl) URL.revokeObjectURL(previewPdfUrl);
+          setPreviewPdfUrl(null);
+        }}
+        title={previewPdfTitulo}
+        size="xl"
+      >
+        {previewPdfUrl ? (
+          <div className="h-[78vh]">
+            <iframe
+              title="Previa PDF do certificado"
+              src={previewPdfUrl}
+              className="w-full h-full border border-border rounded"
+            />
+          </div>
+        ) : null}
       </Modal>
     </div>
   );
