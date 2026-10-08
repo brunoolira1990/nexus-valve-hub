@@ -191,6 +191,16 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
       .finally(() => setLoading(false));
   }, [certificadoId]);
 
+  // DEBUG: monitor de mudanca em form.itens
+  useEffect(() => {
+    const c = form.itens?.[0]?.componentes;
+    console.log(
+      '[DBG-monitor] form.itens[0].componentes =',
+      c?.length ?? 'undefined',
+      '| it.id=', form.itens?.[0]?.id,
+    );
+  }, [form.itens]);
+
   // Carrega NF-e de saida historicas (uma vez no mount)
   useEffect(() => {
     nfeHistoricaImportadaService
@@ -342,11 +352,15 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
     [form.itens],
   );
 
-  const updateItem = (idx: number, patch: Partial<ItemCertificadoQualidade>) =>
+  const updateItem = (idx: number, patch: Partial<ItemCertificadoQualidade>) => {
+    if (idx === 0) {
+      console.log('[DBG-updateItem idx=0] patch=', JSON.stringify(Object.keys(patch)), 'temComponentes=', 'componentes' in patch);
+    }
     setForm((p) => ({
       ...p,
       itens: p.itens.map((it, i) => (i === idx ? { ...it, ...patch } : it)),
     }));
+  };
 
   const adicionarMensagensUnicas = (novas: string | string[]) =>
     setMensagens((m) => mesclarMensagensUnicas(m, novas));
