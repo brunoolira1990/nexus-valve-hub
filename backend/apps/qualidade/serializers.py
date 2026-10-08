@@ -496,6 +496,9 @@ class CertificadoQualidadeSerializer(serializers.ModelSerializer):
         itens = validated_data.pop('itens', [])
         if numero_certificado_qualidade_vazio(validated_data.get('numero')):
             validated_data['numero'] = gerar_numero_certificado_qualidade()
+        # Serie inicial sempre 'A' (primeira versao antes de reemissao)
+        if not (validated_data.get('serie') or '').strip():
+            validated_data['serie'] = 'A'
         obj = CertificadoQualidade.objects.create(**validated_data)
         self._upsert_itens(obj, itens)
         self._gravar_snapshot_se_emitido(obj)
