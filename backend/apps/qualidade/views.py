@@ -470,6 +470,19 @@ class CertificadoQualidadeViewSet(AutocompleteOrPaginationMixin, viewsets.ModelV
     def _status_vinculo_item(produto_id: int | None) -> str:
         return 'VINCULADO' if produto_id else 'NAO_VINCULADO'
 
+    @action(detail=True, methods=['post'], url_path='reemitir')
+    def reemitir(self, request, pk=None):
+        """Cria novo CQ clonando este, incrementa serie e marca este como substituido."""
+        cq = self.get_object()
+        if cq.status != CertificadoQualidade.Status.EMITIDO:
+            return Response(
+                {'detail': 'Somente certificados emitidos podem ser reemitidos.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        novo = cq.reemitir()
+        serializer = self.get_serializer(novo)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
     @action(detail=False, methods=['get'], url_path='nfes-elegiveis')
     def nfes_elegiveis(self, request):
         """Busca paginada de NF-e Saída autorizadas elegíveis para CQ (sem XML)."""

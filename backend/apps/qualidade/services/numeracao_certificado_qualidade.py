@@ -47,3 +47,19 @@ def extrair_sequencial_cq_automatico(numero: str) -> tuple[date, int] | None:
     except ValueError:
         return None
     return data_ref, int(m.group(2))
+
+
+def proxima_serie(serie: str) -> str:
+    """Proxima serie alfabetica: ''->A, A->B, ..., Z->AA, AZ->BA, ZZ->AAA."""
+    s = (serie or '').strip().upper()
+    if not s:
+        return 'A'
+    chars = list(s)
+    i = len(chars) - 1
+    while i >= 0:
+        if chars[i] < 'Z':
+            chars[i] = chr(ord(chars[i]) + 1)
+            return ''.join(chars)
+        chars[i] = 'A'
+        i -= 1
+    return 'A' + ''.join(chars)
