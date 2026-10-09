@@ -238,6 +238,16 @@ class DanfeNexus:
                     )
                 return reescritos
 
+            def _product_col_widths(self, cst_width):
+                """Override Nexus: alarga cProd (15->22mm) e CFOP (7->9mm).
+                BFR 0.7.4 hardcoda estes valores; codigos longos cortavam
+                e CFOP de 4 digitos quebrava em 2 linhas no DANFE.
+                """
+                from brazilfiscalreport.danfe.config import FontSize
+                if self.default_font_factor is FontSize.SMALL.value:
+                    return (22, None, 11, cst_width, 9, 6, 10, 12, 12, 12, 9, 9, 8, 8)
+                return (15, None, 14, 8, 8, 8, 12, 13, 15, 14, 13, 10, 9, 9)
+
             _draw_header = draw_header_emit_nexus
             _draw_billing = draw_billing_nexus
             _draw_taxes = draw_taxes_nexus

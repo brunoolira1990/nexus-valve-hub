@@ -998,8 +998,10 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
         _inst = getattr(self, 'instance', None)
         _skip_xor = bool(_inst and _inst.nfe_entrada_conferencia_origem)
         if not _skip_xor:
-            _cli = attrs.get('cliente')
-            _forn = attrs.get('fornecedor')
+            # Se o campo nao veio no payload (PATCH parcial), usa o estado atual
+            # do instance para nao disparar XOR falso-positivo.
+            _cli = attrs.get('cliente', _inst.cliente if _inst else None)
+            _forn = attrs.get('fornecedor', _inst.fornecedor if _inst else None)
             if _cli is not None and _forn is not None:
                 raise serializers.ValidationError(
                     {'non_field_errors': 'Nao e possivel preencher tanto cliente quanto fornecedor.'},
