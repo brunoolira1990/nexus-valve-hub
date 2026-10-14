@@ -31,6 +31,7 @@ import ColaboradorDetalhe from "./pages/Colaboradores/ColaboradorDetalhe";
 import MinhaConta from "./pages/MinhaConta";
 import MinhaContaAlterarSenha from "./pages/MinhaContaAlterarSenha";
 import Produtos from "./pages/Produtos/ProdutoList";
+import ProdutoDetalhe from "./pages/Produtos/ProdutoDetalhe";
 import Corridas from "./pages/Corridas";
 import RegrasFiscais from "./pages/RegrasFiscais";
 import Propostas from "./pages/Propostas";
@@ -116,6 +117,7 @@ const App = () => (
         <Route path="minha-conta" element={<MinhaConta />} />
         <Route path="minha-conta/alterar-senha" element={<MinhaContaAlterarSenha />} />
         <Route path="produtos" element={<Produtos />} />
+        <Route path="produtos/:id" element={<ProdutoDetalhe />} />
         <Route path="corridas" element={<Corridas />} />
         <Route path="regras-fiscais" element={<RegrasFiscais />} />
         <Route path="propostas" element={<Propostas />} />
