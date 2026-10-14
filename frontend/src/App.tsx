@@ -30,7 +30,7 @@ import ColaboradorDetalhe from "./pages/Colaboradores/ColaboradorDetalhe";
 
 import MinhaConta from "./pages/MinhaConta";
 import MinhaContaAlterarSenha from "./pages/MinhaContaAlterarSenha";
-import Produtos from "./pages/Produtos";
+import Produtos from "./pages/Produtos/ProdutoList";
 import Corridas from "./pages/Corridas";
 import RegrasFiscais from "./pages/RegrasFiscais";
 import Propostas from "./pages/Propostas";
