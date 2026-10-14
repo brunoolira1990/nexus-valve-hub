@@ -1,17 +1,38 @@
-import { Input, Label, RadioGroup, RadioGroupItem, Textarea } from '@/components/ui';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Textarea } from '@/components/ui/textarea';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
+import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Info } from 'lucide-react';
 import type { FamiliaProduto } from '@/types';
 import type { ProdutoFormState, ModoCodigoProduto } from '../types';
 import { familiasProdutoService } from '@/services/api/produtos';
+import { labelsCamposObrigatoriosProduto } from '@/lib/familiaRegra';
+
+/** Asterisco de campo obrigatório (design system C: span text-destructive). */
+function Obrigatorio() {
+  return (
+    <span className="text-destructive" aria-hidden>
+      {' '}
+      *
+    </span>
+  );
+}
 
 interface ProdutoGeralFormTabProps {
   form: ProdutoFormState;
   setForm: (updater: (prev: ProdutoFormState) => ProdutoFormState) => void;
-  preview: { codigo?: string; descricao?: string; ncm?: string };
+  preview: { codigo?: string; descricao?: string; ncm?: string; mensagem?: string };
   familiaSelecionada: FamiliaProduto | null;
   erro?: string | null;
   duplicateCodigo?: string | null;
   setModoCodigo: (modo: ModoCodigoProduto) => void;
+  /** Abre o fluxo de criação rápida de família (orquestrado na página container). */
+  onNovaFamilia?: () => void;
+  /** Código efetivo do produto em edição — fallback read-only quando o preview está vazio. */
+  editingCodigo?: string | null;
 }
 
 export function ProdutoGeralFormTab({
@@ -22,8 +43,14 @@ export function ProdutoGeralFormTab({
   erro,
   duplicateCodigo,
   setModoCodigo,
+  onNovaFamilia,
+  editingCodigo,
 }: ProdutoGeralFormTabProps) {
   const modo = (form.modo_codigo || 'LEGADO') as ModoCodigoProduto;
+  // Obrigatórios derivados da família (fonte única: @/lib/familiaRegra)
+  const obrigatorios = familiaSelecionada
+    ? labelsCamposObrigatoriosProduto(familiaSelecionada)
+    : [];
 
   const handleInputChange = <K extends keyof ProdutoFormState>(
     key: K,
@@ -89,7 +116,10 @@ export function ProdutoGeralFormTab({
       {modo === 'INTERNO' && (
         <div className="rounded-md border border-border bg-muted/20 p-3 space-y-1">
           <Label>Código</Label>
-          <p className="font-mono font-semibold text-lg">{preview.codigo || '—'}</p>
+          <p className="font-mono font-semibold text-lg">{preview.codigo || editingCodigo || '—'}</p>
+          {preview.mensagem && (
+            <p className="text-xs text-amber-700 dark:text-amber-300">{preview.mensagem}</p>
+          )}
           {duplicateCodigo && (
             <p className="text-xs text-destructive">Já existe produto com este código.</p>
           )}
@@ -99,13 +129,16 @@ export function ProdutoGeralFormTab({
       {modo === 'LEGADO' && (
         <div className="rounded-md border border-border bg-muted/20 p-3 space-y-1">
           <Label>Código (prévia legado)</Label>
-          <p className="font-mono font-semibold text-lg">{preview.codigo || '—'}</p>
+          <p className="font-mono font-semibold text-lg">{preview.codigo || editingCodigo || '—'}</p>
         </div>
       )}
 
       {/* Descrição */}
       <div className="space-y-1">
-        <Label>Descrição</Label>
+        <Label>
+          Descrição
+          <Obrigatorio />
+        </Label>
         <Input
           value={form.descricao}
           onChange={(e) => handleInputChange('descricao', e.target.value)}
@@ -125,7 +158,21 @@ export function ProdutoGeralFormTab({
       {/* Família (apenas modo INTERNO) */}
       {modo === 'INTERNO' && (
         <div className="space-y-1">
-          <Label>Família / figura</Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label>
+              Família / figura
+              <Obrigatorio />
+            </Label>
+            {onNovaFamilia && (
+              <button
+                type="button"
+                className="erp-btn-outline erp-btn-sm"
+                onClick={onNovaFamilia}
+              >
+                + Nova família
+              </button>
+            )}
+          </div>
           <AsyncAutocomplete<FamiliaProduto>
             value={form.familia_id ?? null}
             selectedOption={familiaSelecionada}
@@ -139,15 +186,27 @@ export function ProdutoGeralFormTab({
             }}
           />
           {familiaSelecionada && (
-            <p className="text-xs text-muted-foreground">
-              Categoria: {familiaSelecionada.categoria_produto === 'MATERIAL_DIMENSIONAL'
-                ? 'Material dimensional'
-                : familiaSelecionada.categoria_produto === 'MANUAL_FABRICANTE'
-                ? 'Produto manual/fabricante'
-                : 'Produto técnico'}
-              {' · '}
-              Tipo: {familiaSelecionada.tipo_dimensional}
-            </p>
+            <div className="rounded-md border border-dashed border-border bg-background p-3 text-xs space-y-1.5">
+              <p className="font-semibold text-foreground">Produto guiado pela Família/Figura</p>
+              <div className="flex flex-wrap gap-1.5">
+                <Badge variant="secondary">
+                  {familiaSelecionada.categoria_produto === 'MATERIAL_DIMENSIONAL'
+                    ? 'Material dimensional'
+                    : familiaSelecionada.categoria_produto === 'MANUAL_FABRICANTE'
+                    ? 'Produto manual/fabricante'
+                    : 'Produto técnico'}
+                </Badge>
+                <Badge variant="secondary">
+                  Tipo: {familiaSelecionada.tipo_dimensional || 'SIMPLES'}
+                </Badge>
+              </div>
+              {obrigatorios.length > 0 && (
+                <p className="text-muted-foreground">
+                  <span className="font-medium text-foreground">Obrigatórios:</span>{' '}
+                  {obrigatorios.join(' · ')}
+                </p>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -206,13 +265,25 @@ export function ProdutoGeralFormTab({
         {/* NCM (preview) */}
         {preview.ncm && (
           <div className="space-y-1">
-            <Label>NCM sugerido</Label>
+            <div className="flex items-center gap-1.5">
+              <Label>NCM sugerido</Label>
+              <Badge variant="secondary">somente leitura</Badge>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Vem da família/figura ou do preview do servidor. Ajuste o NCM na aba Fiscal.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
             <Input
               className="font-mono bg-muted/40"
               value={preview.ncm}
               readOnly
             />
-            <p className="text-xs text-muted-foreground">Vem da família ou do preview.</p>
           </div>
         )}
 

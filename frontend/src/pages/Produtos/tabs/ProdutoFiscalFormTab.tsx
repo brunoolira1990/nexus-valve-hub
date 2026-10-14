@@ -1,9 +1,12 @@
-import { Label, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { NcmAutocomplete, type NcmOption } from '@/components/produtos/NcmAutocomplete';
 import type { ProdutoFormState } from '../types';
 import type { FamiliaProduto } from '@/types';
 import { ncmApiService } from '@/services/api/produtos';
 import { useState } from 'react';
+import { ORIGEM_MERCADORIA_OPTIONS } from './constants';
 
 interface ProdutoFiscalFormTabProps {
   form: ProdutoFormState;
@@ -11,18 +14,6 @@ interface ProdutoFiscalFormTabProps {
   preview?: { ncm?: string };
   familiaSelecionada?: FamiliaProduto | null;
 }
-
-const ORIGEM_MERCADORIA_OPTIONS = [
-  { value: '0', label: '0 - Nacional, exceto as indicadas nos códigos 3, 4, 5 e 8' },
-  { value: '1', label: '1 - Estrangeira - Importação direta, exceto a indicada no código 6' },
-  { value: '2', label: '2 - Estrangeira - Adquirida no mercado interno, exceto a indicada no código 7' },
-  { value: '3', label: '3 - Nacional, mercadoria ou bem com Conteúdo de Importação superior a 40%' },
-  { value: '4', label: '4 - Nacional, cuja produção tenha sido feita em conformidade com os processos produtivos básicos de que tratam as legislações citadas nos ajustes' },
-  { value: '5', label: '5 - Nacional, mercadoria ou bem com Conteúdo de Importação inferior ou igual a 40%' },
-  { value: '6', label: '6 - Estrangeira - Importação direta, sem similar nacional, constante em lista da CAMEX' },
-  { value: '7', label: '7 - Estrangeira - Adquirida no mercado interno, sem similar nacional, constante em lista da CAMEX' },
-  { value: '8', label: '8 - Nacional, mercadoria ou bem com Conteúdo de Importação superior a 70%' },
-];
 
 export function ProdutoFiscalFormTab({
   form,

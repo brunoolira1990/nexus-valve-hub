@@ -1,9 +1,11 @@
-import { Label, Select, Input } from '@/components/ui';
+import { Label } from '@/components/ui/label';
+import { Select } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import type { ProdutoFormState } from '../types';
 import { PolegadaAutocomplete } from '@/components/produtos/PolegadaAutocomplete';
 import { ConversaoMedidasBlock } from '@/components/produtos/ConversaoMedidasBlock';
-import { MATERIAIS } from '../ProdutoList';
+import { MATERIAIS } from './constants';
 import { schedulesEspessuraService } from '@/services/api/produtos';
 import type { ScheduleEspessura } from '@/types';
 

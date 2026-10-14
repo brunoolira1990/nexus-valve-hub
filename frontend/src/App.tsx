@@ -32,6 +32,7 @@ import MinhaConta from "./pages/MinhaConta";
 import MinhaContaAlterarSenha from "./pages/MinhaContaAlterarSenha";
 import Produtos from "./pages/Produtos/ProdutoList";
 import ProdutoDetalhe from "./pages/Produtos/ProdutoDetalhe";
+import ProdutoFormPage from "./pages/Produtos/ProdutoFormPage";
 import Corridas from "./pages/Corridas";
 import RegrasFiscais from "./pages/RegrasFiscais";
 import Propostas from "./pages/Propostas";
@@ -118,6 +119,8 @@ const App = () => (
         <Route path="minha-conta/alterar-senha" element={<MinhaContaAlterarSenha />} />
         <Route path="produtos" element={<Produtos />} />
         <Route path="produtos/:id" element={<ProdutoDetalhe />} />
+        <Route path="produtos/novo" element={<ProdutoFormPage />} />
+        <Route path="produtos/:id/editar" element={<ProdutoFormPage />} />
         <Route path="corridas" element={<Corridas />} />
         <Route path="regras-fiscais" element={<RegrasFiscais />} />
         <Route path="propostas" element={<Propostas />} />
