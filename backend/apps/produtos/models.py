@@ -2,6 +2,10 @@ from decimal import Decimal
 
 from django.db import models
 
+# Material é definido em módulo separado para não sobrecarregar este arquivo.
+# Re-exportado aqui para que `from apps.produtos.models import Material` funcione.
+from apps.produtos.material_models import Material  # noqa: E402  (import após models)
+
 
 def _norm_polegada(polegada: str) -> str:
     return (polegada or '').replace('"', '').strip()
