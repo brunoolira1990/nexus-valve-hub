@@ -1,12 +1,26 @@
+import { type ReactNode } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { FileText, Calculator, Percent } from 'lucide-react';
 import { NcmAutocomplete, type NcmOption } from '@/components/produtos/NcmAutocomplete';
 import type { ProdutoFormState } from '../types';
 import type { FamiliaProduto } from '@/types';
 import { ncmApiService } from '@/services/api/produtos';
 import { useState, useEffect } from 'react';
 import { ORIGEM_MERCADORIA_OPTIONS } from './constants';
+
+/** Rótulo de campo padronizado (text-sm font-medium mb-1.5). */
+function CampoLabel({ children }: { children: ReactNode }) {
+  return <Label className="text-sm font-medium mb-1.5 block">{children}</Label>;
+}
 
 interface ProdutoFiscalFormTabProps {
   form: ProdutoFormState;
@@ -55,150 +69,162 @@ export function ProdutoFiscalFormTab({
   // NCM efetivo: produto override > família > não definido
   const ncmEfetivo = form.ncm || familiaSelecionada?.ncm_padrao_info?.codigo || 'NÃO DEFINIDO';
   const ncmEfetivoDesc = familiaSelecionada?.ncm_padrao_info?.descricao || '';
-  const ncmOrigem = form.ncm ? 'override no produto' : (familiaSelecionada?.ncm_padrao_id ? 'família / figura' : 'não definido');
+  const ncmOrigem = form.ncm
+    ? 'override no produto'
+    : familiaSelecionada?.ncm_padrao_id
+    ? 'família / figura'
+    : 'não definido';
 
   return (
-    <div className="space-y-4">
-      {/* NCM Efetivo - Read Only */}
-      <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-2">
-        <p className="text-sm font-semibold">NCM efetivo para tributação</p>
-        <p className="text-lg font-mono">{ncmEfetivo}</p>
-        <p className="text-xs text-muted-foreground">
-          Este é o código utilizado em NF-e e regras fiscais. Origem: {ncmOrigem}
-        </p>
-        {ncmEfetivoDesc && (
-          <p className="text-sm text-muted-foreground">{ncmEfetivoDesc}</p>
-        )}
-      </div>
-
-      {/* NCM no produto (override opcional) */}
-      <div className="space-y-2">
-        <Label>NCM no produto (override opcional)</Label>
-        <NcmAutocomplete
-          value={ncmProdutoOption}
-          onChange={(opt) => {
-            setNcmProdutoOption(opt);
-            handleInputChange('ncm', opt?.codigo || '');
-          }}
-          searchNcm={(term, limit) => ncmApiService.search(term, limit)}
-          placeholder="Digite código ou descrição do NCM..."
-        />
-        <p className="text-xs text-muted-foreground">
-          Preencha para sobrescrever o NCM da família. Vazio = herda da família/figura.
-        </p>
-        {form.ncm && (
-          <button
-            type="button"
-            className="erp-btn-outline erp-btn-sm mt-2 w-full sm:w-auto"
-            onClick={() => {
-              handleInputChange('ncm', '');
-              setNcmProdutoOption(null);
-            }}
-          >
-            Remover override e usar NCM da família
-          </button>
-        )}
-      </div>
-
-      {/* Campos fiscais adicionais */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Origem da mercadoria */}
-        <div className="space-y-1">
-          <Label>Origem da mercadoria</Label>
-          <Select
-            value={form.origem || '0'}
-            onValueChange={(v) => handleInputChange('origem', v)}
-            className="w-full"
-          >
-            <SelectTrigger className="erp-select">
-              <SelectValue placeholder="Selecione a origem" />
-            </SelectTrigger>
-            <SelectContent>
-              {ORIGEM_MERCADORIA_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* NCM específico (legado) */}
-        <div className="space-y-1">
-          <Label>NCM específico (legado)</Label>
-          <Input
-            className="erp-input mt-1"
-            value={form.ncm_especifico || ''}
-            onChange={(e) => handleInputChange('ncm_especifico', e.target.value)}
-            placeholder="NCM específico legado"
-          />
-        </div>
-
-        {/* Unidade específica (override) */}
-        <div className="space-y-1">
-          <Label>Unidade específica (override)</Label>
-          <Input
-            className="erp-input mt-1"
-            value={form.unidade_especifica || ''}
-            onChange={(e) => handleInputChange('unidade_especifica', e.target.value)}
-            placeholder="Override de unidade para este produto"
-          />
-        </div>
-
-        {/* Unidade fiscal */}
-        <div className="space-y-1">
-          <Label>Unidade fiscal</Label>
-          <Input
-            className="erp-input mt-1"
-            value={form.unidade_fiscal || ''}
-            onChange={(e) => handleInputChange('unidade_fiscal', e.target.value)}
-            placeholder="Unidade para fins fiscais (NF-e)"
-          />
-        </div>
-
-        {/* Unidade estoque efetiva - Read Only */}
-        <div className="space-y-1">
-          <Label>Unidade estoque efetiva</Label>
-          <Input
-            className="erp-input mt-1 bg-muted/40 cursor-default"
-            value={form.unidade_estoque || form.unidade || '—'}
-            readOnly
-          />
-          <p className="text-xs text-muted-foreground">
-            Somente leitura. Ajuste unidades na aba Classificação industrial.
-          </p>
-        </div>
-      </div>
-
-      {/* Alíquotas base de referência (informativas) */}
-      <section className="rounded-lg border border-border bg-muted/20 p-4 space-y-3">
-        <p className="text-sm font-semibold text-foreground">Alíquotas base de referência (informativas)</p>
-        <p className="text-xs text-muted-foreground">
-          Estas alíquotas são de referência e podem variar conforme a operação, estado e regime tributário.
-          Consulte a legislação vigente e seu contador para valores aplicáveis.
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-          <div className="rounded-md border border-border bg-background p-3">
-            <p className="text-xs text-muted-foreground">IPI</p>
-            <p className="font-mono text-lg">—</p>
-            <p className="text-[11px] text-muted-foreground">Consultar TIPI</p>
+    <div className="space-y-6">
+      {/* ===== NCM efetivo ===== */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <FileText className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">NCM efetivo para tributação</CardTitle>
           </div>
-          <div className="rounded-md border border-border bg-background p-3">
-            <p className="text-xs text-muted-foreground">PIS/COFINS</p>
-            <p className="font-mono text-lg">—</p>
-            <p className="text-[11px] text-muted-foreground">Consultar regime</p>
+          <CardDescription className="text-xs">
+            Código utilizado em NF-e e regras fiscais. Origem: {ncmOrigem}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {/* NCM efetivo — read only */}
+          <div className="rounded-md border border-primary/30 bg-primary/5 p-3 space-y-1">
+            <p className="font-mono text-lg font-semibold">{ncmEfetivo}</p>
+            {ncmEfetivoDesc && (
+              <p className="text-sm text-muted-foreground">{ncmEfetivoDesc}</p>
+            )}
           </div>
-          <div className="rounded-md border border-border bg-background p-3">
-            <p className="text-xs text-muted-foreground">ICMS</p>
-            <p className="font-mono text-lg">—</p>
-            <p className="text-[11px] text-muted-foreground">Consultar estado</p>
+
+          {/* NCM no produto (override opcional) */}
+          <div>
+            <CampoLabel>NCM no produto (override opcional)</CampoLabel>
+            <NcmAutocomplete
+              value={ncmProdutoOption}
+              onChange={(opt) => {
+                setNcmProdutoOption(opt);
+                handleInputChange('ncm', opt?.codigo || '');
+              }}
+              searchNcm={(term, limit) => ncmApiService.search(term, limit)}
+              placeholder="Digite código ou descrição do NCM..."
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Preencha para sobrescrever o NCM da família. Vazio = herda da família/figura.
+            </p>
+            {form.ncm && (
+              <button
+                type="button"
+                className="erp-btn-outline erp-btn-sm mt-2 w-full sm:w-auto"
+                onClick={() => {
+                  handleInputChange('ncm', '');
+                  setNcmProdutoOption(null);
+                }}
+              >
+                Remover override e usar NCM da família
+              </button>
+            )}
           </div>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          <strong>Nota:</strong> As alíquotas efetivas são determinadas no momento da operação fiscal
-          com base na NCM, CST/CSOSN, origem, destino e regime tributário da empresa.
-        </p>
-      </section>
+        </CardContent>
+      </Card>
+
+      {/* ===== NCM específico e unidades ===== */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Calculator className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">NCM específico e unidades</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            Campos legados, origem e unidades de controle fiscal e estoque
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {/* Origem da mercadoria */}
+            <div>
+              <CampoLabel>Origem da mercadoria</CampoLabel>
+              <Select
+                value={form.origem || '0'}
+                onValueChange={(v) => handleInputChange('origem', v)}
+              >
+                <SelectTrigger className="w-full h-10">
+                  <SelectValue placeholder="Selecione a origem" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ORIGEM_MERCADORIA_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* NCM específico (legado) */}
+            <div>
+              <CampoLabel>NCM específico (legado)</CampoLabel>
+              <Input
+                className="h-10"
+                value={form.ncm_especifico || ''}
+                onChange={(e) => handleInputChange('ncm_especifico', e.target.value)}
+                placeholder="NCM específico legado"
+              />
+            </div>
+
+            {/* Unidade específica (override) */}
+            <div>
+              <CampoLabel>Unidade específica (override)</CampoLabel>
+              <Input
+                className="h-10"
+                value={form.unidade_especifica || ''}
+                onChange={(e) => handleInputChange('unidade_especifica', e.target.value)}
+                placeholder="Override de unidade para este produto"
+              />
+            </div>
+
+            {/* Unidade fiscal */}
+            <div>
+              <CampoLabel>Unidade fiscal</CampoLabel>
+              <Input
+                className="h-10"
+                value={form.unidade_fiscal || ''}
+                onChange={(e) => handleInputChange('unidade_fiscal', e.target.value)}
+                placeholder="Unidade para fins fiscais (NF-e)"
+              />
+            </div>
+
+            {/* Unidade estoque efetiva — read only */}
+            <div>
+              <CampoLabel>Unidade estoque efetiva</CampoLabel>
+              <Input
+                className="h-10 bg-muted/40 cursor-default"
+                value={form.unidade_estoque || form.unidade || '—'}
+                readOnly
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Somente leitura. Ajuste unidades na aba Classificação industrial.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ===== Alíquotas de referência ===== */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Percent className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">Alíquotas base de referência</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            Informativas — variam conforme operação, estado e regime tributário.
+            IPI: consultar TIPI · PIS/COFINS: consultar regime · ICMS: consultar estado.
+            As alíquotas efetivas são determinadas no momento da operação fiscal com base na NCM,
+            CST/CSOSN, origem, destino e regime tributário da empresa.
+          </CardDescription>
+        </CardHeader>
+      </Card>
     </div>
   );
 }
