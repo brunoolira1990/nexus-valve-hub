@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Pencil, Trash2, FlaskConical } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { materiaisService } from '@/services/api/materiais';
 import { apiErrorMessage } from '@/services/api/config';
@@ -23,8 +24,16 @@ const CATEGORIA_BADGE: Record<MaterialCategoria, string> = {
   OUTRO:         'bg-slate-100 text-slate-600 border-slate-200',
 };
 
+const TODAS_CATEGORIAS = '__all__';
+const TODOS_STATUS     = '__all__';
+
 const MaterialList = () => {
   const navigate = useNavigate();
+
+  // Estados locais dos selects — nunca passam string vazia para o Radix.
+  // '__all__' = sem filtro (sentinela); qualquer outro valor é enviado à API.
+  const [categoriaSelect, setCategoriaSelect] = useState<string>(TODAS_CATEGORIAS);
+  const [ativoSelect, setAtivoSelect]         = useState<string>(TODOS_STATUS);
 
   const {
     items,
@@ -36,7 +45,6 @@ const MaterialList = () => {
     setSearch,
     setPage,
     setPageSize,
-    filters,
     setFilter,
     loading,
     error,
@@ -44,6 +52,17 @@ const MaterialList = () => {
   } = usePaginatedList<Material>({
     fetchPage: materiaisService.listPaginated,
   });
+
+  // Converte sentinela → '' para que o hook remova a chave dos params.
+  const handleCategoriaChange = (v: string) => {
+    setCategoriaSelect(v);
+    setFilter('categoria', v === TODAS_CATEGORIAS ? '' : v);
+  };
+
+  const handleAtivoChange = (v: string) => {
+    setAtivoSelect(v);
+    setFilter('ativo', v === TODOS_STATUS ? '' : v);
+  };
 
   const handleDelete = async (id: number, nome: string) => {
     if (!confirm(`Excluir o material "${nome}"?\nEsta ação não pode ser desfeita.`)) return;
@@ -71,14 +90,14 @@ const MaterialList = () => {
       <div className="px-0 pb-3 flex gap-3 flex-wrap">
         <div className="w-56">
           <Select
-            value={filters.categoria ?? ''}
-            onValueChange={(v) => setFilter('categoria', v)}
+            value={categoriaSelect}
+            onValueChange={handleCategoriaChange}
           >
             <SelectTrigger className="h-9 text-sm">
               <SelectValue placeholder="Todas as categorias" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Todas as categorias</SelectItem>
+              <SelectItem value={TODAS_CATEGORIAS}>Todas as categorias</SelectItem>
               {MATERIAL_CATEGORIA_OPTIONS.map((opt) => (
                 <SelectItem key={opt.value} value={opt.value}>
                   {opt.label}
@@ -90,14 +109,14 @@ const MaterialList = () => {
 
         <div className="w-44">
           <Select
-            value={filters.ativo ?? ''}
-            onValueChange={(v) => setFilter('ativo', v)}
+            value={ativoSelect}
+            onValueChange={handleAtivoChange}
           >
             <SelectTrigger className="h-9 text-sm">
               <SelectValue placeholder="Ativos e inativos" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Ativos e inativos</SelectItem>
+              <SelectItem value={TODOS_STATUS}>Ativos e inativos</SelectItem>
               <SelectItem value="true">Somente ativos</SelectItem>
               <SelectItem value="false">Somente inativos</SelectItem>
             </SelectContent>
