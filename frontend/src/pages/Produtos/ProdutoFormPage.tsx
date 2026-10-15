@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Loader2, Save, X } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
@@ -12,12 +12,60 @@ import { ProdutoFiscalFormTab } from './tabs/ProdutoFiscalFormTab';
 import { ProdutoPainelOperacionalTab } from '@/components/produtos/ProdutoPainelOperacionalTab';
 import { ProdutoRastreabilidadeTab } from '@/components/produtos/ProdutoRastreabilidadeTab';
 import { HistoricoAlteracoesPanel } from '@/components/auditoria/HistoricoAlteracoesPanel';
+import { familiasProdutoService, produtosService } from '@/services/api/produtos';
+import type { FamiliaProduto, Produto } from '@/types';
 
 const ProdutoFormPage = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const isEdit = Boolean(id);
   const produtoId = id ? Number(id) : undefined;
+
+  // Famílias carregadas no container e passadas ao hook (necessário para
+  // familiaSelecionada / famReq funcionarem — antes vinha [] e ficava sempre null).
+  const [familias, setFamilias] = useState<FamiliaProduto[]>([]);
+  const [produtosOpcoes, setProdutosOpcoes] = useState<
+    Array<{ id: number; codigo_completo: string; descricao: string }>
+  >([]);
+
+  useEffect(() => {
+    let ativo = true;
+    void familiasProdutoService
+      .getAll({ apenas_ativas: '1' })
+      .then((list) => {
+        if (ativo) setFamilias(list);
+      })
+      .catch(() => {
+        if (ativo) setFamilias([]);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, []);
+
+  // Lista de produtos para o seletor de componentes da Composição (apenas em edição).
+  useEffect(() => {
+    if (!isEdit) return;
+    let ativo = true;
+    void produtosService
+      .search('', 200)
+      .then((hits: Produto[]) => {
+        if (!ativo) return;
+        setProdutosOpcoes(
+          hits.map((p) => ({
+            id: p.id,
+            codigo_completo: p.codigo_completo,
+            descricao: p.descricao,
+          }))
+        );
+      })
+      .catch(() => {
+        if (ativo) setProdutosOpcoes([]);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [isEdit]);
 
   const {
     form,
@@ -28,33 +76,25 @@ const ProdutoFormPage = () => {
     carregando,
     salvar,
     familiaSelecionada,
+    famReq,
+    editing,
     duplicateCodigo,
     setModoCodigo,
-  } = useProdutoForm(produtoId, [], async () => {
-    // onSaveSuccess callback
-    if (!isEdit) {
-      // For create, we need to wait for the ID to be returned
-      // The hook returns the new ID, so we handle navigation in the handleSubmit
-    }
+  } = useProdutoForm(produtoId, familias, async () => {
+    // onSaveSuccess — navegação é tratada em handleSubmit (precisa do id retornado).
   });
 
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [lastSavedId, setLastSavedId] = useState<number | null>(null);
 
   const handleSubmit = async () => {
     setSaveError(null);
     const result = await salvar();
     if (result.sucesso && result.id) {
-      setLastSavedId(result.id);
-      const targetId = result.id;
       toast.success(isEdit ? 'Produto atualizado com sucesso.' : 'Produto criado com sucesso.');
-      navigate(`/produtos/${targetId}`);
-    } else if (!result.sucesso) {
-      // Error is already set in the hook via `erro` state
-      if (erro) {
-        setSaveError(erro);
-        toast.error(erro);
-      }
+      navigate(`/produtos/${result.id}`);
+    } else if (!result.sucesso && erro) {
+      setSaveError(erro);
+      toast.error(erro);
     }
   };
 
@@ -62,7 +102,18 @@ const ProdutoFormPage = () => {
     navigate('/produtos');
   };
 
-  // Loading state for initial fetch (edit mode)
+  // Criação rápida de família: o fluxo inline (famModalOpen) ainda vive no modal
+  // antigo (ProdutoList.tsx) e não há rota dedicada. Até a extração (Fase 5),
+  // orientamos o usuário em vez de abrir um fluxo inexistente.
+  const handleNovaFamilia = useMemo(
+    () => () => {
+      toast.info(
+        'A criação rápida de família ainda não foi migrada para esta tela. Cadastre a família no módulo de Famílias/Figuras e volte para selecioná-la.'
+      );
+    },
+    []
+  );
+
   if (carregando) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -74,11 +125,13 @@ const ProdutoFormPage = () => {
     );
   }
 
-  // Error state for initial fetch
-  if (erro && isEdit) {
+  if (erro && isEdit && !editing) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
-        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive text-center" role="alert">
+        <div
+          className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive text-center"
+          role="alert"
+        >
           {erro}
         </div>
         <NexusButton variant="outline" onClick={handleCancel}>
@@ -89,7 +142,6 @@ const ProdutoFormPage = () => {
     );
   }
 
-  // Save error banner (shown above tabs)
   const showSaveError = saveError || (erro && !carregando);
 
   return (
@@ -103,21 +155,11 @@ const ProdutoFormPage = () => {
         ]}
         actions={
           <div className="flex items-center gap-2">
-            <NexusButton
-              type="button"
-              variant="outline"
-              onClick={handleCancel}
-              disabled={salvando}
-            >
+            <NexusButton type="button" variant="outline" onClick={handleCancel} disabled={salvando}>
               <X className="h-4 w-4 mr-2" />
               Cancelar
             </NexusButton>
-            <NexusButton
-              type="button"
-              onClick={handleSubmit}
-              disabled={salvando}
-              loading={salvando}
-            >
+            <NexusButton type="button" onClick={handleSubmit} disabled={salvando} loading={salvando}>
               <Save className="h-4 w-4 mr-2" />
               Salvar
             </NexusButton>
@@ -130,7 +172,7 @@ const ProdutoFormPage = () => {
           className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
           role="alert"
         >
-          {(saveError || erro) && <p>{saveError || erro}</p>}
+          <p>{saveError || erro}</p>
         </div>
       )}
 
@@ -154,9 +196,11 @@ const ProdutoFormPage = () => {
             setForm={setForm}
             preview={preview}
             familiaSelecionada={familiaSelecionada}
-            erro={showSaveError ? (saveError || erro) : undefined}
+            erro={showSaveError ? saveError || erro || undefined : undefined}
             duplicateCodigo={duplicateCodigo}
             setModoCodigo={setModoCodigo}
+            onNovaFamilia={handleNovaFamilia}
+            editingCodigo={editing?.codigo_completo ?? null}
           />
         </TabsContent>
 
@@ -165,6 +209,10 @@ const ProdutoFormPage = () => {
             form={form}
             setForm={setForm}
             preview={preview}
+            familiaSelecionada={familiaSelecionada}
+            famReq={famReq}
+            editing={editing}
+            produtosOpcoes={produtosOpcoes}
           />
         </TabsContent>
 

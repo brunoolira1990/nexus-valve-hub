@@ -1,24 +1,74 @@
+import { useEffect, useState, type ReactNode } from 'react';
 import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Info, Wrench, Link2, Ruler, Boxes, Scale, Layers } from 'lucide-react';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import type { ProdutoFormState } from '../types';
+import type { FamiliaProduto, RequisitosProdutoDimensionais, Produto, ScheduleEspessura } from '@/types';
 import { PolegadaAutocomplete } from '@/components/produtos/PolegadaAutocomplete';
 import { ConversaoMedidasBlock } from '@/components/produtos/ConversaoMedidasBlock';
+import { ProdutoComposicaoPanel } from '@/components/produtos/ProdutoComposicaoPanel';
 import { MATERIAIS } from './constants';
 import { schedulesEspessuraService } from '@/services/api/produtos';
-import type { ScheduleEspessura } from '@/types';
+import {
+  getTdAtual,
+  getUsaDimensoesMateriais,
+  getLabelCampoOdPrincipal,
+  getLabelCampoEspessuraOuMenor,
+  getAtributosTecnicosFamilia,
+} from '../lib/familiaDerivations';
+
+/** Asterisco de campo obrigatório (design system C: span text-destructive). */
+function Obrigatorio() {
+  return (
+    <span className="text-destructive" aria-hidden>
+      {' '}
+      *
+    </span>
+  );
+}
+
+/** Rótulo de campo padronizado (text-sm font-medium mb-1.5). */
+function CampoLabel({ children }: { children: ReactNode }) {
+  return <Label className="text-sm font-medium mb-1.5 block">{children}</Label>;
+}
 
 interface ProdutoClassificacaoFormTabProps {
   form: ProdutoFormState;
   setForm: (updater: (prev: ProdutoFormState) => ProdutoFormState) => void;
-  preview?: { codigo?: string; descricao?: string; ncm?: string };
+  preview?: { codigo?: string; descricao?: string; ncm?: string; mensagem?: string };
+  familiaSelecionada?: FamiliaProduto | null;
+  famReq?: RequisitosProdutoDimensionais | null;
+  /** Produto em edição — habilita o painel de Composição. */
+  editing?: Produto | null;
+  /** Lista de produtos para o seletor de componentes da composição. */
+  produtosOpcoes?: Array<{ id: number; codigo_completo: string; descricao: string }>;
 }
 
 export function ProdutoClassificacaoFormTab({
   form,
   setForm,
   preview,
+  familiaSelecionada = null,
+  famReq = null,
+  editing = null,
+  produtosOpcoes = [],
 }: ProdutoClassificacaoFormTabProps) {
   const handleInputChange = <K extends keyof ProdutoFormState>(
     key: K,
@@ -27,281 +77,508 @@ export function ProdutoClassificacaoFormTab({
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleNumberChange = (key: keyof ProdutoFormState, value: string) => {
-    const num = value === '' ? 0 : Number(value);
-    handleInputChange(key, Number.isFinite(num) ? num : 0);
+  // Schedule: option controlada (não fixa em null) — resolve o id salvo para exibir rótulo.
+  const [scheduleOption, setScheduleOption] = useState<ScheduleEspessura | null>(null);
+  useEffect(() => {
+    let ativo = true;
+    const id = form.schedule_ref_id;
+    if (!id) {
+      setScheduleOption(null);
+      return;
+    }
+    if (scheduleOption?.id === id) return;
+    void schedulesEspessuraService
+      .getAll()
+      .then((list) => {
+        if (!ativo) return;
+        setScheduleOption(list.find((s) => s.id === id) ?? null);
+      })
+      .catch(() => {
+        if (ativo) setScheduleOption(null);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [form.schedule_ref_id, scheduleOption?.id]);
+
+  // Derivações da família (puras — vindas de lib/familiaDerivations)
+  const tdAtual = getTdAtual(familiaSelecionada);
+  const usaDimensoesMateriais = getUsaDimensoesMateriais(familiaSelecionada);
+  const labelOd = getLabelCampoOdPrincipal(familiaSelecionada);
+  const labelEsp = getLabelCampoEspessuraOuMenor(familiaSelecionada);
+  const atributosTecnicos = getAtributosTecnicosFamilia(familiaSelecionada);
+  const familiaEhMaterialDimensional =
+    familiaSelecionada?.categoria_produto === 'MATERIAL_DIMENSIONAL';
+
+  // Material: comparação normalizada por caixa (Opção C) — resolve "opção fantasma"
+  // sem alterar strings nem dados. 'Aço Carbono' (default) casa com 'Aço carbono' (lista).
+  const materialNaLista = MATERIAIS.some(
+    (m) => m.toLowerCase() === (form.material || '').toLowerCase()
+  );
+
+  const getAtributoTecnico = (key: string): string => {
+    const value = form.dimensoes_json?.[key];
+    return value == null ? '' : String(value);
+  };
+  const setAtributoTecnico = (key: string, value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      dimensoes_json: { ...(prev.dimensoes_json || {}), [key]: value },
+    }));
   };
 
+  const parseDec = (raw: string): number | null => {
+    const v = raw.replace(',', '.');
+    if (v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const decToText = (n: number | null | undefined) =>
+    n?.toString().replace('.', ',') || '';
+
   return (
-    <div className="space-y-4">
-      {/* Identidade técnica */}
-      <section className="rounded-lg border border-border bg-muted/20 p-4 space-y-4">
-        <p className="text-sm font-semibold text-foreground">Identidade técnica</p>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div>
-            <Label>Material base</Label>
-            <Select
-              value={form.material}
-              onValueChange={(v) => handleInputChange('material', v)}
-              className="erp-select mt-1 w-full"
-            >
-              <option value="">Selecione...</option>
-              {form.material && !MATERIAIS.includes(form.material) ? (
-                <option value={form.material}>{form.material}</option>
-              ) : null}
-              {MATERIAIS.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </Select>
+    <div className="space-y-6">
+      {/* ===== Identidade técnica ===== */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Wrench className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">Identidade técnica</CardTitle>
           </div>
-          <div>
-            <Label>Norma técnica</Label>
-            <Input
-              className="erp-input mt-1"
-              value={form.norma}
-              onChange={(e) => handleInputChange('norma', e.target.value)}
-              placeholder="Ex.: ASME B16.34, DIN 3352"
-            />
+          <CardDescription className="text-xs">
+            Material, norma e pressão nominal do produto
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            <div>
+              <CampoLabel>Material base</CampoLabel>
+              <Select
+                value={form.material || ''}
+                onValueChange={(v) => handleInputChange('material', v)}
+              >
+                <SelectTrigger className="w-full h-10">
+                  <SelectValue placeholder="Selecione..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {form.material && !materialNaLista ? (
+                    <SelectItem value={form.material}>{form.material}</SelectItem>
+                  ) : null}
+                  {MATERIAIS.map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {m}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <CampoLabel>Norma técnica</CampoLabel>
+              <Input
+                className="erp-input h-10"
+                value={form.norma}
+                onChange={(e) => handleInputChange('norma', e.target.value)}
+                placeholder="Ex.: ASME B16.34, DIN 3352"
+              />
+            </div>
+            <div>
+              <CampoLabel>Pressão nominal</CampoLabel>
+              <Input
+                className="erp-input h-10"
+                value={form.pressao_nominal}
+                onChange={(e) => handleInputChange('pressao_nominal', e.target.value)}
+                placeholder="Ex.: PN 16, Class 150"
+              />
+            </div>
           </div>
-          <div>
-            <Label>Pressão nominal</Label>
-            <Input
-              className="erp-input mt-1"
-              value={form.pressao_nominal}
-              onChange={(e) => handleInputChange('pressao_nominal', e.target.value)}
-              placeholder="Ex.: PN 16, Class 150"
-            />
-          </div>
-          <div>
-            <Label>Tipo de peça</Label>
-            <Input
-              className="erp-input mt-1"
-              value={form.tipo_peca}
-              onChange={(e) => handleInputChange('tipo_peca', e.target.value)}
-              placeholder="Ex.: Válvula, Conexão, Flange"
-            />
-          </div>
-          <div className="md:col-span-2 lg:col-span-3">
-            <Label>Conexão (texto livre)</Label>
-            <Input
-              className="erp-input mt-1"
-              value={form.conexao}
-              onChange={(e) => handleInputChange('conexao', e.target.value)}
-              placeholder="Descrição livre da conexão"
-            />
-          </div>
-        </div>
-      </section>
+        </CardContent>
+      </Card>
 
-      {/* Dimensões e referências */}
-      <section className="rounded-lg border border-border bg-muted/20 p-4 space-y-4">
-        <p className="text-sm font-semibold text-foreground">Dimensões e referências</p>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {/* Polegada principal */}
-          <div>
-            <Label>Polegada principal (autocomplete)</Label>
-            <PolegadaAutocomplete
-              value={form.polegada_principal_ref_id ?? null}
-              onChange={(id) => handleInputChange('polegada_principal_ref_id', id)}
-              tipoMedida="OD"
-              allowCreate
-              placeholder="Busque por código, polegada, decimal ou mm"
-            />
+      {/* ===== Tipo de peça / Conexão ===== */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Link2 className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">Tipo de peça e conexão</CardTitle>
           </div>
+          <CardDescription className="text-xs">
+            Classificação da peça e descrição da conexão
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            <div className="lg:col-span-1">
+              <CampoLabel>Tipo de peça</CampoLabel>
+              <Input
+                className="erp-input h-10"
+                value={form.tipo_peca}
+                onChange={(e) => handleInputChange('tipo_peca', e.target.value)}
+                placeholder="Ex.: Válvula, Conexão, Flange"
+              />
+            </div>
+            <div className="lg:col-span-2">
+              <CampoLabel>Conexão (texto livre)</CampoLabel>
+              <Input
+                className="erp-input h-10"
+                value={form.conexao}
+                onChange={(e) => handleInputChange('conexao', e.target.value)}
+                placeholder="Descrição livre da conexão"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
-          {/* Polegada secundária */}
-          <div>
-            <Label>Polegada secundária (autocomplete)</Label>
-            <PolegadaAutocomplete
-              value={form.polegada_secundaria_ref_id ?? null}
-              onChange={(id) => handleInputChange('polegada_secundaria_ref_id', id)}
-              tipoMedida="OD"
-              allowCreate
-              placeholder="Busque por código, polegada, decimal ou mm"
-            />
-          </div>
+      {/* ===== Requisitos da Família/Figura (condicional) ===== */}
+      {familiaSelecionada && famReq && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <Link2 className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-base">Requisitos da Família/Figura</CardTitle>
+              <Badge variant="secondary">guiado pela regra</Badge>
+            </div>
+            <CardDescription className="text-xs">
+              Campos exigidos pela regra estrutural desta família
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {!familiaEhMaterialDimensional && famReq.usa_rosca_conexao && (
+              <div className="rounded-md border border-dashed border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+                A rosca/conexão padrão é herdada da família. Ajuste na aba Dados gerais se necessário.
+              </div>
+            )}
 
-          {/* Schedule / Espessura */}
-          <div>
-            <Label>Schedule / Espessura (autocomplete)</Label>
-            <AsyncAutocomplete<ScheduleEspessura>
-              value={form.schedule_ref_id ?? null}
-              selectedOption={null}
-              placeholder="Digite código, descrição ou aplicação (ex.: 10S, SCH 20, INOX)"
-              search={async (term, limit) => schedulesEspessuraService.search(term, limit ?? 20)}
-              getOptionValue={(opt) => opt.id}
-              getOptionLabel={(opt) =>
-                `${opt.codigo || opt.codigo_schedule} — ${opt.descricao || opt.codigo_schedule}`
-              }
-              onChange={(val, opt) => {
-                const id = typeof val === 'number' ? val : null;
-                handleInputChange('schedule_ref_id', id);
-              }}
-            />
-          </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {!familiaEhMaterialDimensional && famReq.usa_schedule && (
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <Label className="text-sm font-medium">Schedule / espessura</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Busque por código, descrição ou aplicação (ex.: 10S, SCH 20, INOX).
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <AsyncAutocomplete<ScheduleEspessura>
+                    value={form.schedule_ref_id ?? null}
+                    selectedOption={scheduleOption}
+                    placeholder="Digite código, descrição ou aplicação (ex.: 10S, SCH 20, INOX)"
+                    search={async (term, limit) => schedulesEspessuraService.search(term, limit ?? 20)}
+                    getOptionValue={(opt) => opt.id}
+                    getOptionLabel={(opt) =>
+                      `${opt.codigo || opt.codigo_schedule} — ${opt.descricao || opt.codigo_schedule}`
+                    }
+                    onChange={(val, opt) => {
+                      const id = typeof val === 'number' ? val : null;
+                      handleInputChange('schedule_ref_id', id);
+                      setScheduleOption(opt ?? null);
+                    }}
+                  />
+                </div>
+              )}
 
-          {/* Medidas em mm */}
-          <div>
-            <Label>OD (mm)</Label>
-            <Input
-              type="text"
-              inputMode="decimal"
-              className="erp-input mt-1"
-              placeholder="Ex.: 10 | 10,0 | 1,5"
-              value={form.od_mm?.toString().replace('.', ',') || ''}
-              onChange={(e) => {
-                const v = e.target.value.replace(',', '.');
-                const n = v === '' ? null : Number(v);
-                handleInputChange('od_mm', Number.isFinite(n) ? n : null);
-              }}
-            />
-          </div>
+              {!familiaEhMaterialDimensional && famReq.exige_od_mm && (
+                <div>
+                  <CampoLabel>
+                    {labelOd}
+                    <Obrigatorio />
+                  </CampoLabel>
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    className="erp-input h-10"
+                    placeholder="Ex.: 10 | 10,0 | 1,5"
+                    value={decToText(form.od_mm)}
+                    onChange={(e) => handleInputChange('od_mm', parseDec(e.target.value))}
+                  />
+                </div>
+              )}
 
-          <div>
-            <Label>Espessura (mm)</Label>
-            <Input
-              type="text"
-              inputMode="decimal"
-              className="erp-input mt-1"
-              placeholder="Ex.: 2 | 2,0 | 1,5"
-              value={form.espessura_mm?.toString().replace('.', ',') || ''}
-              onChange={(e) => {
-                const v = e.target.value.replace(',', '.');
-                const n = v === '' ? null : Number(v);
-                handleInputChange('espessura_mm', Number.isFinite(n) ? n : null);
-              }}
-            />
-          </div>
+              {!familiaEhMaterialDimensional && famReq.exige_espessura_mm && (
+                <div>
+                  <CampoLabel>
+                    {labelEsp}
+                    <Obrigatorio />
+                  </CampoLabel>
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    className="erp-input h-10"
+                    placeholder="Ex.: 2 | 2,0 | 1,5"
+                    value={decToText(form.espessura_mm)}
+                    onChange={(e) => handleInputChange('espessura_mm', parseDec(e.target.value))}
+                  />
+                </div>
+              )}
 
-          <div>
-            <Label>Comprimento (mm)</Label>
-            <Input
-              type="text"
-              inputMode="decimal"
-              className="erp-input mt-1"
-              placeholder="Ex.: 6000"
-              value={form.comprimento_mm?.toString().replace('.', ',') || ''}
-              onChange={(e) => {
-                const v = e.target.value.replace(',', '.');
-                const n = v === '' ? null : Number(v);
-                handleInputChange('comprimento_mm', Number.isFinite(n) ? n : null);
-              }}
-            />
-          </div>
-        </div>
-      </section>
+              {!familiaEhMaterialDimensional && famReq.exige_comprimento_mm && (
+                <div>
+                  <CampoLabel>Comprimento (mm)</CampoLabel>
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    className="erp-input h-10"
+                    placeholder="Ex.: 6000"
+                    value={decToText(form.comprimento_mm)}
+                    onChange={(e) => handleInputChange('comprimento_mm', parseDec(e.target.value))}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Se vazio, pode usar o comprimento padrão da barra cadastrado na família.
+                  </p>
+                </div>
+              )}
+            </div>
 
-      {/* Dimensões especiais (JSON) */}
-      <section className="rounded-lg border border-border bg-muted/20 p-4 space-y-4">
-        <p className="text-sm font-semibold text-foreground">Dimensões especiais</p>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div>
-            <Label>Espessura (mm)</Label>
-            <Input
-              type="text"
-              inputMode="decimal"
-              className="erp-input mt-1"
-              placeholder="Ex.: 3,2"
-              value={form.dim_espessura_mm?.toString().replace('.', ',') || ''}
-              onChange={(e) => {
-                const v = e.target.value.replace(',', '.');
-                const n = v === '' ? null : Number(v);
-                handleInputChange('dim_espessura_mm', Number.isFinite(n) ? n : null);
-              }}
-            />
-          </div>
-          <div>
-            <Label>Largura (mm)</Label>
-            <Input
-              type="text"
-              inputMode="decimal"
-              className="erp-input mt-1"
-              placeholder="Ex.: 1000"
-              value={form.dim_largura_mm?.toString().replace('.', ',') || ''}
-              onChange={(e) => {
-                const v = e.target.value.replace(',', '.');
-                const n = v === '' ? null : Number(v);
-                handleInputChange('dim_largura_mm', Number.isFinite(n) ? n : null);
-              }}
-            />
-          </div>
-          <div>
-            <Label>Comprimento (mm)</Label>
-            <Input
-              type="text"
-              inputMode="decimal"
-              className="erp-input mt-1"
-              placeholder="Ex.: 2000"
-              value={form.dim_comprimento_mm?.toString().replace('.', ',') || ''}
-              onChange={(e) => {
-                const v = e.target.value.replace(',', '.');
-                const n = v === '' ? null : Number(v);
-                handleInputChange('dim_comprimento_mm', Number.isFinite(n) ? n : null);
-              }}
-            />
-          </div>
-          <div>
-            <Label>Altura (mm)</Label>
-            <Input
-              type="text"
-              inputMode="decimal"
-              className="erp-input mt-1"
-              placeholder="Ex.: 50"
-              value={form.dim_altura_mm?.toString().replace('.', ',') || ''}
-              onChange={(e) => {
-                const v = e.target.value.replace(',', '.');
-                const n = v === '' ? null : Number(v);
-                handleInputChange('dim_altura_mm', Number.isFinite(n) ? n : null);
-              }}
-            />
-          </div>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Estas dimensões são armazenadas no campo JSON <code className="font-mono">dimensoes_json</code> do produto.
-        </p>
-      </section>
+            {!familiaEhMaterialDimensional && (famReq.usa_schedule || famReq.exige_espessura_mm) && (
+              <p className="text-xs text-muted-foreground rounded-md bg-muted/50 px-2 py-1.5">
+                Informe o schedule/espessura conforme a regra desta Família/Figura.
+              </p>
+            )}
 
-      {/* Conversão de Medidas */}
-      <ConversaoMedidasBlock
-        usaConversao={!!form.usa_conversao_dimensional}
-        onUsaConversaoChange={(v) => handleInputChange('usa_conversao_dimensional', v)}
-        controlaComposicaoFisica={!!form.controla_composicao_fisica}
-        onControlaComposicaoFisicaChange={(v) => handleInputChange('controla_composicao_fisica', v)}
-        tipoComposicaoFisica={form.tipo_composicao_fisica || 'BARRA_M'}
-        onTipoComposicaoFisicaChange={(v) => handleInputChange('tipo_composicao_fisica', v)}
-        tipoFisicoEfetivo={form.tipo_fisico_efetivo || form.tipo_fisico || ''}
-        tipoFisicoProduto={form.tipo_fisico || ''}
-        onTipoFisicoProdutoChange={(v) => handleInputChange('tipo_fisico', v)}
-        tipoControleProduto={form.tipo_controle_unidade || ''}
-        onTipoControleProdutoChange={(v) => handleInputChange('tipo_controle_unidade', v)}
-        unidadeEstoque={form.unidade_estoque || ''}
-        onUnidadeEstoqueChange={(v) => handleInputChange('unidade_estoque', v)}
-        unidadeVenda={form.unidade_venda_padrao || ''}
-        onUnidadeVendaChange={(v) => handleInputChange('unidade_venda_padrao', v)}
-        unidadeCompra={form.unidade_compra_padrao || ''}
-        onUnidadeCompraChange={(v) => handleInputChange('unidade_compra_padrao', v)}
-        unidadeFiscal={form.unidade_fiscal || ''}
-        onUnidadeFiscalChange={(v) => handleInputChange('unidade_fiscal', v)}
-        unidadesVenda={form.unidades_venda_permitidas || []}
-        onUnidadesVendaChange={(list) => handleInputChange('unidades_venda_permitidas', list)}
-        unidadesCompra={form.unidades_compra_permitidas || []}
-        onUnidadesCompraChange={(list) => handleInputChange('unidades_compra_permitidas', list)}
-        comprimentoBarra={form.comprimento_padrao_barra_m ?? null}
-        onComprimentoBarraChange={(v) => handleInputChange('comprimento_padrao_barra_m', v)}
-        pesoMetro={form.peso_por_metro_kg ?? null}
-        onPesoMetroChange={(v) => handleInputChange('peso_por_metro_kg', v)}
-        pesoPeca={form.peso_por_peca_kg ?? null}
-        onPesoPecaChange={(v) => handleInputChange('peso_por_peca_kg', v)}
-        pesoChapa={form.peso_por_chapa_kg ?? null}
-        onPesoChapaChange={(v) => handleInputChange('peso_por_chapa_kg', v)}
-        densidade={form.densidade ?? null}
-        onDensidadeChange={(v) => handleInputChange('densidade', v)}
-        observacoes={form.observacoes_conversao || ''}
-        onObservacoesChange={(v) => handleInputChange('observacoes_conversao', v)}
-        ocultarUnidadeFiscal
-      />
+            {atributosTecnicos.length > 0 && (
+              <div className="space-y-3 pt-2">
+                <p className="text-sm font-medium text-foreground">Atributos técnicos da Figura</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {atributosTecnicos.map(({ token, key, label, hint }) => (
+                    <div key={token}>
+                      <CampoLabel>
+                        {label}
+                        <code className="font-mono text-xs"> {token}</code>
+                      </CampoLabel>
+                      <Input
+                        className="erp-input h-10"
+                        value={getAtributoTecnico(key)}
+                        placeholder={hint}
+                        onChange={(e) => setAtributoTecnico(key, e.target.value)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ===== Dimensões e referências ===== */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Ruler className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">Dimensões e referências</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            Polegadas de referência e medidas em milímetros
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            <div>
+              <CampoLabel>Polegada principal (autocomplete)</CampoLabel>
+              <PolegadaAutocomplete
+                value={form.polegada_principal_ref_id ?? null}
+                onChange={(id) => handleInputChange('polegada_principal_ref_id', id)}
+                tipoMedida="OD"
+                allowCreate
+                placeholder="Busque por código, polegada, decimal ou mm"
+              />
+            </div>
+            <div>
+              <CampoLabel>Polegada secundária (autocomplete)</CampoLabel>
+              <PolegadaAutocomplete
+                value={form.polegada_secundaria_ref_id ?? null}
+                onChange={(id) => handleInputChange('polegada_secundaria_ref_id', id)}
+                tipoMedida="OD"
+                allowCreate
+                placeholder="Busque por código, polegada, decimal ou mm"
+              />
+            </div>
+            <div>
+              <CampoLabel>OD (mm)</CampoLabel>
+              <Input
+                type="text"
+                inputMode="decimal"
+                className="erp-input h-10"
+                placeholder="Ex.: 10 | 10,0 | 1,5"
+                value={decToText(form.od_mm)}
+                onChange={(e) => handleInputChange('od_mm', parseDec(e.target.value))}
+              />
+            </div>
+            <div>
+              <CampoLabel>Espessura (mm)</CampoLabel>
+              <Input
+                type="text"
+                inputMode="decimal"
+                className="erp-input h-10"
+                placeholder="Ex.: 2 | 2,0 | 1,5"
+                value={decToText(form.espessura_mm)}
+                onChange={(e) => handleInputChange('espessura_mm', parseDec(e.target.value))}
+              />
+            </div>
+            <div>
+              <CampoLabel>Comprimento (mm)</CampoLabel>
+              <Input
+                type="text"
+                inputMode="decimal"
+                className="erp-input h-10"
+                placeholder="Ex.: 6000"
+                value={decToText(form.comprimento_mm)}
+                onChange={(e) => handleInputChange('comprimento_mm', parseDec(e.target.value))}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ===== Dimensões especiais (JSON) ===== */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Boxes className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">Dimensões especiais</CardTitle>
+            {usaDimensoesMateriais && tdAtual ? (
+              <Badge variant="secondary">tipo: {tdAtual}</Badge>
+            ) : null}
+          </div>
+          <CardDescription className="text-xs">
+            Dimensões de material dimensional (armazenadas em{' '}
+            <code className="font-mono">dimensoes_json</code>)
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {usaDimensoesMateriais ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              <div>
+                <CampoLabel>Espessura (mm)</CampoLabel>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  className="erp-input h-10"
+                  placeholder="Ex.: 3,2"
+                  value={decToText(form.dim_espessura_mm)}
+                  onChange={(e) => handleInputChange('dim_espessura_mm', parseDec(e.target.value))}
+                />
+              </div>
+              <div>
+                <CampoLabel>Largura (mm)</CampoLabel>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  className="erp-input h-10"
+                  placeholder="Ex.: 1000"
+                  value={decToText(form.dim_largura_mm)}
+                  onChange={(e) => handleInputChange('dim_largura_mm', parseDec(e.target.value))}
+                />
+              </div>
+              <div>
+                <CampoLabel>Comprimento (mm)</CampoLabel>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  className="erp-input h-10"
+                  placeholder="Ex.: 2000"
+                  value={decToText(form.dim_comprimento_mm)}
+                  onChange={(e) => handleInputChange('dim_comprimento_mm', parseDec(e.target.value))}
+                />
+              </div>
+              <div>
+                <CampoLabel>Altura (mm)</CampoLabel>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  className="erp-input h-10"
+                  placeholder="Ex.: 50"
+                  value={decToText(form.dim_altura_mm)}
+                  onChange={(e) => handleInputChange('dim_altura_mm', parseDec(e.target.value))}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground text-center py-8 border border-dashed rounded-md bg-muted/30">
+              Dimensões especiais aparecem quando a família/figura é do tipo MATERIAL_DIMENSIONAL.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ===== Conversão de Medidas ===== */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Scale className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">Conversão de Medidas</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            Unidades, pesos e conversão dimensional do produto
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ConversaoMedidasBlock
+            usaConversao={!!form.usa_conversao_dimensional}
+            onUsaConversaoChange={(v) => handleInputChange('usa_conversao_dimensional', v)}
+            controlaComposicaoFisica={!!form.controla_composicao_fisica}
+            onControlaComposicaoFisicaChange={(v) => handleInputChange('controla_composicao_fisica', v)}
+            tipoComposicaoFisica={form.tipo_composicao_fisica || 'BARRA_M'}
+            onTipoComposicaoFisicaChange={(v) => handleInputChange('tipo_composicao_fisica', v)}
+            tipoFisicoEfetivo={form.tipo_fisico_efetivo || form.tipo_fisico || ''}
+            tipoFisicoProduto={form.tipo_fisico || ''}
+            onTipoFisicoProdutoChange={(v) => handleInputChange('tipo_fisico', v)}
+            tipoControleProduto={form.tipo_controle_unidade || ''}
+            onTipoControleProdutoChange={(v) => handleInputChange('tipo_controle_unidade', v)}
+            unidadeEstoque={form.unidade_estoque || ''}
+            onUnidadeEstoqueChange={(v) => handleInputChange('unidade_estoque', v)}
+            unidadeVenda={form.unidade_venda_padrao || ''}
+            onUnidadeVendaChange={(v) => handleInputChange('unidade_venda_padrao', v)}
+            unidadeCompra={form.unidade_compra_padrao || ''}
+            onUnidadeCompraChange={(v) => handleInputChange('unidade_compra_padrao', v)}
+            unidadeFiscal={form.unidade_fiscal || ''}
+            onUnidadeFiscalChange={(v) => handleInputChange('unidade_fiscal', v)}
+            unidadesVenda={form.unidades_venda_permitidas || []}
+            onUnidadesVendaChange={(list) => handleInputChange('unidades_venda_permitidas', list)}
+            unidadesCompra={form.unidades_compra_permitidas || []}
+            onUnidadesCompraChange={(list) => handleInputChange('unidades_compra_permitidas', list)}
+            familiaUnidadesVenda={familiaSelecionada?.unidades_venda_permitidas}
+            familiaUnidadesCompra={familiaSelecionada?.unidades_compra_permitidas}
+            comprimentoBarra={form.comprimento_padrao_barra_m ?? null}
+            onComprimentoBarraChange={(v) => handleInputChange('comprimento_padrao_barra_m', v)}
+            pesoMetro={form.peso_por_metro_kg ?? null}
+            onPesoMetroChange={(v) => handleInputChange('peso_por_metro_kg', v)}
+            pesoPeca={form.peso_por_peca_kg ?? null}
+            onPesoPecaChange={(v) => handleInputChange('peso_por_peca_kg', v)}
+            pesoChapa={form.peso_por_chapa_kg ?? null}
+            onPesoChapaChange={(v) => handleInputChange('peso_por_chapa_kg', v)}
+            densidade={form.densidade ?? null}
+            onDensidadeChange={(v) => handleInputChange('densidade', v)}
+            observacoes={form.observacoes_conversao || ''}
+            onObservacoesChange={(v) => handleInputChange('observacoes_conversao', v)}
+            ocultarUnidadeFiscal
+          />
+        </CardContent>
+      </Card>
+
+      {/* ===== Composição do produto (apenas em edição) ===== */}
+      {editing?.id ? (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <Layers className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-base">Composição do produto</CardTitle>
+            </div>
+            <CardDescription className="text-xs">
+              Componentes que formam este produto
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ProdutoComposicaoPanel produtoId={editing.id} produtosOpcoes={produtosOpcoes} />
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

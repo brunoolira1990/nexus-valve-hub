@@ -63,6 +63,10 @@ export function aplicarHerancaFamiliaProduto(
       next.unidades_compra_permitidas = [...familia.unidades_compra_permitidas];
     }
   }
+  if ((forcar || !next.tipo_fisico) && familia.tipo_fisico) next.tipo_fisico = familia.tipo_fisico;
+  if ((forcar || !next.tipo_controle_unidade) && familia.tipo_controle_unidade) {
+    next.tipo_controle_unidade = familia.tipo_controle_unidade;
+  }
 
   return next;
 }

@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { produtosService } from '@/services/api/produtos';
 import { familiasProdutoService } from '@/services/api/produtos';
-import type { Produto, FamiliaProduto, ModoCodigoProduto, TipoRegraCodigo, TipoDimensional, TipoFisicoProduto, TipoControleUnidade } from '@/types';
+import type { Produto, FamiliaProduto, ModoCodigoProduto, TipoRegraCodigo, TipoDimensional, TipoFisicoProduto, TipoControleUnidade, RequisitosProdutoDimensionais } from '@/types';
 import type { ProdutoFormState } from '../types';
 import { apiErrorMessage } from '@/services/api/config';
-import { normalizarTipoRegra } from '@/lib/familiaRegra';
+import { getFamReq } from '../lib/familiaDerivations';
+import {
+  aplicarHerancaFamiliaProduto as aplicarHerancaLib,
+  familiaEhManualFabricante as familiaEhManualFabricanteLib,
+} from '../lib/herancaFamilia';
+import { codigoProdutoIgual as codigoProdutoIgualLib } from '../lib/codigoPreview';
 
 // --- Utilitários copiados de ProdutoList.tsx (não exportados) ---
 
@@ -67,70 +72,9 @@ const emptyForm = (): ProdutoFormState => ({
   dimensoes_json: {},
 });
 
-function familiaEhManualFabricante(familia: FamiliaProduto): boolean {
-  return (
-    normalizarTipoRegra(familia.tipo_regra_codigo) === 'MANUAL_FABRICANTE' ||
-    familia.categoria_produto === 'MANUAL_FABRICANTE'
-  );
-}
-
-function aplicarHerancaFamiliaProduto(
-  prev: ProdutoFormState,
-  familia: FamiliaProduto,
-  modo: ModoCodigoProduto,
-  opts?: { forcarCamposIniciais?: boolean },
-): ProdutoFormState {
-  const forcar = opts?.forcarCamposIniciais ?? false;
-  const next = { ...prev };
-
-  const setStrSeVazio = (key: keyof ProdutoFormState, value: string | undefined | null) => {
-    const v = (value || '').trim();
-    if (!v) return;
-    const atual = String(next[key] ?? '').trim();
-    if (forcar || !atual) next[key] = v as ProdutoFormState[typeof key];
-  };
-
-  if (modo === 'INTERNO') {
-    if ((forcar || !next.rosca_conexao_id) && familia.rosca_padrao_id) {
-      next.rosca_conexao_id = familia.rosca_padrao_id;
-    }
-    if ((forcar || !next.schedule_ref_id) && familia.schedule_padrao_id) {
-      next.schedule_ref_id = familia.schedule_padrao_id;
-    }
-  }
-
-  if (modo === 'MANUAL') {
-    setStrSeVazio('descricao', familia.descricao_base);
-    setStrSeVazio('ncm', familia.ncm_padrao_info?.codigo);
-  }
-
-  setStrSeVazio('unidade', familia.unidade_padrao || familia.unidade_estoque_padrao);
-  setStrSeVazio('unidade_estoque', familia.unidade_estoque_padrao);
-  setStrSeVazio('unidade_venda_padrao', familia.unidade_venda_padrao);
-  setStrSeVazio('unidade_compra_padrao', familia.unidade_compra_padrao);
-  setStrSeVazio('unidade_fiscal', familia.unidade_fiscal_padrao);
-  setStrSeVazio('material', familia.material_base);
-  setStrSeVazio('pressao_nominal', familia.pressao_base);
-  setStrSeVazio('norma', familia.norma_base);
-  setStrSeVazio('conexao', familia.conexao_base);
-
-  if (forcar || !(next.unidades_venda_permitidas || []).length) {
-    if (familia.unidades_venda_permitidas?.length) {
-      next.unidades_venda_permitidas = [...familia.unidades_venda_permitidas];
-    }
-  }
-  if (forcar || !(next.unidades_compra_permitidas || []).length) {
-    if (familia.unidades_compra_permitidas?.length) {
-      next.unidades_compra_permitidas = [...familia.unidades_compra_permitidas];
-    }
-  }
-  if ((forcar || !next.tipo_fisico) && familia.tipo_fisico) next.tipo_fisico = familia.tipo_fisico;
-  if ((forcar || !next.tipo_controle_unidade) && familia.tipo_controle_unidade) {
-    next.tipo_controle_unidade = familia.tipo_controle_unidade;
-  }
-
-  return next;
-}
+// Fonte única: ../lib/herancaFamilia (delegações finas para não duplicar lógica).
+const familiaEhManualFabricante = familiaEhManualFabricanteLib;
+const aplicarHerancaFamiliaProduto = aplicarHerancaLib;
 
 function extractCodigoDuplicado(err: unknown): string | null {
   const ax = err as { response?: { data?: { non_field_errors?: unknown; codigo_completo?: unknown; detail?: unknown } } };
@@ -148,20 +92,21 @@ function extractCodigoDuplicado(err: unknown): string | null {
   return m?.[1]?.trim() || null;
 }
 
-function codigoProdutoIgual(a: string | null | undefined, b: string | null | undefined): boolean {
-  return (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();
-}
+// Fonte única: ../lib/codigoPreview
+const codigoProdutoIgual = codigoProdutoIgualLib;
 
 interface UseProdutoFormReturn {
   form: ProdutoFormState;
   setForm: React.Dispatch<React.SetStateAction<ProdutoFormState>>;
   salvando: boolean;
   erro: string | null;
-  preview: { codigo?: string; descricao?: string; ncm?: string };
+  preview: { codigo?: string; descricao?: string; ncm?: string; mensagem?: string };
   carregando: boolean;
   salvar: () => Promise<{ sucesso: boolean; id?: number }>;
   limpar: () => void;
   familiaSelecionada: FamiliaProduto | null;
+  famReq: RequisitosProdutoDimensionais | null;
+  editing: Produto | null;
   duplicateCodigo: string | null;
   duplicateProdutoId: number | null;
   setDuplicateCodigo: React.Dispatch<React.SetStateAction<string | null>>;
@@ -181,16 +126,20 @@ export function useProdutoForm(
   const [previewCodigo, setPreviewCodigo] = useState('');
   const [previewDesc, setPreviewDesc] = useState('');
   const [previewNcm, setPreviewNcm] = useState('');
+  const [previewMsg, setPreviewMsg] = useState('');
+  const [editing, setEditing] = useState<Produto | null>(null);
   const [duplicateCodigo, setDuplicateCodigo] = useState<string | null>(null);
   const [duplicateProdutoId, setDuplicateProdutoId] = useState<number | null>(null);
   const previewRequestSeqRef = useRef(0);
 
   const familiaSelecionada = familias.find((f) => f.id === form.familia_id) ?? null;
+  const famReq = getFamReq(familiaSelecionada);
 
   // Carregar produto se id fornecido
   useEffect(() => {
     if (!id) {
       setForm(emptyForm());
+      setEditing(null);
       setCarregando(false);
       return;
     }
@@ -258,6 +207,7 @@ export function useProdutoForm(
           dimensao_descricao: produto.dimensao_descricao ?? '',
           dimensoes_json: produto.dimensoes_json ?? {},
         });
+        setEditing(produto);
       })
       .catch((e) => {
         setErro(apiErrorMessage(e, { fallback: 'Não foi possível carregar o produto.' }));
@@ -283,6 +233,7 @@ export function useProdutoForm(
       setPreviewCodigo('');
       setPreviewDesc('');
       setPreviewNcm('');
+      setPreviewMsg('');
       return;
     }
     const seq = ++previewRequestSeqRef.current;
@@ -312,11 +263,13 @@ export function useProdutoForm(
       setPreviewCodigo(res.codigo);
       setPreviewDesc(res.descricao_sugerida);
       setPreviewNcm(res.ncm_efetivo || '');
+      setPreviewMsg(res.mensagem || '');
     } catch {
       if (seq !== previewRequestSeqRef.current) return;
       setPreviewCodigo('');
       setPreviewDesc('');
       setPreviewNcm('');
+      setPreviewMsg('Não foi possível calcular a prévia.');
     }
   }, [
     form.familia_id,
@@ -553,6 +506,8 @@ export function useProdutoForm(
     setPreviewCodigo('');
     setPreviewDesc('');
     setPreviewNcm('');
+    setPreviewMsg('');
+    setEditing(null);
   }, []);
 
   return {
@@ -560,11 +515,13 @@ export function useProdutoForm(
     setForm,
     salvando,
     erro,
-    preview: { codigo: previewCodigo, descricao: previewDesc, ncm: previewNcm },
+    preview: { codigo: previewCodigo, descricao: previewDesc, ncm: previewNcm, mensagem: previewMsg },
     carregando,
     salvar,
     limpar,
     familiaSelecionada,
+    famReq,
+    editing,
     duplicateCodigo,
     duplicateProdutoId,
     setDuplicateCodigo,
