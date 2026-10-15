@@ -5,11 +5,11 @@
  */
 
 export const MATERIAIS = [
-  'Aço carbono',
-  'Aço inox',
+  'Aço Carbono',
+  'Aço Inox',
   'Alumínio',
   'Bronze',
-  'Ferro fundido',
+  'Ferro Fundido',
   'Latão',
   'PVC',
   'PTFE',

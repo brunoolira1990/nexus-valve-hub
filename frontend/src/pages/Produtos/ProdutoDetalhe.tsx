@@ -104,10 +104,7 @@ export default function ProdutoDetalhe() {
             <button
               type="button"
               className="erp-btn-primary"
-              onClick={() => {
-                // TODO: Implementar navegação para edição (modal ou página dedicada)
-                alert('Edição em breve — por enquanto use o modal na listagem');
-              }}
+              onClick={() => navigate(`/produtos/${id}/editar`)}
             >
               Editar
             </button>

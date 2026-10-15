@@ -5,7 +5,7 @@ import { NcmAutocomplete, type NcmOption } from '@/components/produtos/NcmAutoco
 import type { ProdutoFormState } from '../types';
 import type { FamiliaProduto } from '@/types';
 import { ncmApiService } from '@/services/api/produtos';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ORIGEM_MERCADORIA_OPTIONS } from './constants';
 
 interface ProdutoFiscalFormTabProps {
@@ -23,17 +23,34 @@ export function ProdutoFiscalFormTab({
 }: ProdutoFiscalFormTabProps) {
   const [ncmProdutoOption, setNcmProdutoOption] = useState<NcmOption | null>(null);
 
+  // Inicializa o autocomplete com o NCM já salvo no produto ao montar o tab
+  // ou quando form.ncm mudar externamente (ex.: reset do formulário).
+  useEffect(() => {
+    if (!form.ncm) {
+      setNcmProdutoOption(null);
+      return;
+    }
+    // Evita re-busca se a opção já está sincronizada com o código atual
+    if (ncmProdutoOption?.codigo === form.ncm) return;
+
+    ncmApiService
+      .search(form.ncm, 1)
+      .then((results) => {
+        const match = results.find((o) => o.codigo === form.ncm);
+        setNcmProdutoOption(match ?? null);
+      })
+      .catch(() => setNcmProdutoOption(null));
+    // ncmProdutoOption intencionalmente omitido: só re-executa quando o código muda,
+    // não quando a opção interna é atualizada por este mesmo efeito.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.ncm]);
+
   const handleInputChange = <K extends keyof ProdutoFormState>(
     key: K,
     value: ProdutoFormState[K]
   ) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
-
-  // Initialize NCM option from form.ncm if available
-  if (!ncmProdutoOption && form.ncm) {
-    ncmApiService.getById(0).catch(() => {}); // just to trigger types
-  }
 
   // NCM efetivo: produto override > família > não definido
   const ncmEfetivo = form.ncm || familiaSelecionada?.ncm_padrao_info?.codigo || 'NÃO DEFINIDO';
@@ -104,21 +121,6 @@ export function ProdutoFiscalFormTab({
               ))}
             </SelectContent>
           </Select>
-        </div>
-
-        {/* Código CEST */}
-        <div className="space-y-1">
-          <Label>Código CEST</Label>
-          <Input
-            className="erp-input mt-1"
-            value={form.cest || ''}
-            onChange={(e) => handleInputChange('cest', e.target.value)}
-            placeholder="Ex.: 01.001.00"
-            maxLength={7}
-          />
-          <p className="text-xs text-muted-foreground">
-            Código Especificador da Substituição Tributária (formato XX.XXX.XX)
-          </p>
         </div>
 
         {/* NCM específico (legado) */}
