@@ -487,7 +487,7 @@ def gerar_contas_receber_automatico_apos_autorizacao_producao(
 
     try:
         with transaction.atomic():
-            nf = NFeSaida.objects.select_for_update().select_related('cliente').get(pk=nf.pk)
+            nf = NFeSaida.objects.select_for_update(of=('self',)).select_related('cliente').get(pk=nf.pk)
             vinculados = list(titulos_vinculados_nfe(nf).select_for_update())
             if vinculados:
                 titulo = vinculados[0]
@@ -574,7 +574,7 @@ def gerar_contas_receber_de_nfe_autorizada(
     observacoes: str = '',
     usuario=None,
 ) -> TituloFinanceiro:
-    nf = NFeSaida.objects.select_for_update().select_related('cliente').get(pk=nf.pk)
+    nf = NFeSaida.objects.select_for_update(of=('self',)).select_related('cliente').get(pk=nf.pk)
     list(titulos_vinculados_nfe(nf).select_for_update())
 
     flags = montar_flags_financeiro_nfe(nf)

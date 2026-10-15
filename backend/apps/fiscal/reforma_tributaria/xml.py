@@ -88,19 +88,19 @@ def build_reforma_tributaria_item_bindings(
 
     gibsuf = None
     if p_ibs_uf or v_ibs_uf:
-        gibsuf = dfe.Tcibs.GIbsuf(
+        gibsuf = dfe.TcibsNfe.GIbsuf(
             pIBSUF=p_ibs_uf,
             vIBSUF=v_ibs_uf or '0.00',
         )
 
-    gibsmun = dfe.Tcibs.GIbsmun(
+    gibsmun = dfe.TcibsNfe.GIbsmun(
         pIBSMun=p_ibs_mun or '0.0000',
         vIBSMun=v_ibs_mun or '0.00',
     )
 
     gcbs = None
     if p_cbs or v_cbs:
-        gcbs = dfe.Tcibs.GCbs(
+        gcbs = dfe.TcibsNfe.GCbs(
             pCBS=p_cbs,
             vCBS=v_cbs or '0.00',
         )
@@ -108,7 +108,7 @@ def build_reforma_tributaria_item_bindings(
     return dfe.TtribNfe(
         CST=cst.zfill(3)[:3],
         cClassTrib=cclass.zfill(6)[:6],
-        gIBSCBS=dfe.Tcibs(
+        gIBSCBS=dfe.TcibsNfe(
             vBC=base or '0.00',
             gIBSUF=gibsuf,
             gIBSMun=gibsmun,
