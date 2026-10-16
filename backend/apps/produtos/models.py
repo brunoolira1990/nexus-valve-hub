@@ -256,6 +256,16 @@ class FamiliaProduto(models.Model):
     )
     unidade_padrao = models.CharField(max_length=16, blank=True)
     material_base = models.CharField(max_length=128, blank=True)
+    # FK para o catálogo de materiais — preenchida pelo command migrar_material_para_fk.
+    # O CharField material_base acima é mantido como legado durante a transição.
+    material_base_ref = models.ForeignKey(
+        'produtos.Material',
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name='familias',
+        verbose_name='Material (ref)',
+    )
     pressao_base = models.CharField(max_length=64, blank=True)
     norma_base = models.CharField(max_length=128, blank=True)
     conexao_base = models.CharField(max_length=128, blank=True)
@@ -362,6 +372,16 @@ class Produto(models.Model):
     polegada_secundaria = models.CharField(max_length=32, blank=True)
     descricao = models.CharField(max_length=512)
     material = models.CharField(max_length=128, blank=True)
+    # FK para o catálogo de materiais — preenchida pelo command migrar_material_para_fk.
+    # O CharField material acima é mantido como legado durante a transição.
+    material_ref = models.ForeignKey(
+        'produtos.Material',
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name='produtos',
+        verbose_name='Material (ref)',
+    )
     tipo_peca = models.CharField(max_length=128, blank=True)
     pressao_nominal = models.CharField(max_length=64, blank=True)
     norma = models.CharField(max_length=128, blank=True)
