@@ -54,6 +54,9 @@ SEED: list[tuple[int, str, str, str, str, str, list[str]]] = [
     (28, 'Silicone',           'Silicone', 'POLIMERO', 'ASTM D2000',   '3910.00.00', ['SILICONE', 'SILICON']),
     # ── Outro ───────────────────────────────────────────────────────────────
     (29, 'Outro', 'Outro', 'OUTRO', '', '', []),
+    # ── Adicionados na extensão do Bloco 3 ──────────────────────────────────
+    (30, 'Aço Carbono A106',    'A106', 'ACO_CARBONO', 'ASTM A106 Gr.B', '7304.19.00', ['A106', 'A-106', 'ASTM A106', 'API 5L']),
+    (31, 'PP (Polipropileno)',  'PP',   'POLIMERO',    'ASTM F2389',     '3917.22.00', ['PP', 'POLIPROPILENO']),
 ]
 
 

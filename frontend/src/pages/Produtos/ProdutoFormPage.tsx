@@ -13,7 +13,9 @@ import { ProdutoPainelOperacionalTab } from '@/components/produtos/ProdutoPainel
 import { ProdutoRastreabilidadeTab } from '@/components/produtos/ProdutoRastreabilidadeTab';
 import { HistoricoAlteracoesPanel } from '@/components/auditoria/HistoricoAlteracoesPanel';
 import { familiasProdutoService, produtosService } from '@/services/api/produtos';
+import { materiaisService } from '@/services/api/materiais';
 import type { FamiliaProduto, Produto } from '@/types';
+import type { Material } from '@/types/material';
 
 const ProdutoFormPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -24,9 +26,29 @@ const ProdutoFormPage = () => {
   // Famílias carregadas no container e passadas ao hook (necessário para
   // familiaSelecionada / famReq funcionarem — antes vinha [] e ficava sempre null).
   const [familias, setFamilias] = useState<FamiliaProduto[]>([]);
+  const [materiais, setMateriais] = useState<Material[]>([]);
+  const [carregandoMateriais, setCarregandoMateriais] = useState(true);
   const [produtosOpcoes, setProdutosOpcoes] = useState<
     Array<{ id: number; codigo_completo: string; descricao: string }>
   >([]);
+
+  useEffect(() => {
+    let ativo = true;
+    void materiaisService
+      .getAll({ ativo: 'true' })
+      .then((list) => {
+        if (ativo) setMateriais(list);
+      })
+      .catch(() => {
+        if (ativo) setMateriais([]);
+      })
+      .finally(() => {
+        if (ativo) setCarregandoMateriais(false);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, []);
 
   useEffect(() => {
     let ativo = true;
@@ -82,7 +104,7 @@ const ProdutoFormPage = () => {
     setModoCodigo,
   } = useProdutoForm(produtoId, familias, async () => {
     // onSaveSuccess — navegação é tratada em handleSubmit (precisa do id retornado).
-  });
+  }, materiais);
 
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -213,6 +235,8 @@ const ProdutoFormPage = () => {
             famReq={famReq}
             editing={editing}
             produtosOpcoes={produtosOpcoes}
+            materiais={materiais}
+            carregandoMateriais={carregandoMateriais}
           />
         </TabsContent>
 

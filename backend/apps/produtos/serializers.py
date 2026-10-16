@@ -48,12 +48,27 @@ from apps.produtos.models import (
     FamiliaProdutoRoscaConexaoPermitida,
     FamiliaProdutoSchedulePermitido,
     FamiliaProduto,
+    Material,
     Ncm,
     Polegada,
     Produto,
     RoscaConexao,
     ScheduleEspessura,
 )
+
+
+def _material_resumo(material: Material | None) -> dict | None:
+    if material is None:
+        return None
+    return {
+        'id': material.id,
+        'codigo': material.codigo,
+        'nome': material.nome,
+        'nome_curto': material.nome_curto,
+        'categoria': material.categoria,
+        'norma_astm': material.norma_astm,
+        'ncm_sugerido': material.ncm_sugerido,
+    }
 
 
 def _msg_polegada_tipo_incompativel(esperado: str) -> str:
@@ -212,6 +227,7 @@ class FamiliaProdutoSerializer(serializers.ModelSerializer):
         required=False,
     )
     ncm_padrao_info = serializers.SerializerMethodField(read_only=True)
+    material_base_ref_detalhes = serializers.SerializerMethodField(read_only=True)
     polegadas_permitidas = serializers.SerializerMethodField(read_only=True)
     roscas_permitidas = serializers.SerializerMethodField(read_only=True)
     schedules_permitidos = serializers.SerializerMethodField(read_only=True)
@@ -393,6 +409,9 @@ class FamiliaProdutoSerializer(serializers.ModelSerializer):
             'codigo': obj.ncm_padrao.codigo,
             'descricao': obj.ncm_padrao.descricao,
         }
+
+    def get_material_base_ref_detalhes(self, obj: FamiliaProduto):
+        return _material_resumo(obj.material_base_ref)
 
     def get_polegadas_permitidas(self, obj: FamiliaProduto):
         return [
@@ -604,6 +623,12 @@ class ProdutoSerializer(serializers.ModelSerializer):
         allow_null=True,
         required=False,
     )
+    material_ref = serializers.PrimaryKeyRelatedField(
+        queryset=Material.objects.filter(ativo=True),
+        allow_null=True,
+        required=False,
+    )
+    material_ref_detalhes = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Produto
@@ -622,6 +647,8 @@ class ProdutoSerializer(serializers.ModelSerializer):
             'polegada_secundaria',
             'descricao',
             'material',
+            'material_ref',
+            'material_ref_detalhes',
             'tipo_peca',
             'pressao_nominal',
             'norma',
@@ -666,6 +693,9 @@ class ProdutoSerializer(serializers.ModelSerializer):
             'dimensao_codigo',
             'dimensao_descricao',
         )
+
+    def get_material_ref_detalhes(self, obj: Produto):
+        return _material_resumo(obj.material_ref)
 
     def validate(self, attrs):
         inst = self.instance

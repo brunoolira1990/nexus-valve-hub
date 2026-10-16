@@ -138,7 +138,18 @@ export function ProdutoWorkspace({ produto, mode }: ProdutoWorkspaceProps) {
           description="Características técnicas e classificação do produto."
         >
           <dl className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {renderField('Material', produto.material || '—')}
+            {renderField(
+              'Material',
+              produto.material_ref_detalhes?.nome ?? produto.material ?? '—',
+            )}
+            {renderField(
+              'Norma ASTM',
+              produto.material_ref_detalhes?.norma_astm || '—',
+            )}
+            {renderField(
+              'NCM sugerido',
+              produto.material_ref_detalhes?.ncm_sugerido || '—',
+            )}
             {renderField('Norma', produto.norma || '—')}
             {renderField('Tipo de peça', produto.tipo_peca || '—')}
             {renderField('Pressão nominal', produto.pressao_nominal || '—')}

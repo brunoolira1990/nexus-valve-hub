@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { produtosService } from '@/services/api/produtos';
 import { familiasProdutoService } from '@/services/api/produtos';
 import type { Produto, FamiliaProduto, ModoCodigoProduto, TipoRegraCodigo, TipoDimensional, TipoFisicoProduto, TipoControleUnidade, RequisitosProdutoDimensionais } from '@/types';
+import type { Material } from '@/types/material';
 import type { ProdutoFormState } from '../types';
 import { apiErrorMessage } from '@/services/api/config';
 import { getFamReq } from '../lib/familiaDerivations';
@@ -26,7 +27,11 @@ const emptyForm = (): ProdutoFormState => ({
   polegada_principal: '',
   polegada_secundaria: '',
   descricao: '',
+  // TODO(Fase 5): trocar default 'Aço Carbono' por '' quando o modal legado
+  // (ProdutoList) sair. Material agora vem da FK material_ref; o string legado
+  // continua preenchido pelo onChange do dropdown (espelhamento).
   material: 'Aço Carbono',
+  material_ref: null,
   tipo_peca: '',
   pressao_nominal: '',
   norma: '',
@@ -117,7 +122,8 @@ interface UseProdutoFormReturn {
 export function useProdutoForm(
   id?: number,
   familias: FamiliaProduto[] = [],
-  onSaveSuccess?: () => void
+  onSaveSuccess?: () => void,
+  materiais: Material[] = []
 ): UseProdutoFormReturn {
   const [form, setForm] = useState<ProdutoFormState>(emptyForm());
   const [salvando, setSalvando] = useState(false);
@@ -161,6 +167,7 @@ export function useProdutoForm(
           polegada_secundaria: produto.polegada_secundaria ?? '',
           descricao: produto.descricao,
           material: produto.material ?? 'Aço Carbono',
+          material_ref: produto.material_ref ?? null,
           tipo_peca: produto.tipo_peca ?? '',
           pressao_nominal: produto.pressao_nominal ?? '',
           norma: produto.norma ?? '',
@@ -225,6 +232,24 @@ export function useProdutoForm(
       setForm((prev) => aplicarHerancaFamiliaProduto(prev, familiaSelecionada, 'MANUAL'));
     }
   }, [form.modo_codigo, familiaSelecionada]);
+
+  // Manter material_ref (FK) coerente com material (string legado).
+  // Dispara após a herança da família, que seta material sem tocar material_ref,
+  // e para produtos legados carregados sem FK. Resolve por nome/curto/alias no
+  // catálogo; se já houver FK, não faz nada (o onChange do dropdown é dono).
+  useEffect(() => {
+    if (!materiais || materiais.length === 0) return;
+    if (form.material_ref) return;
+    const alvo = (form.material || '').trim().toLowerCase();
+    if (!alvo) return;
+    const mat = materiais.find(
+      (m) =>
+        m.nome.toLowerCase() === alvo ||
+        m.nome_curto.toLowerCase() === alvo ||
+        (m.aliases ?? []).some((a) => String(a).toLowerCase() === alvo),
+    );
+    if (mat) setForm((prev) => (prev.material_ref ? prev : { ...prev, material_ref: mat.id }));
+  }, [materiais, form.material, form.material_ref]);
 
   // Preview de código com debounce e race condition protection
   const refreshPreview = useCallback(async () => {
@@ -365,10 +390,26 @@ export function useProdutoForm(
     setDuplicateProdutoId(null);
     setSalvando(true);
 
+    // Blinding de timing: se o efeito de resolução ainda não rodou (catálogo
+    // recém-chegado), resolve material_ref a partir de form.material agora,
+    // usando o catálogo já em memória. Zero requests extras.
+    let materialRefResolvido = form.material_ref ?? null;
+    if (!materialRefResolvido && form.material && materiais.length > 0) {
+      const alvo = form.material.trim().toLowerCase();
+      const mat = materiais.find(
+        (m) =>
+          m.nome.toLowerCase() === alvo ||
+          m.nome_curto.toLowerCase() === alvo ||
+          (m.aliases ?? []).some((a) => String(a).toLowerCase() === alvo),
+      );
+      if (mat) materialRefResolvido = mat.id;
+    }
+
     const body: Partial<Produto> = {
       modo_codigo: form.modo_codigo as ModoCodigoProduto,
       descricao: form.descricao,
       material: form.material,
+      material_ref: materialRefResolvido,
       tipo_peca: form.tipo_peca,
       pressao_nominal: form.pressao_nominal,
       norma: form.norma,
@@ -462,6 +503,8 @@ export function useProdutoForm(
       body.dimensoes_json = {};
     }
 
+    // body.material_ref e body.material já vêm sincronizados do form: o Select
+    // de Material grava FK (id) e nome espelhado (material) juntos no onChange.
     try {
       let result: Produto;
       if (id) {
@@ -496,7 +539,7 @@ export function useProdutoForm(
       setErro(msg);
       return { sucesso: false };
     }
-  }, [form, id, familias, onSaveSuccess]);
+  }, [form, id, familias, onSaveSuccess, materiais]);
 
   const limpar = useCallback(() => {
     setForm(emptyForm());

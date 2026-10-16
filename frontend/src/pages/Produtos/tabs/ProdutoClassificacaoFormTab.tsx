@@ -3,7 +3,9 @@ import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
@@ -21,10 +23,10 @@ import { Info, Wrench, Link2, Ruler, Boxes, Scale, Layers } from 'lucide-react';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import type { ProdutoFormState } from '../types';
 import type { FamiliaProduto, RequisitosProdutoDimensionais, Produto, ScheduleEspessura } from '@/types';
+import type { Material, MaterialCategoria } from '@/types/material';
 import { PolegadaAutocomplete } from '@/components/produtos/PolegadaAutocomplete';
 import { ConversaoMedidasBlock } from '@/components/produtos/ConversaoMedidasBlock';
 import { ProdutoComposicaoPanel } from '@/components/produtos/ProdutoComposicaoPanel';
-import { MATERIAIS } from './constants';
 import { schedulesEspessuraService } from '@/services/api/produtos';
 import {
   getTdAtual,
@@ -49,6 +51,27 @@ function CampoLabel({ children }: { children: ReactNode }) {
   return <Label className="text-sm font-medium mb-1.5 block">{children}</Label>;
 }
 
+/** Rótulos no plural para agrupar o dropdown de Material por categoria. */
+const MATERIAL_GRUPO_LABELS: Record<MaterialCategoria, string> = {
+  ACO_CARBONO: 'Aços Carbono',
+  ACO_INOX: 'Aços Inox',
+  FERRO_FUNDIDO: 'Ferros Fundidos',
+  ACO_LIGA: 'Aços Liga',
+  NAO_FERROSO: 'Não-ferrosos',
+  POLIMERO: 'Polímeros',
+  OUTRO: 'Outro',
+};
+
+const MATERIAL_GRUPO_ORDEM: MaterialCategoria[] = [
+  'ACO_CARBONO',
+  'ACO_INOX',
+  'FERRO_FUNDIDO',
+  'ACO_LIGA',
+  'NAO_FERROSO',
+  'POLIMERO',
+  'OUTRO',
+];
+
 interface ProdutoClassificacaoFormTabProps {
   form: ProdutoFormState;
   setForm: (updater: (prev: ProdutoFormState) => ProdutoFormState) => void;
@@ -59,6 +82,10 @@ interface ProdutoClassificacaoFormTabProps {
   editing?: Produto | null;
   /** Lista de produtos para o seletor de componentes da composição. */
   produtosOpcoes?: Array<{ id: number; codigo_completo: string; descricao: string }>;
+  /** Catálogo de materiais (ativos) carregado pelo container — alimenta o dropdown. */
+  materiais?: Material[];
+  /** Indica que o catálogo de materiais ainda está carregando. */
+  carregandoMateriais?: boolean;
 }
 
 export function ProdutoClassificacaoFormTab({
@@ -69,6 +96,8 @@ export function ProdutoClassificacaoFormTab({
   famReq = null,
   editing = null,
   produtosOpcoes = [],
+  materiais = [],
+  carregandoMateriais = false,
 }: ProdutoClassificacaoFormTabProps) {
   const handleInputChange = <K extends keyof ProdutoFormState>(
     key: K,
@@ -101,6 +130,15 @@ export function ProdutoClassificacaoFormTab({
     };
   }, [form.schedule_ref_id, scheduleOption?.id]);
 
+  // Material: o catálogo (ativos) vem do container via prop `materiais`.
+  // A resolução material→material_ref (herança da família / produto legado) vive
+  // no useProdutoForm, que também recebe `materiais`. Aqui só agrupamos p/ render.
+  const materiaisAgrupados = MATERIAL_GRUPO_ORDEM.map((categoria) => ({
+    categoria,
+    label: MATERIAL_GRUPO_LABELS[categoria],
+    itens: materiais.filter((m) => m.categoria === categoria),
+  })).filter((grupo) => grupo.itens.length > 0);
+
   // Derivações da família (puras — vindas de lib/familiaDerivations)
   const tdAtual = getTdAtual(familiaSelecionada);
   const usaDimensoesMateriais = getUsaDimensoesMateriais(familiaSelecionada);
@@ -109,12 +147,6 @@ export function ProdutoClassificacaoFormTab({
   const atributosTecnicos = getAtributosTecnicosFamilia(familiaSelecionada);
   const familiaEhMaterialDimensional =
     familiaSelecionada?.categoria_produto === 'MATERIAL_DIMENSIONAL';
-
-  // Material: comparação normalizada por caixa (Opção C) — resolve "opção fantasma"
-  // sem alterar strings nem dados. 'Aço Carbono' (default) casa com 'Aço carbono' (lista).
-  const materialNaLista = MATERIAIS.some(
-    (m) => m.toLowerCase() === (form.material || '').toLowerCase()
-  );
 
   const getAtributoTecnico = (key: string): string => {
     const value = form.dimensoes_json?.[key];
@@ -152,23 +184,46 @@ export function ProdutoClassificacaoFormTab({
         <CardContent className="space-y-5">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             <div>
-              <CampoLabel>Material base</CampoLabel>
+              <CampoLabel>Material</CampoLabel>
               <Select
-                value={form.material || ''}
-                onValueChange={(v) => handleInputChange('material', v)}
+                value={form.material_ref?.toString() ?? ''}
+                onValueChange={(v) => {
+                  const id = Number(v) || null;
+                  const mat = id ? materiais.find((m) => m.id === id) : null;
+                  setForm((prev) => ({
+                    ...prev,
+                    material_ref: id,
+                    material: mat?.nome ?? prev.material,
+                  }));
+                }}
+                disabled={carregandoMateriais}
               >
                 <SelectTrigger className="w-full h-10">
-                  <SelectValue placeholder="Selecione..." />
+                  <SelectValue
+                    placeholder={carregandoMateriais ? 'Carregando materiais…' : 'Selecione...'}
+                  />
                 </SelectTrigger>
                 <SelectContent>
-                  {form.material && !materialNaLista ? (
-                    <SelectItem value={form.material}>{form.material}</SelectItem>
-                  ) : null}
-                  {MATERIAIS.map((m) => (
-                    <SelectItem key={m} value={m}>
-                      {m}
-                    </SelectItem>
-                  ))}
+                  {carregandoMateriais ? (
+                    <div className="px-2 py-4 text-center text-xs text-muted-foreground">
+                      Carregando catálogo de materiais…
+                    </div>
+                  ) : materiais.length === 0 ? (
+                    <div className="px-2 py-4 text-center text-xs text-muted-foreground">
+                      Nenhum material cadastrado.
+                    </div>
+                  ) : (
+                    materiaisAgrupados.map((grupo) => (
+                      <SelectGroup key={grupo.categoria}>
+                        <SelectLabel>{grupo.label}</SelectLabel>
+                        {grupo.itens.map((m) => (
+                          <SelectItem key={m.id} value={m.id.toString()}>
+                            {m.nome}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
             </div>

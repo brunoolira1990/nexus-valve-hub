@@ -40,6 +40,20 @@ export interface Material {
   produtos_count: number;   // SerializerMethodField — read-only
 }
 
+/**
+ * Subconjunto do Material embutido em Produto/FamiliaProduto via
+ * *_ref_detalhes no serializer (evita depender do Material completo).
+ */
+export interface MaterialResumo {
+  id: number;
+  codigo: string;
+  nome: string;
+  nome_curto: string;
+  categoria: MaterialCategoria;
+  norma_astm: string;
+  ncm_sugerido: string;
+}
+
 export type MaterialFormState = Omit<Material, 'id' | 'codigo' | 'criado_em' | 'atualizado_em' | 'produtos_count'>;
 
 export function materialFormDefault(): MaterialFormState {
