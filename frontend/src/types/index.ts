@@ -1,3 +1,5 @@
+import type { MaterialResumo } from './material';
+
 export interface Empresa {
   id: number;
   razao_social: string;
@@ -289,6 +291,8 @@ export interface FamiliaProduto {
   ncm_padrao_info?: { id: number; codigo: string; descricao: string } | null;
   unidade_padrao?: string;
   material_base?: string;
+  material_base_ref?: number | null;
+  material_base_ref_detalhes?: MaterialResumo | null;
   pressao_base?: string;
   norma_base?: string;
   conexao_base?: string;
@@ -390,6 +394,8 @@ export interface Produto {
   descricao: string;
   material: string;
   material_label?: string | null;
+  material_ref?: number | null;
+  material_ref_detalhes?: MaterialResumo | null;
   tipo_peca: string;
   pressao_nominal: string;
   norma: string;

@@ -1,0 +1,22 @@
+# Forca line endings LF (Unix) no repo - evita quebra em Docker/Linux
+* text=auto eol=lf
+
+# Arquivos que DEVEM ser sempre LF (scripts shell)
+*.sh text eol=lf
+docker-entrypoint.sh text eol=lf
+Dockerfile text eol=lf
+Dockerfile.* text eol=lf
+
+# Arquivos Windows (bat, cmd) ficam CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binarios - nao mexe
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.pfx binary

@@ -101,6 +101,7 @@ from apps.produtos.views import (
     RoscaConexaoViewSet,
     ScheduleEspessuraViewSet,
 )
+from apps.produtos.material_views import MaterialViewSet
 from apps.produtos.views_equivalencia import (
     FornecedorComposicaoEquivalenciaViewSet,
     FornecedorProdutoEquivalenciaViewSet,
@@ -145,6 +146,7 @@ router.register(r'roscas-conexao', RoscaConexaoViewSet, basename='roscaconexao')
 router.register(r'schedules-espessura', ScheduleEspessuraViewSet, basename='scheduleespessura')
 router.register(r'polegadas', PolegadaViewSet, basename='polegada')
 router.register(r'ncms', NcmViewSet, basename='ncm')
+router.register(r'materiais', MaterialViewSet, basename='material')
 router.register(r'expedicoes', ExpedicaoViewSet, basename='expedicao')
 router.register(r'corridas', CorridaViewSet, basename='corrida')
 router.register(r'regras-fiscais', RegraFiscalViewSet, basename='regrafiscal')
