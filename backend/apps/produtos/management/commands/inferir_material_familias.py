@@ -109,26 +109,33 @@ _SEM_MATCH_INT = '__SEM_MATCH_INTENCIONAL__'
 
 
 def _inferir_material(descricao: str) -> str | None:
-    """Retorna o material canônico, _SEM_MATCH_INT, ou None.
+    """Retorna o material canônico ou None se não houver match.
 
     Prioridade:
-      1. Regras contextuais ACO CARBONO (VALVULA → WCB, TUBO → sentinela, genérico → A105).
-      2. MAPA_INFERENCIA (busca por substring).
-      3. None (sem match).
+      1. PP como palavra isolada → 'PP (Polipropileno)'.
+      2. Regras contextuais ACO CARBONO:
+           VALVULA → 'Aço Carbono A216 WCB' (fundido)
+           TUBO    → 'Aço Carbono A106'      (tubo seamless)
+           genérico → 'Aço Carbono A105'     (fitting forjado)
+      3. MAPA_INFERENCIA (busca por substring).
+      4. None (sem match).
     """
     upper = descricao.upper()
 
-    # 1. Regras contextuais para "ACO CARBONO" / "AÇO CARBONO" genérico.
-    #    Estas têm prioridade sobre o MAPA_INFERENCIA para evitar que
-    #    WCB/A-105 presentes na descrição sobrescrevam a lógica contextual.
+    # 1. PP isolado → Polipropileno (antes de qualquer outra regra para
+    #    famílias como "VALVULA DIAFRAGMA PP NEOPRENE" e "CONJUNTO VEDACAO PP TP").
+    if _RE_PP.search(upper) and not _RE_ACO_CARBONO.search(upper):
+        return 'PP (Polipropileno)'
+
+    # 2. Regras contextuais para "ACO CARBONO" / "AÇO CARBONO" genérico.
     if _RE_ACO_CARBONO.search(upper):
         if 'VALVULA' in upper or 'VÁLVULA' in upper:
             return 'Aço Carbono A216 WCB'   # válvula = peça fundida
         if 'TUBO' in upper:
-            return _SEM_MATCH_INT           # A-106 — não está no catálogo
+            return 'Aço Carbono A106'       # tubo seamless
         return 'Aço Carbono A105'           # fitting forjado (fallback)
 
-    # 2. Mapa específico.
+    # 3. Mapa específico.
     for substring, material in MAPA_INFERENCIA:
         if substring in upper:
             return material
@@ -189,8 +196,8 @@ class Command(BaseCommand):
         # ------------------------------------------------------------------
         por_material: dict[str, list[tuple[int, str, str]]] = defaultdict(list)
         sem_match_real: list[tuple[int, str, str]] = []          # sem padrão
-        sem_match_int: list[tuple[int, str, str]] = []           # A-106, etc.
-        ambiguos: list[tuple[int, str, str, str]] = []           # PP ambíguo
+        sem_match_int: list[tuple[int, str, str]] = []           # reservado (não usado)
+        ambiguos: list[tuple[int, str, str, str]] = []           # (reservado para uso futuro)
         ja_preenchidos: list[tuple[int, str, str, str]] = []     # preservar
 
         for fam in familias:
@@ -201,33 +208,19 @@ class Command(BaseCommand):
                 ja_preenchidos.append((fam.id, fam.codigo_figura or '', desc, atual))
                 continue
 
-            # PP ambíguo avaliado primeiro para não mascarar outros matches.
-            if _tem_pp_ambiguo(desc):
-                resultado = _inferir_material(desc)
-                if resultado and resultado != _SEM_MATCH_INT:
-                    # Tem match claro + PP presente → aceita o match, avisa sobre PP
-                    por_material[resultado].append((fam.id, fam.codigo_figura or '', desc))
-                else:
-                    ambiguos.append((fam.id, fam.codigo_figura or '', desc, 'PP ambíguo'))
-                continue
-
             resultado = _inferir_material(desc)
             if resultado is None:
                 sem_match_real.append((fam.id, fam.codigo_figura or '', desc))
-            elif resultado == _SEM_MATCH_INT:
-                sem_match_int.append((fam.id, fam.codigo_figura or '', desc))
             else:
                 por_material[resultado].append((fam.id, fam.codigo_figura or '', desc))
 
         # ------------------------------------------------------------------
         # Contagens
         # ------------------------------------------------------------------
-        total_alterar   = sum(len(v) for v in por_material.values())
-        n_sem_match     = len(sem_match_real)
-        n_sem_match_int = len(sem_match_int)
-        n_ambiguos      = len(ambiguos)
-        n_ja            = len(ja_preenchidos)
-        pct_sem_match   = (n_sem_match / total * 100) if total else 0
+        total_alterar = sum(len(v) for v in por_material.values())
+        n_sem_match   = len(sem_match_real)
+        n_ja          = len(ja_preenchidos)
+        pct_sem_match = (n_sem_match / total * 100) if total else 0
 
         # ------------------------------------------------------------------
         # Output
@@ -250,18 +243,6 @@ class Command(BaseCommand):
                 self.stdout.write(f"  {mat:<{C_MAT}}  {len(rows):>{C_QTD}}  {ex}")
             self.stdout.write('')
 
-            # Casos a revisar (sem match intencional)
-            if sem_match_int:
-                self.stdout.write(self.style.WARNING(
-                    f'── Casos a revisar — material não cadastrado ({n_sem_match_int}) ──'
-                ))
-                self.stdout.write(
-                    '  (ex: tubos ACO CARBONO → A-106, que não está no catálogo)'
-                )
-                for _id, cod, desc in sem_match_int:
-                    self.stdout.write(f"  {cod:<14}  {desc}")
-                self.stdout.write('')
-
             # Já preenchidos
             if ja_preenchidos:
                 self.stdout.write(self.style.WARNING(
@@ -273,15 +254,6 @@ class Command(BaseCommand):
                     )
                 if n_ja > 20:
                     self.stdout.write(f"  … e mais {n_ja - 20} famílias.")
-                self.stdout.write('')
-
-            # Ambíguos
-            if ambiguos:
-                self.stdout.write(self.style.WARNING(
-                    f'── Ambíguos (não alterados — {n_ambiguos}) ──'
-                ))
-                for _id, cod, desc, motivo in ambiguos:
-                    self.stdout.write(f"  {cod:<14}  [{motivo}]  {desc[:60]}")
                 self.stdout.write('')
 
         # Sem match real
@@ -300,8 +272,6 @@ class Command(BaseCommand):
         self.stdout.write(f'  Total famílias                   : {total}')
         self.stdout.write(f'  Já preenchidos (preservados)     : {n_ja}')
         self.stdout.write(f'  Serão preenchidos                : {total_alterar}')
-        self.stdout.write(f'  Casos a revisar (mat. s/ cadastro): {n_sem_match_int}')
-        self.stdout.write(f'  Ambíguos — PP                    : {n_ambiguos}')
         self.stdout.write(f'  Sem match real                   : {n_sem_match}  ({pct_sem_match:.1f}%)')
         self.stdout.write('')
 
