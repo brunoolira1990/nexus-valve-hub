@@ -103,6 +103,8 @@ const ProdutoFormPage = () => {
     editing,
     duplicateCodigo,
     setModoCodigo,
+    herdouFamilia,
+    limparHerdadoCampo,
   } = useProdutoForm(produtoId, familias, async () => {
     // onSaveSuccess — navegação é tratada em handleSubmit (precisa do id retornado).
   }, materiais);
@@ -236,6 +238,8 @@ const ProdutoFormPage = () => {
             produtosOpcoes={produtosOpcoes}
             materiais={materiais}
             carregandoMateriais={carregandoMateriais}
+            herdouFamilia={herdouFamilia}
+            onLimparHerdado={limparHerdadoCampo}
           />
         </TabsContent>
 

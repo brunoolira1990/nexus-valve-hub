@@ -10,6 +10,7 @@ import {
   aplicarHerancaFamiliaProduto as aplicarHerancaLib,
   familiaEhManualFabricante as familiaEhManualFabricanteLib,
 } from '../lib/herancaFamilia';
+import type { CampoHerancaVisivel } from '../lib/herancaFamilia';
 import { codigoProdutoIgual as codigoProdutoIgualLib } from '../lib/codigoPreview';
 
 // --- Utilitários copiados de ProdutoList.tsx (não exportados) ---
@@ -116,6 +117,10 @@ interface UseProdutoFormReturn {
   setDuplicateCodigo: React.Dispatch<React.SetStateAction<string | null>>;
   setDuplicateProdutoId: React.Dispatch<React.SetStateAction<number | null>>;
   setModoCodigo: (modo: ModoCodigoProduto) => void;
+  /** Campos técnicos preenchidos pela última herança aplicada da família. */
+  herdouFamilia: CampoHerancaVisivel[];
+  /** Zera o campo herdado para o usuário digitar um override próprio. */
+  limparHerdadoCampo: (campo: CampoHerancaVisivel) => void;
 }
 
 export function useProdutoForm(
@@ -136,6 +141,14 @@ export function useProdutoForm(
   const [duplicateCodigo, setDuplicateCodigo] = useState<string | null>(null);
   const [duplicateProdutoId, setDuplicateProdutoId] = useState<number | null>(null);
   const previewRequestSeqRef = useRef(0);
+  const [herdouFamilia, setHerdouFamilia] = useState<CampoHerancaVisivel[]>([]);
+
+  // Espelho do form para o efeito de herança, que não pode listar `form` nas
+  // deps (re-aplicaria a herança a cada tecla digitada).
+  const formRef = useRef(form);
+  useEffect(() => {
+    formRef.current = form;
+  }, [form]);
 
   const familiaSelecionada = familias.find((f) => f.id === form.familia_id) ?? null;
   const famReq = getFamReq(familiaSelecionada);
@@ -223,13 +236,24 @@ export function useProdutoForm(
 
   // Aplicar herança da família quando muda modo_codigo ou familia_id
   useEffect(() => {
-    if (!familiaSelecionada) return;
-    const modo = (form.modo_codigo || 'LEGADO') as ModoCodigoProduto;
-    if (modo === 'INTERNO') {
-      setForm((prev) => aplicarHerancaFamiliaProduto(prev, familiaSelecionada, 'INTERNO'));
-    } else if (modo === 'MANUAL' && familiaEhManualFabricante(familiaSelecionada)) {
-      setForm((prev) => aplicarHerancaFamiliaProduto(prev, familiaSelecionada, 'MANUAL'));
+    if (!familiaSelecionada) {
+      setHerdouFamilia([]);
+      return;
     }
+    const modo = (form.modo_codigo || 'LEGADO') as ModoCodigoProduto;
+    const ehInterno = modo === 'INTERNO';
+    const ehManual = modo === 'MANUAL' && familiaEhManualFabricante(familiaSelecionada);
+    if (!ehInterno && !ehManual) {
+      setHerdouFamilia([]);
+      return;
+    }
+    const { form: proximo, herdou } = aplicarHerancaFamiliaProduto(
+      formRef.current,
+      familiaSelecionada,
+      ehManual ? 'MANUAL' : 'INTERNO'
+    );
+    setForm(proximo);
+    setHerdouFamilia(herdou);
   }, [form.modo_codigo, familiaSelecionada]);
 
   // Manter material_ref (FK) coerente com material (string legado).
@@ -382,6 +406,16 @@ export function useProdutoForm(
       return next;
     });
   }, [familias]);
+
+  // "Limpar" da badge: desgruda o campo da família para virar override do produto.
+  const limparHerdadoCampo = useCallback((campo: CampoHerancaVisivel) => {
+    setForm((prev) =>
+      campo === 'material_ref'
+        ? { ...prev, material_ref: null, material: '' }
+        : Object.assign({}, prev, { [campo]: '' })
+    );
+    setHerdouFamilia((prev) => prev.filter((c) => c !== campo));
+  }, []);
 
   const salvar = useCallback(async (): Promise<{ sucesso: boolean; id?: number }> => {
     setErro(null);
@@ -568,6 +602,7 @@ export function useProdutoForm(
     setPreviewNcm('');
     setPreviewMsg('');
     setEditing(null);
+    setHerdouFamilia([]);
   }, []);
 
   return {
@@ -587,5 +622,7 @@ export function useProdutoForm(
     setDuplicateCodigo,
     setDuplicateProdutoId,
     setModoCodigo,
+    herdouFamilia,
+    limparHerdadoCampo,
   };
 }

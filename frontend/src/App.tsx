@@ -35,6 +35,8 @@ import ProdutoDetalhe from "./pages/Produtos/ProdutoDetalhe";
 import ProdutoFormPage from "./pages/Produtos/ProdutoFormPage";
 import MaterialList from "./pages/Materiais/MaterialList";
 import MaterialFormPage from "./pages/Materiais/MaterialFormPage";
+import FamiliaList from "./pages/Familias/FamiliaList";
+import FamiliaFormPage from "./pages/Familias/FamiliaFormPage";
 import Corridas from "./pages/Corridas";
 import RegrasFiscais from "./pages/RegrasFiscais";
 import Propostas from "./pages/Propostas";
@@ -126,6 +128,9 @@ const App = () => (
         <Route path="materiais" element={<MaterialList />} />
         <Route path="materiais/novo" element={<MaterialFormPage />} />
         <Route path="materiais/:id/editar" element={<MaterialFormPage />} />
+        <Route path="familias" element={<FamiliaList />} />
+        <Route path="familias/nova" element={<FamiliaFormPage />} />
+        <Route path="familias/:id/editar" element={<FamiliaFormPage />} />
         <Route path="corridas" element={<Corridas />} />
         <Route path="regras-fiscais" element={<RegrasFiscais />} />
         <Route path="propostas" element={<Propostas />} />

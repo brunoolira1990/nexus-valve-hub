@@ -26,8 +26,14 @@ import type { FamiliaProduto, RequisitosProdutoDimensionais, Produto, RoscaConex
 import type { Material, MaterialCategoria } from '@/types/material';
 import { PolegadaAutocomplete } from '@/components/produtos/PolegadaAutocomplete';
 import { ConversaoMedidasBlock } from '@/components/produtos/ConversaoMedidasBlock';
+import { InheritedBadge } from '@/components/produtos/InheritedBadge';
 import { ProdutoComposicaoPanel } from '@/components/produtos/ProdutoComposicaoPanel';
 import { roscasConexaoService, schedulesEspessuraService } from '@/services/api/produtos';
+import {
+  estaHerdadoDaFamilia,
+  valorFamiliaParaCampo,
+  type CampoHerancaVisivel,
+} from '../lib/herancaFamilia';
 import {
   getTdAtual,
   getUsaDimensoesMateriais,
@@ -89,6 +95,10 @@ interface ProdutoClassificacaoFormTabProps {
   materiais?: Material[];
   /** Indica que o catálogo de materiais ainda está carregando. */
   carregandoMateriais?: boolean;
+  /** Campos técnicos preenchidos pela última herança aplicada da família. */
+  herdouFamilia?: CampoHerancaVisivel[];
+  /** Botão "Limpar" da badge: solta o campo da família para virar override. */
+  onLimparHerdado?: (campo: CampoHerancaVisivel) => void;
 }
 
 export function ProdutoClassificacaoFormTab({
@@ -101,7 +111,42 @@ export function ProdutoClassificacaoFormTab({
   produtosOpcoes = [],
   materiais = [],
   carregandoMateriais = false,
+  herdouFamilia = [],
+  onLimparHerdado,
 }: ProdutoClassificacaoFormTabProps) {
+  // Rótulo humano de cada campo herdável (usado na badge e no resumo).
+  const ROTULO_HERANCA: Record<CampoHerancaVisivel, string> = {
+    material_ref: 'Material',
+    tipo_peca: 'Tipo de peça',
+    norma: 'Norma técnica',
+    pressao_nominal: 'Pressão nominal',
+    conexao: 'Conexão',
+  };
+
+  const badgeHeranca = (campo: CampoHerancaVisivel, valorProduto: unknown) => {
+    if (!familiaSelecionada || !estaHerdadoDaFamilia(familiaSelecionada, campo, valorProduto)) {
+      return null;
+    }
+    const valorFamiliaExibido =
+      campo === 'material_ref'
+        ? familiaSelecionada.material_base || String(valorProduto ?? '')
+        : valorFamiliaParaCampo(familiaSelecionada, campo);
+    return (
+      <InheritedBadge
+        campo={ROTULO_HERANCA[campo]}
+        valor={valorFamiliaExibido}
+        onLimpar={() => onLimparHerdado?.(campo)}
+      />
+    );
+  };
+
+  const rotuloLinha = (label: string, campo: CampoHerancaVisivel, valorProduto: unknown) => (
+    <div className="flex items-center justify-between gap-2">
+      <CampoLabel>{label}</CampoLabel>
+      {badgeHeranca(campo, valorProduto)}
+    </div>
+  );
+
   const handleInputChange = <K extends keyof ProdutoFormState>(
     key: K,
     value: ProdutoFormState[K]
@@ -202,9 +247,14 @@ export function ProdutoClassificacaoFormTab({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
+          {herdouFamilia.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Herdados da família ao selecioná-la: {herdouFamilia.map((c) => ROTULO_HERANCA[c]).join(', ')}
+            </p>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             <div>
-              <CampoLabel>Material</CampoLabel>
+              {rotuloLinha('Material', 'material_ref', form.material_ref)}
               <Select
                 value={form.material_ref?.toString() ?? ''}
                 onValueChange={(v) => {
@@ -248,7 +298,7 @@ export function ProdutoClassificacaoFormTab({
               </Select>
             </div>
             <div>
-              <CampoLabel>Norma técnica</CampoLabel>
+              {rotuloLinha('Norma técnica', 'norma', form.norma)}
               <Input
                 className="erp-input h-10"
                 value={form.norma}
@@ -257,7 +307,7 @@ export function ProdutoClassificacaoFormTab({
               />
             </div>
             <div>
-              <CampoLabel>Pressão nominal</CampoLabel>
+              {rotuloLinha('Pressão nominal', 'pressao_nominal', form.pressao_nominal)}
               <Input
                 className="erp-input h-10"
                 value={form.pressao_nominal}
@@ -283,7 +333,7 @@ export function ProdutoClassificacaoFormTab({
         <CardContent className="space-y-5">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             <div className="lg:col-span-1">
-              <CampoLabel>Tipo de peça</CampoLabel>
+              {rotuloLinha('Tipo de peça', 'tipo_peca', form.tipo_peca)}
               <Input
                 className="erp-input h-10"
                 value={form.tipo_peca}
@@ -292,7 +342,7 @@ export function ProdutoClassificacaoFormTab({
               />
             </div>
             <div className="lg:col-span-2">
-              <CampoLabel>Conexão (texto livre)</CampoLabel>
+              {rotuloLinha('Conexão (texto livre)', 'conexao', form.conexao)}
               <Input
                 className="erp-input h-10"
                 value={form.conexao}

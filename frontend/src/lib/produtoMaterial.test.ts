@@ -35,4 +35,13 @@ describe('produtoMaterial', () => {
   it('payload envia material quando preenchido', () => {
     expect(materialParaPayload('Aço Inoxidável', null)).toEqual({ material: 'Aço Inoxidável' });
   });
+
+  it('form não fabrica material quando o produto não tem', () => {
+    expect(materialValorParaForm({ material: '', material_label: '' } as Produto)).toBe('');
+    expect(materialValorParaForm(null)).toBe('');
+  });
+
+  it('payload de criação mantém vazio quando não informado', () => {
+    expect(materialParaPayload('', null)).toEqual({ material: '' });
+  });
 });

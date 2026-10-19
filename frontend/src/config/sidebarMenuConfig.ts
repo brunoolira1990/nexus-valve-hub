@@ -58,6 +58,7 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
     icon: Package,
     children: [
       { type: 'link', label: 'Produtos', path: '/produtos' },
+      { type: 'link', label: 'Famílias', path: '/familias' },
       { type: 'link', label: 'Materiais', path: '/materiais' },
       { type: 'link', label: 'Corridas / Lotes', path: '/corridas' },
     ],
