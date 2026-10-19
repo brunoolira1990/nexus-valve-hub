@@ -276,6 +276,11 @@ export type RequisitosProdutoDimensionais = {
 export interface FamiliaProduto {
   id: number;
   codigo_figura: string;
+  /**
+   * Decisão de cadastro apenas: write-only no FamiliaProdutoSerializer
+   * (AUTOMATICO gera NNNN, MANUAL exige codigo_figura). Não é campo do model.
+   */
+  modo_codigo?: 'AUTOMATICO' | 'MANUAL';
   descricao_base: string;
   tipo_regra_codigo: TipoRegraCodigo;
   categoria_produto?: 'PRODUTO_TECNICO' | 'MATERIAL_DIMENSIONAL' | 'MANUAL_FABRICANTE';
@@ -296,6 +301,14 @@ export interface FamiliaProduto {
   pressao_base?: string;
   norma_base?: string;
   conexao_base?: string;
+  tipo_peca?: string;
+  subtipo_peca?: string;
+  norma_tecnica?: string;
+  pressao_nominal?: string;
+  tipo_conexao?: string;
+  material_vedacao?: string;
+  tipo_acionamento?: string;
+  cfop_padrao?: string;
   tipo_fisico?: TipoFisicoProduto;
   tipo_controle_unidade?: TipoControleUnidade;
   unidade_estoque_padrao?: string;

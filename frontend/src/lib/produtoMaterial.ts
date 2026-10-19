@@ -24,13 +24,11 @@ export function formatProdutoMaterial(
 /** Valor inicial do select Material (compatível com MATERIAIS). */
 export function materialValorParaForm(
   produto: Pick<Produto, 'material' | 'material_label'> | null | undefined,
-  fallback = 'Aço Carbono',
 ): string {
-  if (!produto) return fallback;
+  if (!produto) return '';
   const label = (produto.material_label || '').trim();
   if (label) return label;
-  const raw = (produto.material || '').trim();
-  return raw || fallback;
+  return (produto.material || '').trim();
 }
 
 /** Inclui material no payload só se preenchido (evita apagar em PATCH acidental). */
@@ -41,5 +39,5 @@ export function materialParaPayload(
   const valor = (material || '').trim();
   if (valor) return { material: valor };
   if (editing) return {};
-  return { material: 'Aço Carbono' };
+  return { material: '' };
 }

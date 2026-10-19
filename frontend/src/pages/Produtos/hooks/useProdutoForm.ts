@@ -27,10 +27,9 @@ const emptyForm = (): ProdutoFormState => ({
   polegada_principal: '',
   polegada_secundaria: '',
   descricao: '',
-  // TODO(Fase 5): trocar default 'Aço Carbono' por '' quando o modal legado
-  // (ProdutoList) sair. Material agora vem da FK material_ref; o string legado
-  // continua preenchido pelo onChange do dropdown (espelhamento).
-  material: 'Aço Carbono',
+  // Material vem da FK material_ref; a string legada é só o espelhamento do nome,
+  // gravado pelo onChange do dropdown. Vazio é vazio — sem default fabricado.
+  material: '',
   material_ref: null,
   tipo_peca: '',
   pressao_nominal: '',
@@ -166,7 +165,7 @@ export function useProdutoForm(
           polegada_principal: produto.polegada_principal ?? '',
           polegada_secundaria: produto.polegada_secundaria ?? '',
           descricao: produto.descricao,
-          material: produto.material ?? 'Aço Carbono',
+          material: produto.material ?? '',
           material_ref: produto.material_ref ?? null,
           tipo_peca: produto.tipo_peca ?? '',
           pressao_nominal: produto.pressao_nominal ?? '',
@@ -388,7 +387,6 @@ export function useProdutoForm(
     setErro(null);
     setDuplicateCodigo(null);
     setDuplicateProdutoId(null);
-    setSalvando(true);
 
     // Blinding de timing: se o efeito de resolução ainda não rodou (catálogo
     // recém-chegado), resolve material_ref a partir de form.material agora,
@@ -404,6 +402,25 @@ export function useProdutoForm(
       );
       if (mat) materialRefResolvido = mat.id;
     }
+
+    // Validação mínima: sem estes três campos o produto nasce sem identidade
+    // (descrição vazia, código não derivável, material fora do catálogo).
+    if (!form.descricao.trim()) {
+      setErro('Informe a descrição do produto.');
+      return { sucesso: false };
+    }
+    if (form.modo_codigo === 'INTERNO') {
+      if (!form.familia_id) {
+        setErro('Selecione a Família/Figura — o código interno é derivado dela.');
+        return { sucesso: false };
+      }
+      if (!materialRefResolvido) {
+        setErro('Selecione o material no catálogo de materiais.');
+        return { sucesso: false };
+      }
+    }
+
+    setSalvando(true);
 
     const body: Partial<Produto> = {
       modo_codigo: form.modo_codigo as ModoCodigoProduto,

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
@@ -368,6 +368,7 @@ function aplicarHerancaFamiliaProduto(
 }
 
 const Produtos = () => {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const semNcmUrl = searchParams.get('sem_ncm') || '';
   const [activeTab, setActiveTab] = useState<'produtos' | 'familias'>('produtos');
@@ -1577,7 +1578,7 @@ const Produtos = () => {
       <PageHeader
         title="Produtos"
         description="Cadastro de produtos e informações fiscais."
-        onAdd={openNew}
+        onAdd={() => navigate('/produtos/novo')}
         addLabel="Novo Produto"
         searchValue={search}
         onSearch={setSearch}
@@ -1664,7 +1665,11 @@ const Produtos = () => {
                     <td>{formatMoneyBRL(e.preco_venda)}</td>
                     <td>
                       <div className="flex gap-1">
-                        <button type="button" onClick={() => openEdit(e)} className="erp-btn-ghost erp-btn-sm">
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/produtos/${e.id}/editar`)}
+                          className="erp-btn-ghost erp-btn-sm"
+                        >
                           <Pencil className="h-4 w-4" />
                         </button>
                         <button type="button" onClick={() => handleDelete(e.id)} className="erp-btn-ghost erp-btn-sm text-destructive">

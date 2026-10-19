@@ -22,12 +22,12 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Info, Wrench, Link2, Ruler, Boxes, Scale, Layers } from 'lucide-react';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import type { ProdutoFormState } from '../types';
-import type { FamiliaProduto, RequisitosProdutoDimensionais, Produto, ScheduleEspessura } from '@/types';
+import type { FamiliaProduto, RequisitosProdutoDimensionais, Produto, RoscaConexao, ScheduleEspessura } from '@/types';
 import type { Material, MaterialCategoria } from '@/types/material';
 import { PolegadaAutocomplete } from '@/components/produtos/PolegadaAutocomplete';
 import { ConversaoMedidasBlock } from '@/components/produtos/ConversaoMedidasBlock';
 import { ProdutoComposicaoPanel } from '@/components/produtos/ProdutoComposicaoPanel';
-import { schedulesEspessuraService } from '@/services/api/produtos';
+import { roscasConexaoService, schedulesEspessuraService } from '@/services/api/produtos';
 import {
   getTdAtual,
   getUsaDimensoesMateriais,
@@ -71,6 +71,9 @@ const MATERIAL_GRUPO_ORDEM: MaterialCategoria[] = [
   'POLIMERO',
   'OUTRO',
 ];
+
+/** Sentinela de "sem rosca específica" (Radix não aceita SelectItem com value=""). */
+const SEM_ROSCA = '__none__';
 
 interface ProdutoClassificacaoFormTabProps {
   form: ProdutoFormState;
@@ -129,6 +132,23 @@ export function ProdutoClassificacaoFormTab({
       ativo = false;
     };
   }, [form.schedule_ref_id, scheduleOption?.id]);
+
+  // Rosca/conexão: lista pequena e estática — carregada uma vez por montagem.
+  const [roscas, setRoscas] = useState<RoscaConexao[]>([]);
+  useEffect(() => {
+    let ativo = true;
+    void roscasConexaoService
+      .getAll()
+      .then((list) => {
+        if (ativo) setRoscas(list);
+      })
+      .catch(() => {
+        if (ativo) setRoscas([]);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, []);
 
   // Material: o catálogo (ativos) vem do container via prop `materiais`.
   // A resolução material→material_ref (herança da família / produto legado) vive
@@ -298,13 +318,33 @@ export function ProdutoClassificacaoFormTab({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
-            {!familiaEhMaterialDimensional && famReq.usa_rosca_conexao && (
-              <div className="rounded-md border border-dashed border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-                A rosca/conexão padrão é herdada da família. Ajuste na aba Dados gerais se necessário.
-              </div>
-            )}
-
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {!familiaEhMaterialDimensional && famReq.usa_rosca_conexao && (
+                <div>
+                  <CampoLabel>Rosca / conexão</CampoLabel>
+                  <Select
+                    value={form.rosca_conexao_id?.toString() ?? SEM_ROSCA}
+                    onValueChange={(v) =>
+                      handleInputChange('rosca_conexao_id', v === SEM_ROSCA ? null : Number(v))
+                    }
+                  >
+                    <SelectTrigger className="w-full h-10">
+                      <SelectValue placeholder="Selecione a rosca / conexão" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={SEM_ROSCA}>
+                        — Sem rosca específica (usa o padrão da família) —
+                      </SelectItem>
+                      {roscas.map((r) => (
+                        <SelectItem key={r.id} value={r.id.toString()}>
+                          {(r.codigo || '—') + ' — ' + r.descricao}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
               {!familiaEhMaterialDimensional && famReq.usa_schedule && (
                 <div>
                   <div className="flex items-center gap-1.5 mb-1.5">
@@ -429,7 +469,8 @@ export function ProdutoClassificacaoFormTab({
             <CardTitle className="text-base">Dimensões e referências</CardTitle>
           </div>
           <CardDescription className="text-xs">
-            Polegadas de referência e medidas em milímetros
+            Polegadas de referência deste produto. Medidas em milímetros (OD, espessura,
+            comprimento) ficam no card Requisitos da Família/Figura.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -452,39 +493,6 @@ export function ProdutoClassificacaoFormTab({
                 tipoMedida="OD"
                 allowCreate
                 placeholder="Busque por código, polegada, decimal ou mm"
-              />
-            </div>
-            <div>
-              <CampoLabel>OD (mm)</CampoLabel>
-              <Input
-                type="text"
-                inputMode="decimal"
-                className="erp-input h-10"
-                placeholder="Ex.: 10 | 10,0 | 1,5"
-                value={decToText(form.od_mm)}
-                onChange={(e) => handleInputChange('od_mm', parseDec(e.target.value))}
-              />
-            </div>
-            <div>
-              <CampoLabel>Espessura (mm)</CampoLabel>
-              <Input
-                type="text"
-                inputMode="decimal"
-                className="erp-input h-10"
-                placeholder="Ex.: 2 | 2,0 | 1,5"
-                value={decToText(form.espessura_mm)}
-                onChange={(e) => handleInputChange('espessura_mm', parseDec(e.target.value))}
-              />
-            </div>
-            <div>
-              <CampoLabel>Comprimento (mm)</CampoLabel>
-              <Input
-                type="text"
-                inputMode="decimal"
-                className="erp-input h-10"
-                placeholder="Ex.: 6000"
-                value={decToText(form.comprimento_mm)}
-                onChange={(e) => handleInputChange('comprimento_mm', parseDec(e.target.value))}
               />
             </div>
           </div>

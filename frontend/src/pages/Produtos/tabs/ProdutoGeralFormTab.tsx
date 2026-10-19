@@ -215,6 +215,62 @@ export function ProdutoGeralFormTab({
             </div>
           )}
 
+          {/* Segmentos de texto do código legado — só existem neste modo. */}
+          {modo === 'LEGADO' && (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Cadastro legado: apenas segmentos preenchidos entram no código (sem reticências).
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                <div>
+                  <CampoLabel>Figura</CampoLabel>
+                  <Input
+                    className="h-10"
+                    value={form.figura || ''}
+                    onChange={(e) => handleInputChange('figura', e.target.value)}
+                    placeholder="Ex.: 6119"
+                  />
+                </div>
+                <div>
+                  <CampoLabel>Sufixo (texto livre)</CampoLabel>
+                  <Input
+                    className="h-10"
+                    value={form.sufixo || ''}
+                    onChange={(e) => handleInputChange('sufixo', e.target.value)}
+                    placeholder="Ex.: F04"
+                  />
+                </div>
+                <div>
+                  <CampoLabel>Schedule (texto livre)</CampoLabel>
+                  <Input
+                    className="h-10"
+                    value={form.schedule || ''}
+                    onChange={(e) => handleInputChange('schedule', e.target.value)}
+                    placeholder="Ex.: 40"
+                  />
+                </div>
+                <div>
+                  <CampoLabel>Polegada principal (texto)</CampoLabel>
+                  <Input
+                    className="h-10"
+                    value={form.polegada_principal || ''}
+                    onChange={(e) => handleInputChange('polegada_principal', e.target.value)}
+                    placeholder='Ex.: 1 1/2"'
+                  />
+                </div>
+                <div>
+                  <CampoLabel>Polegada secundária (texto)</CampoLabel>
+                  <Input
+                    className="h-10"
+                    value={form.polegada_secundaria || ''}
+                    onChange={(e) => handleInputChange('polegada_secundaria', e.target.value)}
+                    placeholder='Ex.: 3/4"'
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Descrição */}
           <div>
             <CampoLabel>

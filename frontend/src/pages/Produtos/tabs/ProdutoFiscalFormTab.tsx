@@ -1,7 +1,6 @@
 import { type ReactNode } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Card,
   CardContent,
@@ -15,7 +14,6 @@ import type { ProdutoFormState } from '../types';
 import type { FamiliaProduto } from '@/types';
 import { ncmApiService } from '@/services/api/produtos';
 import { useState, useEffect } from 'react';
-import { ORIGEM_MERCADORIA_OPTIONS } from './constants';
 
 /** Rótulo de campo padronizado (text-sm font-medium mb-1.5). */
 function CampoLabel({ children }: { children: ReactNode }) {
@@ -136,31 +134,11 @@ export function ProdutoFiscalFormTab({
             <CardTitle className="text-base">NCM específico e unidades</CardTitle>
           </div>
           <CardDescription className="text-xs">
-            Campos legados, origem e unidades de controle fiscal e estoque
+            Campos legados e unidades de controle fiscal e estoque
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {/* Origem da mercadoria */}
-            <div>
-              <CampoLabel>Origem da mercadoria</CampoLabel>
-              <Select
-                value={form.origem || '0'}
-                onValueChange={(v) => handleInputChange('origem', v)}
-              >
-                <SelectTrigger className="w-full h-10">
-                  <SelectValue placeholder="Selecione a origem" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ORIGEM_MERCADORIA_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
             {/* NCM específico (legado) */}
             <div>
               <CampoLabel>NCM específico (legado)</CampoLabel>

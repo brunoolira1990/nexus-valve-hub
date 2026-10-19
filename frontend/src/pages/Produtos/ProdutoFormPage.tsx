@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Loader2, Save, X } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
@@ -20,6 +20,7 @@ import type { Material } from '@/types/material';
 const ProdutoFormPage = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const isEdit = Boolean(id);
   const produtoId = id ? Number(id) : undefined;
 
@@ -108,6 +109,13 @@ const ProdutoFormPage = () => {
 
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Pré-preenchimento vindo de outra tela (ex.: proposta → "Cadastrar novo produto").
+  const descricaoUrl = searchParams.get('descricao') || '';
+  useEffect(() => {
+    if (isEdit || !descricaoUrl) return;
+    setForm((prev) => (prev.descricao ? prev : { ...prev, descricao: descricaoUrl }));
+  }, [isEdit, descricaoUrl, setForm]);
+
   const handleSubmit = async () => {
     setSaveError(null);
     const result = await salvar();
@@ -124,17 +132,8 @@ const ProdutoFormPage = () => {
     navigate('/produtos');
   };
 
-  // Criação rápida de família: o fluxo inline (famModalOpen) ainda vive no modal
-  // antigo (ProdutoList.tsx) e não há rota dedicada. Até a extração (Fase 5),
-  // orientamos o usuário em vez de abrir um fluxo inexistente.
-  const handleNovaFamilia = useMemo(
-    () => () => {
-      toast.info(
-        'A criação rápida de família ainda não foi migrada para esta tela. Cadastre a família no módulo de Famílias/Figuras e volte para selecioná-la.'
-      );
-    },
-    []
-  );
+  // A família tem módulo dedicado desde a Sprint 3.6: o botão navega para lá.
+  const handleNovaFamilia = useMemo(() => () => navigate('/familias/nova'), [navigate]);
 
   if (carregando) {
     return (

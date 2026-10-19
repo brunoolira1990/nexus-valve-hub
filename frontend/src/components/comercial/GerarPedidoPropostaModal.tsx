@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Modal, ModalFooterActions } from '@/components/Modal';
 import { ProdutoComercialField } from '@/components/comercial/ProdutoComercialField';
 import { formatMoneyBr } from '@/lib/numberFormat';
@@ -6,7 +7,6 @@ import { formatPrecoUnitarioBRL } from '@/lib/pedidoVendaValorUnitario';
 import { itemPodeSelecionarParaPedido, labelStatusItemProposta } from '@/lib/propostaStatus';
 import { apiErrorMessage } from '@/services/api/config';
 import { propostasService } from '@/services/api/comercial';
-import { produtosService } from '@/services/api/produtos';
 import type { AcaoItensNaoSelecionados, ItemProposta, Proposta, Produto } from '@/types';
 
 function valorTotalItem(it: ItemProposta): number {
@@ -43,6 +43,7 @@ export function GerarPedidoPropostaModal({
   onConfirm,
   onPropostaAtualizada,
 }: Props) {
+  const navigate = useNavigate();
   const [selecionados, setSelecionados] = useState<number[]>([]);
   const [acao, setAcao] = useState<AcaoItensNaoSelecionados>('MANTER_PENDENTE');
   const [observacao, setObservacao] = useState('');
@@ -124,47 +125,16 @@ export function GerarPedidoPropostaModal({
     }
   };
 
-  const criarProdutoParaItem = async (itemId: number) => {
-    if (!proposta) return;
+  // O cadastro do produto acontece na Página Dedicada: só ela exige família e
+  // material e deriva o código a partir da regra. Levamos a descrição digitada.
+  const irParaCadastroProduto = (itemId: number) => {
     const descricao = (novoProdutoDescricao[itemId] || '').trim();
     if (!descricao) {
       setRegularizacaoErro('Informe a descrição do novo produto.');
       return;
     }
-    setRegularizando(true);
-    setRegularizacaoErro(null);
-    try {
-      const produto = await produtosService.create({
-        figura: 'AV',
-        sufixo: 'LIVRE',
-        schedule: 'STD',
-        polegada_principal: '1/2"',
-        polegada_secundaria: '',
-        descricao,
-        material: '',
-        tipo_peca: '',
-        pressao_nominal: '',
-        norma: '',
-        conexao: '',
-        ncm: '',
-        preco_custo: 0,
-        preco_venda: 0,
-        estoque_minimo: 0,
-        codigo_completo: '',
-      });
-      const itensAtualizados = proposta.itens.map((it) =>
-        it.id === itemId ? { ...it, produto_id: produto.id, descricao_avulsa: '' } : it,
-      );
-      await propostasService.update(proposta.id, { itens: itensAtualizados });
-      mergeProdutoCache(produto);
-      const atualizada = await propostasService.getById(proposta.id);
-      aplicarPropostaAtualizada(atualizada);
-      setRegularizarItemId(null);
-    } catch (e) {
-      setRegularizacaoErro(apiErrorMessage(e, { fallback: 'Não foi possível criar o produto para o item.' }));
-    } finally {
-      setRegularizando(false);
-    }
+    onClose();
+    navigate(`/produtos/novo?descricao=${encodeURIComponent(descricao)}`);
   };
 
   const bloqueado = Boolean(loading || regularizando);
@@ -315,10 +285,10 @@ export function GerarPedidoPropostaModal({
                                   {regularizando ? 'Vinculando…' : 'Confirmar vínculo'}
                                 </button>
                                 <div className="md:col-span-2">
-                                  <label className="erp-label">Ou criar novo produto</label>
+                                  <label className="erp-label">Ou cadastrar novo produto</label>
                                   <input
                                     className="erp-input mt-1 w-full"
-                                    placeholder="Descrição para novo produto"
+                                    placeholder="Descrição para o novo produto"
                                     value={novoProdutoDescricao[it.id] ?? ''}
                                     disabled={bloqueado}
                                     onChange={(e) =>
@@ -330,10 +300,14 @@ export function GerarPedidoPropostaModal({
                                   type="button"
                                   className="erp-btn-outline"
                                   disabled={bloqueado}
-                                  onClick={() => void criarProdutoParaItem(it.id)}
+                                  onClick={() => irParaCadastroProduto(it.id)}
                                 >
-                                  {regularizando ? 'Criando…' : 'Criar e vincular produto'}
+                                  Cadastrar novo produto
                                 </button>
+                                <p className="md:col-span-2 text-xs text-muted-foreground">
+                                  O cadastro completo acontece na página de Produtos, com família, material e
+                                  NCM. Depois volte a esta proposta e vincule o produto criado.
+                                </p>
                               </div>
                             </div>
                           </td>
