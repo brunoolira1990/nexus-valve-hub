@@ -330,8 +330,15 @@ const NFeEntrada = () => {
                     <td>
                       <StatusBadge status={labelTipoOrigemNfeEntrada(e)} />
                     </td>
-                    <td>{e.numero}</td>
-                    <td>{e.serie || '—'}</td>
+                    <td>
+                      <div className="font-mono font-medium">
+                        {e.numero_nfe || '—'}
+                      </div>
+                      <div className="text-xs text-muted-foreground font-mono">
+                        {e.numero}
+                      </div>
+                    </td>
+                    <td>{e.serie_nfe || '—'}</td>
                     <td className="font-mono text-xs" title={e.chave_acesso || undefined}>
                       {chaveNfeResumida(e.chave_acesso)}
                     </td>

@@ -90,9 +90,12 @@ export function NFeEntradaDetalheDrawer({ nfeId, open, onClose, onChanged }: Pro
                   <div>
                     <dt className="text-xs text-muted-foreground">Número / Série</dt>
                     <dd className="font-medium">
-                      {nfe.numero}
-                      {nfe.serie ? ` / ${nfe.serie}` : ''}
+                      {nfe.numero_nfe || '—'}
+                      {nfe.serie_nfe ? ` / ${nfe.serie_nfe}` : ''}
                     </dd>
+                    {nfe.numero && (
+                      <div className="text-xs text-muted-foreground font-mono">{nfe.numero}</div>
+                    )}
                   </div>
                   <div>
                     <dt className="text-xs text-muted-foreground">Emissão</dt>
