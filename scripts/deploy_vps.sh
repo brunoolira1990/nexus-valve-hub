@@ -69,10 +69,11 @@ echo "[deploy] Checks Django..."
 compose exec -T backend python manage.py check
 compose exec -T backend python manage.py create_groups
 echo "[deploy] Aplicando seed + inferência de materiais (idempotente)..."
+compose exec -T backend python manage.py normalizar_materiais --apply || true
 compose exec -T backend python manage.py seed_materiais --apply || true
 compose exec -T backend python manage.py inferir_material_familias --apply || true
 compose exec -T backend python manage.py propagar_material_produtos --apply || true
-compose exec -T backend python manage.py migrar_material_para_fk --apply || true
+compose exec -T backend python manage.py migrar_material_para_fk --apply
 compose exec -T backend python manage.py verificar_prontidao_producao || true
 
 if [[ "${SKIP_MIGRATE_CHECK:-}" != "1" ]]; then
