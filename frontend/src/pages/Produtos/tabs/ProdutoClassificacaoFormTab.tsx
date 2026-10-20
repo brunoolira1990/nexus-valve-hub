@@ -22,7 +22,15 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Info, Wrench, Link2, Ruler, Lock, Scale, Layers } from 'lucide-react';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import type { ProdutoFormState } from '../types';
-import type { FamiliaProduto, RequisitosProdutoDimensionais, Produto, RoscaConexao, ScheduleEspessura } from '@/types';
+import type {
+  FamiliaProduto,
+  RequisitosProdutoDimensionais,
+  Produto,
+  RoscaConexao,
+  ScheduleEspessura,
+  TipoControleUnidade,
+  TipoFisicoProduto,
+} from '@/types';
 import type { Material, MaterialCategoria } from '@/types/material';
 import { PolegadaAutocomplete } from '@/components/produtos/PolegadaAutocomplete';
 import { ConversaoMedidasBlock } from '@/components/produtos/ConversaoMedidasBlock';
@@ -32,6 +40,8 @@ import { roscasConexaoService, schedulesEspessuraService } from '@/services/api/
 import {
   estaHerdadoDaFamilia,
   valorFamiliaParaCampo,
+  valoresConversaoHerdados,
+  valoresConversaoProduto,
   type CampoHerancaVisivel,
 } from '../lib/herancaFamilia';
 import {
@@ -238,6 +248,12 @@ export function ProdutoClassificacaoFormTab({
   // OD/espessura/comprimento em mm são do produto técnico; em material dimensional a
   // medida da peça é o conjunto dim_*. O card Requisitos nunca mostra os dois.
   const mmDoProdutoVisiveis = !familiaEhMaterialDimensional && !usaDimensoesMateriais;
+
+  // Conversão de Medidas: com família, o card mostra o molde herdado (Família/Figura)
+  // e bloqueia a edição; sem família, o produto continua dono das próprias medidas.
+  const conversao = familiaSelecionada
+    ? valoresConversaoHerdados(form, familiaSelecionada)
+    : valoresConversaoProduto(form);
 
   const getAtributoTecnico = (key: string): string => {
     const value = form.dimensoes_json?.[key];
@@ -677,55 +693,61 @@ export function ProdutoClassificacaoFormTab({
         </Card>
       )}
 
-      {/* ===== Conversão de Medidas ===== */}
+      {/* ===== Conversão de Medidas (molde da Família/Figura) ===== */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
             <Scale className="h-4 w-4 text-muted-foreground" />
             <CardTitle className="text-base">Conversão de Medidas</CardTitle>
+            {familiaSelecionada ? <Badge variant="secondary">somente leitura</Badge> : null}
           </div>
           <CardDescription className="text-xs">
-            Unidades, pesos e conversão dimensional do produto
+            {familiaSelecionada
+              ? `Estas configurações são herdadas da Família/Figura. Para alterar, edite a família ${familiaSelecionada.codigo_figura}.`
+              : 'Unidades, pesos e conversão dimensional do produto'}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <ConversaoMedidasBlock
-            usaConversao={!!form.usa_conversao_dimensional}
+            somenteLeitura={!!familiaSelecionada}
+            usaConversao={conversao.usaConversao}
             onUsaConversaoChange={(v) => handleInputChange('usa_conversao_dimensional', v)}
-            controlaComposicaoFisica={!!form.controla_composicao_fisica}
+            controlaComposicaoFisica={conversao.controlaComposicaoFisica}
             onControlaComposicaoFisicaChange={(v) => handleInputChange('controla_composicao_fisica', v)}
-            tipoComposicaoFisica={form.tipo_composicao_fisica || 'BARRA_M'}
+            tipoComposicaoFisica={conversao.tipoComposicaoFisica}
             onTipoComposicaoFisicaChange={(v) => handleInputChange('tipo_composicao_fisica', v)}
-            tipoFisicoEfetivo={form.tipo_fisico_efetivo || form.tipo_fisico || ''}
-            tipoFisicoProduto={form.tipo_fisico || ''}
-            onTipoFisicoProdutoChange={(v) => handleInputChange('tipo_fisico', v)}
-            tipoControleProduto={form.tipo_controle_unidade || ''}
-            onTipoControleProdutoChange={(v) => handleInputChange('tipo_controle_unidade', v)}
-            unidadeEstoque={form.unidade_estoque || ''}
+            tipoFisicoEfetivo={conversao.tipoFisicoEfetivo}
+            tipoFisicoProduto={conversao.tipoFisico}
+            onTipoFisicoProdutoChange={(v) => handleInputChange('tipo_fisico', v as TipoFisicoProduto)}
+            tipoControleProduto={conversao.tipoControleUnidade}
+            onTipoControleProdutoChange={(v) =>
+              handleInputChange('tipo_controle_unidade', v as TipoControleUnidade)
+            }
+            unidadeEstoque={conversao.unidadeEstoque}
             onUnidadeEstoqueChange={(v) => handleInputChange('unidade_estoque', v)}
-            unidadeVenda={form.unidade_venda_padrao || ''}
+            unidadeVenda={conversao.unidadeVenda}
             onUnidadeVendaChange={(v) => handleInputChange('unidade_venda_padrao', v)}
-            unidadeCompra={form.unidade_compra_padrao || ''}
+            unidadeCompra={conversao.unidadeCompra}
             onUnidadeCompraChange={(v) => handleInputChange('unidade_compra_padrao', v)}
-            unidadeFiscal={form.unidade_fiscal || ''}
+            unidadeFiscal={conversao.unidadeFiscal}
             onUnidadeFiscalChange={(v) => handleInputChange('unidade_fiscal', v)}
-            unidadesVenda={form.unidades_venda_permitidas || []}
+            unidadesVenda={conversao.unidadesVenda}
             onUnidadesVendaChange={(list) => handleInputChange('unidades_venda_permitidas', list)}
-            unidadesCompra={form.unidades_compra_permitidas || []}
+            unidadesCompra={conversao.unidadesCompra}
             onUnidadesCompraChange={(list) => handleInputChange('unidades_compra_permitidas', list)}
             familiaUnidadesVenda={familiaSelecionada?.unidades_venda_permitidas}
             familiaUnidadesCompra={familiaSelecionada?.unidades_compra_permitidas}
-            comprimentoBarra={form.comprimento_padrao_barra_m ?? null}
+            comprimentoBarra={conversao.comprimentoBarra}
             onComprimentoBarraChange={(v) => handleInputChange('comprimento_padrao_barra_m', v)}
-            pesoMetro={form.peso_por_metro_kg ?? null}
+            pesoMetro={conversao.pesoMetro}
             onPesoMetroChange={(v) => handleInputChange('peso_por_metro_kg', v)}
-            pesoPeca={form.peso_por_peca_kg ?? null}
+            pesoPeca={conversao.pesoPeca}
             onPesoPecaChange={(v) => handleInputChange('peso_por_peca_kg', v)}
-            pesoChapa={form.peso_por_chapa_kg ?? null}
+            pesoChapa={conversao.pesoChapa}
             onPesoChapaChange={(v) => handleInputChange('peso_por_chapa_kg', v)}
-            densidade={form.densidade ?? null}
+            densidade={conversao.densidade}
             onDensidadeChange={(v) => handleInputChange('densidade', v)}
-            observacoes={form.observacoes_conversao || ''}
+            observacoes={conversao.observacoes}
             onObservacoesChange={(v) => handleInputChange('observacoes_conversao', v)}
             ocultarUnidadeFiscal
           />

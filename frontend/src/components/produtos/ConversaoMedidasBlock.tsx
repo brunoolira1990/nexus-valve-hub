@@ -74,6 +74,11 @@ type Props = {
   rotulos?: { limparUnidades?: string };
   /** Oculta unidade fiscal quando editada em outra aba (ex.: Fiscal). */
   ocultarUnidadeFiscal?: boolean;
+  /**
+   * Molde vem da Família/Figura: mostra os valores efetivos e bloqueia a edição
+   * de todos os controles (inclusive as sugestões de unidades).
+   */
+  somenteLeitura?: boolean;
 };
 
 function BadgeHeranca({ texto, variante }: { texto: string; variante: 'familia' | 'override' }) {
@@ -127,6 +132,7 @@ function GrupoCheckboxesUnidades({
   onChange,
   sugestao,
   limparLabel,
+  disabled = false,
 }: {
   titulo: string;
   selecionados: string[];
@@ -134,6 +140,7 @@ function GrupoCheckboxesUnidades({
   onChange: (list: string[]) => void;
   sugestao: string[];
   limparLabel: string;
+  disabled?: boolean;
 }) {
   const baseLista = selecionados.length > 0 ? selecionados : [...(familiaBase || [])];
   const toggle = (cod: string) => onChange(toggleUnidadeLista(baseLista, cod));
@@ -143,19 +150,39 @@ function GrupoCheckboxesUnidades({
       <div className="flex flex-wrap gap-3">
         {UNIDADES_CATALOGO.map((u) => (
           <label key={u} className="flex items-center gap-1.5 text-sm cursor-pointer">
-            <input type="checkbox" checked={baseLista.includes(u)} onChange={() => toggle(u)} />
+            <input
+              type="checkbox"
+              checked={baseLista.includes(u)}
+              disabled={disabled}
+              onChange={() => toggle(u)}
+            />
             {u}
           </label>
         ))}
       </div>
       <div className="mt-2 flex flex-wrap gap-2">
-        <button type="button" className="erp-btn-outline erp-btn-sm text-xs" onClick={() => onChange([...sugestao])}>
+        <button
+          type="button"
+          disabled={disabled}
+          className="erp-btn-outline erp-btn-sm text-xs"
+          onClick={() => onChange([...sugestao])}
+        >
           Sugestão linear (M, BR, KG, TON)
         </button>
-        <button type="button" className="erp-btn-outline erp-btn-sm text-xs" onClick={() => onChange([...unidadesSugeridasChapa()])}>
+        <button
+          type="button"
+          disabled={disabled}
+          className="erp-btn-outline erp-btn-sm text-xs"
+          onClick={() => onChange([...unidadesSugeridasChapa()])}
+        >
           Sugestão chapa (CH, KG, TON…)
         </button>
-        <button type="button" className="erp-btn-ghost erp-btn-sm text-xs" onClick={() => onChange([])}>
+        <button
+          type="button"
+          disabled={disabled}
+          className="erp-btn-ghost erp-btn-sm text-xs"
+          onClick={() => onChange([])}
+        >
           {limparLabel}
         </button>
       </div>
@@ -200,6 +227,7 @@ export function ConversaoMedidasBlock({
   heranca,
   rotulos,
   ocultarUnidadeFiscal = false,
+  somenteLeitura = false,
   controlaComposicaoFisica = false,
   onControlaComposicaoFisicaChange,
   tipoComposicaoFisica = 'BARRA_M',
@@ -227,7 +255,12 @@ export function ConversaoMedidasBlock({
   const todosAvisos = [...new Set([...avisosPrev, ...avisosLinhas])];
 
   const selUnidade = (value: string, onChange: (v: string) => void) => (
-    <select className="erp-select mt-1 w-full" value={value} onChange={(e) => onChange(e.target.value.toUpperCase())}>
+    <select
+      className="erp-select mt-1 w-full"
+      value={value}
+      disabled={somenteLeitura}
+      onChange={(e) => onChange(e.target.value.toUpperCase())}
+    >
       <option value="">—</option>
       {UNIDADES_CATALOGO.map((u) => (
         <option key={u} value={u}>
@@ -241,6 +274,7 @@ export function ConversaoMedidasBlock({
     <input
       type="number"
       step={step}
+      disabled={somenteLeitura}
       className="erp-input mt-1 w-full"
       value={v ?? ''}
       onChange={(e) => {
@@ -257,7 +291,12 @@ export function ConversaoMedidasBlock({
       <section className="space-y-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">1. Ativação</p>
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={usaConversao} onChange={(e) => onUsaConversaoChange(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={usaConversao}
+            disabled={somenteLeitura}
+            onChange={(e) => onUsaConversaoChange(e.target.checked)}
+          />
           Usa conversão dimensional?
         </label>
         {onControlaComposicaoFisicaChange ? (
@@ -265,6 +304,7 @@ export function ConversaoMedidasBlock({
             <input
               type="checkbox"
               checked={controlaComposicaoFisica}
+              disabled={somenteLeitura}
               onChange={(e) => onControlaComposicaoFisicaChange(e.target.checked)}
             />
             Controla composição física na conferência NF-e
@@ -276,6 +316,7 @@ export function ConversaoMedidasBlock({
             <select
               className="erp-select w-full max-w-md"
               value={tipoComposicaoFisica || 'BARRA_M'}
+              disabled={somenteLeitura}
               onChange={(e) => onTipoComposicaoFisicaChange(e.target.value)}
             >
               <option value="BARRA_M">Barra — comprimento em metros (tubo)</option>
@@ -296,6 +337,7 @@ export function ConversaoMedidasBlock({
             <select
               className="erp-select mt-1 w-full"
               value={tipoFisicoProduto || ''}
+              disabled={somenteLeitura}
               onChange={(e) => onTipoFisicoProdutoChange(e.target.value)}
             >
               <option value="">(herdar da família)</option>
@@ -312,6 +354,7 @@ export function ConversaoMedidasBlock({
             <select
               className="erp-select mt-1 w-full"
               value={tipoControleProduto || ''}
+              disabled={somenteLeitura}
               onChange={(e) => onTipoControleProdutoChange(e.target.value)}
             >
               <option value="">(herdar da família)</option>
@@ -355,6 +398,7 @@ export function ConversaoMedidasBlock({
             onChange={onUnidadesVendaChange}
             sugestao={vis.showSugestaoUnidadesChapa ? unidadesSugeridasChapa() : unidadesSugeridasLinear()}
             limparLabel={limparUnidades}
+            disabled={somenteLeitura}
           />
         </LinhaHeranca>
         <LinhaHeranca campo="unidades_compra" heranca={heranca}>
@@ -365,6 +409,7 @@ export function ConversaoMedidasBlock({
             onChange={onUnidadesCompraChange}
             sugestao={vis.showSugestaoUnidadesChapa ? unidadesSugeridasChapa() : unidadesSugeridasLinear()}
             limparLabel={limparUnidades}
+            disabled={somenteLeitura}
           />
         </LinhaHeranca>
       </section>
@@ -440,6 +485,7 @@ export function ConversaoMedidasBlock({
           <textarea
             className="erp-input mt-1 w-full min-h-[72px] text-sm"
             value={observacoes}
+            disabled={somenteLeitura}
             onChange={(e) => onObservacoesChange(e.target.value)}
             placeholder="Notas internas sobre conversão, tolerâncias, fornecedor, etc."
           />

@@ -157,3 +157,88 @@ export function aplicarHerancaFamiliaProduto(
 
   return { form: next, herdou: [...herdou] };
 }
+
+/** Valores exibidos pelo card de Conversão de Medidas do produto. */
+export type ValoresConversaoVisiveis = {
+  usaConversao: boolean;
+  controlaComposicaoFisica: boolean;
+  tipoComposicaoFisica: string;
+  tipoFisicoEfetivo: string;
+  tipoFisico: string;
+  tipoControleUnidade: string;
+  unidadeEstoque: string;
+  unidadeVenda: string;
+  unidadeCompra: string;
+  unidadeFiscal: string;
+  unidadesVenda: string[];
+  unidadesCompra: string[];
+  comprimentoBarra: number | null;
+  pesoMetro: number | null;
+  pesoPeca: number | null;
+  pesoChapa: number | null;
+  densidade: number | null;
+  observacoes: string;
+};
+
+/** Modo Manual/Legado: o produto é dono das próprias medidas. */
+export function valoresConversaoProduto(form: ProdutoFormState): ValoresConversaoVisiveis {
+  return {
+    usaConversao: !!form.usa_conversao_dimensional,
+    controlaComposicaoFisica: !!form.controla_composicao_fisica,
+    tipoComposicaoFisica: form.tipo_composicao_fisica || 'BARRA_M',
+    tipoFisicoEfetivo: form.tipo_fisico_efetivo || form.tipo_fisico || '',
+    tipoFisico: form.tipo_fisico || '',
+    tipoControleUnidade: form.tipo_controle_unidade || '',
+    unidadeEstoque: form.unidade_estoque || '',
+    unidadeVenda: form.unidade_venda_padrao || '',
+    unidadeCompra: form.unidade_compra_padrao || '',
+    unidadeFiscal: form.unidade_fiscal || '',
+    unidadesVenda: form.unidades_venda_permitidas || [],
+    unidadesCompra: form.unidades_compra_permitidas || [],
+    comprimentoBarra: form.comprimento_padrao_barra_m ?? null,
+    pesoMetro: form.peso_por_metro_kg ?? null,
+    pesoPeca: form.peso_por_peca_kg ?? null,
+    pesoChapa: form.peso_por_chapa_kg ?? null,
+    densidade: form.densidade ?? null,
+    observacoes: form.observacoes_conversao || '',
+  };
+}
+
+/**
+ * Com família, o card mostra o valor efetivo — o do produto quando ele tem um,
+ * senão o da família. Mesma precedência de `Produto._fallback_familia_attr`
+ * (`unidade_*_padrao` → `unidade_padrao`), para tela e API concordarem.
+ */
+export function valoresConversaoHerdados(
+  form: ProdutoFormState,
+  familia: FamiliaProduto,
+): ValoresConversaoVisiveis {
+  const texto = (produto: string | undefined, ...familiaVals: Array<string | undefined>) =>
+    (produto || '').trim() || familiaVals.map((v) => (v || '').trim()).find(Boolean) || '';
+  const numero = (produto: number | null | undefined, fam: number | null | undefined) =>
+    produto ?? fam ?? null;
+  const unidades = (produto: string[] | undefined, fam: string[] | undefined) =>
+    (produto || []).length ? [...(produto || [])] : [...(fam || [])];
+  const tipoFisico = texto(form.tipo_fisico, familia.tipo_fisico);
+  return {
+    usaConversao: !!form.usa_conversao_dimensional || !!familia.usa_conversao_dimensional,
+    controlaComposicaoFisica:
+      !!form.controla_composicao_fisica || !!familia.controla_composicao_fisica,
+    tipoComposicaoFisica: texto(form.tipo_composicao_fisica, familia.tipo_composicao_fisica) || 'BARRA_M',
+    tipoFisicoEfetivo: texto(form.tipo_fisico_efetivo, form.tipo_fisico, familia.tipo_fisico),
+    tipoFisico,
+    tipoControleUnidade: texto(form.tipo_controle_unidade, familia.tipo_controle_unidade),
+    unidadeEstoque: texto(form.unidade_estoque, familia.unidade_estoque_padrao, familia.unidade_padrao),
+    unidadeVenda: texto(form.unidade_venda_padrao, familia.unidade_venda_padrao, familia.unidade_padrao),
+    unidadeCompra: texto(form.unidade_compra_padrao, familia.unidade_compra_padrao, familia.unidade_padrao),
+    unidadeFiscal: texto(form.unidade_fiscal, familia.unidade_fiscal_padrao, familia.unidade_padrao),
+    unidadesVenda: unidades(form.unidades_venda_permitidas, familia.unidades_venda_permitidas),
+    unidadesCompra: unidades(form.unidades_compra_permitidas, familia.unidades_compra_permitidas),
+    comprimentoBarra: numero(form.comprimento_padrao_barra_m, familia.comprimento_padrao_barra_m),
+    pesoMetro: numero(form.peso_por_metro_kg, familia.peso_por_metro_kg),
+    pesoPeca: numero(form.peso_por_peca_kg, familia.peso_por_peca_kg),
+    pesoChapa: numero(form.peso_por_chapa_kg, familia.peso_por_chapa_kg),
+    densidade: numero(form.densidade, familia.densidade),
+    observacoes: texto(form.observacoes_conversao, familia.observacoes_conversao),
+  };
+}

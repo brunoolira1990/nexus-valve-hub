@@ -963,6 +963,41 @@ class ProdutoSerializer(serializers.ModelSerializer):
         if not (attrs.get('conexao') or '').strip() and (familia.conexao_base or '').strip():
             attrs['conexao'] = familia.conexao_base.strip()
 
+        # Molde de medidas/unidades (Sprint 3.6): mesmo tratamento dado a material e norma.
+        # Sem isso, o produto gravaria vazio e a tela dependeria só do fallback de leitura
+        # (get_*_efetivo), que não existe em quem lê o objeto diretamente.
+        for _campo, _valor_familia in (
+            ('tipo_fisico', familia.tipo_fisico),
+            ('tipo_controle_unidade', familia.tipo_controle_unidade),
+            ('unidade_estoque', familia.unidade_estoque_padrao or familia.unidade_padrao),
+            ('unidade_venda_padrao', familia.unidade_venda_padrao or familia.unidade_padrao),
+            ('unidade_compra_padrao', familia.unidade_compra_padrao or familia.unidade_padrao),
+            ('unidade_fiscal', familia.unidade_fiscal_padrao or familia.unidade_padrao),
+            ('tipo_composicao_fisica', familia.tipo_composicao_fisica),
+            ('observacoes_conversao', familia.observacoes_conversao),
+        ):
+            if not str(pick(_campo) or '').strip() and str(_valor_familia or '').strip():
+                attrs[_campo] = str(_valor_familia).strip()
+        for _campo, _valor_familia in (
+            ('unidades_venda_permitidas', familia.unidades_venda_permitidas),
+            ('unidades_compra_permitidas', familia.unidades_compra_permitidas),
+        ):
+            if not (pick(_campo) or []) and (_valor_familia or []):
+                attrs[_campo] = list(_valor_familia)
+        for _campo, _valor_familia in (
+            ('comprimento_padrao_barra_m', familia.comprimento_padrao_barra_m),
+            ('peso_por_metro_kg', familia.peso_por_metro_kg),
+            ('peso_por_peca_kg', familia.peso_por_peca_kg),
+            ('peso_por_chapa_kg', familia.peso_por_chapa_kg),
+            ('densidade', familia.densidade),
+        ):
+            if pick(_campo) is None and _valor_familia is not None:
+                attrs[_campo] = _valor_familia
+        if not pick('usa_conversao_dimensional') and familia.usa_conversao_dimensional:
+            attrs['usa_conversao_dimensional'] = True
+        if not pick('controla_composicao_fisica') and familia.controla_composicao_fisica:
+            attrs['controla_composicao_fisica'] = True
+
         # Sempre persiste descrição comercial sem acento (merge payload + instância + sugestão acima).
         eff_desc = (attrs.get('descricao') or '').strip()
         if not eff_desc and inst:

@@ -24,9 +24,22 @@ import {
 import { familiasProdutoService, ncmApiService } from '@/services/api/produtos';
 import { materiaisService } from '@/services/api/materiais';
 import { apiErrorMessage } from '@/services/api/config';
+import { Textarea } from '@/components/ui/textarea';
 import { NcmAutocomplete, type NcmOption } from '@/components/produtos/NcmAutocomplete';
 import { FamiliaDominioCard } from '@/components/familias/FamiliaDominioCard';
-import type { FamiliaProduto, TipoDimensional, TipoRegraCodigo } from '@/types';
+import {
+  TIPO_CONTROLE_OPTIONS,
+  TIPO_FISICO_OPTIONS,
+  UNIDADES_CATALOGO,
+  toggleUnidadeLista,
+} from '@/lib/conversaoMedidasUx';
+import type {
+  FamiliaProduto,
+  TipoControleUnidade,
+  TipoDimensional,
+  TipoFisicoProduto,
+  TipoRegraCodigo,
+} from '@/types';
 import type { Material } from '@/types/material';
 import { MENSAGEM_CODIGO_FIGURA_AUTO, validarDescricaoBaseLocal } from '@/lib/familiaCodigo';
 import {
@@ -55,6 +68,20 @@ type FamiliaFormState = {
   unidade_estoque_padrao: string;
   unidade_venda_padrao: string;
   unidade_compra_padrao: string;
+  unidade_fiscal_padrao: string;
+  tipo_fisico: TipoFisicoProduto;
+  tipo_controle_unidade: TipoControleUnidade;
+  unidades_venda_permitidas: string[];
+  unidades_compra_permitidas: string[];
+  comprimento_padrao_barra_m: number | null;
+  peso_por_metro_kg: number | null;
+  peso_por_peca_kg: number | null;
+  peso_por_chapa_kg: number | null;
+  densidade: number | null;
+  usa_conversao_dimensional: boolean;
+  controla_composicao_fisica: boolean;
+  tipo_composicao_fisica: string;
+  observacoes_conversao: string;
   material_base: string;
   material_base_ref: number | null;
   tipo_peca: string;
@@ -80,6 +107,20 @@ const emptyForm = (): FamiliaFormState => ({
   unidade_estoque_padrao: '',
   unidade_venda_padrao: '',
   unidade_compra_padrao: '',
+  unidade_fiscal_padrao: '',
+  tipo_fisico: 'PECA',
+  tipo_controle_unidade: 'PECA',
+  unidades_venda_permitidas: [],
+  unidades_compra_permitidas: [],
+  comprimento_padrao_barra_m: null,
+  peso_por_metro_kg: null,
+  peso_por_peca_kg: null,
+  peso_por_chapa_kg: null,
+  densidade: null,
+  usa_conversao_dimensional: false,
+  controla_composicao_fisica: false,
+  tipo_composicao_fisica: 'BARRA_M',
+  observacoes_conversao: '',
   material_base: '',
   material_base_ref: null,
   tipo_peca: '',
@@ -149,6 +190,20 @@ const FamiliaFormPage = () => {
           unidade_estoque_padrao: fam.unidade_estoque_padrao ?? '',
           unidade_venda_padrao: fam.unidade_venda_padrao ?? '',
           unidade_compra_padrao: fam.unidade_compra_padrao ?? '',
+          unidade_fiscal_padrao: fam.unidade_fiscal_padrao ?? '',
+          tipo_fisico: fam.tipo_fisico ?? 'PECA',
+          tipo_controle_unidade: fam.tipo_controle_unidade ?? 'PECA',
+          unidades_venda_permitidas: fam.unidades_venda_permitidas ?? [],
+          unidades_compra_permitidas: fam.unidades_compra_permitidas ?? [],
+          comprimento_padrao_barra_m: fam.comprimento_padrao_barra_m ?? null,
+          peso_por_metro_kg: fam.peso_por_metro_kg ?? null,
+          peso_por_peca_kg: fam.peso_por_peca_kg ?? null,
+          peso_por_chapa_kg: fam.peso_por_chapa_kg ?? null,
+          densidade: fam.densidade ?? null,
+          usa_conversao_dimensional: !!fam.usa_conversao_dimensional,
+          controla_composicao_fisica: !!fam.controla_composicao_fisica,
+          tipo_composicao_fisica: fam.tipo_composicao_fisica || 'BARRA_M',
+          observacoes_conversao: fam.observacoes_conversao ?? '',
           material_base: fam.material_base ?? '',
           material_base_ref: fam.material_base_ref ?? null,
           tipo_peca: fam.tipo_peca ?? '',
@@ -235,9 +290,9 @@ const FamiliaFormPage = () => {
       return;
     }
 
-    // Payload parcial: esta tela é dona da estrutura do molde (regra, NCM, unidades)
-    // e da classificação técnica da Sprint 3.6. O bloco de conversão de medidas
-    // (pesos, densidade, unidades permitidas) continua no modal legado de produtos.
+    // Payload parcial: esta tela é dona da estrutura do molde (regra, NCM), da
+    // classificação técnica e do molde de medidas/unidades da Sprint 3.6 — o produto
+    // apenas herda tudo isto ao ser cadastrado com a família.
     const payload: Partial<FamiliaProduto> = {
       descricao_base: form.descricao_base.trim(),
       ativo: form.ativo,
@@ -250,6 +305,20 @@ const FamiliaFormPage = () => {
       unidade_estoque_padrao: form.unidade_estoque_padrao,
       unidade_venda_padrao: form.unidade_venda_padrao,
       unidade_compra_padrao: form.unidade_compra_padrao,
+      unidade_fiscal_padrao: form.unidade_fiscal_padrao,
+      tipo_fisico: form.tipo_fisico,
+      tipo_controle_unidade: form.tipo_controle_unidade,
+      unidades_venda_permitidas: form.unidades_venda_permitidas,
+      unidades_compra_permitidas: form.unidades_compra_permitidas,
+      comprimento_padrao_barra_m: form.comprimento_padrao_barra_m,
+      peso_por_metro_kg: form.peso_por_metro_kg,
+      peso_por_peca_kg: form.peso_por_peca_kg,
+      peso_por_chapa_kg: form.peso_por_chapa_kg,
+      densidade: form.densidade,
+      usa_conversao_dimensional: form.usa_conversao_dimensional,
+      controla_composicao_fisica: form.controla_composicao_fisica,
+      tipo_composicao_fisica: form.tipo_composicao_fisica,
+      observacoes_conversao: form.observacoes_conversao,
       material_base: form.material_base,
       material_base_ref: form.material_base_ref,
       tipo_peca: form.tipo_peca,
@@ -502,18 +571,72 @@ const FamiliaFormPage = () => {
           </CardContent>
         </Card>
 
-        {/* ===== Unidades padrão ===== */}
+        {/* ===== Conversão de Medidas e Unidades ===== */}
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
               <Ruler className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-base">Unidades padrão</CardTitle>
+              <CardTitle className="text-base">Conversão de Medidas e Unidades</CardTitle>
             </div>
             <CardDescription className="text-xs">
-              Unidades sugeridas ao produto ao selecionar esta família (siglas comerciais: UN, PC, KG, M…)
+              Molde de unidades, pesos e conversão dimensional que os produtos desta família herdam
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              <div>
+                <CampoLabel>Tipo físico</CampoLabel>
+                <Select
+                  value={form.tipo_fisico}
+                  onValueChange={(v) => handleField('tipo_fisico', v as TipoFisicoProduto)}
+                >
+                  <SelectTrigger className="h-10 w-full">
+                    <SelectValue placeholder="Selecione…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TIPO_FISICO_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <CampoLabel>Tipo de controle de unidade</CampoLabel>
+                <Select
+                  value={form.tipo_controle_unidade}
+                  onValueChange={(v) => handleField('tipo_controle_unidade', v as TipoControleUnidade)}
+                >
+                  <SelectTrigger className="h-10 w-full">
+                    <SelectValue placeholder="Selecione…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TIPO_CONTROLE_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <CampoLabel>Tipo de composição física</CampoLabel>
+                <Select
+                  value={form.tipo_composicao_fisica}
+                  onValueChange={(v) => handleField('tipo_composicao_fisica', v)}
+                  disabled={!form.controla_composicao_fisica}
+                >
+                  <SelectTrigger className="h-10 w-full">
+                    <SelectValue placeholder="Selecione…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="BARRA_M">Barra — comprimento em metros (tubo)</SelectItem>
+                    <SelectItem value="PECA_KG">Peça/chapa — peso real em kg</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
               <div>
                 <CampoLabel>Unidade padrão</CampoLabel>
@@ -555,6 +678,166 @@ const FamiliaFormPage = () => {
                   placeholder="Ex.: M"
                 />
               </div>
+              <div>
+                <CampoLabel>Unidade fiscal</CampoLabel>
+                <Input
+                  className="h-10"
+                  maxLength={16}
+                  value={form.unidade_fiscal_padrao}
+                  onChange={(e) => handleField('unidade_fiscal_padrao', e.target.value)}
+                  placeholder="Ex.: M"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
+              <div className="flex items-center gap-3">
+                <Switch
+                  id="fam-usa-conversao"
+                  checked={form.usa_conversao_dimensional}
+                  onCheckedChange={(v) => handleField('usa_conversao_dimensional', v)}
+                />
+                <Label htmlFor="fam-usa-conversao" className="cursor-pointer text-sm font-medium">
+                  Usa conversão dimensional
+                </Label>
+              </div>
+              <div className="flex items-center gap-3">
+                <Switch
+                  id="fam-controla-composicao"
+                  checked={form.controla_composicao_fisica}
+                  onCheckedChange={(v) => handleField('controla_composicao_fisica', v)}
+                />
+                <Label htmlFor="fam-controla-composicao" className="cursor-pointer text-sm font-medium">
+                  Controla composição física na conferência NF-e
+                </Label>
+              </div>
+            </div>
+            {form.controla_composicao_fisica ? (
+              <p className="text-xs text-muted-foreground">
+                {form.tipo_composicao_fisica === 'PECA_KG'
+                  ? 'Na conferência, informe o peso real de cada peça/chapa. O estoque base fica em KG.'
+                  : 'Na conferência, informe quantidade de barras e comprimento unitário em metros. O estoque base fica em M.'}
+              </p>
+            ) : null}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <CampoLabel>Unidades permitidas para venda</CampoLabel>
+                <div className="flex flex-wrap gap-3">
+                  {UNIDADES_CATALOGO.map((u) => (
+                    <label key={u} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={form.unidades_venda_permitidas.includes(u)}
+                        onChange={() =>
+                          handleField(
+                            'unidades_venda_permitidas',
+                            toggleUnidadeLista(form.unidades_venda_permitidas, u),
+                          )
+                        }
+                      />
+                      {u}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <CampoLabel>Unidades permitidas para compra</CampoLabel>
+                <div className="flex flex-wrap gap-3">
+                  {UNIDADES_CATALOGO.map((u) => (
+                    <label key={u} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={form.unidades_compra_permitidas.includes(u)}
+                        onChange={() =>
+                          handleField(
+                            'unidades_compra_permitidas',
+                            toggleUnidadeLista(form.unidades_compra_permitidas, u),
+                          )
+                        }
+                      />
+                      {u}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+              <div>
+                <CampoLabel>Comprimento padrão da barra (m)</CampoLabel>
+                <Input
+                  type="number"
+                  step="0.001"
+                  className="h-10"
+                  value={form.comprimento_padrao_barra_m ?? ''}
+                  onChange={(e) =>
+                    handleField(
+                      'comprimento_padrao_barra_m',
+                      e.target.value === '' ? null : Number(e.target.value),
+                    )
+                  }
+                />
+              </div>
+              <div>
+                <CampoLabel>Peso por metro (kg/m)</CampoLabel>
+                <Input
+                  type="number"
+                  step="0.0001"
+                  className="h-10"
+                  value={form.peso_por_metro_kg ?? ''}
+                  onChange={(e) =>
+                    handleField('peso_por_metro_kg', e.target.value === '' ? null : Number(e.target.value))
+                  }
+                />
+              </div>
+              <div>
+                <CampoLabel>Peso por peça (kg)</CampoLabel>
+                <Input
+                  type="number"
+                  step="0.0001"
+                  className="h-10"
+                  value={form.peso_por_peca_kg ?? ''}
+                  onChange={(e) =>
+                    handleField('peso_por_peca_kg', e.target.value === '' ? null : Number(e.target.value))
+                  }
+                />
+              </div>
+              <div>
+                <CampoLabel>Peso por chapa (kg)</CampoLabel>
+                <Input
+                  type="number"
+                  step="0.0001"
+                  className="h-10"
+                  value={form.peso_por_chapa_kg ?? ''}
+                  onChange={(e) =>
+                    handleField('peso_por_chapa_kg', e.target.value === '' ? null : Number(e.target.value))
+                  }
+                />
+              </div>
+              <div>
+                <CampoLabel>Densidade (opcional)</CampoLabel>
+                <Input
+                  type="number"
+                  step="0.0001"
+                  className="h-10"
+                  value={form.densidade ?? ''}
+                  onChange={(e) =>
+                    handleField('densidade', e.target.value === '' ? null : Number(e.target.value))
+                  }
+                />
+              </div>
+            </div>
+
+            <div>
+              <CampoLabel>Observações da conversão</CampoLabel>
+              <Textarea
+                className="min-h-[72px] text-sm"
+                maxLength={512}
+                value={form.observacoes_conversao}
+                onChange={(e) => handleField('observacoes_conversao', e.target.value)}
+                placeholder="Notas internas sobre conversão, tolerâncias, fornecedor, etc."
+              />
             </div>
           </CardContent>
         </Card>
