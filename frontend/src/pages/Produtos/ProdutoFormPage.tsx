@@ -16,6 +16,7 @@ import { familiasProdutoService, produtosService } from '@/services/api/produtos
 import { materiaisService } from '@/services/api/materiais';
 import type { FamiliaProduto, Produto } from '@/types';
 import type { Material } from '@/types/material';
+import type { ProdutoFichaTab } from './types';
 
 const ProdutoFormPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -110,6 +111,9 @@ const ProdutoFormPage = () => {
   }, materiais);
 
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Aba controlada: quando a validação de salvar() aponta o campo pendente,
+  // a página salta para a aba onde ele está.
+  const [abaAtiva, setAbaAtiva] = useState<ProdutoFichaTab>('geral');
 
   // Pré-preenchimento vindo de outra tela (ex.: proposta → "Cadastrar novo produto").
   const descricaoUrl = searchParams.get('descricao') || '';
@@ -121,6 +125,7 @@ const ProdutoFormPage = () => {
   const handleSubmit = async () => {
     setSaveError(null);
     const result = await salvar();
+    if (result.aba) setAbaAtiva(result.aba);
     if (result.sucesso && result.id) {
       toast.success(isEdit ? 'Produto atualizado com sucesso.' : 'Produto criado com sucesso.');
       navigate(`/produtos/${result.id}`);
@@ -199,7 +204,11 @@ const ProdutoFormPage = () => {
         </div>
       )}
 
-      <Tabs defaultValue="geral" className="w-full">
+      <Tabs
+        value={abaAtiva}
+        onValueChange={(v) => setAbaAtiva(v as ProdutoFichaTab)}
+        className="w-full"
+      >
         <TabsList className="flex flex-wrap gap-1 w-full justify-start">
           <TabsTrigger value="geral">Dados gerais</TabsTrigger>
           <TabsTrigger value="classificacao">Classificação industrial</TabsTrigger>

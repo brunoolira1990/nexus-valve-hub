@@ -19,7 +19,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Info, Wrench, Link2, Ruler, Boxes, Scale, Layers } from 'lucide-react';
+import { Info, Wrench, Link2, Ruler, Lock, Scale, Layers } from 'lucide-react';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import type { ProdutoFormState } from '../types';
 import type { FamiliaProduto, RequisitosProdutoDimensionais, Produto, RoscaConexao, ScheduleEspessura } from '@/types';
@@ -41,6 +41,7 @@ import {
   getLabelCampoEspessuraOuMenor,
   getAtributosTecnicosFamilia,
 } from '../lib/familiaDerivations';
+import { labelPolegadaPrincipal, labelPolegadaSecundaria } from '@/lib/familiaRegra';
 
 /** Asterisco de campo obrigatório (design system C: span text-destructive). */
 function Obrigatorio() {
@@ -80,6 +81,18 @@ const MATERIAL_GRUPO_ORDEM: MaterialCategoria[] = [
 
 /** Sentinela de "sem rosca específica" (Radix não aceita SelectItem com value=""). */
 const SEM_ROSCA = '__none__';
+
+/**
+ * Padrões técnicos que vivem apenas na Família/Figura (decisão Sprint 3.6: o Produto
+ * não tem esses campos). São exibidos como leitura aqui para deixar claro que não se
+ * digita nada no produto.
+ */
+const PADROES_FAMILIA: readonly { key: keyof FamiliaProduto; label: string }[] = [
+  { key: 'subtipo_peca', label: 'Subtipo de peça' },
+  { key: 'material_vedacao', label: 'Material de vedação' },
+  { key: 'tipo_acionamento', label: 'Tipo de acionamento' },
+  { key: 'cfop_padrao', label: 'CFOP padrão' },
+];
 
 interface ProdutoClassificacaoFormTabProps {
   form: ProdutoFormState;
@@ -212,6 +225,15 @@ export function ProdutoClassificacaoFormTab({
   const atributosTecnicos = getAtributosTecnicosFamilia(familiaSelecionada);
   const familiaEhMaterialDimensional =
     familiaSelecionada?.categoria_produto === 'MATERIAL_DIMENSIONAL';
+
+  // As polegadas de referência (FK) só existem quando a regra da família as usa;
+  // no modo LEGADO os segmentos de texto do código ficam na aba Geral.
+  const usaPolegadaPrincipal = !!famReq?.usa_polegada_principal;
+  const usaPolegadaSecundaria = !!famReq?.usa_polegada_secundaria;
+  const exigePolegadas = usaPolegadaPrincipal || usaPolegadaSecundaria;
+  // OD/espessura/comprimento em mm são do produto técnico; em material dimensional a
+  // medida da peça é o conjunto dim_*. O card Requisitos nunca mostra os dois.
+  const mmDoProdutoVisiveis = !familiaEhMaterialDimensional && !usaDimensoesMateriais;
 
   const getAtributoTecnico = (key: string): string => {
     const value = form.dimensoes_json?.[key];
@@ -354,6 +376,43 @@ export function ProdutoClassificacaoFormTab({
         </CardContent>
       </Card>
 
+      {/* ===== Padrões da Família (somente leitura — o produto herda, não digita) ===== */}
+      {familiaSelecionada && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <Lock className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-base">Padrões da Família/Figura</CardTitle>
+              <Badge variant="secondary">somente leitura</Badge>
+            </div>
+            <CardDescription className="text-xs">
+              Estes campos pertencem à Família/Figura — o produto apenas os herda. Para
+              alterar, edite a família {familiaSelecionada.codigo_figura}.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+              {PADROES_FAMILIA.map(({ key, label }) => {
+                const valor = String(familiaSelecionada?.[key] ?? '').trim();
+                return (
+                  <div key={key}>
+                    <CampoLabel>{label}</CampoLabel>
+                    <Input
+                      className="erp-input h-10 bg-muted/40"
+                      value={valor}
+                      disabled
+                      readOnly
+                      placeholder="Não definido na família"
+                      title="Herda da Família/Figura — edite a família para alterar"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* ===== Requisitos da Família/Figura (condicional) ===== */}
       {familiaSelecionada && famReq && (
         <Card>
@@ -428,7 +487,7 @@ export function ProdutoClassificacaoFormTab({
                 </div>
               )}
 
-              {!familiaEhMaterialDimensional && famReq.exige_od_mm && (
+              {mmDoProdutoVisiveis && famReq.exige_od_mm && (
                 <div>
                   <CampoLabel>
                     {labelOd}
@@ -445,7 +504,7 @@ export function ProdutoClassificacaoFormTab({
                 </div>
               )}
 
-              {!familiaEhMaterialDimensional && famReq.exige_espessura_mm && (
+              {mmDoProdutoVisiveis && famReq.exige_espessura_mm && (
                 <div>
                   <CampoLabel>
                     {labelEsp}
@@ -462,7 +521,7 @@ export function ProdutoClassificacaoFormTab({
                 </div>
               )}
 
-              {!familiaEhMaterialDimensional && famReq.exige_comprimento_mm && (
+              {mmDoProdutoVisiveis && famReq.exige_comprimento_mm && (
                 <div>
                   <CampoLabel>Comprimento (mm)</CampoLabel>
                   <Input
@@ -484,6 +543,65 @@ export function ProdutoClassificacaoFormTab({
               <p className="text-xs text-muted-foreground rounded-md bg-muted/50 px-2 py-1.5">
                 Informe o schedule/espessura conforme a regra desta Família/Figura.
               </p>
+            )}
+
+            {/* Material dimensional: as medidas do material vivem no dimensoes_json e
+                entram aqui — único lugar da tela onde Espessura/Comprimento aparecem. */}
+            {usaDimensoesMateriais && (
+              <div className="space-y-3 pt-3 border-t border-dashed border-border">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Dimensões do material (mm)
+                  </p>
+                  {tdAtual ? <Badge variant="secondary">tipo: {tdAtual}</Badge> : null}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+                  <div>
+                    <CampoLabel>Espessura (mm)</CampoLabel>
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      className="erp-input h-10"
+                      placeholder="Ex.: 3,2"
+                      value={decToText(form.dim_espessura_mm)}
+                      onChange={(e) => handleInputChange('dim_espessura_mm', parseDec(e.target.value))}
+                    />
+                  </div>
+                  <div>
+                    <CampoLabel>Largura (mm)</CampoLabel>
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      className="erp-input h-10"
+                      placeholder="Ex.: 1000"
+                      value={decToText(form.dim_largura_mm)}
+                      onChange={(e) => handleInputChange('dim_largura_mm', parseDec(e.target.value))}
+                    />
+                  </div>
+                  <div>
+                    <CampoLabel>Comprimento (mm)</CampoLabel>
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      className="erp-input h-10"
+                      placeholder="Ex.: 2000"
+                      value={decToText(form.dim_comprimento_mm)}
+                      onChange={(e) => handleInputChange('dim_comprimento_mm', parseDec(e.target.value))}
+                    />
+                  </div>
+                  <div>
+                    <CampoLabel>Altura (mm)</CampoLabel>
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      className="erp-input h-10"
+                      placeholder="Ex.: 50"
+                      value={decToText(form.dim_altura_mm)}
+                      onChange={(e) => handleInputChange('dim_altura_mm', parseDec(e.target.value))}
+                    />
+                  </div>
+                </div>
+              </div>
             )}
 
             {atributosTecnicos.length > 0 && (
@@ -511,114 +629,49 @@ export function ProdutoClassificacaoFormTab({
         </Card>
       )}
 
-      {/* ===== Dimensões e referências ===== */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <Ruler className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-base">Dimensões e referências</CardTitle>
-          </div>
-          <CardDescription className="text-xs">
-            Polegadas de referência deste produto. Medidas em milímetros (OD, espessura,
-            comprimento) ficam no card Requisitos da Família/Figura.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            <div>
-              <CampoLabel>Polegada principal (autocomplete)</CampoLabel>
-              <PolegadaAutocomplete
-                value={form.polegada_principal_ref_id ?? null}
-                onChange={(id) => handleInputChange('polegada_principal_ref_id', id)}
-                tipoMedida="OD"
-                allowCreate
-                placeholder="Busque por código, polegada, decimal ou mm"
-              />
+      {/* ===== Polegadas de referência (só quando a regra da família as usa) ===== */}
+      {exigePolegadas && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <Ruler className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-base">Polegadas de referência</CardTitle>
             </div>
-            <div>
-              <CampoLabel>Polegada secundária (autocomplete)</CampoLabel>
-              <PolegadaAutocomplete
-                value={form.polegada_secundaria_ref_id ?? null}
-                onChange={(id) => handleInputChange('polegada_secundaria_ref_id', id)}
-                tipoMedida="OD"
-                allowCreate
-                placeholder="Busque por código, polegada, decimal ou mm"
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ===== Dimensões especiais (JSON) ===== */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <Boxes className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-base">Dimensões especiais</CardTitle>
-            {usaDimensoesMateriais && tdAtual ? (
-              <Badge variant="secondary">tipo: {tdAtual}</Badge>
-            ) : null}
-          </div>
-          <CardDescription className="text-xs">
-            Dimensões de material dimensional (armazenadas em{' '}
-            <code className="font-mono">dimensoes_json</code>)
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          {usaDimensoesMateriais ? (
+            <CardDescription className="text-xs">
+              Medidas em milímetros (OD, espessura, comprimento) ficam apenas no card
+              Requisitos da Família/Figura.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              <div>
-                <CampoLabel>Espessura (mm)</CampoLabel>
-                <Input
-                  type="text"
-                  inputMode="decimal"
-                  className="erp-input h-10"
-                  placeholder="Ex.: 3,2"
-                  value={decToText(form.dim_espessura_mm)}
-                  onChange={(e) => handleInputChange('dim_espessura_mm', parseDec(e.target.value))}
-                />
-              </div>
-              <div>
-                <CampoLabel>Largura (mm)</CampoLabel>
-                <Input
-                  type="text"
-                  inputMode="decimal"
-                  className="erp-input h-10"
-                  placeholder="Ex.: 1000"
-                  value={decToText(form.dim_largura_mm)}
-                  onChange={(e) => handleInputChange('dim_largura_mm', parseDec(e.target.value))}
-                />
-              </div>
-              <div>
-                <CampoLabel>Comprimento (mm)</CampoLabel>
-                <Input
-                  type="text"
-                  inputMode="decimal"
-                  className="erp-input h-10"
-                  placeholder="Ex.: 2000"
-                  value={decToText(form.dim_comprimento_mm)}
-                  onChange={(e) => handleInputChange('dim_comprimento_mm', parseDec(e.target.value))}
-                />
-              </div>
-              <div>
-                <CampoLabel>Altura (mm)</CampoLabel>
-                <Input
-                  type="text"
-                  inputMode="decimal"
-                  className="erp-input h-10"
-                  placeholder="Ex.: 50"
-                  value={decToText(form.dim_altura_mm)}
-                  onChange={(e) => handleInputChange('dim_altura_mm', parseDec(e.target.value))}
-                />
-              </div>
+              {usaPolegadaPrincipal && (
+                <div>
+                  <CampoLabel>{labelPolegadaPrincipal(tdAtual)}</CampoLabel>
+                  <PolegadaAutocomplete
+                    value={form.polegada_principal_ref_id ?? null}
+                    onChange={(id) => handleInputChange('polegada_principal_ref_id', id)}
+                    tipoMedida="OD"
+                    allowCreate
+                    placeholder="Busque por código, polegada, decimal ou mm"
+                  />
+                </div>
+              )}
+              {usaPolegadaSecundaria && (
+                <div>
+                  <CampoLabel>{labelPolegadaSecundaria(tdAtual)}</CampoLabel>
+                  <PolegadaAutocomplete
+                    value={form.polegada_secundaria_ref_id ?? null}
+                    onChange={(id) => handleInputChange('polegada_secundaria_ref_id', id)}
+                    tipoMedida="OD"
+                    allowCreate
+                    placeholder="Busque por código, polegada, decimal ou mm"
+                  />
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="text-sm text-muted-foreground text-center py-8 border border-dashed rounded-md bg-muted/30">
-              Dimensões especiais aparecem quando a família/figura é do tipo MATERIAL_DIMENSIONAL.
-            </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ===== Conversão de Medidas ===== */}
       <Card>
