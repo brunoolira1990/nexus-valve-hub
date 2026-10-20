@@ -3,7 +3,7 @@ import { produtosService } from '@/services/api/produtos';
 import { familiasProdutoService } from '@/services/api/produtos';
 import type { Produto, FamiliaProduto, ModoCodigoProduto, TipoRegraCodigo, TipoDimensional, TipoFisicoProduto, TipoControleUnidade, RequisitosProdutoDimensionais } from '@/types';
 import type { Material } from '@/types/material';
-import type { ProdutoFormState } from '../types';
+import type { ProdutoFormState, ProdutoFichaTab } from '../types';
 import type { CampoFormProdutoInvalido } from '../lib/erroCampo';
 import { apiErrorMessage } from '@/services/api/config';
 import {
@@ -113,7 +113,12 @@ interface UseProdutoFormReturn {
   erro: string | null;
   preview: { codigo?: string; descricao?: string; ncm?: string; mensagem?: string };
   carregando: boolean;
-  salvar: () => Promise<{ sucesso: boolean; id?: number; campo?: CampoFormProdutoInvalido }>;
+  salvar: () => Promise<{
+    sucesso: boolean;
+    id?: number;
+    aba?: ProdutoFichaTab;
+    campo?: CampoFormProdutoInvalido;
+  }>;
   limpar: () => void;
   familiaSelecionada: FamiliaProduto | null;
   famReq: RequisitosProdutoDimensionais | null;
@@ -423,7 +428,12 @@ export function useProdutoForm(
     setHerdouFamilia((prev) => prev.filter((c) => c !== campo));
   }, []);
 
-  const salvar = useCallback(async (): Promise<{ sucesso: boolean; id?: number; campo?: CampoFormProdutoInvalido }> => {
+  const salvar = useCallback(async (): Promise<{
+    sucesso: boolean;
+    id?: number;
+    aba?: ProdutoFichaTab;
+    campo?: CampoFormProdutoInvalido;
+  }> => {
     setErro(null);
     setDuplicateCodigo(null);
     setDuplicateProdutoId(null);
@@ -447,16 +457,16 @@ export function useProdutoForm(
     // (descrição vazia, código não derivável, material fora do catálogo).
     if (!form.descricao.trim()) {
       setErro('Informe a descrição do produto.');
-      return { sucesso: false, campo: 'descricao' };
+      return { sucesso: false, aba: 'configuracao', campo: 'descricao' };
     }
     if (form.modo_codigo === 'INTERNO') {
       if (!form.familia_id) {
         setErro('Selecione a Família/Figura — o código interno é derivado dela.');
-        return { sucesso: false, campo: 'familia_id' };
+        return { sucesso: false, aba: 'configuracao', campo: 'familia_id' };
       }
       if (!materialRefResolvido) {
         setErro('Selecione o material no catálogo de materiais.');
-        return { sucesso: false, campo: 'material_ref' };
+        return { sucesso: false, aba: 'configuracao', campo: 'material_ref' };
       }
     }
 
@@ -481,9 +491,9 @@ export function useProdutoForm(
       if (faltando.length > 0) {
         setErro(
           `A família ${familiaSelecionada.codigo_figura} exige ${faltando.map((f) => f.rotulo).join(', ')}. ` +
-            'Preencha no card "Requisitos da Família/Figura".',
+            'Preencha no card "Requisitos da Família/Figura", em "Configuração do Produto".',
         );
-        return { sucesso: false, campo: faltando[0].campo };
+        return { sucesso: false, aba: 'configuracao', campo: faltando[0].campo };
       }
     }
 

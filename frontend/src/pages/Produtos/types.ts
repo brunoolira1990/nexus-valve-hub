@@ -69,12 +69,11 @@ export type FamiliaQuickFormState = {
 export type ProdutoMainTab = 'produtos' | 'familias';
 
 /**
- * Abas da ficha do produto (linha 436 do Produtos.tsx).
- * Valores: geral, classificacao, fiscal, painel, rastreabilidade, historico.
+ * Abas da ficha do produto na página dedicada (ProdutoFormPage.tsx).
+ * `configuracao` reúne Identificação + Classificação técnica na mesma aba.
  */
 export type ProdutoFichaTab =
-  | 'geral'
-  | 'classificacao'
+  | 'configuracao'
   | 'fiscal'
   | 'painel'
   | 'rastreabilidade'
