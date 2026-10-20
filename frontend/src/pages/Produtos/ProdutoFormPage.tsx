@@ -285,7 +285,7 @@ const ProdutoFormPage = () => {
 
             <TabsContent value="historico" className="mt-4">
               <HistoricoAlteracoesPanel
-                appLabel="cadastros"
+                appLabel="produtos"
                 modelName="produto"
                 objectId={produtoId}
                 active={true}

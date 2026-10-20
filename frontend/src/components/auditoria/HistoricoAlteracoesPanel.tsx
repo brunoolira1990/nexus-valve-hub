@@ -15,13 +15,16 @@ import {
 } from '@/services/api/auditoria';
 import { apiErrorMessage, getApiErrorStatus, isApiForbidden } from '@/services/api/config';
 
+// O par appLabel/modelName tem de bater com MODELOS_AUDITADOS do backend;
+// fora dele a view responde 404 e a aba mostra "Recurso não encontrado".
 type Props = {
-  appLabel: 'cadastros' | 'produtos';
-  modelName: 'cliente' | 'produto';
   objectId?: number | null;
   active?: boolean;
   enabled?: boolean;
-};
+} & (
+  | { appLabel: 'cadastros'; modelName: 'cliente' }
+  | { appLabel: 'produtos'; modelName: 'produto' }
+);
 
 function formatarDataLocal(iso: string): string {
   try {
