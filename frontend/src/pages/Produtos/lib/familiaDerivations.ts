@@ -29,6 +29,8 @@ export function getFamReq(
     exige_od_mm: false,
     exige_espessura_mm: false,
     exige_comprimento_mm: false,
+    exige_diametro_interno_mm: false,
+    exige_diametro_mostrador_mm: false,
     incluir_schedule_na_descricao: fl.usa_schedule,
   };
 }
@@ -69,7 +71,12 @@ export function getLabelCampoEspessuraOuMenor(familiaSel: FamiliaProduto | null)
   return 'Espessura (mm)';
 }
 
+/** Chaves de manômetro que hoje são colunas do Produto e não passam mais por dimensoes_json. */
+const CHAVES_MANOMETRO_EM_COLUNA = new Set(['escala', 'unidade_escala', 'fluido']);
+
 export function getAtributosTecnicosFamilia(familiaSel: FamiliaProduto | null) {
-  if (familiaSel?.tipo_dimensional === 'MANOMETRO') return DESCRICAO_TOKENS_TECNICOS;
+  if (familiaSel?.tipo_dimensional === 'MANOMETRO') {
+    return DESCRICAO_TOKENS_TECNICOS.filter(({ key }) => !CHAVES_MANOMETRO_EM_COLUNA.has(key));
+  }
   return tokensDescricaoTecnicaConfigurados(familiaSel?.descricao_base);
 }

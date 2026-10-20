@@ -76,6 +76,8 @@ export const TIPOS_DIMENSIONAIS_PRODUTO_TECNICO: readonly TipoDimensional[] = [
   'ESPIGAO_X_FLANGE',
   'VALVULA',
   'MANOMETRO',
+  'JUNTA_VEDACAO',
+  'JUNTA_EXPANSAO',
 ];
 
 export const TIPOS_DIMENSIONAIS_MATERIAL_DIMENSIONAL: readonly TipoDimensional[] = [
@@ -110,6 +112,8 @@ export const OPCOES_TIPO_REGRA: { value: TipoRegraCodigo; label: string }[] = [
   { value: 'BASE_OD_MM', label: '16) Base + OD mm (PU) — {figura}.{mm 3 dígitos}' },
   { value: 'BASE_OD_MM_REDUCAO', label: '17) Base + OD maior×menor — {figura}.{mm}{mm}' },
   { value: 'BASE_OD_MM_X_ROSCA', label: '18) Base + OD mm + rosca/bitola — {figura}.{mm}{sufixo}' },
+  { value: 'BASE_JUNTA_VEDACAO', label: '20) Base + ID mm × OD mm × espessura mm — {figura}.{id}X{od}X{esp} (ex.: 8016.015X030X003 | decimal com P: 8016.015P5X030X003)' },
+  { value: 'BASE_JUNTA_EXPANSAO', label: '21) Base + polegada × comprimento mm — {figura}.{polegada}X{comprimento} (ex.: 8020.04X150)' },
 ];
 
 export const OPCOES_CATEGORIA_FAMILIA: { value: CategoriaProdutoSugestao; label: string }[] = [
@@ -148,6 +152,8 @@ export const OPCOES_TIPO_DIMENSIONAL: { value: TipoDimensional; label: string }[
   { value: 'ESPIGAO_X_FLANGE', label: 'Espigão x Flange (duas NPS, texto flange na descrição base)' },
   { value: 'VALVULA', label: 'Válvula (orientação)' },
   { value: 'MANOMETRO', label: 'Manômetro (descrição técnica)' },
+  { value: 'JUNTA_VEDACAO', label: 'Junta de vedação (ID × OD × espessura em mm)' },
+  { value: 'JUNTA_EXPANSAO', label: 'Junta de expansão (polegada + comprimento em mm)' },
   { value: 'MANUAL', label: 'Dimensional manual' },
   { value: 'LEGADO', label: 'Legado / misto' },
 ];
@@ -184,6 +190,8 @@ const TABLE: Record<TipoRegraCodigo, FlagsFamilia> = {
   BASE_OD_MM_REDUCAO: { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: false, usa_polegada_secundaria: false },
   BASE_OD_MM_X_ROSCA: { usa_rosca_conexao: true, usa_schedule: false, usa_polegada_principal: true, usa_polegada_secundaria: false },
   BASE_ESPIGAO_FLANGE_NPS: { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: true, usa_polegada_secundaria: true },
+  BASE_JUNTA_VEDACAO: { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: false, usa_polegada_secundaria: false },
+  BASE_JUNTA_EXPANSAO: { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: true, usa_polegada_secundaria: false },
   MANUAL_FABRICANTE: { usa_rosca_conexao: false, usa_schedule: false, usa_polegada_principal: false, usa_polegada_secundaria: false },
 };
 
@@ -223,7 +231,9 @@ export function labelsCamposObrigatorios(flags: FlagsFamilia, td?: TipoDimension
         ? 'Medida do espigão (NPS)'
         : td === 'BITOLA_POLEGADA' || td === 'OD_MM_X_ROSCA'
           ? 'Bitola'
-          : 'Polegada principal (ID)',
+          : td === 'JUNTA_EXPANSAO'
+            ? 'Polegada nominal (NPS)'
+            : 'Polegada principal (ID)',
     );
   }
   if (flags.usa_polegada_secundaria) {
@@ -242,6 +252,13 @@ export function labelsCamposObrigatorios(flags: FlagsFamilia, td?: TipoDimension
   if (td === 'OD_MM') extra.push('Medida OD/mm');
   if (td === 'OD_POLEGADA_X_ESPESSURA') extra.push('Espessura (mm)');
   if (td === 'OD_MM_X_ROSCA') extra.push('Medida OD/mm');
+  if (td === 'JUNTA_VEDACAO') {
+    extra.push('Diâmetro interno ID (mm)');
+    extra.push('OD externo (mm)');
+    extra.push('Espessura (mm)');
+  }
+  if (td === 'JUNTA_EXPANSAO') extra.push('Comprimento (mm ou padrão da família)');
+  if (td === 'MANOMETRO') extra.push('Diâmetro do mostrador (mm)');
   const out = [...r, ...extra];
   if (out.length === 0) out.push('Nenhum (código manual no produto)');
   return out;
@@ -291,6 +308,10 @@ export function hintTipoDimensional(td: TipoDimensional | undefined | null): str
       return 'Perfil retangular mm — preparado para fluxo dimensional assistido.';
     case 'MANOMETRO':
       return 'Manômetro — usa Polegada NPS + rosca e atributos técnicos de descrição.';
+    case 'JUNTA_VEDACAO':
+      return 'Junta de vedação — ID, OD e espessura em mm; código {figura}.{ID}X{OD}X{esp} (regra 20). Casa decimal sai com P: 8016.015P5X030X003.';
+    case 'JUNTA_EXPANSAO':
+      return 'Junta de expansão — polegada nominal e comprimento em mm; código {figura}.{NPS}X{comprimento} (regra 21).';
     case 'NPS_X_ROSCA':
       return 'NPS x Rosca — polegada nominal com rosca no código (regra 2).';
     case 'ESPIGAO_X_FLANGE':
@@ -305,7 +326,8 @@ export function labelPolegadaPrincipal(td: TipoDimensional | undefined | null): 
   if (td === 'OD_POLEGADA' || td === 'OD_POLEGADA_X_ESPESSURA' || td === 'OD_POLEGADA_X_ROSCA') return 'Medida OD (cadastro mestre)';
   if (td === 'CANTONEIRA_POLEGADA') return 'Aba em polegada';
   if (td === 'BITOLA_POLEGADA' || td === 'OD_MM_X_ROSCA') return 'Bitola';
-  if (td === 'NPS_SCHEDULE' || td === 'NPS' || td === 'MANOMETRO') return 'Polegada nominal (NPS)';
+  if (td === 'NPS_SCHEDULE' || td === 'NPS' || td === 'MANOMETRO' || td === 'JUNTA_EXPANSAO')
+    return 'Polegada nominal (NPS)';
   if (td === 'REDUCAO_NPS') return 'Polegada maior';
   return 'Polegada principal (código oficial)';
 }
@@ -344,6 +366,8 @@ export function labelsCamposObrigatoriosProduto(familia: FamiliaProduto | null):
     else r.push('Espessura (mm)');
   }
   if (req.exige_comprimento_mm) r.push('Comprimento (mm ou padrão da família)');
+  if (req.exige_diametro_interno_mm) r.push('Diâmetro interno ID (mm)');
+  if (req.exige_diametro_mostrador_mm) r.push('Diâmetro do mostrador (mm)');
   if (r.length === 0) r.push('Nenhum campo automático (ver modo manual)');
   return r;
 }
@@ -401,6 +425,8 @@ export function sugerirTipoRegraPorDimensional(td: TipoDimensional): TipoRegraCo
   if (td === 'CANTONEIRA_POLEGADA') return 'BASE_POLEGADA';
   if (td === 'ROSCA_X_ROSCA') return 'BASE_ROSCA_DUAS_POLEGADAS';
   if (td === 'MANUAL') return 'MANUAL_FABRICANTE';
+  if (td === 'JUNTA_VEDACAO') return 'BASE_JUNTA_VEDACAO';
+  if (td === 'JUNTA_EXPANSAO') return 'BASE_JUNTA_EXPANSAO';
   return 'BASE_POLEGADA';
 }
 
@@ -435,7 +461,7 @@ export function sugerirConfiguracaoFamilia(descricaoBase: string): SugestaoConfi
 
   const fab = _has(
     u,
-    /\b(JEFFERSON|DANFOSS|VALMICRO|SOLENOIDE|ATUADOR|CONECTOR CABO|MANOMETRO|KIT REPARO|KIT TEFLON|ALAVANCA|JUNTA|MANGUEIRA|ABRACADEIRA|ABRAÇADEIRA|PARAFUSO|PORCA|ARRUELA|GRAMPO|FOLHA TEADIT)\b/,
+    /\b(JEFFERSON|DANFOSS|VALMICRO|SOLENOIDE|ATUADOR|CONECTOR CABO|MANOMETRO|KIT REPARO|KIT TEFLON|ALAVANCA|MANGUEIRA|ABRACADEIRA|ABRAÇADEIRA|PARAFUSO|PORCA|ARRUELA|GRAMPO|FOLHA TEADIT)\b/,
   );
   if (fab) {
     const td: TipoDimensional = 'MANUAL';
@@ -446,6 +472,24 @@ export function sugerirConfiguracaoFamilia(descricaoBase: string): SugestaoConfi
       tipo_regra_codigo: tr,
       campos_obrigatorios_labels: labelsCamposObrigatorios(flagsPorTipoRegra(tr), td),
       observacao: 'Descrição sugere item de fabricante/manual — revise NCM e unidade.',
+    };
+  }
+
+  // Junta/gaxeta nomeia o próprio produto; o guarda evita ler "VÁLVULA … VEDAÇÃO" como junta.
+  const junta =
+    _has(u, /\b(JUNTA|GAXETA|VEDACAO)\b/) && !_has(u, /\bVALVULA\b/) && !_has(u0, /^(VEM|VEB|VET)\b/);
+  if (junta) {
+    const expansao = _has(u, /\bEXPANSAO\b/);
+    const td: TipoDimensional = expansao ? 'JUNTA_EXPANSAO' : 'JUNTA_VEDACAO';
+    const tr = sugerirTipoRegraPorDimensional(td);
+    return {
+      categoria_produto: 'PRODUTO_TECNICO',
+      tipo_dimensional: td,
+      tipo_regra_codigo: tr,
+      campos_obrigatorios_labels: labelsCamposObrigatorios(flagsPorTipoRegra(tr), td),
+      observacao: expansao
+        ? 'Junta de expansão — polegada principal × comprimento em mm (regra 21).'
+        : 'Junta de vedação — ID × OD × espessura em mm (regra 20).',
     };
   }
 
@@ -863,6 +907,7 @@ export function tipoMedidaPrincipalPorDimensional(td: TipoDimensional | undefine
     td === 'ESPIGAO_X_FLANGE' ||
     td === 'VALVULA' ||
     td === 'MANOMETRO' ||
+    td === 'JUNTA_EXPANSAO' ||
     td === 'ROSCA' ||
     td === 'ROSCA_X_ROSCA'
   )

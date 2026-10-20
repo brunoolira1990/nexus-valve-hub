@@ -10,8 +10,10 @@ export type CampoFormProdutoInvalido =
   | 'familia_id'
   | 'material_ref'
   | 'od_mm'
+  | 'diametro_interno_mm'
   | 'espessura_mm'
-  | 'comprimento_mm';
+  | 'comprimento_mm'
+  | 'diametro_mostrador_mm';
 
 export const campoId = (campo: CampoFormProdutoInvalido) => `campo_${campo}`;
 

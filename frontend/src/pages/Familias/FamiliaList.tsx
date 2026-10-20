@@ -127,9 +127,6 @@ const FamiliaList = () => {
                 <th>Código</th>
                 <th>Nome</th>
                 <th>Tipo Peça</th>
-                <th>Subtipo</th>
-                <th>Norma Técnica</th>
-                <th>Pressão</th>
                 <th>Material Base</th>
                 <th>Status</th>
                 <th className="w-28">Ações</th>
@@ -138,7 +135,7 @@ const FamiliaList = () => {
             <tbody>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={9}>
+                  <td colSpan={6}>
                     <EmptyState
                       message="Nenhuma família encontrada."
                       actionLabel="Nova família"
@@ -154,11 +151,6 @@ const FamiliaList = () => {
                       {f.descricao_base}
                     </td>
                     <td className="text-sm">{f.tipo_peca || '—'}</td>
-                    <td className="text-sm">{f.subtipo_peca || '—'}</td>
-                    <td className="text-sm text-muted-foreground max-w-[200px] truncate">
-                      {f.norma_tecnica || '—'}
-                    </td>
-                    <td className="text-sm">{f.pressao_nominal || '—'}</td>
                     <td className="text-sm">
                       {f.material_base_ref_detalhes?.nome ?? f.material_base ?? '—'}
                     </td>

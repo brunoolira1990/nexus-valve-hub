@@ -162,6 +162,8 @@ class FamiliaProduto(models.Model):
         ESPIGAO_X_FLANGE = 'ESPIGAO_X_FLANGE', 'Espigão x Flange (duas NPS + texto flange na base)'
         VALVULA = 'VALVULA', 'Válvula (orientação)'
         MANOMETRO = 'MANOMETRO', 'Manômetro (descrição técnica)'
+        JUNTA_VEDACAO = 'JUNTA_VEDACAO', 'Junta de vedação (ID x OD x espessura em mm)'
+        JUNTA_EXPANSAO = 'JUNTA_EXPANSAO', 'Junta de expansão (polegada + comprimento em mm)'
         MANUAL = 'MANUAL', 'Dimensional manual / sem padrão automático'
         LEGADO = 'LEGADO', 'Legado / misto (orientação)'
 
@@ -190,6 +192,14 @@ class FamiliaProduto(models.Model):
         BASE_OD_MM_REDUCAO = 'BASE_OD_MM_REDUCAO', 'Base + OD mm maior × menor (3+3 dígitos)'
         BASE_OD_MM_X_ROSCA = 'BASE_OD_MM_X_ROSCA', 'Base + OD mm + rosca e/ou bitola'
         BASE_ESPIGAO_FLANGE_NPS = 'BASE_ESPIGAO_FLANGE_NPS', 'Base + espigão NPS + flange NPS'
+        BASE_JUNTA_VEDACAO = (
+            'BASE_JUNTA_VEDACAO',
+            'Base + ID mm × OD mm × espessura mm (junta de vedação)',
+        )
+        BASE_JUNTA_EXPANSAO = (
+            'BASE_JUNTA_EXPANSAO',
+            'Base + polegada × comprimento mm (junta de expansão)',
+        )
         MANUAL_FABRICANTE = 'MANUAL_FABRICANTE', 'Manual / fabricante (sem código automático por família)'
 
     class TipoControleUnidade(models.TextChoices):
@@ -270,13 +280,7 @@ class FamiliaProduto(models.Model):
     norma_base = models.CharField(max_length=128, blank=True)
     conexao_base = models.CharField(max_length=128, blank=True)
     tipo_peca = models.CharField(max_length=50, blank=True, default='')
-    subtipo_peca = models.CharField(max_length=50, blank=True, default='')
-    norma_tecnica = models.CharField(max_length=100, blank=True, default='')
-    pressao_nominal = models.CharField(max_length=50, blank=True, default='')
-    tipo_conexao = models.CharField(max_length=50, blank=True, default='')
     material_vedacao = models.CharField(max_length=50, blank=True, default='')
-    tipo_acionamento = models.CharField(max_length=50, blank=True, default='')
-    cfop_padrao = models.CharField(max_length=10, blank=True, default='')
     ativo = models.BooleanField(default=True)
     tipo_fisico = models.CharField(max_length=24, choices=TipoFisico.choices, default=TipoFisico.PECA)
     tipo_controle_unidade = models.CharField(
@@ -307,6 +311,10 @@ class FamiliaProduto(models.Model):
         help_text='BARRA_M: estoque base em metros por barra. PECA_KG: estoque base em kg por peça/chapa.',
     )
     observacoes_conversao = models.CharField(max_length=512, blank=True)
+    exige_certificado_qualidade = models.BooleanField(
+        default=False,
+        help_text='Produtos desta família exigem Certificado de Qualidade (rastreabilidade).',
+    )
 
     class Meta:
         ordering = ['codigo_figura']
@@ -428,6 +436,10 @@ class Produto(models.Model):
         blank=True,
         help_text='Vazio herda da família. BARRA_M: metros por barra. PECA_KG: kg por peça/chapa.',
     )
+    exige_certificado_qualidade = models.BooleanField(
+        default=False,
+        help_text='Falso herda da família: se a família exige certificado, o produto exige.',
+    )
     od_mm = models.DecimalField(
         max_digits=10,
         decimal_places=3,
@@ -435,8 +447,40 @@ class Produto(models.Model):
         blank=True,
         help_text='OD externo em mm (tubo / dimensional; não confundir com NPS).',
     )
+    diametro_interno_mm = models.DecimalField(
+        max_digits=10,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        help_text='ID interno em mm (junta de vedação).',
+    )
     espessura_mm = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
     comprimento_mm = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
+    diametro_mostrador_mm = models.DecimalField(
+        max_digits=10,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        help_text='Manômetro: diâmetro do mostrador em mm (ex.: 100, 150).',
+    )
+    escala = models.CharField(
+        max_length=32,
+        blank=True,
+        default='',
+        help_text='Manômetro: faixa da escala (ex.: 0 A 16).',
+    )
+    unidade_escala = models.CharField(
+        max_length=16,
+        blank=True,
+        default='',
+        help_text='Manômetro: unidade da escala (ex.: BAR, PSI).',
+    )
+    fluido = models.CharField(
+        max_length=32,
+        blank=True,
+        default='',
+        help_text='Manômetro: preenchimento (ex.: GLICERINA, SECO).',
+    )
     dimensoes_json = models.JSONField(default=dict, blank=True)
     dim_espessura_mm = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
     dim_largura_mm = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
@@ -587,6 +631,13 @@ class Produto(models.Model):
             return True
         if self.familia_id:
             return bool(self.familia.controla_composicao_fisica)
+        return False
+
+    def get_exige_certificado_qualidade_efetivo(self) -> bool:
+        if self.exige_certificado_qualidade:
+            return True
+        if self.familia_id:
+            return bool(self.familia.exige_certificado_qualidade)
         return False
 
     def get_tipo_composicao_fisica_efetivo(self) -> str:

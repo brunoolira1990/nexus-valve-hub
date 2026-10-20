@@ -39,8 +39,10 @@ export type PreviewCodigoPayload = {
   polegada_principal_ref_id?: number | null;
   polegada_secundaria_ref_id?: number | null;
   od_mm?: number | null;
+  diametro_interno_mm?: number | null;
   espessura_mm?: number | null;
   comprimento_mm?: number | null;
+  diametro_mostrador_mm?: number | null;
   dim_espessura_mm?: number | null;
   dim_largura_mm?: number | null;
   dim_comprimento_mm?: number | null;
@@ -51,6 +53,9 @@ export type PreviewCodigoPayload = {
   dim_espessura_polegada_ref_id?: number | null;
   dimensao_codigo?: string;
   dimensao_descricao?: string;
+  escala?: string;
+  unidade_escala?: string;
+  fluido?: string;
   dimensoes_json?: Record<string, number | string | null>;
 };
 

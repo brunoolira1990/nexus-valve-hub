@@ -76,6 +76,8 @@ class DescricaoPosicionavelTests(TestCase):
             schedule=None,
             polegada_principal=self.polegada,
             polegada_secundaria=None,
+            # O molde já traz "100MM"; a coluna igual não pode duplicar o trecho.
+            diametro_mostrador_mm=Decimal('100'),
             dimensoes=dimensoes or {},
         )
 
@@ -231,6 +233,7 @@ class DescricaoPosicionavelTests(TestCase):
             'schedule': None,
             'polegada_principal': self.polegada,
             'polegada_secundaria': None,
+            'diametro_mostrador_mm': Decimal('100'),
         }
         codigo_base = montar_codigo_interno(self.familia_manometro, dimensoes={}, **kwargs)
         for fluido in ('GLICERINA', 'SILICONE', 'SEM PREENCHIMENTO', 'S/ GLICERINA', ''):
@@ -271,6 +274,7 @@ class DescricaoPosicionavelTests(TestCase):
                 'familia_id': self.familia_manometro.id,
                 'rosca_conexao_id': self.rosca_bsp.id,
                 'polegada_principal_ref_id': self.polegada.id,
+                'diametro_mostrador_mm': '100',
                 'descricao': descricao_historica,
                 'dimensoes_json': self.atributos_completos(),
                 'preco_custo': '0',
@@ -305,17 +309,18 @@ class DescricaoPosicionavelTests(TestCase):
         self.assertFalse(requisitos['usa_schedule'])
         self.assertEqual(tipo_medida_esperado_por_campo(familia)['polegada_principal_ref_id'], Polegada.TipoMedida.NPS)
 
-    def test_codigo_manometro_continua_compatível_com_regra_existente(self):
+    def test_codigo_manometro_inclui_segmento_do_mostrador(self):
         codigo = montar_codigo_interno(
             self.familia_manometro,
             rosca=self.rosca_bsp,
             schedule=None,
             polegada_principal=self.polegada,
             polegada_secundaria=None,
+            diametro_mostrador_mm=Decimal('100'),
             dimensoes=self.atributos_completos(),
         )
 
-        self.assertEqual(codigo, '9904BSP.01')
+        self.assertEqual(codigo, '9904BSPM100.01')
 
     def test_ncm_e_codigo_nao_sao_alterados_por_descricao_manometro(self):
         descricao = self.render_manometro(self.atributos_completos())
@@ -325,6 +330,7 @@ class DescricaoPosicionavelTests(TestCase):
                 'familia_id': self.familia_manometro.id,
                 'rosca_conexao_id': self.rosca_bsp.id,
                 'polegada_principal_ref_id': self.polegada.id,
+                'diametro_mostrador_mm': '100',
                 'descricao': descricao,
                 'dimensoes_json': self.atributos_completos(),
                 'preco_custo': '0',
@@ -335,7 +341,7 @@ class DescricaoPosicionavelTests(TestCase):
         self.assertTrue(produto_ser.is_valid(), produto_ser.errors)
         produto = produto_ser.save()
 
-        self.assertEqual(produto.codigo_completo, '9904BSP.01')
+        self.assertEqual(produto.codigo_completo, '9904BSPM100.01')
         self.assertEqual(produto.ncm, '')
         self.assertEqual(produto.ncm_especifico, '')
 

@@ -33,7 +33,6 @@ import {
   materialValorParaForm,
 } from '@/lib/produtoMaterial';
 import {
-  DESCRICAO_TOKENS_TECNICOS,
   expandirSiglasValvulaDescricaoBase,
   exemploCodigoDimensionalFamilia,
   exemploDescricaoDimensionalFamilia,
@@ -51,8 +50,8 @@ import {
   sugerirConfiguracaoFamilia,
   sugerirTipoRegraPorDimensional,
   tiposDimensionaisPorCategoria,
-  tokensDescricaoTecnicaConfigurados,
 } from '@/lib/familiaRegra';
+import { getAtributosTecnicosFamilia } from './lib/familiaDerivations';
 import { normalizarDescricaoProduto } from '@/lib/descricaoProduto';
 import {
   MENSAGEM_CODIGO_FIGURA_AUTO,
@@ -139,8 +138,13 @@ const emptyForm = (): FormState => ({
   estoque_minimo: 0,
   codigo_completo: '',
   od_mm: null,
+  diametro_interno_mm: null,
   espessura_mm: null,
   comprimento_mm: null,
+  diametro_mostrador_mm: null,
+  escala: '',
+  unidade_escala: '',
+  fluido: '',
   dim_espessura_mm: null,
   dim_largura_mm: null,
   dim_comprimento_mm: null,
@@ -496,16 +500,14 @@ const Produtos = () => {
       exige_od_mm: false,
       exige_espessura_mm: false,
       exige_comprimento_mm: false,
+      exige_diametro_interno_mm: false,
+      exige_diametro_mostrador_mm: false,
       incluir_schedule_na_descricao: fl.usa_schedule,
     };
   }, [familiaSel]);
-  const tokensTecnicosFamilia = useMemo(
-    () => tokensDescricaoTecnicaConfigurados(familiaSel?.descricao_base),
-    [familiaSel?.descricao_base],
-  );
   const atributosTecnicosFamilia = useMemo(
-    () => familiaSel?.tipo_dimensional === 'MANOMETRO' ? DESCRICAO_TOKENS_TECNICOS : tokensTecnicosFamilia,
-    [familiaSel?.tipo_dimensional, tokensTecnicosFamilia],
+    () => getAtributosTecnicosFamilia(familiaSel),
+    [familiaSel],
   );
   const roscasPermitidas = roscas;
   const tipoMedidaPrincipal = useMemo<'NPS' | 'OD' | undefined>(() => {
@@ -614,8 +616,10 @@ const Produtos = () => {
         polegada_principal_ref_id: form.polegada_principal_ref_id,
         polegada_secundaria_ref_id: form.polegada_secundaria_ref_id,
         od_mm: form.od_mm ?? null,
+        diametro_interno_mm: form.diametro_interno_mm ?? null,
         espessura_mm: form.espessura_mm ?? null,
         comprimento_mm: form.comprimento_mm ?? null,
+        diametro_mostrador_mm: form.diametro_mostrador_mm ?? null,
         dim_espessura_mm: form.dim_espessura_mm ?? null,
         dim_largura_mm: form.dim_largura_mm ?? null,
         dim_comprimento_mm: form.dim_comprimento_mm ?? null,
@@ -626,6 +630,9 @@ const Produtos = () => {
         dim_espessura_polegada_ref_id: form.dim_espessura_polegada_ref ?? null,
         dimensao_codigo: form.dimensao_codigo || '',
         dimensao_descricao: form.dimensao_descricao || '',
+        escala: form.escala || '',
+        unidade_escala: form.unidade_escala || '',
+        fluido: form.fluido || '',
         dimensoes_json: form.dimensoes_json ?? {},
       });
       if (seq !== previewRequestSeqRef.current) return;
@@ -654,8 +661,10 @@ const Produtos = () => {
     form.polegada_principal_ref_id,
     form.polegada_secundaria_ref_id,
     form.od_mm,
+    form.diametro_interno_mm,
     form.espessura_mm,
     form.comprimento_mm,
+    form.diametro_mostrador_mm,
     form.dim_espessura_mm,
     form.dim_largura_mm,
     form.dim_comprimento_mm,
@@ -666,6 +675,9 @@ const Produtos = () => {
     form.dim_espessura_polegada_ref,
     form.dimensao_codigo,
     form.dimensao_descricao,
+    form.escala,
+    form.unidade_escala,
+    form.fluido,
     form.dimensoes_json,
   ]);
 
@@ -682,8 +694,10 @@ const Produtos = () => {
     form.polegada_principal_ref_id,
     form.polegada_secundaria_ref_id,
     form.od_mm,
+    form.diametro_interno_mm,
     form.espessura_mm,
     form.comprimento_mm,
+    form.diametro_mostrador_mm,
     form.dim_espessura_mm,
     form.dim_largura_mm,
     form.dim_comprimento_mm,
@@ -694,6 +708,9 @@ const Produtos = () => {
     form.dim_espessura_polegada_ref,
     form.dimensao_codigo,
     form.dimensao_descricao,
+    form.escala,
+    form.unidade_escala,
+    form.fluido,
     form.dimensoes_json,
     refreshPreview,
   ]);
@@ -945,8 +962,13 @@ const Produtos = () => {
       estoque_minimo: e.estoque_minimo,
       codigo_completo: e.codigo_completo,
       od_mm: e.od_mm ?? null,
+      diametro_interno_mm: e.diametro_interno_mm ?? null,
       espessura_mm: e.espessura_mm ?? null,
       comprimento_mm: e.comprimento_mm ?? null,
+      diametro_mostrador_mm: e.diametro_mostrador_mm ?? null,
+      escala: e.escala ?? '',
+      unidade_escala: e.unidade_escala ?? '',
+      fluido: e.fluido ?? '',
       dim_espessura_mm: e.dim_espessura_mm ?? null,
       dim_largura_mm: e.dim_largura_mm ?? null,
       dim_comprimento_mm: e.dim_comprimento_mm ?? null,
@@ -1064,6 +1086,7 @@ const Produtos = () => {
       body.polegada_principal_ref_id = null;
       body.polegada_secundaria_ref_id = null;
       body.od_mm = null;
+      body.diametro_interno_mm = null;
       body.espessura_mm = null;
       body.comprimento_mm = null;
       body.dim_espessura_mm = null;
@@ -1076,6 +1099,10 @@ const Produtos = () => {
       body.dim_espessura_polegada_ref = null;
       body.dimensao_codigo = '';
       body.dimensao_descricao = '';
+      body.diametro_mostrador_mm = null;
+      body.escala = '';
+      body.unidade_escala = '';
+      body.fluido = '';
       body.dimensoes_json = {};
     } else if (form.modo_codigo === 'INTERNO') {
       body.familia_id = form.familia_id;
@@ -1084,6 +1111,7 @@ const Produtos = () => {
       body.polegada_principal_ref_id = form.polegada_principal_ref_id;
       body.polegada_secundaria_ref_id = form.polegada_secundaria_ref_id;
       body.od_mm = form.od_mm ?? null;
+      body.diametro_interno_mm = form.diametro_interno_mm ?? null;
       body.espessura_mm = form.espessura_mm ?? null;
       body.comprimento_mm = form.comprimento_mm ?? null;
       body.dim_espessura_mm = form.dim_espessura_mm ?? null;
@@ -1096,6 +1124,10 @@ const Produtos = () => {
       body.dim_espessura_polegada_ref = form.dim_espessura_polegada_ref ?? null;
       body.dimensao_codigo = (form.dimensao_codigo || '').toUpperCase();
       body.dimensao_descricao = normalizarDescricaoProduto(form.dimensao_descricao || '');
+      body.diametro_mostrador_mm = form.diametro_mostrador_mm ?? null;
+      body.escala = form.escala || '';
+      body.unidade_escala = form.unidade_escala || '';
+      body.fluido = form.fluido || '';
       body.dimensoes_json = form.dimensoes_json ?? {};
     } else {
       body.figura = form.figura;
@@ -1104,6 +1136,7 @@ const Produtos = () => {
       body.polegada_principal = form.polegada_principal;
       body.polegada_secundaria = form.polegada_secundaria;
       body.od_mm = null;
+      body.diametro_interno_mm = null;
       body.espessura_mm = null;
       body.comprimento_mm = null;
       body.dim_espessura_mm = null;
@@ -1116,6 +1149,10 @@ const Produtos = () => {
       body.dim_espessura_polegada_ref = null;
       body.dimensao_codigo = '';
       body.dimensao_descricao = '';
+      body.diametro_mostrador_mm = null;
+      body.escala = '';
+      body.unidade_escala = '';
+      body.fluido = '';
       body.dimensoes_json = {};
     }
     try {
@@ -1915,6 +1952,19 @@ const Produtos = () => {
                     />
                   </div>
                 )}
+                {!familiaEhMaterialDimensional && famReq.exige_diametro_interno_mm && (
+                  <div>
+                    <label className="erp-label">Diâmetro interno ID (mm)</label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      className="erp-input mt-1"
+                      placeholder='Ex.: 15 | 15,0'
+                      value={form.diametro_interno_mm == null ? '' : String(form.diametro_interno_mm)}
+                      onChange={(e) => f('diametro_interno_mm', parseDecimalFlexible(e.target.value))}
+                    />
+                  </div>
+                )}
                 {!familiaEhMaterialDimensional && famReq.exige_od_mm && (
                   <div>
                     <label className="erp-label">{labelCampoOdPrincipal}</label>
@@ -2081,6 +2131,34 @@ const Produtos = () => {
                       tipoMedida={tipoMedidaSecundaria}
                       allowCreate
                     />
+                  </div>
+                )}
+                {manometroEstruturalNoProduto && (
+                  <div className="md:col-span-2 rounded-md border border-dashed border-border bg-background p-3 space-y-3">
+                    <div>
+                      <p className="text-xs font-semibold text-foreground">Manômetro</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Medida e faixa próprias deste Produto. Eles alimentam a prévia e a descrição sugerida.
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="erp-label">Diâmetro do mostrador (mm)</label>
+                        <input type="text" inputMode="decimal" className="erp-input mt-1" placeholder="Ex.: 100" value={form.diametro_mostrador_mm == null ? '' : String(form.diametro_mostrador_mm)} onChange={(e) => f('diametro_mostrador_mm', parseDecimalFlexible(e.target.value))} />
+                      </div>
+                      <div>
+                        <label className="erp-label">Escala</label>
+                        <input className="erp-input mt-1" placeholder="Ex.: 0 A 16" value={form.escala || ''} onChange={(e) => f('escala', e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="erp-label">Unidade da escala</label>
+                        <input className="erp-input mt-1" placeholder="Ex.: BAR" value={form.unidade_escala || ''} onChange={(e) => f('unidade_escala', e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="erp-label">Fluido / preenchimento</label>
+                        <input className="erp-input mt-1" placeholder="Ex.: GLICERINA" value={form.fluido || ''} onChange={(e) => f('fluido', e.target.value)} />
+                      </div>
+                    </div>
                   </div>
                 )}
                 {atributosTecnicosFamilia.length > 0 && (

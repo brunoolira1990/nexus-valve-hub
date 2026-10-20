@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
@@ -19,7 +20,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Info, Wrench, Link2, Ruler, Lock, Scale, Layers } from 'lucide-react';
+import { Info, Wrench, Link2, Ruler, Lock, Scale, Layers, ShieldCheck, Gauge } from 'lucide-react';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import type { ProdutoFormState } from '../types';
 import type {
@@ -99,10 +100,7 @@ const SEM_ROSCA = '__none__';
  * digita nada no produto.
  */
 const PADROES_FAMILIA: readonly { key: keyof FamiliaProduto; label: string }[] = [
-  { key: 'subtipo_peca', label: 'Subtipo de peça' },
   { key: 'material_vedacao', label: 'Material de vedação' },
-  { key: 'tipo_acionamento', label: 'Tipo de acionamento' },
-  { key: 'cfop_padrao', label: 'CFOP padrão' },
 ];
 
 interface ProdutoClassificacaoFormTabProps {
@@ -254,6 +252,10 @@ export function ProdutoClassificacaoFormTab({
   const conversao = familiaSelecionada
     ? valoresConversaoHerdados(form, familiaSelecionada)
     : valoresConversaoProduto(form);
+
+  // Certificado de Qualidade: requisito do molde (Família/Figura). Sem família, o produto decide.
+  const exigeCertificadoEfetivo =
+    !!form.exige_certificado_qualidade || !!familiaSelecionada?.exige_certificado_qualidade;
 
   const getAtributoTecnico = (key: string): string => {
     const value = form.dimensoes_json?.[key];
@@ -507,6 +509,26 @@ export function ProdutoClassificacaoFormTab({
                 </div>
               )}
 
+              {mmDoProdutoVisiveis && famReq.exige_diametro_interno_mm && (
+                <div
+                  id={campoId('diametro_interno_mm')}
+                  className={classeErroCampo(campoErro, 'diametro_interno_mm')}
+                >
+                  <CampoLabel>
+                    Diâmetro interno ID (mm)
+                    <Obrigatorio />
+                  </CampoLabel>
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    className="erp-input h-10"
+                    placeholder="Ex.: 15 | 15,0"
+                    value={decToText(form.diametro_interno_mm)}
+                    onChange={(e) => handleInputChange('diametro_interno_mm', parseDec(e.target.value))}
+                  />
+                </div>
+              )}
+
               {mmDoProdutoVisiveis && famReq.exige_od_mm && (
                 <div id={campoId('od_mm')} className={classeErroCampo(campoErro, 'od_mm')}>
                   <CampoLabel>
@@ -649,6 +671,70 @@ export function ProdutoClassificacaoFormTab({
         </Card>
       )}
 
+      {/* ===== Manômetro (colunas próprias do SKU, não vêm da Família) ===== */}
+      {tdAtual === 'MANOMETRO' && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <Gauge className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-base">Manômetro</CardTitle>
+              <Badge variant="secondary">variação por SKU</Badge>
+            </div>
+            <CardDescription className="text-xs">
+              Medidas e faixa próprias deste Produto; alimentam a descrição técnica sugerida
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div
+                id={campoId('diametro_mostrador_mm')}
+                className={classeErroCampo(campoErro, 'diametro_mostrador_mm')}
+              >
+                <CampoLabel>
+                  Diâmetro do mostrador (mm)
+                  {famReq?.exige_diametro_mostrador_mm && <Obrigatorio />}
+                </CampoLabel>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  className="erp-input h-10"
+                  placeholder="Ex.: 100"
+                  value={decToText(form.diametro_mostrador_mm)}
+                  onChange={(e) => handleInputChange('diametro_mostrador_mm', parseDec(e.target.value))}
+                />
+              </div>
+              <div>
+                <CampoLabel>Escala</CampoLabel>
+                <Input
+                  className="erp-input h-10"
+                  placeholder="Ex.: 0 A 16"
+                  value={form.escala || ''}
+                  onChange={(e) => handleInputChange('escala', e.target.value)}
+                />
+              </div>
+              <div>
+                <CampoLabel>Unidade da escala</CampoLabel>
+                <Input
+                  className="erp-input h-10"
+                  placeholder="Ex.: BAR"
+                  value={form.unidade_escala || ''}
+                  onChange={(e) => handleInputChange('unidade_escala', e.target.value)}
+                />
+              </div>
+              <div>
+                <CampoLabel>Fluido / preenchimento</CampoLabel>
+                <Input
+                  className="erp-input h-10"
+                  placeholder="Ex.: GLICERINA"
+                  value={form.fluido || ''}
+                  onChange={(e) => handleInputChange('fluido', e.target.value)}
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* ===== Polegadas de referência (só quando a regra da família as usa) ===== */}
       {exigePolegadas && (
         <Card>
@@ -751,6 +837,35 @@ export function ProdutoClassificacaoFormTab({
             onObservacoesChange={(v) => handleInputChange('observacoes_conversao', v)}
             ocultarUnidadeFiscal
           />
+        </CardContent>
+      </Card>
+
+      {/* ===== Qualidade (molde vem da Família/Figura) ===== */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">Qualidade</CardTitle>
+            {familiaSelecionada ? <Badge variant="secondary">somente leitura</Badge> : null}
+          </div>
+          <CardDescription className="text-xs">
+            {familiaSelecionada
+              ? `Estas configurações são herdadas da Família/Figura ${familiaSelecionada.codigo_figura}. Para alterar, edite a família.`
+              : 'Sem família selecionada, o produto define o próprio requisito.'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-3">
+            <Switch
+              id="prod-exige-certificado"
+              disabled={!!familiaSelecionada}
+              checked={exigeCertificadoEfetivo}
+              onCheckedChange={(v) => setForm((prev) => ({ ...prev, exige_certificado_qualidade: v }))}
+            />
+            <Label htmlFor="prod-exige-certificado" className="cursor-pointer text-sm font-medium">
+              Exige Certificado de Qualidade
+            </Label>
+          </div>
         </CardContent>
       </Card>
 

@@ -39,6 +39,8 @@ class RequisitosEfetivosProduto(TypedDict):
     exige_od_mm: bool
     exige_espessura_mm: bool
     exige_comprimento_mm: bool
+    exige_diametro_interno_mm: bool
+    exige_diametro_mostrador_mm: bool
     incluir_schedule_na_descricao: bool
 
 
@@ -63,6 +65,14 @@ def validar_tipo_dimensional_x_regra(*, tipo_dimensional: str, tipo_regra_codigo
     Td = FamiliaProduto.TipoDimensional
     Tr = FamiliaProduto.TipoRegraCodigo
 
+    # As regras de junta montam o código a partir do tipo dimensional, então a família
+    # só pode usá-las com o tipo certo — inclusive quando o tipo está vazio/SIMPLES.
+    if tipo_regra_codigo == Tr.BASE_JUNTA_VEDACAO and tipo_dimensional != Td.JUNTA_VEDACAO:
+        return 'A regra Base + ID × OD × espessura exige o tipo dimensional Junta de vedação.'
+
+    if tipo_regra_codigo == Tr.BASE_JUNTA_EXPANSAO and tipo_dimensional != Td.JUNTA_EXPANSAO:
+        return 'A regra Base + polegada × comprimento exige o tipo dimensional Junta de expansão.'
+
     if tipo_dimensional in ('', None):
         return None
     if tipo_dimensional in (Td.MANUAL, Td.LEGADO):
@@ -71,6 +81,12 @@ def validar_tipo_dimensional_x_regra(*, tipo_dimensional: str, tipo_regra_codigo
         return None
     if tipo_dimensional == Td.MANOMETRO and tipo_regra_codigo != Tr.BASE_ROSCA_POLEGADA:
         return 'Manômetro exige a regra Base + rosca/conexão + polegada principal.'
+
+    if tipo_dimensional == Td.JUNTA_VEDACAO and tipo_regra_codigo != Tr.BASE_JUNTA_VEDACAO:
+        return 'Junta de vedação exige a regra Base + ID × OD × espessura (mm).'
+
+    if tipo_dimensional == Td.JUNTA_EXPANSAO and tipo_regra_codigo != Tr.BASE_JUNTA_EXPANSAO:
+        return 'Junta de expansão exige a regra Base + polegada × comprimento (mm).'
 
     sch_rules = _schedule_code_rules()
 
@@ -180,6 +196,8 @@ def requisitos_efetivos_produto(familia: FamiliaProduto) -> RequisitosEfetivosPr
         'exige_od_mm': False,
         'exige_espessura_mm': False,
         'exige_comprimento_mm': False,
+        'exige_diametro_interno_mm': False,
+        'exige_diametro_mostrador_mm': False,
         'incluir_schedule_na_descricao': bool(flags['usa_schedule']),
     }
 
@@ -191,6 +209,31 @@ def requisitos_efetivos_produto(familia: FamiliaProduto) -> RequisitosEfetivosPr
         r['exige_od_mm'] = False
         r['exige_espessura_mm'] = False
         r['exige_comprimento_mm'] = False
+        r['exige_diametro_mostrador_mm'] = True
+        r['incluir_schedule_na_descricao'] = False
+        return r
+
+    if td == Td.JUNTA_VEDACAO:
+        r['usa_rosca_conexao'] = False
+        r['usa_schedule'] = False
+        r['usa_polegada_principal'] = False
+        r['usa_polegada_secundaria'] = False
+        r['exige_diametro_interno_mm'] = True
+        r['exige_od_mm'] = True
+        r['exige_espessura_mm'] = True
+        r['exige_comprimento_mm'] = False
+        r['incluir_schedule_na_descricao'] = False
+        return r
+
+    if td == Td.JUNTA_EXPANSAO:
+        r['usa_rosca_conexao'] = False
+        r['usa_schedule'] = False
+        r['usa_polegada_principal'] = True
+        r['usa_polegada_secundaria'] = False
+        r['exige_diametro_interno_mm'] = False
+        r['exige_od_mm'] = False
+        r['exige_espessura_mm'] = False
+        r['exige_comprimento_mm'] = True
         r['incluir_schedule_na_descricao'] = False
         return r
 
@@ -403,6 +446,8 @@ def validar_campos_obrigatorios_produto_interno(
     od_mm: Decimal | None,
     espessura_mm: Decimal | None,
     comprimento_mm_resolvido: Decimal | None,
+    diametro_interno_mm: Decimal | None = None,
+    diametro_mostrador_mm: Decimal | None = None,
 ) -> dict[str, str]:
     """Retorna mapa campo -> mensagem (uma por campo). Vazio se OK."""
     from apps.produtos.models import FamiliaProduto
@@ -462,6 +507,10 @@ def validar_campos_obrigatorios_produto_interno(
             errs['espessura_mm'] = 'Informe a Espessura em mm.'
     if req['exige_comprimento_mm'] and comprimento_mm_resolvido is None:
         errs['comprimento_mm'] = 'Informe o Comprimento em mm.'
+    if req['exige_diametro_interno_mm'] and diametro_interno_mm is None:
+        errs['diametro_interno_mm'] = 'Informe o diâmetro interno (ID) em mm.'
+    if req['exige_diametro_mostrador_mm'] and diametro_mostrador_mm is None:
+        errs['diametro_mostrador_mm'] = 'Informe o diâmetro do mostrador em mm.'
     return errs
 
 
@@ -495,6 +544,7 @@ def tipo_medida_esperado_por_campo(familia: FamiliaProduto) -> dict[str, str | N
         Td.ROSCA,
         Td.ROSCA_X_ROSCA,
         Td.MANOMETRO,
+        Td.JUNTA_EXPANSAO,
     ):
         principal = tipo_nps
 

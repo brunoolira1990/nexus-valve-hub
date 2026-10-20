@@ -40,9 +40,9 @@ const familiaTecnica = familia({
   material_base: 'Aço Carbono',
   material_base_ref: 42,
   tipo_peca: 'Válvula',
-  norma_tecnica: 'ASME B16.34',
-  pressao_nominal: 'Class 150',
-  tipo_conexao: 'Flangeada',
+  norma_base: 'ASME B16.34',
+  pressao_base: 'Class 150',
+  conexao_base: 'Flangeada',
 });
 
 describe('aplicarHerancaFamiliaProduto — campos técnicos', () => {
@@ -60,20 +60,20 @@ describe('aplicarHerancaFamiliaProduto — campos técnicos', () => {
     );
   });
 
-  it('usa o padrão legado da família quando o campo técnico novo está vazio', () => {
+  it('nada herda quando a família não tem padrão preenchido', () => {
     const f = familia({
-      norma_tecnica: '',
-      norma_base: 'DIN 3352',
-      pressao_nominal: '',
-      pressao_base: 'PN 16',
-      tipo_conexao: '',
-      conexao_base: 'Soldável',
+      norma_base: '',
+      pressao_base: '',
+      conexao_base: '',
     });
-    const { form } = aplicarHerancaFamiliaProduto(formVazio(), f, 'INTERNO');
+    const { form, herdou } = aplicarHerancaFamiliaProduto(formVazio(), f, 'INTERNO');
 
-    expect(form.norma).toBe('DIN 3352');
-    expect(form.pressao_nominal).toBe('PN 16');
-    expect(form.conexao).toBe('Soldável');
+    expect(form.norma).toBe('');
+    expect(form.pressao_nominal).toBe('');
+    expect(form.conexao).toBe('');
+    expect(herdou).not.toContain('norma');
+    expect(herdou).not.toContain('pressao_nominal');
+    expect(herdou).not.toContain('conexao');
   });
 
   it('não sobrescreve override já digitado no produto', () => {
@@ -99,9 +99,9 @@ describe('aplicarHerancaFamiliaProduto — campos técnicos', () => {
 });
 
 describe('herança visível', () => {
-  it('valorFamiliaParaCampo respeita a precedência novo > legado', () => {
-    const f = familia({ norma_tecnica: 'ASME B16.34', norma_base: 'DIN 3352' });
-    expect(valorFamiliaParaCampo(f, 'norma')).toBe('ASME B16.34');
+  it('valorFamiliaParaCampo lê o padrão da família', () => {
+    const f = familia({ norma_base: 'DIN 3352' });
+    expect(valorFamiliaParaCampo(f, 'norma')).toBe('DIN 3352');
   });
 
   it('badge aparece com valor igual ao da família e some no override', () => {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Boxes, Layers, Loader2, Receipt, Ruler, Save, Wrench, X } from 'lucide-react';
+import { Boxes, Layers, Loader2, Receipt, Ruler, Save, ShieldCheck, Wrench, X } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { NexusButton } from '@/components/nexus';
 import {
@@ -80,18 +80,13 @@ type FamiliaFormState = {
   densidade: number | null;
   usa_conversao_dimensional: boolean;
   controla_composicao_fisica: boolean;
+  exige_certificado_qualidade: boolean;
   tipo_composicao_fisica: string;
   observacoes_conversao: string;
   material_base: string;
   material_base_ref: number | null;
   tipo_peca: string;
-  subtipo_peca: string;
-  norma_tecnica: string;
-  pressao_nominal: string;
-  tipo_conexao: string;
   material_vedacao: string;
-  tipo_acionamento: string;
-  cfop_padrao: string;
 };
 
 const emptyForm = (): FamiliaFormState => ({
@@ -119,18 +114,13 @@ const emptyForm = (): FamiliaFormState => ({
   densidade: null,
   usa_conversao_dimensional: false,
   controla_composicao_fisica: false,
+  exige_certificado_qualidade: false,
   tipo_composicao_fisica: 'BARRA_M',
   observacoes_conversao: '',
   material_base: '',
   material_base_ref: null,
   tipo_peca: '',
-  subtipo_peca: '',
-  norma_tecnica: '',
-  pressao_nominal: '',
-  tipo_conexao: '',
   material_vedacao: '',
-  tipo_acionamento: '',
-  cfop_padrao: '',
 });
 
 function CampoLabel({ children }: { children: React.ReactNode }) {
@@ -202,18 +192,13 @@ const FamiliaFormPage = () => {
           densidade: fam.densidade ?? null,
           usa_conversao_dimensional: !!fam.usa_conversao_dimensional,
           controla_composicao_fisica: !!fam.controla_composicao_fisica,
+          exige_certificado_qualidade: !!fam.exige_certificado_qualidade,
           tipo_composicao_fisica: fam.tipo_composicao_fisica || 'BARRA_M',
           observacoes_conversao: fam.observacoes_conversao ?? '',
           material_base: fam.material_base ?? '',
           material_base_ref: fam.material_base_ref ?? null,
           tipo_peca: fam.tipo_peca ?? '',
-          subtipo_peca: fam.subtipo_peca ?? '',
-          norma_tecnica: fam.norma_tecnica ?? '',
-          pressao_nominal: fam.pressao_nominal ?? '',
-          tipo_conexao: fam.tipo_conexao ?? '',
           material_vedacao: fam.material_vedacao ?? '',
-          tipo_acionamento: fam.tipo_acionamento ?? '',
-          cfop_padrao: fam.cfop_padrao ?? '',
         });
         setNcmOption(
           fam.ncm_padrao_info
@@ -317,18 +302,13 @@ const FamiliaFormPage = () => {
       densidade: form.densidade,
       usa_conversao_dimensional: form.usa_conversao_dimensional,
       controla_composicao_fisica: form.controla_composicao_fisica,
+      exige_certificado_qualidade: form.exige_certificado_qualidade,
       tipo_composicao_fisica: form.tipo_composicao_fisica,
       observacoes_conversao: form.observacoes_conversao,
       material_base: form.material_base,
       material_base_ref: form.material_base_ref,
       tipo_peca: form.tipo_peca,
-      subtipo_peca: form.subtipo_peca,
-      norma_tecnica: form.norma_tecnica,
-      pressao_nominal: form.pressao_nominal,
-      tipo_conexao: form.tipo_conexao,
       material_vedacao: form.material_vedacao,
-      tipo_acionamento: form.tipo_acionamento,
-      cfop_padrao: form.cfop_padrao,
     };
 
     setSalvando(true);
@@ -866,46 +846,6 @@ const FamiliaFormPage = () => {
                 />
               </div>
               <div>
-                <CampoLabel>Subtipo</CampoLabel>
-                <Input
-                  className="h-10"
-                  maxLength={50}
-                  value={form.subtipo_peca}
-                  onChange={(e) => handleField('subtipo_peca', e.target.value)}
-                  placeholder="Ex.: 3 peças, passagem reduzida"
-                />
-              </div>
-              <div>
-                <CampoLabel>Norma técnica</CampoLabel>
-                <Input
-                  className="h-10"
-                  maxLength={100}
-                  value={form.norma_tecnica}
-                  onChange={(e) => handleField('norma_tecnica', e.target.value)}
-                  placeholder="Ex.: ASME B16.34"
-                />
-              </div>
-              <div>
-                <CampoLabel>Pressão nominal</CampoLabel>
-                <Input
-                  className="h-10"
-                  maxLength={50}
-                  value={form.pressao_nominal}
-                  onChange={(e) => handleField('pressao_nominal', e.target.value)}
-                  placeholder="Ex.: 150 lb"
-                />
-              </div>
-              <div>
-                <CampoLabel>Tipo de conexão</CampoLabel>
-                <Input
-                  className="h-10"
-                  maxLength={50}
-                  value={form.tipo_conexao}
-                  onChange={(e) => handleField('tipo_conexao', e.target.value)}
-                  placeholder="Ex.: Solda socket"
-                />
-              </div>
-              <div>
                 <CampoLabel>Material de vedação</CampoLabel>
                 <Input
                   className="h-10"
@@ -915,17 +855,38 @@ const FamiliaFormPage = () => {
                   placeholder="Ex.: PTFE"
                 />
               </div>
-              <div>
-                <CampoLabel>Tipo de acionamento</CampoLabel>
-                <Input
-                  className="h-10"
-                  maxLength={50}
-                  value={form.tipo_acionamento}
-                  onChange={(e) => handleField('tipo_acionamento', e.target.value)}
-                  placeholder="Ex.: Manual (volante)"
-                />
-              </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* ===== Qualidade ===== */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-base">Qualidade</CardTitle>
+            </div>
+            <CardDescription className="text-xs">
+              Requisito herdado pelos produtos desta família
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-3">
+              <Switch
+                id="fam-exige-certificado"
+                checked={form.exige_certificado_qualidade}
+                onCheckedChange={(v) => handleField('exige_certificado_qualidade', v)}
+              />
+              <Label htmlFor="fam-exige-certificado" className="cursor-pointer text-sm font-medium">
+                Exige Certificado de Qualidade
+              </Label>
+            </div>
+            {form.exige_certificado_qualidade ? (
+              <p className="text-xs text-muted-foreground mt-3">
+                Os produtos desta família precisam de Certificado de Qualidade (CQ) com corrida/lote e dados
+                técnicos. O módulo de Qualidade usa esse requisito para saber o que rastreabilizar.
+              </p>
+            ) : null}
           </CardContent>
         </Card>
 
@@ -937,7 +898,7 @@ const FamiliaFormPage = () => {
               <CardTitle className="text-base">Fiscal</CardTitle>
             </div>
             <CardDescription className="text-xs">
-              NCM e CFOP sugeridos para os produtos desta família
+              NCM sugerido para os produtos desta família
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -956,16 +917,6 @@ const FamiliaFormPage = () => {
                   O produto usa este NCM quando não informa um específico. Se não encontrar resultados,
                   verifique se a lista TIPI/NCM foi importada.
                 </p>
-              </div>
-              <div>
-                <CampoLabel>CFOP padrão</CampoLabel>
-                <Input
-                  className="h-10 font-mono"
-                  maxLength={10}
-                  value={form.cfop_padrao}
-                  onChange={(e) => handleField('cfop_padrao', e.target.value)}
-                  placeholder="Ex.: 5.101"
-                />
               </div>
             </div>
           </CardContent>

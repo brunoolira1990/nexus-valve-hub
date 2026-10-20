@@ -15,17 +15,18 @@ export function familiaEhManualFabricante(familia: FamiliaProduto): boolean {
 
 /**
  * Campos técnicos que o produto pode receber da família e que a tela marca
- * como herdados. `fontes` é a ordem de precedência: o padrão técnico novo da
- * família vence o campo legado `*_base`.
+ * como herdados. A família guarda esses padrões nos campos `*_base`; os antigos
+ * campos técnicos "novos" da família (norma_tecnica/pressao_nominal/tipo_conexao)
+ * foram removidos na limpeza da Sprint 3.6.
  */
 export const HERANCA_TECNICA: readonly {
   produto: 'tipo_peca' | 'norma' | 'pressao_nominal' | 'conexao';
   fontes: readonly (keyof FamiliaProduto)[];
 }[] = [
   { produto: 'tipo_peca', fontes: ['tipo_peca'] },
-  { produto: 'norma', fontes: ['norma_tecnica', 'norma_base'] },
-  { produto: 'pressao_nominal', fontes: ['pressao_nominal', 'pressao_base'] },
-  { produto: 'conexao', fontes: ['tipo_conexao', 'conexao_base'] },
+  { produto: 'norma', fontes: ['norma_base'] },
+  { produto: 'pressao_nominal', fontes: ['pressao_base'] },
+  { produto: 'conexao', fontes: ['conexao_base'] },
 ];
 
 export type CampoHerancaTecnica = (typeof HERANCA_TECNICA)[number]['produto'];

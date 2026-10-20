@@ -226,6 +226,8 @@ export type TipoRegraCodigo =
   | 'BASE_OD_MM_REDUCAO'
   | 'BASE_OD_MM_X_ROSCA'
   | 'BASE_ESPIGAO_FLANGE_NPS'
+  | 'BASE_JUNTA_VEDACAO'
+  | 'BASE_JUNTA_EXPANSAO'
   | 'MANUAL_FABRICANTE';
 
 export type TipoDimensional =
@@ -259,6 +261,8 @@ export type TipoDimensional =
   | 'ESPIGAO_X_FLANGE'
   | 'VALVULA'
   | 'MANOMETRO'
+  | 'JUNTA_VEDACAO'
+  | 'JUNTA_EXPANSAO'
   | 'MANUAL'
   | 'LEGADO';
 
@@ -270,6 +274,8 @@ export type RequisitosProdutoDimensionais = {
   exige_od_mm: boolean;
   exige_espessura_mm: boolean;
   exige_comprimento_mm: boolean;
+  exige_diametro_interno_mm: boolean;
+  exige_diametro_mostrador_mm: boolean;
   incluir_schedule_na_descricao: boolean;
 };
 
@@ -302,13 +308,7 @@ export interface FamiliaProduto {
   norma_base?: string;
   conexao_base?: string;
   tipo_peca?: string;
-  subtipo_peca?: string;
-  norma_tecnica?: string;
-  pressao_nominal?: string;
-  tipo_conexao?: string;
   material_vedacao?: string;
-  tipo_acionamento?: string;
-  cfop_padrao?: string;
   tipo_fisico?: TipoFisicoProduto;
   tipo_controle_unidade?: TipoControleUnidade;
   unidade_estoque_padrao?: string;
@@ -324,6 +324,7 @@ export interface FamiliaProduto {
   densidade?: number | null;
   usa_conversao_dimensional?: boolean;
   controla_composicao_fisica?: boolean;
+  exige_certificado_qualidade?: boolean;
   tipo_composicao_fisica?: string;
   tipo_composicao_fisica_efetivo?: string;
   unidade_base_composicao_fisica?: string;
@@ -447,6 +448,8 @@ export interface Produto {
   unidades_compra_permitidas_efetivas?: string[];
   controla_composicao_fisica_efetivo?: boolean;
   controla_composicao_fisica?: boolean;
+  exige_certificado_qualidade_efetivo?: boolean;
+  exige_certificado_qualidade?: boolean;
   tipo_composicao_fisica?: string;
   tipo_composicao_fisica_efetivo?: string;
   unidade_base_composicao_fisica?: string;
@@ -459,8 +462,13 @@ export interface Produto {
   estoque_minimo: number;
   codigo_completo: string;
   od_mm?: number | null;
+  diametro_interno_mm?: number | null;
   espessura_mm?: number | null;
   comprimento_mm?: number | null;
+  diametro_mostrador_mm?: number | null;
+  escala?: string;
+  unidade_escala?: string;
+  fluido?: string;
   dim_espessura_mm?: number | null;
   dim_largura_mm?: number | null;
   dim_comprimento_mm?: number | null;

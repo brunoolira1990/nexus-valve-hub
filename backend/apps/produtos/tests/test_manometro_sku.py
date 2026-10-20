@@ -44,13 +44,14 @@ class ManometroSkuBaseTests(TestCase):
             tipo_dimensional=FamiliaProduto.TipoDimensional.MANOMETRO,
         )
 
-    def produto_serializer(self, *, rosca, polegada, escala='0 A 4', fluido='AR'):
+    def produto_serializer(self, *, rosca, polegada, escala='0 A 4', fluido='AR', mostrador='100'):
         serializer = ProdutoSerializer(
             data={
                 'modo_codigo': Produto.ModoCodigo.INTERNO,
                 'familia_id': self.familia.id,
                 'rosca_conexao_id': rosca.id,
                 'polegada_principal_ref_id': polegada.id,
+                'diametro_mostrador_mm': mostrador,
                 'descricao': f'MANOMETRO {escala} {fluido}',
                 'dimensoes_json': {
                     'escala': escala,
@@ -71,33 +72,36 @@ class ManometroSkuBaseTests(TestCase):
         terceiro = self.produto_serializer(rosca=self.rosca_bsp, polegada=self.polegada_half, escala='0 A 25', fluido='GLICERINA').save()
         outro_grupo = self.produto_serializer(rosca=self.rosca_bsp, polegada=self.polegada_three_quarter).save()
         npt = self.produto_serializer(rosca=self.rosca_npt, polegada=self.polegada_half).save()
+        outro_mostrador = self.produto_serializer(rosca=self.rosca_bsp, polegada=self.polegada_half, mostrador='150').save()
 
-        self.assertEqual(primeiro.codigo_completo, '9920.04')
-        self.assertEqual(segundo.codigo_completo, '9920.04.01')
-        self.assertEqual(terceiro.codigo_completo, '9920.04.02')
-        self.assertEqual(outro_grupo.codigo_completo, '9920.06')
-        self.assertEqual(npt.codigo_completo, '9920N.04')
+        self.assertEqual(primeiro.codigo_completo, '9920M100.04')
+        self.assertEqual(segundo.codigo_completo, '9920M100.04.01')
+        self.assertEqual(terceiro.codigo_completo, '9920M100.04.02')
+        self.assertEqual(outro_grupo.codigo_completo, '9920M100.06')
+        self.assertEqual(npt.codigo_completo, '9920NM100.04')
+        self.assertEqual(outro_mostrador.codigo_completo, '9920M150.04')
 
     def test_preview_sugere_sem_consumir_contador(self):
         primeiro = self.produto_serializer(rosca=self.rosca_npt, polegada=self.polegada_half).save()
-        seq_antes = ProdutoManometroSkuSequencia.objects.get(codigo_base='9920N.04').proximo_numero
+        seq_antes = ProdutoManometroSkuSequencia.objects.get(codigo_base='9920NM100.04').proximo_numero
         preview = PreviewCodigoSerializer(
             data={
                 'familia_id': self.familia.id,
                 'rosca_conexao_id': self.rosca_npt.id,
                 'polegada_principal_ref_id': self.polegada_half.id,
+                'diametro_mostrador_mm': '100',
                 'dimensoes_json': {'escala': '0 A 16', 'unidade_escala': 'BAR'},
             },
         )
         self.assertTrue(preview.is_valid(), preview.errors)
-        self.assertEqual(preview.validated_data['_codigo'], '9920N.04.01')
-        self.assertEqual(preview.validated_data['_codigo_base'], '9920N.04')
+        self.assertEqual(preview.validated_data['_codigo'], '9920NM100.04.01')
+        self.assertEqual(preview.validated_data['_codigo_base'], '9920NM100.04')
         self.assertTrue(preview.validated_data['_sequencia_tecnica'])
         self.assertEqual(
-            ProdutoManometroSkuSequencia.objects.get(codigo_base='9920N.04').proximo_numero,
+            ProdutoManometroSkuSequencia.objects.get(codigo_base='9920NM100.04').proximo_numero,
             seq_antes,
         )
-        self.assertEqual(primeiro.codigo_completo, '9920N.04')
+        self.assertEqual(primeiro.codigo_completo, '9920NM100.04')
 
     def test_edicao_tecnica_preserva_codigo_e_estrutural_e_bloqueada(self):
         produto = self.produto_serializer(rosca=self.rosca_npt, polegada=self.polegada_half).save()
@@ -150,6 +154,7 @@ class ManometroSkuConcurrencyTests(TransactionTestCase):
                         'familia_id': self.familia.id,
                         'rosca_conexao_id': self.rosca.id,
                         'polegada_principal_ref_id': self.polegada.id,
+                        'diametro_mostrador_mm': '100',
                     },
                 )
                 if not preview.is_valid():
@@ -167,7 +172,7 @@ class ManometroSkuConcurrencyTests(TransactionTestCase):
         for thread in threads:
             thread.join(timeout=30)
         self.assertFalse(erros, erros)
-        self.assertEqual(resultados, ['9930N2.04', '9930N2.04'])
+        self.assertEqual(resultados, ['9930N2M100.04', '9930N2M100.04'])
         self.assertFalse(ProdutoManometroSkuSequencia.objects.exists())
 
     def test_rollback_de_criacao_nao_consumo_sequencia(self):
@@ -178,11 +183,12 @@ class ManometroSkuConcurrencyTests(TransactionTestCase):
                     familia_id=self.familia.id,
                     rosca_conexao_id=self.rosca.id,
                     polegada_principal_ref_id=self.polegada.id,
+                    diametro_mostrador_mm=Decimal('100'),
                     descricao='MANOMETRO ROLLBACK',
                     dimensoes_json={'escala': '0 A 4', 'unidade_escala': 'BAR'},
                 )
                 produto.save()
-                self.assertEqual(produto.codigo_completo, '9930N2.04')
+                self.assertEqual(produto.codigo_completo, '9930N2M100.04')
                 raise RuntimeError('rollback de teste')
         self.assertFalse(Produto.objects.exists())
         self.assertFalse(ProdutoManometroSkuSequencia.objects.exists())
@@ -191,11 +197,12 @@ class ManometroSkuConcurrencyTests(TransactionTestCase):
             familia_id=self.familia.id,
             rosca_conexao_id=self.rosca.id,
             polegada_principal_ref_id=self.polegada.id,
+            diametro_mostrador_mm=Decimal('100'),
             descricao='MANOMETRO APOS ROLLBACK',
             dimensoes_json={'escala': '0 A 4', 'unidade_escala': 'BAR'},
         )
         produto.save()
-        self.assertEqual(produto.codigo_completo, '9930N2.04')
+        self.assertEqual(produto.codigo_completo, '9930N2M100.04')
 
     def test_duas_criacoes_concorrentes_recebem_codigos_distintos(self):
         preview = PreviewCodigoSerializer(
@@ -203,10 +210,11 @@ class ManometroSkuConcurrencyTests(TransactionTestCase):
                 'familia_id': self.familia.id,
                 'rosca_conexao_id': self.rosca.id,
                 'polegada_principal_ref_id': self.polegada.id,
+                'diametro_mostrador_mm': '100',
             },
         )
         self.assertTrue(preview.is_valid(), preview.errors)
-        self.assertEqual(preview.validated_data['_codigo'], '9930N2.04')
+        self.assertEqual(preview.validated_data['_codigo'], '9930N2M100.04')
         barrier = threading.Barrier(2)
         resultados = []
         erros = []
@@ -219,6 +227,7 @@ class ManometroSkuConcurrencyTests(TransactionTestCase):
                     familia_id=self.familia.id,
                     rosca_conexao_id=self.rosca.id,
                     polegada_principal_ref_id=self.polegada.id,
+                    diametro_mostrador_mm=Decimal('100'),
                     descricao=f'MANOMETRO {escala}',
                     dimensoes_json={'escala': escala, 'unidade_escala': 'BAR'},
                 )
@@ -242,10 +251,10 @@ class ManometroSkuConcurrencyTests(TransactionTestCase):
         self.assertFalse(erros, erros)
         self.assertEqual(len(resultados), 2)
         self.assertEqual(len(set(resultados)), 2)
-        self.assertIn('9930N2.04', resultados)
-        self.assertIn('9930N2.04.01', resultados)
+        self.assertIn('9930N2M100.04', resultados)
+        self.assertIn('9930N2M100.04.01', resultados)
         self.assertEqual(Produto.objects.filter(codigo_completo__in=resultados).count(), 2)
         self.assertEqual(
-            ProdutoManometroSkuSequencia.objects.get(codigo_base='9930N2.04').proximo_numero,
+            ProdutoManometroSkuSequencia.objects.get(codigo_base='9930N2M100.04').proximo_numero,
             2,
         )

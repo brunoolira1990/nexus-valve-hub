@@ -84,12 +84,17 @@ def _montar_descricao_manometro(
     *,
     polegada: str,
     rosca: str,
+    mostrador: str,
     dimensoes: dict | None,
 ) -> str:
     """Regra específica de descrição; não participa do código dimensional."""
     partes: list[str] = []
     if base:
         partes.append(base)
+    # A família legada já traz o mostrador na descrição base (ex.: "MANOMETRO 100MM ...");
+    # só acrescentamos quando este SKU tem um diâmetro diferente do texto do molde.
+    if mostrador and not _token_in_text(base.upper(), mostrador):
+        partes.append(f'MOSTRADOR {mostrador}')
     if polegada:
         partes.append(polegada)
     if rosca and not _token_in_text(base.upper(), rosca):
@@ -229,6 +234,22 @@ def _segmento_mm_codigo(val: Decimal | None, *, width: int = 2) -> str:
     return s
 
 
+def _segmento_mm_preciso(val: Decimal | None, *, width: int = 3) -> str:
+    """Segmento de mm que preserva a casa decimal (15 → '015', 15,5 → '015P5').
+
+    ``_segmento_mm_codigo`` arredonda (15,5 viraria 016), o que destruiria a precisão
+    do ID/OD/espessura de junta. 'P' é a mesma convenção de ``_format_dim_code_piece``.
+    """
+    if val is None:
+        return ''
+    if not val.is_finite():
+        return ''
+    inteiro, sep, fracao = format(abs(val), 'f').partition('.')
+    segmento = inteiro.zfill(width) if len(inteiro) <= width else inteiro
+    fracao = fracao.rstrip('0')
+    return f'{segmento}P{fracao}' if fracao else segmento
+
+
 def _prefixo_od(figura: str) -> str:
     f = (figura or '').strip()
     if not f:
@@ -306,6 +327,9 @@ def montar_codigo_interno(
     polegada_secundaria: Polegada | None,
     od_mm: Decimal | None = None,
     espessura_mm: Decimal | None = None,
+    comprimento_mm: Decimal | None = None,
+    diametro_interno_mm: Decimal | None = None,
+    diametro_mostrador_mm: Decimal | None = None,
     dimensoes: dict | None = None,
 ) -> str:
     from apps.produtos.models import FamiliaProduto
@@ -371,6 +395,27 @@ def montar_codigo_interno(
         if not dim_code:
             return ''
         return f'{fig}{sep}{dim_code}'
+
+    if td == td_new.MANOMETRO:
+        # O mostrador é coluna do produto: 100 mm e 150 mm são SKUs diferentes.
+        diam = _segmento_mm_codigo(diametro_mostrador_mm, width=3)
+        if not diam or not id1:
+            return ''
+        return f'{fig}{rs}M{diam}{sep}{id1}'
+
+    if td == td_new.JUNTA_VEDACAO:
+        id_s = _segmento_mm_preciso(diametro_interno_mm)
+        od_s = _segmento_mm_preciso(od_mm)
+        esp_s = _segmento_mm_preciso(espessura_mm)
+        if not id_s or not od_s or not esp_s:
+            return ''
+        return f'{fig}{sep}{id_s}X{od_s}X{esp_s}'
+
+    if td == td_new.JUNTA_EXPANSAO:
+        comp_s = _format_dim_code_piece(comprimento_mm)
+        if not id1 or not comp_s:
+            return ''
+        return f'{fig}{sep}{id1}X{comp_s}'
 
     if rule == t.BASE_DN_MM:
         mm = _segmento_mm_codigo(od_mm, width=3)
@@ -484,6 +529,8 @@ def montar_descricao_sugerida(
     od_mm: Decimal | None = None,
     espessura_mm: Decimal | None = None,
     comprimento_mm: Decimal | None = None,
+    diametro_interno_mm: Decimal | None = None,
+    diametro_mostrador_mm: Decimal | None = None,
     dimensoes: dict | None = None,
 ) -> str:
     from apps.produtos.descricao_norm import normalizar_descricao_produto
@@ -506,6 +553,7 @@ def montar_descricao_sugerida(
                 base_template,
                 polegada=p_desc,
                 rosca=_descricao_rosca_comercial(rosca),
+                mostrador=_format_mm_descricao(diametro_mostrador_mm),
                 dimensoes=dimensoes,
             ),
         )
@@ -554,6 +602,27 @@ def montar_descricao_sugerida(
         if d2:
             chunks_ef.append(d2)
         return _fin(' '.join(chunks_ef))
+
+    if td == Td.JUNTA_VEDACAO:
+        medidas: list[str] = []
+        id_txt = _format_mm_descricao(diametro_interno_mm)
+        od_txt = _format_mm_descricao(od_mm)
+        esp_txt = _format_mm_descricao(espessura_mm)
+        if id_txt:
+            medidas.append(f'ID {id_txt}')
+        if od_txt:
+            medidas.append(f'OD {od_txt}')
+        if esp_txt:
+            medidas.append(esp_txt)
+        head_jv = ' '.join([p for p in (base_template, ' X '.join(medidas)) if p])
+        return _fin(head_jv)
+
+    if td == Td.JUNTA_EXPANSAO:
+        head_je = ' '.join([p for p in (base_template, principal_desc_for_append) if p])
+        comp_txt = _format_mm_descricao(comprimento_mm)
+        if head_je and comp_txt:
+            head_je = f'{head_je} X {comp_txt}'
+        return _fin(head_je)
 
     if td in (Td.CHAPA_MM, Td.CHAPA_FURO_MM, Td.BARRA_CHATA_MM, Td.METALON_MM, Td.PERFIL_RETANGULAR_MM, Td.CANTONEIRA_MM):
         base = base_template
@@ -740,6 +809,9 @@ def produto_aplicar_codigo_completo(produto: Produto) -> None:
         polegada_secundaria=produto.polegada_secundaria_ref,
         od_mm=produto.od_mm,
         espessura_mm=produto.espessura_mm,
+        comprimento_mm=produto.comprimento_mm,
+        diametro_interno_mm=produto.diametro_interno_mm,
+        diametro_mostrador_mm=produto.diametro_mostrador_mm,
         dimensoes={
             **(produto.dimensoes_json or {}),
             'espessura_mm': produto.dim_espessura_mm,
@@ -750,6 +822,11 @@ def produto_aplicar_codigo_completo(produto: Produto) -> None:
             'aba_mm': produto.dim_aba_mm,
             'dimensao_codigo': produto.dimensao_codigo,
             'dimensao_descricao': produto.dimensao_descricao,
+            # Manômetro: viraram colunas do produto, então a coluna (mesmo vazia) manda
+            # no lugar da chave legada de dimensoes_json.
+            'escala': produto.escala,
+            'unidade_escala': produto.unidade_escala,
+            'fluido': produto.fluido,
         },
     )
     produto.codigo_completo = codigo

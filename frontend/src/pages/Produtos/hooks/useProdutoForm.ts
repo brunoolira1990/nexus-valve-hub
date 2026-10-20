@@ -62,14 +62,20 @@ const emptyForm = (): ProdutoFormState => ({
   densidade: null,
   usa_conversao_dimensional: false,
   controla_composicao_fisica: false,
+  exige_certificado_qualidade: false,
   tipo_composicao_fisica: 'BARRA_M' as 'BARRA_M' | 'PECA_KG',
   preco_custo: 0,
   preco_venda: 0,
   estoque_minimo: 0,
   codigo_completo: '',
   od_mm: null,
+  diametro_interno_mm: null,
   espessura_mm: null,
   comprimento_mm: null,
+  diametro_mostrador_mm: null,
+  escala: '',
+  unidade_escala: '',
+  fluido: '',
   dim_espessura_mm: null,
   dim_largura_mm: null,
   dim_comprimento_mm: null,
@@ -215,6 +221,7 @@ export function useProdutoForm(
           densidade: produto.densidade ?? null,
           usa_conversao_dimensional: !!produto.usa_conversao_dimensional,
           controla_composicao_fisica: !!produto.controla_composicao_fisica,
+          exige_certificado_qualidade: !!produto.exige_certificado_qualidade,
           tipo_composicao_fisica: (produto.tipo_composicao_fisica || produto.tipo_composicao_fisica_efetivo || 'BARRA_M') as
             | 'BARRA_M'
             | 'PECA_KG',
@@ -223,8 +230,13 @@ export function useProdutoForm(
           estoque_minimo: produto.estoque_minimo ?? 0,
           codigo_completo: produto.codigo_completo ?? '',
           od_mm: produto.od_mm ?? null,
+          diametro_interno_mm: produto.diametro_interno_mm ?? null,
           espessura_mm: produto.espessura_mm ?? null,
           comprimento_mm: produto.comprimento_mm ?? null,
+          diametro_mostrador_mm: produto.diametro_mostrador_mm ?? null,
+          escala: produto.escala ?? '',
+          unidade_escala: produto.unidade_escala ?? '',
+          fluido: produto.fluido ?? '',
           dim_espessura_mm: produto.dim_espessura_mm ?? null,
           dim_largura_mm: produto.dim_largura_mm ?? null,
           dim_comprimento_mm: produto.dim_comprimento_mm ?? null,
@@ -304,8 +316,10 @@ export function useProdutoForm(
         polegada_principal_ref_id: form.polegada_principal_ref_id,
         polegada_secundaria_ref_id: form.polegada_secundaria_ref_id,
         od_mm: form.od_mm ?? null,
+        diametro_interno_mm: form.diametro_interno_mm ?? null,
         espessura_mm: form.espessura_mm ?? null,
         comprimento_mm: form.comprimento_mm ?? null,
+        diametro_mostrador_mm: form.diametro_mostrador_mm ?? null,
         dim_espessura_mm: form.dim_espessura_mm ?? null,
         dim_largura_mm: form.dim_largura_mm ?? null,
         dim_comprimento_mm: form.dim_comprimento_mm ?? null,
@@ -316,6 +330,9 @@ export function useProdutoForm(
         dim_espessura_polegada_ref_id: form.dim_espessura_polegada_ref ?? null,
         dimensao_codigo: form.dimensao_codigo || '',
         dimensao_descricao: form.dimensao_descricao || '',
+        escala: form.escala || '',
+        unidade_escala: form.unidade_escala || '',
+        fluido: form.fluido || '',
         dimensoes_json: form.dimensoes_json ?? {},
       });
       if (seq !== previewRequestSeqRef.current) return;
@@ -338,8 +355,10 @@ export function useProdutoForm(
     form.polegada_principal_ref_id,
     form.polegada_secundaria_ref_id,
     form.od_mm,
+    form.diametro_interno_mm,
     form.espessura_mm,
     form.comprimento_mm,
+    form.diametro_mostrador_mm,
     form.dim_espessura_mm,
     form.dim_largura_mm,
     form.dim_comprimento_mm,
@@ -350,6 +369,9 @@ export function useProdutoForm(
     form.dim_espessura_polegada_ref,
     form.dimensao_codigo,
     form.dimensao_descricao,
+    form.escala,
+    form.unidade_escala,
+    form.fluido,
     form.dimensoes_json,
   ]);
 
@@ -366,8 +388,10 @@ export function useProdutoForm(
     form.polegada_principal_ref_id,
     form.polegada_secundaria_ref_id,
     form.od_mm,
+    form.diametro_interno_mm,
     form.espessura_mm,
     form.comprimento_mm,
+    form.diametro_mostrador_mm,
     form.dim_espessura_mm,
     form.dim_largura_mm,
     form.dim_comprimento_mm,
@@ -378,6 +402,9 @@ export function useProdutoForm(
     form.dim_espessura_polegada_ref,
     form.dimensao_codigo,
     form.dimensao_descricao,
+    form.escala,
+    form.unidade_escala,
+    form.fluido,
     form.dimensoes_json,
     refreshPreview,
   ]);
@@ -479,6 +506,9 @@ export function useProdutoForm(
         familiaSelecionada.categoria_produto !== 'MATERIAL_DIMENSIONAL' &&
         !getUsaDimensoesMateriais(familiaSelecionada);
       const faltando: Array<{ campo: CampoFormProdutoInvalido; rotulo: string }> = [];
+      if (mmDoProduto && famReq.exige_diametro_interno_mm && !form.diametro_interno_mm) {
+        faltando.push({ campo: 'diametro_interno_mm', rotulo: 'Diâmetro interno ID (mm)' });
+      }
       if (mmDoProduto && famReq.exige_od_mm && !form.od_mm) {
         faltando.push({ campo: 'od_mm', rotulo: getLabelCampoOdPrincipal(familiaSelecionada) });
       }
@@ -488,10 +518,13 @@ export function useProdutoForm(
       if (mmDoProduto && famReq.exige_comprimento_mm && !form.comprimento_mm) {
         faltando.push({ campo: 'comprimento_mm', rotulo: 'Comprimento (mm)' });
       }
+      if (mmDoProduto && famReq.exige_diametro_mostrador_mm && !form.diametro_mostrador_mm) {
+        faltando.push({ campo: 'diametro_mostrador_mm', rotulo: 'Diâmetro do mostrador (mm)' });
+      }
       if (faltando.length > 0) {
         setErro(
           `A família ${familiaSelecionada.codigo_figura} exige ${faltando.map((f) => f.rotulo).join(', ')}. ` +
-            'Preencha no card "Requisitos da Família/Figura", em "Configuração do Produto".',
+            'Preencha as medidas exigidas na seção "Configuração do Produto".',
         );
         return { sucesso: false, aba: 'configuracao', campo: faltando[0].campo };
       }
@@ -528,6 +561,7 @@ export function useProdutoForm(
       densidade: form.densidade,
       usa_conversao_dimensional: !!form.usa_conversao_dimensional,
       controla_composicao_fisica: !!form.controla_composicao_fisica,
+      exige_certificado_qualidade: !!form.exige_certificado_qualidade,
       tipo_composicao_fisica: form.tipo_composicao_fisica || 'BARRA_M',
       preco_custo: form.preco_custo,
       preco_venda: form.preco_venda,
@@ -542,6 +576,7 @@ export function useProdutoForm(
       body.polegada_principal_ref_id = null;
       body.polegada_secundaria_ref_id = null;
       body.od_mm = null;
+      body.diametro_interno_mm = null;
       body.espessura_mm = null;
       body.comprimento_mm = null;
       body.dim_espessura_mm = null;
@@ -554,6 +589,10 @@ export function useProdutoForm(
       body.dim_espessura_polegada_ref = null;
       body.dimensao_codigo = '';
       body.dimensao_descricao = '';
+      body.diametro_mostrador_mm = null;
+      body.escala = '';
+      body.unidade_escala = '';
+      body.fluido = '';
       body.dimensoes_json = {};
     } else if (form.modo_codigo === 'INTERNO') {
       body.familia_id = form.familia_id;
@@ -562,6 +601,7 @@ export function useProdutoForm(
       body.polegada_principal_ref_id = form.polegada_principal_ref_id;
       body.polegada_secundaria_ref_id = form.polegada_secundaria_ref_id;
       body.od_mm = form.od_mm ?? null;
+      body.diametro_interno_mm = form.diametro_interno_mm ?? null;
       body.espessura_mm = form.espessura_mm ?? null;
       body.comprimento_mm = form.comprimento_mm ?? null;
       body.dim_espessura_mm = form.dim_espessura_mm ?? null;
@@ -574,6 +614,10 @@ export function useProdutoForm(
       body.dim_espessura_polegada_ref = form.dim_espessura_polegada_ref ?? null;
       body.dimensao_codigo = (form.dimensao_codigo || '').toUpperCase();
       body.dimensao_descricao = form.dimensao_descricao || '';
+      body.diametro_mostrador_mm = form.diametro_mostrador_mm ?? null;
+      body.escala = form.escala || '';
+      body.unidade_escala = form.unidade_escala || '';
+      body.fluido = form.fluido || '';
       body.dimensoes_json = form.dimensoes_json ?? {};
     } else {
       body.figura = form.figura;
@@ -582,6 +626,7 @@ export function useProdutoForm(
       body.polegada_principal = form.polegada_principal;
       body.polegada_secundaria = form.polegada_secundaria;
       body.od_mm = null;
+      body.diametro_interno_mm = null;
       body.espessura_mm = null;
       body.comprimento_mm = null;
       body.dim_espessura_mm = null;
@@ -594,6 +639,10 @@ export function useProdutoForm(
       body.dim_espessura_polegada_ref = null;
       body.dimensao_codigo = '';
       body.dimensao_descricao = '';
+      body.diametro_mostrador_mm = null;
+      body.escala = '';
+      body.unidade_escala = '';
+      body.fluido = '';
       body.dimensoes_json = {};
     }
 

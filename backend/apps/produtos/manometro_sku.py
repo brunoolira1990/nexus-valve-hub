@@ -44,6 +44,7 @@ def montar_codigo_base_manometro(produto) -> str:
         polegada_secundaria=produto.polegada_secundaria_ref,
         od_mm=produto.od_mm,
         espessura_mm=produto.espessura_mm,
+        diametro_mostrador_mm=produto.diametro_mostrador_mm,
         dimensoes=produto.dimensoes_json or {},
     )
     return codigo if codigo_interno_valido(codigo) else ''

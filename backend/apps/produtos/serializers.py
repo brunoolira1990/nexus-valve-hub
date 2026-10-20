@@ -678,9 +678,15 @@ class ProdutoSerializer(serializers.ModelSerializer):
             'usa_conversao_dimensional',
             'controla_composicao_fisica',
             'tipo_composicao_fisica',
+            'exige_certificado_qualidade',
             'od_mm',
+            'diametro_interno_mm',
             'espessura_mm',
             'comprimento_mm',
+            'diametro_mostrador_mm',
+            'escala',
+            'unidade_escala',
+            'fluido',
             'dimensoes_json',
             'dim_espessura_mm',
             'dim_largura_mm',
@@ -802,6 +808,8 @@ class ProdutoSerializer(serializers.ModelSerializer):
         dim_esp_pol = pick('dim_espessura_polegada_ref')
         od_mm = pick('od_mm')
         esp_mm = pick('espessura_mm')
+        id_mm = pick('diametro_interno_mm')
+        mostrador_mm = pick('diametro_mostrador_mm')
         td_f = familia.tipo_dimensional
         if (
             td_f in (FamiliaProduto.TipoDimensional.DN_MM_REDUCAO, FamiliaProduto.TipoDimensional.OD_MM_REDUCAO)
@@ -828,6 +836,14 @@ class ProdutoSerializer(serializers.ModelSerializer):
             'dimensao_codigo': pick('dimensao_codigo'),
             'dimensao_descricao': pick('dimensao_descricao'),
         }
+        # Manômetro: escala / unidade_escala / fluido viraram colunas do produto, então a
+        # coluna (mesmo vazia) manda no lugar da chave legada de dimensoes_json.
+        dimensoes_manometro = {
+            **(dimensoes_json if isinstance(dimensoes_json, dict) else {}),
+            'escala': pick('escala'),
+            'unidade_escala': pick('unidade_escala'),
+            'fluido': pick('fluido'),
+        }
         pp_eff = dim_aba_pol if familia.tipo_dimensional == FamiliaProduto.TipoDimensional.CANTONEIRA_POLEGADA else pp
         ps_eff = dim_esp_pol if familia.tipo_dimensional == FamiliaProduto.TipoDimensional.CANTONEIRA_POLEGADA else ps
         comp_resolved = comprimento_mm_efetivo(comprimento_mm=comp_in, familia=familia)
@@ -842,6 +858,8 @@ class ProdutoSerializer(serializers.ModelSerializer):
             od_mm=od_mm,
             espessura_mm=esp_mm,
             comprimento_mm_resolvido=comp_resolved,
+            diametro_interno_mm=id_mm,
+            diametro_mostrador_mm=mostrador_mm,
         )
         if ferr:
             raise serializers.ValidationError({k: [v] for k, v in ferr.items()})
@@ -866,6 +884,10 @@ class ProdutoSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'espessura_mm': 'Esta família não utiliza espessura em mm no produto.'})
         if not req['exige_comprimento_mm'] and pick('comprimento_mm') is not None:
             raise serializers.ValidationError({'comprimento_mm': 'Esta família não utiliza comprimento em mm no produto.'})
+        if not req['exige_diametro_interno_mm'] and id_mm is not None:
+            raise serializers.ValidationError({'diametro_interno_mm': 'Esta família não utiliza diâmetro interno (ID) em mm no produto.'})
+        if not req['exige_diametro_mostrador_mm'] and mostrador_mm is not None:
+            raise serializers.ValidationError({'diametro_mostrador_mm': 'Esta família não utiliza diâmetro do mostrador em mm no produto.'})
 
         expected_types = tipo_medida_esperado_por_campo(familia)
         if pp is not None:
@@ -898,7 +920,10 @@ class ProdutoSerializer(serializers.ModelSerializer):
             polegada_secundaria=ps_eff,
             od_mm=od_mm,
             espessura_mm=esp_mm,
-            dimensoes=dimensoes_json if isinstance(dimensoes_json, dict) else {},
+            comprimento_mm=comp_resolved,
+            diametro_interno_mm=id_mm,
+            diametro_mostrador_mm=mostrador_mm,
+            dimensoes=dimensoes_manometro,
         )
         if not codigo_interno_valido(codigo):
             raise serializers.ValidationError(
@@ -937,7 +962,9 @@ class ProdutoSerializer(serializers.ModelSerializer):
                 od_mm=od_mm,
                 espessura_mm=esp_mm,
                 comprimento_mm=comp_resolved,
-                dimensoes=dimensoes_json if isinstance(dimensoes_json, dict) else {},
+                diametro_interno_mm=id_mm,
+                diametro_mostrador_mm=mostrador_mm,
+                dimensoes=dimensoes_manometro,
             )
             if sug:
                 attrs['descricao'] = sug
@@ -997,6 +1024,8 @@ class ProdutoSerializer(serializers.ModelSerializer):
             attrs['usa_conversao_dimensional'] = True
         if not pick('controla_composicao_fisica') and familia.controla_composicao_fisica:
             attrs['controla_composicao_fisica'] = True
+        if not pick('exige_certificado_qualidade') and familia.exige_certificado_qualidade:
+            attrs['exige_certificado_qualidade'] = True
 
         # Sempre persiste descrição comercial sem acento (merge payload + instância + sugestão acima).
         eff_desc = (attrs.get('descricao') or '').strip()
@@ -1103,7 +1132,7 @@ class ProdutoSerializer(serializers.ModelSerializer):
         data['schedule_ref_id'] = instance.schedule_ref_id
         data['polegada_principal_ref_id'] = instance.polegada_principal_ref_id
         data['polegada_secundaria_ref_id'] = instance.polegada_secundaria_ref_id
-        for k in ('od_mm', 'espessura_mm', 'comprimento_mm'):
+        for k in ('od_mm', 'diametro_interno_mm', 'espessura_mm', 'comprimento_mm', 'diametro_mostrador_mm'):
             if k in data and data[k] is not None:
                 data[k] = float(Decimal(str(data[k])))
         ncm_efetivo = instance.get_ncm_efetivo()
@@ -1132,6 +1161,7 @@ class ProdutoSerializer(serializers.ModelSerializer):
         data['unidades_compra_permitidas_efetivas'] = instance.get_unidades_compra_permitidas_efetivas()
         data['usa_conversao_dimensional_efetivo'] = instance.get_usa_conversao_dimensional_efetivo()
         data['controla_composicao_fisica_efetivo'] = instance.get_controla_composicao_fisica_efetivo()
+        data['exige_certificado_qualidade_efetivo'] = instance.get_exige_certificado_qualidade_efetivo()
         data['tipo_composicao_fisica_efetivo'] = instance.get_tipo_composicao_fisica_efetivo()
         data['unidade_base_composicao_fisica'] = instance.get_unidade_base_composicao_fisica()
         data['alertas'] = (
@@ -1175,6 +1205,8 @@ class PreviewCodigoSerializer(serializers.Serializer):
     od_mm = serializers.DecimalField(max_digits=10, decimal_places=3, allow_null=True, required=False)
     espessura_mm = serializers.DecimalField(max_digits=10, decimal_places=3, allow_null=True, required=False)
     comprimento_mm = serializers.DecimalField(max_digits=14, decimal_places=3, allow_null=True, required=False)
+    diametro_interno_mm = serializers.DecimalField(max_digits=10, decimal_places=3, allow_null=True, required=False)
+    diametro_mostrador_mm = serializers.DecimalField(max_digits=10, decimal_places=3, allow_null=True, required=False)
     dimensoes_json = serializers.JSONField(required=False)
     dim_espessura_mm = serializers.DecimalField(max_digits=10, decimal_places=3, allow_null=True, required=False)
     dim_largura_mm = serializers.DecimalField(max_digits=10, decimal_places=3, allow_null=True, required=False)
@@ -1186,6 +1218,9 @@ class PreviewCodigoSerializer(serializers.Serializer):
     dim_espessura_polegada_ref_id = serializers.PrimaryKeyRelatedField(queryset=Polegada.objects.filter(tipo_medida=Polegada.TipoMedida.OD), allow_null=True, required=False)
     dimensao_codigo = serializers.CharField(max_length=64, allow_blank=True, required=False)
     dimensao_descricao = serializers.CharField(max_length=256, allow_blank=True, required=False)
+    escala = serializers.CharField(max_length=32, allow_blank=True, required=False)
+    unidade_escala = serializers.CharField(max_length=16, allow_blank=True, required=False)
+    fluido = serializers.CharField(max_length=32, allow_blank=True, required=False)
 
     def validate(self, attrs):
         f: FamiliaProduto = attrs['familia_id']
@@ -1204,6 +1239,8 @@ class PreviewCodigoSerializer(serializers.Serializer):
         dim_esp_pol = attrs.get('dim_espessura_polegada_ref_id')
         od_mm = attrs.get('od_mm')
         esp_mm = attrs.get('espessura_mm')
+        id_mm = attrs.get('diametro_interno_mm')
+        mostrador_mm = attrs.get('diametro_mostrador_mm')
         comp_in = attrs.get('comprimento_mm')
         dimensoes_json = attrs.get('dimensoes_json') or {}
         dim_values = {
@@ -1219,6 +1256,13 @@ class PreviewCodigoSerializer(serializers.Serializer):
             'dimensao_codigo': attrs.get('dimensao_codigo'),
             'dimensao_descricao': attrs.get('dimensao_descricao'),
         }
+        # Manômetro: as colunas do produto mandam no lugar da chave legada de dimensoes_json.
+        dimensoes_manometro = {
+            **(dimensoes_json if isinstance(dimensoes_json, dict) else {}),
+            'escala': attrs.get('escala'),
+            'unidade_escala': attrs.get('unidade_escala'),
+            'fluido': attrs.get('fluido'),
+        }
         pp_eff = dim_aba_pol if f.tipo_dimensional == FamiliaProduto.TipoDimensional.CANTONEIRA_POLEGADA else pp
         ps_eff = dim_esp_pol if f.tipo_dimensional == FamiliaProduto.TipoDimensional.CANTONEIRA_POLEGADA else ps
         comp_resolved = comprimento_mm_efetivo(comprimento_mm=comp_in, familia=f)
@@ -1232,6 +1276,8 @@ class PreviewCodigoSerializer(serializers.Serializer):
             od_mm=od_mm,
             espessura_mm=esp_mm,
             comprimento_mm_resolvido=comp_resolved,
+            diametro_interno_mm=id_mm,
+            diametro_mostrador_mm=mostrador_mm,
         )
         if ferr:
             raise serializers.ValidationError({k: [v] for k, v in ferr.items()})
@@ -1253,6 +1299,10 @@ class PreviewCodigoSerializer(serializers.Serializer):
             raise serializers.ValidationError({'espessura_mm': 'Espessura em mm não aplicável.'})
         if not req['exige_comprimento_mm'] and comp_in is not None:
             raise serializers.ValidationError({'comprimento_mm': 'Comprimento em mm não aplicável.'})
+        if not req['exige_diametro_interno_mm'] and id_mm is not None:
+            raise serializers.ValidationError({'diametro_interno_mm': 'Diâmetro interno (ID) não aplicável.'})
+        if not req['exige_diametro_mostrador_mm'] and mostrador_mm is not None:
+            raise serializers.ValidationError({'diametro_mostrador_mm': 'Diâmetro do mostrador não aplicável.'})
 
         expected_types = tipo_medida_esperado_por_campo(f)
         if pp is not None:
@@ -1285,7 +1335,10 @@ class PreviewCodigoSerializer(serializers.Serializer):
             polegada_secundaria=ps_eff,
             od_mm=od_mm,
             espessura_mm=esp_mm,
-            dimensoes=dimensoes_json if isinstance(dimensoes_json, dict) else {},
+            comprimento_mm=comp_resolved,
+            diametro_interno_mm=id_mm,
+            diametro_mostrador_mm=mostrador_mm,
+            dimensoes=dimensoes_manometro,
         )
         desc_kwargs = dict(
             rosca=rosca,
@@ -1295,7 +1348,9 @@ class PreviewCodigoSerializer(serializers.Serializer):
             od_mm=od_mm,
             espessura_mm=esp_mm,
             comprimento_mm=comp_resolved,
-            dimensoes=dimensoes_json if isinstance(dimensoes_json, dict) else {},
+            diametro_interno_mm=id_mm,
+            diametro_mostrador_mm=mostrador_mm,
+            dimensoes=dimensoes_manometro,
         )
         if not codigo_interno_valido(codigo):
             attrs['_codigo'] = ''
