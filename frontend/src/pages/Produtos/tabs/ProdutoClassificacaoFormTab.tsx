@@ -42,6 +42,7 @@ import {
   getAtributosTecnicosFamilia,
 } from '../lib/familiaDerivations';
 import { labelPolegadaPrincipal, labelPolegadaSecundaria } from '@/lib/familiaRegra';
+import { campoId, classeErroCampo, type CampoFormProdutoInvalido } from '../lib/erroCampo';
 
 /** Asterisco de campo obrigatório (design system C: span text-destructive). */
 function Obrigatorio() {
@@ -112,6 +113,8 @@ interface ProdutoClassificacaoFormTabProps {
   herdouFamilia?: CampoHerancaVisivel[];
   /** Botão "Limpar" da badge: solta o campo da família para virar override. */
   onLimparHerdado?: (campo: CampoHerancaVisivel) => void;
+  /** Campo apontado pela validação do salvar(): recebe o anel e a âncora de rolagem. */
+  campoErro?: CampoFormProdutoInvalido | null;
 }
 
 export function ProdutoClassificacaoFormTab({
@@ -126,6 +129,7 @@ export function ProdutoClassificacaoFormTab({
   carregandoMateriais = false,
   herdouFamilia = [],
   onLimparHerdado,
+  campoErro = null,
 }: ProdutoClassificacaoFormTabProps) {
   // Rótulo humano de cada campo herdável (usado na badge e no resumo).
   const ROTULO_HERANCA: Record<CampoHerancaVisivel, string> = {
@@ -275,7 +279,7 @@ export function ProdutoClassificacaoFormTab({
             </p>
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            <div>
+            <div id={campoId('material_ref')} className={classeErroCampo(campoErro, 'material_ref')}>
               {rotuloLinha('Material', 'material_ref', form.material_ref)}
               <Select
                 value={form.material_ref?.toString() ?? ''}
@@ -488,7 +492,7 @@ export function ProdutoClassificacaoFormTab({
               )}
 
               {mmDoProdutoVisiveis && famReq.exige_od_mm && (
-                <div>
+                <div id={campoId('od_mm')} className={classeErroCampo(campoErro, 'od_mm')}>
                   <CampoLabel>
                     {labelOd}
                     <Obrigatorio />
@@ -505,7 +509,7 @@ export function ProdutoClassificacaoFormTab({
               )}
 
               {mmDoProdutoVisiveis && famReq.exige_espessura_mm && (
-                <div>
+                <div id={campoId('espessura_mm')} className={classeErroCampo(campoErro, 'espessura_mm')}>
                   <CampoLabel>
                     {labelEsp}
                     <Obrigatorio />
@@ -522,7 +526,7 @@ export function ProdutoClassificacaoFormTab({
               )}
 
               {mmDoProdutoVisiveis && famReq.exige_comprimento_mm && (
-                <div>
+                <div id={campoId('comprimento_mm')} className={classeErroCampo(campoErro, 'comprimento_mm')}>
                   <CampoLabel>Comprimento (mm)</CampoLabel>
                   <Input
                     type="text"

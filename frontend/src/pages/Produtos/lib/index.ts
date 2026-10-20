@@ -6,6 +6,7 @@
 export * from './codigoPreview';
 export * from './herancaFamilia';
 export * from './familiaDerivations';
+export * from './erroCampo';
 
 // Re-export de conveniência (fonte da verdade permanece em @/lib/familiaRegra)
 export {

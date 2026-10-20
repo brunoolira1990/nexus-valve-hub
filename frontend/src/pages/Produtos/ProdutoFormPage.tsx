@@ -4,7 +4,6 @@ import { toast } from 'sonner';
 import { Loader2, Save, X } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { NexusButton } from '@/components/nexus';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useProdutoForm } from './hooks/useProdutoForm';
 import { ProdutoGeralFormTab } from './tabs/ProdutoGeralFormTab';
 import { ProdutoClassificacaoFormTab } from './tabs/ProdutoClassificacaoFormTab';
@@ -16,7 +15,17 @@ import { familiasProdutoService, produtosService } from '@/services/api/produtos
 import { materiaisService } from '@/services/api/materiais';
 import type { FamiliaProduto, Produto } from '@/types';
 import type { Material } from '@/types/material';
-import type { ProdutoFichaTab } from './types';
+import { campoId, type CampoFormProdutoInvalido } from './lib/erroCampo';
+
+/** Seções do painel único. O `id` é a âncora usada pelo menu lateral. */
+const SECOES: ReadonlyArray<{ id: string; rotulo: string; edicao?: boolean }> = [
+  { id: 'secao-geral', rotulo: 'Identificação' },
+  { id: 'secao-classificacao', rotulo: 'Classificação industrial' },
+  { id: 'secao-fiscal', rotulo: 'Fiscal' },
+  { id: 'secao-painel', rotulo: 'Painel operacional', edicao: true },
+  { id: 'secao-rastreabilidade', rotulo: 'Rastreabilidade', edicao: true },
+  { id: 'secao-historico', rotulo: 'Histórico', edicao: true },
+];
 
 const ProdutoFormPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -111,9 +120,8 @@ const ProdutoFormPage = () => {
   }, materiais);
 
   const [saveError, setSaveError] = useState<string | null>(null);
-  // Aba controlada: quando a validação de salvar() aponta o campo pendente,
-  // a página salta para a aba onde ele está.
-  const [abaAtiva, setAbaAtiva] = useState<ProdutoFichaTab>('geral');
+  // Campo apontado pela validação do salvar(): a página rola até ele e o destaca.
+  const [campoErro, setCampoErro] = useState<CampoFormProdutoInvalido | null>(null);
 
   // Pré-preenchimento vindo de outra tela (ex.: proposta → "Cadastrar novo produto").
   const descricaoUrl = searchParams.get('descricao') || '';
@@ -125,7 +133,12 @@ const ProdutoFormPage = () => {
   const handleSubmit = async () => {
     setSaveError(null);
     const result = await salvar();
-    if (result.aba) setAbaAtiva(result.aba);
+    setCampoErro(result.campo ?? null);
+    if (result.campo) {
+      document
+        .getElementById(campoId(result.campo))
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
     if (result.sucesso && result.id) {
       toast.success(isEdit ? 'Produto atualizado com sucesso.' : 'Produto criado com sucesso.');
       navigate(`/produtos/${result.id}`);
@@ -204,85 +217,93 @@ const ProdutoFormPage = () => {
         </div>
       )}
 
-      <Tabs
-        value={abaAtiva}
-        onValueChange={(v) => setAbaAtiva(v as ProdutoFichaTab)}
-        className="w-full"
-      >
-        <TabsList className="flex flex-wrap gap-1 w-full justify-start">
-          <TabsTrigger value="geral">Dados gerais</TabsTrigger>
-          <TabsTrigger value="classificacao">Classificação industrial</TabsTrigger>
-          <TabsTrigger value="fiscal">Fiscal</TabsTrigger>
+      {/* Painel único: as três seções antes separadas em abas vivem agora na mesma
+          rolagem, porque a Família dita os campos técnicos e o operador precisa ver a
+          herança junto de onde ela é selecionada. */}
+      <div className="flex items-start gap-6">
+        <nav
+          aria-label="Seções do cadastro"
+          className="sticky top-4 hidden w-52 shrink-0 flex-col gap-1 lg:flex"
+        >
+          {SECOES.filter((s) => !s.edicao || isEdit).map((s) => (
+            <a
+              key={s.id}
+              href={`#${s.id}`}
+              onClick={(e) => {
+                e.preventDefault();
+                document.getElementById(s.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              className="rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              {s.rotulo}
+            </a>
+          ))}
+        </nav>
+
+        <div className="min-w-0 flex-1 space-y-6">
+          <section id="secao-geral" className="space-y-6 scroll-mt-20">
+            <ProdutoGeralFormTab
+              form={form}
+              setForm={setForm}
+              preview={preview}
+              familiaSelecionada={familiaSelecionada}
+              duplicateCodigo={duplicateCodigo}
+              setModoCodigo={setModoCodigo}
+              onNovaFamilia={handleNovaFamilia}
+              editingCodigo={editing?.codigo_completo ?? null}
+              campoErro={campoErro}
+            />
+          </section>
+
+          <section id="secao-classificacao" className="space-y-6 scroll-mt-20">
+            <ProdutoClassificacaoFormTab
+              form={form}
+              setForm={setForm}
+              preview={preview}
+              familiaSelecionada={familiaSelecionada}
+              famReq={famReq}
+              editing={editing}
+              produtosOpcoes={produtosOpcoes}
+              materiais={materiais}
+              carregandoMateriais={carregandoMateriais}
+              herdouFamilia={herdouFamilia}
+              onLimparHerdado={limparHerdadoCampo}
+              campoErro={campoErro}
+            />
+          </section>
+
+          <section id="secao-fiscal" className="space-y-6 scroll-mt-20">
+            <ProdutoFiscalFormTab
+              form={form}
+              setForm={setForm}
+              preview={preview}
+              familiaSelecionada={familiaSelecionada}
+            />
+          </section>
+
           {isEdit && (
             <>
-              <TabsTrigger value="painel">Painel operacional</TabsTrigger>
-              <TabsTrigger value="rastreabilidade">Rastreabilidade</TabsTrigger>
-              <TabsTrigger value="historico">Histórico</TabsTrigger>
+              <section id="secao-painel" className="scroll-mt-20">
+                <ProdutoPainelOperacionalTab produtoId={produtoId} active={true} />
+              </section>
+
+              <section id="secao-rastreabilidade" className="scroll-mt-20">
+                <ProdutoRastreabilidadeTab produtoId={produtoId} active={true} />
+              </section>
+
+              <section id="secao-historico" className="scroll-mt-20">
+                <HistoricoAlteracoesPanel
+                  appLabel="cadastros"
+                  modelName="produto"
+                  objectId={produtoId}
+                  active={true}
+                  enabled={true}
+                />
+              </section>
             </>
           )}
-        </TabsList>
-
-        <TabsContent value="geral" className="mt-4">
-          <ProdutoGeralFormTab
-            form={form}
-            setForm={setForm}
-            preview={preview}
-            familiaSelecionada={familiaSelecionada}
-            erro={showSaveError ? saveError || erro || undefined : undefined}
-            duplicateCodigo={duplicateCodigo}
-            setModoCodigo={setModoCodigo}
-            onNovaFamilia={handleNovaFamilia}
-            editingCodigo={editing?.codigo_completo ?? null}
-          />
-        </TabsContent>
-
-        <TabsContent value="classificacao" className="mt-4">
-          <ProdutoClassificacaoFormTab
-            form={form}
-            setForm={setForm}
-            preview={preview}
-            familiaSelecionada={familiaSelecionada}
-            famReq={famReq}
-            editing={editing}
-            produtosOpcoes={produtosOpcoes}
-            materiais={materiais}
-            carregandoMateriais={carregandoMateriais}
-            herdouFamilia={herdouFamilia}
-            onLimparHerdado={limparHerdadoCampo}
-          />
-        </TabsContent>
-
-        <TabsContent value="fiscal" className="mt-4">
-          <ProdutoFiscalFormTab
-            form={form}
-            setForm={setForm}
-            preview={preview}
-            familiaSelecionada={familiaSelecionada}
-          />
-        </TabsContent>
-
-        {isEdit && (
-          <>
-            <TabsContent value="painel" className="mt-4">
-              <ProdutoPainelOperacionalTab produtoId={produtoId} active={true} />
-            </TabsContent>
-
-            <TabsContent value="rastreabilidade" className="mt-4">
-              <ProdutoRastreabilidadeTab produtoId={produtoId} active={true} />
-            </TabsContent>
-
-            <TabsContent value="historico" className="mt-4">
-              <HistoricoAlteracoesPanel
-                appLabel="cadastros"
-                modelName="produto"
-                objectId={produtoId}
-                active={true}
-                enabled={true}
-              />
-            </TabsContent>
-          </>
-        )}
-      </Tabs>
+        </div>
+      </div>
     </div>
   );
 };

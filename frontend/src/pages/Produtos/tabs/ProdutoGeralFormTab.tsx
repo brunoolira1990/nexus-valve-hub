@@ -18,6 +18,7 @@ import type { FamiliaProduto } from '@/types';
 import type { ProdutoFormState, ModoCodigoProduto } from '../types';
 import { familiasProdutoService } from '@/services/api/produtos';
 import { labelsCamposObrigatoriosProduto } from '@/lib/familiaRegra';
+import { campoId, classeErroCampo, type CampoFormProdutoInvalido } from '../lib/erroCampo';
 
 /** Asterisco de campo obrigatório (design system C: span text-destructive). */
 function Obrigatorio() {
@@ -39,13 +40,14 @@ interface ProdutoGeralFormTabProps {
   setForm: (updater: (prev: ProdutoFormState) => ProdutoFormState) => void;
   preview: { codigo?: string; descricao?: string; ncm?: string; mensagem?: string };
   familiaSelecionada: FamiliaProduto | null;
-  erro?: string | null;
   duplicateCodigo?: string | null;
   setModoCodigo: (modo: ModoCodigoProduto) => void;
   /** Abre o fluxo de criação rápida de família (orquestrado na página container). */
   onNovaFamilia?: () => void;
   /** Código efetivo do produto em edição — fallback read-only quando o preview está vazio. */
   editingCodigo?: string | null;
+  /** Campo apontado pela validação do salvar(): recebe o anel e a âncora de rolagem. */
+  campoErro?: CampoFormProdutoInvalido | null;
 }
 
 export function ProdutoGeralFormTab({
@@ -53,11 +55,11 @@ export function ProdutoGeralFormTab({
   setForm,
   preview,
   familiaSelecionada,
-  erro,
   duplicateCodigo,
   setModoCodigo,
   onNovaFamilia,
   editingCodigo,
+  campoErro = null,
 }: ProdutoGeralFormTabProps) {
   const modo = (form.modo_codigo || 'LEGADO') as ModoCodigoProduto;
   // Obrigatórios derivados da família (fonte única: @/lib/familiaRegra)
@@ -79,9 +81,6 @@ export function ProdutoGeralFormTab({
 
   return (
     <div className="space-y-6">
-      {/* Erro global */}
-      {erro && <div className="text-sm text-destructive">{erro}</div>}
-
       {/* ===== Identificação ===== */}
       <Card>
         <CardHeader className="pb-3">
@@ -122,7 +121,7 @@ export function ProdutoGeralFormTab({
           {/* Família (apenas modo INTERNO — vem antes do código para que o código
               derivado da família seja gerado após selecioná-la) */}
           {modo === 'INTERNO' && (
-            <div>
+            <div id={campoId('familia_id')} className={classeErroCampo(campoErro, 'familia_id')}>
               <div className="flex items-center justify-between gap-2 mb-1.5">
                 <Label className="text-sm font-medium">
                   Família / figura
@@ -272,7 +271,7 @@ export function ProdutoGeralFormTab({
           )}
 
           {/* Descrição */}
-          <div>
+          <div id={campoId('descricao')} className={classeErroCampo(campoErro, 'descricao')}>
             <CampoLabel>
               Descrição
               <Obrigatorio />
