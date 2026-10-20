@@ -45,11 +45,12 @@ import {
   labelsCamposObrigatoriosProduto,
   normalizarTipoRegra,
   orientacaoDescricaoBaseFamilia,
+  OPCOES_CATEGORIA_FAMILIA,
+  OPCOES_TIPO_REGRA,
   requisitosMedidasPermitidasModal,
-  TIPOS_DIMENSIONAIS_MATERIAL_DIMENSIONAL,
-  TIPOS_DIMENSIONAIS_PRODUTO_TECNICO,
   sugerirConfiguracaoFamilia,
   sugerirTipoRegraPorDimensional,
+  tiposDimensionaisPorCategoria,
   tokensDescricaoTecnicaConfigurados,
 } from '@/lib/familiaRegra';
 import { normalizarDescricaoProduto } from '@/lib/descricaoProduto';
@@ -186,68 +187,6 @@ function genCodigoLegadoPreview(f: FormState): string {
   if (inch) parts.push(inch);
   return parts.join('.');
 }
-
-const REGRAS: { value: TipoRegraCodigo; label: string }[] = [
-  { value: 'BASE_POLEGADA', label: '1) Base + polegada — {figura}.{id principal}' },
-  { value: 'BASE_ROSCA_POLEGADA', label: '2) Base + rosca + polegada — {figura}{rosca}.{id principal}' },
-  { value: 'BASE_DUAS_POLEGADAS', label: '3) Base + duas polegadas — {figura}.{id1}{id2}' },
-  { value: 'BASE_ROSCA_DUAS_POLEGADAS', label: '4) Base + rosca + duas polegadas' },
-  { value: 'BASE_SCHEDULE_POLEGADA', label: '5) Base + schedule + polegada — {figura}{schedule}.{id principal}' },
-  { value: 'BASE_SCHEDULE_DUAS_POLEGADAS', label: '6) Base + schedule + duas polegadas' },
-  { value: 'BASE_ROSCA_SCHEDULE_POLEGADA', label: '7) Base + rosca + schedule + polegada' },
-  { value: 'BASE_ROSCA_SCHEDULE_DUAS_POLEGADAS', label: '8) Base + rosca + schedule + duas polegadas' },
-  { value: 'UNDERSCORE_POLEGADA', label: '9) Underscore + ID 3 dígitos — {figura}_{id}' },
-  { value: 'MANUAL_FABRICANTE', label: '10) Manual/fabricante (sem código por família)' },
-  { value: 'BASE_OD_MM_ESPESSURA', label: '11) Base + OD mm + espessura mm — {figura}.{od}{esp} (ex.: 6119OD.1002)' },
-  { value: 'BASE_OD_POLEGADA_ESPESSURA', label: '19) Base + OD polegada + espessura mm — {figura}OD.{id}{esp} (ex.: 6119OD.040150)' },
-  { value: 'BASE_ESPIGAO_FLANGE_NPS', label: '12) Base + espigão NPS + flange NPS ({figura}.E{id}F{id})' },
-  { value: 'BASE_DN_MM', label: '13) Base + DN/mm — {figura}.{mm 3 dígitos}' },
-  { value: 'BASE_DN_MM_REDUCAO', label: '14) Base + DN maior×menor — {figura}.{mm}{mm}' },
-  { value: 'BASE_BITOLA_POLEGADA', label: '15) Base + bitola — {figura}.{código polegada}' },
-  { value: 'BASE_OD_MM', label: '16) Base + OD mm (PU) — {figura}.{mm 3 dígitos}' },
-  { value: 'BASE_OD_MM_REDUCAO', label: '17) Base + OD maior×menor — {figura}.{mm}{mm}' },
-  { value: 'BASE_OD_MM_X_ROSCA', label: '18) Base + OD mm + rosca/bitola — {figura}.{mm}{sufixo}' },
-];
-
-const CATEGORIAS_FAMILIA = [
-  { value: 'PRODUTO_TECNICO', label: 'Produto técnico' },
-  { value: 'MATERIAL_DIMENSIONAL', label: 'Material dimensional' },
-  { value: 'MANUAL_FABRICANTE', label: 'Produto manual/fabricante' },
-] as const;
-
-const TIPOS_DIMENSIONAIS: { value: TipoDimensional; label: string }[] = [
-  { value: 'SIMPLES', label: 'Simples — só a regra de código define campos' },
-  { value: 'NPS', label: 'NPS — polegada nominal' },
-  { value: 'NPS_SCHEDULE', label: 'NPS + Schedule (SCH)' },
-  { value: 'REDUCAO_NPS', label: 'Redução NPS + Schedule' },
-  { value: 'NPS_X_ROSCA', label: 'NPS x Rosca' },
-  { value: 'OD_POLEGADA', label: 'OD em polegada (não é NPS/SCH)' },
-  { value: 'OD_POLEGADA_X_ESPESSURA', label: 'OD em polegada + espessura mm' },
-  { value: 'OD_POLEGADA_X_ROSCA', label: 'OD em polegada x Rosca' },
-  { value: 'DN_MM', label: 'DN/mm (PVC/CPVC/PPR — medida única)' },
-  { value: 'DN_MM_REDUCAO', label: 'DN/mm × DN/mm (redução)' },
-  { value: 'BITOLA_POLEGADA', label: 'Bitola em polegada (condulete)' },
-  { value: 'OD_MM', label: 'OD em mm (PU / parede de tubo conforme regra)' },
-  { value: 'OD_MM_REDUCAO', label: 'OD mm × OD mm (PU redução)' },
-  { value: 'OD_MM_X_ROSCA', label: 'OD mm × rosca/bitola (PU push-in)' },
-  { value: 'OD_MM_X_ESPESSURA', label: 'OD mm + espessura mm' },
-  { value: 'OD_MM_X_ESPESSURA_X_COMPRIMENTO', label: 'OD mm + espessura + comprimento' },
-  { value: 'CHAPA_MM', label: 'Chapa mm (espessura x largura x comprimento)' },
-  { value: 'CHAPA_FURO_MM', label: 'Chapa furo mm (furo x espessura x largura x comprimento)' },
-  { value: 'BARRA_CHATA_MM', label: 'Barra chata mm (largura x espessura [x comprimento])' },
-  { value: 'METALON_MM', label: 'Metalon mm (altura x largura x espessura)' },
-  { value: 'CANTONEIRA_MM', label: 'Cantoneira mm (aba x espessura [x comprimento])' },
-  { value: 'CANTONEIRA_POLEGADA', label: 'Cantoneira polegada (aba x espessura)' },
-  { value: 'DIMENSIONAL_LIVRE_CONTROLADO', label: 'Dimensional livre controlado' },
-  { value: 'ROSCA', label: 'Rosca (orientação)' },
-  { value: 'ROSCA_X_ROSCA', label: 'Rosca x Rosca (orientação)' },
-  { value: 'FLANGE', label: 'Flange (orientação)' },
-  { value: 'ESPIGAO_X_FLANGE', label: 'Espigão x Flange (duas NPS, texto flange na descrição base)' },
-  { value: 'VALVULA', label: 'Válvula (orientação)' },
-  { value: 'MANOMETRO', label: 'Manômetro (descrição técnica)' },
-  { value: 'MANUAL', label: 'Dimensional manual' },
-  { value: 'LEGADO', label: 'Legado / misto' },
-];
 
 const emptyFamiliaQuick = () => ({
   codigo_figura: '',
@@ -533,7 +472,7 @@ const Produtos = () => {
   }, [familias, famSearch]);
 
   const regraLabelMap = useMemo(
-    () => REGRAS.reduce<Record<string, string>>((acc, r) => ({ ...acc, [r.value]: r.label }), {}),
+    () => OPCOES_TIPO_REGRA.reduce<Record<string, string>>((acc, r) => ({ ...acc, [r.value]: r.label }), {}),
     [],
   );
 
@@ -1407,13 +1346,10 @@ const Produtos = () => {
   }, [form.tipo_fisico, familiaSel?.tipo_fisico]);
   const familiaCategoria = (familiaSel?.categoria_produto || 'PRODUTO_TECNICO') as 'PRODUTO_TECNICO' | 'MATERIAL_DIMENSIONAL' | 'MANUAL_FABRICANTE';
   const familiaEhMaterialDimensional = familiaCategoria === 'MATERIAL_DIMENSIONAL';
-  const tiposDimensionaisPorCategoria = useMemo(() => {
-    if (famQuick.categoria_produto === 'MANUAL_FABRICANTE') return [{ value: 'MANUAL' as TipoDimensional, label: 'Manual/fabricante' }];
-    if (famQuick.categoria_produto === 'MATERIAL_DIMENSIONAL') {
-      return TIPOS_DIMENSIONAIS.filter((x) => TIPOS_DIMENSIONAIS_MATERIAL_DIMENSIONAL.includes(x.value));
-    }
-    return TIPOS_DIMENSIONAIS.filter((x) => TIPOS_DIMENSIONAIS_PRODUTO_TECNICO.includes(x.value));
-  }, [famQuick.categoria_produto]);
+  const opcoesTipoDimensionalFamQuick = useMemo(
+    () => tiposDimensionaisPorCategoria(famQuick.categoria_produto),
+    [famQuick.categoria_produto],
+  );
 
   const herancaConv = useMemo(() => {
     if (!familiaSel) return undefined;
@@ -2691,7 +2627,7 @@ const Produtos = () => {
                   });
                 }}
               >
-                {CATEGORIAS_FAMILIA.map((c) => (
+                {OPCOES_CATEGORIA_FAMILIA.map((c) => (
                   <option key={c.value} value={c.value}>{c.label}</option>
                 ))}
               </select>
@@ -2708,7 +2644,7 @@ const Produtos = () => {
                   setFamQuick((q) => ({ ...q, tipo_dimensional: td, tipo_regra_codigo: sugerirTipoRegraPorDimensional(td) }));
                 }}
               >
-                {tiposDimensionaisPorCategoria.map((r) => (
+                {opcoesTipoDimensionalFamQuick.map((r) => (
                   <option key={r.value} value={r.value}>
                     {r.label}
                   </option>
@@ -2730,7 +2666,7 @@ const Produtos = () => {
                 setFamQuick((q) => ({ ...q, tipo_regra_codigo: e.target.value as TipoRegraCodigo }));
               }}
             >
-              {REGRAS.map((r) => (
+              {OPCOES_TIPO_REGRA.map((r) => (
                 <option key={r.value} value={r.value}>
                   {r.label}
                 </option>
@@ -2762,7 +2698,7 @@ const Produtos = () => {
           </div>
           <div className="rounded-md border border-dashed border-border bg-background p-3 text-xs text-muted-foreground mt-3">
             <p className="font-semibold text-foreground mb-1">Prévia de cadastro da família</p>
-            <p>Categoria: {CATEGORIAS_FAMILIA.find((c) => c.value === famQuick.categoria_produto)?.label}</p>
+            <p>Categoria: {OPCOES_CATEGORIA_FAMILIA.find((c) => c.value === famQuick.categoria_produto)?.label}</p>
             <p>Tipo: {famQuick.tipo_dimensional}</p>
             <p>Produto vai pedir: {labelsCamposObrigatorios(famQuickFlags, famQuick.tipo_dimensional).join(' · ')}</p>
             <p className="mt-1">

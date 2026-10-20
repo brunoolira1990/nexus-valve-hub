@@ -200,17 +200,28 @@ class ScheduleEspessuraViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(rows, many=True).data)
 
 
-class FamiliaProdutoPolegadaPermitidaViewSet(viewsets.ModelViewSet):
+class FiltroPorFamiliaMixin:
+    """Filtro `?familia=<id>` para as tabelas de domínio da família (sem filterset declarado)."""
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        familia = (self.request.query_params.get('familia') or '').strip()
+        if familia.isdigit():
+            qs = qs.filter(familia_id=int(familia))
+        return qs
+
+
+class FamiliaProdutoPolegadaPermitidaViewSet(FiltroPorFamiliaMixin, viewsets.ModelViewSet):
     queryset = FamiliaProdutoPolegadaPermitida.objects.select_related('familia', 'polegada').all()
     serializer_class = FamiliaProdutoPolegadaPermitidaSerializer
 
 
-class FamiliaProdutoRoscaConexaoPermitidaViewSet(viewsets.ModelViewSet):
+class FamiliaProdutoRoscaConexaoPermitidaViewSet(FiltroPorFamiliaMixin, viewsets.ModelViewSet):
     queryset = FamiliaProdutoRoscaConexaoPermitida.objects.select_related('familia', 'rosca_conexao').all()
     serializer_class = FamiliaProdutoRoscaConexaoPermitidaSerializer
 
 
-class FamiliaProdutoSchedulePermitidoViewSet(viewsets.ModelViewSet):
+class FamiliaProdutoSchedulePermitidoViewSet(FiltroPorFamiliaMixin, viewsets.ModelViewSet):
     queryset = FamiliaProdutoSchedulePermitido.objects.select_related('familia', 'schedule').all()
     serializer_class = FamiliaProdutoSchedulePermitidoSerializer
 

@@ -199,16 +199,56 @@ export const ncmApiService = {
   getById: async (id: number) => (await api.get<NcmItem>(`${ncmPath}${id}/`)).data,
 };
 
+export type FamiliaPolegadaPermitidaRow = {
+  id: number;
+  familia: number;
+  polegada: number;
+  tipo: 'principal' | 'secundaria' | 'ambas';
+  ordem?: number | null;
+  ativo: boolean;
+};
+
+export type FamiliaRoscaPermitidaRow = {
+  id: number;
+  familia: number;
+  rosca_conexao: number;
+  padrao_da_familia: boolean;
+  ativo: boolean;
+};
+
+export type FamiliaSchedulePermitidoRow = {
+  id: number;
+  familia: number;
+  schedule: number;
+  padrao_da_familia: boolean;
+  ativo: boolean;
+};
+
 export const familiaVariacoesService = {
+  listPolegadasPermitidas: async (familia: number) =>
+    (await api.get<FamiliaPolegadaPermitidaRow[]>(`${famPolPath}`, { params: { familia } })).data,
+  listRoscasPermitidas: async (familia: number) =>
+    (await api.get<FamiliaRoscaPermitidaRow[]>(`${famRoscaPath}`, { params: { familia } })).data,
+  listSchedulesPermitidos: async (familia: number) =>
+    (await api.get<FamiliaSchedulePermitidoRow[]>(`${famSchedPath}`, { params: { familia } })).data,
   addPolegadaPermitida: async (payload: { familia: number; polegada: number; tipo: 'principal' | 'secundaria' | 'ambas'; ordem?: number; ativo?: boolean }) =>
     (await api.post(famPolPath, payload)).data,
+  patchPolegadaPermitida: async (permitidaId: number, data: { tipo?: 'principal' | 'secundaria' | 'ambas'; ativo?: boolean }) =>
+    (await api.patch<FamiliaPolegadaPermitidaRow>(`${famPolPath}${permitidaId}/`, data)).data,
   removePolegadaPermitida: async (permitidaId: number) => {
     await api.delete(`${famPolPath}${permitidaId}/`);
   },
   addRoscaPermitida: async (payload: { familia: number; rosca_conexao: number; padrao_da_familia?: boolean; ativo?: boolean }) =>
     (await api.post(famRoscaPath, payload)).data,
+  patchRoscaPermitida: async (permitidaId: number, data: { padrao_da_familia?: boolean; ativo?: boolean }) =>
+    (await api.patch<FamiliaRoscaPermitidaRow>(`${famRoscaPath}${permitidaId}/`, data)).data,
+  removeRoscaPermitida: async (permitidaId: number) => {
+    await api.delete(`${famRoscaPath}${permitidaId}/`);
+  },
   addSchedulePermitido: async (payload: { familia: number; schedule: number; padrao_da_familia?: boolean; ativo?: boolean }) =>
     (await api.post(famSchedPath, payload)).data,
+  patchSchedulePermitido: async (permitidoId: number, data: { padrao_da_familia?: boolean; ativo?: boolean }) =>
+    (await api.patch<FamiliaSchedulePermitidoRow>(`${famSchedPath}${permitidoId}/`, data)).data,
   removeSchedulePermitido: async (permitidoId: number) => {
     await api.delete(`${famSchedPath}${permitidoId}/`);
   },

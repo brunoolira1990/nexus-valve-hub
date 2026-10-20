@@ -89,10 +89,8 @@ export function montarPayloadFamiliaSalvar(
     usa_polegada_principal: effSave.usa_polegada_principal,
     usa_polegada_secundaria: effSave.usa_polegada_secundaria,
     ncm_padrao: famQuick.ncm_padrao,
-    unidade_padrao: '',
-    material_base: '',
-    pressao_base: '',
-    norma_base: '',
+    // unidade_padrao / material_base / pressao_base / norma_base NÃO pertencem a este
+    // modal: omitir evita zerar valores que a tela de Famílias é quem guarda.
     usa_conversao_dimensional: famQuick.usa_conversao_dimensional,
     controla_composicao_fisica: famQuick.controla_composicao_fisica,
     tipo_composicao_fisica: famQuick.tipo_composicao_fisica || 'BARRA_M',
