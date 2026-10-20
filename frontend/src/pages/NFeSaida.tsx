@@ -13,11 +13,13 @@ import {
   Copy,
   Eye,
   MoreHorizontal,
+  RefreshCw,
 } from 'lucide-react';
 import { UnitPriceDisplay, UnitPriceInput } from '@/components/comercial/fields';
 import { NFeSaidaConferenciaModal } from '@/components/fiscal/NFeSaidaConferenciaModal';
 import { NFeSaidaDetalheDrawer } from '@/components/fiscal/NFeSaidaDetalheDrawer';
 import { NFeChecklistHomologacaoModal } from '@/components/fiscal/NFeChecklistHomologacaoModal';
+import { NFeConsultaSefazModal } from '@/components/fiscal/NFeConsultaSefazModal';
 import { NFeSaidaEfeitosPanel } from '@/components/fiscal/NFeSaidaEfeitosPanel';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal } from '@/components/Modal';
@@ -45,7 +47,12 @@ import {
   nfeItensComerciaisEditaveis,
   nfeSalvarFormularioBloqueado,
 } from '@/lib/nfeSaidaUi';
-import { isCanceladaNfe, deveUsarDanfeAutorizadoLinha } from '@/lib/nfeSaidaAcoesMatriz';
+import {
+  isCanceladaNfe,
+  deveUsarDanfeAutorizadoLinha,
+  LABEL_SINCRONIZAR_SEFAZ,
+  podeSincronizarSefazLinha,
+} from '@/lib/nfeSaidaAcoesMatriz';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -181,6 +188,7 @@ const NFeSaida = () => {
   const [detalheOpen, setDetalheOpen] = useState(false);
   const [checklistOpen, setChecklistOpen] = useState(false);
   const [checklistNfeId, setChecklistNfeId] = useState<number | null>(null);
+  const [sincronizarNfeId, setSincronizarNfeId] = useState<number | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<NFeSaida | null>(null);
   const [form, setForm] = useState<NFeSaidaFormState>(buildFormFromNfe(null));
@@ -631,6 +639,18 @@ const NFeSaida = () => {
                           <ClipboardCheck className="h-3.5 w-3.5 mr-0.5" />
                           Validar
                         </button>
+                        {podeSincronizarSefazLinha(e) ? (
+                          <button
+                            type="button"
+                            className="erp-btn-ghost erp-btn-sm text-xs"
+                            onClick={() => setSincronizarNfeId(e.id)}
+                            title="Consultar a situação desta NF-e na SEFAZ e sincronizar o status"
+                            aria-label="Sincronizar SEFAZ"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5 mr-0.5" />
+                            {LABEL_SINCRONIZAR_SEFAZ}
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           className="erp-btn-ghost erp-btn-sm p-1"
@@ -1201,6 +1221,13 @@ const NFeSaida = () => {
           setChecklistNfeId(null);
         }}
         nfeSaidaId={checklistNfeId}
+      />
+
+      <NFeConsultaSefazModal
+        open={sincronizarNfeId !== null}
+        nfeId={sincronizarNfeId}
+        onClose={() => setSincronizarNfeId(null)}
+        onConsultaConcluida={() => void load()}
       />
 
       <NFeSaidaDetalheDrawer

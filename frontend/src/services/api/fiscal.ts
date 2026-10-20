@@ -671,6 +671,26 @@ export type NFeEmissaoHomologacaoResponse = {
   sefaz_transmitida?: boolean;
 };
 
+export type NFeFinanceiroAutoResponse = {
+  tentado?: boolean;
+  gerado?: boolean;
+  ja_existente?: boolean;
+  erro?: boolean;
+  mensagem?: string;
+  titulo_id?: number | null;
+  titulo_numero?: string;
+  financeiro_gerado?: boolean;
+  pode_gerar_contas_receber?: boolean;
+  motivo_bloqueio_financeiro?: string;
+  venda_integralmente_a_vista?: boolean;
+  contas_receber_vinculadas?: Array<{
+    id: number;
+    numero: string;
+    status?: string;
+    cancelado?: boolean;
+  }>;
+};
+
 export type NFeConsultaSituacaoSefazResponse = {
   ok: boolean;
   mensagem?: string;
@@ -685,8 +705,11 @@ export type NFeConsultaSituacaoSefazResponse = {
   protocolo?: string;
   protocolo_autorizacao?: string;
   consultado_em?: string;
+  status?: string;
   status_emissao_sefaz?: string;
   status_local_atualizado?: boolean;
+  xml_autorizado_recuperado?: boolean;
+  financeiro?: NFeFinanceiroAutoResponse;
   sem_efeitos_fiscais?: boolean;
   etapa?: string;
   situacao_sefaz?: {
@@ -905,25 +928,8 @@ export type NFeInutilizacaoResponse = {
 
 export type NFeEmissaoProducaoResponse = NFeEmissaoHomologacaoResponse & {
   ambiente?: 'producao';
-  financeiro?: {
-    tentado?: boolean;
-    gerado?: boolean;
-    ja_existente?: boolean;
-    erro?: boolean;
-    mensagem?: string;
-    titulo_id?: number | null;
-    titulo_numero?: string;
-    financeiro_gerado?: boolean;
-    pode_gerar_contas_receber?: boolean;
-    motivo_bloqueio_financeiro?: string;
-    venda_integralmente_a_vista?: boolean;
-    contas_receber_vinculadas?: Array<{
-      id: number;
-      numero: string;
-      status?: string;
-      cancelado?: boolean;
-    }>;
-  };
+  sincronizacao_sefaz?: NFeConsultaSituacaoSefazResponse;
+  financeiro?: NFeFinanceiroAutoResponse;
 };
 
 export type NFeNumeracaoConfig = {

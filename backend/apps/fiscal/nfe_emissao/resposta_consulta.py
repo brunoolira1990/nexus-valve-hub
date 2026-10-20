@@ -17,6 +17,7 @@ def montar_resposta_consulta_situacao(
     ok: bool | None = None,
     mensagem: str = '',
     status_local_atualizado: bool = False,
+    extras: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     ambiente = (nf.ambiente_emissao or '').strip() or 'homologacao'
     consultado_em = timezone.now().isoformat()
@@ -26,7 +27,7 @@ def montar_resposta_consulta_situacao(
         if sucesso
         else resultado.x_motivo or 'Consulta SEFAZ não concluída.'
     )
-    return {
+    payload = {
         'ok': sucesso,
         'mensagem': msg,
         'nfe_saida_id': nf.pk,
@@ -54,3 +55,6 @@ def montar_resposta_consulta_situacao(
             'denegada': resultado.denegada,
         },
     }
+    if extras:
+        payload.update(extras)
+    return payload

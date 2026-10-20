@@ -18,6 +18,11 @@ from apps.fiscal.nfe_emissao.config_producao import (
     exigir_producao_habilitada,
     validar_confirmacao_emissao_producao,
 )
+from apps.fiscal.nfe_emissao.consulta_situacao import (
+    MSG_SEFAZ_JA_REGISTROU,
+    NFeConsultaSituacaoError,
+    recuperar_situacao_pos_rejeicao_duplicidade,
+)
 from apps.fiscal.nfe_emissao.empresa_emitente import resolver_empresa_emitente_nfe
 from apps.fiscal.nfe_emissao.envi_nfe import montar_envi_nfe_xml
 from apps.fiscal.nfe_emissao.numeracao import NFeNumeracaoError, reservar_numeracao_nfe
@@ -316,6 +321,24 @@ def emitir_nfe_producao(
     # Autorização fiscal já commitada — falha financeira não pode desfazê-la.
     nf.refresh_from_db()
     financeiro_auto = None
+    sincronizacao_sefaz = None
+
+    if not resultado.autorizado:
+        try:
+            sincronizacao_sefaz = recuperar_situacao_pos_rejeicao_duplicidade(nf, usuario=usuario)
+        except NFeConsultaSituacaoError as exc:
+            logger.warning(
+                'REJEICAO_204_RECUPERACAO_FALHOU nfe_id=%s etapa=%s msg=%s',
+                nf.pk,
+                getattr(exc, 'etapa', ''),
+                exc,
+            )
+            sincronizacao_sefaz = {'ok': False, 'mensagem': str(exc)}
+        if sincronizacao_sefaz is not None:
+            nf.refresh_from_db()
+
+    autorizado_na_sefaz = (nf.status_emissao_sefaz or '') == NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO
+
     if resultado.autorizado:
         from apps.fiscal.nfe_saida_financeiro import (
             gerar_contas_receber_automatico_apos_autorizacao_producao,
@@ -325,17 +348,24 @@ def emitir_nfe_producao(
             nf,
             usuario=usuario,
         )
+    elif sincronizacao_sefaz is not None:
+        # A própria consulta de situação já disparou o CR ao virar autorizada em produção.
+        financeiro_auto = sincronizacao_sefaz.get('financeiro')
+
+    recuperado_por_sincronizacao = bool(sincronizacao_sefaz and autorizado_na_sefaz)
 
     logger.info(
-        'Emissão produção concluída nfe_id=%s autorizado=%s cStat_nfe=%s serie=%s numero=%s financeiro=%s',
+        'Emissão produção concluída nfe_id=%s autorizado=%s cStat_nfe=%s serie=%s numero=%s '
+        'sincronizado=%s financeiro=%s',
         nf.pk,
         resultado.autorizado,
         nf.cstat_autorizacao,
         nf.serie_nfe,
         nf.numero_nfe,
+        bool(sincronizacao_sefaz),
         (financeiro_auto or {}).get('mensagem', '')[:120],
     )
-    ok = resultado.autorizado
+    ok = bool(resultado.autorizado or autorizado_na_sefaz)
     extras: dict = {
         'status': nf.status,
         'sem_efeitos_erp': not bool(
@@ -343,13 +373,19 @@ def emitir_nfe_producao(
         ),
         'mensagem_efeitos': MSG_SEM_EFEITOS_PRODUCAO,
     }
+    if sincronizacao_sefaz is not None:
+        extras['sincronizacao_sefaz'] = sincronizacao_sefaz
     if financeiro_auto is not None:
         extras['financeiro'] = financeiro_auto
     return montar_resposta_emissao_producao(
         nf,
         ok=ok,
-        autorizado=resultado.autorizado,
-        mensagem=mensagem_resposta_resultado_producao(resultado),
+        autorizado=ok,
+        mensagem=(
+            MSG_SEFAZ_JA_REGISTROU
+            if recuperado_por_sincronizacao
+            else mensagem_resposta_resultado_producao(resultado)
+        ),
         resultado=resultado,
         extras=extras,
     )

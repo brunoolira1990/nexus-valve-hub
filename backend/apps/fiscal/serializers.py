@@ -1406,6 +1406,7 @@ class NFeSaidaListSerializer(serializers.ModelSerializer):
             'valor_total',
             'status',
             'status_emissao_sefaz',
+            'chave_acesso',
             'listagem_resumo',
         )
 

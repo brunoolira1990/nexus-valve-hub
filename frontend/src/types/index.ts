@@ -2233,6 +2233,7 @@ export interface NFeSaidaListItem {
   valor_total: number;
   status: string;
   status_emissao_sefaz?: string;
+  chave_acesso?: string;
   listagem_resumo?: NFeSaidaListagemResumo;
 }
 

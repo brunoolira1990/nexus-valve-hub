@@ -8,7 +8,8 @@ from typing import Any
 from django.db import transaction
 from django.utils import timezone
 
-from apps.fiscal.models import NFeEntrada, NFeSaida, NFeSaidaEvento
+from apps.fiscal.models import NFeEntrada, NFeNumeracaoConfiguracao, NFeSaida, NFeSaidaEvento
+from apps.fiscal.nfe_emissao.aplicar_resultado import _parse_dh_recbto
 from apps.fiscal.nfe_emissao.empresa_emitente import resolver_empresa_emitente_nfe
 from apps.fiscal.nfe_emissao.resposta_consulta import montar_resposta_consulta_situacao
 from apps.fiscal.nfe_integracao.adapters.certificado_a1 import carregar_certificado_empresa
@@ -25,7 +26,11 @@ from apps.fiscal.nfe_integracao.adapters.pynfe_adapter import (
     criar_comunicacao_sefaz,
     extrair_xml_resposta,
 )
-from apps.fiscal.nfe_saida_bloqueio import nf_autorizada_homologacao
+from apps.fiscal.nfe_saida_bloqueio import (
+    nf_autorizada_homologacao,
+    nf_cancelada_operacional,
+    nf_tem_xml_autorizado_local,
+)
 from apps.fiscal.nfe_saida_efeitos import _lock_nfe_saida, _registrar_evento
 
 logger = logging.getLogger(__name__)
@@ -34,6 +39,26 @@ MSG_SEM_CHAVE = 'NF-e sem chave de acesso para consulta SEFAZ.'
 MSG_STATUS_INCOMPATIVEL = (
     'Consulta SEFAZ disponível apenas para NF-e autorizada em homologação ou produção.'
 )
+MSG_SEFAZ_JA_REGISTROU = (
+    'Rejeição 204 (duplicidade): a SEFAZ já registrou este documento — '
+    'situação recuperada por consulta de situação.'
+)
+
+CSTAT_REJEICAO_DUPLICIDADE = '204'
+
+_STATUS_TERMINAIS_SEM_SINCRONIZACAO = frozenset({
+    NFeEntrada.StatusEmissaoSefaz.INUTILIZADA_HOMOLOGACAO,
+    NFeEntrada.StatusEmissaoSefaz.INUTILIZADA_PRODUCAO,
+})
+
+# Estados em que a NF-e foi entregue à SEFAZ mas o ERP pode não ter gravado o protocolo.
+_STATUS_TRANSMITIDOS_RECUPERAVEIS = frozenset({
+    NFeSaida.StatusEmissaoSefaz.ENVIADA_HOMOLOGACAO,
+    NFeSaida.StatusEmissaoSefaz.ENVIADA_PRODUCAO,
+    NFeSaida.StatusEmissaoSefaz.REJEITADA_HOMOLOGACAO,
+    NFeSaida.StatusEmissaoSefaz.REJEITADA_PRODUCAO,
+    NFeSaida.StatusEmissaoSefaz.ERRO_TRANSMISSAO,
+})
 
 
 class NFeConsultaSituacaoError(ValueError):
@@ -66,6 +91,38 @@ def pode_consultar_situacao_sefaz(nf: NFeSaida) -> tuple[bool, str]:
     return False, MSG_STATUS_INCOMPATIVEL
 
 
+def _xml_contem_protocolo(xml: str | None, protocolo: str) -> bool:
+    return bool(protocolo) and protocolo in (xml or '')
+
+
+def _houve_tentativa_transmissao(nf: NFeSaida) -> bool:
+    """True quando a NF-e chegou à SEFAZ — inclusive quando a resposta se perdeu em timeout."""
+    sefaz = (nf.status_emissao_sefaz or '').strip().upper()
+    if sefaz in _STATUS_TRANSMITIDOS_RECUPERAVEIS:
+        return True
+    return bool((nf.cstat_lote or '').strip() or (nf.recibo_lote or '').strip() or (nf.xml_retorno or '').strip())
+
+
+def pode_sincronizar_com_sefaz(nf: NFeSaida) -> tuple[bool, str]:
+    """Guard da sincronização: autorização conhecida ou estado recuperável pós-transmissão.
+
+    ``pode_consultar_situacao_sefaz`` continua estrito de propósito — Carta de Correção e
+    Cancelamento o utilizam como pré-requisito e não podem ser liberados para NF-e rejeitada
+    ou em erro de transmissão.
+    """
+    pode, motivo = pode_consultar_situacao_sefaz(nf)
+    if pode:
+        return True, ''
+    if len(_chave_consulta(nf)) != 44:
+        return False, MSG_SEM_CHAVE
+    sefaz = (nf.status_emissao_sefaz or '').strip().upper()
+    if nf_cancelada_operacional(nf) or sefaz in _STATUS_TERMINAIS_SEM_SINCRONIZACAO:
+        return False, MSG_STATUS_INCOMPATIVEL
+    if _houve_tentativa_transmissao(nf):
+        return True, ''
+    return False, motivo
+
+
 def _homologacao_da_nfe(nf: NFeSaida) -> bool:
     amb = (nf.ambiente_emissao or '').strip().lower()
     if amb == NFeSaida.AmbienteEmissao.PRODUCAO:
@@ -77,9 +134,19 @@ def _homologacao_da_nfe(nf: NFeSaida) -> bool:
     )
 
 
+def _situacao_inequivoca(resultado: ResultadoConsultaSituacaoSefaz) -> str:
+    """cStat do documento (protNFe/infProt) — nunca o cStat da própria consulta.
+
+    ``retConsSitNFe`` devolve ``cStat=100`` sempre que a consulta é aceita, inclusive quando a
+    NF-e está em digitação ou não localizada (sem protocolo). Usar o fallback do parser
+    marcaria como autorizada uma nota que a SEFAZ nunca autorizou.
+    """
+    return (resultado.c_stat_nfe or '').strip()
+
+
 def _sincronizar_status_local_inequivoco(nf: NFeSaida, resultado: ResultadoConsultaSituacaoSefaz) -> bool:
-    """Atualiza status local somente quando a SEFAZ indica situação inequívoca."""
-    cstat = resultado.c_stat
+    """Atualiza status local somente quando a SEFAZ indica situação inequívoca do documento."""
+    cstat = _situacao_inequivoca(resultado)
     if not cstat:
         return False
 
@@ -105,6 +172,24 @@ def _sincronizar_status_local_inequivoco(nf: NFeSaida, resultado: ResultadoConsu
         if status_anterior != alvo:
             nf.status_emissao_sefaz = alvo
             update_fields.append('status_emissao_sefaz')
+        # Causa raiz do incidente: a SEFAZ autorizava, o protocolo era recuperado aqui e o
+        # campo principal ``status`` continuava RASCUNHO — só o ramo CANCELADO o gravava.
+        alvo_status = (
+            NFeSaida.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO if homolog else 'AUTORIZADA_PRODUCAO'
+        )
+        if (nf.status or '').strip().upper() != alvo_status and not nf_cancelada_operacional(nf):
+            nf.status = alvo_status
+            update_fields.append('status')
+        # Data da autorização: usa o dhRecbto da SEFAZ e só preenche se estiver vazia
+        # (nota já autorizada não tem sua data reescrita por uma consulta posterior).
+        if nf.autorizada_em is None:
+            nf.autorizada_em = _parse_dh_recbto(resultado.dh_recbto) or timezone.now()
+            update_fields.append('autorizada_em')
+        # Guarda o retConsSitNFe da autorização quando o XML gravado não traz este protocolo
+        # (ex.: rejeição 204) — é ele que permite remontar o procNFe e liberar DANFE/CR.
+        if resultado.xml_retorno and not _xml_contem_protocolo(nf.xml_retorno, resultado.protocolo):
+            nf.xml_retorno = resultado.xml_retorno
+            update_fields.append('xml_retorno')
     elif cstat in CSTAT_CANCELADO:
         nf.cstat_autorizacao = cstat
         nf.motivo_autorizacao = resultado.x_motivo or nf.motivo_autorizacao
@@ -129,7 +214,7 @@ def _sincronizar_status_local_inequivoco(nf: NFeSaida, resultado: ResultadoConsu
 @transaction.atomic
 def consultar_situacao_nfe_saida(nfe_saida: NFeSaida, *, usuario=None) -> dict[str, Any]:
     nf = _lock_nfe_saida(nfe_saida.pk)
-    pode, motivo = pode_consultar_situacao_sefaz(nf)
+    pode, motivo = pode_sincronizar_com_sefaz(nf)
     if not pode:
         raise NFeConsultaSituacaoError(motivo)
 
@@ -162,14 +247,16 @@ def consultar_situacao_nfe_saida(nfe_saida: NFeSaida, *, usuario=None) -> dict[s
         logger.warning('CONSULTA_SITUACAO_SEFAZ_ERRO nfe_id=%s msg=%s', nf.pk, exc)
         raise NFeConsultaSituacaoError(str(exc), etapa='COMUNICACAO_SEFAZ') from exc
 
+    status_anterior = nf.status or ''
     status_atualizado = _sincronizar_status_local_inequivoco(nf, resultado)
     nf.refresh_from_db()
+    xml_autorizado_recuperado = _recuperar_xml_autorizado(nf, status_atualizado=status_atualizado)
 
     consultado_em = timezone.now()
     _registrar_evento(
         nf,
         tipo=NFeSaidaEvento.TipoEvento.CONSULTA_SITUACAO_SEFAZ,
-        status_anterior=nf.status or '',
+        status_anterior=status_anterior,
         status_novo=nf.status or '',
         resumo={
             'ambiente': ambiente_label,
@@ -189,19 +276,123 @@ def consultar_situacao_nfe_saida(nfe_saida: NFeSaida, *, usuario=None) -> dict[s
     )
 
     logger.info(
-        'CONSULTA_SITUACAO_SEFAZ_OK nfe_id=%s cStat=%s protocolo=%s status_atualizado=%s',
+        'CONSULTA_SITUACAO_SEFAZ_OK nfe_id=%s cStat=%s protocolo=%s status_atualizado=%s status=%s',
         nf.pk,
         resultado.c_stat,
         resultado.protocolo,
         status_atualizado,
+        nf.status,
     )
+
+    financeiro = _gerar_contas_receber_se_autorizada_producao(nf, usuario=usuario)
+
+    extras: dict[str, Any] = {
+        'status': nf.status or '',
+        'xml_autorizado_recuperado': xml_autorizado_recuperado,
+    }
+    if financeiro is not None:
+        extras['financeiro'] = financeiro
 
     return montar_resposta_consulta_situacao(
         nf,
         resultado,
         ok=resultado.ok,
         status_local_atualizado=status_atualizado,
+        extras=extras,
     )
+
+
+def _alinhar_ultimo_numero_autorizado(nf: NFeSaida) -> bool:
+    """Registra na numeração o número cuja autorização acabou de ser recuperada.
+
+    Não retrocede: recuperar uma nota antiga não pode fazer a próxima emissão repetir ou
+    pular número já autorizado.
+    """
+    if (nf.status_emissao_sefaz or '') != NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO:
+        return False
+    try:
+        numero = int((nf.numero_nfe or '').strip())
+    except ValueError:
+        return False
+    cfg = NFeNumeracaoConfiguracao.objects.filter(
+        empresa_id=resolver_empresa_emitente_nfe(nf).pk,
+        ambiente=NFeNumeracaoConfiguracao.Ambiente.PRODUCAO,
+        modelo_documento='55',
+        tipo_operacao=NFeNumeracaoConfiguracao.TipoOperacao.SAIDA,
+        serie=nf.serie_nfe,
+        ativo=True,
+    ).first()
+    if cfg is None or (cfg.ultimo_numero_autorizado or 0) >= numero:
+        return False
+    cfg.ultimo_numero_autorizado = numero
+    cfg.save(update_fields=['ultimo_numero_autorizado', 'atualizado_em'])
+    logger.info(
+        'NUMERACAO_ALINHADA_POS_AUTORIZACAO nfe_id=%s serie=%s numero=%s',
+        nf.pk,
+        nf.serie_nfe,
+        numero,
+    )
+    return True
+
+
+def recuperar_situacao_pos_rejeicao_duplicidade(
+    nf: NFeSaida,
+    *,
+    usuario=None,
+) -> dict[str, Any] | None:
+    """Rejeição 204: a SEFAZ já tem este documento — consulta a situação para recuperar o protocolo.
+
+    Retorna ``None`` quando a rejeição não é de duplicidade (fluxo normal de correção do XML).
+    """
+    if (nf.cstat_autorizacao or '').strip() != CSTAT_REJEICAO_DUPLICIDADE:
+        return None
+    resumo = consultar_situacao_nfe_saida(nf, usuario=usuario)
+    resumo['mensagem'] = MSG_SEFAZ_JA_REGISTROU
+    nf.refresh_from_db()
+    _alinhar_ultimo_numero_autorizado(nf)
+    return resumo
+
+
+def _recuperar_xml_autorizado(nf: NFeSaida, *, status_atualizado: bool) -> bool:
+    """Reconstrói ``xml_autorizado`` (DANFE/CR o exigem) quando só o protocolo foi recuperado."""
+    if not status_atualizado or nf_tem_xml_autorizado_local(nf):
+        return False
+    if (nf.status_emissao_sefaz or '') not in (
+        NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO,
+        NFeSaida.StatusEmissaoSefaz.AUTORIZADA_HOMOLOGACAO,
+    ):
+        return False
+    from apps.fiscal.nfe_integracao.danfe_xml_autorizado import resolver_xml_autorizado_danfe
+
+    try:
+        resolver_xml_autorizado_danfe(nf, persistir=True)
+    except Exception:
+        logger.warning(
+            'CONSULTA_SITUACAO_SEFAZ_SEM_XML_AUTORIZADO nfe_id=%s — protocolo recuperado, procNFe não montado.',
+            nf.pk,
+            exc_info=True,
+        )
+        return False
+    return nf_tem_xml_autorizado_local(nf)
+
+
+def _gerar_contas_receber_se_autorizada_producao(
+    nf: NFeSaida,
+    *,
+    usuario=None,
+) -> dict[str, Any] | None:
+    """Dispara o CR quando a NF-e está autorizada em produção após a consulta.
+
+    A rotina é idempotente e soft-fail: uma consulta posterior volta a tentar um CR que tenha
+    falado na primeira sincronização, sem nunca duplicar título.
+    """
+    if (nf.status_emissao_sefaz or '') != NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO:
+        return None
+    from apps.fiscal.nfe_saida_financeiro import (
+        gerar_contas_receber_automatico_apos_autorizacao_producao,
+    )
+
+    return gerar_contas_receber_automatico_apos_autorizacao_producao(nf, usuario=usuario)
 
 
 # ============================================================================
@@ -233,8 +424,8 @@ def _homologacao_da_nfe_entrada(nf: NFeEntrada) -> bool:
 
 
 def _sincronizar_status_local_entrada(nf: NFeEntrada, resultado: ResultadoConsultaSituacaoSefaz) -> bool:
-    """Atualiza status local da entrada quando a SEFAZ indica situação inequívoca."""
-    cstat = resultado.c_stat
+    """Atualiza status local da entrada quando a SEFAZ indica situação inequívoca do documento."""
+    cstat = _situacao_inequivoca(resultado)
     if not cstat:
         return False
 

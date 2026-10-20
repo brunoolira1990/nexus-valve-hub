@@ -210,6 +210,27 @@ export function podeConsultarSituacaoSefaz(ctx: NFeSaidaContextoAcao): boolean {
   return Boolean(ctx.chaveAcesso) && (ctx.autorizadaHomolog || ctx.autorizadaProducao);
 }
 
+export const LABEL_SINCRONIZAR_SEFAZ = 'Sincronizar SEFAZ';
+
+/**
+ * Botão «Sincronizar SEFAZ» da listagem: disponível quando a NF-e tem chave de acesso
+ * (numeração já reservada/transmitida) e o status local é RASCUNHO ou rejeitada/erro —
+ * exatamente o estado em que a SEFAZ autorizou e a resposta se perdeu.
+ */
+export function podeSincronizarSefazLinha(row: {
+  status?: string | null;
+  status_emissao_sefaz?: string | null;
+  chave_acesso?: string | null;
+}): boolean {
+  if ((row.chave_acesso || '').trim().length !== 44) return false;
+  const ctx = resolverContextoNfeSaida({
+    status: row.status,
+    status_emissao_sefaz: row.status_emissao_sefaz,
+    chave_acesso: row.chave_acesso,
+  });
+  return ctx.cenario === 'rascunho_conferencia' || ctx.cenario === 'rejeitada_erro';
+}
+
 export function podeEmitirCartaCorrecao(ctx: NFeSaidaContextoAcao): boolean {
   if (ctx.cenario === 'cancelada') return false;
   return podeConsultarSituacaoSefaz(ctx);
