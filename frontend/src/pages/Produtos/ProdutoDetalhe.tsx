@@ -86,11 +86,10 @@ export default function ProdutoDetalhe() {
     <div className="space-y-4">
       <PageHeader
         title={produto.descricao || 'Produto sem descrição'}
-        description={`Código: ${produto.codigo_completo}`}
         breadcrumbs={[
           { label: 'Cadastros', path: '/produtos' },
           { label: 'Produtos', path: '/produtos' },
-          { label: `#${produto.id}` },
+          { label: 'Detalhe' },
         ]}
         actions={
           <>
@@ -108,11 +107,6 @@ export default function ProdutoDetalhe() {
             >
               Editar
             </button>
-          </>
-        }
-        meta={
-          <>
-            <span className="font-mono text-sm">{produto.codigo_completo}</span>
           </>
         }
       />

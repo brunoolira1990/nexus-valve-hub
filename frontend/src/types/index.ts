@@ -392,14 +392,39 @@ export interface Polegada {
 
 export type PolegadaItem = Polegada;
 
+/**
+ * Resumos de FK que o ProdutoSerializer envia só para leitura.
+ * A escrita do formulário continua usando o id numérico (familia_id, rosca_conexao_id, ...).
+ */
+export type ProdutoFamiliaResumo = {
+  id: number;
+  codigo_figura: string;
+  descricao_base: string;
+  nome: string;
+};
+
+export type ProdutoRoscaConexaoResumo = Pick<RoscaConexao, 'id' | 'codigo' | 'descricao'>;
+
+export type ProdutoScheduleResumo = Pick<ScheduleEspessura, 'id' | 'codigo_schedule' | 'codigo' | 'descricao'>;
+
+export type ProdutoPolegadaResumo = Pick<
+  Polegada,
+  'id' | 'codigo' | 'codigo_oficial' | 'descricao' | 'tipo_medida'
+> & { nome: string };
+
 export interface Produto {
   id: number;
   modo_codigo?: ModoCodigoProduto;
   familia_id?: number | null;
+  familia_detalhes?: ProdutoFamiliaResumo | null;
   rosca_conexao_id?: number | null;
+  rosca_conexao_detalhes?: ProdutoRoscaConexaoResumo | null;
   schedule_ref_id?: number | null;
+  schedule_ref_detalhes?: ProdutoScheduleResumo | null;
   polegada_principal_ref_id?: number | null;
+  polegada_principal_ref_detalhes?: ProdutoPolegadaResumo | null;
   polegada_secundaria_ref_id?: number | null;
+  polegada_secundaria_ref_detalhes?: ProdutoPolegadaResumo | null;
   figura: string;
   sufixo: string;
   schedule: string;
@@ -410,6 +435,8 @@ export interface Produto {
   material_label?: string | null;
   material_ref?: number | null;
   material_ref_detalhes?: MaterialResumo | null;
+  /** Nome exibido: catálogo (FK) > rótulo da categoria legada > texto cru. */
+  material_nome?: string | null;
   tipo_peca: string;
   pressao_nominal: string;
   norma: string;
@@ -422,7 +449,9 @@ export interface Produto {
   ncm_origem?: 'produto' | 'familia' | 'nao_definido';
   unidade_efetiva?: string;
   tipo_controle_unidade?: TipoControleUnidade | '';
+  tipo_controle_unidade_display?: string | null;
   tipo_fisico?: TipoFisicoProduto | '';
+  tipo_fisico_display?: string | null;
   unidade_estoque?: string;
   unidade_venda_padrao?: string;
   unidade_compra_padrao?: string;
@@ -437,7 +466,9 @@ export interface Produto {
   densidade?: number | null;
   usa_conversao_dimensional?: boolean;
   tipo_controle_unidade_efetivo?: TipoControleUnidade;
+  tipo_controle_unidade_efetivo_display?: string | null;
   tipo_fisico_efetivo?: TipoFisicoProduto;
+  tipo_fisico_efetivo_display?: string | null;
   unidade_estoque_efetiva?: string;
   unidade_venda_efetiva?: string;
   unidade_compra_efetiva?: string;
@@ -451,7 +482,9 @@ export interface Produto {
   exige_certificado_qualidade_efetivo?: boolean;
   exige_certificado_qualidade?: boolean;
   tipo_composicao_fisica?: string;
+  tipo_composicao_fisica_display?: string | null;
   tipo_composicao_fisica_efetivo?: string;
+  tipo_composicao_fisica_efetivo_display?: string | null;
   unidade_base_composicao_fisica?: string;
   usa_conversao_dimensional_efetivo?: boolean;
   origem_ncm?: 'familia' | 'produto';
@@ -476,7 +509,9 @@ export interface Produto {
   dim_furo_mm?: number | null;
   dim_aba_mm?: number | null;
   dim_aba_polegada_ref?: number | null;
+  dim_aba_polegada_ref_detalhes?: ProdutoPolegadaResumo | null;
   dim_espessura_polegada_ref?: number | null;
+  dim_espessura_polegada_ref_detalhes?: ProdutoPolegadaResumo | null;
   dimensao_codigo?: string;
   dimensao_descricao?: string;
   dimensoes_json?: Record<string, number | string | null>;

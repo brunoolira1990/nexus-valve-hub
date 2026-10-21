@@ -82,6 +82,15 @@ class ResolucaoValoresApiTests(APITestCase):
         # Sem correspondência no catálogo, o texto cru permanece.
         self.assertEqual(alt['depois'], 'material maluco')
 
+    def test_material_de_categoria_usa_o_rotulo_oficial_sem_linha_no_catalogo(self):
+        # 'ACO CARBONO' e 'AÇO INOX' são categorias do formulário: não existem como nomes do catálogo.
+        self._registrar({'material': {'antes': 'ACO CARBONO', 'depois': 'AÇO INOX'}})
+        alt = self._historico()['material']
+        self.assertEqual(alt['antes']['nome'], 'Aço Carbono')
+        self.assertEqual(alt['antes']['valor'], 'ACO CARBONO')
+        self.assertIsNone(alt['antes']['id'])
+        self.assertEqual(alt['depois']['nome'], 'Aço Inox')
+
     def test_campo_sensivel_e_texto_livre_nao_mudam(self):
         self._registrar({
             'descricao': {'antes': 'VALVULA A', 'depois': 'VALVULA B'},

@@ -347,7 +347,9 @@ export function ConversaoMedidasBlock({
                 </option>
               ))}
             </select>
-            <p className="text-[11px] text-muted-foreground mt-0.5">Efetivo na tela: {tipoFisicoEfetivo || 'PECA'}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Efetivo na tela: {TIPO_FISICO_OPTIONS.find((o) => o.value === (tipoFisicoEfetivo || 'PECA'))?.label ?? tipoFisicoEfetivo}
+            </p>
           </LinhaHeranca>
           <LinhaHeranca campo="tipo_controle_unidade" heranca={heranca}>
             <label className="erp-label">Tipo de controle de unidade</label>

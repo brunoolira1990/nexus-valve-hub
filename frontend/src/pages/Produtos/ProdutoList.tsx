@@ -11,6 +11,7 @@ import { EmptyState, ErrorState, LoadingState } from '@/components/list/ListStat
 import type { FamiliaProduto, Produto, TipoDimensional, TipoRegraCodigo } from '@/types';
 import { PRODUTO_UI_LABELS } from '@/lib/operationalUi';
 import { formatProdutoMaterial } from '@/lib/produtoMaterial';
+import { ROTULO_MODO_CODIGO } from '@/lib/produtoRotulos';
 import {
   expandirSiglasValvulaDescricaoBase,
   exemploCodigoDimensionalFamilia,
@@ -494,7 +495,7 @@ const Produtos = () => {
                   <tr key={e.id}>
                     <td className="font-mono text-xs">{e.codigo_completo}</td>
                     <td className="font-medium">{e.descricao}</td>
-                    <td className="text-xs text-muted-foreground">{e.modo_codigo || 'LEGADO'}</td>
+                    <td className="text-xs text-muted-foreground">{ROTULO_MODO_CODIGO[e.modo_codigo || 'LEGADO']}</td>
                     <td>{formatProdutoMaterial(e)}</td>
                     <td>{e.ncm_efetivo?.codigo || e.ncm || '—'}</td>
                     <td>{formatMoneyBRL(e.preco_venda)}</td>

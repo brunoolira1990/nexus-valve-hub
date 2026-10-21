@@ -231,10 +231,13 @@ class ProdutoViewSet(FriendlyDestroyMixin, AutocompleteOrPaginationMixin, viewse
     queryset = Produto.objects.select_related(
         'familia',
         'familia__ncm_padrao',
+        'material_ref',
         'rosca_conexao',
         'schedule_ref',
         'polegada_principal_ref',
         'polegada_secundaria_ref',
+        'dim_aba_polegada_ref',
+        'dim_espessura_polegada_ref',
     ).all()
     serializer_class = ProdutoSerializer
     pagination_class = NexusPageNumberPagination

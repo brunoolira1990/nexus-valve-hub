@@ -5,6 +5,8 @@ import { Separator } from '@/components/ui/separator';
 import { ProdutoPainelOperacionalTab } from '@/components/produtos/ProdutoPainelOperacionalTab';
 import { ProdutoRastreabilidadeTab } from '@/components/produtos/ProdutoRastreabilidadeTab';
 import { HistoricoAlteracoesPanel } from '@/components/auditoria/HistoricoAlteracoesPanel';
+import { formatProdutoMaterial } from '@/lib/produtoMaterial';
+import { ROTULO_MODO_CODIGO } from '@/lib/produtoRotulos';
 import type { Produto } from '@/types';
 
 type ProdutoWorkspaceProps = {
@@ -72,22 +74,17 @@ export function ProdutoWorkspace({ produto, mode }: ProdutoWorkspaceProps) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {renderField('Código completo', produto.codigo_completo)}
               {renderField('Descrição', produto.descricao)}
-              {renderField('Modo de código', produto.modo_codigo)}
+              {renderField('Modo de código', produto.modo_codigo ? ROTULO_MODO_CODIGO[produto.modo_codigo] : '—')}
               {renderField('Unidade comercial', produto.unidade)}
             </div>
             {produto.modo_codigo === 'INTERNO' && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-border">
-                {renderField('Família', produto.familia_id ? `#${produto.familia_id}` : '—')}
+                {renderField('Família', produto.familia_detalhes?.nome ?? '—')}
                 {renderField('Figura', produto.figura || '—')}
                 {renderField('Sufixo', produto.sufixo || '—')}
                 {renderField('Schedule', produto.schedule || '—')}
                 {renderField('Polegada principal', produto.polegada_principal || '—')}
                 {renderField('Polegada secundária', produto.polegada_secundaria || '—')}
-              </div>
-            )}
-            {produto.modo_codigo === 'MANUAL' && (
-              <div className="pt-2 border-t border-border">
-                {renderField('Código manual/fabricante', produto.codigo_completo)}
               </div>
             )}
             {produto.modo_codigo === 'LEGADO' && (
@@ -119,7 +116,7 @@ export function ProdutoWorkspace({ produto, mode }: ProdutoWorkspaceProps) {
         >
           <dl className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {renderField('Controla composição física', produto.controla_composicao_fisica ? 'Sim' : 'Não')}
-            {renderField('Tipo de composição', produto.tipo_composicao_fisica || '—')}
+            {renderField('Tipo de composição', produto.tipo_composicao_fisica_display ?? produto.tipo_composicao_fisica ?? '—')}
             {renderField('Usa conversão dimensional', produto.usa_conversao_dimensional ? 'Sim' : 'Não')}
             {renderField('Comprimento padrão barra (m)', formatValor(produto.comprimento_padrao_barra_m, 3))}
             {renderField('Peso por metro (kg/m)', formatValor(produto.peso_por_metro_kg, 4))}
@@ -138,10 +135,7 @@ export function ProdutoWorkspace({ produto, mode }: ProdutoWorkspaceProps) {
           description="Características técnicas e classificação do produto."
         >
           <dl className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {renderField(
-              'Material',
-              produto.material_ref_detalhes?.nome ?? produto.material ?? '—',
-            )}
+            {renderField('Material', produto.material_nome ?? formatProdutoMaterial(produto))}
             {renderField(
               'Norma ASTM',
               produto.material_ref_detalhes?.norma_astm || '—',
@@ -154,10 +148,13 @@ export function ProdutoWorkspace({ produto, mode }: ProdutoWorkspaceProps) {
             {renderField('Tipo de peça', produto.tipo_peca || '—')}
             {renderField('Pressão nominal', produto.pressao_nominal || '—')}
             {renderField('Conexão', produto.conexao || '—')}
-            {renderField('Rosca/Conexão ID', produto.rosca_conexao_id ? `#${produto.rosca_conexao_id}` : '—')}
-            {renderField('Schedule ID', produto.schedule_ref_id ? `#${produto.schedule_ref_id}` : '—')}
-            {renderField('Polegada principal ID', produto.polegada_principal_ref_id ? `#${produto.polegada_principal_ref_id}` : '—')}
-            {renderField('Polegada secundária ID', produto.polegada_secundaria_ref_id ? `#${produto.polegada_secundaria_ref_id}` : '—')}
+            {renderField('Rosca/Conexão', produto.rosca_conexao_detalhes?.codigo ?? '—')}
+            {renderField(
+              'Schedule',
+              produto.schedule_ref_detalhes?.codigo_schedule ?? produto.schedule_ref_detalhes?.codigo ?? '—',
+            )}
+            {renderField('Polegada principal', produto.polegada_principal_ref_detalhes?.nome ?? '—')}
+            {renderField('Polegada secundária', produto.polegada_secundaria_ref_detalhes?.nome ?? '—')}
           </dl>
         </SectionCard>
 
@@ -186,8 +183,8 @@ export function ProdutoWorkspace({ produto, mode }: ProdutoWorkspaceProps) {
               {renderField('Altura (mm)', formatValor(produto.dim_altura_mm, 3))}
               {renderField('Furo (mm)', formatValor(produto.dim_furo_mm, 3))}
               {renderField('Aba (mm)', formatValor(produto.dim_aba_mm, 3))}
-              {renderField('Aba (polegada ref)', produto.dim_aba_polegada_ref ? `#${produto.dim_aba_polegada_ref}` : '—')}
-              {renderField('Espessura (polegada ref)', produto.dim_espessura_polegada_ref ? `#${produto.dim_espessura_polegada_ref}` : '—')}
+              {renderField('Aba (polegada ref)', produto.dim_aba_polegada_ref_detalhes?.nome ?? '—')}
+              {renderField('Espessura (polegada ref)', produto.dim_espessura_polegada_ref_detalhes?.nome ?? '—')}
             </dl>
           </SectionCard>
         )}
@@ -209,8 +206,8 @@ export function ProdutoWorkspace({ produto, mode }: ProdutoWorkspaceProps) {
           description="Configuração de unidades de medida e tipo físico."
         >
           <dl className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {renderField('Tipo de controle de unidade', produto.tipo_controle_unidade || '—')}
-            {renderField('Tipo físico do produto', produto.tipo_fisico || '—')}
+            {renderField('Tipo de controle de unidade', produto.tipo_controle_unidade_display ?? produto.tipo_controle_unidade ?? '—')}
+            {renderField('Tipo físico do produto', produto.tipo_fisico_display ?? produto.tipo_fisico ?? '—')}
             {renderField('Unidade de estoque', produto.unidade_estoque || '—')}
             {renderField('Unidade de venda padrão', produto.unidade_venda_padrao || '—')}
             {renderField('Unidade de compra padrão', produto.unidade_compra_padrao || '—')}
@@ -269,8 +266,7 @@ export function ProdutoWorkspace({ produto, mode }: ProdutoWorkspaceProps) {
           <dl className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {renderField('NCM específico (legado)', produto.ncm_especifico || '—')}
             {renderField('Unidade específica (override)', produto.unidade_especifica || '—')}
-            {renderField('Unidade fiscal', produto.unidade_fiscal || '—')}
-            {renderField('Unidade estoque efetiva', produto.unidade_estoque_efetiva || produto.unidade_estoque || produto.unidade || '—')}
+            {renderField('Unidade estoque efetiva', produto.unidade_estoque_efetiva ?? '—')}
             {renderField('Unidade venda efetiva', produto.unidade_venda_efetiva || '—')}
             {renderField('Unidade compra efetiva', produto.unidade_compra_efetiva || '—')}
             {renderField('Unidade fiscal efetiva', produto.unidade_fiscal_efetiva || '—')}
@@ -286,10 +282,10 @@ export function ProdutoWorkspace({ produto, mode }: ProdutoWorkspaceProps) {
           description="Valores efetivos após herança da família e overrides do produto."
         >
           <dl className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {renderField('Tipo controle unidade efetivo', produto.tipo_controle_unidade_efetivo || '—')}
-            {renderField('Tipo físico efetivo', produto.tipo_fisico_efetivo || '—')}
+            {renderField('Tipo controle unidade efetivo', produto.tipo_controle_unidade_efetivo_display ?? produto.tipo_controle_unidade_efetivo ?? '—')}
+            {renderField('Tipo físico efetivo', produto.tipo_fisico_efetivo_display ?? produto.tipo_fisico_efetivo ?? '—')}
             {renderField('Controla composição efetivo', produto.controla_composicao_fisica_efetivo ? 'Sim' : 'Não')}
-            {renderField('Tipo composição efetivo', produto.tipo_composicao_fisica_efetivo || '—')}
+            {renderField('Tipo composição efetivo', produto.tipo_composicao_fisica_efetivo_display ?? produto.tipo_composicao_fisica_efetivo ?? '—')}
             {renderField('Unidade base composição', produto.unidade_base_composicao_fisica || '—')}
             {renderField('Usa conversão dimensional efetivo', produto.usa_conversao_dimensional_efetivo ? 'Sim' : 'Não')}
           </dl>

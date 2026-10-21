@@ -13,6 +13,8 @@ from django.apps import apps as django_apps
 from rest_framework import serializers
 
 from apps.auditoria.models import RegistroAuditoria
+from apps.produtos.material import material_label_de_valor
+from apps.produtos.rotulos import nome_familia_produto
 
 # Campo auditado -> (app_label, model, atributo usado como rótulo).
 FKS_AUDITADAS: dict[str, tuple[str, str, str]] = {
@@ -78,9 +80,7 @@ class EnriquecedorValores:
 
     def _rotulo_modelo(self, obj, nome_modelo: str, atributo: str) -> str:
         if nome_modelo == 'FamiliaProduto':
-            figura = getattr(obj, 'codigo_figura', '') or ''
-            descricao = getattr(obj, 'descricao_base', '') or ''
-            return f'{figura} — {descricao}'.strip(' —') or str(obj)
+            return nome_familia_produto(obj)
         return str(getattr(obj, atributo, '') or '').strip() or str(obj)
 
     def _carregar_materiais(self, textos: list) -> dict:
@@ -135,6 +135,10 @@ class EnriquecedorValores:
             entrada = self._materiais.get(valor)
             if entrada is not None:
                 return {'valor': valor, 'id': entrada['id'], 'nome': entrada['nome']}
+            # 'ACO CARBONO' e 'LATAO' são categorias do formulário, não nomes do catálogo.
+            rotulo = material_label_de_valor(valor)
+            if rotulo and rotulo != valor:
+                return {'valor': valor, 'id': None, 'nome': rotulo}
             return None
         rotulo = self._mapa_escolhas(campo).get(str(valor))
         if rotulo and rotulo != valor:

@@ -171,19 +171,6 @@ export function ProdutoFiscalFormTab({
                 placeholder="Unidade para fins fiscais (NF-e)"
               />
             </div>
-
-            {/* Unidade estoque efetiva — read only */}
-            <div>
-              <CampoLabel>Unidade estoque efetiva</CampoLabel>
-              <Input
-                className="h-10 bg-muted/40 cursor-default"
-                value={form.unidade_estoque || form.unidade || '—'}
-                readOnly
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Somente leitura. Ajuste unidades na aba Classificação industrial.
-              </p>
-            </div>
           </div>
         </CardContent>
       </Card>

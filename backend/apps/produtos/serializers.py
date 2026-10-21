@@ -43,6 +43,7 @@ from apps.produtos.material import (
     material_canonico_de_entrada,
     material_label_de_valor,
 )
+from apps.produtos.rotulos import nome_familia_produto, rotulo_de_choices, rotulo_polegada
 from apps.produtos.models import (
     FamiliaProdutoPolegadaPermitida,
     FamiliaProdutoRoscaConexaoPermitida,
@@ -73,6 +74,57 @@ def _material_resumo(material: Material | None) -> dict | None:
 
 def _msg_polegada_tipo_incompativel(esperado: str) -> str:
     return f'Use uma polegada da tabela oficial com tipo {esperado} neste campo.'
+
+
+def _familia_resumo(familia: FamiliaProduto | None) -> dict | None:
+    if familia is None:
+        return None
+    return {
+        'id': familia.id,
+        'codigo_figura': familia.codigo_figura,
+        'descricao_base': familia.descricao_base,
+        'nome': nome_familia_produto(familia),
+    }
+
+
+def _rosca_resumo(rosca: RoscaConexao | None) -> dict | None:
+    if rosca is None:
+        return None
+    return {'id': rosca.id, 'codigo': rosca.codigo, 'descricao': rosca.descricao}
+
+
+def _schedule_resumo(schedule: ScheduleEspessura | None) -> dict | None:
+    if schedule is None:
+        return None
+    return {
+        'id': schedule.id,
+        'codigo_schedule': schedule.codigo_schedule,
+        'codigo': schedule.codigo,
+        'descricao': schedule.descricao,
+    }
+
+
+def _polegada_resumo(polegada: Polegada | None) -> dict | None:
+    if polegada is None:
+        return None
+    return {
+        'id': polegada.id,
+        'codigo': polegada.codigo,
+        'codigo_oficial': polegada.codigo_oficial,
+        'descricao': polegada.descricao,
+        'tipo_medida': polegada.tipo_medida,
+        'nome': rotulo_polegada(polegada),
+    }
+
+
+def _material_nome_produto(produto: Produto) -> str | None:
+    """Nome exibido: catálogo (FK) > rótulo do texto legado > texto cru."""
+    if produto.material_ref_id and produto.material_ref:
+        return produto.material_ref.nome
+    bruto = (produto.material or '').strip()
+    if not bruto:
+        return None
+    return material_label_de_valor(bruto) or bruto
 
 
 def _decimal_from_dim(raw):
@@ -170,9 +222,7 @@ class PolegadaSerializer(serializers.ModelSerializer):
         return attrs
 
     def get_label(self, obj: Polegada):
-        tipo = obj.tipo_medida or ''
-        mm = f' — {obj.valor_mm} mm' if obj.valor_mm is not None else ''
-        return f'{tipo} {obj.codigo_oficial} — {obj.descricao}{mm}'.strip()
+        return rotulo_polegada(obj)
 
 
 class RoscaConexaoSerializer(serializers.ModelSerializer):
@@ -1132,6 +1182,17 @@ class ProdutoSerializer(serializers.ModelSerializer):
         data['schedule_ref_id'] = instance.schedule_ref_id
         data['polegada_principal_ref_id'] = instance.polegada_principal_ref_id
         data['polegada_secundaria_ref_id'] = instance.polegada_secundaria_ref_id
+        # Rótulos read-only das FKs: os ids acima continuam sendo o contrato de escrita do formulário.
+        data['familia_detalhes'] = _familia_resumo(instance.familia)
+        data['rosca_conexao_detalhes'] = _rosca_resumo(instance.rosca_conexao)
+        data['schedule_ref_detalhes'] = _schedule_resumo(instance.schedule_ref)
+        data['polegada_principal_ref_detalhes'] = _polegada_resumo(instance.polegada_principal_ref)
+        data['polegada_secundaria_ref_detalhes'] = _polegada_resumo(instance.polegada_secundaria_ref)
+        data['dim_aba_polegada_ref_detalhes'] = _polegada_resumo(instance.dim_aba_polegada_ref)
+        data['dim_espessura_polegada_ref_detalhes'] = _polegada_resumo(instance.dim_espessura_polegada_ref)
+        data['tipo_controle_unidade_display'] = instance.get_tipo_controle_unidade_display() or None
+        data['tipo_fisico_display'] = instance.get_tipo_fisico_display() or None
+        data['tipo_composicao_fisica_display'] = instance.get_tipo_composicao_fisica_display() or None
         for k in ('od_mm', 'diametro_interno_mm', 'espessura_mm', 'comprimento_mm', 'diametro_mostrador_mm'):
             if k in data and data[k] is not None:
                 data[k] = float(Decimal(str(data[k])))
@@ -1164,6 +1225,16 @@ class ProdutoSerializer(serializers.ModelSerializer):
         data['exige_certificado_qualidade_efetivo'] = instance.get_exige_certificado_qualidade_efetivo()
         data['tipo_composicao_fisica_efetivo'] = instance.get_tipo_composicao_fisica_efetivo()
         data['unidade_base_composicao_fisica'] = instance.get_unidade_base_composicao_fisica()
+        # Os efetivos são códigos calculados (herança + override); o rótulo vem das choices do próprio model.
+        data['tipo_controle_unidade_efetivo_display'] = rotulo_de_choices(
+            'produtos', 'produto', 'tipo_controle_unidade', data['tipo_controle_unidade_efetivo']
+        )
+        data['tipo_fisico_efetivo_display'] = rotulo_de_choices(
+            'produtos', 'produto', 'tipo_fisico', data['tipo_fisico_efetivo']
+        )
+        data['tipo_composicao_fisica_efetivo_display'] = rotulo_de_choices(
+            'produtos', 'produto', 'tipo_composicao_fisica', data['tipo_composicao_fisica_efetivo']
+        )
         data['alertas'] = (
             ['Este produto usa NCM diferente do padrão da família.']
             if (instance.ncm_especifico or '').strip()
@@ -1177,6 +1248,7 @@ class ProdutoSerializer(serializers.ModelSerializer):
         data['material'] = mat_raw or None
         label = material_label_de_valor(mat_raw)
         data['material_label'] = label or None
+        data['material_nome'] = _material_nome_produto(instance)
         return data
 
 
