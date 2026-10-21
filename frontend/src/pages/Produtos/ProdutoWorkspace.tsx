@@ -24,11 +24,17 @@ function formatData(value?: string | null): string {
   return value.split('-').reverse().join('/');
 }
 
-function renderField(label: string, value: string | number | null | undefined): React.ReactElement {
+function renderField(
+  label: string,
+  value: string | number | null | undefined,
+  { menor = false }: { menor?: boolean } = {},
+): React.ReactElement {
   return (
     <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 items-start">
-      <dt className="text-sm text-muted-foreground">{label}</dt>
-      <dd className="text-sm font-medium text-foreground break-words">{value ?? '—'}</dd>
+      <dt className={menor ? 'text-xs text-muted-foreground' : 'text-sm text-muted-foreground'}>{label}</dt>
+      <dd className={menor ? 'text-xs text-muted-foreground break-words' : 'text-sm font-medium text-foreground break-words'}>
+        {value ?? '—'}
+      </dd>
     </div>
   );
 }
@@ -101,31 +107,44 @@ export function ProdutoWorkspace({ produto, mode }: ProdutoWorkspaceProps) {
 
         <SectionCard
           title="Preços e estoque"
-          description="Valores financeiros e controle de estoque."
+          description="Últimos preços praticados pela empresa nas NF-e deste item."
         >
+          <dl className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {renderField(
+              'Última compra',
+              produto.ultimo_preco_compra != null ? formatValor(produto.ultimo_preco_compra) : null,
+            )}
+            {renderField(
+              'Última venda',
+              produto.ultimo_preco_venda != null ? formatValor(produto.ultimo_preco_venda) : null,
+            )}
+          </dl>
+          <p className="text-xs text-muted-foreground mt-4 mb-2">Valores do cadastro</p>
           <dl className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {renderField('Preço de custo', formatValor(produto.preco_custo))}
-            {renderField('Preço de venda', formatValor(produto.preco_venda))}
-            {renderField('Estoque mínimo', formatValor(produto.estoque_minimo, 0))}
+            {renderField('Preço de custo', formatValor(produto.preco_custo), { menor: true })}
+            {renderField('Preço de venda', formatValor(produto.preco_venda), { menor: true })}
+            {renderField('Estoque mínimo', formatValor(produto.estoque_minimo, 0), { menor: true })}
           </dl>
         </SectionCard>
 
-        <SectionCard
-          title="Composição e conversões"
-          description="Controle de composição física e conversões dimensionais."
-        >
-          <dl className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {renderField('Controla composição física', produto.controla_composicao_fisica ? 'Sim' : 'Não')}
-            {renderField('Tipo de composição', produto.tipo_composicao_fisica_display ?? produto.tipo_composicao_fisica ?? '—')}
-            {renderField('Usa conversão dimensional', produto.usa_conversao_dimensional ? 'Sim' : 'Não')}
-            {renderField('Comprimento padrão barra (m)', formatValor(produto.comprimento_padrao_barra_m, 3))}
-            {renderField('Peso por metro (kg/m)', formatValor(produto.peso_por_metro_kg, 4))}
-            {renderField('Peso por peça (kg)', formatValor(produto.peso_por_peca_kg, 4))}
-            {renderField('Peso por chapa (kg)', formatValor(produto.peso_por_chapa_kg, 4))}
-            {renderField('Densidade', formatValor(produto.densidade, 4))}
-            {renderField('Observações de conversão', produto.observacoes_conversao || '—')}
-          </dl>
-        </SectionCard>
+        {(produto.usa_conversao_dimensional_efetivo || produto.controla_composicao_fisica_efetivo) && (
+          <SectionCard
+            title="Composição e conversões"
+            description="Controle de composição física e conversões dimensionais."
+          >
+            <dl className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {renderField('Controla composição física', produto.controla_composicao_fisica_efetivo ? 'Sim' : 'Não')}
+              {renderField('Tipo de composição', produto.tipo_composicao_fisica_efetivo_display ?? '—')}
+              {renderField('Usa conversão dimensional', produto.usa_conversao_dimensional_efetivo ? 'Sim' : 'Não')}
+              {renderField('Comprimento padrão barra (m)', formatValor(produto.comprimento_padrao_barra_m_efetivo, 3))}
+              {renderField('Peso por metro (kg/m)', formatValor(produto.peso_por_metro_kg_efetivo, 4))}
+              {renderField('Peso por peça (kg)', formatValor(produto.peso_por_peca_kg, 4))}
+              {renderField('Peso por chapa (kg)', formatValor(produto.peso_por_chapa_kg, 4))}
+              {renderField('Densidade', formatValor(produto.densidade, 4))}
+              {renderField('Observações de conversão', produto.observacoes_conversao || '—')}
+            </dl>
+          </SectionCard>
+        )}
       </TabsContent>
 
       {/* ABA 2 - CLASSIFICAÇÃO INDUSTRIAL */}
@@ -153,8 +172,8 @@ export function ProdutoWorkspace({ produto, mode }: ProdutoWorkspaceProps) {
               'Schedule',
               produto.schedule_ref_detalhes?.codigo_schedule ?? produto.schedule_ref_detalhes?.codigo ?? '—',
             )}
-            {renderField('Polegada principal', produto.polegada_principal_ref_detalhes?.nome ?? '—')}
-            {renderField('Polegada secundária', produto.polegada_secundaria_ref_detalhes?.nome ?? '—')}
+            {renderField('Polegada principal', produto.polegada_principal_ref_detalhes?.descricao ?? '—')}
+            {renderField('Polegada secundária', produto.polegada_secundaria_ref_detalhes?.descricao ?? '—')}
           </dl>
         </SectionCard>
 
@@ -183,8 +202,8 @@ export function ProdutoWorkspace({ produto, mode }: ProdutoWorkspaceProps) {
               {renderField('Altura (mm)', formatValor(produto.dim_altura_mm, 3))}
               {renderField('Furo (mm)', formatValor(produto.dim_furo_mm, 3))}
               {renderField('Aba (mm)', formatValor(produto.dim_aba_mm, 3))}
-              {renderField('Aba (polegada ref)', produto.dim_aba_polegada_ref_detalhes?.nome ?? '—')}
-              {renderField('Espessura (polegada ref)', produto.dim_espessura_polegada_ref_detalhes?.nome ?? '—')}
+              {renderField('Aba (polegada ref)', produto.dim_aba_polegada_ref_detalhes?.descricao ?? '—')}
+              {renderField('Espessura (polegada ref)', produto.dim_espessura_polegada_ref_detalhes?.descricao ?? '—')}
             </dl>
           </SectionCard>
         )}

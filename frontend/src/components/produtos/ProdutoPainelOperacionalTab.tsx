@@ -12,6 +12,8 @@ import {
   buildPainelVendaLinks,
   PAINEL_SEM_HISTORICO,
   painelValorExibicao,
+  painelValorMoeda,
+  painelValorQuantidade,
 } from '@/lib/produtoPainelOperacional';
 import { produtosService } from '@/services/api/produtos';
 import { apiErrorMessage } from '@/services/api/config';
@@ -124,19 +126,19 @@ function InteligenciaComprasCards({ dados }: { dados: ProdutoPainelInteligenciaC
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
       <PainelCard titulo="Menor preço">
-        <p className="text-xl font-semibold tabular-nums">{dados.menor_preco}</p>
+        <p className="text-xl font-semibold tabular-nums">{painelValorMoeda(dados.menor_preco)}</p>
         <p className="text-xs text-muted-foreground">{painelValorExibicao(dados.fornecedor_menor_preco)}</p>
       </PainelCard>
       <PainelCard titulo="Maior preço">
-        <p className="text-xl font-semibold tabular-nums">{dados.maior_preco}</p>
+        <p className="text-xl font-semibold tabular-nums">{painelValorMoeda(dados.maior_preco)}</p>
         <p className="text-xs text-muted-foreground">{painelValorExibicao(dados.fornecedor_maior_preco)}</p>
       </PainelCard>
       <PainelCard titulo="Preço médio">
-        <p className="text-xl font-semibold tabular-nums">{dados.preco_medio}</p>
+        <p className="text-xl font-semibold tabular-nums">{painelValorMoeda(dados.preco_medio)}</p>
         <p className="text-xs text-muted-foreground">{dados.quantidade_registros} registro(s)</p>
       </PainelCard>
       <PainelCard titulo="Último preço">
-        <p className="text-xl font-semibold tabular-nums">{dados.ultimo_preco}</p>
+        <p className="text-xl font-semibold tabular-nums">{painelValorMoeda(dados.ultimo_preco)}</p>
         <p className="text-xs text-muted-foreground">
           {painelValorExibicao(dados.fornecedor_ultimo_preco)} · {formatDateBr(dados.data_ultimo_preco) || '—'}
         </p>
@@ -152,19 +154,19 @@ function InteligenciaVendasCards({ dados }: { dados: ProdutoPainelInteligenciaVe
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
       <PainelCard titulo="Menor preço">
-        <p className="text-xl font-semibold tabular-nums">{dados.menor_preco}</p>
+        <p className="text-xl font-semibold tabular-nums">{painelValorMoeda(dados.menor_preco)}</p>
         <p className="text-xs text-muted-foreground">{painelValorExibicao(dados.cliente_menor_preco)}</p>
       </PainelCard>
       <PainelCard titulo="Maior preço">
-        <p className="text-xl font-semibold tabular-nums">{dados.maior_preco}</p>
+        <p className="text-xl font-semibold tabular-nums">{painelValorMoeda(dados.maior_preco)}</p>
         <p className="text-xs text-muted-foreground">{painelValorExibicao(dados.cliente_maior_preco)}</p>
       </PainelCard>
       <PainelCard titulo="Preço médio">
-        <p className="text-xl font-semibold tabular-nums">{dados.preco_medio}</p>
+        <p className="text-xl font-semibold tabular-nums">{painelValorMoeda(dados.preco_medio)}</p>
         <p className="text-xs text-muted-foreground">{dados.quantidade_registros} registro(s)</p>
       </PainelCard>
       <PainelCard titulo="Último preço">
-        <p className="text-xl font-semibold tabular-nums">{dados.ultimo_preco}</p>
+        <p className="text-xl font-semibold tabular-nums">{painelValorMoeda(dados.ultimo_preco)}</p>
         <p className="text-xs text-muted-foreground">
           {painelValorExibicao(dados.cliente_ultimo_preco)} · {formatDateBr(dados.data_ultimo_preco) || '—'}
         </p>
@@ -222,13 +224,13 @@ function SecaoResumo({ resumo }: { resumo: ProdutoPainelResumo }) {
       <PainelGrupo titulo="Estoque">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <PainelCard titulo="Saldo físico">
-            <p className="text-2xl font-semibold tabular-nums">{painelValorExibicao(resumo.estoque.saldo_fisico)}</p>
+            <p className="text-2xl font-semibold tabular-nums">{painelValorQuantidade(resumo.estoque.saldo_fisico)}</p>
           </PainelCard>
           <PainelCard titulo="Reservado">
-            <p className="text-2xl font-semibold tabular-nums">{painelValorExibicao(resumo.estoque.reservado)}</p>
+            <p className="text-2xl font-semibold tabular-nums">{painelValorQuantidade(resumo.estoque.reservado)}</p>
           </PainelCard>
           <PainelCard titulo="Disponível">
-            <p className="text-2xl font-semibold tabular-nums">{painelValorExibicao(resumo.estoque.disponivel)}</p>
+            <p className="text-2xl font-semibold tabular-nums">{painelValorQuantidade(resumo.estoque.disponivel)}</p>
           </PainelCard>
         </div>
       </PainelGrupo>
@@ -239,7 +241,7 @@ function SecaoResumo({ resumo }: { resumo: ProdutoPainelResumo }) {
             <PainelBlocoHistorico vazio={!resumo.ultima_compra} links={buildPainelCompraLinks(resumo.ultima_compra)}>
               <PainelCampo label="Fornecedor" value={painelValorExibicao(resumo.ultima_compra?.fornecedor)} />
               <PainelCampo label="Data" value={formatDateBr(resumo.ultima_compra?.data) || '—'} />
-              <PainelCampo label="Valor unit." value={painelValorExibicao(resumo.ultima_compra?.valor_unitario)} />
+              <PainelCampo label="Valor unit." value={painelValorMoeda(resumo.ultima_compra?.valor_unitario)} />
             </PainelBlocoHistorico>
           </PainelCard>
           <PainelCard titulo="Última venda">
@@ -273,7 +275,7 @@ function SecaoResumo({ resumo }: { resumo: ProdutoPainelResumo }) {
           <PainelCard titulo="Última corrida">
             <PainelBlocoHistorico vazio={!resumo.ultima_corrida} links={buildPainelCorridaLinks(resumo.ultima_corrida)}>
               <PainelCampo label="Corrida" value={painelValorExibicao(resumo.ultima_corrida?.corrida)} />
-              <PainelCampo label="Saldo" value={painelValorExibicao(resumo.ultima_corrida?.saldo_atual)} />
+              <PainelCampo label="Saldo" value={painelValorQuantidade(resumo.ultima_corrida?.saldo_atual)} />
             </PainelBlocoHistorico>
           </PainelCard>
         </div>
@@ -379,9 +381,9 @@ export function ProdutoPainelOperacionalTab({ produtoId, active = true }: Props)
                 <td>{formatDateBr(row.data) || '—'}</td>
                 <td>{painelValorExibicao(row.fornecedor)}</td>
                 <td>{painelValorExibicao(row.nf)}</td>
-                <td className="tabular-nums">{row.quantidade}</td>
-                <td className="tabular-nums">{row.valor_unitario}</td>
-                <td className="tabular-nums">{row.valor_total}</td>
+                <td className="tabular-nums">{painelValorQuantidade(row.quantidade)}</td>
+                <td className="tabular-nums">{painelValorMoeda(row.valor_unitario)}</td>
+                <td className="tabular-nums">{painelValorMoeda(row.valor_total)}</td>
                 <td>
                   <PainelLinks links={linksCompraHistorico(row)} />
                 </td>
@@ -405,9 +407,9 @@ export function ProdutoPainelOperacionalTab({ produtoId, active = true }: Props)
                 <td>{formatDateBr(row.data) || '—'}</td>
                 <td>{painelValorExibicao(row.cliente)}</td>
                 <td>{painelValorExibicao(row.pedido_numero || row.nf)}</td>
-                <td className="tabular-nums">{row.quantidade}</td>
-                <td className="tabular-nums">{row.valor_unitario}</td>
-                <td className="tabular-nums">{row.valor_total}</td>
+                <td className="tabular-nums">{painelValorQuantidade(row.quantidade)}</td>
+                <td className="tabular-nums">{painelValorMoeda(row.valor_unitario)}</td>
+                <td className="tabular-nums">{painelValorMoeda(row.valor_total)}</td>
                 <td>
                   <PainelLinks links={linksVendaHistorico(row)} />
                 </td>
@@ -448,7 +450,7 @@ export function ProdutoPainelOperacionalTab({ produtoId, active = true }: Props)
                 <td className="font-mono">{c.corrida}</td>
                 <td>{painelValorExibicao(c.fornecedor)}</td>
                 <td>{formatDateBr(c.data_recebimento) || '—'}</td>
-                <td className="tabular-nums">{c.saldo_atual}</td>
+                <td className="tabular-nums">{painelValorQuantidade(c.saldo_atual)}</td>
                 <td>{painelValorExibicao(c.nf_entrada)}</td>
                 <td>
                   <PainelLinks
@@ -478,9 +480,9 @@ export function ProdutoPainelOperacionalTab({ produtoId, active = true }: Props)
                 <td>{formatDateBr(row.data) || '—'}</td>
                 <td>{row.numero}</td>
                 <td>{painelValorExibicao(row.fornecedor)}</td>
-                <td className="tabular-nums">{row.quantidade}</td>
-                <td className="tabular-nums">{row.valor_unitario}</td>
-                <td className="tabular-nums">{row.valor_total}</td>
+                <td className="tabular-nums">{painelValorQuantidade(row.quantidade)}</td>
+                <td className="tabular-nums">{painelValorMoeda(row.valor_unitario)}</td>
+                <td className="tabular-nums">{painelValorMoeda(row.valor_total)}</td>
                 <td>
                   <PainelLinks links={linksNfEntradaFiscal(row)} />
                 </td>
@@ -498,9 +500,9 @@ export function ProdutoPainelOperacionalTab({ produtoId, active = true }: Props)
                 <td>{formatDateBr(row.data) || '—'}</td>
                 <td>{row.numero}</td>
                 <td>{painelValorExibicao(row.cliente)}</td>
-                <td className="tabular-nums">{row.quantidade}</td>
-                <td className="tabular-nums">{row.valor_unitario}</td>
-                <td className="tabular-nums">{row.valor_total}</td>
+                <td className="tabular-nums">{painelValorQuantidade(row.quantidade)}</td>
+                <td className="tabular-nums">{painelValorMoeda(row.valor_unitario)}</td>
+                <td className="tabular-nums">{painelValorMoeda(row.valor_total)}</td>
                 <td>
                   <PainelLinks
                     links={buildPainelNfSaidaLinks({

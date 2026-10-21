@@ -95,7 +95,7 @@ describe('ProdutoWorkspace (visualização)', () => {
     expect(screen.getByText('Aço Carbono A105')).toBeInTheDocument();
     expect(screen.getByText('NPT')).toBeInTheDocument();
     expect(screen.getByText('40')).toBeInTheDocument();
-    expect(screen.getByText('NPS 1/2 — 1/2"')).toBeInTheDocument();
+    expect(screen.getByText('1/2"')).toBeInTheDocument();
     expect(screen.getByText('Dimensional')).toBeInTheDocument();
     expect(screen.getByText('Peça')).toBeInTheDocument();
 
@@ -105,6 +105,14 @@ describe('ProdutoWorkspace (visualização)', () => {
     expect(screen.queryByText('#12')).toBeNull();
     expect(screen.queryByText('#8')).toBeNull();
     expect(screen.queryByText('#3')).toBeNull();
+  });
+
+  it('mostra a polegada sem o rótulo técnico NPS', () => {
+    render(<ProdutoWorkspace produto={produto({})} mode="view" />);
+    abrirAba('Classificação industrial');
+
+    expect(screen.queryByText('NPS 1/2 — 1/2"')).toBeNull();
+    expect(screen.queryByText(/^NPS\s/)).toBeNull();
   });
 
   it('traduz o modo de código em vez do código cru', () => {
@@ -120,7 +128,7 @@ describe('ProdutoWorkspace (visualização)', () => {
     expect(screen.queryByText(/^(INTERNO|MANUAL|LEGADO)$/)).toBeNull();
   });
 
-  it('na aba Classificação mostra o nome da polegada das dimensões, não o id', () => {
+  it('na aba Classificação mostra a polegada das dimensões em formato amigável', () => {
     render(
       <ProdutoWorkspace
         produto={produto({
@@ -149,8 +157,10 @@ describe('ProdutoWorkspace (visualização)', () => {
     );
     abrirAba('Classificação industrial');
 
-    expect(screen.getByText('OD 3/4 — 3/4"')).toBeInTheDocument();
-    expect(screen.getByText('OD 1/4 — 1/4"')).toBeInTheDocument();
+    expect(screen.getByText('3/4"')).toBeInTheDocument();
+    expect(screen.getByText('1/4"')).toBeInTheDocument();
+    expect(screen.queryByText('OD 3/4 — 3/4"')).toBeNull();
+    expect(screen.queryByText('OD 1/4 — 1/4"')).toBeNull();
     expect(screen.queryByText('#5')).toBeNull();
     expect(screen.queryByText('#6')).toBeNull();
   });
@@ -162,6 +172,108 @@ describe('ProdutoWorkspace (visualização)', () => {
     expect(screen.getByText('Unidade estoque efetiva')).toBeInTheDocument();
     expect(screen.getByText('Unidade fiscal efetiva')).toBeInTheDocument();
     expect(screen.queryByText('Unidade fiscal')).toBeNull();
+    expect(screen.getByText(ROTULO_COMPOSICAO)).toBeInTheDocument();
+  });
+
+  it('exibe a última compra e a última venda praticadas e mantém o cadastro menor', () => {
+    render(
+      <ProdutoWorkspace
+        produto={produto({ ultimo_preco_compra: 900, ultimo_preco_venda: 1450.75, preco_custo: 300, preco_venda: 700 })}
+        mode="view"
+      />,
+    );
+
+    expect(screen.getByText('Última compra')).toBeInTheDocument();
+    expect(screen.getByText('900,00')).toBeInTheDocument();
+    expect(screen.getByText('1.450,75')).toBeInTheDocument();
+
+    expect(screen.getByText('Valores do cadastro')).toBeInTheDocument();
+    expect(screen.getByText('300,00')).toBeInTheDocument();
+    expect(screen.getByText('700,00')).toBeInTheDocument();
+    expect(screen.getByText('Preço de custo').closest('div')).toHaveTextContent(/^Preço de custo\s*300,00$/);
+  });
+
+  it('deixa o preço em branco quando o item nunca passou por uma NF-e', () => {
+    render(
+      <ProdutoWorkspace
+        produto={produto({ ultimo_preco_compra: null, ultimo_preco_venda: null, preco_custo: 0 })}
+        mode="view"
+      />,
+    );
+
+    expect(screen.getByText('Última compra').closest('div')).toHaveTextContent(/^Última compra\s*—$/);
+    expect(screen.getByText('Última venda').closest('div')).toHaveTextContent(/^Última venda\s*—$/);
+  });
+
+  it('esconde o card de composição quando nenhum controle efetivo está ligado', () => {
+    render(
+      <ProdutoWorkspace
+        produto={produto({ usa_conversao_dimensional_efetivo: false, controla_composicao_fisica_efetivo: false })}
+        mode="view"
+      />,
+    );
+
+    expect(screen.queryByText('Composição e conversões')).toBeNull();
+  });
+
+  it('mostra o card quando a conversão dimensional efetiva está ligada', () => {
+    render(
+      <ProdutoWorkspace
+        produto={produto({ usa_conversao_dimensional_efetivo: true, controla_composicao_fisica_efetivo: false })}
+        mode="view"
+      />,
+    );
+
+    expect(screen.getByText('Composição e conversões')).toBeInTheDocument();
+  });
+
+  it('mostra o card quando a composição física efetiva está ligada', () => {
+    render(
+      <ProdutoWorkspace
+        produto={produto({ usa_conversao_dimensional_efetivo: false, controla_composicao_fisica_efetivo: true })}
+        mode="view"
+      />,
+    );
+
+    expect(screen.getByText('Composição e conversões')).toBeInTheDocument();
+  });
+
+  it('decide o card pelo controle efetivo, ignorando o flag cru ligado no produto', () => {
+    render(
+      <ProdutoWorkspace
+        produto={produto({
+          usa_conversao_dimensional: true,
+          controla_composicao_fisica: true,
+          usa_conversao_dimensional_efetivo: false,
+          controla_composicao_fisica_efetivo: false,
+        })}
+        mode="view"
+      />,
+    );
+
+    expect(screen.queryByText('Composição e conversões')).toBeNull();
+  });
+
+  it('mostra o card herdado da família com o controle efetivo e o tipo de composição', () => {
+    render(
+      <ProdutoWorkspace
+        produto={produto({
+          usa_conversao_dimensional: false,
+          controla_composicao_fisica: false,
+          usa_conversao_dimensional_efetivo: true,
+          controla_composicao_fisica_efetivo: true,
+        })}
+        mode="view"
+      />,
+    );
+
+    expect(screen.getByText('Composição e conversões')).toBeInTheDocument();
+    expect(screen.getByText('Controla composição física').closest('div')).toHaveTextContent(
+      /^Controla composição física\s*Sim$/,
+    );
+    expect(screen.getByText('Usa conversão dimensional').closest('div')).toHaveTextContent(
+      /^Usa conversão dimensional\s*Sim$/,
+    );
     expect(screen.getByText(ROTULO_COMPOSICAO)).toBeInTheDocument();
   });
 });

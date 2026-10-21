@@ -1,3 +1,4 @@
+import { toNumber } from '@/lib/numberFormat';
 import type {
   ProdutoPainelFiscalNfEntrada,
   ProdutoPainelHistoricoCompra,
@@ -28,6 +29,26 @@ type PainelNfEntradaLinkSource =
 export function painelValorExibicao(value: string | number | null | undefined): string {
   if (value === null || value === undefined || value === '') return '—';
   return String(value);
+}
+
+/**
+ * Preço do painel em pt-BR. O backend entrega moeda como string decimal ('900.0000', '7200.00');
+ * '900,00' e '1.234,5678' saem daqui. Não usar em números de documento: NF '15395' viraria '15.395'.
+ */
+export function painelValorMoeda(value: string | number | null | undefined): string {
+  const n = toNumber(value, NaN);
+  if (!Number.isFinite(n)) return painelValorExibicao(value);
+  return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+}
+
+/**
+ * Quantidade do painel em pt-BR, com no máximo 3 casas (a coluna 'Qtd.' chega como '8.000').
+ * Sem casas forçadas: '8.000' vira '8' e '3.500' vira '3,5'.
+ */
+export function painelValorQuantidade(value: string | number | null | undefined): string {
+  const n = toNumber(value, NaN);
+  if (!Number.isFinite(n)) return painelValorExibicao(value);
+  return n.toLocaleString('pt-BR', { maximumFractionDigits: 3 });
 }
 
 function painelNumeroNfEntrada(block: PainelCompraLinkSource): string | number | undefined {

@@ -32,6 +32,10 @@ from apps.produtos.familia_duplicidade import (
 )
 from apps.produtos.conversao_medidas import ConversaoErro, converter_quantidade_produto
 from apps.produtos.polegadas import aliases_for_polegada, normalize_polegada_label, parse_polegada_to_decimal
+from apps.produtos.precos_praticados import (
+    ultimo_preco_compra_produto,
+    ultimo_preco_venda_produto,
+)
 from apps.text_normalize import normalize_operational_fields, to_operational_upper
 from apps.auditoria.servico import (
     registrar_produto,
@@ -136,6 +140,17 @@ def _decimal_from_dim(raw):
         return Decimal(str(raw))
     except Exception:
         return None
+
+
+_AUSENTE = object()
+
+
+def _preco_praticado(produto: Produto, campo: str, consultor) -> float | None:
+    """O queryset anota o preço; instância fora dele (create/PATCH, painel) consulta sob demanda."""
+    valor = getattr(produto, campo, _AUSENTE)
+    if valor is _AUSENTE:
+        valor = consultor(produto.pk)
+    return None if valor is None else float(valor)
 
 
 def _validar_dimensional_materiais(familia: FamiliaProduto, dims: dict) -> dict[str, str]:
@@ -640,6 +655,8 @@ class ProdutoSerializer(serializers.ModelSerializer):
     preco_custo = serializers.DecimalField(max_digits=14, decimal_places=2, coerce_to_string=False)
     preco_venda = serializers.DecimalField(max_digits=14, decimal_places=2, coerce_to_string=False)
     estoque_minimo = serializers.DecimalField(max_digits=14, decimal_places=3, coerce_to_string=False)
+    ultimo_preco_compra = serializers.SerializerMethodField(read_only=True)
+    ultimo_preco_venda = serializers.SerializerMethodField(read_only=True)
 
     familia_id = serializers.PrimaryKeyRelatedField(
         queryset=FamiliaProduto.objects.filter(ativo=True).exclude(
@@ -709,6 +726,8 @@ class ProdutoSerializer(serializers.ModelSerializer):
             'unidade_especifica',
             'preco_custo',
             'preco_venda',
+            'ultimo_preco_compra',
+            'ultimo_preco_venda',
             'estoque_minimo',
             'codigo_completo',
             'tipo_controle_unidade',
@@ -752,6 +771,12 @@ class ProdutoSerializer(serializers.ModelSerializer):
 
     def get_material_ref_detalhes(self, obj: Produto):
         return _material_resumo(obj.material_ref)
+
+    def get_ultimo_preco_compra(self, obj: Produto) -> float | None:
+        return _preco_praticado(obj, 'ultimo_preco_compra', ultimo_preco_compra_produto)
+
+    def get_ultimo_preco_venda(self, obj: Produto) -> float | None:
+        return _preco_praticado(obj, 'ultimo_preco_venda', ultimo_preco_venda_produto)
 
     def validate(self, attrs):
         inst = self.instance
@@ -1196,6 +1221,9 @@ class ProdutoSerializer(serializers.ModelSerializer):
         for k in ('od_mm', 'diametro_interno_mm', 'espessura_mm', 'comprimento_mm', 'diametro_mostrador_mm'):
             if k in data and data[k] is not None:
                 data[k] = float(Decimal(str(data[k])))
+        # TODO(performance): get_ncm_efetivo() consulta produtos_ncm linha a linha (N+1 pré-existente:
+        # 20 queries por página). Só sai do caminho da anotação de preço; precisa de prefetch do NCM
+        # próprio + da família para resolver sem N+1.
         ncm_efetivo = instance.get_ncm_efetivo()
         data['ncm_efetivo'] = (
             {

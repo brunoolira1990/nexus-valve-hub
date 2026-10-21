@@ -16,6 +16,11 @@ from apps.fiscal.models import (
     NFeEntrada,
 )
 from apps.produtos.models import Produto
+from apps.produtos.precos_praticados import (
+    ORDEM_FONTES_PRECO_COMPRA,
+    STATUS_ENTRADA_PRECO_PRATICADO,
+    STATUS_PEDIDO_COMPRA_DESCARTADO,
+)
 from apps.produtos.serializers import ProdutoSerializer
 from apps.produtos.snapshot import build_produto_snapshot
 from apps.qualidade.corridas_disponiveis import listar_corridas_disponiveis_produto
@@ -28,11 +33,9 @@ def _fmt_money(value) -> str:
     return f'{Decimal(str(value or 0)):.2f}'
 
 
-def _fmt_unit_price(total, qty) -> str:
-    q = Decimal(str(qty or 0))
-    if q <= 0:
-        return '0.00'
-    return f'{(Decimal(str(total or 0)) / q):.4f}'
+def _fmt_unit_price(unit) -> str:
+    """ItemNFe*.valor já é o preço unitário (vUnCom da NF-e); não se divide pela quantidade."""
+    return f'{Decimal(str(unit or 0)):.4f}'
 
 
 def _iso_date(value: date | datetime | None) -> str | None:
@@ -88,12 +91,15 @@ def _montar_bloco_estoque(produto: Produto) -> dict:
 
 
 def _buscar_ultima_compra(produto_id: int) -> dict | None:
-    candidatos: list[tuple[date, dict]] = []
+    candidatos: dict[str, dict] = {}
 
+    # Mesma política da aba Geral (precos_praticados): pedido cancelado deixa de ser intenção de
+    # compra, então não concorre ao card 'Última compra'. As listas de documentos mostram tudo.
     item_pc = (
         ItemPedidoCompra.objects
         .select_related('pedido__fornecedor')
         .filter(produto_id=produto_id)
+        .exclude(pedido__status__icontains=STATUS_PEDIDO_COMPRA_DESCARTADO)
         .order_by('-pedido__data', '-id')
         .first()
     )
@@ -105,44 +111,39 @@ def _buscar_ultima_compra(produto_id: int) -> dict | None:
             .order_by('-data', '-id')
             .first()
         )
-        candidatos.append((
-            pedido.data,
-            {
-                'origem': 'pedido_compra',
-                'fornecedor': pedido.fornecedor.razao_social if pedido.fornecedor_id else '',
-                'fornecedor_id': pedido.fornecedor_id,
-                'data': _iso_date(pedido.data),
-                'valor_unitario': _fmt_money(item_pc.valor_unitario),
-                'pedido_compra_id': pedido.id,
-                'pedido_compra_numero': pedido.numero,
-                'nf_entrada_id': nf.id if nf else None,
-                'nf_entrada_numero': nf.numero if nf else None,
-            },
-        ))
+        candidatos['pedido_compra'] = {
+            'origem': 'pedido_compra',
+            'fornecedor': pedido.fornecedor.razao_social if pedido.fornecedor_id else '',
+            'fornecedor_id': pedido.fornecedor_id,
+            'data': _iso_date(pedido.data),
+            'valor_unitario': _fmt_money(item_pc.valor_unitario),
+            'pedido_compra_id': pedido.id,
+            'pedido_compra_numero': pedido.numero,
+            'nf_entrada_id': nf.id if nf else None,
+            'nf_entrada_numero': nf.numero if nf else None,
+        }
 
+    # Mesma política da aba Geral (precos_praticados): NF-e rejeitada/inutilizada/cancelada não é compra.
     item_ne = (
         ItemNFeEntrada.objects
         .select_related('nf__fornecedor', 'nf__pedido_compra')
-        .filter(produto_id=produto_id)
+        .filter(produto_id=produto_id, nf__status_operacional__in=STATUS_ENTRADA_PRECO_PRATICADO)
         .order_by('-nf__data', '-id')
         .first()
     )
     if item_ne:
         nf = item_ne.nf
-        candidatos.append((
-            nf.data,
-            {
-                'origem': 'nfe_entrada',
-                'fornecedor': nf.fornecedor.razao_social if nf.fornecedor_id else '',
-                'fornecedor_id': nf.fornecedor_id,
-                'data': _iso_date(nf.data),
-                'valor_unitario': _fmt_unit_price(item_ne.valor, item_ne.quantidade),
-                'pedido_compra_id': nf.pedido_compra_id,
-                'pedido_compra_numero': nf.pedido_compra.numero if nf.pedido_compra_id else None,
-                'nf_entrada_id': nf.id,
-                'nf_entrada_numero': nf.numero,
-            },
-        ))
+        candidatos['nfe_entrada'] = {
+            'origem': 'nfe_entrada',
+            'fornecedor': nf.fornecedor.razao_social if nf.fornecedor_id else '',
+            'fornecedor_id': nf.fornecedor_id,
+            'data': _iso_date(nf.data),
+            'valor_unitario': _fmt_unit_price(item_ne.valor),
+            'pedido_compra_id': nf.pedido_compra_id,
+            'pedido_compra_numero': nf.pedido_compra.numero if nf.pedido_compra_id else None,
+            'nf_entrada_id': nf.id,
+            'nf_entrada_numero': nf.numero,
+        }
 
     item_conf = (
         ItemNFeEntradaConferencia.objects
@@ -170,26 +171,26 @@ def _buscar_ultima_compra(produto_id: int) -> dict | None:
             if not fornecedor and pedido_pc.fornecedor_id:
                 fornecedor = pedido_pc.fornecedor.razao_social
                 fornecedor_id = pedido_pc.fornecedor_id
-        candidatos.append((
-            dt or date.min,
-            {
-                'origem': 'nfe_entrada_conferencia',
-                'fornecedor': fornecedor,
-                'fornecedor_id': fornecedor_id,
-                'data': _iso_date(dt),
-                'valor_unitario': _fmt_money(item_conf.valor_unitario_nf),
-                'pedido_compra_id': pedido_pc.id if pedido_pc else None,
-                'pedido_compra_numero': pedido_pc.numero if pedido_pc else None,
-                'nf_entrada_historica_id': nf_hist.id,
-                'nf_entrada_numero': nf_hist.numero,
-                'conferencia_id': item_conf.conferencia_id,
-            },
-        ))
+        candidatos['nfe_entrada_conferencia'] = {
+            'origem': 'nfe_entrada_conferencia',
+            'fornecedor': fornecedor,
+            'fornecedor_id': fornecedor_id,
+            'data': _iso_date(dt),
+            'valor_unitario': _fmt_unit_price(item_conf.valor_unitario_nf),
+            'pedido_compra_id': pedido_pc.id if pedido_pc else None,
+            'pedido_compra_numero': pedido_pc.numero if pedido_pc else None,
+            'nf_entrada_historica_id': nf_hist.id,
+            'nf_entrada_numero': nf_hist.numero,
+            'conferencia_id': item_conf.conferencia_id,
+        }
 
-    if not candidatos:
-        return None
-    candidatos.sort(key=lambda row: (row[0], row[1].get('nf_entrada_id') or 0), reverse=True)
-    return candidatos[0][1]
+    # Cada fonte acima já entrega a sua linha mais recente; o que decide o card é a hierarquia da
+    # aba Geral (precos_praticados.subquery_ultimo_preco_compra), nunca a recência entre fontes.
+    for origem in ORDEM_FONTES_PRECO_COMPRA:
+        candidato = candidatos.get(origem)
+        if candidato is not None:
+            return candidato
+    return None
 
 
 def _buscar_ultima_venda(produto_id: int) -> dict | None:
@@ -278,7 +279,7 @@ def _buscar_ultima_nf_entrada(produto_id: int) -> dict | None:
                 'fornecedor_id': nf.fornecedor_id,
                 'data': _iso_date(nf.data),
                 'quantidade': f'{item_ne.quantidade:.3f}',
-                'valor_unitario': _fmt_unit_price(item_ne.valor, item_ne.quantidade),
+                'valor_unitario': _fmt_unit_price(item_ne.valor),
             },
         ))
 
@@ -312,7 +313,7 @@ def _buscar_ultima_nf_entrada(produto_id: int) -> dict | None:
                 'fornecedor_id': fornecedor_id,
                 'data': _iso_date(dt),
                 'quantidade': f'{item_conf.quantidade_nf:.3f}',
-                'valor_unitario': _fmt_money(item_conf.valor_unitario_nf),
+                'valor_unitario': _fmt_unit_price(item_conf.valor_unitario_nf),
             },
         ))
 
@@ -340,7 +341,7 @@ def _buscar_ultima_nf_saida(produto_id: int) -> dict | None:
         'cliente_id': nf.cliente_id,
         'data': _iso_date(nf.data),
         'quantidade': f'{item_ns.quantidade:.3f}',
-        'valor_unitario': _fmt_unit_price(item_ns.valor, item_ns.quantidade),
+        'valor_unitario': _fmt_unit_price(item_ns.valor),
     }
 
 
@@ -477,8 +478,8 @@ def _coletar_linhas_compra(produto_id: int) -> list[dict]:
     ):
         nf = item_ne.nf
         qty = Decimal(str(item_ne.quantidade or 0))
-        total = Decimal(str(item_ne.valor or 0))
-        unit = (total / qty) if qty > 0 else Decimal('0')
+        unit = Decimal(str(item_ne.valor or 0))
+        total = unit * qty
         linhas.append({
             'origem': 'nfe_entrada',
             '_data_ordem': nf.data,
@@ -490,7 +491,7 @@ def _coletar_linhas_compra(produto_id: int) -> list[dict]:
             'pedido_compra_numero': nf.pedido_compra.numero if nf.pedido_compra_id else None,
             'nf_entrada_id': nf.id,
             'quantidade': f'{qty:.3f}',
-            'valor_unitario': _fmt_unit_price(total, qty),
+            'valor_unitario': _fmt_unit_price(unit),
             'valor_total': _fmt_money(total),
             '_unit_decimal': unit,
         })
@@ -538,7 +539,7 @@ def _coletar_linhas_compra(produto_id: int) -> list[dict]:
             'nf_entrada_historica_id': nf_hist.id,
             'conferencia_id': item_conf.conferencia_id,
             'quantidade': f'{qty:.3f}',
-            'valor_unitario': _fmt_money(unit),
+            'valor_unitario': _fmt_unit_price(unit),
             'valor_total': _fmt_money(total),
             '_unit_decimal': unit,
         })
@@ -597,8 +598,8 @@ def _coletar_linhas_venda(produto_id: int) -> list[dict]:
             if item_pv_fat:
                 pedido = item_pv_fat.pedido
         qty = Decimal(str(item_ns.quantidade or 0))
-        total = Decimal(str(item_ns.valor or 0))
-        unit = (total / qty) if qty > 0 else Decimal('0')
+        unit = Decimal(str(item_ns.valor or 0))
+        total = unit * qty
         linhas.append({
             'origem': 'nfe_saida',
             '_data_ordem': nf.data,
@@ -610,7 +611,7 @@ def _coletar_linhas_venda(produto_id: int) -> list[dict]:
             'nf': nf.numero,
             'nf_id': nf.id,
             'quantidade': f'{qty:.3f}',
-            'valor_unitario': _fmt_unit_price(total, qty),
+            'valor_unitario': _fmt_unit_price(unit),
             'valor_total': _fmt_money(total),
             '_unit_decimal': unit,
         })
@@ -635,10 +636,10 @@ def _montar_inteligencia_preco(linhas: list[dict], *, campo_parte: str) -> dict 
     media = sum(p[0] for p in precos) / Decimal(len(precos))
 
     return {
-        'menor_preco': _fmt_money(menor[0]),
-        'maior_preco': _fmt_money(maior[0]),
+        'menor_preco': _fmt_unit_price(menor[0]),
+        'maior_preco': _fmt_unit_price(maior[0]),
         'preco_medio': f'{media:.4f}',
-        'ultimo_preco': _fmt_money(ultimo[0]),
+        'ultimo_preco': _fmt_unit_price(ultimo[0]),
         f'{campo_parte}_menor_preco': menor[2],
         f'{campo_parte}_maior_preco': maior[2],
         f'{campo_parte}_ultimo_preco': ultimo[2],
@@ -706,7 +707,8 @@ def _montar_bloco_fiscal(produto_id: int) -> dict:
     ):
         nf = item_ne.nf
         qty = Decimal(str(item_ne.quantidade or 0))
-        total = Decimal(str(item_ne.valor or 0))
+        unit = Decimal(str(item_ne.valor or 0))
+        total = unit * qty
         nf_entrada.append({
             'origem': 'nfe_entrada',
             'numero': nf.numero,
@@ -715,7 +717,7 @@ def _montar_bloco_fiscal(produto_id: int) -> dict:
             'fornecedor_id': nf.fornecedor_id,
             'data': _iso_date(nf.data),
             'quantidade': f'{qty:.3f}',
-            'valor_unitario': _fmt_unit_price(total, qty),
+            'valor_unitario': _fmt_unit_price(unit),
             'valor_total': _fmt_money(total),
         })
 
@@ -746,7 +748,7 @@ def _montar_bloco_fiscal(produto_id: int) -> dict:
             'fornecedor': fornecedor,
             'data': _iso_date(dt),
             'quantidade': f'{qty:.3f}',
-            'valor_unitario': _fmt_money(item_conf.valor_unitario_nf),
+            'valor_unitario': _fmt_unit_price(item_conf.valor_unitario_nf),
             'valor_total': _fmt_money(total),
         })
 
@@ -762,7 +764,8 @@ def _montar_bloco_fiscal(produto_id: int) -> dict:
     ):
         nf = item_ns.nf
         qty = Decimal(str(item_ns.quantidade or 0))
-        total = Decimal(str(item_ns.valor or 0))
+        unit = Decimal(str(item_ns.valor or 0))
+        total = unit * qty
         nf_saida.append({
             'numero': nf.numero,
             'nf_id': nf.id,
@@ -770,7 +773,7 @@ def _montar_bloco_fiscal(produto_id: int) -> dict:
             'cliente_id': nf.cliente_id,
             'data': _iso_date(nf.data),
             'quantidade': f'{qty:.3f}',
-            'valor_unitario': _fmt_unit_price(total, qty),
+            'valor_unitario': _fmt_unit_price(unit),
             'valor_total': _fmt_money(total),
         })
 

@@ -37,6 +37,7 @@ from apps.produtos.serializers import (
 from django.db.models import Q, Value
 from django.db.models.functions import Coalesce
 from apps.produtos.polegadas import extract_mm_from_term
+from apps.produtos.precos_praticados import annotate_ultimos_precos
 from apps.produtos.produto_busca import aplicar_filtro_busca_produto, produto_busca_rank
 from apps.produtos.painel_operacional import montar_painel_resumo_produto
 from apps.produtos.painel_rastreabilidade import montar_painel_rastreabilidade
@@ -252,7 +253,7 @@ class ProdutoViewSet(FriendlyDestroyMixin, AutocompleteOrPaginationMixin, viewse
         material = (self.request.query_params.get('material') or '').strip()
         if material:
             qs = qs.filter(material__icontains=material)
-        return qs
+        return annotate_ultimos_precos(qs)
 
     def list(self, request, *args, **kwargs):
         limit = (request.query_params.get('limit') or '').strip()
