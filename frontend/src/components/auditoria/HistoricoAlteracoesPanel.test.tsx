@@ -86,7 +86,12 @@ describe('HistoricoAlteracoesPanel', () => {
     expect(await screen.findByTestId('auditoria-evento-2')).toHaveAttribute('data-operacao', 'UPDATE');
     expect(screen.getByTestId('auditoria-evento-1')).toHaveAttribute('data-operacao', 'CREATE');
     expect(screen.getByTestId('auditoria-campo-email')).toHaveTextContent(AUDITORIA_VALOR_PROTEGIDO);
-    expect(screen.getByTestId('auditoria-campo-nome_fantasia')).toHaveTextContent('de A para B');
+    expect(screen.getByTestId('auditoria-antes-nome_fantasia')).toHaveTextContent('A');
+    expect(screen.getByTestId('auditoria-depois-nome_fantasia')).toHaveTextContent('B');
+    expect(screen.getByTestId('auditoria-campo-nome_fantasia')).not.toHaveTextContent('de A para B');
+    // CREATE não tem valor anterior: mostra apenas o badge verde do valor novo.
+    expect(screen.queryByTestId('auditoria-antes-razao_social')).not.toBeInTheDocument();
+    expect(screen.getByTestId('auditoria-depois-razao_social')).toHaveTextContent('Cliente X');
     expect(screen.queryByRole('button', { name: /excluir|editar/i })).not.toBeInTheDocument();
   });
 

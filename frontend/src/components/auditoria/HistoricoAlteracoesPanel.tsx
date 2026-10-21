@@ -1,5 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { ArrowRight, History, Loader2 } from 'lucide-react';
+import { Badge } from '@/components/nexus';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import {
   AUDITORIA_ESCOPO_TEXTO,
   AUDITORIA_VALOR_PROTEGIDO,
@@ -32,6 +40,10 @@ function formatarDataLocal(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+function temValor(valor: unknown): boolean {
+  return valor !== null && valor !== undefined && valor !== '';
 }
 
 export function HistoricoAlteracoesPanel({
@@ -97,73 +109,121 @@ export function HistoricoAlteracoesPanel({
   }
 
   return (
-    <div className="space-y-3" data-testid="auditoria-historico-panel">
-      <p className="text-sm text-muted-foreground" data-testid="auditoria-historico-escopo">
-        {AUDITORIA_ESCOPO_TEXTO}
-      </p>
+    <div className="space-y-6" data-testid="auditoria-historico-panel">
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <History className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">Histórico de alterações</CardTitle>
+          </div>
+          <CardDescription className="text-xs" data-testid="auditoria-historico-escopo">
+            {AUDITORIA_ESCOPO_TEXTO}
+          </CardDescription>
+        </CardHeader>
 
-      {loading ? (
-        <div
-          className="flex items-center gap-2 text-sm text-muted-foreground py-4"
-          data-testid="auditoria-historico-loading"
-        >
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Carregando histórico…
-        </div>
-      ) : null}
-
-      {!loading && error ? (
-        <div
-          className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-          role="alert"
-          data-testid={forbidden ? 'auditoria-historico-forbidden' : 'auditoria-historico-erro'}
-        >
-          {error}
-        </div>
-      ) : null}
-
-      {!loading && !error && registros.length === 0 ? (
-        <p className="text-sm text-muted-foreground py-2" data-testid="auditoria-historico-vazio">
-          Nenhuma alteração registrada ainda.
-        </p>
-      ) : null}
-
-      {!loading && !error && registros.length > 0 ? (
-        <ul className="space-y-3" data-testid="auditoria-historico-lista">
-          {registros.map((reg) => (
-            <li
-              key={reg.id}
-              className="rounded-md border border-border bg-muted/20 px-3 py-3"
-              data-testid={`auditoria-evento-${reg.id}`}
-              data-operacao={reg.operacao}
+        <CardContent className="space-y-5">
+          {loading ? (
+            <div
+              className="flex items-center gap-2 text-sm text-muted-foreground py-4"
+              data-testid="auditoria-historico-loading"
             >
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <p className="text-sm font-medium">{labelOperacaoAuditoria(reg.operacao)}</p>
-                <p className="text-xs text-muted-foreground">{formatarDataLocal(reg.criado_em)}</p>
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Por: {reg.ator?.nome || 'Sistema / usuário removido'}
-              </p>
-              <ul className="mt-2 space-y-1.5">
-                {entradasAlteracao(reg).map(({ campo, alt }) => (
-                  <li key={campo} className="text-sm" data-testid={`auditoria-campo-${campo}`}>
-                    <span className="font-medium">{labelCampoAuditoria(campo)}</span>
-                    {campoEhProtegido(alt) ? (
-                      <span className="text-muted-foreground"> — {AUDITORIA_VALOR_PROTEGIDO}</span>
-                    ) : (
-                      <span className="text-muted-foreground">
-                        {' '}
-                        — de {formatarValorAuditoria('antes' in alt ? alt.antes : null)} para{' '}
-                        {formatarValorAuditoria('depois' in alt ? alt.depois : null)}
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Carregando histórico…
+            </div>
+          ) : null}
+
+          {!loading && error ? (
+            <div
+              className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+              role="alert"
+              data-testid={forbidden ? 'auditoria-historico-forbidden' : 'auditoria-historico-erro'}
+            >
+              {error}
+            </div>
+          ) : null}
+
+          {!loading && !error && registros.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-2" data-testid="auditoria-historico-vazio">
+              Nenhuma alteração registrada ainda.
+            </p>
+          ) : null}
+
+          {!loading && !error && registros.length > 0 ? (
+            <ol className="relative space-y-4 border-l border-border pl-5" data-testid="auditoria-historico-lista">
+              {registros.map((reg) => (
+                <li
+                  key={reg.id}
+                  className="relative"
+                  data-testid={`auditoria-evento-${reg.id}`}
+                  data-operacao={reg.operacao}
+                >
+                  <span
+                    aria-hidden
+                    className="absolute -left-[26px] top-4 h-2.5 w-2.5 rounded-full border-2 border-background bg-primary/70"
+                  />
+                  <div className="rounded-lg border border-border bg-muted/20 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Badge variant={reg.operacao === 'CREATE' ? 'info' : 'neutral'}>
+                          {labelOperacaoAuditoria(reg.operacao)}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {reg.ator?.nome || 'Sistema / usuário removido'}
+                        </span>
+                      </div>
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {formatarDataLocal(reg.criado_em)}
                       </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+                    </div>
+
+                    <ul className="mt-3 space-y-2.5">
+                      {entradasAlteracao(reg).map(({ campo, alt }) => {
+                        const antes = 'antes' in alt ? alt.antes : null;
+                        const depois = 'depois' in alt ? alt.depois : null;
+                        return (
+                          <li
+                            key={campo}
+                            className="flex flex-wrap items-center gap-x-3 gap-y-1.5"
+                            data-testid={`auditoria-campo-${campo}`}
+                          >
+                            <span className="min-w-40 text-xs font-medium text-muted-foreground">
+                              {labelCampoAuditoria(campo)}
+                            </span>
+                            {campoEhProtegido(alt) ? (
+                              <Badge variant="neutral">{AUDITORIA_VALOR_PROTEGIDO}</Badge>
+                            ) : (
+                              <div className="flex flex-wrap items-center gap-2">
+                                {temValor(antes) ? (
+                                  <span data-testid={`auditoria-antes-${campo}`} className="inline-flex">
+                                    <Badge variant="danger" className="line-through">
+                                      {formatarValorAuditoria(antes)}
+                                    </Badge>
+                                  </span>
+                                ) : null}
+                                {temValor(antes) && temValor(depois) ? (
+                                  <ArrowRight aria-hidden className="h-3.5 w-3.5 text-muted-foreground" />
+                                ) : null}
+                                {temValor(depois) ? (
+                                  <span data-testid={`auditoria-depois-${campo}`} className="inline-flex">
+                                    <Badge variant="success">{formatarValorAuditoria(depois)}</Badge>
+                                  </span>
+                                ) : null}
+                                {!temValor(antes) && !temValor(depois) ? (
+                                  <Badge variant="neutral">{formatarValorAuditoria(null)}</Badge>
+                                ) : null}
+                              </div>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : null}
+        </CardContent>
+      </Card>
     </div>
   );
 }

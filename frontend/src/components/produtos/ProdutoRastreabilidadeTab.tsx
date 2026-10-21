@@ -1,12 +1,13 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
+import { Boxes, FileCheck, Loader2, Receipt, ShieldCheck, Truck } from 'lucide-react';
+import { Badge } from '@/components/nexus';
 import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { formatDateBr } from '@/lib/dateBr';
 import {
   buildRastreabilidadeCfLink,
@@ -83,6 +84,31 @@ function RastreabilidadeSkeleton() {
   );
 }
 
+function RastreabilidadeSecao({
+  icon,
+  title,
+  total,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  total: number;
+  children: ReactNode;
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-2">
+          <span className="text-muted-foreground">{icon}</span>
+          <CardTitle className="text-base">{title}</CardTitle>
+          <Badge variant="neutral">{total}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
+  );
+}
+
 export function ProdutoRastreabilidadeTab({ produtoId, active = true }: Props) {
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -149,150 +175,131 @@ export function ProdutoRastreabilidadeTab({ produtoId, active = true }: Props) {
   const nfsSaida = dados?.nfs_saida ?? [];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <p className="text-xs text-muted-foreground">
         Rastreabilidade por corrida/lote — somente leitura, consolidada a partir de estoque, qualidade e fiscal.
       </p>
 
-      <Accordion type="multiple" defaultValue={['corridas']} className="w-full">
-        <AccordionItem value="corridas">
-          <AccordionTrigger className="text-sm font-semibold">
-            Corridas ({corridas.length})
-          </AccordionTrigger>
-          <AccordionContent>
-            <RastreabilidadeTabela
-              vazio={!corridas.length}
-              headers={['Código', 'Lote', 'Saldo', 'Fornecedor', 'Origem', 'NF entrada', 'CF', '']}
-            >
-              {corridas.map((c) => {
-                const link = buildRastreabilidadeCorridaLink(c.codigo);
-                return (
-                  <tr key={c.id}>
-                    <td className="font-medium">{painelValorExibicao(c.codigo)}</td>
-                    <td>{painelValorExibicao(c.lote)}</td>
-                    <td>{c.saldo.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}</td>
-                    <td>{painelValorExibicao(c.fornecedor_nome)}</td>
-                    <td>{painelValorExibicao(c.origem_tecnica)}</td>
-                    <td>{painelValorExibicao(c.nf_entrada_numero)}</td>
-                    <td>{c.possui_cf ? 'Sim' : 'Não'}</td>
-                    <td>
-                      <RastreabilidadeLinks links={[link]} />
-                    </td>
-                  </tr>
-                );
-              })}
-            </RastreabilidadeTabela>
-          </AccordionContent>
-        </AccordionItem>
+      <RastreabilidadeSecao icon={<Boxes className="h-4 w-4" />} title="Corridas / Lotes" total={corridas.length}>
+        <RastreabilidadeTabela
+          vazio={!corridas.length}
+          headers={['Código', 'Lote', 'Saldo', 'Fornecedor', 'Origem', 'NF entrada', 'CF', '']}
+        >
+          {corridas.map((c) => {
+            const link = buildRastreabilidadeCorridaLink(c.codigo);
+            return (
+              <tr key={c.id}>
+                <td className="font-medium">{painelValorExibicao(c.codigo)}</td>
+                <td>{painelValorExibicao(c.lote)}</td>
+                <td>{c.saldo.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}</td>
+                <td>{painelValorExibicao(c.fornecedor_nome)}</td>
+                <td>{painelValorExibicao(c.origem_tecnica)}</td>
+                <td>{painelValorExibicao(c.nf_entrada_numero)}</td>
+                <td>{c.possui_cf ? 'Sim' : 'Não'}</td>
+                <td>
+                  <RastreabilidadeLinks links={[link]} />
+                </td>
+              </tr>
+            );
+          })}
+        </RastreabilidadeTabela>
+      </RastreabilidadeSecao>
 
-        <AccordionItem value="certificados-qualidade">
-          <AccordionTrigger className="text-sm font-semibold">
-            Certificados de Qualidade ({certificadosQualidade.length})
-          </AccordionTrigger>
-          <AccordionContent>
-            <RastreabilidadeTabela
-              vazio={!certificadosQualidade.length}
-              headers={['Número', 'Cliente', 'Emissão', 'Status', 'Corridas', '']}
-            >
-              {certificadosQualidade.map((cq) => (
-                <tr key={cq.id}>
-                  <td className="font-medium">{painelValorExibicao(cq.numero)}</td>
-                  <td>{painelValorExibicao(cq.cliente_nome)}</td>
-                  <td>{formatDateBr(cq.data_emissao) || '—'}</td>
-                  <td>{painelValorExibicao(cq.status)}</td>
-                  <td>
-                    {cq.corridas.length
-                      ? cq.corridas.map((c) => c.codigo).join(', ')
-                      : '—'}
-                  </td>
-                  <td>
-                    <RastreabilidadeLinks links={[buildRastreabilidadeCqLink(cq.id, cq.numero)]} />
-                  </td>
-                </tr>
-              ))}
-            </RastreabilidadeTabela>
-          </AccordionContent>
-        </AccordionItem>
+      <RastreabilidadeSecao
+        icon={<FileCheck className="h-4 w-4" />}
+        title="Certificados de Qualidade"
+        total={certificadosQualidade.length}
+      >
+        <RastreabilidadeTabela
+          vazio={!certificadosQualidade.length}
+          headers={['Número', 'Cliente', 'Emissão', 'Status', 'Corridas', '']}
+        >
+          {certificadosQualidade.map((cq) => (
+            <tr key={cq.id}>
+              <td className="font-medium">{painelValorExibicao(cq.numero)}</td>
+              <td>{painelValorExibicao(cq.cliente_nome)}</td>
+              <td>{formatDateBr(cq.data_emissao) || '—'}</td>
+              <td>{painelValorExibicao(cq.status)}</td>
+              <td>
+                {cq.corridas.length
+                  ? cq.corridas.map((c) => c.codigo).join(', ')
+                  : '—'}
+              </td>
+              <td>
+                <RastreabilidadeLinks links={[buildRastreabilidadeCqLink(cq.id, cq.numero)]} />
+              </td>
+            </tr>
+          ))}
+        </RastreabilidadeTabela>
+      </RastreabilidadeSecao>
 
-        <AccordionItem value="certificados-fornecedor">
-          <AccordionTrigger className="text-sm font-semibold">
-            Certificados de Fornecedor ({certificadosFornecedor.length})
-          </AccordionTrigger>
-          <AccordionContent>
-            <RastreabilidadeTabela
-              vazio={!certificadosFornecedor.length}
-              headers={['Número', 'Fornecedor', 'Emissão', 'NF entrada', 'Corridas', '']}
-            >
-              {certificadosFornecedor.map((cf) => (
-                <tr key={cf.id}>
-                  <td className="font-medium">{painelValorExibicao(cf.numero)}</td>
-                  <td>{painelValorExibicao(cf.fornecedor_nome)}</td>
-                  <td>{formatDateBr(cf.data_emissao) || '—'}</td>
-                  <td>{painelValorExibicao(cf.nf_entrada_referencia)}</td>
-                  <td>
-                    {cf.corridas.length
-                      ? cf.corridas.map((c) => c.codigo).join(', ')
-                      : '—'}
-                  </td>
-                  <td>
-                    <RastreabilidadeLinks links={[buildRastreabilidadeCfLink(cf.id, cf.numero)]} />
-                  </td>
-                </tr>
-              ))}
-            </RastreabilidadeTabela>
-          </AccordionContent>
-        </AccordionItem>
+      <RastreabilidadeSecao
+        icon={<ShieldCheck className="h-4 w-4" />}
+        title="Certificados de Fornecedor"
+        total={certificadosFornecedor.length}
+      >
+        <RastreabilidadeTabela
+          vazio={!certificadosFornecedor.length}
+          headers={['Número', 'Fornecedor', 'Emissão', 'NF entrada', 'Corridas', '']}
+        >
+          {certificadosFornecedor.map((cf) => (
+            <tr key={cf.id}>
+              <td className="font-medium">{painelValorExibicao(cf.numero)}</td>
+              <td>{painelValorExibicao(cf.fornecedor_nome)}</td>
+              <td>{formatDateBr(cf.data_emissao) || '—'}</td>
+              <td>{painelValorExibicao(cf.nf_entrada_referencia)}</td>
+              <td>
+                {cf.corridas.length
+                  ? cf.corridas.map((c) => c.codigo).join(', ')
+                  : '—'}
+              </td>
+              <td>
+                <RastreabilidadeLinks links={[buildRastreabilidadeCfLink(cf.id, cf.numero)]} />
+              </td>
+            </tr>
+          ))}
+        </RastreabilidadeTabela>
+      </RastreabilidadeSecao>
 
-        <AccordionItem value="nfs-entrada">
-          <AccordionTrigger className="text-sm font-semibold">
-            NF-e Entrada ({nfsEntrada.length})
-          </AccordionTrigger>
-          <AccordionContent>
-            <RastreabilidadeTabela
-              vazio={!nfsEntrada.length}
-              headers={['Número', 'Fornecedor', 'Entrada', 'Corrida', 'Status', '']}
-            >
-              {nfsEntrada.map((nf) => (
-                <tr key={`nf-ent-${nf.id}-${nf.numero}`}>
-                  <td className="font-medium">{painelValorExibicao(nf.numero)}</td>
-                  <td>{painelValorExibicao(nf.fornecedor_nome)}</td>
-                  <td>{formatDateBr(nf.data_entrada) || '—'}</td>
-                  <td>{painelValorExibicao(nf.corrida_codigo)}</td>
-                  <td>{painelValorExibicao(nf.status)}</td>
-                  <td>
-                    <RastreabilidadeLinks links={[buildRastreabilidadeNfEntradaLink(nf.id, nf.numero)]} />
-                  </td>
-                </tr>
-              ))}
-            </RastreabilidadeTabela>
-          </AccordionContent>
-        </AccordionItem>
+      <RastreabilidadeSecao icon={<Receipt className="h-4 w-4" />} title="Movimentações — NF-e Entrada" total={nfsEntrada.length}>
+        <RastreabilidadeTabela
+          vazio={!nfsEntrada.length}
+          headers={['Número', 'Fornecedor', 'Entrada', 'Corrida', 'Status', '']}
+        >
+          {nfsEntrada.map((nf) => (
+            <tr key={`nf-ent-${nf.id}-${nf.numero}`}>
+              <td className="font-medium">{painelValorExibicao(nf.numero)}</td>
+              <td>{painelValorExibicao(nf.fornecedor_nome)}</td>
+              <td>{formatDateBr(nf.data_entrada) || '—'}</td>
+              <td>{painelValorExibicao(nf.corrida_codigo)}</td>
+              <td>{painelValorExibicao(nf.status)}</td>
+              <td>
+                <RastreabilidadeLinks links={[buildRastreabilidadeNfEntradaLink(nf.id, nf.numero)]} />
+              </td>
+            </tr>
+          ))}
+        </RastreabilidadeTabela>
+      </RastreabilidadeSecao>
 
-        <AccordionItem value="nfs-saida">
-          <AccordionTrigger className="text-sm font-semibold">
-            NF-e Saída ({nfsSaida.length})
-          </AccordionTrigger>
-          <AccordionContent>
-            <RastreabilidadeTabela
-              vazio={!nfsSaida.length}
-              headers={['Número', 'Cliente', 'Emissão', 'Pedido', 'Corrida', '']}
-            >
-              {nfsSaida.map((nf) => (
-                <tr key={nf.id}>
-                  <td className="font-medium">{painelValorExibicao(nf.numero)}</td>
-                  <td>{painelValorExibicao(nf.cliente_nome)}</td>
-                  <td>{formatDateBr(nf.data_emissao) || '—'}</td>
-                  <td>{painelValorExibicao(nf.pedido_numero)}</td>
-                  <td>{painelValorExibicao(nf.corrida_codigo)}</td>
-                  <td>
-                    <RastreabilidadeLinks links={[buildRastreabilidadeNfSaidaLink(nf.id, nf.numero)]} />
-                  </td>
-                </tr>
-              ))}
-            </RastreabilidadeTabela>
-          </AccordionContent>
-        </AccordionItem>
-      </Accordion>
+      <RastreabilidadeSecao icon={<Truck className="h-4 w-4" />} title="Movimentações — NF-e Saída" total={nfsSaida.length}>
+        <RastreabilidadeTabela
+          vazio={!nfsSaida.length}
+          headers={['Número', 'Cliente', 'Emissão', 'Pedido', 'Corrida', '']}
+        >
+          {nfsSaida.map((nf) => (
+            <tr key={nf.id}>
+              <td className="font-medium">{painelValorExibicao(nf.numero)}</td>
+              <td>{painelValorExibicao(nf.cliente_nome)}</td>
+              <td>{formatDateBr(nf.data_emissao) || '—'}</td>
+              <td>{painelValorExibicao(nf.pedido_numero)}</td>
+              <td>{painelValorExibicao(nf.corrida_codigo)}</td>
+              <td>
+                <RastreabilidadeLinks links={[buildRastreabilidadeNfSaidaLink(nf.id, nf.numero)]} />
+              </td>
+            </tr>
+          ))}
+        </RastreabilidadeTabela>
+      </RastreabilidadeSecao>
     </div>
   );
 }
