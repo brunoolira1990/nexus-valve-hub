@@ -692,6 +692,7 @@ export interface CorridaRastreabilidade {
   origem_tecnica: string;
   nf_entrada_numero: string | null;
   possui_cf: boolean;
+  cf_numero: string | null;
 }
 
 export interface CertificadoQualidadeRastreabilidade {

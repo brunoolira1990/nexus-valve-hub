@@ -5,6 +5,13 @@ export type AuditoriaAtor = {
   nome: string | null;
 };
 
+/** Valor de FK/enum resolvido pelo backend para exibição (antes era só o id ou o código cru). */
+export type AuditoriaValorResolvido = {
+  valor: string | number | null;
+  id: number | string | null;
+  nome: string;
+};
+
 export type AuditoriaCampoAlteracao =
   | { antes: unknown; depois: unknown; sensivel?: never; alterado?: never }
   | { sensivel: true; alterado: true; antes?: never; depois?: never };

@@ -15,7 +15,7 @@ from apps.fiscal.models import (
     NFeEntrada,
 )
 from apps.produtos.models import Produto
-from apps.produtos.painel_operacional import _iso_date
+from apps.produtos.painel_operacional import _iso_date, _status_display
 from apps.qualidade.models import ItemCertificadoFornecedorEntrada, ItemCertificadoQualidade
 
 LIMITE_PADRAO = 20
@@ -27,15 +27,6 @@ def _norm_corrida(val: str | None) -> str:
 
 def _decimal_to_float(value) -> float:
     return float(Decimal(str(value or 0)))
-
-
-def _status_display(obj, field: str = 'status') -> str:
-    display = getattr(obj, f'get_{field}_display', None)
-    if callable(display):
-        label = display()
-        if label:
-            return str(label)
-    return str(getattr(obj, field, '') or '')
 
 
 def _montar_corridas(produto: Produto, limite: int) -> list[dict]:
@@ -66,22 +57,34 @@ def _montar_corridas(produto: Produto, limite: int) -> list[dict]:
 
     cf_por_corrida_id: set[int] = set()
     cf_por_corrida_num: set[str] = set()
+    cf_numero_por_corrida_id: dict[int, str] = {}
+    cf_numero_por_corrida_num: dict[str, str] = {}
     lotes_por_corrida_id: dict[int, str] = {}
     lotes_por_corrida_num: dict[str, str] = {}
     for row in (
         ItemCertificadoFornecedorEntrada.objects.filter(produto=produto, ativo=True)
-        .values('corrida', 'lote', 'item_conferencia__corrida_estoque_id')
+        .values(
+            'corrida',
+            'lote',
+            'item_conferencia__corrida_estoque_id',
+            'certificado_fornecedor__numero_certificado_fornecedor',
+        )
     ):
         corrida_fk = row['item_conferencia__corrida_estoque_id']
         corrida_txt = _norm_corrida(row['corrida'])
+        cf_numero = (row['certificado_fornecedor__numero_certificado_fornecedor'] or '').strip()
         if corrida_fk:
             cf_por_corrida_id.add(corrida_fk)
             if row['lote'] and corrida_fk not in lotes_por_corrida_id:
                 lotes_por_corrida_id[corrida_fk] = row['lote']
+            if cf_numero and corrida_fk not in cf_numero_por_corrida_id:
+                cf_numero_por_corrida_id[corrida_fk] = cf_numero
         if corrida_txt:
             cf_por_corrida_num.add(corrida_txt)
             if row['lote'] and corrida_txt not in lotes_por_corrida_num:
                 lotes_por_corrida_num[corrida_txt] = row['lote']
+            if cf_numero and corrida_txt not in cf_numero_por_corrida_num:
+                cf_numero_por_corrida_num[corrida_txt] = cf_numero
 
     for row in (
         ItemNFeEntradaConferencia.objects.filter(
@@ -113,6 +116,10 @@ def _montar_corridas(produto: Produto, limite: int) -> list[dict]:
             origem_tecnica = 'Cadastro manual'
 
         lote = lotes_por_corrida_id.get(corrida.id) or lotes_por_corrida_num.get(numero_norm)
+        cf_numero = (
+            cf_numero_por_corrida_id.get(corrida.id)
+            or cf_numero_por_corrida_num.get(numero_norm)
+        )
 
         resultado.append({
             'id': corrida.id,
@@ -125,6 +132,7 @@ def _montar_corridas(produto: Produto, limite: int) -> list[dict]:
             'origem_tecnica': origem_tecnica,
             'nf_entrada_numero': nf_numero or None,
             'possui_cf': corrida.id in cf_por_corrida_id or numero_norm in cf_por_corrida_num,
+            'cf_numero': cf_numero or None,
         })
     return resultado
 

@@ -195,7 +195,7 @@ export function ProdutoRastreabilidadeTab({ produtoId, active = true }: Props) {
                 <td>{painelValorExibicao(c.fornecedor_nome)}</td>
                 <td>{painelValorExibicao(c.origem_tecnica)}</td>
                 <td>{painelValorExibicao(c.nf_entrada_numero)}</td>
-                <td>{c.possui_cf ? 'Sim' : 'Não'}</td>
+                <td>{c.cf_numero || (c.possui_cf ? 'Sem número' : '—')}</td>
                 <td>
                   <RastreabilidadeLinks links={[link]} />
                 </td>

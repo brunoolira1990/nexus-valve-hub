@@ -43,6 +43,16 @@ def _iso_date(value: date | datetime | None) -> str | None:
     return value.isoformat()
 
 
+def _status_display(obj, field: str = 'status') -> str:
+    """Rótulo do enum (ex.: 'Emitido') em vez do código cru ('EMITIDO')."""
+    display = getattr(obj, f'get_{field}_display', None)
+    if callable(display):
+        rotulo = display()
+        if rotulo:
+            return str(rotulo)
+    return str(getattr(obj, field, '') or '')
+
+
 def _montar_bloco_produto(produto: Produto) -> dict:
     ser_data = ProdutoSerializer(produto).data
     snap = build_produto_snapshot(produto)
@@ -352,7 +362,7 @@ def _serializar_certificado_cq(cq: CertificadoQualidade) -> dict:
         'cliente': cliente,
         'cliente_id': cq.cliente_id,
         'data': _iso_date(cq.data_emissao),
-        'status': cq.status,
+        'status': _status_display(cq),
     }
 
 

@@ -95,6 +95,54 @@ describe('HistoricoAlteracoesPanel', () => {
     expect(screen.queryByRole('button', { name: /excluir|editar/i })).not.toBeInTheDocument();
   });
 
+  it('mostra o nome resolvido pelo backend em vez do id ou do código cru', async () => {
+    vi.mocked(auditoriaService.historicoObjeto).mockResolvedValue({
+      count: 1,
+      next: null,
+      previous: null,
+      results: [
+        {
+          id: 9,
+          operacao: 'UPDATE',
+          ator: { id: 1, nome: 'Operador' },
+          criado_em: '2026-07-24T12:00:00Z',
+          alteracoes: {
+            familia_id: {
+              antes: { valor: 94, id: 94, nome: '0049 — FLANGE CEGO INOX 304' },
+              depois: { valor: 95, id: 95, nome: '0050 — FLANGE CEGO CARBONO' },
+            },
+            tipo_controle_unidade: {
+              antes: { valor: 'PECA', id: null, nome: 'Peça' },
+              depois: 'UNITARIO',
+            },
+            material: {
+              antes: null,
+              depois: { valor: 'ACO CARBONO', id: 3, nome: 'Aço Carbono' },
+            },
+          },
+        },
+      ],
+    });
+    render(
+      <HistoricoAlteracoesPanel
+        appLabel="produtos"
+        modelName="produto"
+        objectId={5}
+        active
+        enabled
+      />,
+    );
+    expect(await screen.findByTestId('auditoria-antes-familia_id')).toHaveTextContent(
+      '0049 — FLANGE CEGO INOX 304',
+    );
+    expect(screen.getByTestId('auditoria-depois-familia_id')).not.toHaveTextContent('94');
+    expect(screen.getByTestId('auditoria-antes-tipo_controle_unidade')).toHaveTextContent('Peça');
+    // valor não resolvido pelo backend permanece cru, sem inventar rótulo.
+    expect(screen.getByTestId('auditoria-depois-tipo_controle_unidade')).toHaveTextContent('UNITARIO');
+    expect(screen.getByTestId('auditoria-depois-material')).toHaveTextContent('Aço Carbono');
+    expect(screen.getByTestId('auditoria-depois-material')).not.toHaveTextContent('ACO CARBONO');
+  });
+
   it('exibe erro 403 amigável', async () => {
     vi.mocked(auditoriaService.historicoObjeto).mockRejectedValue({
       response: { status: 403, data: { detail: 'Forbidden' } },

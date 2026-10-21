@@ -1,4 +1,8 @@
-import type { AuditoriaCampoAlteracao, RegistroAuditoria } from '@/services/api/auditoria';
+import type {
+  AuditoriaCampoAlteracao,
+  AuditoriaValorResolvido,
+  RegistroAuditoria,
+} from '@/services/api/auditoria';
 
 export const AUDITORIA_ESCOPO_TEXTO =
   'Histórico dos campos principais do cadastro. Contatos, endereços e alterações em lote ainda não fazem parte desta versão.';
@@ -86,6 +90,10 @@ export function labelOperacaoAuditoria(operacao: string): string {
 export function formatarValorAuditoria(valor: unknown): string {
   if (valor === null || valor === undefined || valor === '') return '—';
   if (typeof valor === 'boolean') return valor ? 'Sim' : 'Não';
+  if (typeof valor === 'object') {
+    const nome = (valor as AuditoriaValorResolvido).nome;
+    return nome ? String(nome) : '—';
+  }
   return String(valor);
 }
 

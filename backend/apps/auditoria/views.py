@@ -7,7 +7,7 @@ from rest_framework.views import APIView
 from apps.auditoria.escopo import entidade_auditada_permitida
 from apps.auditoria.models import RegistroAuditoria
 from apps.auditoria.permissions import PodeVisualizarAuditoria
-from apps.auditoria.serializers import RegistroAuditoriaSerializer
+from apps.auditoria.serializers import RegistroAuditoriaSerializer, enriquecedor_para
 
 
 class AuditoriaHistoricoPagination(PageNumberPagination):
@@ -54,6 +54,10 @@ class AuditoriaObjetoHistoricoView(APIView):
         )
 
         paginator = AuditoriaHistoricoPagination()
-        page = paginator.paginate_queryset(qs, request, view=self)
-        serializer = RegistroAuditoriaSerializer(page, many=True)
+        page = list(paginator.paginate_queryset(qs, request, view=self))
+        serializer = RegistroAuditoriaSerializer(
+            page,
+            many=True,
+            context={'enriquecedor': enriquecedor_para(page)},
+        )
         return paginator.get_paginated_response(serializer.data)
