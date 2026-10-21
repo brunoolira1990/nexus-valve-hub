@@ -535,7 +535,7 @@ class CertificadoQualidadeViewSet(AutocompleteOrPaginationMixin, viewsets.ModelV
 
         if nf_saida_id:
             try:
-                nf = NFeSaida.objects.select_related('cliente', 'pedido_venda').prefetch_related('itens__produto').get(pk=nf_saida_id)
+                nf = NFeSaida.objects.select_related('cliente', 'pedido_venda').prefetch_related('itens__produto__familia').get(pk=nf_saida_id)
             except NFeSaida.DoesNotExist:
                 return Response({'detail': 'NF-e de saída não encontrada.'}, status=status.HTTP_404_NOT_FOUND)
             if not nfe_elegivel_para_certificado_qualidade(nf):
@@ -566,7 +566,8 @@ class CertificadoQualidadeViewSet(AutocompleteOrPaginationMixin, viewsets.ModelV
                     'produto_snapshot': it.snapshot_produto or build_produto_snapshot(it.produto),
                     'origem_rastreabilidade_tipo': 'NF_SAIDA_OPERACIONAL',
                     'origem_status_tecnico': 'SEM_DADOS_TECNICOS',
-                    'incluir_no_certificado': True,
+                    # Só entra no CQ o produto que exige certificado (no produto ou na família).
+                    'incluir_no_certificado': it.produto.get_exige_certificado_qualidade_efetivo(),
                     'motivo_nao_inclusao': '',
                     'observacao_nao_inclusao': '',
                     'observacoes_item': '',

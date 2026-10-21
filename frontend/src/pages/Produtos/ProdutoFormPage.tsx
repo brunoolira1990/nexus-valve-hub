@@ -151,8 +151,8 @@ const ProdutoFormPage = () => {
     navigate('/produtos');
   };
 
-  // A família tem módulo dedicado desde a Sprint 3.6: o botão navega para lá.
-  const handleNovaFamilia = useMemo(() => () => navigate('/familias/nova'), [navigate]);
+  // Abre em nova aba para o operador não perder o que já digitou no produto.
+  const handleNovaFamilia = useMemo(() => () => window.open('/familias/nova', '_blank'), []);
 
   if (carregando) {
     return (

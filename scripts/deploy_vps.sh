@@ -74,6 +74,7 @@ compose exec -T backend python manage.py seed_materiais --apply || true
 compose exec -T backend python manage.py inferir_material_familias --apply || true
 compose exec -T backend python manage.py propagar_material_produtos --apply || true
 compose exec -T backend python manage.py migrar_material_para_fk --apply
+compose exec -T backend python manage.py preencher_ncm_via_familia --apply || true
 compose exec -T backend python manage.py verificar_prontidao_producao || true
 
 if [[ "${SKIP_MIGRATE_CHECK:-}" != "1" ]]; then
