@@ -66,31 +66,27 @@ export function ProdutoWorkspace({ produto, mode }: ProdutoWorkspaceProps) {
   const ncmOrigem = produto.ncm_origem === 'produto' ? 'Override no produto' : produto.ncm_origem === 'familia' ? 'Família/figura' : 'Não definido';
   // Cadastro zerado é poluição visual: sem preço preenchido o que vale é o preço praticado na NF-e.
   const temValoresDeCadastro = Boolean(produto.preco_custo) || Boolean(produto.preco_venda);
-  // Sem nenhum desses campos preenchidos o bloco LEGADO viraria só uma linha de separador vazia.
-  const temIdentificacaoComplementar = Boolean(
-    (produto.sufixo ?? '').trim() ||
-      (produto.schedule ?? '').trim() ||
-      (produto.polegada_principal ?? '').trim() ||
-      (produto.polegada_secundaria ?? '').trim(),
-  );
 
   return (
-    <Tabs defaultValue="geral" className="w-full">
+    <Tabs defaultValue="configuracao" className="w-full">
       <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto whitespace-nowrap bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/90 border border-border border-b-0 rounded-t-lg px-3 pt-2.5 pb-1 sm:px-4">
-        <TabsTrigger value="geral">Geral</TabsTrigger>
-        <TabsTrigger value="classificacao">Classificação industrial</TabsTrigger>
+        <TabsTrigger value="configuracao">Configuração do Produto</TabsTrigger>
         <TabsTrigger value="fiscal">Fiscal</TabsTrigger>
         <TabsTrigger value="painel">Painel operacional</TabsTrigger>
         <TabsTrigger value="rastreabilidade">Rastreabilidade</TabsTrigger>
         {produto.id ? <TabsTrigger value="historico">Histórico</TabsTrigger> : null}
       </TabsList>
 
-      {/* ABA 1 - GERAL */}
-      <TabsContent value="geral" className="mt-4 space-y-6">
+      {/* Mesma divisão da ficha de edição: Identificação/Preços e Classificação técnica dividem a
+          aba 'Configuração do Produto' porque a Família/Figura dita os campos técnicos do item. */}
+      {/* ABA 1 - CONFIGURAÇÃO DO PRODUTO (Geral + Classificação industrial) */}
+      <TabsContent value="configuracao" className="mt-4 space-y-6">
         <SectionCard
           title="Identificação"
           description="Dados principais do produto."
         >
+          {/* Schedule e polegadas não aparecem aqui: o código cru do nome repete exatamente o valor
+              que 'Identidade técnica' já mostra resolvido, e a tela é uma aba só. */}
           <dl className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {renderField('Código completo', produto.codigo_completo)}
@@ -102,27 +98,13 @@ export function ProdutoWorkspace({ produto, mode }: ProdutoWorkspaceProps) {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-border">
                 {renderField('Família', produto.familia_detalhes?.nome ?? '—')}
                 {produto.sufixo?.trim() ? renderField('Sufixo', produto.sufixo.trim()) : null}
-                {produto.schedule?.trim() ? renderField('Schedule', produto.schedule.trim()) : null}
-                {produto.polegada_principal?.trim()
-                  ? renderField('Polegada principal', produto.polegada_principal.trim())
-                  : null}
-                {produto.polegada_secundaria?.trim()
-                  ? renderField('Polegada secundária', produto.polegada_secundaria.trim())
-                  : null}
               </div>
             )}
-            {produto.modo_codigo === 'LEGADO' && temIdentificacaoComplementar && (
+            {produto.modo_codigo === 'LEGADO' && produto.sufixo?.trim() ? (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-border">
-                {produto.sufixo?.trim() ? renderField('Sufixo', produto.sufixo.trim()) : null}
-                {produto.schedule?.trim() ? renderField('Schedule', produto.schedule.trim()) : null}
-                {produto.polegada_principal?.trim()
-                  ? renderField('Polegada principal', produto.polegada_principal.trim())
-                  : null}
-                {produto.polegada_secundaria?.trim()
-                  ? renderField('Polegada secundária', produto.polegada_secundaria.trim())
-                  : null}
+                {renderField('Sufixo', produto.sufixo.trim())}
               </div>
-            )}
+            ) : null}
           </dl>
         </SectionCard>
 
@@ -174,10 +156,8 @@ export function ProdutoWorkspace({ produto, mode }: ProdutoWorkspaceProps) {
             </dl>
           </SectionCard>
         )}
-      </TabsContent>
 
-      {/* ABA 2 - CLASSIFICAÇÃO INDUSTRIAL */}
-      <TabsContent value="classificacao" className="mt-4 space-y-6">
+        {/* Bloco da antiga aba 'Classificação industrial', agora dentro de Configuração do Produto. */}
         <SectionCard
           title="Identidade técnica"
           description="Características técnicas e classificação do produto."
@@ -281,7 +261,7 @@ export function ProdutoWorkspace({ produto, mode }: ProdutoWorkspaceProps) {
         )}
       </TabsContent>
 
-      {/* ABA 3 - FISCAL */}
+      {/* ABA 2 - FISCAL */}
       <TabsContent value="fiscal" className="mt-4 space-y-6">
         <SectionCard
           title="NCM efetivo para tributação"
@@ -340,17 +320,17 @@ export function ProdutoWorkspace({ produto, mode }: ProdutoWorkspaceProps) {
         </SectionCard>
       </TabsContent>
 
-      {/* ABA 4 - PAINEL OPERACIONAL */}
+      {/* ABA 3 - PAINEL OPERACIONAL */}
       <TabsContent value="painel" className="mt-4">
         <ProdutoPainelOperacionalTab produtoId={produto.id} active={true} />
       </TabsContent>
 
-      {/* ABA 5 - RASTREABILIDADE */}
+      {/* ABA 4 - RASTREABILIDADE */}
       <TabsContent value="rastreabilidade" className="mt-4">
         <ProdutoRastreabilidadeTab produtoId={produto.id} active={true} />
       </TabsContent>
 
-      {/* ABA 6 - HISTÓRICO */}
+      {/* ABA 5 - HISTÓRICO */}
       {produto.id && (
         <TabsContent value="historico" className="mt-4">
           <HistoricoAlteracoesPanel

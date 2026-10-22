@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { ProdutoWorkspace } from '@/pages/Produtos/ProdutoWorkspace';
 import type { Produto } from '@/types';
@@ -71,6 +71,17 @@ function abrirAba(nome: string) {
   fireEvent.click(aba);
 }
 
+/**
+ * 'Schedule' e 'Polegada principal/secundária' só existem no card 'Identidade técnica', mas a
+ * asserção de ausência na 'Identificação' precisa do card certo para não passar por engano
+ * quando o rótulo some das duas telas.
+ */
+function cardPorTitulo(nome: string) {
+  const card = screen.getByRole('heading', { name: nome }).closest('div.rounded-lg');
+  if (!(card instanceof HTMLElement)) throw new Error(`Card "${nome}" não encontrado`);
+  return within(card);
+}
+
 describe('ProdutoWorkspace (visualização)', () => {
   it('mostra o código completo uma única vez, dentro de Identificação', () => {
     render(<ProdutoWorkspace produto={produto({})} mode="view" />);
@@ -82,15 +93,45 @@ describe('ProdutoWorkspace (visualização)', () => {
     expect(screen.getAllByText('0013.06')).toHaveLength(1);
   });
 
+  it('abre com as mesmas 5 abas da ficha de edição, na mesma ordem', () => {
+    render(<ProdutoWorkspace produto={produto({})} mode="view" />);
+
+    expect(screen.getAllByRole('tab').map((aba) => aba.textContent)).toEqual([
+      'Configuração do Produto',
+      'Fiscal',
+      'Painel operacional',
+      'Rastreabilidade',
+      'Histórico',
+    ]);
+    expect(screen.queryByRole('tab', { name: 'Geral' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Classificação industrial' })).toBeNull();
+  });
+
+  it('mostra Identificação, Preços e Classificação técnica na mesma aba, sem trocar de aba', () => {
+    render(<ProdutoWorkspace produto={produto({})} mode="view" />);
+
+    expect(screen.getByText('Identificação')).toBeInTheDocument();
+    expect(screen.getByText('Preços e estoque')).toBeInTheDocument();
+    expect(screen.getByText('Identidade técnica')).toBeInTheDocument();
+    expect(screen.getByText('Unidades e controle físico')).toBeInTheDocument();
+  });
+
+  it('mantém Fiscal em aba separada, fora da Configuração do Produto', () => {
+    render(<ProdutoWorkspace produto={produto({})} mode="view" />);
+    expect(screen.queryByText('NCM efetivo para tributação')).toBeNull();
+
+    abrirAba('Fiscal');
+    expect(screen.getByText('NCM efetivo para tributação')).toBeInTheDocument();
+  });
+
   it('mostra o nome da família em vez do id do banco', () => {
     render(<ProdutoWorkspace produto={produto({})} mode="view" />);
     expect(screen.getByText(NOME_FAMILIA)).toBeInTheDocument();
     expect(screen.queryByText('#94')).toBeNull();
   });
 
-  it('na aba Classificação usa rótulos e nomes em vez de enums e ids', () => {
+  it('na aba Configuração do Produto a classificação técnica usa rótulos e nomes em vez de enums e ids', () => {
     render(<ProdutoWorkspace produto={produto({})} mode="view" />);
-    abrirAba('Classificação industrial');
 
     expect(screen.getByText('Aço Carbono A105')).toBeInTheDocument();
     expect(screen.getByText('NPT')).toBeInTheDocument();
@@ -109,7 +150,6 @@ describe('ProdutoWorkspace (visualização)', () => {
 
   it('mostra a polegada sem o rótulo técnico NPS', () => {
     render(<ProdutoWorkspace produto={produto({})} mode="view" />);
-    abrirAba('Classificação industrial');
 
     expect(screen.queryByText('NPS 1/2 — 1/2"')).toBeNull();
     expect(screen.queryByText(/^NPS\s/)).toBeNull();
@@ -128,7 +168,7 @@ describe('ProdutoWorkspace (visualização)', () => {
     expect(screen.queryByText(/^(INTERNO|MANUAL|LEGADO)$/)).toBeNull();
   });
 
-  it('na aba Classificação mostra a polegada das dimensões em formato amigável', () => {
+  it('na aba Configuração do Produto a polegada das dimensões aparece em formato amigável', () => {
     render(
       <ProdutoWorkspace
         produto={produto({
@@ -155,7 +195,6 @@ describe('ProdutoWorkspace (visualização)', () => {
         mode="view"
       />,
     );
-    abrirAba('Classificação industrial');
 
     expect(screen.getByText('3/4"')).toBeInTheDocument();
     expect(screen.getByText('1/4"')).toBeInTheDocument();
@@ -215,74 +254,63 @@ describe('ProdutoWorkspace (visualização)', () => {
     expect(screen.getByText('Sufixo')).toBeInTheDocument();
   });
 
-  it('não renderiza as linhas de campo vazio no modo INTERNO', () => {
+  it('não repete schedule nem polegadas na Identificação mesmo com o código cru preenchido', () => {
     render(
       <ProdutoWorkspace
         produto={produto({
           modo_codigo: 'INTERNO',
-          sufixo: '',
-          schedule: '   ',
+          sufixo: 'RF',
+          schedule: '40',
           polegada_principal: '06',
-          polegada_secundaria: '',
-        })}
-        mode="view"
-      />,
-    );
-
-    expect(screen.queryByText('Sufixo')).toBeNull();
-    expect(screen.queryByText('Schedule')).toBeNull();
-    expect(screen.queryByText('Polegada secundária')).toBeNull();
-    expect(screen.getByText('Polegada principal')).toBeInTheDocument();
-  });
-
-  it('esconde também a Polegada principal vazia, deixando só a Família no bloco', () => {
-    render(
-      <ProdutoWorkspace
-        produto={produto({
-          modo_codigo: 'INTERNO',
-          sufixo: '',
-          schedule: '',
-          polegada_principal: '  ',
-          polegada_secundaria: '',
-        })}
-        mode="view"
-      />,
-    );
-
-    expect(screen.queryByText('Polegada principal')).toBeNull();
-    expect(screen.queryByText('Sufixo')).toBeNull();
-    expect(screen.queryByText('Schedule')).toBeNull();
-    expect(screen.queryByText('Polegada secundária')).toBeNull();
-    expect(screen.getByText('Família')).toBeInTheDocument();
-    expect(screen.getByText(NOME_FAMILIA)).toBeInTheDocument();
-  });
-
-  it('esconde a Polegada principal vazia também no modo LEGADO', () => {
-    render(
-      <ProdutoWorkspace
-        produto={produto({
-          modo_codigo: 'LEGADO',
-          sufixo: '',
-          schedule: '',
-          polegada_principal: '',
           polegada_secundaria: '1/2',
         })}
         mode="view"
       />,
     );
 
-    expect(screen.queryByText('Polegada principal')).toBeNull();
-    expect(screen.getByText('Polegada secundária').closest('div')).toHaveTextContent(/^Polegada secundária\s*1\/2$/);
+    const identificacao = cardPorTitulo('Identificação');
+    expect(identificacao.queryByText('Schedule')).toBeNull();
+    expect(identificacao.queryByText('Polegada principal')).toBeNull();
+    expect(identificacao.queryByText('Polegada secundária')).toBeNull();
+    expect(identificacao.getByText('Sufixo').closest('div')).toHaveTextContent(/^Sufixo\s*RF$/);
+    expect(identificacao.getByText('Família')).toBeInTheDocument();
   });
 
-  it('renderiza só os campos preenchidos no modo LEGADO', () => {
+  it('deixa o par resolvido de Identidade técnica como única exibição desses campos', () => {
+    render(
+      <ProdutoWorkspace
+        produto={produto({ schedule: '40', polegada_principal: '06', polegada_secundaria: '1/2' })}
+        mode="view"
+      />,
+    );
+
+    const tecnica = cardPorTitulo('Identidade técnica');
+    expect(tecnica.getByText('Schedule').closest('div')).toHaveTextContent(/^Schedule\s*40$/);
+    expect(tecnica.getByText('Polegada principal').closest('div')).toHaveTextContent(
+      /^Polegada principal\s*1\/2"$/,
+    );
+    expect(tecnica.getByText('Polegada secundária')).toBeInTheDocument();
+  });
+
+  it('esconde o Sufixo vazio no modo INTERNO, deixando só a Família no bloco', () => {
+    render(
+      <ProdutoWorkspace produto={produto({ modo_codigo: 'INTERNO', sufixo: '' })} mode="view" />,
+    );
+
+    const identificacao = cardPorTitulo('Identificação');
+    expect(identificacao.queryByText('Sufixo')).toBeNull();
+    expect(identificacao.getByText('Família')).toBeInTheDocument();
+    expect(identificacao.getByText(NOME_FAMILIA)).toBeInTheDocument();
+  });
+
+  it('no modo LEGADO a Identificação mostra só o Sufixo, sem as polegadas do código', () => {
     render(
       <ProdutoWorkspace
         produto={produto({
           modo_codigo: 'LEGADO',
           figura: '0013',
           sufixo: 'RF',
-          schedule: '',
+          schedule: '40',
           polegada_principal: '06',
           polegada_secundaria: '1/2',
         })}
@@ -290,10 +318,12 @@ describe('ProdutoWorkspace (visualização)', () => {
       />,
     );
 
+    const identificacao = cardPorTitulo('Identificação');
     expect(screen.queryByText('Figura')).toBeNull();
-    expect(screen.getByText('Sufixo').closest('div')).toHaveTextContent(/^Sufixo\s*RF$/);
-    expect(screen.getByText('Polegada secundária').closest('div')).toHaveTextContent(/^Polegada secundária\s*1\/2$/);
-    expect(screen.queryByText('Schedule')).toBeNull();
+    expect(identificacao.getByText('Sufixo').closest('div')).toHaveTextContent(/^Sufixo\s*RF$/);
+    expect(identificacao.queryByText('Schedule')).toBeNull();
+    expect(identificacao.queryByText('Polegada principal')).toBeNull();
+    expect(identificacao.queryByText('Polegada secundária')).toBeNull();
   });
 
   it('não deixa o bloco do LEGADO virar um separador vazio quando nada está preenchido', () => {
