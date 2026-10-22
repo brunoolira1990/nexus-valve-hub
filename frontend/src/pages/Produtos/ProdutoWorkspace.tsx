@@ -19,6 +19,12 @@ function formatValor(valor: number | null | undefined, decimais = 2): string {
   return Number(valor).toLocaleString('pt-BR', { minimumFractionDigits: decimais, maximumFractionDigits: decimais });
 }
 
+/** Quantidade de estoque em pt-BR: até 3 casas, sem casas forçadas (26.847 → '26,847', 8 → '8'). */
+function formatQuantidade(valor: number | null | undefined): string {
+  if (valor === null || valor === undefined) return '—';
+  return Number(valor).toLocaleString('pt-BR', { maximumFractionDigits: 3 });
+}
+
 function formatData(value?: string | null): string {
   if (!value) return '—';
   return value.split('-').reverse().join('/');
@@ -58,6 +64,15 @@ export function ProdutoWorkspace({ produto, mode }: ProdutoWorkspaceProps) {
 
   const ncmEfetivo = produto.ncm_efetivo?.codigo || produto.ncm || produto.ncm_especifico || 'Não definido';
   const ncmOrigem = produto.ncm_origem === 'produto' ? 'Override no produto' : produto.ncm_origem === 'familia' ? 'Família/figura' : 'Não definido';
+  // Cadastro zerado é poluição visual: sem preço preenchido o que vale é o preço praticado na NF-e.
+  const temValoresDeCadastro = Boolean(produto.preco_custo) || Boolean(produto.preco_venda);
+  // Sem nenhum desses campos preenchidos o bloco LEGADO viraria só uma linha de separador vazia.
+  const temIdentificacaoComplementar = Boolean(
+    (produto.sufixo ?? '').trim() ||
+      (produto.schedule ?? '').trim() ||
+      (produto.polegada_principal ?? '').trim() ||
+      (produto.polegada_secundaria ?? '').trim(),
+  );
 
   return (
     <Tabs defaultValue="geral" className="w-full">
@@ -86,20 +101,26 @@ export function ProdutoWorkspace({ produto, mode }: ProdutoWorkspaceProps) {
             {produto.modo_codigo === 'INTERNO' && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-border">
                 {renderField('Família', produto.familia_detalhes?.nome ?? '—')}
-                {renderField('Figura', produto.figura || '—')}
-                {renderField('Sufixo', produto.sufixo || '—')}
-                {renderField('Schedule', produto.schedule || '—')}
-                {renderField('Polegada principal', produto.polegada_principal || '—')}
-                {renderField('Polegada secundária', produto.polegada_secundaria || '—')}
+                {produto.sufixo?.trim() ? renderField('Sufixo', produto.sufixo.trim()) : null}
+                {produto.schedule?.trim() ? renderField('Schedule', produto.schedule.trim()) : null}
+                {produto.polegada_principal?.trim()
+                  ? renderField('Polegada principal', produto.polegada_principal.trim())
+                  : null}
+                {produto.polegada_secundaria?.trim()
+                  ? renderField('Polegada secundária', produto.polegada_secundaria.trim())
+                  : null}
               </div>
             )}
-            {produto.modo_codigo === 'LEGADO' && (
+            {produto.modo_codigo === 'LEGADO' && temIdentificacaoComplementar && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-border">
-                {renderField('Figura', produto.figura || '—')}
-                {renderField('Sufixo', produto.sufixo || '—')}
-                {renderField('Schedule', produto.schedule || '—')}
-                {renderField('Polegada principal', produto.polegada_principal || '—')}
-                {renderField('Polegada secundária', produto.polegada_secundaria || '—')}
+                {produto.sufixo?.trim() ? renderField('Sufixo', produto.sufixo.trim()) : null}
+                {produto.schedule?.trim() ? renderField('Schedule', produto.schedule.trim()) : null}
+                {produto.polegada_principal?.trim()
+                  ? renderField('Polegada principal', produto.polegada_principal.trim())
+                  : null}
+                {produto.polegada_secundaria?.trim()
+                  ? renderField('Polegada secundária', produto.polegada_secundaria.trim())
+                  : null}
               </div>
             )}
           </dl>
@@ -119,10 +140,18 @@ export function ProdutoWorkspace({ produto, mode }: ProdutoWorkspaceProps) {
               produto.ultimo_preco_venda != null ? formatValor(produto.ultimo_preco_venda) : null,
             )}
           </dl>
-          <p className="text-xs text-muted-foreground mt-4 mb-2">Valores do cadastro</p>
-          <dl className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {renderField('Preço de custo', formatValor(produto.preco_custo), { menor: true })}
-            {renderField('Preço de venda', formatValor(produto.preco_venda), { menor: true })}
+          {temValoresDeCadastro && (
+            <>
+              <p className="text-xs text-muted-foreground mt-4 mb-2">Valores do cadastro</p>
+              <dl className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {renderField('Preço de custo', formatValor(produto.preco_custo), { menor: true })}
+                {renderField('Preço de venda', formatValor(produto.preco_venda), { menor: true })}
+              </dl>
+            </>
+          )}
+          <p className="text-xs text-muted-foreground mt-4 mb-2">Estoque</p>
+          <dl className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {renderField('Estoque atual', formatQuantidade(produto.estoque_atual), { menor: true })}
             {renderField('Estoque mínimo', formatValor(produto.estoque_minimo, 0), { menor: true })}
           </dl>
         </SectionCard>

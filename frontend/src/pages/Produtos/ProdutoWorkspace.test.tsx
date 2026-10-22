@@ -205,6 +205,154 @@ describe('ProdutoWorkspace (visualização)', () => {
     expect(screen.getByText('Última venda').closest('div')).toHaveTextContent(/^Última venda\s*—$/);
   });
 
+  it('remove o campo Figura da Identificação: o nome da Família já traz o código da figura', () => {
+    render(
+      <ProdutoWorkspace produto={produto({ modo_codigo: 'INTERNO', figura: '0013', sufixo: 'RF' })} mode="view" />,
+    );
+
+    expect(screen.queryByText('Figura')).toBeNull();
+    expect(screen.getByText(NOME_FAMILIA)).toBeInTheDocument();
+    expect(screen.getByText('Sufixo')).toBeInTheDocument();
+  });
+
+  it('não renderiza as linhas de campo vazio no modo INTERNO', () => {
+    render(
+      <ProdutoWorkspace
+        produto={produto({
+          modo_codigo: 'INTERNO',
+          sufixo: '',
+          schedule: '   ',
+          polegada_principal: '06',
+          polegada_secundaria: '',
+        })}
+        mode="view"
+      />,
+    );
+
+    expect(screen.queryByText('Sufixo')).toBeNull();
+    expect(screen.queryByText('Schedule')).toBeNull();
+    expect(screen.queryByText('Polegada secundária')).toBeNull();
+    expect(screen.getByText('Polegada principal')).toBeInTheDocument();
+  });
+
+  it('esconde também a Polegada principal vazia, deixando só a Família no bloco', () => {
+    render(
+      <ProdutoWorkspace
+        produto={produto({
+          modo_codigo: 'INTERNO',
+          sufixo: '',
+          schedule: '',
+          polegada_principal: '  ',
+          polegada_secundaria: '',
+        })}
+        mode="view"
+      />,
+    );
+
+    expect(screen.queryByText('Polegada principal')).toBeNull();
+    expect(screen.queryByText('Sufixo')).toBeNull();
+    expect(screen.queryByText('Schedule')).toBeNull();
+    expect(screen.queryByText('Polegada secundária')).toBeNull();
+    expect(screen.getByText('Família')).toBeInTheDocument();
+    expect(screen.getByText(NOME_FAMILIA)).toBeInTheDocument();
+  });
+
+  it('esconde a Polegada principal vazia também no modo LEGADO', () => {
+    render(
+      <ProdutoWorkspace
+        produto={produto({
+          modo_codigo: 'LEGADO',
+          sufixo: '',
+          schedule: '',
+          polegada_principal: '',
+          polegada_secundaria: '1/2',
+        })}
+        mode="view"
+      />,
+    );
+
+    expect(screen.queryByText('Polegada principal')).toBeNull();
+    expect(screen.getByText('Polegada secundária').closest('div')).toHaveTextContent(/^Polegada secundária\s*1\/2$/);
+  });
+
+  it('renderiza só os campos preenchidos no modo LEGADO', () => {
+    render(
+      <ProdutoWorkspace
+        produto={produto({
+          modo_codigo: 'LEGADO',
+          figura: '0013',
+          sufixo: 'RF',
+          schedule: '',
+          polegada_principal: '06',
+          polegada_secundaria: '1/2',
+        })}
+        mode="view"
+      />,
+    );
+
+    expect(screen.queryByText('Figura')).toBeNull();
+    expect(screen.getByText('Sufixo').closest('div')).toHaveTextContent(/^Sufixo\s*RF$/);
+    expect(screen.getByText('Polegada secundária').closest('div')).toHaveTextContent(/^Polegada secundária\s*1\/2$/);
+    expect(screen.queryByText('Schedule')).toBeNull();
+  });
+
+  it('não deixa o bloco do LEGADO virar um separador vazio quando nada está preenchido', () => {
+    const { container } = render(
+      <ProdutoWorkspace
+        produto={produto({
+          modo_codigo: 'LEGADO',
+          sufixo: '',
+          schedule: '',
+          polegada_principal: '',
+          polegada_secundaria: '',
+        })}
+        mode="view"
+      />,
+    );
+
+    expect(container.querySelector('.border-t')).toBeNull();
+  });
+
+  it('esconde "Valores do cadastro" quando custo e venda de cadastro são zero', () => {
+    render(
+      <ProdutoWorkspace
+        produto={produto({ preco_custo: 0, preco_venda: 0, ultimo_preco_compra: 900 })}
+        mode="view"
+      />,
+    );
+
+    expect(screen.queryByText('Valores do cadastro')).toBeNull();
+    expect(screen.queryByText('Preço de custo')).toBeNull();
+    expect(screen.queryByText('Preço de venda')).toBeNull();
+    expect(screen.getByText('Última compra').closest('div')).toHaveTextContent(/^Última compra\s*900,00$/);
+  });
+
+  it('mostra "Valores do cadastro" quando apenas um dos preços de cadastro está preenchido', () => {
+    render(<ProdutoWorkspace produto={produto({ preco_custo: 0, preco_venda: 700 })} mode="view" />);
+
+    expect(screen.getByText('Valores do cadastro')).toBeInTheDocument();
+    expect(screen.getByText('Preço de venda').closest('div')).toHaveTextContent(/^Preço de venda\s*700,00$/);
+  });
+
+  it('mostra o estoque atual ao lado do estoque mínimo', () => {
+    render(<ProdutoWorkspace produto={produto({ estoque_atual: 26.847, estoque_minimo: 5 })} mode="view" />);
+
+    expect(screen.getByText('Estoque atual').closest('div')).toHaveTextContent(/^Estoque atual\s*26,847$/);
+    expect(screen.getByText('Estoque mínimo').closest('div')).toHaveTextContent(/^Estoque mínimo\s*5$/);
+  });
+
+  it('mostra estoque atual zerado sem casas forçadas', () => {
+    render(<ProdutoWorkspace produto={produto({ estoque_atual: 0 })} mode="view" />);
+
+    expect(screen.getByText('Estoque atual').closest('div')).toHaveTextContent(/^Estoque atual\s*0$/);
+  });
+
+  it('põe travessão no estoque atual quando o payload não traz o campo', () => {
+    render(<ProdutoWorkspace produto={produto({ estoque_atual: undefined })} mode="view" />);
+
+    expect(screen.getByText('Estoque atual').closest('div')).toHaveTextContent(/^Estoque atual\s*—$/);
+  });
+
   it('esconde o card de composição quando nenhum controle efetivo está ligado', () => {
     render(
       <ProdutoWorkspace

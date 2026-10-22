@@ -493,6 +493,7 @@ export interface Produto {
   preco_custo: number;
   preco_venda: number;
   estoque_minimo: number;
+  estoque_atual?: number;
   ultimo_preco_compra?: number | null;
   ultimo_preco_venda?: number | null;
   codigo_completo: string;

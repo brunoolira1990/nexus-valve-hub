@@ -36,6 +36,7 @@ from apps.produtos.precos_praticados import (
     ultimo_preco_compra_produto,
     ultimo_preco_venda_produto,
 )
+from apps.produtos.estoque_atual import estoque_atual_produto
 from apps.text_normalize import normalize_operational_fields, to_operational_upper
 from apps.auditoria.servico import (
     registrar_produto,
@@ -657,6 +658,7 @@ class ProdutoSerializer(serializers.ModelSerializer):
     estoque_minimo = serializers.DecimalField(max_digits=14, decimal_places=3, coerce_to_string=False)
     ultimo_preco_compra = serializers.SerializerMethodField(read_only=True)
     ultimo_preco_venda = serializers.SerializerMethodField(read_only=True)
+    estoque_atual = serializers.SerializerMethodField(read_only=True)
 
     familia_id = serializers.PrimaryKeyRelatedField(
         queryset=FamiliaProduto.objects.filter(ativo=True).exclude(
@@ -729,6 +731,7 @@ class ProdutoSerializer(serializers.ModelSerializer):
             'ultimo_preco_compra',
             'ultimo_preco_venda',
             'estoque_minimo',
+            'estoque_atual',
             'codigo_completo',
             'tipo_controle_unidade',
             'tipo_fisico',
@@ -777,6 +780,13 @@ class ProdutoSerializer(serializers.ModelSerializer):
 
     def get_ultimo_preco_venda(self, obj: Produto) -> float | None:
         return _preco_praticado(obj, 'ultimo_preco_venda', ultimo_preco_venda_produto)
+
+    def get_estoque_atual(self, obj: Produto) -> float:
+        """O queryset anota a soma das corridas; instância avulsa (painel, create/PATCH) soma sob demanda."""
+        valor = getattr(obj, 'estoque_atual', _AUSENTE)
+        if valor is _AUSENTE:
+            valor = estoque_atual_produto(obj.pk)
+        return float(valor or 0)
 
     def validate(self, attrs):
         inst = self.instance
