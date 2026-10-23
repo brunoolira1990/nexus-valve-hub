@@ -92,6 +92,20 @@ def _familia_resumo(familia: FamiliaProduto | None) -> dict | None:
     }
 
 
+def _familia_completa(familia: FamiliaProduto | None) -> dict | None:
+    """Resumo + a família inteira, para a ficha que espelha os cards da Edição.
+
+    Só no retrieve: os cards 'Padrões da Família/Figura', 'Requisitos da Família/Figura',
+    'Polegadas de referência' e 'Qualidade' dependem de requisitos_produto, tipo_dimensional,
+    material_vedacao e unidades da família, que não cabem no payload da listagem.
+    """
+    if familia is None:
+        return None
+    data = dict(FamiliaProdutoSerializer(familia).data)
+    data.update(_familia_resumo(familia) or {})
+    return data
+
+
 def _rosca_resumo(rosca: RoscaConexao | None) -> dict | None:
     if rosca is None:
         return None
@@ -1218,7 +1232,11 @@ class ProdutoSerializer(serializers.ModelSerializer):
         data['polegada_principal_ref_id'] = instance.polegada_principal_ref_id
         data['polegada_secundaria_ref_id'] = instance.polegada_secundaria_ref_id
         # Rótulos read-only das FKs: os ids acima continuam sendo o contrato de escrita do formulário.
-        data['familia_detalhes'] = _familia_resumo(instance.familia)
+        data['familia_detalhes'] = (
+            _familia_completa(instance.familia)
+            if self.context.get('familia_completa')
+            else _familia_resumo(instance.familia)
+        )
         data['rosca_conexao_detalhes'] = _rosca_resumo(instance.rosca_conexao)
         data['schedule_ref_detalhes'] = _schedule_resumo(instance.schedule_ref)
         data['polegada_principal_ref_detalhes'] = _polegada_resumo(instance.polegada_principal_ref)

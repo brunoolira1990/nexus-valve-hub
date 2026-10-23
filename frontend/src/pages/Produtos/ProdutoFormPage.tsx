@@ -187,11 +187,11 @@ const ProdutoFormPage = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        title={isEdit ? `Editar produto #${id}` : 'Novo produto'}
+        title={editing ? `${editing.codigo_completo} — ${editing.descricao}` : 'Novo produto'}
         breadcrumbs={[
           { label: 'Cadastros', path: '/produtos' },
           { label: 'Produtos', path: '/produtos' },
-          { label: isEdit ? `Editar #${id}` : 'Novo' },
+          { label: editing ? editing.codigo_completo : 'Novo' },
         ]}
         actions={
           <div className="flex items-center gap-2">
@@ -254,7 +254,7 @@ const ProdutoFormPage = () => {
             preview={preview}
             familiaSelecionada={familiaSelecionada}
             famReq={famReq}
-            editing={editing}
+            produto={editing}
             produtosOpcoes={produtosOpcoes}
             materiais={materiais}
             carregandoMateriais={carregandoMateriais}

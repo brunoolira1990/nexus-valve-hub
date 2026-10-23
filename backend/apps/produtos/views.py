@@ -244,6 +244,12 @@ class ProdutoViewSet(FriendlyDestroyMixin, AutocompleteOrPaginationMixin, viewse
     serializer_class = ProdutoSerializer
     pagination_class = NexusPageNumberPagination
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        if self.action == 'retrieve':
+            context['familia_completa'] = True
+        return context
+
     def get_queryset(self):
         qs = super().get_queryset()
         search = (self.request.query_params.get('search') or '').strip()

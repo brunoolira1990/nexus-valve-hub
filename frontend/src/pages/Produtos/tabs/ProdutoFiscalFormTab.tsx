@@ -25,6 +25,8 @@ interface ProdutoFiscalFormTabProps {
   setForm: (updater: (prev: ProdutoFormState) => ProdutoFormState) => void;
   preview?: { ncm?: string };
   familiaSelecionada?: FamiliaProduto | null;
+  /** Ficha de Visualização: mesmos cards da Edição, NCM como texto e sem o botão de override. */
+  somenteLeitura?: boolean;
 }
 
 export function ProdutoFiscalFormTab({
@@ -32,13 +34,14 @@ export function ProdutoFiscalFormTab({
   setForm,
   preview,
   familiaSelecionada,
+  somenteLeitura = false,
 }: ProdutoFiscalFormTabProps) {
   const [ncmProdutoOption, setNcmProdutoOption] = useState<NcmOption | null>(null);
 
   // Inicializa o autocomplete com o NCM já salvo no produto ao montar o tab
   // ou quando form.ncm mudar externamente (ex.: reset do formulário).
   useEffect(() => {
-    if (!form.ncm) {
+    if (!form.ncm || somenteLeitura) {
       setNcmProdutoOption(null);
       return;
     }
@@ -55,7 +58,7 @@ export function ProdutoFiscalFormTab({
     // ncmProdutoOption intencionalmente omitido: só re-executa quando o código muda,
     // não quando a opção interna é atualizada por este mesmo efeito.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.ncm]);
+  }, [form.ncm, somenteLeitura]);
 
   const handleInputChange = <K extends keyof ProdutoFormState>(
     key: K,
@@ -98,19 +101,25 @@ export function ProdutoFiscalFormTab({
           {/* NCM no produto (override opcional) */}
           <div>
             <CampoLabel>NCM no produto (override opcional)</CampoLabel>
-            <NcmAutocomplete
-              value={ncmProdutoOption}
-              onChange={(opt) => {
-                setNcmProdutoOption(opt);
-                handleInputChange('ncm', opt?.codigo || '');
-              }}
-              searchNcm={(term, limit) => ncmApiService.search(term, limit)}
-              placeholder="Digite código ou descrição do NCM..."
-            />
-            <p className="text-xs text-muted-foreground mt-1">
-              Preencha para sobrescrever o NCM da família. Vazio = herda da família/figura.
-            </p>
-            {form.ncm && (
+            {somenteLeitura ? (
+              <Input className="font-mono h-10 bg-muted/40" value={form.ncm || ''} disabled readOnly />
+            ) : (
+              <NcmAutocomplete
+                value={ncmProdutoOption}
+                onChange={(opt) => {
+                  setNcmProdutoOption(opt);
+                  handleInputChange('ncm', opt?.codigo || '');
+                }}
+                searchNcm={(term, limit) => ncmApiService.search(term, limit)}
+                placeholder="Digite código ou descrição do NCM..."
+              />
+            )}
+            {!somenteLeitura && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Preencha para sobrescrever o NCM da família. Vazio = herda da família/figura.
+              </p>
+            )}
+            {!somenteLeitura && form.ncm && (
               <button
                 type="button"
                 className="erp-btn-outline erp-btn-sm mt-2 w-full sm:w-auto"
@@ -145,6 +154,7 @@ export function ProdutoFiscalFormTab({
               <Input
                 className="h-10"
                 value={form.ncm_especifico || ''}
+                disabled={somenteLeitura}
                 onChange={(e) => handleInputChange('ncm_especifico', e.target.value)}
                 placeholder="NCM específico legado"
               />
@@ -156,6 +166,7 @@ export function ProdutoFiscalFormTab({
               <Input
                 className="h-10"
                 value={form.unidade_especifica || ''}
+                disabled={somenteLeitura}
                 onChange={(e) => handleInputChange('unidade_especifica', e.target.value)}
                 placeholder="Override de unidade para este produto"
               />
@@ -167,6 +178,7 @@ export function ProdutoFiscalFormTab({
               <Input
                 className="h-10"
                 value={form.unidade_fiscal || ''}
+                disabled={somenteLeitura}
                 onChange={(e) => handleInputChange('unidade_fiscal', e.target.value)}
                 placeholder="Unidade para fins fiscais (NF-e)"
               />

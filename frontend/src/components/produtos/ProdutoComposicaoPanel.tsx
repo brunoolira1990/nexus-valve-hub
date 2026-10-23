@@ -26,6 +26,8 @@ const TIPOS_COMPOSICAO = [
 type Props = {
   produtoId: number;
   produtosOpcoes: Array<{ id: number; codigo_completo: string; descricao: string }>;
+  /** Tela de detalhe: mostra as composições, sem nenhum botão de escrita. */
+  somenteLeitura?: boolean;
 };
 
 const emptyItem = (): ProdutoComposicaoItem => ({
@@ -35,7 +37,7 @@ const emptyItem = (): ProdutoComposicaoItem => ({
   ordem: 0,
 });
 
-export function ProdutoComposicaoPanel({ produtoId, produtosOpcoes }: Props) {
+export function ProdutoComposicaoPanel({ produtoId, produtosOpcoes, somenteLeitura = false }: Props) {
   const [lista, setLista] = useState<ProdutoComposicao[]>([]);
   const [loading, setLoading] = useState(false);
   const [editando, setEditando] = useState<ProdutoComposicao | null>(null);
@@ -117,10 +119,12 @@ export function ProdutoComposicaoPanel({ produtoId, produtosOpcoes }: Props) {
           <h3 className="text-sm font-semibold">Composição / Montagem</h3>
           <p className="text-xs text-muted-foreground mt-0.5">{AVISO_COMPOSICAO_SEM_ESTOQUE}</p>
         </div>
-        <button type="button" className="erp-btn-outline erp-btn-sm w-full sm:w-auto" onClick={novaComposicao}>
-          <Plus className="h-4 w-4 mr-1" />
-          Nova composição
-        </button>
+        {!somenteLeitura && (
+          <button type="button" className="erp-btn-outline erp-btn-sm w-full sm:w-auto" onClick={novaComposicao}>
+            <Plus className="h-4 w-4 mr-1" />
+            Nova composição
+          </button>
+        )}
       </div>
 
       {erro ? <p className="text-sm text-destructive mb-2">{erro}</p> : null}
@@ -142,20 +146,22 @@ export function ProdutoComposicaoPanel({ produtoId, produtosOpcoes }: Props) {
             Comprar pronto: {c.permite_comprar_pronto ? 'sim' : 'não'} · Montar: {c.permite_montar ? 'sim' : 'não'} ·
             Componentes: {c.itens?.length ?? 0}
           </p>
-          <div className="flex flex-wrap gap-2 mt-2">
-            <button type="button" className="erp-btn-ghost erp-btn-sm" onClick={() => setEditando(c)}>
-              Editar
-            </button>
-            {c.ativo ? (
-              <button type="button" className="erp-btn-ghost erp-btn-sm" onClick={() => void inativar(c)}>
-                Inativar
+          {!somenteLeitura && (
+            <div className="flex flex-wrap gap-2 mt-2">
+              <button type="button" className="erp-btn-ghost erp-btn-sm" onClick={() => setEditando(c)}>
+                Editar
               </button>
-            ) : (
-              <button type="button" className="erp-btn-ghost erp-btn-sm text-destructive" onClick={() => void excluir(c)}>
-                <Trash2 className="h-4 w-4" />
-              </button>
-            )}
-          </div>
+              {c.ativo ? (
+                <button type="button" className="erp-btn-ghost erp-btn-sm" onClick={() => void inativar(c)}>
+                  Inativar
+                </button>
+              ) : (
+                <button type="button" className="erp-btn-ghost erp-btn-sm text-destructive" onClick={() => void excluir(c)}>
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
       ))}
 

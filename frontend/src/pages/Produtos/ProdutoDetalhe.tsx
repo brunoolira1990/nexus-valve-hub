@@ -85,11 +85,11 @@ export default function ProdutoDetalhe() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title={produto.descricao || 'Produto sem descrição'}
+        title={`${produto.codigo_completo} — ${produto.descricao}`}
         breadcrumbs={[
           { label: 'Cadastros', path: '/produtos' },
           { label: 'Produtos', path: '/produtos' },
-          { label: 'Detalhe' },
+          { label: produto.codigo_completo },
         ]}
         actions={
           <>

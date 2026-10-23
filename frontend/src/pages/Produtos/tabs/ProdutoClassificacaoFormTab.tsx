@@ -109,8 +109,8 @@ interface ProdutoClassificacaoFormTabProps {
   preview?: { codigo?: string; descricao?: string; ncm?: string; mensagem?: string };
   familiaSelecionada?: FamiliaProduto | null;
   famReq?: RequisitosProdutoDimensionais | null;
-  /** Produto em edição — habilita o painel de Composição. */
-  editing?: Produto | null;
+  /** Produto do payload — habilita o painel de Composição e dá os rótulos resolvidos da leitura. */
+  produto?: Produto | null;
   /** Lista de produtos para o seletor de componentes da composição. */
   produtosOpcoes?: Array<{ id: number; codigo_completo: string; descricao: string }>;
   /** Catálogo de materiais (ativos) carregado pelo container — alimenta o dropdown. */
@@ -123,6 +123,8 @@ interface ProdutoClassificacaoFormTabProps {
   onLimparHerdado?: (campo: CampoHerancaVisivel) => void;
   /** Campo apontado pela validação do salvar(): recebe o anel e a âncora de rolagem. */
   campoErro?: CampoFormProdutoInvalido | null;
+  /** Ficha de Visualização: cards e grid idênticos aos da Edição, tudo desabilitado e sem catálogo. */
+  somenteLeitura?: boolean;
 }
 
 export function ProdutoClassificacaoFormTab({
@@ -131,13 +133,14 @@ export function ProdutoClassificacaoFormTab({
   preview,
   familiaSelecionada = null,
   famReq = null,
-  editing = null,
+  produto = null,
   produtosOpcoes = [],
   materiais = [],
   carregandoMateriais = false,
   herdouFamilia = [],
   onLimparHerdado,
   campoErro = null,
+  somenteLeitura = false,
 }: ProdutoClassificacaoFormTabProps) {
   // Rótulo humano de cada campo herdável (usado na badge e no resumo).
   const ROTULO_HERANCA: Record<CampoHerancaVisivel, string> = {
@@ -149,6 +152,8 @@ export function ProdutoClassificacaoFormTab({
   };
 
   const badgeHeranca = (campo: CampoHerancaVisivel, valorProduto: unknown) => {
+    // A badge tem botão "Limpar" (ação de escrita): na ficha ela não existe.
+    if (somenteLeitura) return null;
     if (!familiaSelecionada || !estaHerdadoDaFamilia(familiaSelecionada, campo, valorProduto)) {
       return null;
     }
@@ -184,7 +189,7 @@ export function ProdutoClassificacaoFormTab({
   useEffect(() => {
     let ativo = true;
     const id = form.schedule_ref_id;
-    if (!id) {
+    if (!id || somenteLeitura) {
       setScheduleOption(null);
       return;
     }
@@ -201,11 +206,15 @@ export function ProdutoClassificacaoFormTab({
     return () => {
       ativo = false;
     };
-  }, [form.schedule_ref_id, scheduleOption?.id]);
+  }, [form.schedule_ref_id, scheduleOption?.id, somenteLeitura]);
 
   // Rosca/conexão: lista pequena e estática — carregada uma vez por montagem.
   const [roscas, setRoscas] = useState<RoscaConexao[]>([]);
   useEffect(() => {
+    if (somenteLeitura) {
+      setRoscas([]);
+      return;
+    }
     let ativo = true;
     void roscasConexaoService
       .getAll()
@@ -218,7 +227,7 @@ export function ProdutoClassificacaoFormTab({
     return () => {
       ativo = false;
     };
-  }, []);
+  }, [somenteLeitura]);
 
   // Material: o catálogo (ativos) vem do container via prop `materiais`.
   // A resolução material→material_ref (herança da família / produto legado) vive
@@ -257,6 +266,27 @@ export function ProdutoClassificacaoFormTab({
   const exigeCertificadoEfetivo =
     !!form.exige_certificado_qualidade || !!familiaSelecionada?.exige_certificado_qualidade;
 
+  // Rótulos que só o payload da ficha traz: em leitura não se abre catálogo, então o
+  // texto do select/autompletar vem direto dos *_detalhes já resolvidos pelo backend.
+  const roscaTexto = (() => {
+    const r = produto?.rosca_conexao_detalhes;
+    if (!r) return 'Sem rosca específica (usa o padrão da família)';
+    return `${r.codigo || '—'} — ${r.descricao}`;
+  })();
+  const scheduleTexto = (() => {
+    const s = produto?.schedule_ref_detalhes;
+    if (!s) return '—';
+    return `${s.codigo || s.codigo_schedule} — ${s.descricao || s.codigo_schedule}`;
+  })();
+  /** Formato amigável (decisão Sprint 3.6): `1/2"` em vez do `nome` técnico 'NPS 1/2 — 1/2"'. */
+  const textoPolegada = (p?: Produto['polegada_principal_ref_detalhes']) => {
+    if (!p) return '—';
+    const oficial = p.codigo_oficial || p.codigo;
+    return oficial ? `${oficial}"` : p.descricao;
+  };
+  const polegadaPrincipalTexto = textoPolegada(produto?.polegada_principal_ref_detalhes);
+  const polegadaSecundariaTexto = textoPolegada(produto?.polegada_secundaria_ref_detalhes);
+
   const getAtributoTecnico = (key: string): string => {
     const value = form.dimensoes_json?.[key];
     return value == null ? '' : String(value);
@@ -291,7 +321,7 @@ export function ProdutoClassificacaoFormTab({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          {herdouFamilia.length > 0 && (
+          {!somenteLeitura && herdouFamilia.length > 0 && (
             <p className="text-xs text-muted-foreground">
               Herdados da família ao selecioná-la: {herdouFamilia.map((c) => ROTULO_HERANCA[c]).join(', ')}
             </p>
@@ -299,53 +329,64 @@ export function ProdutoClassificacaoFormTab({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             <div id={campoId('material_ref')} className={classeErroCampo(campoErro, 'material_ref')}>
               {rotuloLinha('Material', 'material_ref', form.material_ref)}
-              <Select
-                value={form.material_ref?.toString() ?? ''}
-                onValueChange={(v) => {
-                  const id = Number(v) || null;
-                  const mat = id ? materiais.find((m) => m.id === id) : null;
-                  setForm((prev) => ({
-                    ...prev,
-                    material_ref: id,
-                    material: mat?.nome ?? prev.material,
-                  }));
-                }}
-                disabled={carregandoMateriais}
-              >
-                <SelectTrigger className="w-full h-10">
-                  <SelectValue
-                    placeholder={carregandoMateriais ? 'Carregando materiais…' : 'Selecione...'}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {carregandoMateriais ? (
-                    <div className="px-2 py-4 text-center text-xs text-muted-foreground">
-                      Carregando catálogo de materiais…
-                    </div>
-                  ) : materiais.length === 0 ? (
-                    <div className="px-2 py-4 text-center text-xs text-muted-foreground">
-                      Nenhum material cadastrado.
-                    </div>
-                  ) : (
-                    materiaisAgrupados.map((grupo) => (
-                      <SelectGroup key={grupo.categoria}>
-                        <SelectLabel>{grupo.label}</SelectLabel>
-                        {grupo.itens.map((m) => (
-                          <SelectItem key={m.id} value={m.id.toString()}>
-                            {m.nome}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
+              {somenteLeitura ? (
+                // material_nome já vem resolvido no payload: a ficha não carrega o catálogo de materiais.
+                <Input
+                  className="h-10 bg-muted/40"
+                  value={produto?.material_nome ?? form.material ?? ''}
+                  disabled
+                  readOnly
+                />
+              ) : (
+                <Select
+                  value={form.material_ref?.toString() ?? ''}
+                  onValueChange={(v) => {
+                    const id = Number(v) || null;
+                    const mat = id ? materiais.find((m) => m.id === id) : null;
+                    setForm((prev) => ({
+                      ...prev,
+                      material_ref: id,
+                      material: mat?.nome ?? prev.material,
+                    }));
+                  }}
+                  disabled={carregandoMateriais}
+                >
+                  <SelectTrigger className="w-full h-10">
+                    <SelectValue
+                      placeholder={carregandoMateriais ? 'Carregando materiais…' : 'Selecione...'}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {carregandoMateriais ? (
+                      <div className="px-2 py-4 text-center text-xs text-muted-foreground">
+                        Carregando catálogo de materiais…
+                      </div>
+                    ) : materiais.length === 0 ? (
+                      <div className="px-2 py-4 text-center text-xs text-muted-foreground">
+                        Nenhum material cadastrado.
+                      </div>
+                    ) : (
+                      materiaisAgrupados.map((grupo) => (
+                        <SelectGroup key={grupo.categoria}>
+                          <SelectLabel>{grupo.label}</SelectLabel>
+                          {grupo.itens.map((m) => (
+                            <SelectItem key={m.id} value={m.id.toString()}>
+                              {m.nome}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div>
               {rotuloLinha('Norma técnica', 'norma', form.norma)}
               <Input
                 className="erp-input h-10"
                 value={form.norma}
+                disabled={somenteLeitura}
                 onChange={(e) => handleInputChange('norma', e.target.value)}
                 placeholder="Ex.: ASME B16.34, DIN 3352"
               />
@@ -355,6 +396,7 @@ export function ProdutoClassificacaoFormTab({
               <Input
                 className="erp-input h-10"
                 value={form.pressao_nominal}
+                disabled={somenteLeitura}
                 onChange={(e) => handleInputChange('pressao_nominal', e.target.value)}
                 placeholder="Ex.: PN 16, Class 150"
               />
@@ -381,6 +423,7 @@ export function ProdutoClassificacaoFormTab({
               <Input
                 className="erp-input h-10"
                 value={form.tipo_peca}
+                disabled={somenteLeitura}
                 onChange={(e) => handleInputChange('tipo_peca', e.target.value)}
                 placeholder="Ex.: Válvula, Conexão, Flange"
               />
@@ -390,6 +433,7 @@ export function ProdutoClassificacaoFormTab({
               <Input
                 className="erp-input h-10"
                 value={form.conexao}
+                disabled={somenteLeitura}
                 onChange={(e) => handleInputChange('conexao', e.target.value)}
                 placeholder="Descrição livre da conexão"
               />
@@ -453,26 +497,30 @@ export function ProdutoClassificacaoFormTab({
               {!familiaEhMaterialDimensional && famReq.usa_rosca_conexao && (
                 <div>
                   <CampoLabel>Rosca / conexão</CampoLabel>
-                  <Select
-                    value={form.rosca_conexao_id?.toString() ?? SEM_ROSCA}
-                    onValueChange={(v) =>
-                      handleInputChange('rosca_conexao_id', v === SEM_ROSCA ? null : Number(v))
-                    }
-                  >
-                    <SelectTrigger className="w-full h-10">
-                      <SelectValue placeholder="Selecione a rosca / conexão" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={SEM_ROSCA}>
-                        — Sem rosca específica (usa o padrão da família) —
-                      </SelectItem>
-                      {roscas.map((r) => (
-                        <SelectItem key={r.id} value={r.id.toString()}>
-                          {(r.codigo || '—') + ' — ' + r.descricao}
+                  {somenteLeitura ? (
+                    <Input className="h-10 bg-muted/40" value={roscaTexto} disabled readOnly />
+                  ) : (
+                    <Select
+                      value={form.rosca_conexao_id?.toString() ?? SEM_ROSCA}
+                      onValueChange={(v) =>
+                        handleInputChange('rosca_conexao_id', v === SEM_ROSCA ? null : Number(v))
+                      }
+                    >
+                      <SelectTrigger className="w-full h-10">
+                        <SelectValue placeholder="Selecione a rosca / conexão" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={SEM_ROSCA}>
+                          — Sem rosca específica (usa o padrão da família) —
                         </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                        {roscas.map((r) => (
+                          <SelectItem key={r.id} value={r.id.toString()}>
+                            {(r.codigo || '—') + ' — ' + r.descricao}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
               )}
 
@@ -491,21 +539,25 @@ export function ProdutoClassificacaoFormTab({
                       </Tooltip>
                     </TooltipProvider>
                   </div>
-                  <AsyncAutocomplete<ScheduleEspessura>
-                    value={form.schedule_ref_id ?? null}
-                    selectedOption={scheduleOption}
-                    placeholder="Digite código, descrição ou aplicação (ex.: 10S, SCH 20, INOX)"
-                    search={async (term, limit) => schedulesEspessuraService.search(term, limit ?? 20)}
-                    getOptionValue={(opt) => opt.id}
-                    getOptionLabel={(opt) =>
-                      `${opt.codigo || opt.codigo_schedule} — ${opt.descricao || opt.codigo_schedule}`
-                    }
-                    onChange={(val, opt) => {
-                      const id = typeof val === 'number' ? val : null;
-                      handleInputChange('schedule_ref_id', id);
-                      setScheduleOption(opt ?? null);
-                    }}
-                  />
+                  {somenteLeitura ? (
+                    <Input className="h-10 bg-muted/40" value={scheduleTexto} disabled readOnly />
+                  ) : (
+                    <AsyncAutocomplete<ScheduleEspessura>
+                      value={form.schedule_ref_id ?? null}
+                      selectedOption={scheduleOption}
+                      placeholder="Digite código, descrição ou aplicação (ex.: 10S, SCH 20, INOX)"
+                      search={async (term, limit) => schedulesEspessuraService.search(term, limit ?? 20)}
+                      getOptionValue={(opt) => opt.id}
+                      getOptionLabel={(opt) =>
+                        `${opt.codigo || opt.codigo_schedule} — ${opt.descricao || opt.codigo_schedule}`
+                      }
+                      onChange={(val, opt) => {
+                        const id = typeof val === 'number' ? val : null;
+                        handleInputChange('schedule_ref_id', id);
+                        setScheduleOption(opt ?? null);
+                      }}
+                    />
+                  )}
                 </div>
               )}
 
@@ -524,6 +576,7 @@ export function ProdutoClassificacaoFormTab({
                     className="erp-input h-10"
                     placeholder="Ex.: 15 | 15,0"
                     value={decToText(form.diametro_interno_mm)}
+                    disabled={somenteLeitura}
                     onChange={(e) => handleInputChange('diametro_interno_mm', parseDec(e.target.value))}
                   />
                 </div>
@@ -541,6 +594,7 @@ export function ProdutoClassificacaoFormTab({
                     className="erp-input h-10"
                     placeholder="Ex.: 10 | 10,0 | 1,5"
                     value={decToText(form.od_mm)}
+                    disabled={somenteLeitura}
                     onChange={(e) => handleInputChange('od_mm', parseDec(e.target.value))}
                   />
                 </div>
@@ -558,6 +612,7 @@ export function ProdutoClassificacaoFormTab({
                     className="erp-input h-10"
                     placeholder="Ex.: 2 | 2,0 | 1,5"
                     value={decToText(form.espessura_mm)}
+                    disabled={somenteLeitura}
                     onChange={(e) => handleInputChange('espessura_mm', parseDec(e.target.value))}
                   />
                 </div>
@@ -572,6 +627,7 @@ export function ProdutoClassificacaoFormTab({
                     className="erp-input h-10"
                     placeholder="Ex.: 6000"
                     value={decToText(form.comprimento_mm)}
+                    disabled={somenteLeitura}
                     onChange={(e) => handleInputChange('comprimento_mm', parseDec(e.target.value))}
                   />
                   <p className="text-xs text-muted-foreground mt-1">
@@ -606,6 +662,7 @@ export function ProdutoClassificacaoFormTab({
                       className="erp-input h-10"
                       placeholder="Ex.: 3,2"
                       value={decToText(form.dim_espessura_mm)}
+                      disabled={somenteLeitura}
                       onChange={(e) => handleInputChange('dim_espessura_mm', parseDec(e.target.value))}
                     />
                   </div>
@@ -617,6 +674,7 @@ export function ProdutoClassificacaoFormTab({
                       className="erp-input h-10"
                       placeholder="Ex.: 1000"
                       value={decToText(form.dim_largura_mm)}
+                      disabled={somenteLeitura}
                       onChange={(e) => handleInputChange('dim_largura_mm', parseDec(e.target.value))}
                     />
                   </div>
@@ -628,6 +686,7 @@ export function ProdutoClassificacaoFormTab({
                       className="erp-input h-10"
                       placeholder="Ex.: 2000"
                       value={decToText(form.dim_comprimento_mm)}
+                      disabled={somenteLeitura}
                       onChange={(e) => handleInputChange('dim_comprimento_mm', parseDec(e.target.value))}
                     />
                   </div>
@@ -639,7 +698,34 @@ export function ProdutoClassificacaoFormTab({
                       className="erp-input h-10"
                       placeholder="Ex.: 50"
                       value={decToText(form.dim_altura_mm)}
+                      disabled={somenteLeitura}
                       onChange={(e) => handleInputChange('dim_altura_mm', parseDec(e.target.value))}
+                    />
+                  </div>
+                  {/* Furo e Aba eram visíveis só na Visualização: sem eles aqui, a ficha
+                      espelhada esconderia a medida do produto CHAPA_FURO_MM. */}
+                  <div>
+                    <CampoLabel>Furo (mm)</CampoLabel>
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      className="erp-input h-10"
+                      placeholder="Ex.: 13,0"
+                      value={decToText(form.dim_furo_mm)}
+                      disabled={somenteLeitura}
+                      onChange={(e) => handleInputChange('dim_furo_mm', parseDec(e.target.value))}
+                    />
+                  </div>
+                  <div>
+                    <CampoLabel>Aba (mm)</CampoLabel>
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      className="erp-input h-10"
+                      placeholder="Ex.: 40"
+                      value={decToText(form.dim_aba_mm)}
+                      disabled={somenteLeitura}
+                      onChange={(e) => handleInputChange('dim_aba_mm', parseDec(e.target.value))}
                     />
                   </div>
                 </div>
@@ -659,6 +745,7 @@ export function ProdutoClassificacaoFormTab({
                       <Input
                         className="erp-input h-10"
                         value={getAtributoTecnico(key)}
+                        disabled={somenteLeitura}
                         placeholder={hint}
                         onChange={(e) => setAtributoTecnico(key, e.target.value)}
                       />
@@ -700,6 +787,7 @@ export function ProdutoClassificacaoFormTab({
                   className="erp-input h-10"
                   placeholder="Ex.: 100"
                   value={decToText(form.diametro_mostrador_mm)}
+                  disabled={somenteLeitura}
                   onChange={(e) => handleInputChange('diametro_mostrador_mm', parseDec(e.target.value))}
                 />
               </div>
@@ -709,6 +797,7 @@ export function ProdutoClassificacaoFormTab({
                   className="erp-input h-10"
                   placeholder="Ex.: 0 A 16"
                   value={form.escala || ''}
+                  disabled={somenteLeitura}
                   onChange={(e) => handleInputChange('escala', e.target.value)}
                 />
               </div>
@@ -718,6 +807,7 @@ export function ProdutoClassificacaoFormTab({
                   className="erp-input h-10"
                   placeholder="Ex.: BAR"
                   value={form.unidade_escala || ''}
+                  disabled={somenteLeitura}
                   onChange={(e) => handleInputChange('unidade_escala', e.target.value)}
                 />
               </div>
@@ -727,6 +817,7 @@ export function ProdutoClassificacaoFormTab({
                   className="erp-input h-10"
                   placeholder="Ex.: GLICERINA"
                   value={form.fluido || ''}
+                  disabled={somenteLeitura}
                   onChange={(e) => handleInputChange('fluido', e.target.value)}
                 />
               </div>
@@ -753,25 +844,33 @@ export function ProdutoClassificacaoFormTab({
               {usaPolegadaPrincipal && (
                 <div>
                   <CampoLabel>{labelPolegadaPrincipal(tdAtual)}</CampoLabel>
-                  <PolegadaAutocomplete
-                    value={form.polegada_principal_ref_id ?? null}
-                    onChange={(id) => handleInputChange('polegada_principal_ref_id', id)}
-                    tipoMedida="OD"
-                    allowCreate
-                    placeholder="Busque por código, polegada, decimal ou mm"
-                  />
+                  {somenteLeitura ? (
+                    <Input className="h-10 bg-muted/40" value={polegadaPrincipalTexto} disabled readOnly />
+                  ) : (
+                    <PolegadaAutocomplete
+                      value={form.polegada_principal_ref_id ?? null}
+                      onChange={(id) => handleInputChange('polegada_principal_ref_id', id)}
+                      tipoMedida="OD"
+                      allowCreate
+                      placeholder="Busque por código, polegada, decimal ou mm"
+                    />
+                  )}
                 </div>
               )}
               {usaPolegadaSecundaria && (
                 <div>
                   <CampoLabel>{labelPolegadaSecundaria(tdAtual)}</CampoLabel>
-                  <PolegadaAutocomplete
-                    value={form.polegada_secundaria_ref_id ?? null}
-                    onChange={(id) => handleInputChange('polegada_secundaria_ref_id', id)}
-                    tipoMedida="OD"
-                    allowCreate
-                    placeholder="Busque por código, polegada, decimal ou mm"
-                  />
+                  {somenteLeitura ? (
+                    <Input className="h-10 bg-muted/40" value={polegadaSecundariaTexto} disabled readOnly />
+                  ) : (
+                    <PolegadaAutocomplete
+                      value={form.polegada_secundaria_ref_id ?? null}
+                      onChange={(id) => handleInputChange('polegada_secundaria_ref_id', id)}
+                      tipoMedida="OD"
+                      allowCreate
+                      placeholder="Busque por código, polegada, decimal ou mm"
+                    />
+                  )}
                 </div>
               )}
             </div>
@@ -795,7 +894,7 @@ export function ProdutoClassificacaoFormTab({
         </CardHeader>
         <CardContent>
           <ConversaoMedidasBlock
-            somenteLeitura={!!familiaSelecionada}
+            somenteLeitura={!!familiaSelecionada || somenteLeitura}
             usaConversao={conversao.usaConversao}
             onUsaConversaoChange={(v) => handleInputChange('usa_conversao_dimensional', v)}
             controlaComposicaoFisica={conversao.controlaComposicaoFisica}
@@ -858,7 +957,7 @@ export function ProdutoClassificacaoFormTab({
           <div className="flex items-center gap-3">
             <Switch
               id="prod-exige-certificado"
-              disabled={!!familiaSelecionada}
+              disabled={!!familiaSelecionada || somenteLeitura}
               checked={exigeCertificadoEfetivo}
               onCheckedChange={(v) => setForm((prev) => ({ ...prev, exige_certificado_qualidade: v }))}
             />
@@ -869,8 +968,8 @@ export function ProdutoClassificacaoFormTab({
         </CardContent>
       </Card>
 
-      {/* ===== Composição do produto (apenas em edição) ===== */}
-      {editing?.id ? (
+      {/* ===== Composição do produto (exige produto salvo; na ficha só lista, sem ações) ===== */}
+      {produto?.id ? (
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
@@ -882,7 +981,11 @@ export function ProdutoClassificacaoFormTab({
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <ProdutoComposicaoPanel produtoId={editing.id} produtosOpcoes={produtosOpcoes} />
+            <ProdutoComposicaoPanel
+              produtoId={produto.id}
+              produtosOpcoes={produtosOpcoes}
+              somenteLeitura={somenteLeitura}
+            />
           </CardContent>
         </Card>
       ) : null}

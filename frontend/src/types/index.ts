@@ -403,6 +403,26 @@ export type ProdutoFamiliaResumo = {
   nome: string;
 };
 
+/**
+ * Ficha (retrieve) — o backend devolve a Família inteira, não só o resumo da listagem.
+ * É o que os cards espelhados da Edição leem: requisitos_produto (gates de Rosca/Schedule/
+ * Polegadas), tipo_dimensional (card Manômetro e rótulos), categoria_produto,
+ * material_vedacao (Padrões da Família), unidades e exige_certificado_qualidade (Qualidade).
+ * Listagem não entrega essas chaves: quem tem só um Produto de lista precisa estreitar
+ * primeiro, e o contrato é provado por teste no backend.
+ */
+export type ProdutoFamiliaDaFicha = FamiliaProduto & { nome: string };
+
+export type ProdutoFamiliaDetalhes = ProdutoFamiliaResumo | ProdutoFamiliaDaFicha;
+
+/** Estreita o resumo da listagem para a Família completa da ficha; devolve null fora do retrieve. */
+export function familiaDaFicha(
+  detalhes: ProdutoFamiliaDetalhes | null | undefined,
+): ProdutoFamiliaDaFicha | null {
+  if (!detalhes) return null;
+  return 'requisitos_produto' in detalhes ? detalhes : null;
+}
+
 export type ProdutoRoscaConexaoResumo = Pick<RoscaConexao, 'id' | 'codigo' | 'descricao'>;
 
 export type ProdutoScheduleResumo = Pick<ScheduleEspessura, 'id' | 'codigo_schedule' | 'codigo' | 'descricao'>;
@@ -416,7 +436,7 @@ export interface Produto {
   id: number;
   modo_codigo?: ModoCodigoProduto;
   familia_id?: number | null;
-  familia_detalhes?: ProdutoFamiliaResumo | null;
+  familia_detalhes?: ProdutoFamiliaDetalhes | null;
   rosca_conexao_id?: number | null;
   rosca_conexao_detalhes?: ProdutoRoscaConexaoResumo | null;
   schedule_ref_id?: number | null;
