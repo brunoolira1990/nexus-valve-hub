@@ -160,32 +160,31 @@ function GrupoCheckboxesUnidades({
           </label>
         ))}
       </div>
-      <div className="mt-2 flex flex-wrap gap-2">
-        <button
-          type="button"
-          disabled={disabled}
-          className="erp-btn-outline erp-btn-sm text-xs"
-          onClick={() => onChange([...sugestao])}
-        >
-          Sugestão linear (M, BR, KG, TON)
-        </button>
-        <button
-          type="button"
-          disabled={disabled}
-          className="erp-btn-outline erp-btn-sm text-xs"
-          onClick={() => onChange([...unidadesSugeridasChapa()])}
-        >
-          Sugestão chapa (CH, KG, TON…)
-        </button>
-        <button
-          type="button"
-          disabled={disabled}
-          className="erp-btn-ghost erp-btn-sm text-xs"
-          onClick={() => onChange([])}
-        >
-          {limparLabel}
-        </button>
-      </div>
+      {!disabled && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="erp-btn-outline erp-btn-sm text-xs"
+            onClick={() => onChange([...sugestao])}
+          >
+            Sugestão linear (M, BR, KG, TON)
+          </button>
+          <button
+            type="button"
+            className="erp-btn-outline erp-btn-sm text-xs"
+            onClick={() => onChange([...unidadesSugeridasChapa()])}
+          >
+            Sugestão chapa (CH, KG, TON…)
+          </button>
+          <button
+            type="button"
+            className="erp-btn-ghost erp-btn-sm text-xs"
+            onClick={() => onChange([])}
+          >
+            {limparLabel}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

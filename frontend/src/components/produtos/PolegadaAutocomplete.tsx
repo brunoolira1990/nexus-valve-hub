@@ -187,7 +187,7 @@ export function PolegadaAutocomplete({
           setTerm(e.target.value);
         }}
       />
-      {value != null ? (
+      {!disabled && value != null ? (
         <button
           type="button"
           className="erp-btn-outline erp-btn-sm mt-2"
@@ -197,7 +197,6 @@ export function PolegadaAutocomplete({
             setTerm('');
             setOpen(false);
           }}
-          disabled={disabled}
         >
           Limpar seleção
         </button>

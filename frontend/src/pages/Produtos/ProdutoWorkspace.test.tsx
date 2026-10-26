@@ -249,6 +249,21 @@ describe('ProdutoWorkspace (espelho da Edição)', () => {
     expect(screen.queryByText(/Herdados da família ao selecioná-la/)).toBeNull();
   });
 
+  // Botão desabilitado é só ruído na ficha: em leitura ele não aparece, e não existe escrita possível.
+  it('esconde os botões de ação dos autocompletes e da Conversão de Medidas', () => {
+    render(<ProdutoWorkspace produto={produtoComFamilia()} mode="view" />);
+
+    expect(screen.queryByRole('button', { name: 'Limpar seleção' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Limpar' })).toBeNull();
+    const conversao = cardPorTitulo('Conversão de Medidas');
+    expect(conversao.queryByText(/Sugestão linear/)).toBeNull();
+    expect(conversao.queryByText(/Sugestão chapa/)).toBeNull();
+    expect(conversao.queryByText('Limpar (herdar da família no produto)')).toBeNull();
+    // Os checkboxes de unidades continuam visíveis, só que inertes.
+    expect(conversao.getAllByRole('checkbox').length).toBeGreaterThan(0);
+    conversao.getAllByRole('checkbox').forEach((c) => expect(c).toBeDisabled());
+  });
+
   it('mantém os campos derivados da família somente leitura, com o valor da família', () => {
     render(<ProdutoWorkspace produto={produtoComFamilia()} mode="view" />);
 

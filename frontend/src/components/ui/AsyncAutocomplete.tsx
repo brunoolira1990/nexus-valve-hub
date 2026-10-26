@@ -156,7 +156,7 @@ export function AsyncAutocomplete<T>({
           ) : null}
         </div>
 
-        {value != null ? (
+        {!disabled && value != null ? (
           <button
             type="button"
             className="erp-btn-outline erp-btn-sm mt-1 h-10 w-full shrink-0 px-2 sm:w-auto"
@@ -166,7 +166,6 @@ export function AsyncAutocomplete<T>({
               setOptions([]);
               setOpen(false);
             }}
-            disabled={disabled}
             title="Limpar seleção"
           >
             Limpar
