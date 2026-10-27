@@ -34,6 +34,7 @@ import type {
 } from '@/types';
 import type { Material, MaterialCategoria } from '@/types/material';
 import { PolegadaAutocomplete } from '@/components/produtos/PolegadaAutocomplete';
+import { DecimalPtBrInput } from '@/components/produtos/DecimalPtBrInput';
 import { ConversaoMedidasBlock } from '@/components/produtos/ConversaoMedidasBlock';
 import { InheritedBadge } from '@/components/produtos/InheritedBadge';
 import { ProdutoComposicaoPanel } from '@/components/produtos/ProdutoComposicaoPanel';
@@ -52,8 +53,14 @@ import {
   getLabelCampoEspessuraOuMenor,
   getAtributosTecnicosFamilia,
 } from '../lib/familiaDerivations';
-import { labelPolegadaPrincipal, labelPolegadaSecundaria } from '@/lib/familiaRegra';
+import {
+  labelPolegadaPrincipal,
+  labelPolegadaSecundaria,
+  tipoMedidaPrincipalPorDimensional,
+  tipoMedidaSecundariaPorDimensional,
+} from '@/lib/familiaRegra';
 import { campoId, classeErroCampo, type CampoFormProdutoInvalido } from '../lib/erroCampo';
+import { resolverTipoMedida } from '../lib/tipoMedidaPolegada';
 
 /** Asterisco de campo obrigatório (design system C: span text-destructive). */
 function Obrigatorio() {
@@ -93,6 +100,17 @@ const MATERIAL_GRUPO_ORDEM: MaterialCategoria[] = [
 
 /** Sentinela de "sem rosca específica" (Radix não aceita SelectItem com value=""). */
 const SEM_ROSCA = '__none__';
+
+/**
+ * Rosca há quem só tenha descrição (o catálogo permite `codigo` vazio). Concatenar com
+ * '—' mostrava «— —» na tela, então o separador só aparece quando os dois lados existem.
+ */
+function rotuloRosca(codigo?: string | null, descricao?: string | null): string {
+  const c = (codigo || '').trim();
+  const d = (descricao || '').trim();
+  if (c && d) return `${c} — ${d}`;
+  return c || d || '—';
+}
 
 /**
  * Padrões técnicos que vivem apenas na Família/Figura (decisão Sprint 3.6: o Produto
@@ -244,6 +262,10 @@ export function ProdutoClassificacaoFormTab({
   const labelOd = getLabelCampoOdPrincipal(familiaSelecionada);
   const labelEsp = getLabelCampoEspessuraOuMenor(familiaSelecionada);
   const atributosTecnicos = getAtributosTecnicosFamilia(familiaSelecionada);
+  // Card de leitura: sem valor na família não há nada a mostrar, então o card não aparece.
+  const padroesFamilia = PADROES_FAMILIA.filter(
+    ({ key }) => String(familiaSelecionada?.[key] ?? '').trim().length > 0,
+  );
   const familiaEhMaterialDimensional =
     familiaSelecionada?.categoria_produto === 'MATERIAL_DIMENSIONAL';
 
@@ -252,6 +274,20 @@ export function ProdutoClassificacaoFormTab({
   const usaPolegadaPrincipal = !!famReq?.usa_polegada_principal;
   const usaPolegadaSecundaria = !!famReq?.usa_polegada_secundaria;
   const exigePolegadas = usaPolegadaPrincipal || usaPolegadaSecundaria;
+  // O filtro NPS/OD da busca vem da regra da família (espelho do backend), nunca de um
+  // valor fixo na tela: forçar OD fazia um NPS salvo sumir e virar outra polegada no código.
+  const tipoMedidaEsperado = {
+    polegada_principal_ref_id: tipoMedidaPrincipalPorDimensional(tdAtual),
+    polegada_secundaria_ref_id: tipoMedidaSecundariaPorDimensional(tdAtual),
+  };
+  const tipoMedidaPrincipal = resolverTipoMedida(
+    produto?.polegada_principal_ref_detalhes?.tipo_medida,
+    tipoMedidaEsperado.polegada_principal_ref_id,
+  );
+  const tipoMedidaSecundaria = resolverTipoMedida(
+    produto?.polegada_secundaria_ref_detalhes?.tipo_medida,
+    tipoMedidaEsperado.polegada_secundaria_ref_id,
+  );
   // OD/espessura/comprimento em mm são do produto técnico; em material dimensional a
   // medida da peça é o conjunto dim_*. O card Requisitos nunca mostra os dois.
   const mmDoProdutoVisiveis = !familiaEhMaterialDimensional && !usaDimensoesMateriais;
@@ -271,7 +307,7 @@ export function ProdutoClassificacaoFormTab({
   const roscaTexto = (() => {
     const r = produto?.rosca_conexao_detalhes;
     if (!r) return 'Sem rosca específica (usa o padrão da família)';
-    return `${r.codigo || '—'} — ${r.descricao}`;
+    return rotuloRosca(r.codigo, r.descricao);
   })();
   const scheduleTexto = (() => {
     const s = produto?.schedule_ref_detalhes;
@@ -297,15 +333,6 @@ export function ProdutoClassificacaoFormTab({
       dimensoes_json: { ...(prev.dimensoes_json || {}), [key]: value },
     }));
   };
-
-  const parseDec = (raw: string): number | null => {
-    const v = raw.replace(',', '.');
-    if (v === '') return null;
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
-  };
-  const decToText = (n: number | null | undefined) =>
-    n?.toString().replace('.', ',') || '';
 
   return (
     <div className="space-y-6">
@@ -443,7 +470,7 @@ export function ProdutoClassificacaoFormTab({
       </Card>
 
       {/* ===== Padrões da Família (somente leitura — o produto herda, não digita) ===== */}
-      {familiaSelecionada && (
+      {familiaSelecionada && padroesFamilia.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
@@ -458,7 +485,7 @@ export function ProdutoClassificacaoFormTab({
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-              {PADROES_FAMILIA.map(({ key, label }) => {
+              {padroesFamilia.map(({ key, label }) => {
                 const valor = String(familiaSelecionada?.[key] ?? '').trim();
                 return (
                   <div key={key}>
@@ -496,7 +523,10 @@ export function ProdutoClassificacaoFormTab({
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {!familiaEhMaterialDimensional && famReq.usa_rosca_conexao && (
                 <div>
-                  <CampoLabel>Rosca / conexão</CampoLabel>
+                  <CampoLabel>
+                    Rosca / conexão
+                    <Obrigatorio />
+                  </CampoLabel>
                   {somenteLeitura ? (
                     <Input className="h-10 bg-muted/40" value={roscaTexto} disabled readOnly />
                   ) : (
@@ -515,7 +545,7 @@ export function ProdutoClassificacaoFormTab({
                         </SelectItem>
                         {roscas.map((r) => (
                           <SelectItem key={r.id} value={r.id.toString()}>
-                            {(r.codigo || '—') + ' — ' + r.descricao}
+                            {rotuloRosca(r.codigo, r.descricao)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -527,7 +557,10 @@ export function ProdutoClassificacaoFormTab({
               {!familiaEhMaterialDimensional && famReq.usa_schedule && (
                 <div>
                   <div className="flex items-center gap-1.5 mb-1.5">
-                    <Label className="text-sm font-medium">Schedule / espessura</Label>
+                    <Label className="text-sm font-medium">
+                      Schedule / espessura
+                      <Obrigatorio />
+                    </Label>
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -570,14 +603,12 @@ export function ProdutoClassificacaoFormTab({
                     Diâmetro interno ID (mm)
                     <Obrigatorio />
                   </CampoLabel>
-                  <Input
-                    type="text"
-                    inputMode="decimal"
+                  <DecimalPtBrInput
                     className="erp-input h-10"
                     placeholder="Ex.: 15 | 15,0"
-                    value={decToText(form.diametro_interno_mm)}
+                    value={form.diametro_interno_mm}
                     disabled={somenteLeitura}
-                    onChange={(e) => handleInputChange('diametro_interno_mm', parseDec(e.target.value))}
+                    onChange={(v) => handleInputChange('diametro_interno_mm', v)}
                   />
                 </div>
               )}
@@ -588,14 +619,12 @@ export function ProdutoClassificacaoFormTab({
                     {labelOd}
                     <Obrigatorio />
                   </CampoLabel>
-                  <Input
-                    type="text"
-                    inputMode="decimal"
+                  <DecimalPtBrInput
                     className="erp-input h-10"
                     placeholder="Ex.: 10 | 10,0 | 1,5"
-                    value={decToText(form.od_mm)}
+                    value={form.od_mm}
                     disabled={somenteLeitura}
-                    onChange={(e) => handleInputChange('od_mm', parseDec(e.target.value))}
+                    onChange={(v) => handleInputChange('od_mm', v)}
                   />
                 </div>
               )}
@@ -606,14 +635,12 @@ export function ProdutoClassificacaoFormTab({
                     {labelEsp}
                     <Obrigatorio />
                   </CampoLabel>
-                  <Input
-                    type="text"
-                    inputMode="decimal"
+                  <DecimalPtBrInput
                     className="erp-input h-10"
                     placeholder="Ex.: 2 | 2,0 | 1,5"
-                    value={decToText(form.espessura_mm)}
+                    value={form.espessura_mm}
                     disabled={somenteLeitura}
-                    onChange={(e) => handleInputChange('espessura_mm', parseDec(e.target.value))}
+                    onChange={(v) => handleInputChange('espessura_mm', v)}
                   />
                 </div>
               )}
@@ -621,14 +648,12 @@ export function ProdutoClassificacaoFormTab({
               {mmDoProdutoVisiveis && famReq.exige_comprimento_mm && (
                 <div id={campoId('comprimento_mm')} className={classeErroCampo(campoErro, 'comprimento_mm')}>
                   <CampoLabel>Comprimento (mm)</CampoLabel>
-                  <Input
-                    type="text"
-                    inputMode="decimal"
+                  <DecimalPtBrInput
                     className="erp-input h-10"
                     placeholder="Ex.: 6000"
-                    value={decToText(form.comprimento_mm)}
+                    value={form.comprimento_mm}
                     disabled={somenteLeitura}
-                    onChange={(e) => handleInputChange('comprimento_mm', parseDec(e.target.value))}
+                    onChange={(v) => handleInputChange('comprimento_mm', v)}
                   />
                   <p className="text-xs text-muted-foreground mt-1">
                     Se vazio, pode usar o comprimento padrão da barra cadastrado na família.
@@ -656,76 +681,64 @@ export function ProdutoClassificacaoFormTab({
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                   <div>
                     <CampoLabel>Espessura (mm)</CampoLabel>
-                    <Input
-                      type="text"
-                      inputMode="decimal"
+                    <DecimalPtBrInput
                       className="erp-input h-10"
                       placeholder="Ex.: 3,2"
-                      value={decToText(form.dim_espessura_mm)}
+                      value={form.dim_espessura_mm}
                       disabled={somenteLeitura}
-                      onChange={(e) => handleInputChange('dim_espessura_mm', parseDec(e.target.value))}
+                      onChange={(v) => handleInputChange('dim_espessura_mm', v)}
                     />
                   </div>
                   <div>
                     <CampoLabel>Largura (mm)</CampoLabel>
-                    <Input
-                      type="text"
-                      inputMode="decimal"
+                    <DecimalPtBrInput
                       className="erp-input h-10"
                       placeholder="Ex.: 1000"
-                      value={decToText(form.dim_largura_mm)}
+                      value={form.dim_largura_mm}
                       disabled={somenteLeitura}
-                      onChange={(e) => handleInputChange('dim_largura_mm', parseDec(e.target.value))}
+                      onChange={(v) => handleInputChange('dim_largura_mm', v)}
                     />
                   </div>
                   <div>
                     <CampoLabel>Comprimento (mm)</CampoLabel>
-                    <Input
-                      type="text"
-                      inputMode="decimal"
+                    <DecimalPtBrInput
                       className="erp-input h-10"
                       placeholder="Ex.: 2000"
-                      value={decToText(form.dim_comprimento_mm)}
+                      value={form.dim_comprimento_mm}
                       disabled={somenteLeitura}
-                      onChange={(e) => handleInputChange('dim_comprimento_mm', parseDec(e.target.value))}
+                      onChange={(v) => handleInputChange('dim_comprimento_mm', v)}
                     />
                   </div>
                   <div>
                     <CampoLabel>Altura (mm)</CampoLabel>
-                    <Input
-                      type="text"
-                      inputMode="decimal"
+                    <DecimalPtBrInput
                       className="erp-input h-10"
                       placeholder="Ex.: 50"
-                      value={decToText(form.dim_altura_mm)}
+                      value={form.dim_altura_mm}
                       disabled={somenteLeitura}
-                      onChange={(e) => handleInputChange('dim_altura_mm', parseDec(e.target.value))}
+                      onChange={(v) => handleInputChange('dim_altura_mm', v)}
                     />
                   </div>
                   {/* Furo e Aba eram visíveis só na Visualização: sem eles aqui, a ficha
                       espelhada esconderia a medida do produto CHAPA_FURO_MM. */}
                   <div>
                     <CampoLabel>Furo (mm)</CampoLabel>
-                    <Input
-                      type="text"
-                      inputMode="decimal"
+                    <DecimalPtBrInput
                       className="erp-input h-10"
                       placeholder="Ex.: 13,0"
-                      value={decToText(form.dim_furo_mm)}
+                      value={form.dim_furo_mm}
                       disabled={somenteLeitura}
-                      onChange={(e) => handleInputChange('dim_furo_mm', parseDec(e.target.value))}
+                      onChange={(v) => handleInputChange('dim_furo_mm', v)}
                     />
                   </div>
                   <div>
                     <CampoLabel>Aba (mm)</CampoLabel>
-                    <Input
-                      type="text"
-                      inputMode="decimal"
+                    <DecimalPtBrInput
                       className="erp-input h-10"
                       placeholder="Ex.: 40"
-                      value={decToText(form.dim_aba_mm)}
+                      value={form.dim_aba_mm}
                       disabled={somenteLeitura}
-                      onChange={(e) => handleInputChange('dim_aba_mm', parseDec(e.target.value))}
+                      onChange={(v) => handleInputChange('dim_aba_mm', v)}
                     />
                   </div>
                 </div>
@@ -781,14 +794,12 @@ export function ProdutoClassificacaoFormTab({
                   Diâmetro do mostrador (mm)
                   {famReq?.exige_diametro_mostrador_mm && <Obrigatorio />}
                 </CampoLabel>
-                <Input
-                  type="text"
-                  inputMode="decimal"
+                <DecimalPtBrInput
                   className="erp-input h-10"
                   placeholder="Ex.: 100"
-                  value={decToText(form.diametro_mostrador_mm)}
+                  value={form.diametro_mostrador_mm}
                   disabled={somenteLeitura}
-                  onChange={(e) => handleInputChange('diametro_mostrador_mm', parseDec(e.target.value))}
+                  onChange={(v) => handleInputChange('diametro_mostrador_mm', v)}
                 />
               </div>
               <div>
@@ -843,14 +854,17 @@ export function ProdutoClassificacaoFormTab({
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {usaPolegadaPrincipal && (
                 <div>
-                  <CampoLabel>{labelPolegadaPrincipal(tdAtual)}</CampoLabel>
+                  <CampoLabel>
+                    {labelPolegadaPrincipal(tdAtual)}
+                    <Obrigatorio />
+                  </CampoLabel>
                   {somenteLeitura ? (
                     <Input className="h-10 bg-muted/40" value={polegadaPrincipalTexto} disabled readOnly />
                   ) : (
                     <PolegadaAutocomplete
                       value={form.polegada_principal_ref_id ?? null}
                       onChange={(id) => handleInputChange('polegada_principal_ref_id', id)}
-                      tipoMedida="OD"
+                      tipoMedida={tipoMedidaPrincipal}
                       allowCreate
                       placeholder="Busque por código, polegada, decimal ou mm"
                     />
@@ -859,14 +873,17 @@ export function ProdutoClassificacaoFormTab({
               )}
               {usaPolegadaSecundaria && (
                 <div>
-                  <CampoLabel>{labelPolegadaSecundaria(tdAtual)}</CampoLabel>
+                  <CampoLabel>
+                    {labelPolegadaSecundaria(tdAtual)}
+                    <Obrigatorio />
+                  </CampoLabel>
                   {somenteLeitura ? (
                     <Input className="h-10 bg-muted/40" value={polegadaSecundariaTexto} disabled readOnly />
                   ) : (
                     <PolegadaAutocomplete
                       value={form.polegada_secundaria_ref_id ?? null}
                       onChange={(id) => handleInputChange('polegada_secundaria_ref_id', id)}
-                      tipoMedida="OD"
+                      tipoMedida={tipoMedidaSecundaria}
                       allowCreate
                       placeholder="Busque por código, polegada, decimal ou mm"
                     />

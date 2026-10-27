@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Boxes, Layers, Loader2, Receipt, Ruler, Save, ShieldCheck, Wrench, X } from 'lucide-react';
+import { Boxes, Layers, Loader2, Receipt, Ruler, Save, ShieldCheck, Sparkles, Wrench, X } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { NexusButton } from '@/components/nexus';
+import { Badge } from '@/components/ui/badge';
 import {
   Card,
   CardContent,
@@ -21,12 +22,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { DecimalPtBrInput } from '@/components/produtos/DecimalPtBrInput';
 import { familiasProdutoService, ncmApiService } from '@/services/api/produtos';
 import { materiaisService } from '@/services/api/materiais';
 import { apiErrorMessage } from '@/services/api/config';
 import { Textarea } from '@/components/ui/textarea';
 import { NcmAutocomplete, type NcmOption } from '@/components/produtos/NcmAutocomplete';
-import { FamiliaDominioCard } from '@/components/familias/FamiliaDominioCard';
+import {
+  FamiliaDominioCard,
+  type FamiliaDominioHandle,
+  type FamiliaDominioResumo,
+} from '@/components/familias/FamiliaDominioCard';
 import {
   TIPO_CONTROLE_OPTIONS,
   TIPO_FISICO_OPTIONS,
@@ -44,13 +50,19 @@ import type { Material } from '@/types/material';
 import { MENSAGEM_CODIGO_FIGURA_AUTO, validarDescricaoBaseLocal } from '@/lib/familiaCodigo';
 import {
   OPCOES_CATEGORIA_FAMILIA,
-  OPCOES_TIPO_DIMENSIONAL,
   OPCOES_TIPO_REGRA,
   hintTipoDimensional,
+  sugerirConfiguracaoFamilia,
   sugerirTipoRegraPorDimensional,
   tiposDimensionaisPorCategoria,
+  flagsPorTipoRegra,
   type CategoriaProdutoSugestao,
 } from '@/lib/familiaRegra';
+import {
+  OPCOES_MATERIAL_VEDACAO_FAMILIA,
+  OPCOES_TIPO_PECA_FAMILIA,
+  opcoesComValorSalvo,
+} from '@/lib/familiaClassificacao';
 
 /** Sentinela do Select — o Radix não aceita value="". */
 const SEM_MATERIAL = '__none__';
@@ -64,7 +76,6 @@ type FamiliaFormState = {
   categoria_produto: CategoriaProdutoSugestao;
   separador_base_medidas: string;
   ncm_padrao: number | null;
-  unidade_padrao: string;
   unidade_estoque_padrao: string;
   unidade_venda_padrao: string;
   unidade_compra_padrao: string;
@@ -87,6 +98,9 @@ type FamiliaFormState = {
   material_base_ref: number | null;
   tipo_peca: string;
   material_vedacao: string;
+  norma_base: string;
+  pressao_base: string;
+  conexao_base: string;
 };
 
 const emptyForm = (): FamiliaFormState => ({
@@ -98,7 +112,6 @@ const emptyForm = (): FamiliaFormState => ({
   categoria_produto: 'PRODUTO_TECNICO',
   separador_base_medidas: '.',
   ncm_padrao: null,
-  unidade_padrao: '',
   unidade_estoque_padrao: '',
   unidade_venda_padrao: '',
   unidade_compra_padrao: '',
@@ -121,6 +134,9 @@ const emptyForm = (): FamiliaFormState => ({
   material_base_ref: null,
   tipo_peca: '',
   material_vedacao: '',
+  norma_base: '',
+  pressao_base: '',
+  conexao_base: '',
 });
 
 function CampoLabel({ children }: { children: React.ReactNode }) {
@@ -129,6 +145,31 @@ function CampoLabel({ children }: { children: React.ReactNode }) {
 
 function Obrigatorio() {
   return <span className="text-destructive" aria-hidden> *</span>;
+}
+
+/** Os 5 números de peso ficam fora do caminho de preenchimento até a flag ligar. */
+function PainelAvancado({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="space-y-5 rounded-md border border-border bg-muted/30 p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="secondary" className="text-[10px] uppercase tracking-wide">
+          Configuração avançada
+        </Badge>
+        <p className="text-xs text-muted-foreground">
+          Preencha apenas quando a conversão de medida ou a conferência da NF-e precisar destes valores.
+        </p>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function MensagemAviso({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100">
+      {children}
+    </div>
+  );
 }
 
 const FamiliaFormPage = () => {
@@ -143,6 +184,18 @@ const FamiliaFormPage = () => {
   const [erro, setErro] = useState<string | null>(null);
   const [materiais, setMateriais] = useState<Material[]>([]);
   const [ncmOption, setNcmOption] = useState<NcmOption | null>(null);
+  const [dominio, setResumoDominio] = useState<FamiliaDominioResumo>({
+    carregado: false,
+    salvando: false,
+    roscas: 0,
+    schedules: 0,
+    polegadas: 0,
+  });
+
+  // O "Salvar" do cabeçalho é o único da tela; o domínio grava por aqui.
+  const dominioRef = useRef<FamiliaDominioHandle | null>(null);
+  // Identidade estável: callback novo a cada render faria o card recomeçar a carga em loop.
+  const reportarErro = useCallback((mensagem: string | null) => setErro(mensagem), []);
 
   useEffect(() => {
     let ativo = true;
@@ -176,7 +229,6 @@ const FamiliaFormPage = () => {
           categoria_produto: fam.categoria_produto ?? 'PRODUTO_TECNICO',
           separador_base_medidas: fam.separador_base_medidas || '.',
           ncm_padrao: fam.ncm_padrao ?? fam.ncm_padrao_id ?? null,
-          unidade_padrao: fam.unidade_padrao ?? '',
           unidade_estoque_padrao: fam.unidade_estoque_padrao ?? '',
           unidade_venda_padrao: fam.unidade_venda_padrao ?? '',
           unidade_compra_padrao: fam.unidade_compra_padrao ?? '',
@@ -199,6 +251,9 @@ const FamiliaFormPage = () => {
           material_base_ref: fam.material_base_ref ?? null,
           tipo_peca: fam.tipo_peca ?? '',
           material_vedacao: fam.material_vedacao ?? '',
+          norma_base: fam.norma_base ?? '',
+          pressao_base: fam.pressao_base ?? '',
+          conexao_base: fam.conexao_base ?? '',
         });
         setNcmOption(
           fam.ncm_padrao_info
@@ -267,6 +322,27 @@ const FamiliaFormPage = () => {
     }));
   };
 
+  const handleSugerirConfiguracao = () => {
+    const sugestao = sugerirConfiguracaoFamilia(form.descricao_base);
+    setForm((prev) => ({
+      ...prev,
+      categoria_produto: sugestao.categoria_produto,
+      tipo_dimensional: sugestao.tipo_dimensional,
+      tipo_regra_codigo: sugestao.tipo_regra_codigo,
+    }));
+    if (sugestao.observacao) toast.info(sugestao.observacao);
+    else toast.success('Configuração sugerida. Revise antes de salvar.');
+  };
+
+  const flagsRegraAtual = flagsPorTipoRegra(form.tipo_regra_codigo);
+  const regraUsaDominio =
+    flagsRegraAtual.usa_rosca_conexao ||
+    flagsRegraAtual.usa_schedule ||
+    flagsRegraAtual.usa_polegada_principal ||
+    flagsRegraAtual.usa_polegada_secundaria;
+  const dominioVazio =
+    dominio.carregado && dominio.roscas === 0 && dominio.schedules === 0 && dominio.polegadas === 0;
+
   const handleSubmit = async () => {
     setErro(null);
     const erroDescricao = validarDescricaoBaseLocal(form.descricao_base);
@@ -274,10 +350,15 @@ const FamiliaFormPage = () => {
       setErro(erroDescricao);
       return;
     }
+    if (form.ncm_padrao == null) {
+      setErro('NCM é obrigatório para esta família.');
+      return;
+    }
 
     // Payload parcial: esta tela é dona da estrutura do molde (regra, NCM), da
     // classificação técnica e do molde de medidas/unidades da Sprint 3.6 — o produto
-    // apenas herda tudo isto ao ser cadastrado com a família.
+    // apenas herda tudo isto ao ser cadastrado com a família. `unidade_padrao` saiu da
+    // tela e do payload: o update é PATCH, então o valor já gravado permanece intacto.
     const payload: Partial<FamiliaProduto> = {
       descricao_base: form.descricao_base.trim(),
       ativo: form.ativo,
@@ -286,7 +367,6 @@ const FamiliaFormPage = () => {
       categoria_produto: form.categoria_produto,
       separador_base_medidas: form.separador_base_medidas || '.',
       ncm_padrao: form.ncm_padrao,
-      unidade_padrao: form.unidade_padrao,
       unidade_estoque_padrao: form.unidade_estoque_padrao,
       unidade_venda_padrao: form.unidade_venda_padrao,
       unidade_compra_padrao: form.unidade_compra_padrao,
@@ -309,12 +389,23 @@ const FamiliaFormPage = () => {
       material_base_ref: form.material_base_ref,
       tipo_peca: form.tipo_peca,
       material_vedacao: form.material_vedacao,
+      norma_base: form.norma_base,
+      pressao_base: form.pressao_base,
+      conexao_base: form.conexao_base,
     };
 
     setSalvando(true);
     try {
       if (isEdit && familiaId) {
         await familiasProdutoService.update(familiaId, payload);
+        const dominioOk = (await dominioRef.current?.salvarDominio()) ?? true;
+        if (!dominioOk) {
+          toast.error('A família foi atualizada, mas as medidas permitidas não foram salvas. Tente salvar de novo.');
+          return;
+        }
+        if (regraUsaDominio && dominioVazio) {
+          toast.warning('Família salva sem medidas permitidas — o cadastro do produto ficará sem opções.');
+        }
         toast.success('Família atualizada com sucesso.');
         navigate('/familias');
       } else {
@@ -322,7 +413,7 @@ const FamiliaFormPage = () => {
           modo_codigo: 'AUTOMATICO',
           ...payload,
         });
-        toast.success('Família criada com sucesso.');
+        toast.success('Família criada com sucesso. Agora marque as medidas, roscas e espessuras dela.');
         navigate(`/familias/${created.id}/editar`, { replace: true });
       }
     } catch (e) {
@@ -347,6 +438,14 @@ const FamiliaFormPage = () => {
     );
   }
 
+  const tipoPecaOpcoes = opcoesComValorSalvo(OPCOES_TIPO_PECA_FAMILIA, form.tipo_peca, SEM_MATERIAL);
+  const materialVedacaoOpcoes = opcoesComValorSalvo(
+    OPCOES_MATERIAL_VEDACAO_FAMILIA,
+    form.material_vedacao,
+    SEM_MATERIAL,
+  );
+  const exibirPesos = form.usa_conversao_dimensional || form.controla_composicao_fisica;
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -362,7 +461,12 @@ const FamiliaFormPage = () => {
               <X className="h-4 w-4 mr-2" />
               Cancelar
             </NexusButton>
-            <NexusButton type="button" onClick={handleSubmit} disabled={salvando} loading={salvando}>
+            <NexusButton
+              type="button"
+              onClick={handleSubmit}
+              disabled={salvando || dominio.salvando}
+              loading={salvando || dominio.salvando}
+            >
               <Save className="h-4 w-4 mr-2" />
               Salvar
             </NexusButton>
@@ -380,15 +484,15 @@ const FamiliaFormPage = () => {
       )}
 
       <div className="space-y-6">
-        {/* ===== Dados gerais ===== */}
+        {/* ===== 1. Identificação ===== */}
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
               <Layers className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-base">Dados gerais</CardTitle>
+              <CardTitle className="text-base">Identificação</CardTitle>
             </div>
             <CardDescription className="text-xs">
-              Identificação da família e material base herdado pelos produtos
+              O que é esta família e de qual material ela parte
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -454,23 +558,34 @@ const FamiliaFormPage = () => {
           </CardContent>
         </Card>
 
-        {/* ===== Regras de geração de código e estrutura ===== */}
+        {/* ===== 2. Como o código é montado ===== */}
         <Card>
           <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <Boxes className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-base">Regras de Geração de Código e Estrutura</CardTitle>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Boxes className="h-4 w-4 text-muted-foreground" />
+                <CardTitle className="text-base">Como o código é montado</CardTitle>
+              </div>
+              <NexusButton
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleSugerirConfiguracao}
+                disabled={!form.descricao_base.trim()}
+              >
+                <Sparkles className="h-4 w-4 mr-2" />
+                Sugerir configuração pela descrição
+              </NexusButton>
             </div>
             <CardDescription className="text-xs">
-              Modelo de formação do código e significado dimensional — são estes campos que definem
-              o que o produto desta família precisa preencher
+              Estes 3 campos definem o código do produto e o que ele precisa preencher
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               <div>
                 <CampoLabel>
-                  Categoria do produto
+                  O que é esta família?
                   <Obrigatorio />
                 </CampoLabel>
                 <Select
@@ -492,7 +607,7 @@ const FamiliaFormPage = () => {
 
               <div>
                 <CampoLabel>
-                  Modelo de medidas (tipo dimensional)
+                  Como as medidas são definidas?
                   <Obrigatorio />
                 </CampoLabel>
                 <Select
@@ -515,7 +630,7 @@ const FamiliaFormPage = () => {
 
               <div>
                 <CampoLabel>
-                  Regra de código
+                  Regra do código
                   <Obrigatorio />
                 </CampoLabel>
                 <Select
@@ -534,100 +649,203 @@ const FamiliaFormPage = () => {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
 
+            <PainelAvancado>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                <div>
+                  <CampoLabel>Separador do código</CampoLabel>
+                  <Input
+                    className="h-10 w-16 font-mono"
+                    maxLength={1}
+                    value={form.separador_base_medidas}
+                    onChange={(e) => handleField('separador_base_medidas', e.target.value.slice(-1) || '.')}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Em UNDERSCORE_POLEGADA o código usa &quot;_&quot; fixo; o separador acima afeta as demais regras.
+                  </p>
+                </div>
+              </div>
+            </PainelAvancado>
+          </CardContent>
+        </Card>
+
+        {/* ===== 3. Classificação técnica ===== */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <Wrench className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-base">Classificação técnica</CardTitle>
+            </div>
+            <CardDescription className="text-xs">
+              Características fixas desta família — o produto herda estes valores
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               <div>
-                <CampoLabel>Separador base → medidas</CampoLabel>
+                <CampoLabel>Tipo de peça</CampoLabel>
+                <Select value={form.tipo_peca || SEM_MATERIAL} onValueChange={(v) => handleField('tipo_peca', v === SEM_MATERIAL ? '' : v)}>
+                  <SelectTrigger className="h-10 w-full">
+                    <SelectValue placeholder="Selecione…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tipoPecaOpcoes.map((opcao) => (
+                      <SelectItem key={opcao} value={opcao}>
+                        {opcao}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value={SEM_MATERIAL}>— Sem tipo —</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <CampoLabel>Material de vedação</CampoLabel>
+                <Select
+                  value={form.material_vedacao || SEM_MATERIAL}
+                  onValueChange={(v) => handleField('material_vedacao', v === SEM_MATERIAL ? '' : v)}
+                >
+                  <SelectTrigger className="h-10 w-full">
+                    <SelectValue placeholder="Selecione…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {materialVedacaoOpcoes.map((opcao) => (
+                      <SelectItem key={opcao} value={opcao}>
+                        {opcao}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value={SEM_MATERIAL}>— Sem vedação —</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <CampoLabel>Norma</CampoLabel>
                 <Input
-                  className="h-10 w-16 font-mono"
-                  maxLength={1}
-                  value={form.separador_base_medidas}
-                  onChange={(e) => handleField('separador_base_medidas', e.target.value.slice(-1) || '.')}
+                  className="h-10"
+                  maxLength={50}
+                  value={form.norma_base}
+                  onChange={(e) => handleField('norma_base', e.target.value)}
+                  placeholder="Ex.: ANSI B16.34"
                 />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Em UNDERSCORE_POLEGADA o código usa &quot;_&quot; fixo; o separador acima afeta as demais regras.
-                </p>
+              </div>
+              <div>
+                <CampoLabel>Pressão nominal</CampoLabel>
+                <Input
+                  className="h-10"
+                  maxLength={50}
+                  value={form.pressao_base}
+                  onChange={(e) => handleField('pressao_base', e.target.value)}
+                  placeholder="Ex.: 150 lbs"
+                />
+              </div>
+              <div>
+                <CampoLabel>Conexão</CampoLabel>
+                <Input
+                  className="h-10"
+                  maxLength={50}
+                  value={form.conexao_base}
+                  onChange={(e) => handleField('conexao_base', e.target.value)}
+                  placeholder="Ex.: Solda BW"
+                />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* ===== Conversão de Medidas e Unidades ===== */}
+        {/* ===== 4. Domínio ===== */}
+        {isEdit && familiaId ? (
+          <>
+            {regraUsaDominio && dominioVazio ? (
+              <MensagemAviso>
+                A regra do código desta família usa rosca, espessura (schedule) ou medida. Nenhuma opção está
+                marcada abaixo — sem elas, o cadastro de um produto desta família fica sem o que escolher.
+              </MensagemAviso>
+            ) : null}
+            <FamiliaDominioCard
+              ref={dominioRef}
+              familiaId={familiaId}
+              onResumoChange={setResumoDominio}
+              onErroChange={reportarErro}
+            />
+          </>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Salve esta família para liberar o card “Medidas, roscas e espessuras desta família”, onde você marca
+            o que o produto pode escolher.
+          </p>
+        )}
+
+        {/* ===== 5. Como esta família se converte ===== */}
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
               <Ruler className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-base">Conversão de Medidas e Unidades</CardTitle>
+              <CardTitle className="text-base">Como esta família se converte</CardTitle>
             </div>
             <CardDescription className="text-xs">
-              Molde de unidades, pesos e conversão dimensional que os produtos desta família herdam
+              Unidades, pesos e conversão dimensional que os produtos desta família herdam
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              <div>
-                <CampoLabel>Tipo físico</CampoLabel>
-                <Select
-                  value={form.tipo_fisico}
-                  onValueChange={(v) => handleField('tipo_fisico', v as TipoFisicoProduto)}
-                >
-                  <SelectTrigger className="h-10 w-full">
-                    <SelectValue placeholder="Selecione…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TIPO_FISICO_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <CampoLabel>Tipo de controle de unidade</CampoLabel>
-                <Select
-                  value={form.tipo_controle_unidade}
-                  onValueChange={(v) => handleField('tipo_controle_unidade', v as TipoControleUnidade)}
-                >
-                  <SelectTrigger className="h-10 w-full">
-                    <SelectValue placeholder="Selecione…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TIPO_CONTROLE_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <CampoLabel>Tipo de composição física</CampoLabel>
-                <Select
-                  value={form.tipo_composicao_fisica}
-                  onValueChange={(v) => handleField('tipo_composicao_fisica', v)}
-                  disabled={!form.controla_composicao_fisica}
-                >
-                  <SelectTrigger className="h-10 w-full">
-                    <SelectValue placeholder="Selecione…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="BARRA_M">Barra — comprimento em metros (tubo)</SelectItem>
-                    <SelectItem value="PECA_KG">Peça/chapa — peso real em kg</SelectItem>
-                  </SelectContent>
-                </Select>
+            <div>
+              <CampoLabel>Como esta família é contada?</CampoLabel>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1.5 block">Forma física</Label>
+                  <Select
+                    value={form.tipo_fisico}
+                    onValueChange={(v) => handleField('tipo_fisico', v as TipoFisicoProduto)}
+                  >
+                    <SelectTrigger className="h-10 w-full">
+                      <SelectValue placeholder="Selecione…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TIPO_FISICO_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1.5 block">Controle de unidade</Label>
+                  <Select
+                    value={form.tipo_controle_unidade}
+                    onValueChange={(v) => handleField('tipo_controle_unidade', v as TipoControleUnidade)}
+                  >
+                    <SelectTrigger className="h-10 w-full">
+                      <SelectValue placeholder="Selecione…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TIPO_CONTROLE_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1.5 block">Composição física</Label>
+                  <Select
+                    value={form.tipo_composicao_fisica}
+                    onValueChange={(v) => handleField('tipo_composicao_fisica', v)}
+                    disabled={!form.controla_composicao_fisica}
+                  >
+                    <SelectTrigger className="h-10 w-full">
+                      <SelectValue placeholder="Selecione…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="BARRA_M">Barra — comprimento em metros (tubo)</SelectItem>
+                      <SelectItem value="PECA_KG">Peça/chapa — peso real em kg</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-              <div>
-                <CampoLabel>Unidade padrão</CampoLabel>
-                <Input
-                  className="h-10"
-                  maxLength={16}
-                  value={form.unidade_padrao}
-                  onChange={(e) => handleField('unidade_padrao', e.target.value)}
-                  placeholder="Ex.: UN"
-                />
-              </div>
               <div>
                 <CampoLabel>Unidade de estoque</CampoLabel>
                 <Input
@@ -678,7 +896,7 @@ const FamiliaFormPage = () => {
                   onCheckedChange={(v) => handleField('usa_conversao_dimensional', v)}
                 />
                 <Label htmlFor="fam-usa-conversao" className="cursor-pointer text-sm font-medium">
-                  Usa conversão dimensional
+                  Converter medida em estoque
                 </Label>
               </div>
               <div className="flex items-center gap-3">
@@ -688,7 +906,7 @@ const FamiliaFormPage = () => {
                   onCheckedChange={(v) => handleField('controla_composicao_fisica', v)}
                 />
                 <Label htmlFor="fam-controla-composicao" className="cursor-pointer text-sm font-medium">
-                  Controla composição física na conferência NF-e
+                  Exigir medida na conferência da NF-e
                 </Label>
               </div>
             </div>
@@ -743,71 +961,52 @@ const FamiliaFormPage = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-              <div>
-                <CampoLabel>Comprimento padrão da barra (m)</CampoLabel>
-                <Input
-                  type="number"
-                  step="0.001"
-                  className="h-10"
-                  value={form.comprimento_padrao_barra_m ?? ''}
-                  onChange={(e) =>
-                    handleField(
-                      'comprimento_padrao_barra_m',
-                      e.target.value === '' ? null : Number(e.target.value),
-                    )
-                  }
-                />
-              </div>
-              <div>
-                <CampoLabel>Peso por metro (kg/m)</CampoLabel>
-                <Input
-                  type="number"
-                  step="0.0001"
-                  className="h-10"
-                  value={form.peso_por_metro_kg ?? ''}
-                  onChange={(e) =>
-                    handleField('peso_por_metro_kg', e.target.value === '' ? null : Number(e.target.value))
-                  }
-                />
-              </div>
-              <div>
-                <CampoLabel>Peso por peça (kg)</CampoLabel>
-                <Input
-                  type="number"
-                  step="0.0001"
-                  className="h-10"
-                  value={form.peso_por_peca_kg ?? ''}
-                  onChange={(e) =>
-                    handleField('peso_por_peca_kg', e.target.value === '' ? null : Number(e.target.value))
-                  }
-                />
-              </div>
-              <div>
-                <CampoLabel>Peso por chapa (kg)</CampoLabel>
-                <Input
-                  type="number"
-                  step="0.0001"
-                  className="h-10"
-                  value={form.peso_por_chapa_kg ?? ''}
-                  onChange={(e) =>
-                    handleField('peso_por_chapa_kg', e.target.value === '' ? null : Number(e.target.value))
-                  }
-                />
-              </div>
-              <div>
-                <CampoLabel>Densidade (opcional)</CampoLabel>
-                <Input
-                  type="number"
-                  step="0.0001"
-                  className="h-10"
-                  value={form.densidade ?? ''}
-                  onChange={(e) =>
-                    handleField('densidade', e.target.value === '' ? null : Number(e.target.value))
-                  }
-                />
-              </div>
-            </div>
+            {exibirPesos ? (
+              <PainelAvancado>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+                  <div>
+                    <CampoLabel>Comprimento padrão da barra (m)</CampoLabel>
+                    <DecimalPtBrInput
+                      className="h-10"
+                      value={form.comprimento_padrao_barra_m}
+                      onChange={(v) => handleField('comprimento_padrao_barra_m', v)}
+                    />
+                  </div>
+                  <div>
+                    <CampoLabel>Peso por metro (kg/m)</CampoLabel>
+                    <DecimalPtBrInput
+                      className="h-10"
+                      value={form.peso_por_metro_kg}
+                      onChange={(v) => handleField('peso_por_metro_kg', v)}
+                    />
+                  </div>
+                  <div>
+                    <CampoLabel>Peso por peça (kg)</CampoLabel>
+                    <DecimalPtBrInput
+                      className="h-10"
+                      value={form.peso_por_peca_kg}
+                      onChange={(v) => handleField('peso_por_peca_kg', v)}
+                    />
+                  </div>
+                  <div>
+                    <CampoLabel>Peso por chapa (kg)</CampoLabel>
+                    <DecimalPtBrInput
+                      className="h-10"
+                      value={form.peso_por_chapa_kg}
+                      onChange={(v) => handleField('peso_por_chapa_kg', v)}
+                    />
+                  </div>
+                  <div>
+                    <CampoLabel>Densidade do material (g/cm³)</CampoLabel>
+                    <DecimalPtBrInput
+                      className="h-10"
+                      value={form.densidade}
+                      onChange={(v) => handleField('densidade', v)}
+                    />
+                  </div>
+                </div>
+              </PainelAvancado>
+            ) : null}
 
             <div>
               <CampoLabel>Observações da conversão</CampoLabel>
@@ -822,44 +1021,7 @@ const FamiliaFormPage = () => {
           </CardContent>
         </Card>
 
-        {/* ===== Classificação técnica ===== */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <Wrench className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-base">Classificação técnica</CardTitle>
-            </div>
-            <CardDescription className="text-xs">
-              Padrões técnicos herdados pelos produtos desta família
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              <div>
-                <CampoLabel>Tipo de peça</CampoLabel>
-                <Input
-                  className="h-10"
-                  maxLength={50}
-                  value={form.tipo_peca}
-                  onChange={(e) => handleField('tipo_peca', e.target.value)}
-                  placeholder="Ex.: Válvula esfera"
-                />
-              </div>
-              <div>
-                <CampoLabel>Material de vedação</CampoLabel>
-                <Input
-                  className="h-10"
-                  maxLength={50}
-                  value={form.material_vedacao}
-                  onChange={(e) => handleField('material_vedacao', e.target.value)}
-                  placeholder="Ex.: PTFE"
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* ===== Qualidade ===== */}
+        {/* ===== 6. Qualidade ===== */}
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
@@ -881,16 +1043,15 @@ const FamiliaFormPage = () => {
                 Exige Certificado de Qualidade
               </Label>
             </div>
-            {form.exige_certificado_qualidade ? (
-              <p className="text-xs text-muted-foreground mt-3">
-                Os produtos desta família precisam de Certificado de Qualidade (CQ) com corrida/lote e dados
-                técnicos. O módulo de Qualidade usa esse requisito para saber o que rastreabilizar.
-              </p>
-            ) : null}
+            <p className="text-xs text-muted-foreground mt-3">
+              Com esta opção ligada, os produtos desta família precisam de Certificado de Qualidade (CQ) com
+              corrida/lote e dados técnicos. O módulo de Qualidade usa esse requisito para saber o que
+              rastreabilizar; desligado, o produto desta família não exige CQ.
+            </p>
           </CardContent>
         </Card>
 
-        {/* ===== Fiscal ===== */}
+        {/* ===== 7. Fiscal ===== */}
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
@@ -898,13 +1059,16 @@ const FamiliaFormPage = () => {
               <CardTitle className="text-base">Fiscal</CardTitle>
             </div>
             <CardDescription className="text-xs">
-              NCM sugerido para os produtos desta família
+              NCM aplicado aos produtos desta família quando eles não informam um específico
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               <div className="lg:col-span-2">
-                <CampoLabel>NCM padrão</CampoLabel>
+                <CampoLabel>
+                  NCM obrigatório (fiscal)
+                  <Obrigatorio />
+                </CampoLabel>
                 <NcmAutocomplete
                   value={ncmOption}
                   onChange={(opt) => {
@@ -922,14 +1086,6 @@ const FamiliaFormPage = () => {
           </CardContent>
         </Card>
 
-        {isEdit && familiaId ? (
-          <FamiliaDominioCard familiaId={familiaId} />
-        ) : (
-          <p className="text-xs text-muted-foreground">
-            Após salvar esta família, o card “Variações Permitidas (Domínio)” libera a escolha de
-            roscas, schedules e polegadas.
-          </p>
-        )}
       </div>
     </div>
   );

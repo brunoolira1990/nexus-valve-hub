@@ -3,6 +3,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
+import { DecimalPtBrInput } from '@/components/produtos/DecimalPtBrInput';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -112,11 +113,6 @@ export function ProdutoGeralFormTab({
     value: ProdutoFormState[K]
   ) => {
     setForm((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const handleNumberChange = (key: keyof ProdutoFormState, value: string) => {
-    const num = value === '' ? 0 : Number(value);
-    handleInputChange(key, Number.isFinite(num) ? num : 0);
   };
 
   return (
@@ -373,41 +369,35 @@ export function ProdutoGeralFormTab({
               {/* Preço Custo */}
               <div>
                 <CampoLabel>Preço Custo</CampoLabel>
-                <Input
-                  type="number"
-                  step="0.01"
+                <DecimalPtBrInput
                   className="h-10"
                   value={form.preco_custo}
                   disabled={somenteLeitura}
-                  onChange={(e) => handleNumberChange('preco_custo', e.target.value)}
-                  placeholder="0.00"
+                  onChange={(v) => handleInputChange('preco_custo', v ?? 0)}
+                  placeholder="0,00"
                 />
               </div>
 
               {/* Preço Venda */}
               <div>
                 <CampoLabel>Preço Venda</CampoLabel>
-                <Input
-                  type="number"
-                  step="0.01"
+                <DecimalPtBrInput
                   className="h-10"
                   value={form.preco_venda}
                   disabled={somenteLeitura}
-                  onChange={(e) => handleNumberChange('preco_venda', e.target.value)}
-                  placeholder="0.00"
+                  onChange={(v) => handleInputChange('preco_venda', v ?? 0)}
+                  placeholder="0,00"
                 />
               </div>
 
               {/* Estoque Mínimo */}
               <div>
                 <CampoLabel>Estoque Mínimo</CampoLabel>
-                <Input
-                  type="number"
-                  step="1"
+                <DecimalPtBrInput
                   className="h-10"
                   value={form.estoque_minimo}
                   disabled={somenteLeitura}
-                  onChange={(e) => handleNumberChange('estoque_minimo', e.target.value)}
+                  onChange={(v) => handleInputChange('estoque_minimo', v ?? 0)}
                   placeholder="0"
                 />
               </div>

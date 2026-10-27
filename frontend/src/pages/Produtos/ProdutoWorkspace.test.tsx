@@ -234,6 +234,19 @@ describe('ProdutoWorkspace (espelho da Edição)', () => {
     expect(screen.queryByPlaceholderText('Busque por código, polegada, decimal ou mm')).toBeNull();
   });
 
+  it('rosca sem código mostra apenas a descrição', () => {
+    render(
+      <ProdutoWorkspace
+        produto={produtoComFamilia({
+          rosca_conexao_detalhes: { id: 12, codigo: '', descricao: 'BSP FÊMEA' },
+        })}
+        mode="view"
+      />,
+    );
+
+    expect(cardPorTitulo('Requisitos da Família/Figura').getByDisplayValue('BSP FÊMEA')).toBeDisabled();
+  });
+
   it('mostra a polegada sem o rótulo técnico NPS', () => {
     render(<ProdutoWorkspace produto={produtoComFamilia()} mode="view" />);
 

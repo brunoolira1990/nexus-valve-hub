@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, Save } from 'lucide-react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { NexusButton } from '@/components/nexus';
 import { apiErrorMessage } from '@/services/api/config';
 import {
   familiaVariacoesService,
@@ -34,11 +33,35 @@ const OPCOES_TIPO_POLEGADA: { value: TipoPolegadaPermitida; label: string }[] = 
 
 const SEM_FILTRO = '';
 
+export type FamiliaDominioResumo = {
+  carregado: boolean;
+  salvando: boolean;
+  roscas: number;
+  schedules: number;
+  polegadas: number;
+};
+
+/**
+ * A gravação do domínio perdeu o botão próprio: o cabeçalho da tela é o único "Salvar"
+ * e é ele que chama `salvarDominio()` depois de gravar a família.
+ */
+export type FamiliaDominioHandle = {
+  salvarDominio: () => Promise<boolean>;
+};
+
 interface FamiliaDominioCardProps {
   familiaId: number;
+  dominioRef?: React.Ref<FamiliaDominioHandle>;
+  onResumoChange?: (resumo: FamiliaDominioResumo) => void;
+  onErroChange?: (erro: string | null) => void;
 }
 
-export function FamiliaDominioCard({ familiaId }: FamiliaDominioCardProps) {
+function FamiliaDominioCardConteudo({
+  familiaId,
+  dominioRef,
+  onResumoChange,
+  onErroChange,
+}: FamiliaDominioCardProps) {
   const [roscas, setRoscas] = useState<RoscaConexao[]>([]);
   const [schedules, setSchedules] = useState<ScheduleEspessura[]>([]);
   const [polegadas, setPolegadas] = useState<Polegada[]>([]);
@@ -56,7 +79,12 @@ export function FamiliaDominioCard({ familiaId }: FamiliaDominioCardProps) {
   const [carregandoCatalogo, setCarregandoCatalogo] = useState(true);
   const [carregandoDominio, setCarregandoDominio] = useState(true);
   const [salvando, setSalvando] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
+
+  // O erro do domínio sobre no alerta único da tela — sem uma segunda caixa na página.
+  const reportarErro = useCallback(
+    (mensagem: string | null) => onErroChange?.(mensagem),
+    [onErroChange],
+  );
 
   useEffect(() => {
     let ativo = true;
@@ -72,7 +100,7 @@ export function FamiliaDominioCard({ familiaId }: FamiliaDominioCardProps) {
         setPolegadas(p);
       })
       .catch(() => {
-        if (ativo) setErro('Não foi possível carregar os catálogos de rosca, schedule e polegada.');
+        if (ativo) reportarErro('Não foi possível carregar os catálogos de rosca, schedule e polegada.');
       })
       .finally(() => {
         if (ativo) setCarregandoCatalogo(false);
@@ -80,7 +108,7 @@ export function FamiliaDominioCard({ familiaId }: FamiliaDominioCardProps) {
     return () => {
       ativo = false;
     };
-  }, []);
+  }, [reportarErro]);
 
   const recarregarDominio = useCallback(async () => {
     setCarregandoDominio(true);
@@ -108,11 +136,11 @@ export function FamiliaDominioCard({ familiaId }: FamiliaDominioCardProps) {
       });
       setPolegadaTipos(tipos);
     } catch (e) {
-      setErro(apiErrorMessage(e, { fallback: 'Não foi possível carregar o domínio desta família.' }));
+      reportarErro(apiErrorMessage(e, { fallback: 'Não foi possível carregar o domínio desta família.' }));
     } finally {
       setCarregandoDominio(false);
     }
-  }, [familiaId]);
+  }, [familiaId, reportarErro]);
 
   useEffect(() => {
     void recarregarDominio();
@@ -145,8 +173,20 @@ export function FamiliaDominioCard({ familiaId }: FamiliaDominioCardProps) {
     );
   }, [polegadas, filtroPolegada]);
 
-  const salvar = async () => {
-    setErro(null);
+  // O cabeçalho da tela precisa saber se o domínio está vazio para dar o aviso — e o
+  // resumo só existe aqui dentro.
+  useEffect(() => {
+    onResumoChange?.({
+      carregado: !carregandoDominio,
+      salvando,
+      roscas: roscaIds.length,
+      schedules: scheduleIds.length,
+      polegadas: Object.keys(polegadaTipos).length,
+    });
+  }, [onResumoChange, carregandoDominio, salvando, roscaIds.length, scheduleIds.length, polegadaTipos]);
+
+  const salvar = useCallback(async (): Promise<boolean> => {
+    reportarErro(null);
     setSalvando(true);
     try {
       // 1) Suelta o padrão antigo antes de criar/marcar outro (constraint de padrão único).
@@ -222,35 +262,42 @@ export function FamiliaDominioCard({ familiaId }: FamiliaDominioCardProps) {
       }
 
       await recarregarDominio();
+      return true;
     } catch (e) {
-      setErro(apiErrorMessage(e, { fallback: 'Não foi possível salvar o domínio da família.' }));
+      reportarErro(apiErrorMessage(e, { fallback: 'Não foi possível salvar o domínio da família.' }));
+      return false;
     } finally {
       setSalvando(false);
     }
-  };
+  }, [
+    familiaId,
+    polegadaTipos,
+    recarregarDominio,
+    reportarErro,
+    roscaIds,
+    roscaPadrao,
+    rowsPolegada,
+    rowsRosca,
+    rowsSchedule,
+    scheduleIds,
+    schedulePadrao,
+  ]);
+
+  useImperativeHandle(dominioRef, () => ({ salvarDominio: salvar }), [salvar]);
 
   return (
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-center gap-2">
           <Loader2 className={`h-4 w-4 text-muted-foreground ${carregandoDominio ? 'animate-spin' : 'invisible'}`} />
-          <CardTitle className="text-base">Variações Permitidas (Domínio)</CardTitle>
+          <CardTitle className="text-base">Medidas, roscas e espessuras desta família</CardTitle>
         </div>
         <CardDescription className="text-xs">
-          Quais roscas, schedules e polegadas pertencem a esta família. Estas listas também definem o
-          padrão herdado no cadastro do produto; a validação do produto contra o domínio é etapa seguinte.
+          O que o produto desta família pode escolher. O item marcado como padrão é o que o cadastro
+          do produto já traz preenchido.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {erro && (
-          <div
-            role="alert"
-            className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-          >
-            {erro}
-          </div>
-        )}
-
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <div>
             <Label className="text-sm font-medium mb-1.5 block">Roscas / conexões</Label>
@@ -286,7 +333,7 @@ export function FamiliaDominioCard({ familiaId }: FamiliaDominioCardProps) {
           </div>
 
           <div>
-            <Label className="text-sm font-medium mb-1.5 block">Schedules / espessuras</Label>
+            <Label className="text-sm font-medium mb-1.5 block">Espessura da parede (schedule)</Label>
             <div className="max-h-56 overflow-y-auto rounded-md border border-border p-2 space-y-1">
               {carregandoCatalogo ? (
                 <p className="text-xs text-muted-foreground px-1 py-2">Carregando schedules…</p>
@@ -320,7 +367,7 @@ export function FamiliaDominioCard({ familiaId }: FamiliaDominioCardProps) {
         </div>
 
         <div>
-          <Label className="text-sm font-medium mb-1.5 block">Polegadas / medidas</Label>
+          <Label className="text-sm font-medium mb-1.5 block">Medidas (polegadas)</Label>
           <Input
             className="h-9 mb-2"
             value={filtroPolegada}
@@ -372,17 +419,17 @@ export function FamiliaDominioCard({ familiaId }: FamiliaDominioCardProps) {
           </div>
         </div>
 
-        <div className="flex items-center gap-3 pt-2 border-t border-border">
-          <NexusButton type="button" onClick={() => void salvar()} disabled={salvando || carregandoDominio}>
-            {salvando ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
-            Salvar domínio
-          </NexusButton>
-          <p className="text-xs text-muted-foreground">
-            {roscaIds.length} rosca(s), {scheduleIds.length} schedule(s) e {Object.keys(polegadaTipos).length} medida(s)
-            selecionado(s).
-          </p>
-        </div>
+        <p className="text-xs text-muted-foreground pt-2 border-t border-border">
+          {roscaIds.length} rosca(s), {scheduleIds.length} espessura(s) e{' '}
+          {Object.keys(polegadaTipos).length} medida(s) marcadas — salvas junto com a família.
+        </p>
       </CardContent>
     </Card>
   );
 }
+
+export const FamiliaDominioCard = forwardRef<FamiliaDominioHandle, FamiliaDominioCardProps>(
+  function FamiliaDominioCard(props, ref) {
+    return <FamiliaDominioCardConteudo {...props} dominioRef={ref} />;
+  },
+);

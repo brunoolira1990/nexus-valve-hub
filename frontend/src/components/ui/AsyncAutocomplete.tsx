@@ -51,6 +51,7 @@ export function AsyncAutocomplete<T>({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const reqId = useRef(0);
+  const wrapRef = useRef<HTMLDivElement>(null);
 
   const selectedLabel = useMemo(() => {
     if (!selectedOption || value == null) return '';
@@ -88,7 +89,7 @@ export function AsyncAutocomplete<T>({
   }, [open, term, minChars, limit, search]);
 
   return (
-    <div className={cn('min-w-0', wrapClassName)}>
+    <div ref={wrapRef} className={cn('min-w-0', wrapClassName)}>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
         <div className="relative min-w-0 flex-1">
           <input
@@ -107,6 +108,16 @@ export function AsyncAutocomplete<T>({
             onChange={(e) => {
               setOpen(true);
               setTerm(e.target.value);
+            }}
+            onBlur={(e) => {
+              if (e.relatedTarget instanceof Node && wrapRef.current?.contains(e.relatedTarget)) return;
+              setOpen(false);
+              setTerm('');
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== 'Escape') return;
+              setOpen(false);
+              setTerm('');
             }}
           />
 
@@ -134,6 +145,7 @@ export function AsyncAutocomplete<T>({
                         <button
                           type="button"
                           className="min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-muted whitespace-normal"
+                          onMouseDown={(e) => e.preventDefault()}
                           onClick={() => {
                             onChange(key, opt);
                             setOpen(false);

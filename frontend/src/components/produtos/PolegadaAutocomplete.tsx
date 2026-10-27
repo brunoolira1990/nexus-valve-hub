@@ -47,6 +47,7 @@ export function PolegadaAutocomplete({
   const [createOpen, setCreateOpen] = useState(false);
   const [createErr, setCreateErr] = useState<string | null>(null);
   const reqId = useRef(0);
+  const wrapRef = useRef<HTMLDivElement>(null);
   const minChars = 1;
 
   const [novo, setNovo] = useState({
@@ -171,8 +172,13 @@ export function PolegadaAutocomplete({
     }
   };
 
+  const fecharSemEscolha = () => {
+    setOpen(false);
+    setTerm('');
+  };
+
   return (
-    <div className="relative">
+    <div ref={wrapRef} className="relative">
       <input
         className="erp-input mt-1"
         placeholder={placeholderResolved}
@@ -185,6 +191,13 @@ export function PolegadaAutocomplete({
         onChange={(e) => {
           setOpen(true);
           setTerm(e.target.value);
+        }}
+        onBlur={(e) => {
+          if (e.relatedTarget instanceof Node && wrapRef.current?.contains(e.relatedTarget)) return;
+          fecharSemEscolha();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') fecharSemEscolha();
         }}
       />
       {!disabled && value != null ? (
@@ -213,7 +226,7 @@ export function PolegadaAutocomplete({
             <div className="px-3 py-2 text-xs text-muted-foreground">
               <p>Nenhuma polegada encontrada.</p>
               {allowCreate ? (
-                <button type="button" className="erp-btn-outline erp-btn-sm mt-2" onClick={openCreate}>
+                <button type="button" className="erp-btn-outline erp-btn-sm mt-2" onMouseDown={(e) => e.preventDefault()} onClick={openCreate}>
                   Cadastrar nova polegada
                 </button>
               ) : null}
@@ -225,6 +238,7 @@ export function PolegadaAutocomplete({
                   <button
                     type="button"
                     className="w-full px-3 py-2 text-left text-sm hover:bg-muted"
+                    onMouseDown={(e) => e.preventDefault()}
                     onClick={() => {
                       setSelected(opt);
                       onChange(opt.id, opt);
