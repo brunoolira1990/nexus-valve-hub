@@ -1,38 +1,53 @@
-import { Link, useNavigate } from 'react-router-dom';
-import { LogOut, Menu } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Menu } from 'lucide-react';
 import { NexusButton } from '@/components/nexus';
-import { clearAuthSession } from '@/services/api/config';
-import { clearAppContextoCache, useAppContexto } from '@/hooks/useAppContexto';
-import { GlobalSearch } from './header/GlobalSearch';
+import { useAppContexto } from '@/hooks/useAppContexto';
 import { EmpresaAtualBadge } from './header/EmpresaAtualBadge';
 import { AmbienteBadge } from './header/AmbienteBadge';
-import { UserMenu } from './header/UserMenu';
-import { NotificacoesSino } from './layout/NotificacoesSino';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
+  /** Falso em rotas sem Sidebar (Dashboard, blocos isolados): o hambúrguer viraria botão morto. */
+  showMenuButton?: boolean;
+  /**
+   * Falso quando a própria página já mostra empresa/ambiente no conteúdo (BI).
+   * O padrão é `true`: fora do BI o selo de Homologação é o único aviso de
+   * ambiente das 94 rotas do shell, e sumir com ele não é um ganho de layout.
+   */
+  mostraSelos?: boolean;
   breadcrumbs?: { label: string; path?: string }[];
 }
 
-export const Header = ({ onToggleSidebar, breadcrumbs = [] }: HeaderProps) => {
-  const navigate = useNavigate();
+/**
+ * Segunda linha do app shell (36px): contexto da página — módulo/breadcrumb e
+ * empresa+ambiente. Identidade, busca, notificações e usuário ficam na TopBar.
+ */
+export const Header = ({
+  onToggleSidebar,
+  showMenuButton = true,
+  mostraSelos = true,
+  breadcrumbs = [],
+}: HeaderProps) => {
   const { contexto } = useAppContexto();
 
-  const handleLogout = () => {
-    clearAppContextoCache();
-    clearAuthSession();
-    navigate('/login');
-  };
-
   return (
-    <header className="min-h-14 bg-card/95 backdrop-blur-sm border-b border-border flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-0 lg:px-6 shrink-0 shadow-sm">
+    <header className="min-h-9 bg-card/95 backdrop-blur-sm border-b border-border flex items-center gap-2 px-3 py-1 sm:px-4 sm:py-0 lg:px-6 shrink-0 shadow-sm">
       <div className="flex flex-1 items-center gap-2 min-w-0">
-        <NexusButton type="button" variant="ghost" size="icon" className="lg:hidden shrink-0" onClick={onToggleSidebar}>
-          <Menu className="h-5 w-5" />
-        </NexusButton>
+        {showMenuButton ? (
+          <NexusButton
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 lg:hidden shrink-0"
+            aria-label="Abrir menu"
+            onClick={onToggleSidebar}
+          >
+            <Menu className="h-4 w-4" />
+          </NexusButton>
+        ) : null}
         <nav
           aria-label="Breadcrumb"
-          className="hidden md:flex items-center gap-1 text-sm text-muted-foreground min-w-0 max-w-[180px] lg:max-w-[240px] truncate"
+          className="hidden md:flex items-center gap-1 text-xs text-muted-foreground min-w-0 max-w-[180px] lg:max-w-[240px] truncate"
         >
           {breadcrumbs.map((bc, i) => (
             <span key={i} className="flex items-center gap-1 shrink-0 min-w-0">
@@ -49,28 +64,14 @@ export const Header = ({ onToggleSidebar, breadcrumbs = [] }: HeaderProps) => {
         </nav>
       </div>
 
-      <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 shrink-0 justify-end">
-        <div className="min-w-0 flex-shrink">
-          <EmpresaAtualBadge empresa={contexto.empresa} />
+      {mostraSelos ? (
+        <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 shrink-0 justify-end">
+          <div className="min-w-0 flex-shrink">
+            <EmpresaAtualBadge empresa={contexto.empresa} />
+          </div>
+          <AmbienteBadge label={contexto.ambiente_label} />
         </div>
-        <AmbienteBadge label={contexto.ambiente_label} />
-        <NotificacoesSino />
-        <UserMenu usuario={contexto.usuario} />
-        <NexusButton
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={handleLogout}
-          className="text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
-          title="Sair"
-        >
-          <LogOut className="h-4 w-4" />
-          <span className="hidden sm:inline">Sair</span>
-        </NexusButton>
-        <div className="min-w-0 w-8 sm:w-auto sm:max-w-[200px] lg:max-w-xs shrink-0">
-          <GlobalSearch compact />
-        </div>
-      </div>
+      ) : null}
     </header>
   );
 };

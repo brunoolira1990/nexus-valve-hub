@@ -80,13 +80,20 @@ export interface ResultadoHeranca {
   herdou: CampoHerancaVisivel[];
 }
 
+/**
+ * Rosca e schedule entram no código do produto (`montar_codigo_interno` lê as FKs
+ * do próprio produto, não o padrão da família). Por isso, num produto já salvo a
+ * herança não pode escrevê-las: abrir a ficha de Edição e salvar reaproveitaria o
+ * padrão da família e o backend recalcularia o `codigo_completo` do SKU existente.
+ */
 export function aplicarHerancaFamiliaProduto(
   prev: ProdutoFormState,
   familia: FamiliaProduto,
   modo: ModoCodigoProduto,
-  opts?: { forcarCamposIniciais?: boolean },
+  opts?: { forcarCamposIniciais?: boolean; escreverMedidas?: boolean },
 ): ResultadoHeranca {
   const forcar = opts?.forcarCamposIniciais ?? false;
+  const escreverMedidas = opts?.escreverMedidas ?? true;
   const next = { ...prev };
   const herdou = new Set<CampoHerancaVisivel>();
 
@@ -108,7 +115,7 @@ export function aplicarHerancaFamiliaProduto(
     }
   };
 
-  if (modo === 'INTERNO') {
+  if (modo === 'INTERNO' && escreverMedidas) {
     if ((forcar || !next.rosca_conexao_id) && familia.rosca_padrao_id) {
       escrever('rosca_conexao_id', familia.rosca_padrao_id);
     }

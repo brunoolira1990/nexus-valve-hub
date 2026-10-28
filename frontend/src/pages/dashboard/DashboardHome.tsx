@@ -52,6 +52,7 @@ export default function DashboardHome() {
   return (
     <BIPageLayout
       title="Dashboard"
+      titleVisible={false}
       subtitle="Visão executiva dos módulos permitidos ao seu perfil"
       periodo={data?.periodo}
       nav={<BIModuleNav permissoes={perms} />}
@@ -71,7 +72,7 @@ export default function DashboardHome() {
           {data.nenhum_modulo ? (
             <BIEmptyState message="Nenhum painel disponível para seu usuário. Solicite acesso ao administrador." />
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-5 mb-8 min-w-0">
+            <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4 mb-4 min-w-0">
               {(data.modulos ?? []).map((mod) => (
                 <BIModuleCard key={mod.modulo} modulo={mod} />
               ))}

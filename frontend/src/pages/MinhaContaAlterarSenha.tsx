@@ -86,7 +86,7 @@ export default function MinhaContaAlterarSenha() {
           <button type="submit" className="erp-btn-primary" disabled={loading}>
             {loading ? 'Salvando…' : 'Alterar senha'}
           </button>
-          <Link to="/dashboard" className="erp-btn-outline inline-flex items-center">
+          <Link to="/apps" className="erp-btn-outline inline-flex items-center">
             Voltar
           </Link>
         </div>

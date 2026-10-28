@@ -6,14 +6,13 @@ import { PageHeader } from '@/components/PageHeader';
 import { NexusButton } from '@/components/nexus';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useProdutoForm } from './hooks/useProdutoForm';
-import { ProdutoGeralFormTab } from './tabs/ProdutoGeralFormTab';
-import { ProdutoClassificacaoFormTab } from './tabs/ProdutoClassificacaoFormTab';
-import { ProdutoFiscalFormTab } from './tabs/ProdutoFiscalFormTab';
+import { ProdutoFormTab } from './tabs/ProdutoFormTab';
 import { ProdutoPainelOperacionalTab } from '@/components/produtos/ProdutoPainelOperacionalTab';
 import { ProdutoRastreabilidadeTab } from '@/components/produtos/ProdutoRastreabilidadeTab';
 import { HistoricoAlteracoesPanel } from '@/components/auditoria/HistoricoAlteracoesPanel';
 import { familiasProdutoService, produtosService } from '@/services/api/produtos';
 import { materiaisService } from '@/services/api/materiais';
+import { useAppContexto } from '@/hooks/useAppContexto';
 import type { FamiliaProduto, Produto } from '@/types';
 import type { Material } from '@/types/material';
 import type { ProdutoFichaTab } from './types';
@@ -106,10 +105,13 @@ const ProdutoFormPage = () => {
     duplicateCodigo,
     setModoCodigo,
     herdouFamilia,
-    limparHerdadoCampo,
   } = useProdutoForm(produtoId, familias, async () => {
     // onSaveSuccess — navegação é tratada em handleSubmit (precisa do id retornado).
   }, materiais);
+
+  // 'Tipo de cadastro' (Painel Avançado) é restrito a admin: muda a origem do código.
+  const { contexto } = useAppContexto();
+  const ehAdmin = !!contexto.usuario.is_admin;
 
   const [saveError, setSaveError] = useState<string | null>(null);
   const [abaAtiva, setAbaAtiva] = useState<ProdutoFichaTab>('configuracao');
@@ -216,8 +218,8 @@ const ProdutoFormPage = () => {
         </div>
       )}
 
-      {/* Identificação e Classificação técnica dividem a mesma aba: a Família/Figura
-          dita os campos técnicos, então o operador precisa ver os dois blocos juntos. */}
+      {/* Sprint 3.7: um único formulário em 4 blocos + Painel Avançado. A Família é o
+          molde, então Identificação, Medidas, Preços/Estoque e Fiscal ficam na mesma aba. */}
       <Tabs
         value={abaAtiva}
         onValueChange={(v) => setAbaAtiva(v as ProdutoFichaTab)}
@@ -225,7 +227,6 @@ const ProdutoFormPage = () => {
       >
         <TabsList className="flex flex-wrap gap-1 w-full justify-start">
           <TabsTrigger value="configuracao">Configuração do Produto</TabsTrigger>
-          <TabsTrigger value="fiscal">Fiscal</TabsTrigger>
           {isEdit && (
             <>
               <TabsTrigger value="painel">Painel operacional</TabsTrigger>
@@ -236,40 +237,24 @@ const ProdutoFormPage = () => {
         </TabsList>
 
         <TabsContent value="configuracao" className="mt-4 space-y-6">
-          <ProdutoGeralFormTab
-            form={form}
-            setForm={setForm}
-            preview={preview}
-            familiaSelecionada={familiaSelecionada}
-            duplicateCodigo={duplicateCodigo}
-            setModoCodigo={setModoCodigo}
-            onNovaFamilia={handleNovaFamilia}
-            editingCodigo={editing?.codigo_completo ?? null}
-            campoErro={campoErro}
-          />
-
-          <ProdutoClassificacaoFormTab
+          <ProdutoFormTab
             form={form}
             setForm={setForm}
             preview={preview}
             familiaSelecionada={familiaSelecionada}
             famReq={famReq}
+            familias={familias}
             produto={editing}
             produtosOpcoes={produtosOpcoes}
             materiais={materiais}
             carregandoMateriais={carregandoMateriais}
-            herdouFamilia={herdouFamilia}
-            onLimparHerdado={limparHerdadoCampo}
+            duplicateCodigo={duplicateCodigo}
+            setModoCodigo={setModoCodigo}
+            onNovaFamilia={handleNovaFamilia}
+            editingCodigo={editing?.codigo_completo ?? null}
             campoErro={campoErro}
-          />
-        </TabsContent>
-
-        <TabsContent value="fiscal" className="mt-4">
-          <ProdutoFiscalFormTab
-            form={form}
-            setForm={setForm}
-            preview={preview}
-            familiaSelecionada={familiaSelecionada}
+            herdouFamilia={herdouFamilia}
+            ehAdmin={ehAdmin}
           />
         </TabsContent>
 

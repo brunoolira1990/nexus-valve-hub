@@ -140,6 +140,9 @@ def montar_bi_comercial(f: DashboardFilters) -> dict:
         _kpi('propostas_abertas', 'Propostas abertas', propostas_abertas, link='/propostas?status=aberta'),
         _kpi('propostas_convertidas', 'Propostas convertidas', propostas_convertidas),
     ]
+    # Herói nomeado no payload: o card da home fatia 4 KPIs e, sem isto,
+    # dependeria do fallback do frontend para saber qual número destacar.
+    out['hero_kpi_id'] = 'valor_aberto'
 
     status_rows = (
         pv_qs.values('status')
@@ -758,6 +761,8 @@ def montar_bi_compras(f: DashboardFilters) -> dict:
         ),
         _kpi('cte_historico_importado', 'CT-e importados', cte_historico, link='/central-dfe'),
     ]
+    # 5º KPI da lista: com o corte antigo de 4 o card de Compras ficava sem hero.
+    out['hero_kpi_id'] = 'valor_aberto_compras'
 
     status_rows = pc_all.values('status').annotate(total=Count('id')).order_by('-total')[:8]
     out['graficos'].append(
@@ -1192,6 +1197,8 @@ def montar_bi_financeiro(f: DashboardFilters) -> dict:
 
     out = _base_bi('financeiro', f)
     out['em_preparacao'] = False
+    # Já é o 1º KPI, mas o card da home só destaca o que o payload nomeia.
+    out['hero_kpi_id'] = 'saldo_previsto'
     out['kpis'] = [
         _kpi('saldo_previsto', 'Saldo previsto em aberto', saldo, 'moeda', '/financeiro'),
         _kpi(
@@ -1309,7 +1316,18 @@ MODULO_TITULOS = {
 
 
 def _resumir_modulo_home(bi: dict) -> dict:
-    kpis = bi.get('kpis', [])[:4]
+    """
+    Card da home: o hero abre a lista e os 3 primeiros restantes completam.
+
+    Fatiar `kpis[:4]` a seco cortava o próprio número de destaque quando ele
+    caía depois do 4º KPI — acontece em compras (5º), estoque (`estoque_baixo`
+    é o 7º) e sempre que o herói dinâmico de fiscal/expedição elege um KPI de
+    fim de lista. O card ficava sem hero nenhum no Dashboard.
+    """
+    todas = bi.get('kpis', [])
+    hero_id = bi.get('hero_kpi_id')
+    hero = next((k for k in todas if k['id'] == hero_id), None) if hero_id else None
+    kpis = ([hero] if hero else []) + [k for k in todas if hero is None or k['id'] != hero_id][:3]
     alerta = bi.get('alertas', [None])[0] if bi.get('alertas') else None
     modulo = bi['modulo']
     link_bi = '/financeiro' if modulo == 'financeiro' else f'/dashboard/{modulo}'
@@ -1319,7 +1337,7 @@ def _resumir_modulo_home(bi: dict) -> dict:
         'kpis': kpis,
         'alerta_principal': alerta,
         'link_bi': link_bi,
-        'hero_kpi_id': bi.get('hero_kpi_id'),
+        'hero_kpi_id': hero_id,
     }
 
 

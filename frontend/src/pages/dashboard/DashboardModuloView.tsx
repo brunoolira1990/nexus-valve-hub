@@ -170,6 +170,7 @@ export default function DashboardModuloView({ modulo }: DashboardModuloViewProps
     return (
       <BIPageLayout
         title={`BI ${MODULO_LABELS[modulo]}`}
+        titleVisible={false}
         subtitle={MODULO_SUBTITLES[modulo]}
         nav={<BIModuleNav permissoes={permissoes} />}
       >
@@ -181,6 +182,7 @@ export default function DashboardModuloView({ modulo }: DashboardModuloViewProps
   return (
     <BIPageLayout
       title={`BI ${MODULO_LABELS[modulo]}`}
+      titleVisible={false}
       subtitle={MODULO_SUBTITLES[modulo]}
       periodo={data?.periodo}
       nav={<BIModuleNav permissoes={permissoes} />}

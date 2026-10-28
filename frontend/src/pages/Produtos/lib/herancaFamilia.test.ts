@@ -98,6 +98,45 @@ describe('aplicarHerancaFamiliaProduto — campos técnicos', () => {
   });
 });
 
+describe('aplicarHerancaFamiliaProduto — medidas só no produto novo', () => {
+  const familiaMedidas = familia({ rosca_padrao_id: 12, schedule_padrao_id: 8 });
+
+  it('pré-seleciona rosca e schedule do molde no produto novo', () => {
+    const { form } = aplicarHerancaFamiliaProduto(formVazio(), familiaMedidas, 'INTERNO');
+
+    expect(form.rosca_conexao_id).toBe(12);
+    expect(form.schedule_ref_id).toBe(8);
+  });
+
+  // O código do produto é montado a partir das FKs dele (codigo_produto.py). Se a
+  // herança escrevesse o padrão da família num SKU salvo, abrir a Edição e salvar
+  // bastaria para o backend recalcular o codigo_completo daquele produto.
+  it('não escreve rosca nem schedule no produto já salvo (escreverMedidas: false)', () => {
+    const { form, herdou } = aplicarHerancaFamiliaProduto(
+      formVazio({ rosca_conexao_id: null, schedule_ref_id: null }),
+      familiaMedidas,
+      'INTERNO',
+      { escreverMedidas: false },
+    );
+
+    expect(form.rosca_conexao_id).toBeNull();
+    expect(form.schedule_ref_id).toBeNull();
+    expect(herdou).not.toContain('norma');
+  });
+
+  it('não afeta a herança técnica quando escreverMedidas é false', () => {
+    const { form } = aplicarHerancaFamiliaProduto(
+      formVazio(),
+      familiaTecnica,
+      'INTERNO',
+      { escreverMedidas: false },
+    );
+
+    expect(form.material_ref).toBe(42);
+    expect(form.norma).toBe('ASME B16.34');
+  });
+});
+
 describe('herança visível', () => {
   it('valorFamiliaParaCampo lê o padrão da família', () => {
     const f = familia({ norma_base: 'DIN 3352' });

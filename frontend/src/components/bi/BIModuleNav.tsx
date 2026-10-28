@@ -12,8 +12,13 @@ export function BIModuleNav({ permissoes }: BIModuleNavProps) {
 
   if (items.length <= 1) return null;
 
+  // -mb-6 encosta a borda inferior das abas no border-b do cabeçalho do BIPageLayout:
+  // a linha do cabeçalho é a régua da barra de abas, não uma segunda borda.
   return (
-    <nav className="flex flex-wrap gap-2 mb-6" aria-label="Navegação dos painéis BI">
+    <nav
+      className="-mb-6 flex gap-5 overflow-x-auto"
+      aria-label="Navegação dos painéis BI"
+    >
       {items.map((item) => {
         const active =
           item.path === '/dashboard'
@@ -23,13 +28,15 @@ export function BIModuleNav({ permissoes }: BIModuleNavProps) {
           <Link
             key={item.path}
             to={item.path}
+            aria-current={active ? 'page' : undefined}
             className={
-              'inline-flex items-center rounded-full px-4 py-1.5 text-sm font-medium transition-colors ' +
+              'flex items-center gap-1.5 border-b-2 pb-2.5 pt-1.5 text-sm transition-colors ' +
               (active
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground')
+                ? 'border-nexus-blue font-medium text-nexus-blue'
+                : 'border-transparent text-muted-foreground hover:text-foreground')
             }
           >
+            <item.icon className="h-4 w-4 shrink-0" aria-hidden />
             {item.label}
           </Link>
         );

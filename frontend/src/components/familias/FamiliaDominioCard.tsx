@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { apiErrorMessage } from '@/services/api/config';
+import { etiquetaRosca } from '@/lib/roscaLabel';
 import {
   familiaVariacoesService,
   polegadasService,
@@ -312,7 +313,7 @@ function FamiliaDominioCardConteudo({
                     <input
                       type="radio"
                       name="rosca-padrao"
-                      aria-label={`Padrão ${r.codigo || r.descricao}`}
+                      aria-label={`Padrão ${etiquetaRosca(r)}`}
                       className="h-3.5 w-3.5 shrink-0 disabled:opacity-40"
                       disabled={!roscaIds.includes(r.id)}
                       checked={roscaPadrao === r.id}
@@ -324,7 +325,7 @@ function FamiliaDominioCardConteudo({
                       onCheckedChange={(v) => toggleRosca(r.id, v === true)}
                     />
                     <Label htmlFor={`rosca-${r.id}`} className="cursor-pointer font-normal text-xs flex-1 truncate">
-                      {(r.codigo || '—') + ' — ' + r.descricao}
+                      {etiquetaRosca(r)}
                     </Label>
                   </div>
                 ))

@@ -57,11 +57,30 @@ export function resolveActiveSidebarSection(pathname: string, items: SidebarPath
   return null;
 }
 
-export function isSidebarSectionActive(pathname: string, item: SidebarPathItem): boolean {
-  if (item.dashboardNav) return pathname.startsWith('/dashboard');
-  if (item.path) return isSidebarPathActive(pathname, item.path);
-  if (!item.children) return false;
-  return item.children.some(
-    (child) => child.type === 'link' && child.path && isSidebarPathActive(pathname, child.path, child.activeMatchPaths),
-  );
+/**
+ * Rotas em que o próprio conteúdo (BIPageLayout) mostra empresa e ambiente.
+ * São exatamente as 8 páginas BI abaixo de `/dashboard`; nelas o selo do Header
+ * seria duplicado. Nas demais o selo continua no shell — fora do BI ele é o
+ * único indicador de Homologação/Produção da tela.
+ */
+export function isRotaSelosNoConteudo(pathname: string): boolean {
+  return pathname === '/dashboard' || pathname.startsWith('/dashboard/');
+}
+
+/**
+ * Módulo que justifica a Sidebar: precisa ter submenu próprio.
+ *
+ * Dashboard fica de fora — as abas (Visão geral, Comercial, ...) já são
+ * renderizadas no conteúdo por BIModuleNav, então uma sidebar só com o
+ * cabeçalho seria um painel vazio. Blocos sem children (Notificações,
+ * Contábil) e rotas fora do menu também ficam sem Sidebar.
+ */
+export function resolveSidebarModule<T extends SidebarPathItem>(
+  pathname: string,
+  items: T[],
+): T | null {
+  const label = resolveActiveSidebarSection(pathname, items);
+  const active = items.find((item) => item.label === label);
+  if (!active || active.dashboardNav) return null;
+  return active.children?.length ? active : null;
 }

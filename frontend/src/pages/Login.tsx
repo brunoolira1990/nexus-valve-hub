@@ -19,7 +19,7 @@ const Login = () => {
       const tokens = await login(username.trim(), senha);
       persistTokens(tokens);
       clearAppContextoCache();
-      navigate('/dashboard');
+      navigate('/apps');
     } catch (err) {
       setErro(apiErrorMessage(err));
     } finally {

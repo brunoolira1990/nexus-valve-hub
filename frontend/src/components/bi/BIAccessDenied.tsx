@@ -12,6 +12,7 @@ export function BIAccessDenied({
   return (
     <div className="erp-card max-w-lg mx-auto mt-8 p-8 text-center">
       <ShieldOff className="h-10 w-10 mx-auto text-muted-foreground mb-4" />
+      <h1 className="sr-only">{titulo}</h1>
       <h2 className="text-lg font-semibold text-foreground mb-2">Acesso restrito</h2>
       <p className="text-sm text-muted-foreground mb-6">
         {message ?? `Você não tem permissão para visualizar o ${titulo}.`}

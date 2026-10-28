@@ -70,11 +70,11 @@ export type ProdutoMainTab = 'produtos' | 'familias';
 
 /**
  * Abas da ficha do produto na página dedicada (ProdutoFormPage.tsx).
- * `configuracao` reúne Identificação + Classificação técnica na mesma aba.
+ * Sprint 3.7: Identificação, Medidas, Preços/Estoque e Fiscal formam uma aba única
+ * (`configuracao`) — a aba `fiscal` separada deixou de existir.
  */
 export type ProdutoFichaTab =
   | 'configuracao'
-  | 'fiscal'
   | 'painel'
   | 'rastreabilidade'
   | 'historico';

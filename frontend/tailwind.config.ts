@@ -39,6 +39,12 @@ export default {
           active: "hsl(var(--sidebar-active))",
           muted: "hsl(var(--sidebar-muted))",
         },
+        nexus: {
+          blue: "hsl(var(--nexus-blue))",
+          "blue-strong": "hsl(var(--nexus-blue-strong))",
+          orange: "hsl(var(--nexus-orange))",
+          "orange-strong": "hsl(var(--nexus-orange-strong))",
+        },
       },
       borderRadius: {
         lg: "var(--radius-lg)",

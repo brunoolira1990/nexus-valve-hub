@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from apps.cadastros.models import Empresa
 from apps.fiscal.models import NFeEntrada, NFeNumeracaoConfiguracao
+from apps.fiscal.nfe_entrada_devolucao_efeitos import aplicar_efeitos_devolucao_pos_autorizacao
 from apps.fiscal.nfe_emissao.retorno_sefaz import ResultadoAutorizacaoSefaz
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,35 @@ MSG_SEM_EFEITOS_PRODUCAO = (
     'NF-e entrada própria autorizada em produção SEFAZ — '
     'sem efeitos automáticos de estoque/financeiro nesta fase.'
 )
+
+
+def _agendar_efeitos_devolucao(nf: NFeEntrada, *, usuario=None) -> None:
+    """Roda estorno/estoque/financeiro depois que a autorização for commitada.
+
+    A autorização da SEFAZ é irreversível, então os efeitos não podem dividir a mesma
+    transação do save do status: falhas aqui derrubariam o "Autorizada" e deixariam o
+    ERP divergente da SEFAZ. Dentro do callback a exceção é capturada e logada — a nota
+    segue autorizada e fica pendente de reparo, identificável por
+    `listar_devolucoes_com_efeitos_pendentes()` (finNFe=4 + autorizada + sem carimbo).
+    """
+    if (nf.fin_nfe or '').strip() != '4':
+        return
+    nf_id = nf.pk
+
+    def _executar() -> None:
+        try:
+            entrada = NFeEntrada.objects.get(pk=nf_id)
+            aplicar_efeitos_devolucao_pos_autorizacao(entrada, usuario=usuario)
+        except NFeEntrada.DoesNotExist:
+            logger.error('DEVOLUCAO_EFEITOS_NFE_NAO_ENCONTRADA nf_entrada_id=%s', nf_id)
+        except Exception:
+            logger.exception(
+                'DEVOLUCAO_EFEITOS_FALHARAM nf_entrada_id=%s — autorização mantida, '
+                'efeitos de devolução pendentes de aplicação.',
+                nf_id,
+            )
+
+    transaction.on_commit(_executar)
 
 
 def _parse_dh_recbto(val: str):
@@ -63,7 +93,6 @@ def aplicar_resultado_sefaz_homologacao_entrada(
     usuario=None,
     xml_envio: str = '',
 ) -> NFeEntrada:
-    del usuario  # auditoria de eventos NF-e saída não se aplica; campos SEFAZ bastam
     nf.xml_envio = xml_envio or nf.xml_envio or nf.xml_assinado or ''
     if xml_envio and '<enviNFe' in xml_envio:
         nf.xml_envio_lote = xml_envio
@@ -127,8 +156,8 @@ def aplicar_resultado_sefaz_homologacao_entrada(
             serie=nf.serie_nfe,
             numero_nfe=nf.numero_nfe,
         )
-        # Aplica estorno no pedido original se for devolução (finNFe=4)
-        aplicar_estorno_pedido_pos_autorizacao_devolucao(nf, usuario=usuario)
+        # Devolução (finNFe=4): pedido, estoque e financeiro do ciclo completo.
+        _agendar_efeitos_devolucao(nf, usuario=usuario)
 
     logger.info(
         'RESULTADO_SEFAZ_ENTRADA_HOMOLOG nf_id=%s status=%s cStat_lote=%s cStat_nfe=%s protocolo=%s',
@@ -149,7 +178,6 @@ def aplicar_resultado_sefaz_producao_entrada(
     usuario=None,
     xml_envio: str = '',
 ) -> NFeEntrada:
-    del usuario
     nf.xml_envio = xml_envio or nf.xml_envio or nf.xml_assinado or ''
     if xml_envio and '<enviNFe' in xml_envio:
         nf.xml_envio_lote = xml_envio
@@ -215,8 +243,8 @@ def aplicar_resultado_sefaz_producao_entrada(
             serie=nf.serie_nfe,
             numero_nfe=nf.numero_nfe,
         )
-        # Aplica estorno no pedido original se for devolução (finNFe=4)
-        aplicar_estorno_pedido_pos_autorizacao_devolucao(nf, usuario=usuario)
+        # Devolução (finNFe=4): pedido, estoque e financeiro do ciclo completo.
+        _agendar_efeitos_devolucao(nf, usuario=usuario)
 
     logger.info(
         'RESULTADO_SEFAZ_ENTRADA_PRODUCAO nf_id=%s status=%s cStat_lote=%s cStat_nfe=%s protocolo=%s',
@@ -227,51 +255,6 @@ def aplicar_resultado_sefaz_producao_entrada(
         nf.protocolo_autorizacao or '',
     )
     return nf
-
-
-@transaction.atomic
-def aplicar_estorno_pedido_pos_autorizacao_devolucao(nf_entrada: NFeEntrada, *, usuario=None) -> dict[str, Any]:
-    """
-    Após autorizar NFeEntrada de devolução (finNFe=4), estorna quantidade_faturada
-    nos itens do pedido original e recalcula status. Não mexe em estoque/financeiro.
-    Idempotente: não reaplica se já foi aplicado.
-    """
-    from apps.comercial.models import PedidoVenda
-    from apps.comercial.faturamento_pedido_venda import recalcular_status_pedido
-    from apps.fiscal.nfe_saida_pedido_cancelamento import _estornar_quantidades_pedido_da_nfe
-
-    # Só se for devolução vinculada a uma saída
-    if (nf_entrada.fin_nfe or '').strip() != '4':
-        return {'aplicado': False, 'motivo': 'Não é devolução (finNFe≠4).'}
-    if not nf_entrada.nfe_saida_origem_id:
-        return {'aplicado': False, 'motivo': 'Sem nfe_saida_origem.'}
-
-    nf_saida = nf_entrada.nfe_saida_origem
-    if not nf_saida.faturamento_pedido_venda_id:
-        return {'aplicado': False, 'motivo': 'NF saída sem faturamento.'}
-
-    # Idempotência: marca na NFeEntrada que já aplicou
-    if getattr(nf_entrada, 'efeitos_devolucao_aplicados_em', None):
-        return {'aplicado': False, 'motivo': 'Já aplicado antes.'}
-
-    # Reusa a lógica existente de estorno do cancelamento
-    estorno_resumo, pedido_ids = _estornar_quantidades_pedido_da_nfe(nf_saida)
-
-    for pid in sorted(pedido_ids):
-        pedido = PedidoVenda.objects.select_for_update().get(pk=pid)
-        recalcular_status_pedido(pedido)
-
-    # Marca timestamp de aplicação
-    nf_entrada.efeitos_devolucao_aplicados_em = timezone.now()
-    if usuario and getattr(usuario, 'is_authenticated', False):
-        nf_entrada.efeitos_devolucao_por = usuario
-    nf_entrada.save(update_fields=['efeitos_devolucao_aplicados_em', 'efeitos_devolucao_por'])
-
-    return {
-        'aplicado': True,
-        'estorno_resumo': estorno_resumo,
-        'pedidos_afetados': sorted(pedido_ids),
-    }
 
 
 def mensagem_resposta_resultado_entrada(resultado: ResultadoAutorizacaoSefaz) -> str:

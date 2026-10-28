@@ -26,6 +26,17 @@ function polegadaLabel(p: Polegada): string {
   return `${codigo} — ${p.descricao}`;
 }
 
+/**
+ * Rótulo do valor já escolhido: só a polegada (`3/4"`), como a Visualização mostra.
+ * O rótulo completo continua nas opções da busca, onde o mm serve para conferir a escolha.
+ */
+function polegadaResumo(p: Polegada): string {
+  if (p.label) return p.label;
+  const oficial = (p.codigo_oficial || p.codigo || '').trim();
+  if (oficial) return `${oficial}"`;
+  return (p.descricao || '').trim() || polegadaLabel(p);
+}
+
 export function PolegadaAutocomplete({
   value,
   selectedLabel,
@@ -106,7 +117,7 @@ export function PolegadaAutocomplete({
     return () => clearTimeout(t);
   }, [open, term, tipoMedida]);
 
-  const currentLabel = selected ? polegadaLabel(selected) : selectedLabel || '';
+  const currentLabel = selected ? polegadaResumo(selected) : selectedLabel || '';
 
   const openCreate = async () => {
     const normalized = normalizePolegadaInput(term);

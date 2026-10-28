@@ -29,20 +29,33 @@ describe('PolegadaAutocomplete — saída sem escolha', () => {
     vi.mocked(polegadasService.search).mockResolvedValue([]);
   });
 
-  it('resolve o rótulo da polegada salva pelo id', async () => {
+  it('resolve a polegada salva pelo id mostrando só a polegada, sem o rótulo técnico', async () => {
     render(<PolegadaAutocomplete value={130} tipoMedida="NPS" onChange={vi.fn()} />);
-    expect(await screen.findByDisplayValue('1/2 — 1/2" — 12,7 mm')).toBeInTheDocument();
+    expect(await screen.findByDisplayValue('1/2"')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue(/NPS|12,7 mm/)).toBeNull();
+  });
+
+  it('mantém o rótulo completo (código, descrição e mm) nas opções da busca', async () => {
+    vi.mocked(polegadasService.search).mockResolvedValueOnce([
+      { ...NPS_MEIA, id: 131, codigo: '06', codigo_oficial: '3/4', descricao: '3/4"', valor_mm: '19.05' },
+    ]);
+    render(<PolegadaAutocomplete value={null} tipoMedida="NPS" onChange={vi.fn()} />);
+    const input = screen.getByRole('textbox');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: '3/4' } });
+
+    expect(await screen.findByRole('button', { name: '3/4 — 3/4" — 19,05 mm' })).toBeInTheDocument();
   });
 
   it('ao perder o foco sem escolher, fecha o painel e restaura a polegada salva', async () => {
     render(<PolegadaAutocomplete value={130} tipoMedida="NPS" onChange={vi.fn()} />);
-    const input = await screen.findByDisplayValue('1/2 — 1/2" — 12,7 mm');
+    const input = await screen.findByDisplayValue('1/2"');
 
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: '3/4' } });
     fireEvent.blur(input);
 
-    expect(input).toHaveValue('1/2 — 1/2" — 12,7 mm');
+    expect(input).toHaveValue('1/2"');
     expect(screen.queryByText('Nenhuma polegada encontrada.')).toBeNull();
   });
 
@@ -57,10 +70,10 @@ describe('PolegadaAutocomplete — saída sem escolha', () => {
 
   it('Escape fecha o painel sem alterar a seleção', async () => {
     render(<PolegadaAutocomplete value={130} tipoMedida="NPS" onChange={vi.fn()} />);
-    const input = await screen.findByDisplayValue('1/2 — 1/2" — 12,7 mm');
+    const input = await screen.findByDisplayValue('1/2"');
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: '3/4' } });
     fireEvent.keyDown(input, { key: 'Escape' });
-    expect(input).toHaveValue('1/2 — 1/2" — 12,7 mm');
+    expect(input).toHaveValue('1/2"');
   });
 });

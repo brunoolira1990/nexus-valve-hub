@@ -52,11 +52,17 @@
     --section-gap: 1.5rem;
     --form-gap: 1rem;
     --table-row-py: 0.75rem;
-    --sidebar-bg: 220 26% 14%;
-    --sidebar-fg: 210 40% 98%;
-    --sidebar-hover: 220 26% 20%;
-    --sidebar-active: 217 91% 45%;
-    --sidebar-muted: 215 16% 47%;
+    /* Identidade Nexus: azul #2D5D8A e laranja #E67E22 (triolos HSL p/ hsl(var())). */
+    --nexus-blue: 209 51% 36%;
+    --nexus-blue-strong: 209 46% 42%;
+    --nexus-orange: 28 80% 52%;
+    --nexus-orange-strong: 24 100% 41%;
+    --sidebar-bg: var(--nexus-blue);
+    --sidebar-fg: 0 0% 100%;
+    --sidebar-hover: var(--nexus-blue-strong);
+    /* Item ativo em padrão Odoo: fundo levemente mais claro + marcador laranja à esquerda. */
+    --sidebar-active: 0 0% 100% / 0.1;
+    --sidebar-muted: 209 45% 85%;
     --header-bg: 0 0% 100%;
     --header-fg: 222 47% 11%;
     /* Status semânticos */

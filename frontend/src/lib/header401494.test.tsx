@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { Header } from '@/components/Header';
+import { TopBar } from '@/components/layout/TopBar';
 import { EmpresaAtualBadge } from '@/components/header/EmpresaAtualBadge';
 import { UserMenu } from '@/components/header/UserMenu';
 
@@ -50,6 +51,10 @@ vi.mock('@/components/header/GlobalSearch', () => ({
   GlobalSearch: () => <input aria-label="Busca global" placeholder="Buscar…" />,
 }));
 
+vi.mock('@/components/layout/NotificacoesSino', () => ({
+  NotificacoesSino: () => <button type="button" aria-label="Notificações" />,
+}));
+
 describe('Header 401494', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -73,10 +78,10 @@ describe('Header 401494', () => {
     expect(screen.getByText('Homologação')).toBeInTheDocument();
   });
 
-  it('exibe nome do colaborador, não username', () => {
+  it('TopBar exibe nome do colaborador, não username', () => {
     render(
       <MemoryRouter>
-        <Header onToggleSidebar={() => undefined} />
+        <TopBar onOpenAppSwitcher={() => undefined} />
       </MemoryRouter>,
     );
     expect(screen.getByText('BRUNO PRADO DE LIRA')).toBeInTheDocument();

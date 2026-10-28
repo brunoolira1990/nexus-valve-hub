@@ -1,9 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
+import { TopBar } from '@/components/layout/TopBar';
+import { AppSwitcher } from '@/components/layout/AppSwitcher';
 import { MobileTableEnhancer } from '@/components/nexus/MobileTableEnhancer';
 import { PageContainer } from '@/components/nexus/PageContainer';
+import { SIDEBAR_MENU_ITEMS } from '@/config/sidebarMenuConfig';
+import { isRotaSelosNoConteudo, resolveSidebarModule } from '@/lib/sidebarNav';
 
 const DASHBOARD_MODULO_LABELS: Record<string, string> = {
   comercial: 'BI Comercial',
@@ -16,6 +20,7 @@ const DASHBOARD_MODULO_LABELS: Record<string, string> = {
 };
 
 const breadcrumbMap: Record<string, { label: string; path?: string }[]> = {
+  '/apps': [{ label: 'Aplicativos' }],
   '/dashboard': [{ label: 'Dashboard' }],
   '/empresas': [{ label: 'Cadastros' }, { label: 'Empresas' }],
   '/clientes': [{ label: 'Cadastros' }, { label: 'Clientes' }],
@@ -91,7 +96,14 @@ const breadcrumbMap: Record<string, { label: string; path?: string }[]> = {
 
 export const MainLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [appSwitcherOpen, setAppSwitcherOpen] = useState(false);
   const location = useLocation();
+
+  // Trocar de rota fecha drawer e grid de módulos, inclusive em navegação por teclado/redirect.
+  useEffect(() => {
+    setSidebarOpen(false);
+    setAppSwitcherOpen(false);
+  }, [location.pathname]);
   const isConferenciaEntrada = /^\/nfe-entrada\/[^/]+\/conferencia$/.test(location.pathname);
   const dashModuloMatch = location.pathname.match(/^\/dashboard\/([^/]+)$/);
   const basePath = '/' + location.pathname.split('/')[1];
@@ -104,18 +116,36 @@ export const MainLayout = () => {
         ]
       : (breadcrumbMap[location.pathname] ?? breadcrumbMap[basePath] ?? [{ label: 'Página' }]);
 
+  /** Sem submenu próprio (Dashboard, blocos isolados, rota desconhecida) a Sidebar não aparece. */
+  const showMenuButton = resolveSidebarModule(location.pathname, SIDEBAR_MENU_ITEMS) !== null;
+  /** No BI o selo de empresa/ambiente vive no topo do conteúdo, não no Header. */
+  const selosNoConteudo = isRotaSelosNoConteudo(location.pathname);
+
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background">
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        <MobileTableEnhancer />
-        <Header onToggleSidebar={() => setSidebarOpen(true)} breadcrumbs={breadcrumbs} />
-        <main className="flex-1 min-w-0 overflow-auto px-3 py-4 sm:px-4 sm:py-5 lg:px-6 lg:py-6">
-          <PageContainer>
-            <Outlet />
-          </PageContainer>
-        </main>
+    <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
+      <TopBar onOpenAppSwitcher={() => setAppSwitcherOpen(true)} />
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <Sidebar
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          onOpenAppSwitcher={() => setAppSwitcherOpen(true)}
+        />
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+          <MobileTableEnhancer />
+          <Header
+            onToggleSidebar={() => setSidebarOpen(true)}
+            showMenuButton={showMenuButton}
+            mostraSelos={!selosNoConteudo}
+            breadcrumbs={breadcrumbs}
+          />
+          <main className="flex-1 min-w-0 overflow-auto bg-surface-muted px-3 py-4 sm:px-4 sm:py-5 lg:px-6 lg:py-6">
+            <PageContainer>
+              <Outlet />
+            </PageContainer>
+          </main>
+        </div>
       </div>
+      <AppSwitcher open={appSwitcherOpen} onClose={() => setAppSwitcherOpen(false)} />
     </div>
   );
 };

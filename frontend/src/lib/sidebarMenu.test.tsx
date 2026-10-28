@@ -1,10 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 import { SIDEBAR_MENU_ITEMS } from '@/config/sidebarMenuConfig';
 import { Sidebar } from '@/components/Sidebar';
-import { resolveActiveSidebarSection, isSidebarPathActive } from '@/lib/sidebarNav';
+import {
+  AppSwitcher,
+  APP_SWITCHER_OTHER_SECTIONS,
+  APP_SWITCHER_PRIMARY_SECTIONS,
+  buildAppSwitcherModules,
+} from '@/components/layout/AppSwitcher';
+import { resolveActiveSidebarSection, resolveSidebarModule, isSidebarPathActive } from '@/lib/sidebarNav';
 
 vi.mock('@/hooks/useDashboardPermissoes', () => ({
   useDashboardPermissoes: () => ({
@@ -26,6 +32,7 @@ describe('sidebarMenuConfig — estrutura reorganizada', () => {
     const labels = SIDEBAR_MENU_ITEMS.map((i) => i.label);
     expect(labels).toEqual([
       'Dashboard',
+      'Notificações',
       'Cadastros',
       'Catálogo',
       'Compras',
@@ -63,7 +70,7 @@ describe('sidebarMenuConfig — estrutura reorganizada', () => {
   it('menu Compras exibe Entrada Própria sem bases importadas', () => {
     const compras = SIDEBAR_MENU_ITEMS.find((i) => i.label === 'Compras');
     const labels = compras?.children?.filter((c) => c.type === 'link').map((c) => c.label);
-    expect(labels).toEqual(['Pedidos de Compra', 'Entrada Própria']);
+    expect(labels).toEqual(['Pedidos de Compra', 'Entrada Própria', 'Cotações com Fornecedores']);
     expect(labels).not.toContain('NF-e Entrada (base)');
   });
 
@@ -125,6 +132,29 @@ describe('sidebarNav — seção ativa', () => {
   });
 });
 
+describe('sidebarNav — resolveSidebarModule (quando a Sidebar existe)', () => {
+  const module_ = (pathname: string) => resolveSidebarModule(pathname, SIDEBAR_MENU_ITEMS)?.label ?? null;
+
+  it('só blocos com submenu geram Sidebar', () => {
+    expect(module_('/produtos')).toBe('Catálogo');
+    expect(module_('/financeiro/cadastros')).toBe('Financeiro');
+    expect(module_('/empresas')).toBe('Cadastros');
+    expect(module_('/familias')).toBe('Catálogo');
+  });
+
+  it('Dashboard e blocos isolados não geram Sidebar', () => {
+    for (const pathname of ['/dashboard', '/dashboard/comercial', '/dashboard/financeiro', '/notificacoes', '/contabil', '/rota-inexistente', '/']) {
+      expect(resolveSidebarModule(pathname, SIDEBAR_MENU_ITEMS)).toBeNull();
+    }
+  });
+
+  it('o bloco devolvido é o mesmo que resolveActiveSidebarSection nomeia', () => {
+    const item = resolveSidebarModule('/central-dfe', SIDEBAR_MENU_ITEMS);
+    expect(item?.label).toBe(resolveActiveSidebarSection('/central-dfe', SIDEBAR_MENU_ITEMS));
+    expect(item?.children?.length).toBeGreaterThan(0);
+  });
+});
+
 describe('Sidebar — colapso e destaque', () => {
   it('expandida mostra só seção ativa em /fornecedores', () => {
     render(
@@ -139,5 +169,172 @@ describe('Sidebar — colapso e destaque', () => {
   it('destaca Cadastros financeiros sem ativar Visão geral', () => {
     expect(isSidebarPathActive('/financeiro/cadastros', '/financeiro')).toBe(false);
     expect(isSidebarPathActive('/financeiro/cadastros', '/financeiro/cadastros')).toBe(true);
+  });
+});
+
+describe('App shell 3.8 — sidebar só com o submenu do módulo ativo', () => {
+  const BLOCO_SOZINHO = ['Catálogo', 'Cadastros', 'CRM', 'Contador', 'Gestão de Resultado', 'Folha / RH'];
+
+  it('em /dashboard a Sidebar não existe: as abas ficam no conteúdo', () => {
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <Sidebar isOpen onClose={() => undefined} onOpenAppSwitcher={() => undefined} />
+      </MemoryRouter>,
+    );
+    expect(document.querySelector('aside')).toBeNull();
+    expect(document.querySelectorAll('nav')).toHaveLength(0);
+    expect(screen.queryByText('Dashboard')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Trocar de módulo')).not.toBeInTheDocument();
+  });
+
+  it('em /dashboard/<módulo> também não há Sidebar', () => {
+    for (const modulo of ['comercial', 'fiscal', 'financeiro']) {
+      const { unmount } = render(
+        <MemoryRouter initialEntries={[`/dashboard/${modulo}`]}>
+          <Sidebar isOpen onClose={() => undefined} onOpenAppSwitcher={() => undefined} />
+        </MemoryRouter>,
+      );
+      expect(document.querySelector('aside')).toBeNull();
+      unmount();
+    }
+  });
+
+  it('em /produtos mostra só Catálogo, sem nenhum outro bloco', () => {
+    render(
+      <MemoryRouter initialEntries={['/produtos']}>
+        <Sidebar isOpen onClose={() => undefined} onOpenAppSwitcher={() => undefined} />
+      </MemoryRouter>,
+    );
+    expect(document.querySelector('aside')).not.toBeNull();
+    expect(screen.getByText('Catálogo')).toBeInTheDocument();
+    expect(screen.getByText('Produtos')).toBeInTheDocument();
+    expect(screen.getByText('Famílias')).toBeInTheDocument();
+    expect(screen.getByText('Materiais')).toBeInTheDocument();
+    expect(screen.getByText('Corridas / Lotes')).toBeInTheDocument();
+    expect(screen.queryByText('Inbox Fiscal')).not.toBeInTheDocument();
+    expect(screen.queryByText('Pedidos de Compra')).not.toBeInTheDocument();
+    expect(document.querySelectorAll('nav')).toHaveLength(1);
+    for (const label of BLOCO_SOZINHO.filter((l) => l !== 'Catálogo')) {
+      expect(screen.queryByText(label)).not.toBeInTheDocument();
+    }
+  });
+
+  it('em /central-dfe mostra só Fiscal, preservando os subgrupos', () => {
+    render(
+      <MemoryRouter initialEntries={['/central-dfe']}>
+        <Sidebar isOpen onClose={() => undefined} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('Fiscal')).toBeInTheDocument();
+    expect(screen.getByText('Bases / Histórico')).toBeInTheDocument();
+    expect(screen.queryByText('Produtos')).not.toBeInTheDocument();
+  });
+
+  it('em /notificacoes (bloco sem submenu) não há Sidebar', () => {
+    render(
+      <MemoryRouter initialEntries={['/notificacoes']}>
+        <Sidebar isOpen onClose={() => undefined} onOpenAppSwitcher={() => undefined} />
+      </MemoryRouter>,
+    );
+    expect(document.querySelector('aside')).toBeNull();
+    expect(screen.queryByText('Voltar para Dashboard')).not.toBeInTheDocument();
+    for (const label of BLOCO_SOZINHO) {
+      expect(screen.queryByText(label)).not.toBeInTheDocument();
+    }
+  });
+
+  it('em /contabil (bloco sem submenu) também não há Sidebar', () => {
+    render(
+      <MemoryRouter initialEntries={['/contabil']}>
+        <Sidebar isOpen onClose={() => undefined} />
+      </MemoryRouter>,
+    );
+    expect(document.querySelector('aside')).toBeNull();
+    expect(document.querySelectorAll('nav a')).toHaveLength(0);
+  });
+
+  it('em /empresas mostra o submenu de Cadastros', () => {
+    render(
+      <MemoryRouter initialEntries={['/empresas']}>
+        <Sidebar isOpen onClose={() => undefined} onOpenAppSwitcher={() => undefined} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('Cadastros')).toBeInTheDocument();
+    expect(screen.getByText('Transportadoras')).toBeInTheDocument();
+    expect(screen.queryByText('Produtos')).not.toBeInTheDocument();
+  });
+
+  it('todo link do menu tem entrada clicável na rota raiz do próprio bloco', () => {
+    for (const item of SIDEBAR_MENU_ITEMS) {
+      const links = (item.children ?? []).filter((child) => child.type === 'link');
+      const root = item.path ?? links[0]?.path ?? (item.dashboardNav ? '/dashboard' : null);
+      if (!root) continue;
+      const { unmount } = render(
+        <MemoryRouter initialEntries={[root]}>
+          <Sidebar isOpen onClose={() => undefined} />
+        </MemoryRouter>,
+      );
+      for (const link of links) {
+        expect(document.querySelector(`a[href="${link.path}"]`)).not.toBeNull();
+      }
+      unmount();
+    }
+  });
+});
+
+describe('App shell 3.8 — AppSwitcher com 8 módulos + outras áreas', () => {
+  it('grade primária tem os 8 módulos apontando para rotas existentes', () => {
+    const modules = buildAppSwitcherModules(APP_SWITCHER_PRIMARY_SECTIONS);
+    expect(modules.map((m) => m.label)).toEqual([
+      'Dashboard',
+      'Catálogo',
+      'Compras',
+      'Comercial',
+      'Estoque & Logística',
+      'Fiscal',
+      'Qualidade',
+      'Financeiro',
+    ]);
+    expect(modules.map((m) => m.path)).toEqual([
+      '/dashboard',
+      '/produtos',
+      '/pedidos-compra',
+      '/propostas',
+      '/estoque',
+      '/central-dfe',
+      '/certificados',
+      '/financeiro',
+    ]);
+  });
+
+  it('"Outras áreas" cobre os blocos restantes, sem órfãos', () => {
+    const others = buildAppSwitcherModules(APP_SWITCHER_OTHER_SECTIONS);
+    expect(others.map((m) => m.path)).toEqual([
+      '/empresas',
+      '/crm',
+      '/modulos/gestao-resultado',
+      '/modulos/folha-rh',
+      '/contabil',
+      '/contador/exportar-xmls',
+      '/notificacoes',
+    ]);
+    const cobertos = [
+      ...APP_SWITCHER_PRIMARY_SECTIONS,
+      ...APP_SWITCHER_OTHER_SECTIONS,
+    ];
+    expect(SIDEBAR_MENU_ITEMS.map((i) => i.label).sort()).toEqual(cobertos.slice().sort());
+  });
+
+  it('abre e lista os módulos', () => {
+    const onClose = vi.fn();
+    render(
+      <MemoryRouter initialEntries={['/produtos']}>
+        <AppSwitcher open onClose={onClose} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('Estoque & Logística')).toBeInTheDocument();
+    expect(screen.getByText('Outras áreas')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Notificações/ }));
+    expect(onClose).toHaveBeenCalled();
   });
 });

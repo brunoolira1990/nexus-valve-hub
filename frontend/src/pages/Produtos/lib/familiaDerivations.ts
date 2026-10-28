@@ -55,19 +55,25 @@ export function getUsaDimensoesMateriais(familiaSel: FamiliaProduto | null): boo
   return !!td && TD_MATERIAIS.includes(td);
 }
 
+/**
+ * Rótulos da tela do Produto (Sprint 3.7): termos do catálogo mestre traduzidos para a
+ * linguagem do balcão — 'OD' vira 'Diâmetro externo'. As siglas continuam no código e na
+ * família; aqui só muda o texto que o operador lê.
+ */
 export function getLabelCampoOdPrincipal(familiaSel: FamiliaProduto | null): string {
   const td = familiaSel?.tipo_dimensional;
   if (td === 'DN_MM') return 'Medida DN/MM';
   if (td === 'DN_MM_REDUCAO') return 'Medida maior DN/MM';
-  if (td === 'OD_MM_REDUCAO') return 'OD maior (mm)';
-  if (td === 'OD_MM' && familiaSel?.tipo_regra_codigo === 'BASE_OD_MM') return 'Medida OD/mm';
-  return 'OD externo (mm)';
+  if (td === 'OD_MM_REDUCAO') return 'Diâmetro externo maior (mm)';
+  if (td === 'OD_MM' && familiaSel?.tipo_regra_codigo === 'BASE_OD_MM')
+    return 'Diâmetro externo (OD/mm)';
+  return 'Diâmetro externo (mm)';
 }
 
 export function getLabelCampoEspessuraOuMenor(familiaSel: FamiliaProduto | null): string {
   const td = familiaSel?.tipo_dimensional;
   if (td === 'DN_MM_REDUCAO') return 'Medida menor DN/MM';
-  if (td === 'OD_MM_REDUCAO') return 'OD menor (mm)';
+  if (td === 'OD_MM_REDUCAO') return 'Diâmetro externo menor (mm)';
   return 'Espessura (mm)';
 }
 

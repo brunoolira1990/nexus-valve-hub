@@ -3,6 +3,7 @@ import { Toaster } from "sonner";
 import { PrivateRoute } from "./components/PrivateRoute";
 import { MainLayout } from "./components/MainLayout";
 import Login from "./pages/Login";
+import AppsHome from "./pages/Apps/AppsHome";
 import DashboardHome from "./pages/dashboard/DashboardHome";
 import DashboardComercial from "./pages/dashboard/DashboardComercial";
 import DashboardFiscal from "./pages/dashboard/DashboardFiscal";
@@ -89,7 +90,8 @@ const App = () => (
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/" element={<PrivateRoute><MainLayout /></PrivateRoute>}>
-        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route index element={<Navigate to="/apps" replace />} />
+        <Route path="apps" element={<AppsHome />} />
         <Route path="dashboard" element={<DashboardHome />} />
         <Route path="dashboard/comercial" element={<DashboardComercial />} />
         <Route path="dashboard/fiscal" element={<DashboardFiscal />} />

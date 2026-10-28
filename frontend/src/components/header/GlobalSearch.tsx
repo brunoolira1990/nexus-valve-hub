@@ -19,14 +19,15 @@ function agruparResultados(items: BuscaGlobalItem[]) {
   return GRUPO_ORDEM.filter((g) => map.has(g)).map((g) => ({ grupo: g, items: map.get(g)! }));
 }
 
-type Props = {
-  compact?: boolean;
-};
-
-export function GlobalSearch({ compact = false }: Props) {
+/**
+ * Busca universal da TopBar. Ocupa toda a largura do container — quem define o
+ * tamanho é o layout (`flex-1 min-w-0`). O campo é sempre visível: a variante
+ * "ícone que expande" desaparecia abaixo de 768px, porque o campo expandido só
+ * aparecia em telas maiores que esse breakpoint.
+ */
+export function GlobalSearch() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const [expanded, setExpanded] = useState(!compact);
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
   const [loading, setLoading] = useState(false);
@@ -106,26 +107,9 @@ export function GlobalSearch({ compact = false }: Props) {
 
   const showPanel = open && (query.trim().length > 0 || loading);
 
-  if (compact && !expanded) {
-    return (
-      <button
-        type="button"
-        className="md:hidden erp-btn-ghost erp-btn-sm p-2"
-        aria-label="Buscar"
-        onClick={() => {
-          setExpanded(true);
-          setOpen(true);
-          window.setTimeout(() => inputRef.current?.focus(), 50);
-        }}
-      >
-        <Search className="h-4 w-4" />
-      </button>
-    );
-  }
-
   return (
-    <div ref={rootRef} className={`relative ${compact ? 'hidden md:block' : ''} min-w-0`}>
-      <div className="flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 w-full max-w-xs lg:max-w-sm">
+    <div ref={rootRef} className="relative min-w-0">
+      <div className="flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 w-full">
         <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
         <input
           ref={inputRef}

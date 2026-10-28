@@ -89,3 +89,6 @@ opencode.json
 
 # Backups locais do deploy
 deploy-backups/
+sprint-*.diff
+*.diff
+print-*.png

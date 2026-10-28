@@ -12,8 +12,13 @@ import { ErrorState } from '@/components/nexus/ErrorState';
 import { MainLayout } from '@/components/MainLayout';
 import { Header } from '@/components/Header';
 import { Sidebar } from '@/components/Sidebar';
+import { TopBar } from '@/components/layout/TopBar';
 import { resolveStatusToken } from '@/design-system/tokens';
 import DashboardHome from '@/pages/dashboard/DashboardHome';
+
+vi.mock('@/components/layout/NotificacoesSino', () => ({
+  NotificacoesSino: () => <button type="button" aria-label="Notificações" />,
+}));
 
 vi.mock('@/hooks/useDashboardPermissoes', () => ({
   useDashboardPermissoes: () => ({
@@ -111,6 +116,7 @@ describe('ERP 4.0.9 — Design System Nexus', () => {
   it('App shell renderiza sidebar e topbar', () => {
     render(
       <MemoryRouter>
+        <TopBar onOpenAppSwitcher={vi.fn()} />
         <Sidebar isOpen onClose={vi.fn()} />
         <Header breadcrumbs={[{ label: 'Dashboard' }]} onToggleSidebar={vi.fn()} />
       </MemoryRouter>,
@@ -132,12 +138,14 @@ describe('ERP 4.0.9 — Design System Nexus', () => {
     expect(screen.getByText('Painel')).toBeInTheDocument();
   });
 
-  it('Dashboard continua renderizando', async () => {
+  it('Dashboard começa no resumo/abas com h1 apenas acessível', async () => {
     render(
       <MemoryRouter initialEntries={['/dashboard']}>
         <DashboardHome />
       </MemoryRouter>,
     );
-    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
+    expect(await screen.findByText('Visão executiva dos módulos permitidos ao seu perfil')).toBeInTheDocument();
+    expect(document.querySelector('h1')?.textContent).toBe('Dashboard');
+    expect(document.querySelector('h1')?.className).toBe('sr-only');
   });
 });

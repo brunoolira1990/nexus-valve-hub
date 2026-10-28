@@ -208,11 +208,13 @@ export function useProdutoForm(
     const { form: proximo, herdou } = aplicarHerancaFamiliaProduto(
       formRef.current,
       familiaSelecionada,
-      ehManual ? 'MANUAL' : 'INTERNO'
+      ehManual ? 'MANUAL' : 'INTERNO',
+      // Produto do banco tem código próprio: as medidas do molde não são dele.
+      { escreverMedidas: !editing?.id },
     );
     setForm(proximo);
     setHerdouFamilia(herdou);
-  }, [form.modo_codigo, familiaSelecionada]);
+  }, [form.modo_codigo, familiaSelecionada, editing?.id]);
 
   // Manter material_ref (FK) coerente com material (string legado).
   // Dispara após a herança da família, que seta material sem tocar material_ref,
@@ -442,7 +444,7 @@ export function useProdutoForm(
         !getUsaDimensoesMateriais(familiaSelecionada);
       const faltando: Array<{ campo: CampoFormProdutoInvalido; rotulo: string }> = [];
       if (mmDoProduto && famReq.exige_diametro_interno_mm && !form.diametro_interno_mm) {
-        faltando.push({ campo: 'diametro_interno_mm', rotulo: 'Diâmetro interno ID (mm)' });
+        faltando.push({ campo: 'diametro_interno_mm', rotulo: 'Diâmetro interno (mm)' });
       }
       if (mmDoProduto && famReq.exige_od_mm && !form.od_mm) {
         faltando.push({ campo: 'od_mm', rotulo: getLabelCampoOdPrincipal(familiaSelecionada) });
