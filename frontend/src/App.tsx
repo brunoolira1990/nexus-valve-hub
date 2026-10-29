@@ -83,12 +83,16 @@ import RelatorioFluxoPrevistoPage from "./pages/financeiro/relatorios/RelatorioF
 import RelatorioCategoriasPage from "./pages/financeiro/relatorios/RelatorioCategoriasPage";
 import RelatorioClientesPage from "./pages/financeiro/relatorios/RelatorioClientesPage";
 import RelatorioFornecedoresPage from "./pages/financeiro/relatorios/RelatorioFornecedoresPage";
+import StatusPipelineDemo from "./pages/dev/StatusPipelineDemo";
 
 const App = () => (
   <BrowserRouter>
     <Toaster richColors closeButton position="top-right" />
     <Routes>
       <Route path="/login" element={<Login />} />
+      {import.meta.env.DEV && (
+        <Route path="/_status-pipeline-demo" element={<StatusPipelineDemo />} />
+      )}
       <Route path="/" element={<PrivateRoute><MainLayout /></PrivateRoute>}>
         <Route index element={<Navigate to="/apps" replace />} />
         <Route path="apps" element={<AppsHome />} />
