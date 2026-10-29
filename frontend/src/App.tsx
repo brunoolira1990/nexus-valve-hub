@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { PrivateRoute } from "./components/PrivateRoute";
@@ -83,15 +84,27 @@ import RelatorioFluxoPrevistoPage from "./pages/financeiro/relatorios/RelatorioF
 import RelatorioCategoriasPage from "./pages/financeiro/relatorios/RelatorioCategoriasPage";
 import RelatorioClientesPage from "./pages/financeiro/relatorios/RelatorioClientesPage";
 import RelatorioFornecedoresPage from "./pages/financeiro/relatorios/RelatorioFornecedoresPage";
-import StatusPipelineDemo from "./pages/dev/StatusPipelineDemo";
+
+// Ternario com import.meta.env.DEV (substituido por false no build) faz o Rollup
+// descartar o import() — o chunk do demo nem chega a existir no build de producao.
+const StatusPipelineDemoLazy = import.meta.env.DEV
+  ? lazy(() => import("./pages/dev/StatusPipelineDemo"))
+  : null;
 
 const App = () => (
   <BrowserRouter>
     <Toaster richColors closeButton position="top-right" />
     <Routes>
       <Route path="/login" element={<Login />} />
-      {import.meta.env.DEV && (
-        <Route path="/_status-pipeline-demo" element={<StatusPipelineDemo />} />
+      {StatusPipelineDemoLazy && (
+        <Route
+          path="/_status-pipeline-demo"
+          element={
+            <Suspense fallback={null}>
+              <StatusPipelineDemoLazy />
+            </Suspense>
+          }
+        />
       )}
       <Route path="/" element={<PrivateRoute><MainLayout /></PrivateRoute>}>
         <Route index element={<Navigate to="/apps" replace />} />

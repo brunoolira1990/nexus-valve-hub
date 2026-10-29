@@ -7,7 +7,17 @@ const proxyTarget = process.env.VITE_PROXY_TARGET || "http://127.0.0.1:8000";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
+  // Bind-mount Windows: manter deps otimizados fora do mount (no FS local do container),
+  // senao o otimizador trava em deps_temp_* e o navegador recebe 504 Outdated Optimize Dep.
+  cacheDir: "/tmp/.vite",
+  optimizeDeps: {
+    force: true,
+  },
   server: {
+    watch: {
+      // inotify nao funciona no bind-mount do Docker Desktop/Windows.
+      usePolling: true,
+    },
     host: "0.0.0.0",
     allowedHosts: [
       'erp.nexusvalvulas.com.br',
