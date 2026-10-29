@@ -27,6 +27,7 @@ const breadcrumbMap: Record<string, { label: string; path?: string }[]> = {
   '/fornecedores': [{ label: 'Cadastros' }, { label: 'Fornecedores' }],
   '/transportadoras': [{ label: 'Cadastros' }, { label: 'Transportadoras' }],
   '/colaboradores': [{ label: 'Cadastros' }, { label: 'Colaboradores' }],
+  '/familias': [{ label: 'Cadastros' }, { label: 'Famílias' }],
   '/produtos': [{ label: 'Catálogo' }, { label: 'Produtos' }],
   '/corridas': [{ label: 'Catálogo' }, { label: 'Corridas / Lotes' }],
   '/regras-fiscais': [{ label: 'Fiscal' }, { label: 'Regras Fiscais' }],

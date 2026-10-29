@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Boxes, Layers, Loader2, Receipt, Ruler, Save, ShieldCheck, Sparkles, Wrench, X } from 'lucide-react';
-import { PageHeader } from '@/components/PageHeader';
-import { NexusButton } from '@/components/nexus';
-import { Badge } from '@/components/ui/badge';
+import { Boxes, Layers, Loader2, Receipt, Ruler, Save, ShieldCheck, Sparkles, Trash2, Wrench } from 'lucide-react';
+import { Badge, NexusButton } from '@/components/nexus';
+import { FormShell } from '@/components/layout/FormShell';
+import { ChatterPlaceholder } from '@/components/layout/ChatterPlaceholder';
 import {
   Card,
   CardContent,
@@ -152,7 +152,7 @@ function PainelAvancado({ children }: { children: React.ReactNode }) {
   return (
     <div className="space-y-5 rounded-md border border-border bg-muted/30 p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="secondary" className="text-[10px] uppercase tracking-wide">
+        <Badge variant="neutral" className="text-[10px] uppercase tracking-wide">
           Configuração avançada
         </Badge>
         <p className="text-xs text-muted-foreground">
@@ -446,34 +446,33 @@ const FamiliaFormPage = () => {
   );
   const exibirPesos = form.usa_conversao_dimensional || form.controla_composicao_fisica;
 
-  return (
-    <div className="space-y-6">
-      <PageHeader
-        title={isEdit ? `Editar família ${form.codigo_figura}` : 'Nova família'}
-        breadcrumbs={[
-          { label: 'Catálogo', path: '/produtos' },
-          { label: 'Famílias', path: '/familias' },
-          { label: isEdit ? `Editar ${form.codigo_figura}` : 'Nova' },
-        ]}
-        actions={
-          <div className="flex items-center gap-2">
-            <NexusButton type="button" variant="outline" onClick={handleCancel} disabled={salvando}>
-              <X className="h-4 w-4 mr-2" />
-              Cancelar
-            </NexusButton>
-            <NexusButton
-              type="button"
-              onClick={handleSubmit}
-              disabled={salvando || dominio.salvando}
-              loading={salvando || dominio.salvando}
-            >
-              <Save className="h-4 w-4 mr-2" />
-              Salvar
-            </NexusButton>
-          </div>
-        }
-      />
+  const titulo = isEdit
+    ? `${form.codigo_figura} — ${form.descricao_base}`
+    : form.descricao_base.trim() || 'Nova família';
 
+  return (
+    <FormShell
+      titulo={titulo}
+      meta={<Badge variant={form.ativo ? 'success' : 'neutral'}>{form.ativo ? 'Ativa' : 'Inativa'}</Badge>}
+      acoesPrincipais={[
+        {
+          label: 'Salvar',
+          icon: <Save className="h-4 w-4 mr-2" />,
+          variant: 'primary',
+          loading: salvando || dominio.salvando,
+          onClick: handleSubmit,
+        },
+      ]}
+      acoesSecundarias={[
+        {
+          label: 'Descartar',
+          icon: <Trash2 className="h-4 w-4 mr-2" />,
+          onClick: handleCancel,
+        },
+      ]}
+      onVoltar={() => navigate('/familias')}
+      rail={<ChatterPlaceholder />}
+    >
       {erro && (
         <div
           role="alert"
@@ -483,7 +482,7 @@ const FamiliaFormPage = () => {
         </div>
       )}
 
-      <div className="space-y-6">
+      <div className="mt-1 space-y-6">
         {/* ===== 1. Identificação ===== */}
         <Card>
           <CardHeader className="pb-3">
@@ -1087,7 +1086,7 @@ const FamiliaFormPage = () => {
         </Card>
 
       </div>
-    </div>
+    </FormShell>
   );
 };
 
