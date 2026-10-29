@@ -56,7 +56,7 @@ from apps.regras_fiscais.saida_fiscal import (
 from apps.fiscal.nfe_difal_calculo import (
     calcular_difal_item,
     deve_aplicar_difal,
-    validar_parametros_difal_regra,
+    resolver_aliquotas_difal,
 )
 from apps.fiscal.nfe_destinatario_fiscal import (
     eh_devolucao_ao_fornecedor,
@@ -485,20 +485,28 @@ def montar_snapshot_fiscal_de_regra_atual(
         consumidor_final=perfil.consumidor_final,
         regra=regra,
     ):
-        pendencias_difal = validar_parametros_difal_regra(
+        aliquotas_difal = resolver_aliquotas_difal(
             regra,
             uf_destino=ufd,
             nome_item=_descricao_item(item),
         )
-        if pendencias_difal:
-            snap['difal_pendencias'] = pendencias_difal
+        if aliquotas_difal.pendencias:
+            snap['difal_pendencias'] = aliquotas_difal.pendencias
         else:
-            snap['difal'] = calcular_difal_item(v_prod, regra)
+            snap['difal'] = calcular_difal_item(v_prod, regra, aliquotas=aliquotas_difal)
             snap['difal_aplicavel'] = True
+            frete_nf = _dec(getattr(nf, 'valor_frete', None))
+            if frete_nf > 0:
+                snap['difal_avisos'] = [
+                    f'Base do DIFAL = valor do produto do item (R$ {_q2(v_prod)}), mas a NF-e declara '
+                    f'frete R$ {_q2(frete_nf)}. A BC do DIFAL é o valor da operação (frete, seguro, '
+                    'despesas acessórias). Confira antes de transmitir.'
+                ]
     else:
         snap.pop('difal', None)
         snap.pop('difal_aplicavel', None)
         snap.pop('difal_pendencias', None)
+        snap.pop('difal_avisos', None)
 
     return normalize_snapshot_fiscal_for_nfe(snap)
 

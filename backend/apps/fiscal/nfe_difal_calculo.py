@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
 
@@ -50,37 +51,123 @@ def deve_aplicar_difal(
     return True
 
 
+@dataclass(frozen=True)
+class AliquotasDifalResolvidas:
+    aliquota_interestadual: Decimal
+    aliquota_interna_destino: Decimal
+    aliquota_fcp: Decimal
+    fontes: list[str] = field(default_factory=list)
+    pendencias: list[str] = field(default_factory=list)
+
+
+def _aliquota_uf_destino(uf_destino: str) -> tuple[Decimal, Decimal] | None:
+    """(interna, interestadual) da UF destino na tabela de referência; None se a UF não estiver cadastrada."""
+    from apps.regras_fiscais.models import AliquotaIcmsUF
+
+    ufd = _norm_uf(uf_destino)
+    if len(ufd) != 2:
+        return None
+    registro = AliquotaIcmsUF.objects.filter(uf=ufd, ativo=True).first()
+    if registro is None:
+        return None
+    return _dec(registro.aliquota_interna), _dec(registro.aliquota_interestadual)
+
+
+def resolver_aliquotas_difal(
+    regra: RegraFiscalSaida,
+    *,
+    uf_destino: str,
+    nome_item: str = '',
+) -> AliquotasDifalResolvidas:
+    """Resolve alíquotas por UF destino: override na regra > tabela de alíquotas > sem origem (pendência).
+
+    Sem a tabela, uma regra genérica (uf_destino vazio) aplicava a mesma alíquota
+    interna a todos os estados; a resolução por UF elimina essa base única.
+    """
+    prefixo = f'Regra fiscal #{regra.pk}'
+    if nome_item:
+        prefixo = f'{nome_item} — {prefixo}'
+    pendencias: list[str] = []
+    fontes: list[str] = []
+
+    ali_inter = _dec(regra.aliquota_icms_interestadual)
+    if ali_inter > 0:
+        fontes.append('interestadual:regra')
+    else:
+        tab = _aliquota_uf_destino(uf_destino)
+        ali_inter = tab[1] if tab is not None else Decimal('0')
+        if ali_inter > 0:
+            fontes.append('interestadual:tabela_uf')
+    if ali_inter <= 0:
+        pendencias.append(f'{prefixo}: informe alíquota ICMS interestadual para DIFAL.')
+
+    ali_dest = _dec(regra.aliquota_icms_interna_destino)
+    if ali_dest > 0:
+        fontes.append('interna_destino:regra')
+    else:
+        tab = _aliquota_uf_destino(uf_destino)
+        if tab is not None and tab[0] > 0:
+            ali_dest = tab[0]
+            fontes.append('interna_destino:tabela_uf')
+        else:
+            ufd = _norm_uf(uf_destino) or 'destino'
+            pendencias.append(f'{prefixo}: informe alíquota ICMS interna da UF {ufd} para DIFAL.')
+
+    p_fcp = Decimal('0')
+    if regra.fcp_aplicavel:
+        p_fcp = _dec(regra.aliquota_fcp)
+        if p_fcp <= 0:
+            from apps.regras_fiscais.models import AliquotaIcmsUF
+
+            ufd = _norm_uf(uf_destino)
+            registro = (
+                AliquotaIcmsUF.objects.filter(uf=ufd, ativo=True).first()
+                if len(ufd) == 2
+                else None
+            )
+            if registro is not None and _dec(registro.aliquota_fcp) > 0:
+                p_fcp = _dec(registro.aliquota_fcp)
+                fontes.append('fcp:tabela_uf')
+        if p_fcp < 0:
+            pendencias.append(f'{prefixo}: alíquota FCP destino inválida.')
+
+    return AliquotasDifalResolvidas(
+        aliquota_interestadual=ali_inter,
+        aliquota_interna_destino=ali_dest,
+        aliquota_fcp=p_fcp,
+        fontes=fontes,
+        pendencias=pendencias,
+    )
+
+
 def validar_parametros_difal_regra(
     regra: RegraFiscalSaida,
     *,
     uf_destino: str = '',
     nome_item: str = '',
 ) -> list[str]:
-    prefixo = f'Regra fiscal #{regra.pk}'
-    if nome_item:
-        prefixo = f'{nome_item} — {prefixo}'
-    erros: list[str] = []
     if not regra.difal_aplicavel:
-        return erros
-    ali_inter = _dec(regra.aliquota_icms_interestadual)
-    ali_dest = _dec(regra.aliquota_icms_interna_destino)
-    if ali_inter <= 0:
-        erros.append(f'{prefixo}: informe alíquota ICMS interestadual para DIFAL.')
-    if ali_dest <= 0:
-        ufd = _norm_uf(uf_destino) or 'destino'
-        erros.append(f'{prefixo}: informe alíquota ICMS interna da UF {ufd} para DIFAL.')
-    if regra.fcp_aplicavel and _dec(regra.aliquota_fcp) < 0:
-        erros.append(f'{prefixo}: alíquota FCP destino inválida.')
-    return erros
+        return []
+    return resolver_aliquotas_difal(regra, uf_destino=uf_destino, nome_item=nome_item).pendencias
 
 
 def calcular_difal_item(
     valor_base: Decimal,
     regra: RegraFiscalSaida,
+    *,
+    aliquotas: AliquotasDifalResolvidas | None = None,
 ) -> dict[str, Any]:
     """Retorna snapshot DIFAL por item (valores monetários em string com 2 casas)."""
-    ali_inter = _dec(regra.aliquota_icms_interestadual)
-    ali_dest = _dec(regra.aliquota_icms_interna_destino)
+    ali_inter = (
+        aliquotas.aliquota_interestadual
+        if aliquotas is not None
+        else _dec(regra.aliquota_icms_interestadual)
+    )
+    ali_dest = (
+        aliquotas.aliquota_interna_destino
+        if aliquotas is not None
+        else _dec(regra.aliquota_icms_interna_destino)
+    )
     base = max(valor_base, Decimal('0')).quantize(Decimal('0.01'))
 
     difal_pct = max(ali_dest - ali_inter, Decimal('0'))
@@ -90,11 +177,15 @@ def calcular_difal_item(
     p_fcp = Decimal('0')
     v_fcp = Decimal('0')
     if regra.fcp_aplicavel:
-        p_fcp = _dec(regra.aliquota_fcp)
+        p_fcp = (
+            aliquotas.aliquota_fcp
+            if aliquotas is not None
+            else _dec(regra.aliquota_fcp)
+        )
         if p_fcp > 0:
             v_fcp = (base * p_fcp / Decimal('100')).quantize(Decimal('0.01'))
 
-    return {
+    snapshot = {
         'aplicavel': True,
         'v_bc_uf_dest': _q2(base),
         'v_bc_fcp_uf_dest': _q2(base),
@@ -106,6 +197,9 @@ def calcular_difal_item(
         'v_icms_uf_dest': _q2(v_icms_uf_dest),
         'v_icms_uf_remet': _q2(v_icms_uf_remet),
     }
+    if aliquotas is not None and aliquotas.fontes:
+        snapshot['fontes_aliquota'] = ','.join(aliquotas.fontes)
+    return snapshot
 
 
 def difal_emitido_no_item(difal: dict[str, Any] | None) -> bool:

@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 
@@ -519,3 +520,47 @@ class RegraFiscalSaida(models.Model):
             or self.codigo
             or f'Regra saída #{self.pk}'
         )
+
+
+class AliquotaIcmsUF(models.Model):
+    """Tabela de referência de alíquotas de ICMS por UF (interna, interestadual e FCP) para DIFAL."""
+
+    uf = models.CharField(max_length=2, unique=True)
+    alias = models.CharField(max_length=32, blank=True)
+    aliquota_interna = models.DecimalField(max_digits=7, decimal_places=4)
+    aliquota_interestadual = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        help_text='Alíquota interestadual de/para a UF (12% Sul/Sudeste, 7% demais, 4% áreas incentivadas).',
+    )
+    aliquota_fcp = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text='FCP destino. NULL = não cadastrado; o DIFAL não presume FCP.',
+    )
+    vigencia_inicio = models.DateField(
+        null=True,
+        blank=True,
+        help_text='Data em que esta alíquota passou a valer. NULL = vigência não informada.',
+    )
+    ativo = models.BooleanField(default=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+    atualizado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='aliquotas_uf_atualizadas',
+        verbose_name='atualizado por',
+        help_text='Última pessoa que alterou a linha (seed/migração fica vazio).',
+    )
+
+    class Meta:
+        ordering = ['uf']
+        verbose_name = 'Alíquota ICMS por UF'
+        verbose_name_plural = 'Alíquotas ICMS por UF'
+
+    def __str__(self):
+        return f'{self.uf} interna {self.aliquota_interna}% inter {self.aliquota_interestadual}%'

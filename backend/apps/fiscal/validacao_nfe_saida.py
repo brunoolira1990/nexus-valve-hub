@@ -760,6 +760,15 @@ def validar_nfe_saida_para_emissao(
                         mensagem=str(msg_difal),
                         item_id=item.pk,
                     )
+            for msg_aviso_difal in snap_f.get('difal_avisos') or []:
+                _add(
+                    grupos,
+                    tipo=TIPO_ALERTA,
+                    codigo='DIFAL_BC_SEM_FRETE',
+                    grupo='fiscal',
+                    mensagem=str(msg_aviso_difal),
+                    item_id=item.pk,
+                )
             from apps.fiscal.nfe_difal_calculo import validar_parametros_difal_regra
             from apps.fiscal.nfe_destinatario_fiscal import resolver_perfil_destinatario_nf
             from apps.regras_fiscais.models import RegraFiscalSaida
