@@ -145,6 +145,65 @@ PRODUTO_CAMPOS_EXCLUIDOS: frozenset[str] = frozenset(
 
 PRODUTO_ALLOWLIST: frozenset[str] = PRODUTO_CAMPOS_VALOR | PRODUTO_CAMPOS_MASCARADOS
 
+# Família/figura: o molde do código e a classificação técnica herdada pelo produto.
+FAMILIA_CAMPOS_VALOR: frozenset[str] = frozenset(
+    {
+        'codigo_figura',
+        'descricao_base',
+        'tipo_regra_codigo',
+        'categoria_produto',
+        'tipo_dimensional',
+        'separador_base_medidas',
+        'ncm_padrao_id',
+        'material_base_ref_id',
+        'unidade_padrao',
+        'material_base',
+        'pressao_base',
+        'norma_base',
+        'conexao_base',
+        'tipo_peca',
+        'material_vedacao',
+        'ativo',
+        'tipo_fisico',
+        'tipo_controle_unidade',
+        'unidade_estoque_padrao',
+        'unidade_venda_padrao',
+        'unidade_compra_padrao',
+        'unidade_fiscal_padrao',
+        'usa_conversao_dimensional',
+        'controla_composicao_fisica',
+        'tipo_composicao_fisica',
+        'exige_certificado_qualidade',
+    }
+)
+
+# Nenhum campo da família é sensível: pesos e observações ficam fora por serem
+# ruído dimensional (mesma política do produto), não por sigilo.
+FAMILIA_CAMPOS_MASCARADOS: frozenset[str] = frozenset()
+
+FAMILIA_CAMPOS_EXCLUIDOS: frozenset[str] = frozenset(
+    {
+        'id',
+        # Derivadas de tipo_regra_codigo no save(): registrar as duas coisas seria diff duplicado.
+        'usa_rosca_conexao',
+        'usa_schedule',
+        'usa_polegada_principal',
+        'usa_polegada_secundaria',
+        'peso_por_metro_kg',
+        'peso_por_peca_kg',
+        'peso_por_chapa_kg',
+        'densidade',
+        'comprimento_padrao_barra_m',
+        'unidades_venda_permitidas',
+        'unidades_compra_permitidas',
+        'observacoes_conversao',
+        'ncm_padrao',
+        'material_base_ref',
+    }
+)
+
+FAMILIA_ALLOWLIST: frozenset[str] = FAMILIA_CAMPOS_VALOR | FAMILIA_CAMPOS_MASCARADOS
+
 # Bloqueio semântico obrigatório (nunca armazenar valor).
 CAMPOS_BLOQUEADOS_SEMPRE: frozenset[str] = frozenset(
     {

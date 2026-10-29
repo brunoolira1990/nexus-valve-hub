@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { Boxes, Layers, Loader2, Receipt, Ruler, Save, ShieldCheck, Sparkles, Trash2, Wrench } from 'lucide-react';
 import { Badge, NexusButton } from '@/components/nexus';
 import { FormShell } from '@/components/layout/FormShell';
-import { ChatterPlaceholder } from '@/components/layout/ChatterPlaceholder';
+import { Chatter } from '@/components/layout/Chatter';
 import {
   Card,
   CardContent,
@@ -471,7 +471,7 @@ const FamiliaFormPage = () => {
         },
       ]}
       onVoltar={() => navigate('/familias')}
-      rail={<ChatterPlaceholder />}
+      rail={<Chatter entityType="familia" entityId={familiaId ?? null} />}
     >
       {erro && (
         <div

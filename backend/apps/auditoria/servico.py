@@ -13,6 +13,8 @@ from apps.auditoria.politicas import (
     CAMPOS_BLOQUEADOS_SEMPRE,
     CLIENTE_ALLOWLIST,
     CLIENTE_CAMPOS_MASCARADOS,
+    FAMILIA_ALLOWLIST,
+    FAMILIA_CAMPOS_MASCARADOS,
     PRODUTO_ALLOWLIST,
     PRODUTO_CAMPOS_MASCARADOS,
     STRING_MAX_LEN,
@@ -211,6 +213,34 @@ def snapshot_cliente(cliente) -> dict[str, Any]:
 
 def snapshot_produto(produto) -> dict[str, Any]:
     return capturar_snapshot(produto, PRODUTO_ALLOWLIST)
+
+
+def registrar_familia(
+    *,
+    usuario: AbstractBaseUser | None,
+    familia,
+    operacao: str,
+    estado_anterior: dict[str, Any],
+    estado_posterior: dict[str, Any] | None = None,
+) -> RegistroAuditoria | None:
+    depois = estado_posterior if estado_posterior is not None else capturar_snapshot(familia, FAMILIA_ALLOWLIST)
+    return registrar_auditoria(
+        usuario=usuario,
+        app_label='produtos',
+        # model_name é o nome lowercase da classe (FamiliaProduto), não 'familia':
+        # é a string que a consulta de histórico compara, e o frontend precisa enviar a mesma.
+        model_name='familiaproduto',
+        object_id=familia.pk,
+        operacao=operacao,
+        estado_anterior=estado_anterior,
+        estado_posterior=depois,
+        allowlist=FAMILIA_ALLOWLIST,
+        mascarados=FAMILIA_CAMPOS_MASCARADOS,
+    )
+
+
+def snapshot_familia(familia) -> dict[str, Any]:
+    return capturar_snapshot(familia, FAMILIA_ALLOWLIST)
 
 
 def usuario_do_contexto(serializer) -> AbstractBaseUser | None:

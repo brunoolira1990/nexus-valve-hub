@@ -25,14 +25,17 @@ import { apiErrorMessage, getApiErrorStatus, isApiForbidden } from '@/services/a
 
 // O par appLabel/modelName tem de bater com MODELOS_AUDITADOS do backend;
 // fora dele a view responde 404 e a aba mostra "Recurso não encontrado".
+export type HistoricoEscopo =
+  | { appLabel: 'cadastros'; modelName: 'cliente' }
+  | { appLabel: 'produtos'; modelName: 'produto' }
+  // Família: no escopo de auditoria o modelName é o nome da classe em minúsculas, não "familia".
+  | { appLabel: 'produtos'; modelName: 'familiaproduto' };
+
 type Props = {
   objectId?: number | null;
   active?: boolean;
   enabled?: boolean;
-} & (
-  | { appLabel: 'cadastros'; modelName: 'cliente' }
-  | { appLabel: 'produtos'; modelName: 'produto' }
-);
+} & HistoricoEscopo;
 
 function formatarDataLocal(iso: string): string {
   try {

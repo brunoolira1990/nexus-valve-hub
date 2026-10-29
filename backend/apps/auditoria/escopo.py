@@ -8,6 +8,7 @@ MODELOS_AUDITADOS: frozenset[tuple[str, str]] = frozenset(
     {
         ('cadastros', 'cliente'),
         ('produtos', 'produto'),
+        ('produtos', 'familiaproduto'),
     }
 )
 

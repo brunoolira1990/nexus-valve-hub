@@ -39,7 +39,9 @@ from apps.produtos.precos_praticados import (
 from apps.produtos.estoque_atual import estoque_atual_produto
 from apps.text_normalize import normalize_operational_fields, to_operational_upper
 from apps.auditoria.servico import (
+    registrar_familia,
     registrar_produto,
+    snapshot_familia,
     snapshot_produto,
     usuario_do_contexto,
 )
@@ -545,6 +547,7 @@ class FamiliaProdutoSerializer(serializers.ModelSerializer):
         return requisitos_efetivos_produto(obj)
 
     def create(self, validated_data):
+        usuario = usuario_do_contexto(self)
         modo = validated_data.pop('modo_codigo', self.MODO_CODIGO_AUTOMATICO) or self.MODO_CODIGO_AUTOMATICO
         with transaction.atomic():
             # Lock + recheck sob a mesma TX do INSERT/reserva (evita corrida).
@@ -561,9 +564,17 @@ class FamiliaProdutoSerializer(serializers.ModelSerializer):
                 try:
                     # Savepoint: IntegrityError no PG não derruba a TX externa.
                     with transaction.atomic():
-                        return super().create(validated_data)
+                        familia = super().create(validated_data)
                 except IntegrityError as exc:
                     raise serializers.ValidationError({'codigo_figura': self.MSG_CODIGO_DUPLICADO}) from exc
+                registrar_familia(
+                    usuario=usuario,
+                    familia=familia,
+                    operacao='CREATE',
+                    estado_anterior={},
+                    estado_posterior=snapshot_familia(familia),
+                )
+                return familia
 
             # AUTOMATICO — só reserva depois do lock/recheck (perdedor não consome código).
             validated_data.pop('codigo_figura', None)
@@ -574,17 +585,27 @@ class FamiliaProdutoSerializer(serializers.ModelSerializer):
                     with transaction.atomic():
                         dados = dict(validated_data)
                         dados['codigo_figura'] = reservar_codigo_figura()
-                        return super().create(dados)
+                        familia = super().create(dados)
                 except (FamiliaCodigoEsgotadoError, FamiliaCodigoConfigError) as exc:
                     raise serializers.ValidationError({'codigo_figura': str(exc)}) from exc
                 except IntegrityError as exc:
                     ultimo_erro = exc
                     continue
+                registrar_familia(
+                    usuario=usuario,
+                    familia=familia,
+                    operacao='CREATE',
+                    estado_anterior={},
+                    estado_posterior=snapshot_familia(familia),
+                )
+                return familia
             raise serializers.ValidationError({'codigo_figura': self.MSG_CODIGO_DUPLICADO}) from ultimo_erro
 
     def update(self, instance, validated_data):
+        usuario = usuario_do_contexto(self)
         validated_data.pop('codigo_figura', None)
         validated_data.pop('modo_codigo', None)
+        antes = snapshot_familia(instance)
         with transaction.atomic():
             desc_eff = validated_data.get('descricao_base', instance.descricao_base)
             tipo_eff = validated_data.get('tipo_regra_codigo', instance.tipo_regra_codigo)
@@ -597,7 +618,15 @@ class FamiliaProdutoSerializer(serializers.ModelSerializer):
                     descricao_origem=instance.descricao_base,
                     tipo_regra_origem=instance.tipo_regra_codigo,
                 )
-            return super().update(instance, validated_data)
+            familia = super().update(instance, validated_data)
+            registrar_familia(
+                usuario=usuario,
+                familia=familia,
+                operacao='UPDATE',
+                estado_anterior=antes,
+                estado_posterior=snapshot_familia(familia),
+            )
+            return familia
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

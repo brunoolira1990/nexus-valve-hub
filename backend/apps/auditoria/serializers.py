@@ -20,6 +20,9 @@ from apps.produtos.rotulos import nome_familia_produto
 FKS_AUDITADAS: dict[str, tuple[str, str, str]] = {
     'familia_id': ('produtos', 'FamiliaProduto', 'descricao_base'),
     'transportadora_padrao_id': ('cadastros', 'Transportadora', 'razao_social'),
+    # Famílias auditadas: sem isto o histórico mostraria o id cru do NCM/material.
+    'ncm_padrao_id': ('produtos', 'Ncm', 'codigo'),
+    'material_base_ref_id': ('produtos', 'Material', 'nome'),
 }
 
 CAMPO_MATERIAL_LEGADO = 'material'
