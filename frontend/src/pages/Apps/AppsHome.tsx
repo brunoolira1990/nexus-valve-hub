@@ -38,26 +38,21 @@ const GradeModulos = ({ modulos }: GradeModulosProps) => (
 
 export const AppsHome = () => {
   const { contexto } = useAppContexto();
-  const primary = useMemo(() => buildAppSwitcherModules(APP_SWITCHER_PRIMARY_SECTIONS), []);
-  const others = useMemo(() => buildAppSwitcherModules(APP_SWITCHER_OTHER_SECTIONS), []);
+  const modulos = useMemo(
+    () => buildAppSwitcherModules([...APP_SWITCHER_PRIMARY_SECTIONS, ...APP_SWITCHER_OTHER_SECTIONS]),
+    [],
+  );
   const nome = contexto.usuario.nome_exibicao || contexto.usuario.nome;
 
   return (
     <div className="mx-auto w-full max-w-6xl py-6 sm:py-10">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Aplicativos</h1>
-        {nome ? <p className="mt-1 text-sm text-muted-foreground">Bem-vindo, {nome}.</p> : null}
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">
+          {nome ? `Bem-vindo, ${nome}.` : 'Bem-vindo.'}
+        </h1>
       </header>
 
-      <div className="space-y-8">
-        <GradeModulos modulos={primary} />
-        <section>
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Outras áreas
-          </h2>
-          <GradeModulos modulos={others} />
-        </section>
-      </div>
+      <GradeModulos modulos={modulos} />
     </div>
   );
 };

@@ -610,8 +610,9 @@ describe('App shell 3.8 — tela de Aplicativos é a primeira após o login', ()
     );
     expect(document.querySelector('aside')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Abrir menu' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 1, name: 'Aplicativos' })).toBeInTheDocument();
-    expect(screen.getByText('Bem-vindo, Admin.')).toBeInTheDocument();
+    // A saudação é o título da página; a palavra "Aplicativos" fica só no breadcrumb.
+    expect(screen.getByRole('heading', { level: 1, name: 'Bem-vindo, Admin.' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 1, name: 'Aplicativos' })).toBeNull();
   });
 
   it('o breadcrumb da tela é Aplicativos, nunca "Página"', () => {
@@ -646,18 +647,23 @@ describe('App shell 3.8 — tela de Aplicativos é a primeira após o login', ()
     esperados.forEach((modulo, i) => expect(cards[i]).toHaveTextContent(modulo.label));
   });
 
-  it('"Outras áreas" traz os 7 blocos restantes, pelos mesmos dados do modal', () => {
+  it('as 7 áreas extras entram no mesmo grid contínuo, sem título de seção', () => {
     render(
       <MemoryRouter initialEntries={['/apps']}>
         <AppsHome />
       </MemoryRouter>,
     );
+    const main = document.querySelector('main') ?? document.body;
     const outros = buildAppSwitcherModules(APP_SWITCHER_OTHER_SECTIONS);
     expect(outros).toHaveLength(7);
-    const secao = screen.getByRole('heading', { name: 'Outras áreas' }).closest('section')!;
-    const cards = within(secao).getAllByRole('link');
-    expect(cards.map((card) => card.getAttribute('href'))).toEqual(outros.map((m) => m.path));
-    outros.forEach((modulo, i) => expect(cards[i]).toHaveTextContent(modulo.label));
+    expect(screen.queryByRole('heading', { name: 'Outras áreas' })).toBeNull();
+    // um grid só: não há segunda grade nem <section> separada
+    expect(main.querySelectorAll('[class*="grid-cols"]')).toHaveLength(1);
+    expect(main.querySelector('section')).toBeNull();
+    const cards = within(main).getAllByRole('link');
+    expect(cards.slice(-outros.length).map((card) => card.getAttribute('href'))).toEqual(
+      outros.map((m) => m.path),
+    );
   });
 
   it('aumentou o card: mais padding e ícone maior que os do modal', () => {
