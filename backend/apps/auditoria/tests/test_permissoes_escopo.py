@@ -22,14 +22,23 @@ class RegistroAuditoriaPermissoesTests(TestCase):
 
 
 class AuditoriaEscopoTests(TestCase):
-    def test_mvp_somente_cliente_e_produto(self):
+    def test_escopo_cliente_produto_e_familia(self):
         self.assertEqual(
             MODELOS_AUDITADOS,
-            {('cadastros', 'cliente'), ('produtos', 'produto')},
+            {
+                ('cadastros', 'cliente'),
+                ('produtos', 'produto'),
+                ('produtos', 'familiaproduto'),
+            },
         )
         self.assertEqual(entidade_auditada_permitida('Cadastros', 'Cliente'), ('cadastros', 'cliente'))
         self.assertIsNone(entidade_auditada_permitida('cadastros', 'fornecedor'))
         self.assertIsNone(entidade_auditada_permitida('fiscal', 'nfesaida'))
+        self.assertEqual(
+            entidade_auditada_permitida('Produtos', 'FamiliaProduto'),
+            ('produtos', 'familiaproduto'),
+        )
+        # 'familia' continua inválido: o model_name gravado é o nome lowercase da classe.
         self.assertIsNone(entidade_auditada_permitida('produtos', 'familia'))
 
 
