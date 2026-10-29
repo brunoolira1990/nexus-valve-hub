@@ -540,6 +540,15 @@ class AliquotaIcmsUF(models.Model):
         blank=True,
         help_text='FCP destino. NULL = não cadastrado; o DIFAL não presume FCP.',
     )
+    usa_base_dupla = models.BooleanField(
+        default=False,
+        verbose_name='usa base dupla',
+        help_text=(
+            'True = DIFAL calculado "por dentro" (base dupla): a BC do estado de destino é '
+            'recomposta dentro do próprio ICMS. False = base única: DIFAL sobre a BC da '
+            'operação pela diferença de alíquotas.'
+        ),
+    )
     vigencia_inicio = models.DateField(
         null=True,
         blank=True,

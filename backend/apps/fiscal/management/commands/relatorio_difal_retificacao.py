@@ -5,18 +5,32 @@ from datetime import datetime
 from django.core.management.base import BaseCommand, CommandError
 from django.db.utils import ProgrammingError
 
-from apps.fiscal.difal_retificacao import analisar_difal_retificacao, formatar_relatorio_difal_retificacao
+from apps.fiscal.difal_retificacao import (
+    CFOP_DIFAL_DEVIDO,
+    analisar_difal_retificacao,
+    formatar_relatorio_difal_retificacao,
+)
 
 
 class Command(BaseCommand):
     help = (
         'Lista NF-e de saída autorizadas (produção) com DIFAL emitido × DIFAL correto pela tabela de '
-        'alíquotas por UF. Somente leitura — destina-se à auditoria de retificação.'
+        'alíquotas por UF, filtrando só o DIFAL devido (CFOP 6108 + destinatário não contribuinte). '
+        'Somente leitura — destina-se à auditoria de retificação.'
     )
 
     def add_arguments(self, parser):
         parser.add_argument('--desde', type=str, default='', help='Data inicial AAAA-MM-DD (ex.: 2026-01-01).')
         parser.add_argument('--ate', type=str, default='', help='Data final AAAA-MM-DD (opcional).')
+        parser.add_argument(
+            '--cfop',
+            type=str,
+            default='',
+            help=(
+                'CFOPs com DIFAL devido, separados por vírgula (ex.: 6108,6107). '
+                'Vazio = só 6108.'
+            ),
+        )
         parser.add_argument(
             '--excluir-uf-origem',
             type=str,
@@ -38,12 +52,17 @@ class Command(BaseCommand):
         uf_exclusao = (options['excluir_uf_origem'] or '').strip().upper()[:2] or None
         if uf_exclusao and len(uf_exclusao) != 2:
             raise CommandError('--excluir-uf-origem deve ter 2 caracteres (ex.: SP).')
+        cfops = [c.strip() for c in (options['cfop'] or '').replace(';', ',').split(',') if c.strip()]
+        cfop_invalido = [c for c in cfops if not (c.isdigit() and len(c) == 4)]
+        if cfop_invalido:
+            raise CommandError(f'--cfop inválido: {", ".join(cfop_invalido)} — use 4 dígitos (ex.: 6108).')
 
         try:
             relatorio = analisar_difal_retificacao(
                 desde=desde,
                 ate=ate,
                 uf_exclusao_origem=uf_exclusao,
+                cfops_devidos=cfops or CFOP_DIFAL_DEVIDO,
             )
         except ProgrammingError as exc:
             raise CommandError(

@@ -9,6 +9,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 
 from apps.fiscal.difal_retificacao import (
+    _base_da_operacao,
     analisar_difal_retificacao,
     formatar_relatorio_difal_retificacao,
     interestadual_regiao,
@@ -17,12 +18,14 @@ from apps.fiscal.models import ItemNFeSaida, NFeSaida
 from apps.fiscal.nfe_saida_atualizar_impostos import aplicar_atualizacao_impostos_nfe
 from apps.fiscal.nfe_saida_from_faturamento import gerar_nfe_saida_from_faturamento
 from apps.fiscal.tests.test_nfe_saida_faturamento import _faturamento_pronto, _pedido_item
+from apps.fiscal.snapshot_fiscal_helpers import cfop_from_snapshot_fiscal
 from apps.fiscal.validacao_nfe_saida import (
     TIPO_ALERTA,
     validar_nfe_saida_para_emissao,
 )
 from apps.fiscal.nfe_difal_calculo import (
     calcular_difal_item,
+    calcular_difal_na_base,
     resolver_aliquotas_difal,
     validar_parametros_difal_regra,
 )
@@ -168,7 +171,7 @@ class ResolverAliquotasDifalTests(DifalAliquotasUfTestsBase):
 
 
 class DifalFormulaPorUfTests(DifalAliquotasUfTestsBase):
-    """DIFAL = Base × (AliqInterna_destino − AliqInterestadual) / 100 — SP, BA, PR."""
+    """DIFAL por regime da UF destino: base única (SP, ES) e base dupla "por dentro" (BA, PR)."""
 
     def _criar_uf(self, uf: str, interna: str, inter: str) -> None:
         AliquotaIcmsUF.objects.update_or_create(
@@ -176,6 +179,7 @@ class DifalFormulaPorUfTests(DifalAliquotasUfTestsBase):
             defaults={
                 'aliquota_interna': Decimal(interna),
                 'aliquota_interestadual': Decimal(inter),
+                'usa_base_dupla': ALICOTAS_ICMS_UF[uf]['base_dupla'] is True,
                 'ativo': True,
             },
         )
@@ -188,10 +192,13 @@ class DifalFormulaPorUfTests(DifalAliquotasUfTestsBase):
         )
         self.assertEqual(difal['p_icms_uf_dest'], '18.00')
         self.assertEqual(difal['p_icms_inter'], '12.00')
+        self.assertEqual(difal['tipo_base'], 'UNICA')
+        self.assertEqual(difal['v_bc_uf_dest'], '1000.00')
         self.assertEqual(difal['v_icms_uf_dest'], '60.00')
         self.assertEqual(difal['fontes_aliquota'], 'interestadual:tabela_uf,interna_destino:tabela_uf')
 
-    def test_ba_1000_difal_135(self):
+    def test_ba_1000_difal_por_dentro_169_81(self):
+        """BA é base dupla: BC recomposta por dentro (1169,81) e DIFAL 169,81, não 135,00."""
         self._criar_uf('BA', '20.5', '7')
         regra = self._criar_regra()
         difal = calcular_difal_item(
@@ -199,9 +206,12 @@ class DifalFormulaPorUfTests(DifalAliquotasUfTestsBase):
         )
         self.assertEqual(difal['p_icms_uf_dest'], '20.50')
         self.assertEqual(difal['p_icms_inter'], '7.00')
-        self.assertEqual(difal['v_icms_uf_dest'], '135.00')
+        self.assertEqual(difal['tipo_base'], 'DUPLA')
+        self.assertEqual(difal['v_bc_uf_dest'], '1169.81')
+        self.assertEqual(difal['v_icms_uf_dest'], '169.81')
+        self.assertIn('base_dupla:tabela_uf', difal['fontes_aliquota'])
 
-    def test_pr_1000_difal_75(self):
+    def test_pr_1000_difal_por_dentro_93_17(self):
         self._criar_uf('PR', '19.5', '12')
         regra = self._criar_regra()
         difal = calcular_difal_item(
@@ -209,10 +219,12 @@ class DifalFormulaPorUfTests(DifalAliquotasUfTestsBase):
         )
         self.assertEqual(difal['p_icms_uf_dest'], '19.50')
         self.assertEqual(difal['p_icms_inter'], '12.00')
-        self.assertEqual(difal['v_icms_uf_dest'], '75.00')
+        self.assertEqual(difal['tipo_base'], 'DUPLA')
+        self.assertEqual(difal['v_bc_uf_dest'], '1093.17')
+        self.assertEqual(difal['v_icms_uf_dest'], '93.17')
 
     def test_es_1000_difal_100(self):
-        """ES 17% interna − 7% interestadual = 10% (não 5%)."""
+        """ES 17% interna − 7% interestadual = 10% (base única, não 5%)."""
         self._criar_uf('ES', '17', '7')
         regra = self._criar_regra()
         difal = calcular_difal_item(
@@ -233,7 +245,7 @@ class DifalFormulaPorUfTests(DifalAliquotasUfTestsBase):
                 Decimal('2000.00'), regra, aliquotas=resolver_aliquotas_difal(regra, uf_destino=uf),
             )
             valores[uf] = difal['v_icms_uf_dest']
-        self.assertEqual(valores, {'SP': '120.00', 'BA': '270.00', 'PR': '150.00'})
+        self.assertEqual(valores, {'SP': '120.00', 'BA': '339.62', 'PR': '186.34'})
 
     def test_sem_aliquotas_resolvidas_mantem_comportamento_legado_da_regra(self):
         regra = self._criar_regra(
@@ -310,9 +322,9 @@ class DifalSemBaseUnicaIntegracaoTests(DifalAliquotasUfTestsBase):
 
     def test_quatro_destinos_quatro_difais(self):
         esperado = {
-            'BA': ('20.50', '7.00', '54.00'),
-            'PR': ('19.50', '12.00', '30.00'),
-            'MG': ('18.00', '12.00', '24.00'),
+            'BA': ('20.50', '7.00', '67.92'),
+            'PR': ('19.50', '12.00', '37.27'),
+            'MG': ('18.00', '12.00', '29.27'),
             'ES': ('17.00', '7.00', '40.00'),
         }
         observado = {}
@@ -346,7 +358,7 @@ class DifalSemBaseUnicaIntegracaoTests(DifalAliquotasUfTestsBase):
         item = nf.itens.first()
         assert item is not None
         snap = item.snapshot_fiscal or {}
-        self.assertEqual(snap['difal']['v_icms_uf_dest'], '54.00', 'decisão: só sinalizar, BC segue o produto')
+        self.assertEqual(snap['difal']['v_icms_uf_dest'], '67.92', 'decisão: só sinalizar, o frete não entra na BC')
         self.assertNotIn('difal_pendencias', snap)
         avisos = snap.get('difal_avisos') or []
         self.assertEqual(len(avisos), 1, snap)
@@ -418,7 +430,7 @@ class DifalRetificacaoAuditoriaTests(DifalAliquotasUfTestsBase):
         nf.ambiente_emissao = NFeSaida.AmbienteEmissao.PRODUCAO
         nf.status = 'AUTORIZADA'
         nf.save(update_fields=['ambiente_emissao', 'status'])
-        return nf
+        return NFeSaida.objects.prefetch_related('itens__produto', 'cliente').get(pk=nf.pk)
 
     def test_auditoria_aponta_difal_a_menor_e_totaliza(self):
         nf = self._nf_ba_com_difal_de_sp()
@@ -431,12 +443,16 @@ class DifalRetificacaoAuditoriaTests(DifalAliquotasUfTestsBase):
         self.assertEqual(linha.uf_destino, 'BA')
         self.assertEqual(linha.p_emitido, Decimal('18'))
         self.assertEqual(linha.p_correto, Decimal('20.5'))
-        self.assertEqual(linha.v_emitido, Decimal('24.00'))
-        self.assertEqual(linha.v_correto, Decimal('54.00'))
-        self.assertEqual(linha.diferenca, Decimal('30.00'))
+        self.assertEqual(linha.tipo_base, 'DUPLA')
+        self.assertEqual(linha.base_difal, Decimal('400.00'))
+        self.assertEqual(linha.v_emitido, Decimal('29.27'))
+        self.assertEqual(linha.v_correto, Decimal('67.92'))
+        self.assertEqual(linha.diferenca, Decimal('38.65'))
         self.assertEqual(linha.situacao, 'A_MENOR')
-        self.assertEqual(rel.total_diferenca, Decimal('30.00'))
+        self.assertEqual(rel.total_diferenca, Decimal('38.65'))
+        self.assertEqual(rel.itens_com_base_dupla, 1)
         self.assertIn('A_MENOR', formatar_relatorio_difal_retificacao(rel))
+        self.assertIn('base dupla', formatar_relatorio_difal_retificacao(rel))
 
     def test_auditoria_marca_item_com_frete_fora_da_base(self):
         self._nf_ba_com_difal_de_sp(frete=Decimal('80.00'))
@@ -452,3 +468,142 @@ class DifalRetificacaoAuditoriaTests(DifalAliquotasUfTestsBase):
         rel = analisar_difal_retificacao(desde=None, uf_exclusao_origem=None)
         self.assertEqual(rel.itens_com_frete_fora_da_base, 0)
         self.assertNotIn('FRETE FORA DA BASE', formatar_relatorio_difal_retificacao(rel))
+
+    def _forcar_cfop(self, nf: NFeSaida, cfop: str) -> None:
+        item = nf.itens.first()
+        assert item is not None
+        snap = dict(item.snapshot_fiscal or {})
+        snap['cfop'] = cfop
+        item.snapshot_fiscal = snap
+        item.save(update_fields=['snapshot_fiscal'])
+
+    def test_auditoria_so_com_cfop_6108(self):
+        nf = self._nf_ba_com_difal_de_sp()
+        self.assertEqual(cfop_from_snapshot_fiscal(nf.itens.first().snapshot_fiscal), '6108')
+        rel = analisar_difal_retificacao(desde=None, uf_exclusao_origem=None)
+        self.assertEqual(rel.nf_com_cfop_alvo, 1)
+        self.assertEqual(rel.nf_sem_cfop_alvo, 0)
+        self.assertEqual(rel.itens_fora_do_cfop, 0)
+        self.assertEqual(rel.itens_sem_cfop, 0)
+        self.assertEqual([linha.cfop for linha in rel.linhas], ['6108'])
+
+    def test_auditoria_exclui_item_fora_do_cfop(self):
+        nf = self._nf_ba_com_difal_de_sp()
+        self._forcar_cfop(nf, '5405')
+        rel = analisar_difal_retificacao(desde=None, uf_exclusao_origem=None)
+        self.assertEqual(rel.linhas, [])
+        self.assertEqual(rel.nf_avaliadas, 1)
+        self.assertEqual(rel.nf_com_cfop_alvo, 0)
+        self.assertEqual(rel.nf_sem_cfop_alvo, 1)
+        self.assertEqual(rel.itens_fora_do_cfop, 1)
+        self.assertEqual(rel.total_diferenca, Decimal('0'))
+
+    def test_auditoria_permite_ampliar_cfop(self):
+        nf = self._nf_ba_com_difal_de_sp()
+        self._forcar_cfop(nf, '5405')
+        rel = analisar_difal_retificacao(desde=None, uf_exclusao_origem=None, cfops_devidos={'5405'})
+        self.assertEqual(len(rel.linhas), 1)
+        self.assertEqual(rel.cfops_aplicados, ['5405'])
+        self.assertIn('CFOP 5405', formatar_relatorio_difal_retificacao(rel))
+
+    def test_auditoria_exclui_destinatario_contribuinte(self):
+        nf = self._nf_ba_com_difal_de_sp()
+        cliente = nf.cliente or nf.pedido_venda.cliente
+        cliente.ie = '091759527100'
+        cliente.ie_isento = False
+        cliente.save(update_fields=['ie', 'ie_isento'])
+        rel = analisar_difal_retificacao(desde=None, uf_exclusao_origem=None)
+        self.assertEqual(rel.linhas, [])
+        self.assertEqual(rel.nf_avaliadas, 1)
+        self.assertEqual(rel.nf_descartadas_destinatario, 1)
+        self.assertEqual(rel.nf_com_cfop_alvo, 0)
+
+    def test_auditoria_exclui_nf_cancelada(self):
+        nf = self._nf_ba_com_difal_de_sp()
+        nf.status = 'CANCELADA_PRODUCAO'
+        nf.status_emissao_sefaz = NFeSaida.StatusEmissaoSefaz.AUTORIZADA_PRODUCAO
+        nf.save(update_fields=['status', 'status_emissao_sefaz'])
+        rel = analisar_difal_retificacao(desde=None, uf_exclusao_origem=None)
+        self.assertEqual(rel.nf_avaliadas, 0)
+        self.assertEqual(rel.nf_canceladas, 1)
+        self.assertEqual(rel.linhas, [])
+        self.assertIn('canceladas excluídas', formatar_relatorio_difal_retificacao(rel))
+
+    def test_relatorio_mostra_filtro_aplicado(self):
+        self._nf_ba_com_difal_de_sp()
+        texto = formatar_relatorio_difal_retificacao(analisar_difal_retificacao(desde=None))
+        self.assertIn('FILTRO DIFAL DEVIDO — CFOP 6108', texto)
+        self.assertIn('destinatário não contribuinte', texto)
+        cabecalho_tabela = [linha for linha in texto.splitlines() if 'VEMIT' in linha]
+        self.assertTrue(cabecalho_tabela, texto)
+        self.assertIn('CFOP', cabecalho_tabela[0])
+        self.assertIn('REG', cabecalho_tabela[0])
+
+
+class DifalBaseDuplaTests(DifalAliquotasUfTestsBase):
+    """Sprint 3.11 — `usa_base_dupla` por UF decide o cálculo "por dentro" do DIFAL."""
+
+    BASE_DUPLA_2026 = frozenset({
+        'AL', 'BA', 'GO', 'MA', 'MG', 'MS', 'PA', 'PB', 'PE', 'PI', 'PR', 'RJ', 'RS', 'SC', 'SE', 'TO',
+    })
+
+    def test_seed_marca_base_dupla_somente_nas_ufs_pactuadas(self):
+        no_seed = {uf for uf, dados in ALICOTAS_ICMS_UF.items() if dados['base_dupla'] is True}
+        self.assertEqual(no_seed, set(self.BASE_DUPLA_2026))
+        self.assertEqual(len(ALICOTAS_ICMS_UF), 27)
+
+    def test_migration_semeia_o_regime_de_base_de_cada_uf(self):
+        no_db = {r.uf: r.usa_base_dupla for r in AliquotaIcmsUF.objects.filter(ativo=True)}
+        self.assertEqual(set(no_db), set(ALICOTAS_ICMS_UF))
+        for uf, dados in ALICOTAS_ICMS_UF.items():
+            self.assertEqual(no_db[uf], dados['base_dupla'] is True, f'regime de base de {uf}')
+
+    def test_override_de_aliquota_nao_altera_o_regime_da_uf(self):
+        regra = self._criar_regra(
+            aliquota_icms_interestadual=Decimal('12'),
+            aliquota_icms_interna_destino=Decimal('18'),
+        )
+        resolvida = resolver_aliquotas_difal(regra, uf_destino='BA')
+        self.assertTrue(resolvida.usa_base_dupla, 'a base vem da UF, não da regra')
+        self.assertIn('base_dupla:tabela_uf', resolvida.fontes)
+
+    def test_base_dupla_recompoe_a_bc_do_destino(self):
+        calculo = calcular_difal_na_base(
+            Decimal('1000.00'),
+            aliquota_interestadual=Decimal('7'),
+            aliquota_interna=Decimal('20.5'),
+            usa_base_dupla=True,
+        )
+        self.assertEqual(calculo.tipo_base, 'DUPLA')
+        self.assertEqual(calculo.base_uf_dest, Decimal('1169.81'))
+        self.assertEqual(calculo.icms_uf_dest, Decimal('169.81'))
+
+    def test_base_unica_mantem_a_bc_do_item(self):
+        calculo = calcular_difal_na_base(
+            Decimal('1000.00'),
+            aliquota_interestadual=Decimal('7'),
+            aliquota_interna=Decimal('20.5'),
+            usa_base_dupla=False,
+        )
+        self.assertEqual(calculo.tipo_base, 'UNICA')
+        self.assertEqual(calculo.base_uf_dest, Decimal('1000.00'))
+        self.assertEqual(calculo.icms_uf_dest, Decimal('135.00'))
+
+    def test_aliquota_interna_de_100_por_cento_nao_estoura_divisao(self):
+        """Cadastro errado na tela de alíquotas (3.11) não pode derrubar a emissão."""
+        calculo = calcular_difal_na_base(
+            Decimal('1000.00'),
+            aliquota_interestadual=Decimal('7'),
+            aliquota_interna=Decimal('100'),
+            usa_base_dupla=True,
+        )
+        self.assertEqual(calculo.tipo_base, 'UNICA')
+        self.assertEqual(calculo.icms_uf_dest, Decimal('930.00'))
+
+    def test_desgrossar_recupera_a_base_da_operacao(self):
+        recuperada = _base_da_operacao(
+            Decimal('1169.81'),
+            aliquota_interestadual=Decimal('7'),
+            aliquota_interna=Decimal('20.5'),
+        )
+        self.assertEqual(recuperada, Decimal('1000.00'))

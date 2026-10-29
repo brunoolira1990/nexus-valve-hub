@@ -58,19 +58,17 @@ class AliquotasDifalResolvidas:
     aliquota_fcp: Decimal
     fontes: list[str] = field(default_factory=list)
     pendencias: list[str] = field(default_factory=list)
+    usa_base_dupla: bool = False
 
 
-def _aliquota_uf_destino(uf_destino: str) -> tuple[Decimal, Decimal] | None:
-    """(interna, interestadual) da UF destino na tabela de referência; None se a UF não estiver cadastrada."""
+def _registro_uf_destino(uf_destino: str) -> Any:
+    """Linha da UF destino na tabela de referência (alíquotas + regime de base); None se não cadastrada."""
     from apps.regras_fiscais.models import AliquotaIcmsUF
 
     ufd = _norm_uf(uf_destino)
     if len(ufd) != 2:
         return None
-    registro = AliquotaIcmsUF.objects.filter(uf=ufd, ativo=True).first()
-    if registro is None:
-        return None
-    return _dec(registro.aliquota_interna), _dec(registro.aliquota_interestadual)
+    return AliquotaIcmsUF.objects.filter(uf=ufd, ativo=True).first()
 
 
 def resolver_aliquotas_difal(
@@ -89,13 +87,15 @@ def resolver_aliquotas_difal(
         prefixo = f'{nome_item} — {prefixo}'
     pendencias: list[str] = []
     fontes: list[str] = []
+    tab = _registro_uf_destino(uf_destino)
+    ali_tab_interna = _dec(tab.aliquota_interna) if tab is not None else Decimal('0')
+    ali_tab_inter = _dec(tab.aliquota_interestadual) if tab is not None else Decimal('0')
 
     ali_inter = _dec(regra.aliquota_icms_interestadual)
     if ali_inter > 0:
         fontes.append('interestadual:regra')
     else:
-        tab = _aliquota_uf_destino(uf_destino)
-        ali_inter = tab[1] if tab is not None else Decimal('0')
+        ali_inter = ali_tab_inter
         if ali_inter > 0:
             fontes.append('interestadual:tabela_uf')
     if ali_inter <= 0:
@@ -105,29 +105,23 @@ def resolver_aliquotas_difal(
     if ali_dest > 0:
         fontes.append('interna_destino:regra')
     else:
-        tab = _aliquota_uf_destino(uf_destino)
-        if tab is not None and tab[0] > 0:
-            ali_dest = tab[0]
+        if ali_tab_interna > 0:
+            ali_dest = ali_tab_interna
             fontes.append('interna_destino:tabela_uf')
         else:
             ufd = _norm_uf(uf_destino) or 'destino'
             pendencias.append(f'{prefixo}: informe alíquota ICMS interna da UF {ufd} para DIFAL.')
 
+    usa_base_dupla = tab is not None and bool(tab.usa_base_dupla)
+    if usa_base_dupla:
+        fontes.append('base_dupla:tabela_uf')
+
     p_fcp = Decimal('0')
     if regra.fcp_aplicavel:
         p_fcp = _dec(regra.aliquota_fcp)
-        if p_fcp <= 0:
-            from apps.regras_fiscais.models import AliquotaIcmsUF
-
-            ufd = _norm_uf(uf_destino)
-            registro = (
-                AliquotaIcmsUF.objects.filter(uf=ufd, ativo=True).first()
-                if len(ufd) == 2
-                else None
-            )
-            if registro is not None and _dec(registro.aliquota_fcp) > 0:
-                p_fcp = _dec(registro.aliquota_fcp)
-                fontes.append('fcp:tabela_uf')
+        if p_fcp <= 0 and tab is not None and _dec(tab.aliquota_fcp) > 0:
+            p_fcp = _dec(tab.aliquota_fcp)
+            fontes.append('fcp:tabela_uf')
         if p_fcp < 0:
             pendencias.append(f'{prefixo}: alíquota FCP destino inválida.')
 
@@ -137,6 +131,7 @@ def resolver_aliquotas_difal(
         aliquota_fcp=p_fcp,
         fontes=fontes,
         pendencias=pendencias,
+        usa_base_dupla=usa_base_dupla,
     )
 
 
@@ -149,6 +144,50 @@ def validar_parametros_difal_regra(
     if not regra.difal_aplicavel:
         return []
     return resolver_aliquotas_difal(regra, uf_destino=uf_destino, nome_item=nome_item).pendencias
+
+
+@dataclass(frozen=True)
+class CalculoDifalBase:
+    """BC do estado de destino, DIFAL e regime de base aplicados ao item."""
+
+    base_uf_dest: Decimal
+    icms_uf_dest: Decimal
+    tipo_base: str
+
+
+def calcular_difal_na_base(
+    valor_base: Decimal,
+    *,
+    aliquota_interestadual: Decimal,
+    aliquota_interna: Decimal,
+    usa_base_dupla: bool,
+) -> CalculoDifalBase:
+    """DIFAL do item no regime da UF destino.
+
+    Base única: DIFAL = BC × (interna − interestadual).
+    Base dupla ("por dentro"): ICMS interestadual destacado primeiro, a BC do destino é
+    recomposta dentro do próprio ICMS interno e só então se desconta o interestadual.
+    """
+    base = max(valor_base, Decimal('0')).quantize(Decimal('0.01'))
+    divisor = Decimal('1') - aliquota_interna / Decimal('100')
+    # Alíquota interna ≥ 100% só vem de erro de cadastro na tabela; cair na base única
+    # mantém a emissão de pé em vez de estourar ZeroDivisionError no item.
+    if usa_base_dupla and divisor > 0:
+        v_icms_inter = base * aliquota_interestadual / Decimal('100')
+        base_dupla = (base - v_icms_inter) / divisor
+        difal = base_dupla * aliquota_interna / Decimal('100') - v_icms_inter
+        return CalculoDifalBase(
+            base_uf_dest=base_dupla.quantize(Decimal('0.01')),
+            icms_uf_dest=max(difal, Decimal('0')).quantize(Decimal('0.01')),
+            tipo_base='DUPLA',
+        )
+
+    difal_pct = max(aliquota_interna - aliquota_interestadual, Decimal('0'))
+    return CalculoDifalBase(
+        base_uf_dest=base,
+        icms_uf_dest=(base * difal_pct / Decimal('100')).quantize(Decimal('0.01')),
+        tipo_base='UNICA',
+    )
 
 
 def calcular_difal_item(
@@ -168,10 +207,15 @@ def calcular_difal_item(
         if aliquotas is not None
         else _dec(regra.aliquota_icms_interna_destino)
     )
-    base = max(valor_base, Decimal('0')).quantize(Decimal('0.01'))
-
-    difal_pct = max(ali_dest - ali_inter, Decimal('0'))
-    v_icms_uf_dest = (base * difal_pct / Decimal('100')).quantize(Decimal('0.01'))
+    usa_base_dupla = aliquotas.usa_base_dupla if aliquotas is not None else False
+    calculo = calcular_difal_na_base(
+        valor_base,
+        aliquota_interestadual=ali_inter,
+        aliquota_interna=ali_dest,
+        usa_base_dupla=usa_base_dupla,
+    )
+    base = calculo.base_uf_dest
+    v_icms_uf_dest = calculo.icms_uf_dest
     v_icms_uf_remet = Decimal('0')
 
     p_fcp = Decimal('0')
@@ -187,6 +231,7 @@ def calcular_difal_item(
 
     snapshot = {
         'aplicavel': True,
+        'tipo_base': calculo.tipo_base,
         'v_bc_uf_dest': _q2(base),
         'v_bc_fcp_uf_dest': _q2(base),
         'p_fcp_uf_dest': _q2(p_fcp),
