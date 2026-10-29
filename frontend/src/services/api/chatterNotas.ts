@@ -1,5 +1,15 @@
 import api from './config';
 
+export type AnexoChatter = {
+  id: number;
+  nota: number;
+  nome_original: string;
+  tamanho_bytes: number;
+  criado_em: string;
+  /** Caminho raiz-relativo servido por /media (proxy do Vite em dev, Caddy em prod). */
+  arquivo_url: string;
+};
+
 export type NotaChatter = {
   id: number;
   entity_type: string;
@@ -7,6 +17,7 @@ export type NotaChatter = {
   texto: string;
   autor: number | null;
   autor_nome: string | null;
+  anexos: AnexoChatter[];
   criado_em: string;
   atualizado_em: string;
 };
@@ -37,4 +48,19 @@ export const chatterNotasService = {
     (await api.patch<NotaChatter>(`chatter/notas/${id}/`, { texto })).data,
 
   excluir: async (id: number) => (await api.delete(`chatter/notas/${id}/`)).data,
+
+  uploadAnexo: async (notaId: number, arquivo: File) => {
+    const fd = new FormData();
+    fd.append('nota', String(notaId));
+    fd.append('arquivo', arquivo);
+    return (
+      await api.post<AnexoChatter>('chatter/anexos/', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+    ).data;
+  },
+
+  excluirAnexo: async (id: number) => {
+    await api.delete(`chatter/anexos/${id}/`);
+  },
 };
