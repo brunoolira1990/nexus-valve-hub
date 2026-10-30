@@ -1,33 +1,103 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, ExternalLink, Plus, Search, Trash2, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ExternalLink, Plus, Search, X } from 'lucide-react';
+import { useForm } from 'react-hook-form';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
-import { EmptyState, ErrorState } from '@/components/list/ListStates';
+import { ErrorState } from '@/components/list/ListStates';
 import { apiErrorMessage } from '@/services/api/config';
 import { cotacoesFornecedoresService, propostasService } from '@/services/api/comercial';
 import { fornecedoresService } from '@/services/api/fornecedores';
 import { produtosService } from '@/services/api/produtos';
+import { EditableLineTable, type ColumnDef } from '@/components/ui/EditableLineTable';
 import type { Fornecedor, Produto, Proposta } from '@/types';
 
 type ModoCotacao = 'proposta' | 'manual';
-type ItemManualDraft = {
-  key: number;
+
+/**
+ * Linha da planilha de itens manuais. `quantidade` chega como `''` (linha recém-criada) e passa
+ * a `number` na primeira tecla — `register` com `valueAsNumber`. `produto_id` é o valor do
+ * `<select>`, portanto string: `''` significa "nenhum" e é isso que sustenta a guarda do payload.
+ */
+type LinhaItemManual = {
   descricao_item: string;
   unidade: string;
-  quantidade: string;
+  quantidade: number | '';
   produto_id: string;
 };
 
-const novoItemManual = (key: number): ItemManualDraft => ({
-  key,
+type FormItensManual = { itens: LinhaItemManual[] };
+
+const novaLinhaManual = (): LinhaItemManual => ({
   descricao_item: '',
   unidade: '',
   quantidade: '',
   produto_id: '',
 });
 
-const itemManualValido = (item: ItemManualDraft) =>
+const itemManualValido = (item: LinhaItemManual) =>
   Boolean(item.descricao_item.trim() && item.unidade.trim() && Number(item.quantidade) > 0);
+
+const criarColunasItem = (produtos: Produto[]): ColumnDef<LinhaItemManual>[] => [
+  {
+    key: 'descricao_item',
+    header: 'Descrição técnica',
+    width: 'w-[36%]',
+    render: (_field, index, methods) => (
+      <textarea
+        className="erp-input w-full resize-y"
+        rows={2}
+        placeholder="Descreva o item que será cotado"
+        {...methods.register(`itens.${index}.descricao_item`)}
+      />
+    ),
+  },
+  {
+    key: 'unidade',
+    header: 'Unidade',
+    width: 'w-28',
+    render: (_field, index, methods) => (
+      <input
+        className="erp-input w-full"
+        placeholder="Ex.: PC"
+        {...methods.register(`itens.${index}.unidade`)}
+      />
+    ),
+  },
+  {
+    key: 'quantidade',
+    header: 'Quantidade',
+    width: 'w-32',
+    render: (_field, index, methods) => (
+      <input
+        className="erp-input w-full"
+        type="number"
+        min="0.001"
+        step="0.001"
+        placeholder="0,000"
+        {...methods.register(`itens.${index}.quantidade`, { valueAsNumber: true })}
+      />
+    ),
+  },
+  {
+    key: 'produto_id',
+    header: 'Produto',
+    width: 'w-[26%]',
+    render: (_field, index, methods) => (
+      <select
+        className="erp-input w-full"
+        aria-label="Produto catalogado opcional"
+        {...methods.register(`itens.${index}.produto_id`)}
+      >
+        <option value="">Nenhum produto vinculado</option>
+        {produtos.map((produto) => (
+          <option key={produto.id} value={produto.id}>
+            {produto.codigo_completo} — {produto.descricao}
+          </option>
+        ))}
+      </select>
+    ),
+  },
+];
 
 export default function CotacaoFornecedorNova() {
   const navigate = useNavigate();
@@ -39,8 +109,12 @@ export default function CotacaoFornecedorNova() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [propostaId, setPropostaId] = useState<number | null>(propostaInicial);
   const [itensSelecionados, setItensSelecionados] = useState<number[]>([]);
-  const [itensManuais, setItensManuais] = useState<ItemManualDraft[]>([novoItemManual(1)]);
-  const [nextManualKey, setNextManualKey] = useState(2);
+  const methods = useForm<FormItensManual>({
+    defaultValues: { itens: [novaLinhaManual()] },
+  });
+  // `watch` assina o array: sem isto o resumo lateral e o portão `disabled` não reagem à
+  // digitação, porque `useForm` só re-renderiza quem se inscreve nos valores.
+  const linhasManuais = methods.watch('itens');
   const [fornecedoresSelecionados, setFornecedoresSelecionados] = useState<number[]>([]);
   const [buscaFornecedor, setBuscaFornecedor] = useState('');
   const [buscaItemProposta, setBuscaItemProposta] = useState('');
@@ -110,27 +184,16 @@ export default function CotacaoFornecedorNova() {
     );
   }, [buscaItemProposta, propostaAtual]);
 
-  const itensManuaisValidos = useMemo(() => itensManuais.filter(itemManualValido), [itensManuais]);
-  const itensManuaisCompletos = itensManuais.length > 0 && itensManuaisValidos.length === itensManuais.length;
+  // Sem `useMemo`: o `watch` devolve a MESMA instância do array — o RHF mutate os campos filhos
+  // no lugar. Memoizar por referência congelaria o filtro e o portão nunca abriria ao digitar.
+  const itensManuaisValidos = linhasManuais.filter(itemManualValido);
+  const itensManuaisCompletos = linhasManuais.length > 0 && itensManuaisValidos.length === linhasManuais.length;
   const quantidadeItens = modo === 'proposta' ? itensSelecionados.length : itensManuaisValidos.length;
   const itensProntos = modo === 'proposta'
     ? Boolean(propostaId && itensSelecionados.length)
     : itensManuaisCompletos;
   const fornecedoresProntos = fornecedoresSelecionados.length > 0;
   const prontaParaCriar = itensProntos && fornecedoresProntos;
-
-  const updateManual = (key: number, patch: Partial<ItemManualDraft>) => {
-    setItensManuais((current) => current.map((item) => (item.key === key ? { ...item, ...patch } : item)));
-  };
-
-  const adicionarManual = () => {
-    setItensManuais((current) => [...current, novoItemManual(nextManualKey)]);
-    setNextManualKey((current) => current + 1);
-  };
-
-  const removerManual = (key: number) => {
-    setItensManuais((current) => current.filter((item) => item.key !== key));
-  };
 
   const toggleFornecedor = (fornecedorId: number) => {
     setFornecedoresSelecionados((current) =>
@@ -243,90 +306,19 @@ export default function CotacaoFornecedorNova() {
 
           {modo === 'manual' ? (
             <section className="erp-card space-y-4 p-4 sm:p-5">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-base font-semibold">Itens da cotação</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">O produto catalogado é opcional.</p>
-                </div>
-                <button type="button" className="erp-btn-outline erp-btn-sm self-start" onClick={adicionarManual}>
-                  <Plus className="h-4 w-4" />
-                  Adicionar item
-                </button>
+              <div>
+                <h2 className="text-base font-semibold">Itens da cotação</h2>
+                <p className="mt-1 text-sm text-muted-foreground">O produto catalogado é opcional.</p>
               </div>
 
-              {itensManuais.length === 0 ? (
-                <EmptyState
-                  message="Nenhum item adicionado."
-                  actionLabel="Adicionar item"
-                  onAction={adicionarManual}
-                />
-              ) : (
-                <div className="space-y-3">
-                  {itensManuais.map((item, index) => (
-                    <article key={item.key} className="rounded-lg border border-border bg-muted/10 p-4">
-                      <div className="mb-3 flex items-center justify-between gap-3">
-                        <h3 className="text-sm font-semibold">Item {index + 1}</h3>
-                        <button
-                          type="button"
-                          className="erp-btn-ghost erp-btn-sm text-destructive"
-                          aria-label={`Remover item ${index + 1}`}
-                          onClick={() => removerManual(item.key)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          Remover
-                        </button>
-                      </div>
-                      <label className="block text-xs font-medium text-muted-foreground">
-                        Descrição técnica
-                        <textarea
-                          className="erp-input mt-1 min-h-20 w-full resize-y"
-                          placeholder="Descreva o item que será cotado"
-                          value={item.descricao_item}
-                          onChange={(event) => updateManual(item.key, { descricao_item: event.target.value })}
-                        />
-                      </label>
-                      <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-[8rem_10rem_minmax(0,1fr)]">
-                        <label className="min-w-0 text-xs font-medium text-muted-foreground">
-                          Unidade
-                          <input
-                            className="erp-input mt-1 w-full"
-                            placeholder="Ex.: PC"
-                            value={item.unidade}
-                            onChange={(event) => updateManual(item.key, { unidade: event.target.value })}
-                          />
-                        </label>
-                        <label className="min-w-0 text-xs font-medium text-muted-foreground">
-                          Quantidade
-                          <input
-                            className="erp-input mt-1 w-full"
-                            type="number"
-                            min="0.001"
-                            step="0.001"
-                            placeholder="0,000"
-                            value={item.quantidade}
-                            onChange={(event) => updateManual(item.key, { quantidade: event.target.value })}
-                          />
-                        </label>
-                        <label className="min-w-0 text-xs font-medium text-muted-foreground sm:col-span-2 xl:col-span-1">
-                          Produto catalogado opcional
-                          <select
-                            className="erp-input mt-1 w-full"
-                            value={item.produto_id}
-                            onChange={(event) => updateManual(item.key, { produto_id: event.target.value })}
-                          >
-                            <option value="">Nenhum produto vinculado</option>
-                            {produtos.map((produto) => (
-                              <option key={produto.id} value={produto.id}>
-                                {produto.codigo_completo} — {produto.descricao}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
+              <EditableLineTable
+                control={methods.control}
+                methods={methods}
+                name="itens"
+                columns={criarColunasItem(produtos)}
+                defaultValues={novaLinhaManual()}
+                emptyMessage="Nenhum item adicionado."
+              />
             </section>
           ) : (
             <section className="erp-card space-y-4 p-4 sm:p-5">

@@ -9,6 +9,7 @@ import type {
   CotacaoFornecedor,
   CotacaoFornecedorRespostaItem,
   Fornecedor,
+  Produto,
   Proposta,
 } from '@/types';
 
@@ -57,6 +58,57 @@ const fornecedor = (id: number, razao_social: string): Fornecedor => ({
   cnpj: `00000000000${id}`,
   ativo: true,
 } as Fornecedor);
+
+const produto = (id: number, codigo_completo: string): Produto => ({
+  id,
+  codigo_completo,
+  descricao: `Descrição ${codigo_completo}`,
+  ativo: true,
+} as unknown as Produto);
+
+function renderNovaCotacao() {
+  render(
+    <MemoryRouter initialEntries={['/cotacoes-fornecedores/nova']}>
+      <Routes>
+        <Route path="/cotacoes-fornecedores/nova" element={<CotacaoFornecedorNova />} />
+        <Route path="/cotacoes-fornecedores/:id" element={<LocationProbe />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+  return screen.findByText('Origem da cotação');
+}
+
+/** A célula pertence à linha `<tr>` da planilha — `within` endereça por índice sem ids próprios. */
+function digitarItem(
+  index: number,
+  dados: { descricao?: string; unidade?: string; quantidade?: string; produtoId?: string },
+) {
+  const linha = within(screen.getByTestId(`editable-line-row-${index}`));
+  if (dados.descricao !== undefined) {
+    fireEvent.change(linha.getByPlaceholderText('Descreva o item que será cotado'), { target: { value: dados.descricao } });
+  }
+  if (dados.unidade !== undefined) {
+    fireEvent.change(linha.getByPlaceholderText('Ex.: PC'), { target: { value: dados.unidade } });
+  }
+  if (dados.quantidade !== undefined) {
+    fireEvent.change(linha.getByPlaceholderText('0,000'), { target: { value: dados.quantidade } });
+  }
+  if (dados.produtoId !== undefined) {
+    fireEvent.change(linha.getByLabelText('Produto catalogado opcional'), { target: { value: dados.produtoId } });
+  }
+}
+
+function adicionarLinhaItem() {
+  fireEvent.click(screen.getByRole('button', { name: 'Adicionar item' }));
+}
+
+function selecionarFornecedorAlpha() {
+  fireEvent.click(screen.getByLabelText(/Fornecedor Alpha/));
+}
+
+function botaoCriar() {
+  return screen.getByRole('button', { name: 'Criar cotação' });
+}
 
 const proposta = (): Proposta => ({
   id: 42,
@@ -292,9 +344,9 @@ describe('Nova cotação', () => {
     fireEvent.change(screen.getByPlaceholderText('0,000'), { target: { value: '3' } });
 
     fireEvent.click(screen.getByRole('button', { name: 'Adicionar item' }));
-    expect(screen.getByText('Item 2')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Remover item 2' }));
-    expect(screen.queryByText('Item 2')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('editable-line-row-1')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('editable-line-remover-1'));
+    await waitFor(() => expect(screen.queryByTestId('editable-line-row-1')).not.toBeInTheDocument());
 
     fireEvent.click(screen.getByLabelText(/Fornecedor Alpha/));
     expect(screen.getAllByText('Fornecedor Alpha').length).toBeGreaterThan(1);
@@ -329,6 +381,77 @@ describe('Nova cotação', () => {
     await waitFor(() => expect(mocks.create).toHaveBeenCalledWith({ proposta: 42, observacao: 'Cotação criada a partir da Proposta.' }));
     expect(mocks.addItem).toHaveBeenCalledWith(7, { item_proposta_id: 420 });
     expect(mocks.addParticipante).toHaveBeenCalledWith(7, 1);
+  });
+});
+
+describe('Nova cotação — planilha de itens (Sprint 3.17 FASE 2B)', () => {
+  it('envia produto_id quando a linha referencia um produto catalogado, com os campos aparados', async () => {
+    mocks.produtosGetAll.mockResolvedValue([produto(12, 'VAL-012')]);
+    await renderNovaCotacao();
+
+    digitarItem(0, { descricao: '  Junta especial  ', unidade: ' PC ', quantidade: '3', produtoId: '12' });
+    selecionarFornecedorAlpha();
+    fireEvent.click(botaoCriar());
+
+    await waitFor(() => expect(mocks.addItem).toHaveBeenCalledWith(7, {
+      descricao_item: 'Junta especial',
+      unidade: 'PC',
+      quantidade: 3,
+      produto_id: 12,
+    }));
+  });
+
+  it('não envia linha incompleta e mantém o portão reagindo a cada tecla', async () => {
+    await renderNovaCotacao();
+
+    digitarItem(0, { descricao: 'Item completo', unidade: 'PC', quantidade: '2' });
+    selecionarFornecedorAlpha();
+    expect(botaoCriar()).not.toBeDisabled();
+
+    adicionarLinhaItem();
+    await screen.findByTestId('editable-line-row-1');
+    digitarItem(1, { descricao: 'Só a descrição' });
+    expect(screen.getByRole('button', { name: 'Criar cotação' })).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId('editable-line-remover-1'));
+    await waitFor(() => expect(screen.queryByTestId('editable-line-row-1')).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Criar cotação' }));
+
+    await waitFor(() => expect(mocks.addItem).toHaveBeenCalledTimes(1));
+    expect(mocks.addItem).toHaveBeenCalledWith(7, {
+      descricao_item: 'Item completo',
+      unidade: 'PC',
+      quantidade: 2,
+    });
+  });
+
+  it('mantém a quantidade decimal como número no payload', async () => {
+    await renderNovaCotacao();
+
+    digitarItem(0, { descricao: 'Válvula', unidade: 'PC', quantidade: '2.5' });
+    selecionarFornecedorAlpha();
+    fireEvent.click(botaoCriar());
+
+    await waitFor(() => expect(mocks.addItem).toHaveBeenCalledWith(7, {
+      descricao_item: 'Válvula',
+      unidade: 'PC',
+      quantidade: 2.5,
+    }));
+  });
+
+  it('envia uma chamada addItem por linha, na ordem da tabela', async () => {
+    await renderNovaCotacao();
+
+    digitarItem(0, { descricao: 'Primeira', unidade: 'PC', quantidade: '1' });
+    adicionarLinhaItem();
+    await screen.findByTestId('editable-line-row-1');
+    digitarItem(1, { descricao: 'Segunda', unidade: 'UN', quantidade: '2' });
+    selecionarFornecedorAlpha();
+    fireEvent.click(botaoCriar());
+
+    await waitFor(() => expect(mocks.addItem).toHaveBeenCalledTimes(2));
+    expect(mocks.addItem.mock.calls[0]).toEqual([7, { descricao_item: 'Primeira', unidade: 'PC', quantidade: 1 }]);
+    expect(mocks.addItem.mock.calls[1]).toEqual([7, { descricao_item: 'Segunda', unidade: 'UN', quantidade: 2 }]);
   });
 });
 
