@@ -91,6 +91,10 @@ const StatusPipelineDemoLazy = import.meta.env.DEV
   ? lazy(() => import("./pages/dev/StatusPipelineDemo"))
   : null;
 
+const LineTableDemoLazy = import.meta.env.DEV
+  ? lazy(() => import("./pages/dev/LineTableDemo"))
+  : null;
+
 const App = () => (
   <BrowserRouter>
     <Toaster richColors closeButton position="top-right" />
@@ -102,6 +106,16 @@ const App = () => (
           element={
             <Suspense fallback={null}>
               <StatusPipelineDemoLazy />
+            </Suspense>
+          }
+        />
+      )}
+      {LineTableDemoLazy && (
+        <Route
+          path="/dev/line-table"
+          element={
+            <Suspense fallback={null}>
+              <LineTableDemoLazy />
             </Suspense>
           }
         />
