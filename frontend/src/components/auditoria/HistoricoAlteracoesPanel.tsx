@@ -27,6 +27,9 @@ import { apiErrorMessage, getApiErrorStatus, isApiForbidden } from '@/services/a
 // fora dele a view responde 404 e a aba mostra "Recurso não encontrado".
 export type HistoricoEscopo =
   | { appLabel: 'cadastros'; modelName: 'cliente' }
+  | { appLabel: 'cadastros'; modelName: 'fornecedor' }
+  // Transportadora: o modelName é o nome da classe em minúsculas, igual a 'familiaproduto'.
+  | { appLabel: 'cadastros'; modelName: 'transportadora' }
   | { appLabel: 'produtos'; modelName: 'produto' }
   // Família: no escopo de auditoria o modelName é o nome da classe em minúsculas, não "familia".
   | { appLabel: 'produtos'; modelName: 'familiaproduto' };

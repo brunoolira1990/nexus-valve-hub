@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -80,6 +80,15 @@ function renderEdicao() {
   );
 }
 
+/**
+ * A tela tem dois botões "Salvar" desde o rodapé mobile do FormShell (Sprint 3.16): um no
+ * cabeçalho, outro no rodapé. Os cliques deste arquivo miram sempre o do cabeçalho, que é o
+ * botão que já existia no piloto — o rodapé é coberto pelos testes próprios do FormShell.
+ */
+function salvarDoCabecalho() {
+  return within(screen.getByTestId('form-shell-header')).getByRole('button', { name: /^Salvar$/ });
+}
+
 describe('FamiliaFormPage (redesenho Sprint 3.7)', () => {
   beforeEach(() => {
     // Os mocks são compartilhados entre os testes do arquivo: sem limpar, a contagem de
@@ -114,7 +123,7 @@ describe('FamiliaFormPage (redesenho Sprint 3.7)', () => {
     await screen.findByDisplayValue('0007');
     expect(screen.queryByText('Unidade padrão')).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: /^Salvar$/ }));
+    fireEvent.click(salvarDoCabecalho());
 
     const [, payload] = await waitFor(() => {
       expect(familiasProdutoService.update).toHaveBeenCalled();
@@ -127,7 +136,7 @@ describe('FamiliaFormPage (redesenho Sprint 3.7)', () => {
     renderEdicao();
     await screen.findByDisplayValue('ANSI B16.34');
 
-    fireEvent.click(screen.getByRole('button', { name: /^Salvar$/ }));
+    fireEvent.click(salvarDoCabecalho());
 
     const [, payload] = await waitFor(() => {
       expect(familiasProdutoService.update).toHaveBeenCalled();
@@ -153,7 +162,7 @@ describe('FamiliaFormPage (redesenho Sprint 3.7)', () => {
     renderEdicao();
     await screen.findByDisplayValue('0007');
 
-    fireEvent.click(screen.getByRole('button', { name: /^Salvar$/ }));
+    fireEvent.click(salvarDoCabecalho());
 
     const alerta = await screen.findByRole('alert');
     expect(alerta).toHaveTextContent('NCM é obrigatório para esta família.');

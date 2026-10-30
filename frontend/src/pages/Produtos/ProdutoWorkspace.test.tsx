@@ -305,14 +305,14 @@ const tabSrc = readFileSync(
 );
 
 describe('ProdutoWorkspace (espelho da Edição — Sprint 3.7)', () => {
-  it('abre com as mesmas 4 abas da ficha de edição, na mesma ordem', () => {
+  it('abre com as mesmas 3 abas da ficha de edição, na mesma ordem', () => {
     render(<ProdutoWorkspace produto={produto({})} mode="view" />);
 
+    // Sprint 3.16: a aba Histórico saiu das duas telas — o histórico vive no rail do Chatter.
     expect(screen.getAllByRole('tab').map((aba) => aba.textContent)).toEqual([
       'Configuração do Produto',
       'Painel operacional',
       'Rastreabilidade',
-      'Histórico',
     ]);
   });
 

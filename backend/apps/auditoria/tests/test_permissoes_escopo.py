@@ -22,18 +22,29 @@ class RegistroAuditoriaPermissoesTests(TestCase):
 
 
 class AuditoriaEscopoTests(TestCase):
-    def test_escopo_cliente_produto_e_familia(self):
+    def test_escopo_cliente_produto_familia_fornecedor_transportadora(self):
         self.assertEqual(
             MODELOS_AUDITADOS,
             {
                 ('cadastros', 'cliente'),
+                ('cadastros', 'fornecedor'),
+                ('cadastros', 'transportadora'),
                 ('produtos', 'produto'),
                 ('produtos', 'familiaproduto'),
             },
         )
         self.assertEqual(entidade_auditada_permitida('Cadastros', 'Cliente'), ('cadastros', 'cliente'))
-        self.assertIsNone(entidade_auditada_permitida('cadastros', 'fornecedor'))
+        self.assertEqual(
+            entidade_auditada_permitida('Cadastros', 'Fornecedor'),
+            ('cadastros', 'fornecedor'),
+        )
+        self.assertEqual(
+            entidade_auditada_permitida('cadastros', 'Transportadora'),
+            ('cadastros', 'transportadora'),
+        )
         self.assertIsNone(entidade_auditada_permitida('fiscal', 'nfesaida'))
+        # Fora de MODELOS_AUDITADOS: nem toda model de apps.cadastros é auditável.
+        self.assertIsNone(entidade_auditada_permitida('cadastros', 'colaborador'))
         self.assertEqual(
             entidade_auditada_permitida('Produtos', 'FamiliaProduto'),
             ('produtos', 'familiaproduto'),
@@ -47,8 +58,26 @@ class AuditoriaRotaEscopoApiTests(APITestCase):
         user = get_user_model().objects.create_superuser('aud_esc', 'aud_esc@test.local', 'secret')
         self.client.force_authenticate(user=user)
 
-    def test_fornecedor_404(self):
-        r = self.client.get('/api/auditoria/objetos/cadastros/fornecedor/1/')
+    def test_fornecedor_agora_dentro_de_escopo(self):
+        """Sprint 3.16: ('cadastros','fornecedor') entrou na allowlist — antes era 404."""
+        RegistroAuditoria.objects.create(
+            app_label='cadastros',
+            model_name='fornecedor',
+            object_id=7,
+            operacao='CREATE',
+            alteracoes={'razao_social': {'antes': None, 'depois': 'SUPRIMENTOS LTDA'}},
+        )
+        r = self.client.get('/api/auditoria/objetos/cadastros/fornecedor/7/')
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        self.assertEqual(r.data['count'], 1)
+
+    def test_transportadora_agora_dentro_de_escopo(self):
+        r = self.client.get('/api/auditoria/objetos/cadastros/transportadora/3/')
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        self.assertEqual(r.data['count'], 0)
+
+    def test_model_fora_de_escopo_continua_404(self):
+        r = self.client.get('/api/auditoria/objetos/cadastros/colaborador/1/')
         self.assertEqual(r.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_produto_app_errado_404(self):

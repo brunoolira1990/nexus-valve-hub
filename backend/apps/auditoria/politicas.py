@@ -64,6 +64,110 @@ CLIENTE_CAMPOS_EXCLUIDOS: frozenset[str] = frozenset(
 
 CLIENTE_ALLOWLIST: frozenset[str] = CLIENTE_CAMPOS_VALOR | CLIENTE_CAMPOS_MASCARADOS
 
+# Fornecedor: mesma separação do cliente — identidade e condição de pagamento têm
+# valor; documentos, contato, endereço e dados bancários ficam mascarados.
+FORNECEDOR_CAMPOS_VALOR: frozenset[str] = frozenset(
+    {
+        'razao_social',
+        'nome_fantasia',
+        'ie',
+        'inscricao_municipal',
+        'suframa',
+        'condicao_pagamento_texto',
+        'quantidade_parcelas',
+        'prazo_entrega',
+        'transportadora_padrao_id',
+        'ativo',
+        'ddd',
+        'tipo_conta',
+        'cnae',
+        'regime_tributario',
+    }
+)
+
+FORNECEDOR_CAMPOS_MASCARADOS: frozenset[str] = frozenset(
+    {
+        'cnpj',
+        'email',
+        'email_nf',
+        'telefone',
+        'telefone_alternativo',
+        'celular',
+        'contato_responsavel',
+        'logradouro',
+        'numero',
+        'complemento',
+        'bairro',
+        'cidade',
+        'uf',
+        'cep',
+        'observacoes',
+        'integracao_texto',
+        'banco',
+        'agencia',
+        'conta',
+    }
+)
+
+FORNECEDOR_CAMPOS_EXCLUIDOS: frozenset[str] = frozenset(
+    {
+        'id',
+        # Derivada de condicao_pagamento_texto no validate(); duplicaria o diff.
+        'dias_parcelas',
+        'transportadora_padrao',
+    }
+)
+
+FORNECEDOR_ALLOWLIST: frozenset[str] = FORNECEDOR_CAMPOS_VALOR | FORNECEDOR_CAMPOS_MASCARADOS
+
+# Transportadora: além da identidade fiscal, a tabela de frete (placa e R$ km) tem valor.
+TRANSPORTADORA_CAMPOS_VALOR: frozenset[str] = frozenset(
+    {
+        'razao_social',
+        'nome_fantasia',
+        'ie',
+        'inscricao_municipal',
+        'suframa',
+        'placa_padrao',
+        'uf_placa',
+        'valor_km',
+        'ativo',
+        'ddd',
+        'tipo_conta',
+        'cnae',
+        'regime_tributario',
+    }
+)
+
+TRANSPORTADORA_CAMPOS_MASCARADOS: frozenset[str] = frozenset(
+    {
+        'cnpj',
+        'email',
+        'email_nf',
+        'telefone',
+        'celular',
+        'contato',
+        'logradouro',
+        'numero',
+        'complemento',
+        'bairro',
+        'cidade',
+        'uf',
+        'cep',
+        'observacoes',
+        'integracao_texto',
+        'banco',
+        'agencia',
+        'conta',
+    }
+)
+
+TRANSPORTADORA_CAMPOS_EXCLUIDOS: frozenset[str] = frozenset({'id'})
+
+TRANSPORTADORA_ALLOWLIST: frozenset[str] = (
+    TRANSPORTADORA_CAMPOS_VALOR | TRANSPORTADORA_CAMPOS_MASCARADOS
+)
+
 PRODUTO_CAMPOS_VALOR: frozenset[str] = frozenset(
     {
         'codigo_completo',

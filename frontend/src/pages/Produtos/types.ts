@@ -76,8 +76,7 @@ export type ProdutoMainTab = 'produtos' | 'familias';
 export type ProdutoFichaTab =
   | 'configuracao'
   | 'painel'
-  | 'rastreabilidade'
-  | 'historico';
+  | 'rastreabilidade';
 
 /**
  * Modo de operação do workspace de produto.

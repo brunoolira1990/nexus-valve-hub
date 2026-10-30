@@ -154,8 +154,42 @@ describe('Chatter', () => {
     expect(await screen.findByTestId('chatter-notas-vazio')).toBeInTheDocument();
   });
 
-  it('lista notas internas com autor, texto e link de download do anexo', async () => {
-    vi.mocked(chatterNotasService.listar).mockResolvedValue(
+  it.each([
+    ['cliente', 'cadastros', 'cliente'],
+    ['fornecedor', 'cadastros', 'fornecedor'],
+    ['transportadora', 'cadastros', 'transportadora'],
+    ['produto', 'produtos', 'produto'],
+  ] as const)(
+    'entityType %s pergunta o histórico em (%s, %s) — mesmo par do MODELOS_AUDITADOS do backend',
+    async (entityType, appLabel, modelName) => {
+      vi.mocked(chatterNotasService.listar).mockResolvedValue(vazio());
+      vi.mocked(auditoriaService.historicoObjeto).mockResolvedValue({
+        count: 0,
+        next: null,
+        previous: null,
+        results: [],
+      });
+
+      render(<Chatter entityType={entityType} entityId={5} />);
+
+      await waitFor(() =>
+        expect(auditoriaService.historicoObjeto).toHaveBeenCalledWith(appLabel, modelName, 5, {
+          page_size: 50,
+        }),
+      );
+    },
+  );
+
+  it('entityType fora do escopo de auditoria não inventa rota: mostra indisponível', async () => {
+    vi.mocked(chatterNotasService.listar).mockResolvedValue(vazio());
+
+    render(<Chatter entityType="ordem_producao" entityId={5} />);
+
+    expect(await screen.findByTestId('chatter-historico-indisponivel')).toBeInTheDocument();
+    expect(auditoriaService.historicoObjeto).not.toHaveBeenCalled();
+  });
+
+  it('lista notas internas com autor, texto e link de download do anexo', async () => {    vi.mocked(chatterNotasService.listar).mockResolvedValue(
       lista(
         nota(2, 'Laudo do lote 2026-10', 'Bruno Lira', [anexo(77, 'laudo-lote-2026-10.pdf')]),
         nota(1, 'Família usada no pedido 4421'),

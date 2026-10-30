@@ -6,7 +6,11 @@ from rest_framework import serializers
 
 from apps.auditoria.servico import (
     registrar_cliente,
+    registrar_fornecedor,
+    registrar_transportadora,
     snapshot_cliente,
+    snapshot_fornecedor,
+    snapshot_transportadora,
     usuario_do_contexto,
 )
 from apps.comercial.payment_terms import parse_payment_condition
@@ -458,6 +462,33 @@ class FornecedorSerializer(CnpjNormalizadoMixin, serializers.ModelSerializer):
         attrs['quantidade_parcelas'] = len(dias)
         return attrs
 
+    def create(self, validated_data):
+        usuario = usuario_do_contexto(self)
+        with transaction.atomic():
+            fornecedor = super().create(validated_data)
+            registrar_fornecedor(
+                usuario=usuario,
+                fornecedor=fornecedor,
+                operacao='CREATE',
+                estado_anterior={},
+                estado_posterior=snapshot_fornecedor(fornecedor),
+            )
+            return fornecedor
+
+    def update(self, instance, validated_data):
+        usuario = usuario_do_contexto(self)
+        antes = snapshot_fornecedor(instance)
+        with transaction.atomic():
+            fornecedor = super().update(instance, validated_data)
+            registrar_fornecedor(
+                usuario=usuario,
+                fornecedor=fornecedor,
+                operacao='UPDATE',
+                estado_anterior=antes,
+                estado_posterior=snapshot_fornecedor(fornecedor),
+            )
+            return fornecedor
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data['transportadora_padrao_id'] = instance.transportadora_padrao_id
@@ -500,6 +531,33 @@ class TransportadoraSerializer(CnpjNormalizadoMixin, serializers.ModelSerializer
             },
         )
         return attrs
+
+    def create(self, validated_data):
+        usuario = usuario_do_contexto(self)
+        with transaction.atomic():
+            transportadora = super().create(validated_data)
+            registrar_transportadora(
+                usuario=usuario,
+                transportadora=transportadora,
+                operacao='CREATE',
+                estado_anterior={},
+                estado_posterior=snapshot_transportadora(transportadora),
+            )
+            return transportadora
+
+    def update(self, instance, validated_data):
+        usuario = usuario_do_contexto(self)
+        antes = snapshot_transportadora(instance)
+        with transaction.atomic():
+            transportadora = super().update(instance, validated_data)
+            registrar_transportadora(
+                usuario=usuario,
+                transportadora=transportadora,
+                operacao='UPDATE',
+                estado_anterior=antes,
+                estado_posterior=snapshot_transportadora(transportadora),
+            )
+            return transportadora
 
 
 class CriarUsuarioColaboradorSerializer(serializers.Serializer):

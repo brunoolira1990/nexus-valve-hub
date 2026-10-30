@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ProdutoPainelOperacionalTab } from '@/components/produtos/ProdutoPainelOperacionalTab';
 import { ProdutoRastreabilidadeTab } from '@/components/produtos/ProdutoRastreabilidadeTab';
-import { HistoricoAlteracoesPanel } from '@/components/auditoria/HistoricoAlteracoesPanel';
 import { ProdutoFormTab } from './tabs/ProdutoFormTab';
 import { produtoParaFormState } from './lib/produtoParaForm';
 import { getFamReq } from './lib/familiaDerivations';
@@ -32,7 +31,6 @@ export function ProdutoWorkspace({ produto, mode }: ProdutoWorkspaceProps) {
         <TabsTrigger value="configuracao">Configuração do Produto</TabsTrigger>
         <TabsTrigger value="painel">Painel operacional</TabsTrigger>
         <TabsTrigger value="rastreabilidade">Rastreabilidade</TabsTrigger>
-        {produto.id ? <TabsTrigger value="historico">Histórico</TabsTrigger> : null}
       </TabsList>
 
       {/* Mesmo componente da ficha de Edição (4 blocos + Painel Avançado), com somenteLeitura:
@@ -59,18 +57,6 @@ export function ProdutoWorkspace({ produto, mode }: ProdutoWorkspaceProps) {
       <TabsContent value="rastreabilidade" className="mt-4">
         <ProdutoRastreabilidadeTab produtoId={produto.id} active={true} />
       </TabsContent>
-
-      {produto.id && (
-        <TabsContent value="historico" className="mt-4">
-          <HistoricoAlteracoesPanel
-            appLabel="produtos"
-            modelName="produto"
-            objectId={produto.id}
-            active={true}
-            enabled={true}
-          />
-        </TabsContent>
-      )}
     </Tabs>
   );
 }

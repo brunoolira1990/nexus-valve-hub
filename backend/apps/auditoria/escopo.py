@@ -7,6 +7,8 @@ from __future__ import annotations
 MODELOS_AUDITADOS: frozenset[tuple[str, str]] = frozenset(
     {
         ('cadastros', 'cliente'),
+        ('cadastros', 'fornecedor'),
+        ('cadastros', 'transportadora'),
         ('produtos', 'produto'),
         ('produtos', 'familiaproduto'),
     }

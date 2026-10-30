@@ -63,6 +63,10 @@ export function FormShell({
 }: FormShellProps) {
   const [railAbertoMobile, setRailAbertoMobile] = useState(false);
 
+  const acaoPrincipal = acoesPrincipais[0];
+  /** No mobile o cabeçalho rola para fora da tela: a ação principal vira um rodapé fixo. */
+  const temRodapeMobile = !somenteLeitura && acaoPrincipal != null;
+
   const acoes = (
     <div className="flex flex-wrap items-center gap-2">
       {onVoltar && (
@@ -130,7 +134,7 @@ export function FormShell({
         )}
       </div>
 
-      <div className="flex items-start gap-6 pb-6">
+      <div className={cn('flex items-start gap-6', temRodapeMobile ? 'pb-24 lg:pb-6' : 'pb-6')}>
         <div data-testid="form-shell-content" className="min-w-0 flex-1">
           {children}
         </div>
@@ -150,7 +154,7 @@ export function FormShell({
               type="button"
               data-testid="form-shell-rail-toggle"
               onClick={() => setRailAbertoMobile(true)}
-              className="lg:hidden fixed bottom-6 right-6 z-40 inline-flex items-center gap-2 rounded-full bg-nexus-blue px-4 py-2.5 text-sm font-semibold text-white shadow-lg"
+              className="lg:hidden fixed bottom-24 right-6 z-40 inline-flex items-center gap-2 rounded-full bg-nexus-blue px-4 py-2.5 text-sm font-semibold text-white shadow-lg"
             >
               <PanelRight className="h-4 w-4" />
               Painel
@@ -176,6 +180,31 @@ export function FormShell({
           </>
         )}
       </div>
+
+      {/*
+        Rodapé mobile: em <lg o cabeçalho (e com ele a ação principal) rola para fora da
+        tela. Com o drawer do rail aberto o rodapé cede o lugar — os dois são z-50 fixos.
+      */}
+      {temRodapeMobile && !railAbertoMobile && (
+        <div
+          data-testid="form-shell-rodape-mobile"
+          className="lg:hidden fixed bottom-0 left-0 right-0 z-50 border-t bg-background px-4 py-3 shadow-lg"
+        >
+          <NexusButton
+            type="button"
+            variant={
+              acaoPrincipal.variant === 'primary' || !acaoPrincipal.variant ? 'default' : acaoPrincipal.variant
+            }
+            loading={acaoPrincipal.loading}
+            onClick={acaoPrincipal.onClick}
+            className="w-full"
+            data-testid="form-shell-acao-principal-mobile"
+          >
+            {acaoPrincipal.icon}
+            {acaoPrincipal.label}
+          </NexusButton>
+        </div>
+      )}
     </div>
   );
 }

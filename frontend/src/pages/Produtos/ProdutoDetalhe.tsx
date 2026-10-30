@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Pencil } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
+import { Chatter } from '@/components/layout/Chatter';
+import { FormShell } from '@/components/layout/FormShell';
 import { ProdutoWorkspace } from './ProdutoWorkspace';
 import { produtosService } from '@/services/api/produtos';
 import type { Produto } from '@/types';
@@ -83,34 +86,20 @@ export default function ProdutoDetalhe() {
   }
 
   return (
-    <div className="space-y-4">
-      <PageHeader
-        title={`${produto.codigo_completo} — ${produto.descricao}`}
-        breadcrumbs={[
-          { label: 'Cadastros', path: '/produtos' },
-          { label: 'Produtos', path: '/produtos' },
-          { label: produto.codigo_completo },
-        ]}
-        actions={
-          <>
-            <button
-              type="button"
-              className="erp-btn-outline"
-              onClick={() => navigate('/produtos')}
-            >
-              Voltar
-            </button>
-            <button
-              type="button"
-              className="erp-btn-primary"
-              onClick={() => navigate(`/produtos/${id}/editar`)}
-            >
-              Editar
-            </button>
-          </>
-        }
-      />
+    <FormShell
+      titulo={`${produto.codigo_completo} — ${produto.descricao}`}
+      acoesPrincipais={[
+        {
+          label: 'Editar',
+          icon: <Pencil className="h-4 w-4 mr-2" />,
+          variant: 'primary',
+          onClick: () => navigate(`/produtos/${id}/editar`),
+        },
+      ]}
+      onVoltar={() => navigate('/produtos')}
+      rail={<Chatter entityType="produto" entityId={produto.id} />}
+    >
       <ProdutoWorkspace produto={produto} mode="view" />
-    </div>
+    </FormShell>
   );
 }

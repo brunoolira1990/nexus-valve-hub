@@ -3,7 +3,7 @@
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import ClienteFormPage from '@/pages/Clientes/ClienteFormPage';
 import {
   MSG_CNPJ_CLIENTE_DUPLICADO,
@@ -56,6 +56,11 @@ function axiosLike(status: number, data: unknown) {
 const CNPJ_OK = '04.252.011/0001-10';
 const CNPJ_DIGITS = '04252011000110';
 
+/** A tela tem dois "Salvar" (cabeçalho + rodapé mobile): o clique é sempre no do cabeçalho. */
+function salvarPeloCabecalho() {
+  return within(screen.getByTestId('form-shell-header')).getByRole('button', { name: 'Salvar' });
+}
+
 async function preencherESalvar() {
   render(
     <MemoryRouter initialEntries={['/clientes/novo']}>
@@ -70,7 +75,7 @@ async function preencherESalvar() {
   await screen.findByLabelText(/Razão Social/i);
   fireEvent.change(screen.getByLabelText(/Razão Social/i), { target: { value: 'Cliente Teste LTDA' } });
   fireEvent.change(screen.getByLabelText(/^CNPJ/i), { target: { value: CNPJ_OK } });
-  fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+  fireEvent.click(salvarPeloCabecalho());
 }
 
 describe('ClienteFormPage — CNPJ duplicado', () => {
@@ -105,7 +110,7 @@ describe('ClienteFormPage — CNPJ duplicado', () => {
     expect(screen.queryByText(MSG_CNPJ_CLIENTE_DUPLICADO)).not.toBeInTheDocument();
 
     createMock.mockRejectedValue(axiosLike(403, { detail: 'Permission denied.' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+    fireEvent.click(salvarPeloCabecalho());
     expect(await screen.findByText(PERMISSION_DENIED_MESSAGE)).toBeInTheDocument();
     expect(screen.queryByText(MSG_CNPJ_CLIENTE_DUPLICADO)).not.toBeInTheDocument();
   });

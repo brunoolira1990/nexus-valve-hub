@@ -1,6 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { PageHeader } from '@/components/PageHeader';
+import { Save, Trash2 } from 'lucide-react';
+import { Badge } from '@/components/nexus';
+import { Chatter } from '@/components/layout/Chatter';
+import { FormShell } from '@/components/layout/FormShell';
 import { clientesService } from '@/services/api/clientes';
 import { apiErrorMessage } from '@/services/api/config';
 import {
@@ -10,9 +13,13 @@ import {
 } from '@/lib/clienteCadastroErros';
 import type { Cliente, ContatoCliente, EnderecoEntregaCliente, Transportadora } from '@/types';
 import type { EnderecoFiscalResumo } from '@/lib/enderecoFiscal';
-import { ClienteForm, clientToFormValues, type ClienteFormInput } from './ClienteForm';
+import {
+  ClienteForm,
+  clientToFormValues,
+  type ClienteFormHandle,
+  type ClienteFormInput,
+} from './ClienteForm';
 import { transportadorasService } from '@/services/api/transportadoras';
-import { auditoriaService } from '@/services/api/auditoria';
 
 const ClienteFormPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -21,7 +28,6 @@ const ClienteFormPage = () => {
 
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
-  const [podeVerHistorico, setPodeVerHistorico] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorHint, setErrorHint] = useState<string | null>(null);
   const [serverCnpjError, setServerCnpjError] = useState<string | null>(null);
@@ -36,25 +42,6 @@ const ClienteFormPage = () => {
   useEffect(() => {
     transportadorasService.getAll().then(setTransportadoras).catch(() => setTransportadoras([]));
   }, []);
-
-  useEffect(() => {
-    if (!isEdit) {
-      setPodeVerHistorico(false);
-      return;
-    }
-    let cancelled = false;
-    auditoriaService
-      .capacidade()
-      .then((c) => {
-        if (!cancelled) setPodeVerHistorico(Boolean(c.pode_visualizar));
-      })
-      .catch(() => {
-        if (!cancelled) setPodeVerHistorico(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isEdit]);
 
   useEffect(() => {
     if (!isEdit) {
@@ -99,9 +86,14 @@ const ClienteFormPage = () => {
     setServerCnpjError(null);
     setExistingClientId(null);
     try {
-      if (isEdit) await clientesService.update(Number(id), payload);
-      else await clientesService.create(payload);
-      navigate('/clientes');
+      if (isEdit) {
+        await clientesService.update(Number(id), payload);
+        navigate('/clientes');
+      } else {
+        // Cria já abre o registro novo: é a única forma de o Chatter ter entityId no primeiro salvamento.
+        const criado = await clientesService.create(payload);
+        navigate(`/clientes/${criado.id}/edit`, { replace: true });
+      }
     } catch (e) {
       const parsed = parseClienteSaveError(e);
       // Mensagem principal do save (ex.: CNPJ duplicado) — a busca auxiliar nunca a substitui.
@@ -125,16 +117,42 @@ const ClienteFormPage = () => {
     }
   };
 
+  const clienteId = isEdit ? Number(id) : null;
+  const formRef = useRef<ClienteFormHandle>(null);
+
+  const titulo = defaults.razao_social.trim()
+    ? [defaults.razao_social.trim(), defaults.cnpj.trim()].filter(Boolean).join(' — ')
+    : isEdit
+      ? 'Editar cliente'
+      : 'Novo cliente';
+
   return (
-    <div>
-      <PageHeader
-        title={isEdit ? 'Editar cliente' : 'Novo cliente'}
-        breadcrumbs={[
-          { label: 'Cadastros', path: '/clientes' },
-          { label: 'Clientes', path: '/clientes' },
-          { label: isEdit ? 'Editar' : 'Novo' },
-        ]}
-      />
+    <FormShell
+      titulo={titulo}
+      meta={
+        <Badge variant={defaults.bloqueado ? 'danger' : 'success'}>
+          {defaults.bloqueado ? 'Bloqueado' : 'Ativo'}
+        </Badge>
+      }
+      acoesPrincipais={[
+        {
+          label: 'Salvar',
+          icon: <Save className="h-4 w-4 mr-2" />,
+          variant: 'primary',
+          loading: saving,
+          onClick: () => formRef.current?.salvar(),
+        },
+      ]}
+      acoesSecundarias={[
+        {
+          label: 'Descartar',
+          icon: <Trash2 className="h-4 w-4 mr-2" />,
+          onClick: () => navigate('/clientes'),
+        },
+      ]}
+      onVoltar={() => navigate('/clientes')}
+      rail={<Chatter entityType="cliente" entityId={clienteId} />}
+    >
       {error && !loading && (
         <div
           className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
@@ -164,21 +182,18 @@ const ClienteFormPage = () => {
         <p className="text-muted-foreground">Carregando…</p>
       ) : (
         <ClienteForm
+          ref={formRef}
           key={formKey}
           defaultValues={defaults}
           transportadoras={transportadoras}
           enderecosEntregaInicial={enderecosEntregaInicial}
           contatosIniciais={contatosIniciais}
           onSubmit={handleSubmit}
-          onCancel={() => navigate('/clientes')}
-          saving={saving}
           enderecoFiscalInicial={enderecoFiscalInicial}
           serverCnpjError={serverCnpjError}
-          clienteId={isEdit ? Number(id) : null}
-          podeVerHistorico={podeVerHistorico}
         />
       )}
-    </div>
+    </FormShell>
   );
 };
 

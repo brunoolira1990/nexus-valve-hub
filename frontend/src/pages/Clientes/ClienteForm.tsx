@@ -1,10 +1,9 @@
 import type { ChangeEventHandler, FocusEvent, KeyboardEvent } from 'react';
-import { useEffect, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
-  CadastroButton,
   CadastroFormShell,
   CadastroSection,
   CadastroTabs,
@@ -44,7 +43,6 @@ import {
   validarContatosCliente,
 } from '@/lib/clienteContatosFiscais';
 import { ClienteEnderecosEntregaEditor } from '@/components/clientes/ClienteEnderecosEntregaEditor';
-import { HistoricoAlteracoesPanel } from '@/components/auditoria/HistoricoAlteracoesPanel';
 import type { Cliente, ContatoCliente, EnderecoEntregaCliente, Transportadora } from '@/types';
 import { REGIMES_CADASTRO, TIPOS_CONTA, UFS } from '@/types';
 
@@ -203,21 +201,18 @@ export function clientToFormValues(c: Partial<Cliente>): ClienteFormInput {
   };
 }
 
+/** O cabeçalho do FormShell dispara o submit que pertence a este <form>. */
+export type ClienteFormHandle = { salvar: () => void };
+
 type Props = {
   defaultValues: ClienteFormInput;
   transportadoras: Transportadora[];
   enderecosEntregaInicial?: EnderecoEntregaCliente[];
   contatosIniciais?: ContatoCliente[];
   onSubmit: (payload: Omit<Cliente, 'id'>) => Promise<void>;
-  onCancel: () => void;
-  saving?: boolean;
   enderecoFiscalInicial?: EnderecoFiscalResumo | null;
   /** Erro de validação do servidor no campo CNPJ (ex.: duplicidade). */
   serverCnpjError?: string | null;
-  /** ID do cliente em edição — necessário para a aba Histórico. */
-  clienteId?: number | null;
-  /** Exibe aba Histórico somente com permissão de auditoria. */
-  podeVerHistorico?: boolean;
 };
 
 function AlertaEnderecoFiscal({ mensagem }: { mensagem: string }) {
@@ -235,22 +230,18 @@ function AlertaEnderecoFiscal({ mensagem }: { mensagem: string }) {
   );
 }
 
-export function ClienteForm({
-  defaultValues,
-  transportadoras,
-  enderecosEntregaInicial = [],
-  contatosIniciais = [],
-  onSubmit,
-  onCancel,
-  saving,
-  enderecoFiscalInicial,
-  serverCnpjError = null,
-  clienteId = null,
-  podeVerHistorico = false,
-}: Props) {
-  const tabItems = podeVerHistorico && clienteId
-    ? [...TAB_ITEMS_BASE, { id: 'historico', label: 'Histórico' }]
-    : [...TAB_ITEMS_BASE];
+export const ClienteForm = forwardRef<ClienteFormHandle, Props>(function ClienteForm(
+  {
+    defaultValues,
+    transportadoras,
+    enderecosEntregaInicial = [],
+    contatosIniciais = [],
+    onSubmit,
+    enderecoFiscalInicial,
+    serverCnpjError = null,
+  },
+  ref,
+) {
   const [tab, setTab] = useState<string>(TAB_ITEMS_BASE[0].id);
   const [enderecosEntrega, setEnderecosEntrega] = useState<EnderecoEntregaCliente[]>(
     () => enderecosEntregaInicial,
@@ -526,7 +517,7 @@ export function ClienteForm({
 
   const panel = (
     <CadastroSection
-      title={tabItems.find((t) => t.id === tab)?.label ?? ''}
+      title={TAB_ITEMS_BASE.find((t) => t.id === tab)?.label ?? ''}
       description={
         tab === 'dados-gerais'
           ? 'Base cadastral e identificação principal do cliente.'
@@ -745,60 +736,40 @@ export function ClienteForm({
           />
         </>
       )}
-
-      {tab === 'historico' && podeVerHistorico && clienteId ? (
-        <div className="md:col-span-2">
-          <HistoricoAlteracoesPanel
-            appLabel="cadastros"
-            modelName="cliente"
-            objectId={clienteId}
-            active={tab === 'historico'}
-            enabled={podeVerHistorico}
-          />
-        </div>
-      ) : null}
     </CadastroSection>
   );
 
+  const submeter = handleSubmit(async (values) => {
+    const errosContato = validarContatosCliente(contatos);
+    if (contatosClienteTemErro(errosContato)) {
+      setContatosErros(errosContato);
+      setTab('contatos');
+      setError('root', {
+        message: 'Corrija os contatos adicionais antes de salvar.',
+      });
+      return;
+    }
+    setContatosErros([]);
+    await onSubmit(toApiPayload(values, enderecosEntrega, contatos));
+  });
+
+  useImperativeHandle(ref, () => ({ salvar: () => void submeter() }), [submeter]);
+
   return (
     <CadastroFormShell title="Cliente">
-      <form
-        onSubmit={handleSubmit(async (values) => {
-          const errosContato = validarContatosCliente(contatos);
-          if (contatosClienteTemErro(errosContato)) {
-            setContatosErros(errosContato);
-            setTab('contatos');
-            setError('root', {
-              message: 'Corrija os contatos adicionais antes de salvar.',
-            });
-            return;
-          }
-          setContatosErros([]);
-          await onSubmit(toApiPayload(values, enderecosEntrega, contatos));
-        })}
-        className="space-y-4"
-      >
+      <form onSubmit={submeter} className="space-y-4">
         {errors.root?.message && (
           <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {errors.root.message}
           </div>
         )}
 
-        <CadastroTabs tabs={tabItems} value={tab} onValueChange={setTab}>
+        <CadastroTabs tabs={TAB_ITEMS_BASE} value={tab} onValueChange={setTab}>
           {panel}
         </CadastroTabs>
-
-        <div className="sticky bottom-0 z-10 -mx-4 border-t border-border bg-card px-4 py-3 md:-mx-6 md:px-6">
-          <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:justify-end">
-            <CadastroButton className="w-full sm:w-auto" type="button" variant="outline" onClick={onCancel} disabled={saving}>
-              Cancelar
-            </CadastroButton>
-            <CadastroButton className="w-full sm:w-auto" type="submit" disabled={saving}>
-              {saving ? 'Salvando…' : 'Salvar'}
-            </CadastroButton>
-          </div>
-        </div>
       </form>
     </CadastroFormShell>
   );
-}
+});
+
+ClienteForm.displayName = 'ClienteForm';

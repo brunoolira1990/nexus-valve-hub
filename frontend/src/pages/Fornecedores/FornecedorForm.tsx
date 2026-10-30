@@ -1,5 +1,5 @@
 import type { FocusEvent } from 'react';
-import { useState } from 'react';
+import { forwardRef, useImperativeHandle, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -171,21 +171,19 @@ export function fornecedorToFormValues(f: Partial<Fornecedor>): FornecedorFormIn
   };
 }
 
+/** O cabeçalho do FormShell dispara o submit que pertence a este <form>. */
+export type FornecedorFormHandle = { salvar: () => void };
+
 type Props = {
   defaultValues: FornecedorFormInput;
   transportadoras: Transportadora[];
   onSubmit: (payload: Omit<Fornecedor, 'id'>) => Promise<void>;
-  onCancel: () => void;
-  saving?: boolean;
 };
 
-export function FornecedorForm({
-  defaultValues,
-  transportadoras,
-  onSubmit,
-  onCancel,
-  saving,
-}: Props) {
+export const FornecedorForm = forwardRef<FornecedorFormHandle, Props>(function FornecedorForm(
+  { defaultValues, transportadoras, onSubmit },
+  ref,
+) {
   const [tab, setTab] = useState<string>(TAB_ITEMS[0].id);
   const [contactOpen, setContactOpen] = useState(false);
   const [cnpjLookupLoading, setCnpjLookupLoading] = useState(false);
@@ -497,14 +495,15 @@ export function FornecedorForm({
     </CadastroSection>
   );
 
+  const submeter = handleSubmit(async (values) => {
+    await onSubmit(toApiPayload(values));
+  });
+
+  useImperativeHandle(ref, () => ({ salvar: () => void submeter() }), [submeter]);
+
   return (
     <CadastroFormShell title="Fornecedor">
-      <form
-        onSubmit={handleSubmit(async (values) => {
-          await onSubmit(toApiPayload(values));
-        })}
-        className="space-y-4"
-      >
+      <form onSubmit={submeter} className="space-y-4">
         {errors.root?.message && (
           <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {errors.root.message}
@@ -514,15 +513,6 @@ export function FornecedorForm({
         <CadastroTabs tabs={TAB_ITEMS} value={tab} onValueChange={setTab}>
           {panel}
         </CadastroTabs>
-
-        <div className="flex flex-col items-stretch gap-2 pt-4 border-t border-border sm:flex-row sm:justify-end">
-          <CadastroButton className="w-full sm:w-auto" type="button" variant="outline" onClick={onCancel} disabled={saving}>
-            Cancelar
-          </CadastroButton>
-          <CadastroButton className="w-full sm:w-auto" type="submit" disabled={saving}>
-            {saving ? 'Salvando…' : 'Salvar'}
-          </CadastroButton>
-        </div>
       </form>
 
       <Modal isOpen={contactOpen} onClose={() => setContactOpen(false)} title="Alterar dados de contato" size="md">
@@ -573,4 +563,6 @@ export function FornecedorForm({
       </Modal>
     </CadastroFormShell>
   );
-}
+});
+
+FornecedorForm.displayName = 'FornecedorForm';

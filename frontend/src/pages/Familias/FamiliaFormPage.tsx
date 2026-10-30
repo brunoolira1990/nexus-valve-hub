@@ -192,7 +192,7 @@ const FamiliaFormPage = () => {
     polegadas: 0,
   });
 
-  // O "Salvar" do cabeçalho é o único da tela; o domínio grava por aqui.
+  // O "Salvar" da tela (cabeçalho, e o rodapé mobile que o FormShell replica) grava o domínio por aqui.
   const dominioRef = useRef<FamiliaDominioHandle | null>(null);
   // Identidade estável: callback novo a cada render faria o card recomeçar a carga em loop.
   const reportarErro = useCallback((mensagem: string | null) => setErro(mensagem), []);

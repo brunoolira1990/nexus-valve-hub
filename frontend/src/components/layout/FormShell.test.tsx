@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FormShell, type FormShellAction } from './FormShell';
@@ -84,6 +84,47 @@ describe('FormShell (Sprint 3.13)', () => {
     expect(screen.queryByTestId('form-shell-rail')).toBeNull();
     expect(screen.queryByTestId('form-shell-rail-toggle')).toBeNull();
     expect(screen.queryByTestId('form-shell-pipeline')).toBeNull();
+  });
+
+  it('rodapé mobile replica a ação principal e dispara o mesmo onClick', () => {
+    const salvar = vi.fn();
+    renderShell(
+      <FormShell
+        titulo="Teste"
+        acoesPrincipais={[{ ...SALVAR, onClick: salvar }]}
+        rail={<div>rail</div>}
+      >
+        <div>form</div>
+      </FormShell>,
+    );
+
+    const rodape = screen.getByTestId('form-shell-rodape-mobile');
+    const acao = within(rodape).getByRole('button', { name: 'Salvar' });
+    expect(acao.className).toContain('w-full');
+    fireEvent.click(acao);
+    // Cabeçalho e rodapé apontam para a mesma ação: um clique aqui, uma chamada.
+    expect(salvar).toHaveBeenCalledTimes(1);
+  });
+
+  it('sem ação principal não há rodapé e o botão Painel sobe para não colidir', () => {
+    renderShell(
+      <FormShell titulo="Teste" rail={<div>rail</div>}>
+        <div>form</div>
+      </FormShell>,
+    );
+
+    expect(screen.queryByTestId('form-shell-rodape-mobile')).toBeNull();
+    expect(screen.getByTestId('form-shell-rail-toggle').className).toContain('bottom-24');
+  });
+
+  it('somenteLeitura esconde também o rodapé mobile', () => {
+    renderShell(
+      <FormShell titulo="Teste" acoesPrincipais={[SALVAR]} rail={<div>rail</div>} somenteLeitura>
+        <div>form</div>
+      </FormShell>,
+    );
+
+    expect(screen.queryByTestId('form-shell-rodape-mobile')).toBeNull();
   });
 
   it('renderiza a banda de pipeline e chama onChange ao clicar num estágio futuro', () => {

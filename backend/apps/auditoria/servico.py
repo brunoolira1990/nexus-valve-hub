@@ -15,9 +15,13 @@ from apps.auditoria.politicas import (
     CLIENTE_CAMPOS_MASCARADOS,
     FAMILIA_ALLOWLIST,
     FAMILIA_CAMPOS_MASCARADOS,
+    FORNECEDOR_ALLOWLIST,
+    FORNECEDOR_CAMPOS_MASCARADOS,
     PRODUTO_ALLOWLIST,
     PRODUTO_CAMPOS_MASCARADOS,
     STRING_MAX_LEN,
+    TRANSPORTADORA_ALLOWLIST,
+    TRANSPORTADORA_CAMPOS_MASCARADOS,
 )
 
 
@@ -209,6 +213,66 @@ def registrar_produto(
 
 def snapshot_cliente(cliente) -> dict[str, Any]:
     return capturar_snapshot(cliente, CLIENTE_ALLOWLIST)
+
+
+def snapshot_fornecedor(fornecedor) -> dict[str, Any]:
+    return capturar_snapshot(fornecedor, FORNECEDOR_ALLOWLIST)
+
+
+def snapshot_transportadora(transportadora) -> dict[str, Any]:
+    return capturar_snapshot(transportadora, TRANSPORTADORA_ALLOWLIST)
+
+
+def registrar_fornecedor(
+    *,
+    usuario: AbstractBaseUser | None,
+    fornecedor,
+    operacao: str,
+    estado_anterior: dict[str, Any],
+    estado_posterior: dict[str, Any] | None = None,
+) -> RegistroAuditoria | None:
+    depois = (
+        estado_posterior
+        if estado_posterior is not None
+        else capturar_snapshot(fornecedor, FORNECEDOR_ALLOWLIST)
+    )
+    return registrar_auditoria(
+        usuario=usuario,
+        app_label='cadastros',
+        model_name='fornecedor',
+        object_id=fornecedor.pk,
+        operacao=operacao,
+        estado_anterior=estado_anterior,
+        estado_posterior=depois,
+        allowlist=FORNECEDOR_ALLOWLIST,
+        mascarados=FORNECEDOR_CAMPOS_MASCARADOS,
+    )
+
+
+def registrar_transportadora(
+    *,
+    usuario: AbstractBaseUser | None,
+    transportadora,
+    operacao: str,
+    estado_anterior: dict[str, Any],
+    estado_posterior: dict[str, Any] | None = None,
+) -> RegistroAuditoria | None:
+    depois = (
+        estado_posterior
+        if estado_posterior is not None
+        else capturar_snapshot(transportadora, TRANSPORTADORA_ALLOWLIST)
+    )
+    return registrar_auditoria(
+        usuario=usuario,
+        app_label='cadastros',
+        model_name='transportadora',
+        object_id=transportadora.pk,
+        operacao=operacao,
+        estado_anterior=estado_anterior,
+        estado_posterior=depois,
+        allowlist=TRANSPORTADORA_ALLOWLIST,
+        mascarados=TRANSPORTADORA_CAMPOS_MASCARADOS,
+    )
 
 
 def snapshot_produto(produto) -> dict[str, Any]:

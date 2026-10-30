@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Loader2, Save, X } from 'lucide-react';
-import { PageHeader } from '@/components/PageHeader';
+import { Loader2, Save, Trash2, X } from 'lucide-react';
 import { NexusButton } from '@/components/nexus';
+import { Chatter } from '@/components/layout/Chatter';
+import { FormShell } from '@/components/layout/FormShell';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useProdutoForm } from './hooks/useProdutoForm';
 import { ProdutoFormTab } from './tabs/ProdutoFormTab';
 import { ProdutoPainelOperacionalTab } from '@/components/produtos/ProdutoPainelOperacionalTab';
 import { ProdutoRastreabilidadeTab } from '@/components/produtos/ProdutoRastreabilidadeTab';
-import { HistoricoAlteracoesPanel } from '@/components/auditoria/HistoricoAlteracoesPanel';
 import { familiasProdutoService, produtosService } from '@/services/api/produtos';
 import { materiaisService } from '@/services/api/materiais';
 import { useAppContexto } from '@/hooks/useAppContexto';
@@ -186,32 +186,35 @@ const ProdutoFormPage = () => {
 
   const showSaveError = saveError || (erro && !carregando);
 
-  return (
-    <div className="space-y-6">
-      <PageHeader
-        title={editing ? `${editing.codigo_completo} — ${editing.descricao}` : 'Novo produto'}
-        breadcrumbs={[
-          { label: 'Cadastros', path: '/produtos' },
-          { label: 'Produtos', path: '/produtos' },
-          { label: editing ? editing.codigo_completo : 'Novo' },
-        ]}
-        actions={
-          <div className="flex items-center gap-2">
-            <NexusButton type="button" variant="outline" onClick={handleCancel} disabled={salvando}>
-              <X className="h-4 w-4 mr-2" />
-              Cancelar
-            </NexusButton>
-            <NexusButton type="button" onClick={handleSubmit} disabled={salvando} loading={salvando}>
-              <Save className="h-4 w-4 mr-2" />
-              Salvar
-            </NexusButton>
-          </div>
-        }
-      />
+  const titulo = editing
+    ? `${editing.codigo_completo} — ${editing.descricao}`
+    : form.descricao.trim() || 'Novo produto';
 
+  return (
+    <FormShell
+      titulo={titulo}
+      acoesPrincipais={[
+        {
+          label: 'Salvar',
+          icon: <Save className="h-4 w-4 mr-2" />,
+          variant: 'primary',
+          loading: salvando,
+          onClick: () => void handleSubmit(),
+        },
+      ]}
+      acoesSecundarias={[
+        {
+          label: 'Descartar',
+          icon: <Trash2 className="h-4 w-4 mr-2" />,
+          onClick: handleCancel,
+        },
+      ]}
+      onVoltar={handleCancel}
+      rail={<Chatter entityType="produto" entityId={produtoId ?? null} />}
+    >
       {showSaveError && (
         <div
-          className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
           role="alert"
         >
           <p>{saveError || erro}</p>
@@ -231,7 +234,6 @@ const ProdutoFormPage = () => {
             <>
               <TabsTrigger value="painel">Painel operacional</TabsTrigger>
               <TabsTrigger value="rastreabilidade">Rastreabilidade</TabsTrigger>
-              <TabsTrigger value="historico">Histórico</TabsTrigger>
             </>
           )}
         </TabsList>
@@ -267,20 +269,10 @@ const ProdutoFormPage = () => {
             <TabsContent value="rastreabilidade" className="mt-4">
               <ProdutoRastreabilidadeTab produtoId={produtoId} active={true} />
             </TabsContent>
-
-            <TabsContent value="historico" className="mt-4">
-              <HistoricoAlteracoesPanel
-                appLabel="produtos"
-                modelName="produto"
-                objectId={produtoId}
-                active={true}
-                enabled={true}
-              />
-            </TabsContent>
           </>
         )}
       </Tabs>
-    </div>
+    </FormShell>
   );
 };
 

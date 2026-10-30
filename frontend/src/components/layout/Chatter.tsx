@@ -37,6 +37,8 @@ const ANEXO_ACCEPT = '.pdf,.png,.jpg,.jpeg,.xml,.csv,.docx,.xlsx';
  */
 const ESCOPOS_HISTORICO: Record<string, HistoricoEscopo> = {
   cliente: { appLabel: 'cadastros', modelName: 'cliente' },
+  fornecedor: { appLabel: 'cadastros', modelName: 'fornecedor' },
+  transportadora: { appLabel: 'cadastros', modelName: 'transportadora' },
   produto: { appLabel: 'produtos', modelName: 'produto' },
   familia: { appLabel: 'produtos', modelName: 'familiaproduto' },
 };
