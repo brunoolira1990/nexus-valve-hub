@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Modal } from '@/components/Modal';
-import { PageHeader } from '@/components/PageHeader';
+import { FormShell } from '@/components/layout/FormShell';
 import { GerarContasPagarNfeEntradaModal } from '@/components/fiscal/GerarContasPagarNfeEntradaModal';
 import { FornecedorEntradaAcoes } from '@/components/fiscal/FornecedorEntradaAcoes';
 import { NFeEntradaFinanceiroAcoes } from '@/components/fiscal/NFeEntradaFinanceiroAcoes';
@@ -30,6 +30,7 @@ import {
 } from '@/lib/conferenciaNfeLabels';
 import { aplicarStatusAutomaticoItem } from '@/lib/conferenciaNfeStatus';
 import { prepararEstoqueErrorMessage } from '@/lib/conferenciaNfePreparar';
+import { conferenciaNfeStatusToSteps } from '@/lib/statusPipelineHelpers';
 import {
   buildCriarRegraFiscalEntradaUrl,
   mensagemFiscalEntrada,
@@ -415,9 +416,44 @@ export function NFeEntradaConferenciaPanel({
       ? Math.round((progresso.produtosOk / progresso.itensAtivos) * 100)
       : 0;
 
-  return (
-    <div>
-      {!embedded ? <PageHeader title="Conferência da nota de entrada" /> : null}
+  // Sprint 3.18-3: no modo standalone as ações vivem no cabeçalho do FormShell. Mesmos
+  // handlers, mesmos labels e mesmas condicionais da barra de baixo — que continua
+  // existindo para o modo embedded (Central DF-e), onde não há shell nenhum.
+  // `loading: busy` é o equivalente do `disabled={busy}` de hoje no contrato do shell.
+  const acoesPrincipais = [
+    { label: 'Finalizar', onClick: () => void preparar(), loading: busy, variant: 'primary' as const },
+    ...(podeAplicarEstoque
+      ? [
+          {
+            label: 'Aplicar estoque',
+            onClick: () => void abrirModalAplicar(),
+            loading: busy,
+            variant: 'primary' as const,
+          },
+        ]
+      : []),
+  ];
+
+  const acoesSecundarias = [
+    {
+      label: dados?.financeiro?.possui_pendencias_operacionais ? 'Salvar com pendências' : 'Salvar',
+      onClick: () => void salvar(),
+      loading: busy,
+    },
+    { label: 'Reabrir para correção', onClick: () => setReabrirOpen(true), loading: busy },
+    ...(dados && (dados.status === 'CONFERIDA' || dados.status === 'PREPARADA')
+      ? [
+          {
+            label: 'Gerar devolução ao fornecedor',
+            onClick: () => setShowDevolucaoCompra(true),
+            loading: busy,
+          },
+        ]
+      : []),
+  ];
+
+  const conteudo = (
+    <>
       {dados ? (
         <div className="mb-4 rounded-lg border border-border bg-muted/30 px-4 py-3 space-y-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1607,6 +1643,14 @@ export function NFeEntradaConferenciaPanel({
           }
         />
       </div>
+      {/**
+       * Barra de ações: continua existindo, com os mesmos handlers, labels e condicionais de
+       * sempre, mas só renderiza no modo embedded (Central DF-e) — em standalone as mesmas ações
+       * vivem no cabeçalho do FormShell (acoesPrincipais/acoesSecundarias acima), e renderizar
+       * as duas coisas duplicaria botão na tela. Não reindentamos o bloco para manter cada linha
+       * byte a byte igual à versão anterior.
+       */}
+      {embedded ? (
       <div className="flex flex-col-reverse sm:flex-row justify-end items-stretch sm:items-center gap-2 mt-4">
         {!embedded ? (
           <button type="button" className="erp-btn-outline w-full sm:w-auto justify-center" onClick={() => navigate('/nfe-entrada-historica-importada')}>
@@ -1649,6 +1693,7 @@ export function NFeEntradaConferenciaPanel({
           </button>
         ) : null}
       </div>
+      ) : null}
       {estoqueJaAplicado ? (
         <p className="text-xs text-emerald-700 mt-3 max-w-3xl ml-auto text-right">
           Estoque aplicado em{' '}
@@ -1811,6 +1856,24 @@ export function NFeEntradaConferenciaPanel({
         }}
       />
 
-    </div>
+    </>
+  );
+
+  // Sprint 3.18-3: decisão do PO — o shell só existe no modo standalone. Na Central DF-e
+  // (embedded=true) o painel continua sendo o `<div>` cru de hoje, sem header nem pipeline.
+  if (embedded) {
+    return <div>{conteudo}</div>;
+  }
+
+  return (
+    <FormShell
+      titulo="Conferência da nota de entrada"
+      onVoltar={() => navigate('/nfe-entrada-historica-importada')}
+      pipeline={conferenciaNfeStatusToSteps(dados ?? {})}
+      acoesPrincipais={acoesPrincipais}
+      acoesSecundarias={acoesSecundarias}
+    >
+      {conteudo}
+    </FormShell>
   );
 }

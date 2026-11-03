@@ -223,3 +223,36 @@ export function nfeEntradaStatusToSteps(nfe: {
   }
   return { steps: NFE_ENTRADA_BASE, currentKey: 'rascunho' };
 }
+
+/**
+ * Conferência de NF-e de entrada (Sprint 3.18-3). Os rótulos vêm do próprio
+ * `NFeEntradaConferencia.Status` (models.py: `PENDENTE`/`CONFERIDA`/`PREPARADA`/`CANCELADA`),
+ * com 'Cancelada/Revertida' encurtado no tooltip porque a banda é estreita.
+ * 'Estoque aplicado' NÃO é estágio: é o carimbo `estoque_aplicado_em`, que a tela já
+ * mostra como badge no card de progresso. Colocar um 4º estágio diria que existe uma
+ * transição de status que o domínio não tem.
+ */
+const CONFERENCIA_NFE_BASE: StatusStep[] = [
+  { key: 'pendente', label: 'Pendente', tooltip: 'Nota aguardando conferência dos itens' },
+  { key: 'conferida', label: 'Conferida', tooltip: 'Revisão concluída; estoque ainda não foi tocado' },
+  { key: 'preparada', label: 'Entrada preparada', tooltip: 'Entrada preparada — aplicar estoque é ação separada, com preview' },
+];
+
+export function conferenciaNfeStatusToSteps(conferencia: {
+  status?: string | null;
+}): StatusPipelineState {
+  const st = normStatus(conferencia.status);
+
+  if (st === 'CANCELADA' || st === 'CANCELADO') {
+    // O domínio não registra em qual estágio a conferência estava quando foi revertida,
+    // então o perigo é sinalizado no primeiro estágio: voltou a não estar conferida.
+    return withCancelledStep(CONFERENCIA_NFE_BASE, 'pendente', 'Conferência cancelada/revertida');
+  }
+  if (st === 'PREPARADA') {
+    return { steps: CONFERENCIA_NFE_BASE, currentKey: 'preparada' };
+  }
+  if (st === 'CONFERIDA') {
+    return { steps: CONFERENCIA_NFE_BASE, currentKey: 'conferida' };
+  }
+  return { steps: CONFERENCIA_NFE_BASE, currentKey: 'pendente' };
+}

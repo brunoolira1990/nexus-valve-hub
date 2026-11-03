@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  conferenciaNfeStatusToSteps,
   cotacaoStatusToSteps,
   nfeEntradaStatusToSteps,
   nfeSaidaStatusToSteps,
@@ -191,5 +192,33 @@ describe('nfeEntradaStatusToSteps', () => {
       'pronta',
       'autorizada',
     ]);
+  });
+});
+
+describe('conferenciaNfeStatusToSteps', () => {
+  it('mapeia pendente → conferida → preparada', () => {
+    expect(conferenciaNfeStatusToSteps({ status: 'PENDENTE' }).currentKey).toBe('pendente');
+    expect(conferenciaNfeStatusToSteps({ status: 'CONFERIDA' }).currentKey).toBe('conferida');
+    expect(conferenciaNfeStatusToSteps({ status: 'PREPARADA' }).currentKey).toBe('preparada');
+  });
+
+  it('expõe os três steps da conferência, em ordem, sem estágio de estoque', () => {
+    expect(conferenciaNfeStatusToSteps({}).steps.map((s) => s.key)).toEqual([
+      'pendente',
+      'conferida',
+      'preparada',
+    ]);
+  });
+
+  it('marca perigo em CANCELADA sem perder os steps', () => {
+    const cancelada = conferenciaNfeStatusToSteps({ status: 'CANCELADA' });
+    expect(cancelada.currentKey).toBe('pendente');
+    expect(cancelada.steps.find((s) => s.key === 'pendente')?.tone).toBe('danger');
+    expect(cancelada.steps).toHaveLength(3);
+  });
+
+  it('status vazio ou desconhecido cai no pendente', () => {
+    expect(conferenciaNfeStatusToSteps({}).currentKey).toBe('pendente');
+    expect(conferenciaNfeStatusToSteps({ status: 'NADA_A_VER' }).currentKey).toBe('pendente');
   });
 });
