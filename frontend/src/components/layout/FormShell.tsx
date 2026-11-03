@@ -26,6 +26,13 @@ export interface FormShellProps {
     steps: StatusStep[];
     currentKey: string;
     onChange?: (key: string) => void;
+    /**
+     * Leitura do pipeline separada da leitura da tela. Em documento (Sprint 3.18) o
+     * rail de status é exibição — as transições reais continuam pelos endpoints —
+     * mas as ações do cabeçalho têm de continuar visíveis. Campo omitido herda o
+     * `somenteLeitura` do shell, que é o comportamento de todas as telas da 3.13-3.16.
+     */
+    somenteLeitura?: boolean;
   };
   acoesPrincipais?: FormShellAction[];
   acoesSecundarias?: FormShellAction[];
@@ -128,7 +135,7 @@ export function FormShell({
               steps={pipeline.steps}
               currentKey={pipeline.currentKey}
               onChange={pipeline.onChange}
-              somenteLeitura={somenteLeitura}
+              somenteLeitura={pipeline.somenteLeitura ?? somenteLeitura}
             />
           </div>
         )}

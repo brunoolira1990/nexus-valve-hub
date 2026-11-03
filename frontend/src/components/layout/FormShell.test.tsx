@@ -157,4 +157,86 @@ describe('FormShell (Sprint 3.13)', () => {
     fireEvent.click(screen.getByTestId('form-shell-voltar'));
     expect(onVoltar).toHaveBeenCalled();
   });
+
+  it('pipeline.somenteLeitura congela o estágio sem esconder as ações do cabeçalho (Sprint 3.18)', () => {
+    const onChange = vi.fn();
+    const salvar = vi.fn();
+    const atualizar = vi.fn();
+    renderShell(
+      <FormShell
+        titulo="CF-20260831-0007"
+        acoesPrincipais={[{ ...SALVAR, onClick: salvar }]}
+        acoesSecundarias={[{ label: 'Atualizar', onClick: atualizar }]}
+        pipeline={{
+          steps: [
+            { key: 'rascunho', label: 'Rascunho' },
+            { key: 'em_cotacao', label: 'Em cotação' },
+            { key: 'concluida', label: 'Concluída' },
+          ],
+          currentKey: 'rascunho',
+          onChange,
+          somenteLeitura: true,
+        }}
+      >
+        <div>abas do documento</div>
+      </FormShell>,
+    );
+
+    // O pipeline é exibição: nenhum estágio é clicável mesmo com onChange passado.
+    fireEvent.click(screen.getByTestId('status-pipeline-step-em_cotacao'));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByTestId('status-pipeline-step-concluida')).toBeDisabled();
+
+    // ...e a tela continua escrevendo: as duas faixas de ação seguem na tela.
+    fireEvent.click(within(screen.getByTestId('form-shell-header')).getByRole('button', { name: 'Salvar' }));
+    fireEvent.click(within(screen.getByTestId('form-shell-header')).getByRole('button', { name: 'Atualizar' }));
+    expect(salvar).toHaveBeenCalledTimes(1);
+    expect(atualizar).toHaveBeenCalledTimes(1);
+  });
+
+  it('campo omitido preserva o comportamento atual: o pipeline herda o somenteLeitura do shell', () => {
+    const onChange = vi.fn();
+    const interativo = renderShell(
+      <FormShell
+        titulo="Teste"
+        pipeline={{
+          steps: [
+            { key: 'rascunho', label: 'Rascunho' },
+            { key: 'pronta', label: 'Pronta' },
+          ],
+          currentKey: 'rascunho',
+          onChange,
+        }}
+      >
+        <div>form</div>
+      </FormShell>,
+    );
+    fireEvent.click(screen.getByTestId('status-pipeline-step-pronta'));
+    expect(onChange).toHaveBeenCalledWith('pronta');
+    expect(screen.getByTestId('status-pipeline-step-pronta')).toBeEnabled();
+    interativo.unmount();
+
+    onChange.mockClear();
+    const somenteLeitura = renderShell(
+      <FormShell
+        titulo="Teste"
+        somenteLeitura
+        pipeline={{
+          steps: [
+            { key: 'rascunho', label: 'Rascunho' },
+            { key: 'pronta', label: 'Pronta' },
+          ],
+          currentKey: 'rascunho',
+          onChange,
+        }}
+      >
+        <div>form</div>
+      </FormShell>,
+    );
+    fireEvent.click(screen.getByTestId('status-pipeline-step-pronta'));
+    // Com o campo omitido, o shell em leitura continua congelando o pipeline (0 chamadas).
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByTestId('status-pipeline-step-pronta')).toBeDisabled();
+    somenteLeitura.unmount();
+  });
 });

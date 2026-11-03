@@ -238,8 +238,13 @@ function LocationProbe() {
   return <p data-testid="location">{location.pathname}{location.search}</p>;
 }
 
+/**
+ * Desde a 3.18-1 o detalhe vive dentro do FormShell, e o rail do Chatter tem abas
+ * homônimas ('Histórico'). O seletor passa a escopar o conteúdo do shell — a aba do
+ * documento — sem alterar o que é clicado nem o que é asserido depois.
+ */
 function activateTab(name: string) {
-  const tab = screen.getByRole('tab', { name });
+  const tab = within(screen.getByTestId('form-shell-content')).getByRole('tab', { name });
   fireEvent.pointerDown(tab, { button: 0, ctrlKey: false });
   fireEvent.click(tab);
 }

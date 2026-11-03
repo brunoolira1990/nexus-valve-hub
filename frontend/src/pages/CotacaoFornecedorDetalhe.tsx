@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, CheckCircle2, RefreshCw, Send } from 'lucide-react';
+import { RefreshCw, CheckCircle2, Send } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { PageHeader } from '@/components/PageHeader';
+import { Chatter } from '@/components/layout/Chatter';
+import { FormShell } from '@/components/layout/FormShell';
 import { DataTable, DataTableShell } from '@/components/nexus/DataTable';
 import { StatusBadge } from '@/components/nexus/StatusBadge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EmptyState, ErrorState } from '@/components/list/ListStates';
 import { descricaoItemCotacao, labelOrigemCotacao, labelStatusCotacao, respostaPodeSerSelecionada } from '@/lib/cotacaoFornecedores';
+import { cotacaoStatusToSteps } from '@/lib/statusPipelineHelpers';
 import { formatDateBr } from '@/lib/dateBr';
 import { formatMoneyBRL } from '@/lib/numberFields';
 import { apiErrorMessage } from '@/services/api/config';
@@ -243,28 +245,24 @@ export default function CotacaoFornecedorDetalhe() {
   const totalRespostas = comparativo.itens.reduce((total, item) => total + item.respostas.length, 0);
 
   return (
-    <div className="min-w-0">
-      <PageHeader
-        title={cotacao.numero}
-        description="Consulte os dados da cotação, registre respostas e compare o custo efetivo das ofertas."
-        breadcrumbs={[
-          { label: 'Compras' },
-          { label: 'Cotações com Fornecedores', path: '/cotacoes-fornecedores' },
-          { label: cotacao.numero },
-        ]}
-        badges={<StatusBadge status={cotacao.status} label={labelStatusCotacao(cotacao.status)} />}
-        actions={(
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className="erp-btn-outline" onClick={() => navigate('/cotacoes-fornecedores')}>
-              <ArrowLeft className="h-4 w-4" /> Voltar
-            </button>
-            <button type="button" className="erp-btn-outline" onClick={() => void load()}>
-              <RefreshCw className="h-4 w-4" /> Atualizar
-            </button>
-          </div>
-        )}
-      />
-
+    <FormShell
+      titulo={cotacao.numero}
+      subtitulo="Consulte os dados da cotação, registre respostas e compare o custo efetivo das ofertas."
+      meta={<StatusBadge status={cotacao.status} label={labelStatusCotacao(cotacao.status)} />}
+      // Pipeline é exibição: as transições reais (cancelar, concluir) seguem nos endpoints
+      // do domínio, então nenhum estágio é clicável aqui.
+      pipeline={{ ...cotacaoStatusToSteps(cotacao), somenteLeitura: true }}
+      acoesSecundarias={[
+        {
+          label: 'Atualizar',
+          icon: <RefreshCw className="h-4 w-4 mr-2" />,
+          onClick: () => void load(),
+        },
+      ]}
+      onVoltar={() => navigate('/cotacoes-fornecedores')}
+      rail={<Chatter entityType="cotacaofornecedor" entityId={cotacaoId} />}
+    >
+      {/* O breadcrumb vem do MainLayout (breadcrumbMap cobre /cotacoes-fornecedores). */}
       {error ? <div className="erp-alert erp-alert-error mb-4">{error}</div> : null}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="min-w-0">
@@ -440,6 +438,6 @@ export default function CotacaoFornecedorDetalhe() {
           </section>
         </TabsContent>
       </Tabs>
-    </div>
+    </FormShell>
   );
 }
