@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/services/api/nfeEntradaConferencia', () => ({
   nfeEntradaConferenciaService: {
     get: mocks.getConferencia,
-    previewReabertura: vi.fn(),
+    previewReabertura: vi.fn().mockResolvedValue(null),
     reabrir: vi.fn(),
   },
 }));
@@ -64,6 +64,12 @@ describe('ações de reabertura da entrada de fornecedor', () => {
         <NFeEntradaConferenciaPanel nfeHistoricaId={10} />
       </MemoryRouter>,
     );
+    // Sprint 3.18-3: a barra agrupada é a única fonte de ações da conferência, e o botão que
+    // dispara a reabertura dela se chama 'Reabrir para correção'. O rótulo histórico buscado
+    // por este teste ('Reabrir entrada para correção') é o botão de confirmação do modal —
+    // ele só existe depois de abrir o modal. Este teste falhava no HEAD exatamente por
+    // procurar o botão do modal sem antes clicar na ação; a adaptação é o clique.
+    fireEvent.click(await screen.findByRole('button', { name: /^Reabrir para correção$/i }));
     expect(
       await screen.findByRole('button', { name: /Reabrir entrada para correção/i }),
     ).toBeInTheDocument();

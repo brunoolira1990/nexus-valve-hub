@@ -134,6 +134,16 @@ export function NFeEntradaConferenciaPanel({
     dados &&
     !estoqueJaAplicado &&
     (dados.status === 'PREPARADA' || dados.status === 'CONFERIDA');
+  // Sprint 3.18-3 (gate decidido pelo PO): 'Finalizar conferência' habilita enquanto a nota
+  // ainda é revisável; 'Aplicar estoque' continua aparecendo enquanto o estoque não foi
+  // aplicado, mas só habilita com a conferência CONFERIDA. O guard do backend aceita
+  // CONFERIDA|PREPARADA (aplicacao_estoque_conferencia.py:386-389) — a restrição é de tela,
+  // não de domínio, e é declarada na entrega.
+  const podeFinalizarConferencia =
+    Boolean(dados) && (dados?.status === 'PENDENTE' || dados?.status === 'CONFERIDA');
+  const acaoOperacionalDisponivel =
+    Boolean(dados) && (dados?.status === 'CONFERIDA' || dados?.status === 'PREPARADA');
+  const aplicarEstoqueHabilitado = Boolean(podeAplicarEstoque) && dados?.status === 'CONFERIDA';
 
   const buscarProdutos = useCallback((term: string, limit?: number) => produtosService.search(term, limit ?? 40), []);
 
@@ -416,44 +426,70 @@ export function NFeEntradaConferenciaPanel({
       ? Math.round((progresso.produtosOk / progresso.itensAtivos) * 100)
       : 0;
 
-  // Sprint 3.18-3: no modo standalone as ações vivem no cabeçalho do FormShell. Mesmos
-  // handlers, mesmos labels e mesmas condicionais da barra de baixo — que continua
-  // existindo para o modo embedded (Central DF-e), onde não há shell nenhum.
-  // `loading: busy` é o equivalente do `disabled={busy}` de hoje no contrato do shell.
-  const acoesPrincipais = [
-    { label: 'Finalizar', onClick: () => void preparar(), loading: busy, variant: 'primary' as const },
-    ...(podeAplicarEstoque
-      ? [
-          {
-            label: 'Aplicar estoque',
-            onClick: () => void abrirModalAplicar(),
-            loading: busy,
-            variant: 'primary' as const,
-          },
-        ]
-      : []),
-  ];
+  // Sprint 3.18-3 (upgrade de UX): a barra de baixo voltou a ser a única fonte de ações
+  // (decisão do PO), então não existem mais arrays de ação para o cabeçalho do shell — o
+  // FormShell fica com título + pipeline + seta de voltar.
+  // As duas condições do banner são as do spec. 'itens_sem_vinculo' NÃO existe na API: o
+  // número vem do mesmo computarProgressoConferencia que já alimenta o card de progresso,
+  // e 'produtosFaltando' conta exatamente as linhas ativas com itemPendenteProduto() = true.
+  const pendenciaFornecedor = Boolean(dados) && !dados?.fornecedor_id;
+  const itensSemVinculo = progresso.produtosFaltando;
+  const temPendenciaConferencia = Boolean(dados) && (pendenciaFornecedor || itensSemVinculo > 0);
 
-  const acoesSecundarias = [
-    {
-      label: dados?.financeiro?.possui_pendencias_operacionais ? 'Salvar com pendências' : 'Salvar',
-      onClick: () => void salvar(),
-      loading: busy,
-    },
-    { label: 'Reabrir para correção', onClick: () => setReabrirOpen(true), loading: busy },
-    ...(dados && (dados.status === 'CONFERIDA' || dados.status === 'PREPARADA')
-      ? [
-          {
-            label: 'Gerar devolução ao fornecedor',
-            onClick: () => setShowDevolucaoCompra(true),
-            loading: busy,
-          },
-        ]
-      : []),
-  ];
+  /**
+   * O banner é âncora, não um segundo jogo de botões: os controles reais de fornecedor já
+   * vivem no bloco autocontido `FornecedorEntradaAcoes` (que abre os próprios modais), e
+   * duplicá-lo no topo criaria exatamente a ambiguidade que esta fase quer eliminar.
+   */
+  const rolarParaAncora = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
 
   const conteudo = (
     <>
+      {temPendenciaConferencia ? (
+        <div
+          role="alert"
+          data-testid="banner-pendencias-conferencia"
+          className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800"
+        >
+          <p className="text-sm font-semibold">
+            Atenção: Existem pendências que impedem a finalização segura.
+          </p>
+          <ul className="mt-2 space-y-2 text-xs">
+            {pendenciaFornecedor ? (
+              <li className="flex flex-wrap items-center gap-2">
+                <span>Fornecedor não identificado nesta nota de entrada.</span>
+                <button
+                  type="button"
+                  data-testid="banner-ancora-fornecedor"
+                  className="erp-btn-outline erp-btn-sm border-amber-300 bg-white/70"
+                  onClick={() => rolarParaAncora('conferencia-fornecedor-acoes')}
+                >
+                  Cadastrar ou vincular fornecedor
+                </button>
+              </li>
+            ) : null}
+            {itensSemVinculo > 0 ? (
+              <li className="flex flex-wrap items-center gap-2">
+                <span>
+                  {itensSemVinculo === 1
+                    ? '1 item sem vínculo com o produto.'
+                    : `${itensSemVinculo} itens sem vínculo com o produto.`}
+                </span>
+                <button
+                  type="button"
+                  data-testid="banner-ancora-itens"
+                  className="erp-btn-outline erp-btn-sm border-amber-300 bg-white/70"
+                  onClick={() => rolarParaAncora('conferencia-itens')}
+                >
+                  Ver as linhas
+                </button>
+              </li>
+            ) : null}
+          </ul>
+        </div>
+      ) : null}
       {dados ? (
         <div className="mb-4 rounded-lg border border-border bg-muted/30 px-4 py-3 space-y-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -559,7 +595,7 @@ export function NFeEntradaConferenciaPanel({
               </p>
             )}
           </div>
-          <div className="md:col-span-4">
+          <div className="md:col-span-4" id="conferencia-fornecedor-acoes">
             <FornecedorEntradaAcoes
               status={dados.fornecedor}
               busy={busy}
@@ -1022,7 +1058,7 @@ export function NFeEntradaConferenciaPanel({
         </p>
       ) : null}
       {dados ? (
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-md border border-border/70 bg-muted/20 px-3 py-2">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-md border border-border/70 bg-muted/20 px-3 py-2" id="conferencia-itens">
           <div className="flex flex-wrap items-center gap-3">
             <div
               className="inline-flex rounded-md border border-border bg-background p-0.5 shadow-sm"
@@ -1644,56 +1680,86 @@ export function NFeEntradaConferenciaPanel({
         />
       </div>
       {/**
-       * Barra de ações: continua existindo, com os mesmos handlers, labels e condicionais de
-       * sempre, mas só renderiza no modo embedded (Central DF-e) — em standalone as mesmas ações
-       * vivem no cabeçalho do FormShell (acoesPrincipais/acoesSecundarias acima), e renderizar
-       * as duas coisas duplicaria botão na tela. Não reindentamos o bloco para manter cada linha
-       * byte a byte igual à versão anterior.
+       * Sprint 3.18-3 (upgrade de UX): barra agrupada, única fonte de ações nos dois modos
+       * (decisão do PO — o cabeçalho do FormShell ficou só com título, pipeline e voltar).
+       * Grupo navegação | grupo conferência | grupo operacional. Os handlers são os mesmos de
+       * sempre; mudaram o rótulo, o agrupamento e os gates: 'Finalizar conferência' habilita em
+       * PENDENTE|CONFERIDA e 'Aplicar estoque' só habilita em CONFERIDA. 'Gerar Financeiro' não
+       * entrou aqui porque o gatilho já existe no bloco de Financeiro (NFeEntradaFinanceiroAcoes).
        */}
-      {embedded ? (
-      <div className="flex flex-col-reverse sm:flex-row justify-end items-stretch sm:items-center gap-2 mt-4">
-        {!embedded ? (
-          <button type="button" className="erp-btn-outline w-full sm:w-auto justify-center" onClick={() => navigate('/nfe-entrada-historica-importada')}>
-            Voltar
+      <div
+        data-testid="barra-acoes-conferencia"
+        className="mt-4 flex flex-col-reverse items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end"
+      >
+        <div data-testid="barra-grupo-navegacao" className="flex flex-wrap gap-2">
+          {!embedded ? (
+            <button type="button" className="erp-btn-outline w-full sm:w-auto justify-center" onClick={() => navigate('/nfe-entrada-historica-importada')}>
+              Voltar
+            </button>
+          ) : onClose ? (
+            <button type="button" className="erp-btn-outline w-full sm:w-auto justify-center" onClick={onClose}>
+              Fechar
+            </button>
+          ) : null}
+        </div>
+        <div data-testid="barra-grupo-conferencia" className="flex flex-wrap gap-2">
+          <button type="button" className="erp-btn-outline w-full sm:w-auto justify-center" onClick={() => void salvar()} disabled={busy}>
+            {dados?.financeiro?.possui_pendencias_operacionais
+              ? 'Salvar com pendências'
+              : 'Salvar rascunho'}
           </button>
-        ) : onClose ? (
-          <button type="button" className="erp-btn-outline w-full sm:w-auto justify-center" onClick={onClose}>
-            Fechar
-          </button>
-        ) : null}
-        <button type="button" className="erp-btn-outline w-full sm:w-auto justify-center" onClick={() => setReabrirOpen(true)} disabled={busy}>
-          Reabrir para correção
-        </button>
-        {dados && (dados.status === 'CONFERIDA' || dados.status === 'PREPARADA') ? (
           <button
             type="button"
-            className="erp-btn-outline w-full sm:w-auto justify-center border-amber-500 text-amber-800 hover:bg-amber-50"
-            onClick={() => setShowDevolucaoCompra(true)}
-            disabled={busy}
+            className="erp-btn-primary w-full sm:w-auto justify-center"
+            onClick={() => void preparar()}
+            disabled={busy || !podeFinalizarConferencia}
+            title={
+              podeFinalizarConferencia
+                ? undefined
+                : 'A conferência já foi finalizada; use Reabrir para correção antes de editar de novo.'
+            }
           >
-            Gerar devolução ao fornecedor
+            Finalizar conferência
           </button>
-        ) : null}
-        <button type="button" className="erp-btn-outline w-full sm:w-auto justify-center" onClick={() => void salvar()} disabled={busy}>
-          {dados?.financeiro?.possui_pendencias_operacionais
-            ? 'Salvar com pendências'
-            : 'Salvar'}
-        </button>
-        <button type="button" className="erp-btn-primary w-full sm:w-auto justify-center" onClick={() => void preparar()} disabled={busy}>
-          Finalizar
-        </button>
-        {podeAplicarEstoque ? (
-          <button
-            type="button"
-            className="erp-btn-primary w-full sm:w-auto justify-center bg-emerald-700 hover:bg-emerald-800"
-            onClick={() => void abrirModalAplicar()}
-            disabled={busy}
-          >
-            Aplicar estoque
-          </button>
-        ) : null}
+        </div>
+        <div data-testid="barra-grupo-operacional" className="flex flex-wrap gap-2">
+          {podeAplicarEstoque ? (
+            <button
+              type="button"
+              className="erp-btn-primary w-full sm:w-auto justify-center bg-emerald-700 hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => void abrirModalAplicar()}
+              disabled={busy || !aplicarEstoqueHabilitado}
+              title={
+                aplicarEstoqueHabilitado
+                  ? undefined
+                  : 'Habilita com a conferência CONFERIDA; em Entrada preparada o estoque já foi tratado por outro caminho.'
+              }
+            >
+              Aplicar estoque
+            </button>
+          ) : null}
+          {acaoOperacionalDisponivel ? (
+            <button
+              type="button"
+              className="erp-btn-outline w-full sm:w-auto justify-center border-amber-500 text-amber-800 hover:bg-amber-50"
+              onClick={() => setShowDevolucaoCompra(true)}
+              disabled={busy}
+            >
+              Gerar devolução ao fornecedor
+            </button>
+          ) : null}
+          {acaoOperacionalDisponivel ? (
+            <button
+              type="button"
+              className="erp-btn-outline w-full sm:w-auto justify-center"
+              onClick={() => setReabrirOpen(true)}
+              disabled={busy}
+            >
+              Reabrir para correção
+            </button>
+          ) : null}
+        </div>
       </div>
-      ) : null}
       {estoqueJaAplicado ? (
         <p className="text-xs text-emerald-700 mt-3 max-w-3xl ml-auto text-right">
           Estoque aplicado em{' '}
@@ -1869,9 +1935,7 @@ export function NFeEntradaConferenciaPanel({
     <FormShell
       titulo="Conferência da nota de entrada"
       onVoltar={() => navigate('/nfe-entrada-historica-importada')}
-      pipeline={conferenciaNfeStatusToSteps(dados ?? {})}
-      acoesPrincipais={acoesPrincipais}
-      acoesSecundarias={acoesSecundarias}
+      pipeline={{ ...conferenciaNfeStatusToSteps(dados ?? {}), somenteLeitura: true }}
     >
       {conteudo}
     </FormShell>
