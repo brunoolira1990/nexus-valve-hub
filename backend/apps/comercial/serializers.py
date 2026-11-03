@@ -3,9 +3,18 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from rest_framework import serializers
 
+from apps.auditoria.servico import (
+    registrar_pedido_compra,
+    registrar_pedido_venda,
+    registrar_proposta,
+    snapshot_pedido_compra,
+    snapshot_pedido_venda,
+    snapshot_proposta,
+    usuario_do_contexto,
+)
 from apps.cadastros.models import Cliente, Empresa, Fornecedor
 from apps.corridas.models import Corrida
 from apps.produtos.models import Produto
@@ -980,22 +989,41 @@ class PropostaSerializer(serializers.ModelSerializer):
         itens_data = validated_data.pop('itens')
         if numero_proposta_vazio(validated_data.get('numero')):
             validated_data['numero'] = gerar_numero_proposta(validated_data.get('data'))
-        proposta = Proposta.objects.create(**validated_data)
-        for item in itens_data:
-            ItemProposta.objects.create(proposta=proposta, **item)
-        recalcular_proposta(proposta)
+        usuario = usuario_do_contexto(self)
+        with transaction.atomic():
+            proposta = Proposta.objects.create(**validated_data)
+            for item in itens_data:
+                ItemProposta.objects.create(proposta=proposta, **item)
+            recalcular_proposta(proposta)
+            registrar_proposta(
+                usuario=usuario,
+                proposta=proposta,
+                operacao='CREATE',
+                estado_anterior={},
+                estado_posterior=snapshot_proposta(proposta),
+            )
         return proposta
 
     def update(self, instance, validated_data):
         itens_data = validated_data.pop('itens', None)
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
-        if itens_data is not None:
-            instance.itens.all().delete()
-            for item in itens_data:
-                ItemProposta.objects.create(proposta=instance, **item)
-        recalcular_proposta(instance)
+        usuario = usuario_do_contexto(self)
+        antes = snapshot_proposta(instance)
+        with transaction.atomic():
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            instance.save()
+            if itens_data is not None:
+                instance.itens.all().delete()
+                for item in itens_data:
+                    ItemProposta.objects.create(proposta=instance, **item)
+            recalcular_proposta(instance)
+            registrar_proposta(
+                usuario=usuario,
+                proposta=instance,
+                operacao='UPDATE',
+                estado_anterior=antes,
+                estado_posterior=snapshot_proposta(instance),
+            )
         return instance
 
 
@@ -1323,10 +1351,19 @@ class PedidoVendaSerializer(serializers.ModelSerializer):
         itens_data = validated_data.pop('itens')
         if numero_pedido_venda_vazio(validated_data.get('numero')):
             validated_data['numero'] = gerar_numero_pedido_venda(validated_data.get('data'))
-        pedido = PedidoVenda.objects.create(**validated_data)
-        for item in itens_data:
-            ItemPedidoVenda.objects.create(pedido=pedido, **item)
-        recalcular_pedido_venda(pedido)
+        usuario = usuario_do_contexto(self)
+        with transaction.atomic():
+            pedido = PedidoVenda.objects.create(**validated_data)
+            for item in itens_data:
+                ItemPedidoVenda.objects.create(pedido=pedido, **item)
+            recalcular_pedido_venda(pedido)
+            registrar_pedido_venda(
+                usuario=usuario,
+                pedido=pedido,
+                operacao='CREATE',
+                estado_anterior={},
+                estado_posterior=snapshot_pedido_venda(pedido),
+            )
         return pedido
 
     def _itens_payload_com_ids(self, itens_data: list[dict]) -> list[dict]:
@@ -1350,12 +1387,22 @@ class PedidoVendaSerializer(serializers.ModelSerializer):
         from apps.comercial.pedido_venda_bloqueio import sincronizar_itens_pedido_venda
 
         itens_data = validated_data.pop('itens', None)
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
-        if itens_data is not None:
-            sincronizar_itens_pedido_venda(instance, self._itens_payload_com_ids(itens_data))
-        recalcular_pedido_venda(instance)
+        usuario = usuario_do_contexto(self)
+        antes = snapshot_pedido_venda(instance)
+        with transaction.atomic():
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            instance.save()
+            if itens_data is not None:
+                sincronizar_itens_pedido_venda(instance, self._itens_payload_com_ids(itens_data))
+            recalcular_pedido_venda(instance)
+            registrar_pedido_venda(
+                usuario=usuario,
+                pedido=instance,
+                operacao='UPDATE',
+                estado_anterior=antes,
+                estado_posterior=snapshot_pedido_venda(instance),
+            )
         return instance
 
 
@@ -1665,31 +1712,50 @@ class PedidoCompraSerializer(serializers.ModelSerializer):
         itens_data = validated_data.pop('itens')
         data_pedido = validated_data['data']
         validated_data['numero'] = alocar_numero_pedido_compra(data_pedido)
-        try:
-            pedido = PedidoCompra.objects.create(**validated_data)
-        except IntegrityError:
-            raise serializers.ValidationError(
-                {'numero': ['Já existe um pedido de compra com este número.']}
-            ) from None
-        for item in itens_data:
-            ItemPedidoCompra.objects.create(pedido=pedido, **item)
-        recalcular_pedido_compra(pedido)
+        usuario = usuario_do_contexto(self)
+        with transaction.atomic():
+            try:
+                pedido = PedidoCompra.objects.create(**validated_data)
+            except IntegrityError:
+                raise serializers.ValidationError(
+                    {'numero': ['Já existe um pedido de compra com este número.']}
+                ) from None
+            for item in itens_data:
+                ItemPedidoCompra.objects.create(pedido=pedido, **item)
+            recalcular_pedido_compra(pedido)
+            registrar_pedido_compra(
+                usuario=usuario,
+                pedido=pedido,
+                operacao='CREATE',
+                estado_anterior={},
+                estado_posterior=snapshot_pedido_compra(pedido),
+            )
         return pedido
 
     def update(self, instance, validated_data):
         validated_data.pop('numero', None)
         itens_data = validated_data.pop('itens', None)
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        try:
-            instance.save()
-        except IntegrityError:
-            raise serializers.ValidationError(
-                {'detail': 'Não foi possível salvar o pedido de compra. Verifique se o número já existe.'}
-            ) from None
-        if itens_data is not None:
-            instance.itens.all().delete()
-            for item in itens_data:
-                ItemPedidoCompra.objects.create(pedido=instance, **item)
-        recalcular_pedido_compra(instance)
+        usuario = usuario_do_contexto(self)
+        antes = snapshot_pedido_compra(instance)
+        with transaction.atomic():
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            try:
+                instance.save()
+            except IntegrityError:
+                raise serializers.ValidationError(
+                    {'detail': 'Não foi possível salvar o pedido de compra. Verifique se o número já existe.'}
+                ) from None
+            if itens_data is not None:
+                instance.itens.all().delete()
+                for item in itens_data:
+                    ItemPedidoCompra.objects.create(pedido=instance, **item)
+            recalcular_pedido_compra(instance)
+            registrar_pedido_compra(
+                usuario=usuario,
+                pedido=instance,
+                operacao='UPDATE',
+                estado_anterior=antes,
+                estado_posterior=snapshot_pedido_compra(instance),
+            )
         return instance

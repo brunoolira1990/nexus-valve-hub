@@ -73,5 +73,7 @@ class AuditoriaApiTests(APITestCase):
 
     def test_entidade_nao_suportada_404(self):
         self.client.force_authenticate(user=self.user)
-        r = self.client.get('/api/auditoria/objetos/fiscal/nfesaida/1/')
+        # Sprint 3.18: 'nfesaida' passou a ter histórico, então o exemplo de fora do
+        # escopo é o CTeEntrada (viewset ReadOnly e a tela lista CTeHistoricoImportado).
+        r = self.client.get('/api/auditoria/objetos/fiscal/cteentrada/1/')
         self.assertEqual(r.status_code, status.HTTP_404_NOT_FOUND)

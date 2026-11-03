@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-# Únicas entidades consultáveis via API nesta fase.
 # Chaves sempre em minúsculas: (app_label, model_name).
+# model_name é o nome lowercase da classe (NFeSaida -> 'nfesaida'), igual a 'familiaproduto'.
 MODELOS_AUDITADOS: frozenset[tuple[str, str]] = frozenset(
     {
         ('cadastros', 'cliente'),
@@ -11,6 +11,14 @@ MODELOS_AUDITADOS: frozenset[tuple[str, str]] = frozenset(
         ('cadastros', 'transportadora'),
         ('produtos', 'produto'),
         ('produtos', 'familiaproduto'),
+        # Documentos (Sprint 3.18): só os modelos com caminho de escrita real. CTeEntrada existe
+        # mas o viewset é ReadOnly e a tela CT-e lista CTeHistoricoImportado, então fica fora.
+        ('comercial', 'cotacaofornecedor'),
+        ('comercial', 'proposta'),
+        ('comercial', 'pedidovenda'),
+        ('comercial', 'pedidocompra'),
+        ('fiscal', 'nfesaida'),
+        ('fiscal', 'nfeentrada'),
     }
 )
 

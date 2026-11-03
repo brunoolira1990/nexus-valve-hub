@@ -7,6 +7,13 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 
+from apps.auditoria.servico import (
+    registrar_nfe_entrada,
+    registrar_nfe_saida,
+    snapshot_nfe_entrada,
+    snapshot_nfe_saida,
+    usuario_do_contexto,
+)
 from apps.cadastros.models import Cliente, Empresa, Fornecedor, Transportadora
 from apps.fiscal.nfe_saida_bloqueio import (
     CAMPOS_COMERCIAIS_ITEM_BLOQUEADOS,
@@ -609,6 +616,13 @@ class NFeEntradaSerializer(serializers.ModelSerializer):
             ItemNFeEntrada.objects.create(nf=nf, **item)
         recalcular_valor_nf_entrada(nf)
         self._aplicar_estoque_se_manual(nf)
+        registrar_nfe_entrada(
+            usuario=usuario_do_contexto(self),
+            nfe=nf,
+            operacao='CREATE',
+            estado_anterior={},
+            estado_posterior=snapshot_nfe_entrada(nf),
+        )
         return nf
 
     @transaction.atomic
@@ -622,6 +636,8 @@ class NFeEntradaSerializer(serializers.ModelSerializer):
             raise ValidationError({'detail': 'NF-e autorizada na SEFAZ não pode ser editada.'})
         itens_data = validated_data.pop('itens', None)
         is_emitida = instance.tipo_origem == NFeEntrada.TipoOrigem.ENTRADA_PROPRIA_EMITIDA
+        usuario = usuario_do_contexto(self)
+        antes = snapshot_nfe_entrada(instance)
         if not is_emitida:
             reverter_todos_itens_entrada(instance)
         for attr, value in validated_data.items():
@@ -637,6 +653,13 @@ class NFeEntradaSerializer(serializers.ModelSerializer):
                 aplicar_todos_itens_entrada(instance)
             except ValueError as exc:
                 raise ValidationError({'detail': str(exc)}) from exc
+        registrar_nfe_entrada(
+            usuario=usuario,
+            nfe=instance,
+            operacao='UPDATE',
+            estado_anterior=antes,
+            estado_posterior=snapshot_nfe_entrada(instance),
+        )
         return instance
 
 
@@ -1292,10 +1315,20 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
             raise
         except ValueError as exc:
             raise ValidationError({'detail': str(exc)}) from exc
+        registrar_nfe_saida(
+            usuario=usuario_do_contexto(self),
+            nfe=nf,
+            operacao='CREATE',
+            estado_anterior={},
+            estado_posterior=snapshot_nfe_saida(nf),
+        )
         return nf
 
     @transaction.atomic
     def update(self, instance, validated_data):
+        # Snapshot antes de qualquer mutação: é o "estado anterior" cobrado pelo diff.
+        usuario_auditoria = usuario_do_contexto(self)
+        antes = snapshot_nfe_saida(instance)
         if instance.faturamento_pedido_venda_id or instance.pedido_venda_id:
             validated_data.pop('cliente', None)
 
@@ -1386,6 +1419,13 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
                 alterou_dados=alterou_conferencia,
             )
 
+        registrar_nfe_saida(
+            usuario=usuario_auditoria,
+            nfe=instance,
+            operacao='UPDATE',
+            estado_anterior=antes,
+            estado_posterior=snapshot_nfe_saida(instance),
+        )
         return instance
 
 

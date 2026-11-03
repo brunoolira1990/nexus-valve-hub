@@ -32,7 +32,14 @@ export type HistoricoEscopo =
   | { appLabel: 'cadastros'; modelName: 'transportadora' }
   | { appLabel: 'produtos'; modelName: 'produto' }
   // Família: no escopo de auditoria o modelName é o nome da classe em minúsculas, não "familia".
-  | { appLabel: 'produtos'; modelName: 'familiaproduto' };
+  | { appLabel: 'produtos'; modelName: 'familiaproduto' }
+  // Documentos (Sprint 3.18): mesma regra — modelName é a classe em minúsculas.
+  | { appLabel: 'comercial'; modelName: 'cotacaofornecedor' }
+  | { appLabel: 'comercial'; modelName: 'proposta' }
+  | { appLabel: 'comercial'; modelName: 'pedidovenda' }
+  | { appLabel: 'comercial'; modelName: 'pedidocompra' }
+  | { appLabel: 'fiscal'; modelName: 'nfesaida' }
+  | { appLabel: 'fiscal'; modelName: 'nfeentrada' };
 
 type Props = {
   objectId?: number | null;

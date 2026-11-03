@@ -22,7 +22,7 @@ class RegistroAuditoriaPermissoesTests(TestCase):
 
 
 class AuditoriaEscopoTests(TestCase):
-    def test_escopo_cliente_produto_familia_fornecedor_transportadora(self):
+    def test_escopo_cadastros_produtos_e_documentos(self):
         self.assertEqual(
             MODELOS_AUDITADOS,
             {
@@ -31,6 +31,13 @@ class AuditoriaEscopoTests(TestCase):
                 ('cadastros', 'transportadora'),
                 ('produtos', 'produto'),
                 ('produtos', 'familiaproduto'),
+                # Sprint 3.18: documentos com caminho de escrita pelo serializer/view.
+                ('comercial', 'cotacaofornecedor'),
+                ('comercial', 'proposta'),
+                ('comercial', 'pedidovenda'),
+                ('comercial', 'pedidocompra'),
+                ('fiscal', 'nfesaida'),
+                ('fiscal', 'nfeentrada'),
             },
         )
         self.assertEqual(entidade_auditada_permitida('Cadastros', 'Cliente'), ('cadastros', 'cliente'))
@@ -42,8 +49,10 @@ class AuditoriaEscopoTests(TestCase):
             entidade_auditada_permitida('cadastros', 'Transportadora'),
             ('cadastros', 'transportadora'),
         )
-        self.assertIsNone(entidade_auditada_permitida('fiscal', 'nfesaida'))
-        # Fora de MODELOS_AUDITADOS: nem toda model de apps.cadastros é auditável.
+        self.assertEqual(
+            entidade_auditada_permitida('Fiscal', 'NFeSaida'),
+            ('fiscal', 'nfesaida'),
+        )
         self.assertIsNone(entidade_auditada_permitida('cadastros', 'colaborador'))
         self.assertEqual(
             entidade_auditada_permitida('Produtos', 'FamiliaProduto'),
@@ -51,6 +60,12 @@ class AuditoriaEscopoTests(TestCase):
         )
         # 'familia' continua inválido: o model_name gravado é o nome lowercase da classe.
         self.assertIsNone(entidade_auditada_permitida('produtos', 'familia'))
+        # idem para os documentos: 'nfe_saida' e 'cotacao' não são nomes de classe.
+        self.assertIsNone(entidade_auditada_permitida('fiscal', 'nfe_saida'))
+        self.assertIsNone(entidade_auditada_permitida('comercial', 'cotacao'))
+        # CTeEntrada existe como model mas não tem escrita (ReadOnlyModelViewSet), e a
+        # tela CT-e lista CTeHistoricoImportado: nenhum dos dois está no escopo ainda.
+        self.assertIsNone(entidade_auditada_permitida('fiscal', 'cteentrada'))
 
 
 class AuditoriaRotaEscopoApiTests(APITestCase):

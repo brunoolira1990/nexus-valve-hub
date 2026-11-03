@@ -33,15 +33,28 @@ const ANEXO_ACCEPT = '.pdf,.png,.jpg,.jpeg,.xml,.csv,.docx,.xlsx';
 /**
  * Espelha `MODELOS_AUDITADOS` (backend/apps/auditoria/escopo.py). O valor de
  * `modelName` é o nome da classe em minúsculas, então família é
- * 'familiaproduto' — 'familia' devolve 404.
+ * 'familiaproduto' — 'familia' devolve 404. As chaves são alias de UI: a chave
+ * 'familia' aponta para o modelName 'familiaproduto'.
  */
-const ESCOPOS_HISTORICO: Record<string, HistoricoEscopo> = {
+const ESCOPOS_HISTORICO = {
   cliente: { appLabel: 'cadastros', modelName: 'cliente' },
   fornecedor: { appLabel: 'cadastros', modelName: 'fornecedor' },
   transportadora: { appLabel: 'cadastros', modelName: 'transportadora' },
   produto: { appLabel: 'produtos', modelName: 'produto' },
   familia: { appLabel: 'produtos', modelName: 'familiaproduto' },
-};
+  cotacaofornecedor: { appLabel: 'comercial', modelName: 'cotacaofornecedor' },
+  proposta: { appLabel: 'comercial', modelName: 'proposta' },
+  pedidovenda: { appLabel: 'comercial', modelName: 'pedidovenda' },
+  pedidocompra: { appLabel: 'comercial', modelName: 'pedidocompra' },
+  nfesaida: { appLabel: 'fiscal', modelName: 'nfesaida' },
+  nfeentrada: { appLabel: 'fiscal', modelName: 'nfeentrada' },
+} satisfies Record<string, HistoricoEscopo>;
+
+/**
+ * Union fechada: entityType só aceita alias com histórico real. Passar outra
+ * string é erro de compilação (coberto por teste negativo em Chatter.test.tsx).
+ */
+export type ChatterEntityType = keyof typeof ESCOPOS_HISTORICO;
 
 function iniciaisAutor(nome: string | null): string {
   const partes = (nome ?? '').trim().split(/\s+/).filter(Boolean);
@@ -64,7 +77,7 @@ function formatarDataLocal(iso: string): string {
 }
 
 type Props = {
-  entityType: string;
+  entityType: ChatterEntityType;
   entityId: number | null;
 };
 
@@ -84,7 +97,8 @@ export function Chatter({ entityType, entityId }: Props) {
   // Resposta mais antiga não pode sobrescrever a lista depois de trocar de registro.
   const requisicaoRef = useRef(0);
 
-  const escopo = ESCOPOS_HISTORICO[entityType];
+  // undefined só por chamada vinda de dado não tipado (entity_type da API): a union fecha o caso em compilação.
+  const escopo: HistoricoEscopo | undefined = ESCOPOS_HISTORICO[entityType];
 
   async function carregarNotas() {
     if (!entityId) return;

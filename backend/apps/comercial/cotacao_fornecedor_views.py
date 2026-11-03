@@ -11,6 +11,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.auditoria.servico import registrar_cotacao, snapshot_cotacao
 from apps.cadastros.models import Fornecedor
 
 from .cotacao_fornecedor_permissions import (
@@ -106,6 +107,13 @@ class CotacaoFornecedorViewSet(viewsets.ModelViewSet):
             observacao=serializer.validated_data.get('observacao', ''),
         )
         _evento(cotacao, 'COTACAO_CRIADA', 'cotação criada', request.user)
+        registrar_cotacao(
+            usuario=request.user,
+            cotacao=cotacao,
+            operacao='CREATE',
+            estado_anterior={},
+            estado_posterior=snapshot_cotacao(cotacao),
+        )
         output = CotacaoFornecedorSerializer(cotacao, context={'request': request})
         return Response(output.data, status=status.HTTP_201_CREATED)
 

@@ -159,6 +159,14 @@ describe('Chatter', () => {
     ['fornecedor', 'cadastros', 'fornecedor'],
     ['transportadora', 'cadastros', 'transportadora'],
     ['produto', 'produtos', 'produto'],
+    ['familia', 'produtos', 'familiaproduto'],
+    // Documentos (Sprint 3.18): o par tem de bater com MODELOS_AUDITADOS, senão a view responde 404.
+    ['cotacaofornecedor', 'comercial', 'cotacaofornecedor'],
+    ['proposta', 'comercial', 'proposta'],
+    ['pedidovenda', 'comercial', 'pedidovenda'],
+    ['pedidocompra', 'comercial', 'pedidocompra'],
+    ['nfesaida', 'fiscal', 'nfesaida'],
+    ['nfeentrada', 'fiscal', 'nfeentrada'],
   ] as const)(
     'entityType %s pergunta o histórico em (%s, %s) — mesmo par do MODELOS_AUDITADOS do backend',
     async (entityType, appLabel, modelName) => {
@@ -180,9 +188,12 @@ describe('Chatter', () => {
     },
   );
 
-  it('entityType fora do escopo de auditoria não inventa rota: mostra indisponível', async () => {
+  it('entityType fora da union nem compila; em runtime não inventa rota: mostra indisponível', async () => {
     vi.mocked(chatterNotasService.listar).mockResolvedValue(vazio());
 
+    // A union de ChatterEntityType fecha o caso em tempo de compilação: esta linha
+    // abaixo só existe para provar o contrato — o gate de tsc falha se ela compilar.
+    // @ts-expect-error entityType não aceita alias sem histórico de auditoria
     render(<Chatter entityType="ordem_producao" entityId={5} />);
 
     expect(await screen.findByTestId('chatter-historico-indisponivel')).toBeInTheDocument();

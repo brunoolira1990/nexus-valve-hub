@@ -13,12 +13,24 @@ from apps.auditoria.politicas import (
     CAMPOS_BLOQUEADOS_SEMPRE,
     CLIENTE_ALLOWLIST,
     CLIENTE_CAMPOS_MASCARADOS,
+    COTACAO_ALLOWLIST,
+    COTACAO_CAMPOS_MASCARADOS,
     FAMILIA_ALLOWLIST,
     FAMILIA_CAMPOS_MASCARADOS,
     FORNECEDOR_ALLOWLIST,
     FORNECEDOR_CAMPOS_MASCARADOS,
+    NFE_ENTRADA_ALLOWLIST,
+    NFE_ENTRADA_CAMPOS_MASCARADOS,
+    NFE_SAIDA_ALLOWLIST,
+    NFE_SAIDA_CAMPOS_MASCARADOS,
+    PEDIDO_COMPRA_ALLOWLIST,
+    PEDIDO_COMPRA_CAMPOS_MASCARADOS,
+    PEDIDO_VENDA_ALLOWLIST,
+    PEDIDO_VENDA_CAMPOS_MASCARADOS,
     PRODUTO_ALLOWLIST,
     PRODUTO_CAMPOS_MASCARADOS,
+    PROPOSTA_ALLOWLIST,
+    PROPOSTA_CAMPOS_MASCARADOS,
     STRING_MAX_LEN,
     TRANSPORTADORA_ALLOWLIST,
     TRANSPORTADORA_CAMPOS_MASCARADOS,
@@ -305,6 +317,185 @@ def registrar_familia(
 
 def snapshot_familia(familia) -> dict[str, Any]:
     return capturar_snapshot(familia, FAMILIA_ALLOWLIST)
+
+
+# ---------------------------------------------------------------------------
+# Documentos (Sprint 3.18). `model_name` é sempre o nome lowercase da classe, que é
+# a chave cobrada por MODELOS_AUDITADOS e enviada pelo Chatter: 'cotacaofornecedor',
+# 'nfesaida' — nunca 'cotacao' ou 'nfe_saida'.
+# ---------------------------------------------------------------------------
+
+
+def snapshot_cotacao(cotacao) -> dict[str, Any]:
+    return capturar_snapshot(cotacao, COTACAO_ALLOWLIST)
+
+
+def registrar_cotacao(
+    *,
+    usuario: AbstractBaseUser | None,
+    cotacao,
+    operacao: str,
+    estado_anterior: dict[str, Any],
+    estado_posterior: dict[str, Any] | None = None,
+) -> RegistroAuditoria | None:
+    depois = estado_posterior if estado_posterior is not None else capturar_snapshot(cotacao, COTACAO_ALLOWLIST)
+    return registrar_auditoria(
+        usuario=usuario,
+        app_label='comercial',
+        model_name='cotacaofornecedor',
+        object_id=cotacao.pk,
+        operacao=operacao,
+        estado_anterior=estado_anterior,
+        estado_posterior=depois,
+        allowlist=COTACAO_ALLOWLIST,
+        mascarados=COTACAO_CAMPOS_MASCARADOS,
+    )
+
+
+def snapshot_proposta(proposta) -> dict[str, Any]:
+    return capturar_snapshot(proposta, PROPOSTA_ALLOWLIST)
+
+
+def registrar_proposta(
+    *,
+    usuario: AbstractBaseUser | None,
+    proposta,
+    operacao: str,
+    estado_anterior: dict[str, Any],
+    estado_posterior: dict[str, Any] | None = None,
+) -> RegistroAuditoria | None:
+    depois = estado_posterior if estado_posterior is not None else capturar_snapshot(proposta, PROPOSTA_ALLOWLIST)
+    return registrar_auditoria(
+        usuario=usuario,
+        app_label='comercial',
+        model_name='proposta',
+        object_id=proposta.pk,
+        operacao=operacao,
+        estado_anterior=estado_anterior,
+        estado_posterior=depois,
+        allowlist=PROPOSTA_ALLOWLIST,
+        mascarados=PROPOSTA_CAMPOS_MASCARADOS,
+    )
+
+
+def snapshot_pedido_venda(pedido) -> dict[str, Any]:
+    return capturar_snapshot(pedido, PEDIDO_VENDA_ALLOWLIST)
+
+
+def registrar_pedido_venda(
+    *,
+    usuario: AbstractBaseUser | None,
+    pedido,
+    operacao: str,
+    estado_anterior: dict[str, Any],
+    estado_posterior: dict[str, Any] | None = None,
+) -> RegistroAuditoria | None:
+    depois = (
+        estado_posterior
+        if estado_posterior is not None
+        else capturar_snapshot(pedido, PEDIDO_VENDA_ALLOWLIST)
+    )
+    return registrar_auditoria(
+        usuario=usuario,
+        app_label='comercial',
+        model_name='pedidovenda',
+        object_id=pedido.pk,
+        operacao=operacao,
+        estado_anterior=estado_anterior,
+        estado_posterior=depois,
+        allowlist=PEDIDO_VENDA_ALLOWLIST,
+        mascarados=PEDIDO_VENDA_CAMPOS_MASCARADOS,
+    )
+
+
+def snapshot_pedido_compra(pedido) -> dict[str, Any]:
+    return capturar_snapshot(pedido, PEDIDO_COMPRA_ALLOWLIST)
+
+
+def registrar_pedido_compra(
+    *,
+    usuario: AbstractBaseUser | None,
+    pedido,
+    operacao: str,
+    estado_anterior: dict[str, Any],
+    estado_posterior: dict[str, Any] | None = None,
+) -> RegistroAuditoria | None:
+    depois = (
+        estado_posterior
+        if estado_posterior is not None
+        else capturar_snapshot(pedido, PEDIDO_COMPRA_ALLOWLIST)
+    )
+    return registrar_auditoria(
+        usuario=usuario,
+        app_label='comercial',
+        model_name='pedidocompra',
+        object_id=pedido.pk,
+        operacao=operacao,
+        estado_anterior=estado_anterior,
+        estado_posterior=depois,
+        allowlist=PEDIDO_COMPRA_ALLOWLIST,
+        mascarados=PEDIDO_COMPRA_CAMPOS_MASCARADOS,
+    )
+
+
+def snapshot_nfe_saida(nfe) -> dict[str, Any]:
+    return capturar_snapshot(nfe, NFE_SAIDA_ALLOWLIST)
+
+
+def registrar_nfe_saida(
+    *,
+    usuario: AbstractBaseUser | None,
+    nfe,
+    operacao: str,
+    estado_anterior: dict[str, Any],
+    estado_posterior: dict[str, Any] | None = None,
+) -> RegistroAuditoria | None:
+    depois = (
+        estado_posterior
+        if estado_posterior is not None
+        else capturar_snapshot(nfe, NFE_SAIDA_ALLOWLIST)
+    )
+    return registrar_auditoria(
+        usuario=usuario,
+        app_label='fiscal',
+        model_name='nfesaida',
+        object_id=nfe.pk,
+        operacao=operacao,
+        estado_anterior=estado_anterior,
+        estado_posterior=depois,
+        allowlist=NFE_SAIDA_ALLOWLIST,
+        mascarados=NFE_SAIDA_CAMPOS_MASCARADOS,
+    )
+
+
+def snapshot_nfe_entrada(nfe) -> dict[str, Any]:
+    return capturar_snapshot(nfe, NFE_ENTRADA_ALLOWLIST)
+
+
+def registrar_nfe_entrada(
+    *,
+    usuario: AbstractBaseUser | None,
+    nfe,
+    operacao: str,
+    estado_anterior: dict[str, Any],
+    estado_posterior: dict[str, Any] | None = None,
+) -> RegistroAuditoria | None:
+    depois = (
+        estado_posterior
+        if estado_posterior is not None
+        else capturar_snapshot(nfe, NFE_ENTRADA_ALLOWLIST)
+    )
+    return registrar_auditoria(
+        usuario=usuario,
+        app_label='fiscal',
+        model_name='nfeentrada',
+        object_id=nfe.pk,
+        operacao=operacao,
+        estado_anterior=estado_anterior,
+        estado_posterior=depois,
+        allowlist=NFE_ENTRADA_ALLOWLIST,
+        mascarados=NFE_ENTRADA_CAMPOS_MASCARADOS,
+    )
 
 
 def usuario_do_contexto(serializer) -> AbstractBaseUser | None:
