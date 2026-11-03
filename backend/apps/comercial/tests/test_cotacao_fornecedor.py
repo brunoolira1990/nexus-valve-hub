@@ -4,6 +4,7 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -202,6 +203,38 @@ class CotacaoFornecedorApiTests(TestCase):
         self.assertEqual(comparativo.data['itens'][0]['unidade'], 'PC')
         self.assertTrue(cotacao.historico.filter(evento='COTACAO_CRIADA').exists())
         self.assertTrue(cotacao.historico.filter(evento='ITEM_COTACAO_ADICIONADO').exists())
+
+    def test_create_sem_data_usa_hoje_como_default(self):
+        response = self.client.post(
+            '/api/cotacoes-fornecedores/',
+            {'observacao': 'Cotação manual sem data'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        cotacao = CotacaoFornecedor.objects.get(pk=response.data['id'])
+        self.assertEqual(cotacao.data, timezone.localdate())
+
+    def test_create_com_data_explicita_respeita_a_data_informada(self):
+        data_solicitada = date.today() + timedelta(days=7)
+        response = self.client.post(
+            '/api/cotacoes-fornecedores/',
+            {'data': data_solicitada.isoformat(), 'observacao': 'Cotação com data futura'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        cotacao = CotacaoFornecedor.objects.get(pk=response.data['id'])
+        self.assertEqual(cotacao.data, data_solicitada)
+
+    def test_create_modo_proposta_sem_data_usa_o_mesmo_default(self):
+        response = self.client.post(
+            '/api/cotacoes-fornecedores/',
+            {'proposta': self.proposta.pk, 'observacao': 'Cotação criada a partir da Proposta.'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        cotacao = CotacaoFornecedor.objects.get(pk=response.data['id'])
+        self.assertEqual(cotacao.proposta_id, self.proposta.pk)
+        self.assertEqual(cotacao.data, timezone.localdate())
 
     def test_cotacao_manual_rejeita_item_sem_estrutura_obrigatoria(self):
         response = self.client.post(

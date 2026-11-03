@@ -1,7 +1,14 @@
 from decimal import Decimal, ROUND_HALF_UP
 
+from django.db import transaction
+from django.utils import timezone
 from rest_framework import serializers
 
+from apps.auditoria.servico import (
+    registrar_cotacao,
+    snapshot_cotacao,
+    usuario_do_contexto,
+)
 from apps.cadastros.models import Fornecedor
 from apps.produtos.models import Produto
 
@@ -134,9 +141,31 @@ class CotacaoFornecedorSerializer(serializers.ModelSerializer):
     def get_responsavel_nome(self, obj):
         return obj.responsavel.get_username() if obj.responsavel_id else ''
 
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        # Snapshot antes do super(): depois do save o cabeçalho já mudou e não há
+        # como reconstruir o 'antes'.
+        usuario = usuario_do_contexto(self)
+        antes = snapshot_cotacao(instance)
+        cotacao = super().update(instance, validated_data)
+        registrar_cotacao(
+            usuario=usuario,
+            cotacao=cotacao,
+            operacao='UPDATE',
+            estado_anterior=antes,
+            estado_posterior=snapshot_cotacao(cotacao),
+        )
+        return cotacao
+
 
 class CotacaoFornecedorCreateSerializer(serializers.ModelSerializer):
     proposta = serializers.PrimaryKeyRelatedField(queryset=Proposta.objects.all(), required=False, allow_null=True)
+    # O model não tem default para 'data', então o ModelSerializer a tornaria obrigatória
+    # no create — e a UI cria cotação sem informar data. O default do CREATE é hoje
+    # (timezone.localdate, a mesma referência usada pelo _novo_numero da view).
+    # Quem envia 'data' explícita continua com o contrato antigo: o valor passa pela
+    # validação de DateField e é respeitado.
+    data = serializers.DateField(required=False, default=timezone.localdate)
 
     class Meta:
         model = CotacaoFornecedor
