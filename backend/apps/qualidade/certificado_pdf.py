@@ -14,6 +14,7 @@ from reportlab.pdfgen import canvas
 from reportlab.platypus import KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from apps.cadastros.models import Empresa
+from apps.core.pdf.formatters import formatar_dureza_com_unidade
 from apps.core.pdf.styles import (
     C_BRAND_PRIMARY,
     C_CARD_BG,
@@ -71,6 +72,8 @@ NEXUS_HEADER_FALLBACK = {
 
 COMPOSICAO_COLS = ['C', 'Mn', 'P', 'S', 'Si', 'Ni', 'Cr', 'Mo', 'Cu', 'V', 'Nb', 'Al', 'Ti', 'N', 'Zn', 'Fe', 'Sn', 'Pb', 'Ca', 'Ta', 'W', 'Li', 'Co']
 IMPACTO_COLS = ['norma', 'corpo_prova', 'direcao', 'posicao', 'temperatura', 'corpo_prova_a', 'corpo_prova_b', 'corpo_prova_c', 'media']
+TITULO_QUIMICA_POR_COMPONENTE = 'Composição Química por componente'
+SUFIXO_CONTINUACAO = '(continuação)'
 
 
 def gerar_certificado_pdf(nf: NFeSaida) -> ContentFile:
@@ -129,6 +132,32 @@ def _draw_table(c: canvas.Canvas, data: list[list[str]], x: float, y_top: float,
     w, h = t.wrapOn(c, 0, 0)
     t.drawOn(c, x, y_top - h)
     return y_top - h - 2 * mm
+
+
+class _TabelaComCabecalhoContinuacao(Table):
+    """Tabela que anuncia a continuação quando quebra em mais de uma página.
+
+    O ReportLab já repete a linha de cabeçalho de colunas nas partes seguintes
+    (`repeatRows=1`); aqui cada parte continuada ainda é antecedida por um título
+    de seção com o sufixo "(continuação)", gerado a cada quebra — o mesmo flowable
+    não pode ser reaproveitado entre páginas.
+    """
+
+    continuation_title = None
+
+    def split(self, availWidth, availHeight):
+        parts = super().split(availWidth, availHeight)
+        if len(parts) < 2 or not callable(self.continuation_title):
+            return parts
+        flowables = [parts[0]]
+        for part in parts[1:]:
+            # O ReportLab reconstroi as partes com self.__class__(); sem o vínculo,
+            # uma segunda quebra (tabela em 3+ paginas) perderia o marcador.
+            if isinstance(part, _TabelaComCabecalhoContinuacao):
+                part.continuation_title = self.continuation_title
+            flowables.append(self.continuation_title())
+            flowables.append(part)
+        return flowables
 
 
 def _fmt_value(v: object) -> str:
@@ -489,9 +518,18 @@ def gerar_certificado_qualidade_pdf(cert: CertificadoQualidade, preview: bool = 
         ]))
         return t
 
-    def data_table(data: list[list[str]], col_widths: list[float], row_h: float) -> Table:
+    def data_table(
+        data: list[list[str]],
+        col_widths: list[float],
+        row_h: float,
+        *,
+        continuation_title: str | None = None,
+    ) -> Table:
         rows = [row_h] * len(data)
-        t = Table(data, colWidths=col_widths, rowHeights=rows, repeatRows=1 if len(data) > 1 else 0)
+        cls = _TabelaComCabecalhoContinuacao if continuation_title else Table
+        t = cls(data, colWidths=col_widths, rowHeights=rows, repeatRows=1 if len(data) > 1 else 0)
+        if continuation_title:
+            t.continuation_title = lambda: section_title(f'{continuation_title} {SUFIXO_CONTINUACAO}')
         t.setStyle(
             TableStyle(
                 [
@@ -652,7 +690,7 @@ def gerar_certificado_qualidade_pdf(cert: CertificadoQualidade, preview: bool = 
                 _fmt_value(mapa.get('limite_resistencia')),
                 _fmt_value(mapa.get('alongamento')),
                 _fmt_value(mapa.get('estriccao')),
-                _fmt_value(mapa.get('dureza')),
+                formatar_dureza_com_unidade(mapa.get('dureza')),
                 _fmt_value(mapa.get('tratamento_termico')),
             ])
         bloco_flow.append(section_title('Teste de Tração / Traction Test'))
@@ -755,14 +793,21 @@ def gerar_certificado_qualidade_pdf(cert: CertificadoQualidade, preview: bool = 
                 story.append(data_table(comp_rows, [45 * mm, 35 * mm, 28 * mm, 45 * mm, 118 * mm], row_h=6.7 * mm))
                 story.append(Spacer(1, 1.8 * mm))
 
-                composicao_componentes = [['Comp.', 'QTD'] + COMPOSICAO_COLS]
+                composicao_componentes = [['Comp.'] + COMPOSICAO_COLS]
                 for cp in comp_chunk:
                     mapa = cp.composicao_json if isinstance(cp.composicao_json, dict) else {}
-                    row = [cp.nome_componente or '—', _fmt_value(cp.quantidade if cp.quantidade is not None else item_valvula.quantidade)]
+                    row = [cp.nome_componente or '—']
                     row.extend([_fmt_value(mapa.get(k)) for k in COMPOSICAO_COLS])
                     composicao_componentes.append(row)
-                story.append(section_title('Composição Química por componente'))
-                story.append(data_table(composicao_componentes, [17 * mm, 10 * mm] + [8.8 * mm] * len(COMPOSICAO_COLS), row_h=5.8 * mm))
+                story.append(section_title(TITULO_QUIMICA_POR_COMPONENTE))
+                story.append(
+                    data_table(
+                        composicao_componentes,
+                        [17 * mm] + [8.8 * mm] * len(COMPOSICAO_COLS),
+                        row_h=5.8 * mm,
+                        continuation_title=TITULO_QUIMICA_POR_COMPONENTE,
+                    )
+                )
                 story.append(Spacer(1, 1.8 * mm))
 
                 tracao_componentes = [[
@@ -781,7 +826,7 @@ def gerar_certificado_qualidade_pdf(cert: CertificadoQualidade, preview: bool = 
                         _fmt_value(mapa.get('limite_resistencia')),
                         _fmt_value(mapa.get('alongamento')),
                         _fmt_value(mapa.get('estriccao')),
-                        _fmt_value(mapa.get('dureza')),
+                        formatar_dureza_com_unidade(mapa.get('dureza')),
                         _fmt_value(mapa.get('tratamento_termico')),
                     ])
                 story.append(section_title('Propriedades mecânicas por componente'))

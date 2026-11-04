@@ -1,7 +1,8 @@
-"""Formatação reutilizável para PDFs (moeda, decimal, data, CNPJ, telefone)."""
+"""Formatação reutilizável para PDFs (moeda, decimal, data, CNPJ, telefone, dureza)."""
 
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 from xml.sax.saxutils import escape
 
@@ -107,6 +108,48 @@ def money_nobr(v) -> str:
 def p_cell(text: str, style: ParagraphStyle, *, max_len: int = 4000) -> Paragraph:
     t = escape(str(text or '—')[:max_len]).replace('\n', '<br/>')
     return Paragraph(t, style)
+
+
+# Escala de dureza: abaixo de 100 é Rockwell C (HRC); de 100 em diante é Brinell (HB).
+DUREZA_LIMIAR_HB = 100
+_DUREZA_UNIDADES_CONHECIDAS = ('HB', 'HRC', 'HRB', 'HRE', 'HRF', 'HR15T', 'HR30T', 'HR45T', 'HV', 'HS')
+_DUREZA_JA_TEM_UNIDADE = re.compile(
+    r'\b(' + '|'.join(_DUREZA_UNIDADES_CONHECIDAS) + r')\s*$',
+    re.IGNORECASE,
+)
+
+
+def formatar_dureza_com_unidade(valor: object) -> str:
+    """Dureza com unidade, para todos os certificados (válvula, conexão, item padrão...).
+
+    Regra: valor < 100 → "N HRC"; valor >= 100 → "N HB"; vazio/nulo → "" (sem unidade solta).
+
+    O número não é reformatado: o texto tal como salvo é preservado (dado com vírgula
+    decimal continua com vírgula, dado com ponto continua com ponto) e só a unidade é
+    acrescentada. Valor que já traz unidade no fim ("33 HRC") passa sem alteração, para
+    não duplicar; texto não numérico também passa como está.
+    """
+    if valor is None or isinstance(valor, (dict, list, tuple, set, bool)):
+        return ''
+    if isinstance(valor, (int, float, Decimal)):
+        texto = str(valor)
+        try:
+            numero = Decimal(texto)
+        except (ValueError, ArithmeticError):
+            return texto
+    else:
+        texto = str(valor).strip()
+        if not texto:
+            return ''
+        if _DUREZA_JA_TEM_UNIDADE.search(texto):
+            return texto
+        try:
+            numero = Decimal(texto.replace(',', '.'))
+        except (ValueError, ArithmeticError):
+            return texto
+    if not numero.is_finite():
+        return texto
+    return f'{texto} {"HB" if numero >= DUREZA_LIMIAR_HB else "HRC"}'
 
 
 # Aliases legados / nomes alternativos
