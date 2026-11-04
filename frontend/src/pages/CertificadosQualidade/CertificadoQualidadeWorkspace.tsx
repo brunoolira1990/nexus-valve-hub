@@ -1225,7 +1225,10 @@ export function CertificadoQualidadeWorkspace({ certificadoId, onSaved, onCancel
     const isValvula =
       (item.tipo_dados_tecnicos || 'PADRAO_ITEM') === 'VALVULA_COMPONENTES';
     const { corrida: corridaBusca, lote: loteBusca } = resolverCorridaLoteBuscaFornecedor(item);
-    if (!corridaBusca && !loteBusca) {
+    // Em valvula os campos de corrida/lote do item estao escondidos na UI (ItemEditor), entao
+    // a guarda nao pode bloquear a busca: segue por produto + codigo/descricao e o backend
+    // devolve os componentes do CF.
+    if (!corridaBusca && !loteBusca && !isValvula) {
       patchFornecedorBuscaItemMsg(idx, {
         type: 'error',
         text: 'Informe a corrida ou o lote antes de buscar dados do certificado fornecedor.',
