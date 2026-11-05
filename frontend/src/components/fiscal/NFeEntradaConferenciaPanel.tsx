@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Modal } from '@/components/Modal';
 import { FormShell } from '@/components/layout/FormShell';
+import { Chatter } from '@/components/layout/Chatter';
 import { GerarContasPagarNfeEntradaModal } from '@/components/fiscal/GerarContasPagarNfeEntradaModal';
 import { FornecedorEntradaAcoes } from '@/components/fiscal/FornecedorEntradaAcoes';
 import { NFeEntradaFinanceiroAcoes } from '@/components/fiscal/NFeEntradaFinanceiroAcoes';
@@ -1936,6 +1937,12 @@ export function NFeEntradaConferenciaPanel({
       titulo="Conferência da nota de entrada"
       onVoltar={() => navigate('/nfe-entrada-historica-importada')}
       pipeline={{ ...conferenciaNfeStatusToSteps(dados ?? {}), somenteLeitura: true }}
+      // Sprint 3.18 Fase 1 PR 2: rail de chatter apenas no modo standalone. A entidade é a
+      // CONFERÊNCIA (dados.id = pk de NFeEntradaConferencia, exposto pelo serializer do
+      // painel), não a NF-e histórica — o :id da rota é da histórica, mas as ações que
+      // geram eventos (conferir/reabrir/estoque/devolução) mutam campos da conferência.
+      // Consequência para o PR 3: os registrar_* devem ser chamados com entidade=conferência.
+      rail={<Chatter entityType="nfeentradaconferencia" entityId={dados?.id ?? null} />}
     >
       {conteudo}
     </FormShell>

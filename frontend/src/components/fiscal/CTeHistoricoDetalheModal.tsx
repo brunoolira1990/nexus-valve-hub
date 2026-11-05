@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Modal } from '@/components/Modal';
+import { Chatter } from '@/components/layout/Chatter';
 import { FornecedorEntradaAcoes } from '@/components/fiscal/FornecedorEntradaAcoes';
 import { DfeClassificacaoBadges } from '@/components/fiscal/DfeClassificacaoBadges';
 import { StatusBadge } from '@/components/nexus/StatusBadge';
@@ -23,7 +24,7 @@ import {
 import { buildCriarRegraFiscalCteUrl } from '@/lib/regrasFiscaisEntradaHelpers';
 import {formatMoneyBRL} from '@/lib/numberFields';
 
-type Aba = 'resumo' | 'participantes' | 'totais' | 'docs' | 'frete' | 'eventos' | 'conferencia' | 'tecnico';
+type Aba = 'resumo' | 'participantes' | 'totais' | 'docs' | 'frete' | 'eventos' | 'conferencia' | 'tecnico' | 'historico';
 
 const fmtMoney = (v: unknown): string => {
   const n = Number(String(v ?? 0).replace(',', '.'));
@@ -211,7 +212,7 @@ export function CTeHistoricoDetalheModal({
           </div>
 
           <div className="flex flex-nowrap gap-2 overflow-x-auto border-b border-border pb-3">
-            {(['resumo', 'participantes', 'totais', 'docs', 'frete', 'eventos', 'conferencia', 'tecnico'] as Aba[]).map((t) => (
+            {(['resumo', 'participantes', 'totais', 'docs', 'frete', 'eventos', 'conferencia', 'tecnico', 'historico'] as Aba[]).map((t) => (
               <button
                 key={t}
                 type="button"
@@ -226,6 +227,7 @@ export function CTeHistoricoDetalheModal({
                 {t === 'eventos' && 'Eventos'}
                 {t === 'conferencia' && 'Conferência'}
                 {t === 'tecnico' && 'Técnico / XML'}
+                {t === 'historico' && 'Histórico'}
               </button>
             ))}
           </div>
@@ -688,6 +690,17 @@ export function CTeHistoricoDetalheModal({
                 </details>
               ))}
             </div>
+          )}
+
+          {/*
+            Sprint 3.18 Fase 1 PR 2: aba de histórico/auditoria do CT-e importado. Só renderiza
+            com cteId != null (contrato do plug: entityId presente) e é lazy — as abas aqui são
+            condicionais (`aba === ...`), então nada é buscado até o usuário clicar em 'Histórico'.
+            PR 3: os registrar_* de financeiro/devolução do CT-e gravam contra esta mesma entidade
+            (ctehistoricoimportado) para o evento aparecer nesta aba.
+          */}
+          {aba === 'historico' && cteId != null && (
+            <Chatter entityType="ctehistoricoimportado" entityId={cteId} />
           )}
         </div>
       )}

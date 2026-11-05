@@ -176,7 +176,9 @@ class RegistroAuditoriaSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = RegistroAuditoria
-        fields = ('id', 'operacao', 'ator', 'criado_em', 'alteracoes')
+        # Fase 1 (PR 2): `acao` exposto — o Chatter renderiza eventos (acao != '')
+        # com label de ACAO_LABELS; consumidores antigos só ganham um campo novo.
+        fields = ('id', 'operacao', 'acao', 'ator', 'criado_em', 'alteracoes')
         read_only_fields = fields
 
     def get_ator(self, obj: RegistroAuditoria) -> dict:

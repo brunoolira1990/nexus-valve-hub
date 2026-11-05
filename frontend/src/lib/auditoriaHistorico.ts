@@ -87,6 +87,30 @@ export function labelOperacaoAuditoria(operacao: string): string {
   return operacao;
 }
 
+/**
+ * Fase 1 da entrada de terceiros (PR 2): labels humanos das ações de domínio
+ * gravadas na coluna `acao` por apps/fiscal/auditoria_entrada.py. As chaves
+ * batem com ACOES_CONFERENCIA/ESTOQUE/FINANCEIRO/DEVOLUCAO daquele módulo —
+ * o disco é a fonte; `gerar_contas_pagar_cte` NÃO existe lá (o CT-e reusa
+ * 'gerar_contas_pagar'), por isso não há entrada no map.
+ */
+export const ACAO_LABELS: Record<string, string> = {
+  conferir: 'Conferiu a nota',
+  reabrir: 'Reabriu a conferência',
+  marcar_divergente: 'Marcou como divergente',
+  desvincular_alocacoes_venda: 'Desvinculou alocações de venda',
+  preparar_estoque: 'Preparou o estoque',
+  aplicar_estoque: 'Aplicou o estoque',
+  reverter_estoque: 'Reverteu o estoque',
+  gerar_contas_pagar: 'Gerou contas a pagar',
+  estornar_contas: 'Estornou as contas a pagar',
+  gerar_saida_devolucao_compra: 'Gerou devolução de compra',
+};
+
+export function labelAcaoAuditoria(acao: string): string {
+  return ACAO_LABELS[acao] ?? acao.replace(/_/g, ' ');
+}
+
 export function formatarValorAuditoria(valor: unknown): string {
   if (valor === null || valor === undefined || valor === '') return '—';
   if (typeof valor === 'boolean') return valor ? 'Sim' : 'Não';
@@ -101,6 +125,14 @@ export function campoEhProtegido(alt: AuditoriaCampoAlteracao): boolean {
   return Boolean(alt && 'sensivel' in alt && alt.sensivel && alt.alterado);
 }
 
+/**
+ * Entradas de diff de campo do registro. Chaves iniciadas por '_' são chaves
+ * reservadas do backend (`_snapshot`, `_detalhes` do ramo de evento puro da
+ * Fase 1) e NUNCA são diffs de campo — ficam fora daqui por construção: todo
+ * consumidor do diff (o painel de histórico) herda o filtro.
+ */
 export function entradasAlteracao(registro: RegistroAuditoria): { campo: string; alt: AuditoriaCampoAlteracao }[] {
-  return Object.entries(registro.alteracoes || {}).map(([campo, alt]) => ({ campo, alt }));
+  return Object.entries(registro.alteracoes || {})
+    .filter(([campo]) => !campo.startsWith('_'))
+    .map(([campo, alt]) => ({ campo, alt }));
 }

@@ -19,6 +19,13 @@ export type AuditoriaCampoAlteracao =
 export type RegistroAuditoria = {
   id: number;
   operacao: 'CREATE' | 'UPDATE' | string;
+  /**
+   * Nome máquina da ação de domínio (PR 1: coluna `acao` em RegistroAuditoria).
+   * ''/ausente = diff de campo comum; presente = renderizar como EVENTO no
+   * histórico (label via ACAO_LABELS). Opcional no tipo por retrocompatibilidade
+   * com fixtures antigas que não o traziam.
+   */
+  acao?: string;
   ator: AuditoriaAtor;
   criado_em: string;
   alteracoes: Record<string, AuditoriaCampoAlteracao>;

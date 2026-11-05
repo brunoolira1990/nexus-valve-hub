@@ -143,6 +143,91 @@ describe('HistoricoAlteracoesPanel', () => {
     expect(screen.getByTestId('auditoria-depois-material')).not.toHaveTextContent('ACO CARBONO');
   });
 
+  it('renderiza acao != "" como EVENTO, ignora chaves reservadas "_" e não mostra diff de campo', async () => {
+    vi.mocked(auditoriaService.historicoObjeto).mockResolvedValue({
+      count: 1,
+      next: null,
+      previous: null,
+      results: [
+        {
+          id: 11,
+          operacao: 'UPDATE',
+          acao: 'conferir',
+          ator: { id: 1, nome: 'Fiscal' },
+          criado_em: '2026-11-04T12:00:00Z',
+          alteracoes: {
+            status: { antes: 'PENDENTE', depois: 'CONFERIDA' },
+            // O payload real do PR 1 guarda dict cru sob as chaves reservadas '_' — fora do
+            // tipo fechado AuditoriaCampoAlteracao de propósito: o parser as descarta.
+            _snapshot: { status: 'CONFERIDA' },
+            _detalhes: { itens: 2 },
+          } as never,
+        },
+      ],
+    });
+    render(
+      <HistoricoAlteracoesPanel appLabel="fiscal" modelName="nfeentradaconferencia" objectId={7} active enabled />,
+    );
+    const li = await screen.findByTestId('auditoria-evento-11');
+    expect(li).toHaveAttribute('data-acao', 'conferir');
+    // EVENTO: ícone + label humano do ACAO_LABELS (não o badge 'Atualização').
+    expect(screen.getByTestId('auditoria-acao-11')).toHaveTextContent('Conferiu a nota');
+    // chaves '_' nunca viram diff de campo; e o evento não renderiza lista de campos.
+    expect(screen.queryByTestId('auditoria-campo-_snapshot')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('auditoria-campo-_detalhes')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('auditoria-campo-status')).not.toBeInTheDocument();
+  });
+
+  it('acao ausente/vazia mantém o render atual de diff (retrocompatibilidade com fixtures pré-PR1)', async () => {
+    vi.mocked(auditoriaService.historicoObjeto).mockResolvedValue({
+      count: 1,
+      next: null,
+      previous: null,
+      results: [
+        {
+          id: 12,
+          operacao: 'UPDATE',
+          ator: { id: 1, nome: 'Fiscal' },
+          criado_em: '2026-11-04T12:00:00Z',
+          alteracoes: {
+            status: { antes: 'PENDENTE', depois: 'CONFERIDA' },
+            _detalhes: { x: 1 },
+          },
+        } as never,
+      ],
+    });
+    render(
+      <HistoricoAlteracoesPanel appLabel="fiscal" modelName="nfeentradaconferencia" objectId={7} active enabled />,
+    );
+    const li = await screen.findByTestId('auditoria-evento-12');
+    expect(li).not.toHaveAttribute('data-acao');
+    expect(screen.getByTestId('auditoria-campo-status')).toHaveTextContent('CONFERIDA');
+    expect(screen.getByTestId('auditoria-antes-status')).toHaveTextContent('PENDENTE');
+    expect(screen.queryByTestId('auditoria-campo-_detalhes')).not.toBeInTheDocument();
+  });
+
+  it('acao desconhecida cai no fallback legível (snake_case lido), sem inventar label', async () => {
+    vi.mocked(auditoriaService.historicoObjeto).mockResolvedValue({
+      count: 1,
+      next: null,
+      previous: null,
+      results: [
+        {
+          id: 13,
+          operacao: 'UPDATE',
+          acao: 'reprocessar_lote_extraordinario',
+          ator: { id: 1, nome: 'Sistema' },
+          criado_em: '2026-11-04T12:00:00Z',
+          alteracoes: {},
+        },
+      ],
+    });
+    render(
+      <HistoricoAlteracoesPanel appLabel="fiscal" modelName="nfeentradaconferencia" objectId={7} active enabled />,
+    );
+    expect(await screen.findByTestId('auditoria-acao-13')).toHaveTextContent('reprocessar lote extraordinario');
+  });
+
   it('exibe erro 403 amigável', async () => {
     vi.mocked(auditoriaService.historicoObjeto).mockRejectedValue({
       response: { status: 403, data: { detail: 'Forbidden' } },
