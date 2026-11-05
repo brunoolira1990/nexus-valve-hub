@@ -19,6 +19,12 @@ MODELOS_AUDITADOS: frozenset[tuple[str, str]] = frozenset(
         ('comercial', 'pedidocompra'),
         ('fiscal', 'nfesaida'),
         ('fiscal', 'nfeentrada'),
+        # Fase 1 do redesenho da entrada de terceiros: documentos de entrada com
+        # caminho de escrita real (importação de XML + actions de conferência).
+        # CTeEntrada continua fora (viewset ReadOnly, sem escrita em produção).
+        ('fiscal', 'nfeentradahistoricaimportada'),
+        ('fiscal', 'nfeentradaconferencia'),
+        ('fiscal', 'ctehistoricoimportado'),
     }
 )
 

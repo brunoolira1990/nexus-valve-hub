@@ -167,6 +167,10 @@ describe('Chatter', () => {
     ['pedidocompra', 'comercial', 'pedidocompra'],
     ['nfesaida', 'fiscal', 'nfesaida'],
     ['nfeentrada', 'fiscal', 'nfeentrada'],
+    // Fase 1 da entrada de terceiros: mesmo par do MODELOS_AUDITADOS do backend.
+    ['nfeentradahistoricaimportada', 'fiscal', 'nfeentradahistoricaimportada'],
+    ['nfeentradaconferencia', 'fiscal', 'nfeentradaconferencia'],
+    ['ctehistoricoimportado', 'fiscal', 'ctehistoricoimportado'],
   ] as const)(
     'entityType %s pergunta o histórico em (%s, %s) — mesmo par do MODELOS_AUDITADOS do backend',
     async (entityType, appLabel, modelName) => {

@@ -150,12 +150,26 @@ def registrar_auditoria(
     estado_posterior: dict[str, Any],
     allowlist: frozenset[str],
     mascarados: frozenset[str],
+    acao: str = '',
+    anexos: dict[str, Any] | None = None,
+    permitir_evento_sem_diff: bool = False,
 ) -> RegistroAuditoria | None:
     """
     Persiste um registro se houver diff real.
 
     Deve ser chamado dentro da mesma transação da alteração principal:
     falha de auditoria reverte a escrita; rollback da escrita reverte a auditoria.
+
+    Parâmetros da Fase 1 da entrada de terceiros (retrocompatíveis — chamadores
+    existentes não mudam de comportamento):
+
+    - `acao`: nome máquina da ação de domínio gravado na coluna `acao`.
+    - `anexos`: chaves reservadas (prefixo '_') mescladas ao diff já montado,
+      ex.: `{'_snapshot': {...}, '_detalhes': {...}}`. O parser do histórico
+      (serializers.py, EnriquecedorValores) trata qualquer valor; quem monta a
+      UI precisa ignorar chaves iniciadas por '_' ao exibir diffs de campo.
+    - `permitir_evento_sem_diff`: persiste mesmo com diff vazio (evento puro de
+      `acao`). Sem isso o comportamento continua sendo "sem diff, sem registro".
     """
     alteracoes = montar_alteracoes(
         estado_anterior,
@@ -163,7 +177,9 @@ def registrar_auditoria(
         allowlist=allowlist,
         mascarados=mascarados,
     )
-    if not alteracoes:
+    if anexos:
+        alteracoes.update(anexos)
+    if not alteracoes and not permitir_evento_sem_diff:
         return None
 
     ator = usuario if usuario is not None and getattr(usuario, 'is_authenticated', False) else None
@@ -174,6 +190,7 @@ def registrar_auditoria(
         model_name=model_name,
         object_id=object_id,
         operacao=operacao,
+        acao=acao,
         alteracoes=alteracoes,
         ator_id=ator_id,
     )

@@ -675,6 +675,172 @@ NFE_ENTRADA_ALLOWLIST: frozenset[str] = (
     NFE_ENTRADA_CAMPOS_VALOR | NFE_ENTRADA_CAMPOS_MASCARADOS
 )
 
+# ---------------------------------------------------------------------------
+# Entrada de terceiros (Fase 1 do redesenho): os três documentos que o Chatter
+# vai passar a exibir. Modelagem espelhando NFE_ENTRADA: corpo JSON e XML ficam
+# fora da allowlist (são reescritos em lote na importação e inchariam o diff);
+# os campos de decisão operacional (status, *_por_id, *_em) entram.
+# ---------------------------------------------------------------------------
+
+NFE_ENTRADA_HISTORICA_IMPORTADA_CAMPOS_VALOR: frozenset[str] = frozenset(
+    {
+        'chave_acesso',
+        'numero',
+        'serie',
+        'modelo',
+        'dh_emissao',
+        'tp_amb',
+        'tp_nf',
+        'nat_op',
+        'versao_layout',
+        'cstat',
+        'protocolo',
+        'valor_produtos',
+        'valor_total_nf',
+        'v_frete',
+        'v_seg',
+        'v_desc',
+        'v_outro',
+        'papel_empresa_no_documento',
+        'importada',
+        'origem_externa',
+        'historica',
+        'empresa_destinataria_id',
+        'fornecedor_emitente_id',
+        'importado_em',
+    }
+)
+
+NFE_ENTRADA_HISTORICA_IMPORTADA_CAMPOS_MASCARADOS: frozenset[str] = frozenset(
+    {'xmotivo'}
+)
+
+NFE_ENTRADA_HISTORICA_IMPORTADA_CAMPOS_EXCLUIDOS: frozenset[str] = frozenset(
+    {
+        'emit_json',
+        'dest_json',
+        'totais_json',
+        'reforma_e_outros_json',
+        'prot_json',
+        'nome_arquivo',
+        'xml_conteudo',
+    }
+)
+
+NFE_ENTRADA_HISTORICA_IMPORTADA_ALLOWLIST: frozenset[str] = (
+    NFE_ENTRADA_HISTORICA_IMPORTADA_CAMPOS_VALOR
+    | NFE_ENTRADA_HISTORICA_IMPORTADA_CAMPOS_MASCARADOS
+)
+
+NFE_ENTRADA_CONFERENCIA_CAMPOS_VALOR: frozenset[str] = frozenset(
+    {
+        'status',
+        'divergencias_aceitas',
+        'preparado_em',
+        'estoque_aplicado_em',
+        'estoque_aplicado_por_id',
+        'pedido_baixa_aplicado_em',
+        'pedido_baixa_aplicado_por_id',
+        'data_entrada',
+        'nf_entrada_historica_id',
+        'pedido_compra_id',
+    }
+)
+
+NFE_ENTRADA_CONFERENCIA_CAMPOS_MASCARADOS: frozenset[str] = frozenset(
+    {
+        'observacao_divergencias',
+        'estoque_aplicado_observacao',
+    }
+)
+
+NFE_ENTRADA_CONFERENCIA_ALLOWLIST: frozenset[str] = (
+    NFE_ENTRADA_CONFERENCIA_CAMPOS_VALOR | NFE_ENTRADA_CONFERENCIA_CAMPOS_MASCARADOS
+)
+
+CTE_HISTORICO_IMPORTADO_CAMPOS_VALOR: frozenset[str] = frozenset(
+    {
+        'chave_acesso',
+        'numero',
+        'serie',
+        'modelo',
+        'dh_emissao',
+        'tp_amb',
+        'nat_op',
+        'cfop',
+        'versao_layout',
+        'cstat',
+        'protocolo',
+        'cancelado',
+        'status_documento',
+        'data_cancelamento',
+        'protocolo_cancelamento',
+        'valor_total_servico',
+        'valor_receber',
+        'icms_base',
+        'icms_aliquota',
+        'icms_valor',
+        'modal',
+        'tipo_servico',
+        'municipio_inicio',
+        'uf_inicio',
+        'municipio_fim',
+        'uf_fim',
+        'papel_empresa_no_documento',
+        'status_conferencia',
+        'conferido_em',
+        'conferido_por_id',
+        'apto_operacional',
+        'ignorado_operacionalmente',
+        'rateado_em',
+        'rateado_por_id',
+        'situacao_financeira_frete',
+        'situacao_financeira_em',
+        'situacao_financeira_por_id',
+        'transportadora_id',
+        'empresa_tomadora_id',
+        'empresa_destinataria_id',
+        'empresa_recebedora_id',
+        'fornecedor_remetente_id',
+        'importado_em',
+    }
+)
+
+CTE_HISTORICO_IMPORTADO_CAMPOS_MASCARADOS: frozenset[str] = frozenset(
+    {
+        'xmotivo',
+        'motivo_cancelamento',
+        'observacao_conferencia',
+        'divergencia_motivo',
+        'situacao_financeira_obs',
+    }
+)
+
+CTE_HISTORICO_IMPORTADO_CAMPOS_EXCLUIDOS: frozenset[str] = frozenset(
+    {
+        'emit_json',
+        'rem_json',
+        'dest_json',
+        'exped_json',
+        'receb_json',
+        'tomador_json',
+        'totais_json',
+        'imposto_json',
+        'prot_json',
+        'reforma_e_outros_json',
+        'componentes_frete_json',
+        'chaves_nfe_vinculadas',
+        'rateio_frete_json',
+        'checklist_conferencia_json',
+        'nome_arquivo',
+        'xml_conteudo',
+    }
+)
+
+CTE_HISTORICO_IMPORTADO_ALLOWLIST: frozenset[str] = (
+    CTE_HISTORICO_IMPORTADO_CAMPOS_VALOR | CTE_HISTORICO_IMPORTADO_CAMPOS_MASCARADOS
+)
+
 # Bloqueio semântico obrigatório (nunca armazenar valor).
 CAMPOS_BLOQUEADOS_SEMPRE: frozenset[str] = frozenset(
     {

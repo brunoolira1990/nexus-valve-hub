@@ -38,6 +38,10 @@ class AuditoriaEscopoTests(TestCase):
                 ('comercial', 'pedidocompra'),
                 ('fiscal', 'nfesaida'),
                 ('fiscal', 'nfeentrada'),
+                # Fase 1 da entrada de terceiros: NF-e importada, conferência e CT-e.
+                ('fiscal', 'nfeentradahistoricaimportada'),
+                ('fiscal', 'nfeentradaconferencia'),
+                ('fiscal', 'ctehistoricoimportado'),
             },
         )
         self.assertEqual(entidade_auditada_permitida('Cadastros', 'Cliente'), ('cadastros', 'cliente'))

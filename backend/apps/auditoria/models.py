@@ -13,6 +13,13 @@ class RegistroAuditoria(models.Model):
     model_name = models.CharField(max_length=64, db_index=True)
     object_id = models.PositiveBigIntegerField(db_index=True)
     operacao = models.CharField(max_length=16, choices=Operacao.choices)
+    # Fase 1 da entrada de terceiros: nome máquina da ação de domínio ('conferir',
+    # 'reabrir', 'aplicar_estoque', 'gerar_contas_pagar', ...). Eventos manuais
+    # gravam operacao='UPDATE' + acao preenchida; diffs automáticos de
+    # CREATE/UPDATE deixam acao vazio. Sem índice por ora (YAGNI — nasce com o
+    # relatório de auditoria). UI (PR 2): acao != '' renderiza como EVENTO,
+    # com label humano vindo de um map no frontend, não do banco.
+    acao = models.CharField(max_length=40, blank=True, default='')
     alteracoes = models.JSONField(default=dict)
     ator = models.ForeignKey(
         settings.AUTH_USER_MODEL,

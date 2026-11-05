@@ -48,6 +48,15 @@ const ESCOPOS_HISTORICO = {
   pedidocompra: { appLabel: 'comercial', modelName: 'pedidocompra' },
   nfesaida: { appLabel: 'fiscal', modelName: 'nfesaida' },
   nfeentrada: { appLabel: 'fiscal', modelName: 'nfeentrada' },
+  // Fase 1 da entrada de terceiros — os pares batem com MODELOS_AUDITADOS
+  // (backend/apps/auditoria/escopo.py). model_name é o lowercase da classe
+  // Django, sem acentos e sem sublinhados: 'ctehistoricoimportado'.
+  nfeentradahistoricaimportada: {
+    appLabel: 'fiscal',
+    modelName: 'nfeentradahistoricaimportada',
+  },
+  nfeentradaconferencia: { appLabel: 'fiscal', modelName: 'nfeentradaconferencia' },
+  ctehistoricoimportado: { appLabel: 'fiscal', modelName: 'ctehistoricoimportado' },
 } satisfies Record<string, HistoricoEscopo>;
 
 /**

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, History, Loader2 } from 'lucide-react';
+import { ArrowRight, History, Loader2, Zap } from 'lucide-react';
 import { Badge } from '@/components/nexus';
 import {
   Card,
@@ -14,6 +14,7 @@ import {
   campoEhProtegido,
   entradasAlteracao,
   formatarValorAuditoria,
+  labelAcaoAuditoria,
   labelCampoAuditoria,
   labelOperacaoAuditoria,
 } from '@/lib/auditoriaHistorico';
@@ -39,7 +40,13 @@ export type HistoricoEscopo =
   | { appLabel: 'comercial'; modelName: 'pedidovenda' }
   | { appLabel: 'comercial'; modelName: 'pedidocompra' }
   | { appLabel: 'fiscal'; modelName: 'nfesaida' }
-  | { appLabel: 'fiscal'; modelName: 'nfeentrada' };
+  | { appLabel: 'fiscal'; modelName: 'nfeentrada' }
+  // Fase 1 da entrada de terceiros: os mesmos pares de MODELOS_AUDITADOS
+  // (backend/apps/auditoria/escopo.py). Grafia real do model_name Django:
+  // 'nfeentradahistoricaimportada' com "c" (Historica + Importada).
+  | { appLabel: 'fiscal'; modelName: 'nfeentradahistoricaimportada' }
+  | { appLabel: 'fiscal'; modelName: 'nfeentradaconferencia' }
+  | { appLabel: 'fiscal'; modelName: 'ctehistoricoimportado' };
 
 type Props = {
   objectId?: number | null;
@@ -163,12 +170,20 @@ export function HistoricoAlteracoesPanel({
 
           {!loading && !error && registros.length > 0 ? (
             <ol className="relative space-y-4 border-l border-border pl-5" data-testid="auditoria-historico-lista">
-              {registros.map((reg) => (
+              {registros.map((reg) => {
+                // Contrato do PR 1 (coluna `acao`): acao != '' renderiza como
+                // EVENTO — ícone + label humano de ACAO_LABELS — e NÃO como
+                // diff de campos. acao == ''/'ausente' mantém o render antigo
+                // (retrocompatibilidade obrigatória; fixtures pré-PR1 não têm
+                // a chave nenhuma).
+                const ehEvento = Boolean(reg.acao);
+                return (
                 <li
                   key={reg.id}
                   className="relative"
                   data-testid={`auditoria-evento-${reg.id}`}
                   data-operacao={reg.operacao}
+                  data-acao={reg.acao || undefined}
                 >
                   <span
                     aria-hidden
@@ -177,9 +192,20 @@ export function HistoricoAlteracoesPanel({
                   <div className="rounded-lg border border-border bg-muted/20 p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <Badge variant={reg.operacao === 'CREATE' ? 'info' : 'neutral'}>
-                          {labelOperacaoAuditoria(reg.operacao)}
-                        </Badge>
+                        {ehEvento ? (
+                          // Badge (nexus) rendera <span> próprio sem espalhar props — o testid
+                          // vai no wrapper, não no Badge.
+                          <span data-testid={`auditoria-acao-${reg.id}`} className="inline-flex">
+                            <Badge variant="info">
+                              <Zap aria-hidden className="mr-1 h-3 w-3" />
+                              {labelAcaoAuditoria(reg.acao as string)}
+                            </Badge>
+                          </span>
+                        ) : (
+                          <Badge variant={reg.operacao === 'CREATE' ? 'info' : 'neutral'}>
+                            {labelOperacaoAuditoria(reg.operacao)}
+                          </Badge>
+                        )}
                         <span className="text-xs text-muted-foreground">
                           {reg.ator?.nome || 'Sistema / usuário removido'}
                         </span>
@@ -189,6 +215,7 @@ export function HistoricoAlteracoesPanel({
                       </span>
                     </div>
 
+                    {ehEvento ? null : (
                     <ul className="mt-3 space-y-2.5">
                       {entradasAlteracao(reg).map(({ campo, alt }) => {
                         const antes = 'antes' in alt ? alt.antes : null;
@@ -230,9 +257,11 @@ export function HistoricoAlteracoesPanel({
                         );
                       })}
                     </ul>
+                    )}
                   </div>
                 </li>
-              ))}
+                );
+              })}
             </ol>
           ) : null}
         </CardContent>
