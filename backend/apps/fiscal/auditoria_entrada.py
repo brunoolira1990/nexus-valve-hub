@@ -74,7 +74,9 @@ _CONTEXTO_ENTRADA: dict[str, tuple[frozenset[str], frozenset[str]]] = {
 # novo de PR 3 não inventar grafia sem revisão.
 ACOES_CONFERENCIA = frozenset({'conferir', 'reabrir', 'marcar_divergente', 'desvincular_alocacoes_venda'})
 ACOES_ESTOQUE = frozenset({'preparar_estoque', 'aplicar_estoque', 'reverter_estoque'})
-ACOES_FINANCEIRO = frozenset({'gerar_contas_pagar', 'estornar_contas'})
+# PR 3 Fase 1: 'salvar_rateio' pluggado na action frete/salvar-rateio do CT-e;
+# label humano correspondente adicionado no ACAO_LABELS (lib/auditoriaHistorico.ts).
+ACOES_FINANCEIRO = frozenset({'gerar_contas_pagar', 'estornar_contas', 'salvar_rateio'})
 ACOES_DEVOLUCAO = frozenset({'gerar_saida_devolucao_compra'})
 
 

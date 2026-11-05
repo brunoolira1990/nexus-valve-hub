@@ -3193,6 +3193,15 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
                 {'ok': False, 'mensagem': 'Erro tecnico ao gerar devolucao.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+        # Auditoria Fase 1 PR 3: grava evento 'gerar_saida_devolucao_compra' contra NFeEntradaConferencia
+        # (a devolução cria NFeSaida; a conferência não é mutada — snapshot fallback).
+        from apps.fiscal.auditoria_entrada import registrar_devolucao_nfe
+
+        registrar_devolucao_nfe(
+            entidade=conferencia,
+            usuario=request.user,
+            acao='gerar_saida_devolucao_compra',
+        )
         return response.Response(payload, status=status.HTTP_201_CREATED)
 
     def _salvar_conferencia(self, request, pk=None):
@@ -3216,6 +3225,16 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
         )
         if 'data_entrada' in payload and payload.get('data_entrada') not in (None, '') and data_entrada_val is None:
             return response.Response({'detail': 'Data de entrada inválida.'}, status=status.HTTP_400_BAD_REQUEST)
+        # Auditoria Fase 1 PR 3: congela campos auditados antes de qualquer save.
+        from apps.fiscal.auditoria_entrada import registrar_conferencia_nfe
+
+        estado_anterior_conferencia = {
+            'status': conferencia.status,
+            'divergencias_aceitas': conferencia.divergencias_aceitas,
+            'observacao_divergencias': conferencia.observacao_divergencias,
+            'data_entrada': conferencia.data_entrada,
+            'pedido_compra_id': conferencia.pedido_compra_id,
+        }
         conf_serializer = NFeEntradaConferenciaSerializer(
             conferencia,
             data={
@@ -3291,6 +3310,13 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
             )
 
         conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
+        # Auditoria Fase 1 PR 3: grava evento 'conferir' contra NFeEntradaConferencia.
+        registrar_conferencia_nfe(
+            entidade=conferencia,
+            usuario=request.user,
+            acao='conferir',
+            estado_anterior=estado_anterior_conferencia,
+        )
         return response.Response(NFeEntradaConferenciaSerializer(conferencia).data)
 
     @action(detail=True, methods=['get', 'post'], url_path='conferencia/reabrir')
@@ -3300,6 +3326,21 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
             nf = self.get_queryset().select_related('conferencia').get(pk=pk)
             return response.Response(montar_preview_reabertura_entrada_fornecedor(nf))
 
+        # Auditoria Fase 1 PR 3: congela campos auditados antes da reabertura.
+        from apps.fiscal.auditoria_entrada import registrar_conferencia_nfe
+
+        estado_anterior_reabertura = NFeEntradaConferencia.objects.filter(
+            nf_entrada_historica_id=pk,
+        ).values(
+            'status',
+            'divergencias_aceitas',
+            'observacao_divergencias',
+            'preparado_em',
+            'estoque_aplicado_em',
+            'estoque_aplicado_por_id',
+            'data_entrada',
+            'pedido_compra_id',
+        ).first()
         try:
             resultado = reabrir_entrada_fornecedor(
                 int(pk),
@@ -3314,6 +3355,14 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
 
         conferencia = resultado.pop('conferencia')
         conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
+        if estado_anterior_reabertura is not None:
+            # Auditoria Fase 1 PR 3: grava evento 'reabrir' contra NFeEntradaConferencia.
+            registrar_conferencia_nfe(
+                entidade=conferencia,
+                usuario=request.user,
+                acao='reabrir',
+                estado_anterior=estado_anterior_reabertura,
+            )
         resultado['conferencia'] = NFeEntradaConferenciaSerializer(conferencia).data
         return response.Response(resultado)
 
@@ -3324,6 +3373,16 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
         from apps.comercial.services.alocacao_atendimento_service import AlocacaoAtendimentoErro
 
         nf = self.get_queryset().select_related('conferencia').get(pk=pk)
+        # Auditoria Fase 1 PR 3: congela campos auditados antes de desvincular.
+        from apps.fiscal.auditoria_entrada import registrar_conferencia_nfe
+
+        estado_anterior_desvinculacao = NFeEntradaConferencia.objects.filter(
+            nf_entrada_historica_id=nf.pk,
+        ).values(
+            'status',
+            'pedido_compra_id',
+            'data_entrada',
+        ).first()
         try:
             removidas = desvincular_alocacoes_entrada_venda_da_nf(
                 nf,
@@ -3332,6 +3391,16 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
             )
         except AlocacaoAtendimentoErro as exc:
             return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        if estado_anterior_desvinculacao is not None:
+            # Auditoria Fase 1 PR 3: grava evento 'desvincular_alocacoes_venda' contra NFeEntradaConferencia.
+            conferencia_obj = NFeEntradaConferencia.objects.filter(nf_entrada_historica_id=nf.pk).first()
+            if conferencia_obj is not None:
+                registrar_conferencia_nfe(
+                    entidade=conferencia_obj,
+                    usuario=request.user,
+                    acao='desvincular_alocacoes_venda',
+                    estado_anterior=estado_anterior_desvinculacao,
+                )
         preview = montar_preview_reabertura_entrada_fornecedor(nf)
         return response.Response(
             {
@@ -3401,10 +3470,21 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
             if not conferencia.data_entrada:
                 payload_resp['data_entrada_ausente'] = True
             return response.Response(payload_resp, status=400)
+        # Auditoria Fase 1 PR 3: congela status/preparado_em antes do save.
+        from apps.fiscal.auditoria_entrada import registrar_estoque_nfe
+
+        estado_anterior_preparo = {'status': conferencia.status, 'preparado_em': conferencia.preparado_em}
         conferencia.status = NFeEntradaConferencia.Status.CONFERIDA
         conferencia.preparado_em = timezone.now()
         conferencia.status = NFeEntradaConferencia.Status.PREPARADA
         conferencia.save(update_fields=['status', 'preparado_em', 'atualizado_em'])
+        # Auditoria Fase 1 PR 3: grava evento 'preparar_estoque' contra NFeEntradaConferencia.
+        registrar_estoque_nfe(
+            entidade=conferencia,
+            usuario=request.user,
+            acao='preparar_estoque',
+            estado_anterior=estado_anterior_preparo,
+        )
         return response.Response(NFeEntradaConferenciaSerializer(conferencia).data)
 
     @action(detail=True, methods=['post'], url_path='conferencia/confirmar-equivalencia')
@@ -3515,6 +3595,15 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
             )
             return response.Response(data)
 
+        # Auditoria Fase 1 PR 3: congela campos auditados antes da aplicação de estoque.
+        from apps.fiscal.auditoria_entrada import registrar_estoque_nfe
+
+        estado_anterior_aplicacao = {
+            'status': conferencia.status,
+            'estoque_aplicado_em': conferencia.estoque_aplicado_em,
+            'estoque_aplicado_por_id': conferencia.estoque_aplicado_por_id,
+            'estoque_aplicado_observacao': conferencia.estoque_aplicado_observacao,
+        }
         try:
             data = aplicar_estoque_fisico_conferencia(
                 conferencia,
@@ -3550,6 +3639,13 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
             )
 
         conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
+        # Auditoria Fase 1 PR 3: grava evento 'aplicar_estoque' contra NFeEntradaConferencia.
+        registrar_estoque_nfe(
+            entidade=conferencia,
+            usuario=request.user,
+            acao='aplicar_estoque',
+            estado_anterior=estado_anterior_aplicacao,
+        )
         return response.Response(
             {
                 **data,
@@ -3679,6 +3775,17 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
             )
         except ValueError as exc:
             return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        # Auditoria Fase 1 PR 3: grava evento 'gerar_contas_pagar' contra NFeEntradaHistoricaImportada
+        # (a action cria títulos e marca a NF-e; a conferência não é tocada aqui — snapshot fallback).
+        from apps.fiscal.auditoria_entrada import registrar_financeiro_nfe
+
+        nf.refresh_from_db()
+        registrar_financeiro_nfe(
+            entidade=nf,
+            usuario=request.user if request.user.is_authenticated else None,
+            acao='gerar_contas_pagar',
+            detalhes={'titulo_id': titulo.pk},
+        )
         flags = montar_flags_financeiro_nfe_entrada(nf)
         return response.Response(
             {
@@ -3864,10 +3971,26 @@ class CTeHistoricoImportadoViewSet(AutocompleteOrPaginationMixin, viewsets.ReadO
         from .cte_historico_conferencia import ConferenciaCteErro, conferir_cte_importado, serializar_resposta_conferencia
 
         cte = self.get_object()
+        # Auditoria Fase 1 PR 3: congela campos auditados antes da conferência do CT-e.
+        from apps.fiscal.auditoria_entrada import registrar_conferencia_nfe
+
+        estado_anterior_cte = {
+            'status_conferencia': cte.status_conferencia,
+            'conferido_em': cte.conferido_em,
+            'conferido_por_id': cte.conferido_por_id,
+            'apto_operacional': cte.apto_operacional,
+        }
         try:
             cte = conferir_cte_importado(cte, request.user, request.data or {})
         except ConferenciaCteErro as exc:
             return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        # Auditoria Fase 1 PR 3: grava evento 'conferir' contra CTeHistoricoImportado.
+        registrar_conferencia_nfe(
+            entidade=cte,
+            usuario=request.user,
+            acao='conferir',
+            estado_anterior=estado_anterior_cte,
+        )
         return response.Response(serializar_resposta_conferencia(cte))
 
     @action(detail=True, methods=['post'], url_path='marcar-divergente')
@@ -3875,6 +3998,15 @@ class CTeHistoricoImportadoViewSet(AutocompleteOrPaginationMixin, viewsets.ReadO
         from .cte_historico_conferencia import ConferenciaCteErro, marcar_cte_importado_divergente, serializar_resposta_conferencia
 
         cte = self.get_object()
+        # Auditoria Fase 1 PR 3: congela campos auditados antes de marcar divergência.
+        from apps.fiscal.auditoria_entrada import registrar_conferencia_nfe
+
+        estado_anterior_cte = {
+            'status_conferencia': cte.status_conferencia,
+            'apto_operacional': cte.apto_operacional,
+            'divergencia_motivo': cte.divergencia_motivo,
+            'observacao_conferencia': cte.observacao_conferencia,
+        }
         try:
             cte = marcar_cte_importado_divergente(
                 cte,
@@ -3884,6 +4016,13 @@ class CTeHistoricoImportadoViewSet(AutocompleteOrPaginationMixin, viewsets.ReadO
             )
         except ConferenciaCteErro as exc:
             return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        # Auditoria Fase 1 PR 3: grava evento 'marcar_divergente' contra CTeHistoricoImportado.
+        registrar_conferencia_nfe(
+            entidade=cte,
+            usuario=request.user,
+            acao='marcar_divergente',
+            estado_anterior=estado_anterior_cte,
+        )
         return response.Response(serializar_resposta_conferencia(cte))
 
     @action(detail=True, methods=['post'], url_path='ignorar-operacional')
@@ -3930,15 +4069,27 @@ class CTeHistoricoImportadoViewSet(AutocompleteOrPaginationMixin, viewsets.ReadO
         linhas = data.get('linhas')
         if not isinstance(linhas, list):
             return response.Response({'detail': 'Informe linhas (lista) do rateio.'}, status=status.HTTP_400_BAD_REQUEST)
+        # Auditoria Fase 1 PR 3: congela rateado_em/rateado_por antes do rateio.
+        from apps.fiscal.auditoria_entrada import registrar_financeiro_cte
+
+        cte_obj = self.get_object()
+        estado_anterior_rateio = {'rateado_em': cte_obj.rateado_em, 'rateado_por_id': cte_obj.rateado_por_id}
         try:
             cte = salvar_rateio_frete_cte(
-                self.get_object(),
+                cte_obj,
                 linhas=linhas,
                 metodo=str(data.get('metodo') or 'MANUAL'),
                 usuario=request.user,
             )
         except CteFinanceiroErro as exc:
             return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        # Auditoria Fase 1 PR 3: grava evento 'salvar_rateio' contra CTeHistoricoImportado.
+        registrar_financeiro_cte(
+            entidade=cte,
+            usuario=request.user,
+            acao='salvar_rateio',
+            estado_anterior=estado_anterior_rateio,
+        )
         return response.Response(
             {
                 'cte': CTeHistoricoImportadoSerializer(cte, context={'request': request}).data,
@@ -3986,9 +4137,13 @@ class CTeHistoricoImportadoViewSet(AutocompleteOrPaginationMixin, viewsets.ReadO
         from apps.fiscal.cte_financeiro import CteFinanceiroErro, gerar_contas_pagar_de_cte
 
         data = request.data or {}
+        # Auditoria Fase 1 PR 3: guarda a instância auditada antes do serviço.
+        from apps.fiscal.auditoria_entrada import registrar_financeiro_cte
+
+        cte_obj = self.get_object()
         try:
             result = gerar_contas_pagar_de_cte(
-                self.get_object(),
+                cte_obj,
                 data_vencimento=data.get('data_vencimento'),
                 gerar_impostos_separados=bool(data.get('gerar_impostos_separados', True)),
                 categoria_id=data.get('categoria') or data.get('categoria_id'),
@@ -4001,6 +4156,14 @@ class CTeHistoricoImportadoViewSet(AutocompleteOrPaginationMixin, viewsets.ReadO
             )
         except (CteFinanceiroErro, ValueError) as exc:
             return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        # Auditoria Fase 1 PR 3: grava evento 'gerar_contas_pagar' contra CTeHistoricoImportado
+        # (o serviço cria títulos; campos da allowlist do CT-e não mudam — snapshot fallback).
+        cte_obj.refresh_from_db()
+        registrar_financeiro_cte(
+            entidade=cte_obj,
+            usuario=request.user,
+            acao='gerar_contas_pagar',
+        )
         return response.Response(result, status=status.HTTP_201_CREATED)
 
     @action(

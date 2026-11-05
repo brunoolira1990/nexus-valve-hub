@@ -93,6 +93,8 @@ export function labelOperacaoAuditoria(operacao: string): string {
  * batem com ACOES_CONFERENCIA/ESTOQUE/FINANCEIRO/DEVOLUCAO daquele módulo —
  * o disco é a fonte; `gerar_contas_pagar_cte` NÃO existe lá (o CT-e reusa
  * 'gerar_contas_pagar'), por isso não há entrada no map.
+ * PR 3: `salvar_rateio` entrou no map junto do plug da action frete/salvar-rateio
+ * (última ação de domínio ligada; adicionada a ACOES_FINANCEIRO no mesmo PR).
  */
 export const ACAO_LABELS: Record<string, string> = {
   conferir: 'Conferiu a nota',
@@ -105,6 +107,7 @@ export const ACAO_LABELS: Record<string, string> = {
   gerar_contas_pagar: 'Gerou contas a pagar',
   estornar_contas: 'Estornou as contas a pagar',
   gerar_saida_devolucao_compra: 'Gerou devolução de compra',
+  salvar_rateio: 'Salvou o rateio do frete',
 };
 
 export function labelAcaoAuditoria(acao: string): string {
