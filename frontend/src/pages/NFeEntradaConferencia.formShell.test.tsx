@@ -19,6 +19,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { NFeEntradaConferenciaPanel } from '@/components/fiscal/NFeEntradaConferenciaPanel';
 import NFeEntradaConferenciaPage from '@/pages/NFeEntradaConferencia';
 import { nfeEntradaConferenciaService } from '@/services/api/nfeEntradaConferencia';
+import { auditoriaService } from '@/services/api/auditoria';
 import type { ItemConferenciaNFeEntrada, NFeEntradaConferencia } from '@/types';
 
 const mocks = vi.hoisted(() => ({
@@ -54,6 +55,21 @@ vi.mock('@/services/api/produtos', () => ({
   produtosService: {
     search: vi.fn().mockResolvedValue([]),
     getById: vi.fn(),
+  },
+}));
+
+// PR 4 da Fase 1: o rail standalone deixou de ser o Chatter e virou o
+// UnifiedEntradaFeed, que consulta as duas entidades (conferência + histórica)
+// pelo auditoriaService. Mock vazio — nenhuma chamada de rede no teste de shell.
+vi.mock('@/services/api/auditoria', () => ({
+  auditoriaService: {
+    historicoObjeto: vi.fn().mockResolvedValue({
+      count: 0,
+      next: null,
+      previous: null,
+      results: [],
+    }),
+    capacidade: vi.fn().mockResolvedValue({ pode_visualizar: true }),
   },
 }));
 
@@ -128,6 +144,15 @@ beforeAll(() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // PR 4: o rail (UnifiedEntradaFeed) chama historicoObjeto 2x. clearAllMocks zera a
+  // implementação do factory, então re-implantamos o histórico vazio aqui — nenhum
+  // teste de shell depende do conteúdo, só de não estourar rede.
+  vi.mocked(auditoriaService.historicoObjeto).mockResolvedValue({
+    count: 0,
+    next: null,
+    previous: null,
+    results: [],
+  });
   mocks.salvar.mockResolvedValue(conf());
   mocks.getAllPedidos.mockResolvedValue([]);
   mocks.prepararEstoque.mockResolvedValue(conf({ status: 'PREPARADA' }));
@@ -179,6 +204,30 @@ describe('NFeEntradaConferencia — shell sem ações e barra agrupada (3.18-3)'
     // Ordem dos grupos na DOM: navegação, conferência, operacional.
     expect([navegacao, conferencia, operacional]).toEqual(
       Array.from(barra.querySelectorAll('[data-testid^="barra-grupo-"]')),
+    );
+  });
+
+  it('PR 4: o rail standalone é o feed unificado e consulta conferência + histórica', async () => {
+    const { auditoriaService } = await import('@/services/api/auditoria');
+    await renderCarregado();
+
+    const rail = await screen.findByTestId('auditoria-feed-panel');
+    expect(within(rail).getByTestId('auditoria-feed-escopo')).toBeInTheDocument();
+    // O Chatter de uma entidade só saiu do rail: sem as tabs antigas.
+    expect(screen.queryByTestId('chatter-tabs')).toBeNull();
+    // IDs usados pelo harness: dados.id (conferência) e nfId (histórica) da rota.
+    await waitFor(() => expect(auditoriaService.historicoObjeto).toHaveBeenCalledTimes(2));
+    expect(auditoriaService.historicoObjeto).toHaveBeenCalledWith(
+      'fiscal',
+      'nfeentradaconferencia',
+      20,
+      { page_size: 50 },
+    );
+    expect(auditoriaService.historicoObjeto).toHaveBeenCalledWith(
+      'fiscal',
+      'nfeentradahistoricaimportada',
+      expect.anything(),
+      { page_size: 50 },
     );
   });
 

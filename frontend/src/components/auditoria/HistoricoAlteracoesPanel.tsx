@@ -66,6 +66,106 @@ function temValor(valor: unknown): boolean {
   return valor !== null && valor !== undefined && valor !== '';
 }
 
+/**
+ * Item de timeline do historico (renderer do PR 2, extraido no PR 4 sem
+ * alteracao de markup). O HistoricoAlteracoesPanel renderiza item a item
+ * exatamente como antes; o UnifiedEntradaFeed (rail da conferencia NF-e)
+ * reutiliza este MESMO renderer — mesmo EVENTO (badge Zap + ACAO_LABELS),
+ * mesmo diff de campos, mesmos testids — sem duplicar o parser do PR 2.
+ */
+export function ItemHistoricoAuditoria({ reg }: { reg: RegistroAuditoria }) {
+  // Contrato do PR 1 (coluna `acao`): acao != '' renderiza como
+  // EVENTO — ícone + label humano de ACAO_LABELS — e NÃO como
+  // diff de campos. acao == ''/'ausente' mantém o render antigo
+  // (retrocompatibilidade obrigatória; fixtures pré-PR1 não têm
+  // a chave nenhuma).
+  const ehEvento = Boolean(reg.acao);
+  return (
+  <li
+    key={reg.id}
+    className="relative"
+    data-testid={`auditoria-evento-${reg.id}`}
+    data-operacao={reg.operacao}
+    data-acao={reg.acao || undefined}
+  >
+    <span
+      aria-hidden
+      className="absolute -left-[26px] top-4 h-2.5 w-2.5 rounded-full border-2 border-background bg-primary/70"
+    />
+    <div className="rounded-lg border border-border bg-muted/20 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          {ehEvento ? (
+            // Badge (nexus) rendera <span> próprio sem espalhar props — o testid
+            // vai no wrapper, não no Badge.
+            <span data-testid={`auditoria-acao-${reg.id}`} className="inline-flex">
+              <Badge variant="info">
+                <Zap aria-hidden className="mr-1 h-3 w-3" />
+                {labelAcaoAuditoria(reg.acao as string)}
+              </Badge>
+            </span>
+          ) : (
+            <Badge variant={reg.operacao === 'CREATE' ? 'info' : 'neutral'}>
+              {labelOperacaoAuditoria(reg.operacao)}
+            </Badge>
+          )}
+          <span className="text-xs text-muted-foreground">
+            {reg.ator?.nome || 'Sistema / usuário removido'}
+          </span>
+        </div>
+        <span className="text-xs text-muted-foreground tabular-nums">
+          {formatarDataLocal(reg.criado_em)}
+        </span>
+      </div>
+
+      {ehEvento ? null : (
+      <ul className="mt-3 space-y-2.5">
+        {entradasAlteracao(reg).map(({ campo, alt }) => {
+          const antes = 'antes' in alt ? alt.antes : null;
+          const depois = 'depois' in alt ? alt.depois : null;
+          return (
+            <li
+              key={campo}
+              className="flex flex-wrap items-center gap-x-3 gap-y-1.5"
+              data-testid={`auditoria-campo-${campo}`}
+            >
+              <span className="min-w-40 text-xs font-medium text-muted-foreground">
+                {labelCampoAuditoria(campo)}
+              </span>
+              {campoEhProtegido(alt) ? (
+                <Badge variant="neutral">{AUDITORIA_VALOR_PROTEGIDO}</Badge>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  {temValor(antes) ? (
+                    <span data-testid={`auditoria-antes-${campo}`} className="inline-flex">
+                      <Badge variant="danger" className="line-through">
+                        {formatarValorAuditoria(antes)}
+                      </Badge>
+                    </span>
+                  ) : null}
+                  {temValor(antes) && temValor(depois) ? (
+                    <ArrowRight aria-hidden className="h-3.5 w-3.5 text-muted-foreground" />
+                  ) : null}
+                  {temValor(depois) ? (
+                    <span data-testid={`auditoria-depois-${campo}`} className="inline-flex">
+                      <Badge variant="success">{formatarValorAuditoria(depois)}</Badge>
+                    </span>
+                  ) : null}
+                  {!temValor(antes) && !temValor(depois) ? (
+                    <Badge variant="neutral">{formatarValorAuditoria(null)}</Badge>
+                  ) : null}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      )}
+    </div>
+  </li>
+  );
+}
+
 export function HistoricoAlteracoesPanel({
   appLabel,
   modelName,
@@ -170,98 +270,10 @@ export function HistoricoAlteracoesPanel({
 
           {!loading && !error && registros.length > 0 ? (
             <ol className="relative space-y-4 border-l border-border pl-5" data-testid="auditoria-historico-lista">
-              {registros.map((reg) => {
-                // Contrato do PR 1 (coluna `acao`): acao != '' renderiza como
-                // EVENTO — ícone + label humano de ACAO_LABELS — e NÃO como
-                // diff de campos. acao == ''/'ausente' mantém o render antigo
-                // (retrocompatibilidade obrigatória; fixtures pré-PR1 não têm
-                // a chave nenhuma).
-                const ehEvento = Boolean(reg.acao);
-                return (
-                <li
-                  key={reg.id}
-                  className="relative"
-                  data-testid={`auditoria-evento-${reg.id}`}
-                  data-operacao={reg.operacao}
-                  data-acao={reg.acao || undefined}
-                >
-                  <span
-                    aria-hidden
-                    className="absolute -left-[26px] top-4 h-2.5 w-2.5 rounded-full border-2 border-background bg-primary/70"
-                  />
-                  <div className="rounded-lg border border-border bg-muted/20 p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        {ehEvento ? (
-                          // Badge (nexus) rendera <span> próprio sem espalhar props — o testid
-                          // vai no wrapper, não no Badge.
-                          <span data-testid={`auditoria-acao-${reg.id}`} className="inline-flex">
-                            <Badge variant="info">
-                              <Zap aria-hidden className="mr-1 h-3 w-3" />
-                              {labelAcaoAuditoria(reg.acao as string)}
-                            </Badge>
-                          </span>
-                        ) : (
-                          <Badge variant={reg.operacao === 'CREATE' ? 'info' : 'neutral'}>
-                            {labelOperacaoAuditoria(reg.operacao)}
-                          </Badge>
-                        )}
-                        <span className="text-xs text-muted-foreground">
-                          {reg.ator?.nome || 'Sistema / usuário removido'}
-                        </span>
-                      </div>
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {formatarDataLocal(reg.criado_em)}
-                      </span>
-                    </div>
+              {registros.map((reg) => (
+                <ItemHistoricoAuditoria key={reg.id} reg={reg} />
+              ))}
 
-                    {ehEvento ? null : (
-                    <ul className="mt-3 space-y-2.5">
-                      {entradasAlteracao(reg).map(({ campo, alt }) => {
-                        const antes = 'antes' in alt ? alt.antes : null;
-                        const depois = 'depois' in alt ? alt.depois : null;
-                        return (
-                          <li
-                            key={campo}
-                            className="flex flex-wrap items-center gap-x-3 gap-y-1.5"
-                            data-testid={`auditoria-campo-${campo}`}
-                          >
-                            <span className="min-w-40 text-xs font-medium text-muted-foreground">
-                              {labelCampoAuditoria(campo)}
-                            </span>
-                            {campoEhProtegido(alt) ? (
-                              <Badge variant="neutral">{AUDITORIA_VALOR_PROTEGIDO}</Badge>
-                            ) : (
-                              <div className="flex flex-wrap items-center gap-2">
-                                {temValor(antes) ? (
-                                  <span data-testid={`auditoria-antes-${campo}`} className="inline-flex">
-                                    <Badge variant="danger" className="line-through">
-                                      {formatarValorAuditoria(antes)}
-                                    </Badge>
-                                  </span>
-                                ) : null}
-                                {temValor(antes) && temValor(depois) ? (
-                                  <ArrowRight aria-hidden className="h-3.5 w-3.5 text-muted-foreground" />
-                                ) : null}
-                                {temValor(depois) ? (
-                                  <span data-testid={`auditoria-depois-${campo}`} className="inline-flex">
-                                    <Badge variant="success">{formatarValorAuditoria(depois)}</Badge>
-                                  </span>
-                                ) : null}
-                                {!temValor(antes) && !temValor(depois) ? (
-                                  <Badge variant="neutral">{formatarValorAuditoria(null)}</Badge>
-                                ) : null}
-                              </div>
-                            )}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                    )}
-                  </div>
-                </li>
-                );
-              })}
             </ol>
           ) : null}
         </CardContent>
