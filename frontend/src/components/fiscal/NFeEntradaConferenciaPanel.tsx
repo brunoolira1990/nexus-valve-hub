@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Modal } from '@/components/Modal';
@@ -7,7 +7,10 @@ import { UnifiedEntradaFeed } from '@/components/auditoria/UnifiedEntradaFeed';
 import { GerarContasPagarNfeEntradaModal } from '@/components/fiscal/GerarContasPagarNfeEntradaModal';
 import { FornecedorEntradaAcoes } from '@/components/fiscal/FornecedorEntradaAcoes';
 import { NFeEntradaFinanceiroAcoes } from '@/components/fiscal/NFeEntradaFinanceiroAcoes';
-import { NFeEntradaReabrirModal } from '@/components/fiscal/NFeEntradaReabrirModal';
+import {
+  ReaberturaEntradaBloco,
+  type ReaberturaEntradaBlocoHandle,
+} from '@/components/fiscal/ReaberturaEntradaBloco';
 import { NFeGerarDevolucaoCompraModal } from '@/components/fiscal/NFeGerarDevolucaoCompraModal';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import {
@@ -123,7 +126,7 @@ export function NFeEntradaConferenciaPanel({
   const [obsAplicar, setObsAplicar] = useState('');
   const [modalAplicarErro, setModalAplicarErro] = useState('');
   const [gerarCpOpen, setGerarCpOpen] = useState(false);
-  const [reabrirOpen, setReabrirOpen] = useState(false);
+  const reabrirBlocoRef = useRef<ReaberturaEntradaBlocoHandle>(null);
   const [showDevolucaoCompra, setShowDevolucaoCompra] = useState(false);
   const [sugestoesCorrelacaoIgnoradas, setSugestoesCorrelacaoIgnoradas] = useState<Set<number>>(
     () => new Set(),
@@ -1753,7 +1756,7 @@ export function NFeEntradaConferenciaPanel({
             <button
               type="button"
               className="erp-btn-outline w-full sm:w-auto justify-center"
-              onClick={() => setReabrirOpen(true)}
+              onClick={() => reabrirBlocoRef.current?.abrir()}
               disabled={busy}
             >
               Reabrir para correção
@@ -1894,19 +1897,16 @@ export function NFeEntradaConferenciaPanel({
           }
         }}
       />
-      <NFeEntradaReabrirModal
-        open={reabrirOpen}
-        nfeHistoricaId={nfId}
-        onOpenChange={setReabrirOpen}
-        onSuccess={(resultado) => {
+      <ReaberturaEntradaBloco
+        ref={reabrirBlocoRef}
+        nfId={nfId}
+        embedded={embedded}
+        onUpdated={notifyUpdated}
+        onConferenciaReaberta={(resultado) => {
           setDados(resultado.conferencia);
           void hydrateProdutoCache(resultado.conferencia);
-          toast.success(resultado.mensagem);
-          notifyUpdated();
-          if (!embedded) {
-            navigate(`/nfe-entrada/${nfId}/conferencia`);
-          }
         }}
+        onNavigateConferencia={() => navigate(`/nfe-entrada/${nfId}/conferencia`)}
       />
 
       <NFeGerarDevolucaoCompraModal
