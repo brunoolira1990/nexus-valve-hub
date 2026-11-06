@@ -8,6 +8,10 @@ import {
   FinanceiroEntradaBloco,
   type FinanceiroEntradaBlocoHandle,
 } from '@/components/fiscal/FinanceiroEntradaBloco';
+import {
+  EstoqueEntradaBloco,
+  type EstoqueEntradaBlocoHandle,
+} from '@/components/fiscal/EstoqueEntradaBloco';
 import { FornecedorEntradaAcoes } from '@/components/fiscal/FornecedorEntradaAcoes';
 import { NFeEntradaFinanceiroAcoes } from '@/components/fiscal/NFeEntradaFinanceiroAcoes';
 import {
@@ -94,7 +98,6 @@ import type {
   ItemConferenciaNFeEntrada,
   NFeEntradaConferencia,
   Produto,
-  ResultadoAplicacaoEstoque,
 } from '@/types';
 
 export type NFeEntradaConferenciaPanelProps = {
@@ -123,14 +126,10 @@ export function NFeEntradaConferenciaPanel({
   const [modoTecnico, setModoTecnico] = useState(false);
   const [equivalenciasAberto, setEquivalenciasAberto] = useState(true);
   const [eqBusy, setEqBusy] = useState(false);
-  const [modalAplicarOpen, setModalAplicarOpen] = useState(false);
-  const [previewAplicar, setPreviewAplicar] = useState<ResultadoAplicacaoEstoque | null>(null);
-  const [confirmarAlertasAplicar, setConfirmarAlertasAplicar] = useState(false);
-  const [obsAplicar, setObsAplicar] = useState('');
-  const [modalAplicarErro, setModalAplicarErro] = useState('');
   const reabrirBlocoRef = useRef<ReaberturaEntradaBlocoHandle>(null);
   const devolucaoBlocoRef = useRef<DevolucaoEntradaBlocoHandle>(null);
   const financeiroBlocoRef = useRef<FinanceiroEntradaBlocoHandle>(null);
+  const estoqueBlocoRef = useRef<EstoqueEntradaBlocoHandle>(null);
   const [sugestoesCorrelacaoIgnoradas, setSugestoesCorrelacaoIgnoradas] = useState<Set<number>>(
     () => new Set(),
   );
@@ -255,30 +254,6 @@ export function NFeEntradaConferenciaPanel({
     }
   };
 
-  const abrirModalAplicar = async () => {
-    if (!nfId) return;
-    if (!dados?.data_entrada) {
-      acoes.setErro('Informe a data de entrada da NF-e antes de aplicar estoque físico.');
-      return;
-    }
-    setModalAplicarOpen(true);
-    setModalAplicarErro('');
-    setConfirmarAlertasAplicar(false);
-    setObsAplicar('');
-    acoes.setBusy(true);
-    try {
-      const saved = await salvarSilencioso();
-      if (saved) acoes.setDados(saved);
-      const preview = await nfeEntradaConferenciaService.previewAplicarEstoque(nfId, false);
-      setPreviewAplicar(preview);
-    } catch (e) {
-      setModalAplicarErro(apiErrorMessage(e));
-      setPreviewAplicar(null);
-    } finally {
-      acoes.setBusy(false);
-    }
-  };
-
   const salvarSilencioso = async (): Promise<NFeEntradaConferencia | null> => {
     if (!dados || !nfId) return null;
     const payload = {
@@ -298,45 +273,6 @@ export function NFeEntradaConferenciaPanel({
       })),
     };
     return nfeEntradaConferenciaService.salvar(nfId, payload);
-  };
-
-  const confirmarAplicarEstoque = async () => {
-    if (!nfId) return;
-    acoes.setBusy(true);
-    setModalAplicarErro('');
-    try {
-      const res = await nfeEntradaConferenciaService.aplicarEstoque(nfId, {
-        confirmar_alertas: confirmarAlertasAplicar,
-        observacao: obsAplicar,
-        data_entrada: dados?.data_entrada || undefined,
-      });
-      if (res.conferencia) {
-        acoes.setDados(res.conferencia);
-        await acoes.hydrateProdutoCache(res.conferencia);
-      } else {
-        await acoes.load(nfId);
-      }
-      setModalAplicarOpen(false);
-      setPreviewAplicar(null);
-      const baixa = res.pedido_compra_baixa;
-      if (baixa?.aplicado) {
-        toast.success(baixa.mensagem || 'Pedido de compra baixado.');
-      } else if (baixa?.ja_baixado) {
-        toast.info(baixa.mensagem || 'Pedido de compra já estava baixado para esta NF-e.');
-      }
-      notifyUpdated();
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: ResultadoAplicacaoEstoque & { detail?: string } } };
-      const data = err.response?.data;
-      if (data?.pendencias || data?.alertas) {
-        setPreviewAplicar(data);
-        setModalAplicarErro(data.detail || 'Não foi possível aplicar estoque físico.');
-      } else {
-        setModalAplicarErro(apiErrorMessage(e));
-      }
-    } finally {
-      acoes.setBusy(false);
-    }
   };
 
   const preparar = async () => {
@@ -1678,7 +1614,7 @@ export function NFeEntradaConferenciaPanel({
             <button
               type="button"
               className="erp-btn-primary w-full sm:w-auto justify-center bg-emerald-700 hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
-              onClick={() => void abrirModalAplicar()}
+              onClick={() => estoqueBlocoRef.current?.abrir()}
               disabled={busy || !aplicarEstoqueHabilitado}
               title={
                 aplicarEstoqueHabilitado
@@ -1721,115 +1657,31 @@ export function NFeEntradaConferenciaPanel({
           Finalizar encerra a revisão da nota. Aplicar estoque só depois, quando você confirmar.
         </p>
       )}
-      {modalAplicarOpen && previewAplicar ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="erp-card max-w-3xl w-full max-h-[90vh] overflow-y-auto p-4 sm:p-6 space-y-4">
-            <h2 className="text-lg font-semibold">Aplicar estoque físico</h2>
-            <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded p-3">
-              Esta ação incrementa o estoque físico em EstoqueCorrida e não deve ser executada duas vezes.
-            </p>
-            {modalAplicarErro ? (
-              <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded p-2">{modalAplicarErro}</p>
-            ) : null}
-            {previewAplicar.itens_aplicados.length > 0 ? (
-              <div>
-                <h3 className="text-sm font-medium mb-2">Itens que serão aplicados ({previewAplicar.itens_aplicados.length})</h3>
-                <ul className="text-xs space-y-1 max-h-40 overflow-y-auto border rounded p-2">
-                  {previewAplicar.itens_aplicados.map((it, idx) => (
-                    <li key={`${it.item_conferencia_id}-${it.split_ordem ?? 0}-${idx}`}>
-                      Item #{it.item_conferencia_id}
-                      {it.split_ordem != null ? ` · split ${it.split_ordem}` : ''}
-                      {' — produto '}
-                      {it.produto_id}
-                      {' — corrida '}
-                      {it.corrida}
-                      {' — qtd '}
-                      {it.quantidade}
-                      {it.lote ? ` — lote ${it.lote}` : ''}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-            {previewAplicar.itens_ignorados.length > 0 ? (
-              <div>
-                <h3 className="text-sm font-medium mb-2 text-muted-foreground">Não movimentam estoque</h3>
-                <ul className="text-xs space-y-1 max-h-32 overflow-y-auto">
-                  {previewAplicar.itens_ignorados.map((it) => (
-                    <li key={it.item_conferencia_id ?? it.motivo}>
-                      #{it.item_conferencia_id}: {it.motivo}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-            {previewAplicar.alertas.length > 0 ? (
-              <div className="text-sm text-amber-800">
-                <h3 className="font-medium mb-1">Alertas</h3>
-                <ul className="list-disc pl-5 text-xs">
-                  {previewAplicar.alertas.map((a, i) => (
-                    <li key={i}>{a}</li>
-                  ))}
-                </ul>
-                <label className="flex items-center gap-2 mt-2 text-xs">
-                  <input
-                    type="checkbox"
-                    checked={confirmarAlertasAplicar}
-                    onChange={(e) => setConfirmarAlertasAplicar(e.target.checked)}
-                  />
-                  Confirmo a aplicação mesmo com alertas
-                </label>
-              </div>
-            ) : null}
-            {previewAplicar.pendencias.length > 0 ? (
-              <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded p-3">
-                <h3 className="font-medium mb-1">Pendências bloqueantes</h3>
-                <ul className="list-disc pl-5 text-xs">
-                  {previewAplicar.pendencias.map((pend, i) => (
-                    <li key={i}>
-                      Item #{pend.item_conferencia_id}: {pend.motivo}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-            <label className="block text-xs">
-              Observação (opcional)
-              <textarea
-                className="erp-input w-full mt-1 min-h-[60px]"
-                value={obsAplicar}
-                onChange={(e) => setObsAplicar(e.target.value)}
-              />
-            </label>
-            <div className="flex flex-col-reverse sm:flex-row justify-end items-stretch sm:items-center gap-2">
-              <button
-                type="button"
-                className="erp-btn-outline w-full sm:w-auto justify-center"
-                onClick={() => {
-                  setModalAplicarOpen(false);
-                  setPreviewAplicar(null);
-                  setModalAplicarErro('');
-                }}
-                disabled={busy}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                className="erp-btn-primary w-full sm:w-auto justify-center bg-emerald-700 hover:bg-emerald-800"
-                onClick={() => void confirmarAplicarEstoque()}
-                disabled={
-                  busy ||
-                  previewAplicar.pendencias.length > 0 ||
-                  (previewAplicar.alertas.length > 0 && !confirmarAlertasAplicar)
-                }
-              >
-                Confirmar aplicação
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <EstoqueEntradaBloco
+        ref={estoqueBlocoRef}
+        nfId={nfId}
+        busy={busy}
+        dataEntrada={dados?.data_entrada}
+        onBusyChange={(next) => acoes.setBusy(next)}
+        onValidarAbrir={() => {
+          if (dados?.data_entrada) return true;
+          acoes.setErro('Informe a data de entrada da NF-e antes de aplicar estoque físico.');
+          return false;
+        }}
+        onSalvarSilencioso={async () => {
+          const saved = await salvarSilencioso();
+          if (saved) acoes.setDados(saved);
+        }}
+        onAplicado={async (res) => {
+          if (res.conferencia) {
+            acoes.setDados(res.conferencia);
+            await acoes.hydrateProdutoCache(res.conferencia);
+          } else {
+            await acoes.load(nfId);
+          }
+        }}
+        onConcluido={notifyUpdated}
+      />
 
       <FinanceiroEntradaBloco
         ref={financeiroBlocoRef}
