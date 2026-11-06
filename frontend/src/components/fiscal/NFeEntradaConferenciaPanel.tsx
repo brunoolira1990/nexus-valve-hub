@@ -4,7 +4,10 @@ import { toast } from 'sonner';
 import { Modal } from '@/components/Modal';
 import { FormShell } from '@/components/layout/FormShell';
 import { UnifiedEntradaFeed } from '@/components/auditoria/UnifiedEntradaFeed';
-import { GerarContasPagarNfeEntradaModal } from '@/components/fiscal/GerarContasPagarNfeEntradaModal';
+import {
+  FinanceiroEntradaBloco,
+  type FinanceiroEntradaBlocoHandle,
+} from '@/components/fiscal/FinanceiroEntradaBloco';
 import { FornecedorEntradaAcoes } from '@/components/fiscal/FornecedorEntradaAcoes';
 import { NFeEntradaFinanceiroAcoes } from '@/components/fiscal/NFeEntradaFinanceiroAcoes';
 import {
@@ -125,9 +128,9 @@ export function NFeEntradaConferenciaPanel({
   const [confirmarAlertasAplicar, setConfirmarAlertasAplicar] = useState(false);
   const [obsAplicar, setObsAplicar] = useState('');
   const [modalAplicarErro, setModalAplicarErro] = useState('');
-  const [gerarCpOpen, setGerarCpOpen] = useState(false);
   const reabrirBlocoRef = useRef<ReaberturaEntradaBlocoHandle>(null);
   const devolucaoBlocoRef = useRef<DevolucaoEntradaBlocoHandle>(null);
+  const financeiroBlocoRef = useRef<FinanceiroEntradaBlocoHandle>(null);
   const [sugestoesCorrelacaoIgnoradas, setSugestoesCorrelacaoIgnoradas] = useState<Set<number>>(
     () => new Set(),
   );
@@ -563,7 +566,7 @@ export function NFeEntradaConferenciaPanel({
               nfeEntradaId={nfId}
               conferenciaStatus={dados.status}
               financeiro={dados.financeiro ?? null}
-              onGerar={() => setGerarCpOpen(true)}
+              onGerar={() => financeiroBlocoRef.current?.abrir()}
             />
           </div>
         </div>
@@ -1828,16 +1831,14 @@ export function NFeEntradaConferenciaPanel({
         </div>
       ) : null}
 
-      <GerarContasPagarNfeEntradaModal
-        open={gerarCpOpen}
-        nfeEntradaId={nfId}
-        onClose={() => setGerarCpOpen(false)}
-        onGenerated={({ titulo }) => {
-          toast.success('Contas a pagar geradas com sucesso.');
+      <FinanceiroEntradaBloco
+        ref={financeiroBlocoRef}
+        nfId={nfId}
+        onGerado={(tituloId) => {
           void acoes.load(nfId).catch(() => undefined);
           notifyUpdated();
-          if (titulo?.id && !embedded) {
-            navigate(`/financeiro/contas-pagar?titulo=${titulo.id}`);
+          if (tituloId && !embedded) {
+            navigate(`/financeiro/contas-pagar?titulo=${tituloId}`);
           }
         }}
       />
