@@ -16,6 +16,7 @@ import {
   type DevolucaoEntradaBlocoHandle,
 } from '@/components/fiscal/DevolucaoEntradaBloco';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
+import { useConferenciaStore } from '@/hooks/useConferenciaStore';
 import {
   badgeClassStatusConferencia,
   badgeClassElegibilidadeEstoque,
@@ -46,7 +47,6 @@ import {
 } from '@/lib/regrasFiscaisEntradaHelpers';
 import { apiErrorMessage } from '@/services/api/config';
 import { nfeEntradaConferenciaService } from '@/services/api/nfeEntradaConferencia';
-import { pedidosCompraService } from '@/services/api/comercial';
 import { produtosService } from '@/services/api/produtos';
 import { normalizeOperationalInput } from '@/lib/textNormalize';
 import {
@@ -90,7 +90,6 @@ import {
 import type {
   ItemConferenciaNFeEntrada,
   NFeEntradaConferencia,
-  PedidoCompra,
   Produto,
   ResultadoAplicacaoEstoque,
 } from '@/types';
@@ -110,12 +109,10 @@ export function NFeEntradaConferenciaPanel({
 }: NFeEntradaConferenciaPanelProps) {
   const navigate = useNavigate();
   const nfId = nfeHistoricaId;
-  const [dados, setDados] = useState<NFeEntradaConferencia | null>(null);
-  const [pedidos, setPedidos] = useState<PedidoCompra[]>([]);
-  const [produtoCache, setProdutoCache] = useState<Map<number, Produto>>(() => new Map());
-  const [erro, setErro] = useState('');
-  const [avisoPedido, setAvisoPedido] = useState('');
-  const [busy, setBusy] = useState(false);
+  // PR 8a (Fase 2): os hubs de domínio da conferência vivem no store; o painel é
+  // o único consumidor. Ambiente (nfId, embedded, onUpdated, onClose) fica aqui.
+  const { estado, acoes } = useConferenciaStore();
+  const { dados, pedidos, produtoCache, erro, avisoPedido, busy } = estado;
   const [resumoAberto, setResumoAberto] = useState(false);
   const [resumoFiscalAberto, setResumoFiscalAberto] = useState(false);
   const [resumoElegibilidadeAberto, setResumoElegibilidadeAberto] = useState(false);
@@ -154,27 +151,6 @@ export function NFeEntradaConferenciaPanel({
 
   const buscarProdutos = useCallback((term: string, limit?: number) => produtosService.search(term, limit ?? 40), []);
 
-  const hydrateProdutoCache = useCallback(async (conf: NFeEntradaConferencia) => {
-    const cache = new Map<number, Produto>();
-    const ids = [...new Set(conf.itens.map((it) => it.produto_id).filter((id): id is number => Boolean(id)))];
-    const loaded = await Promise.all(ids.map((id) => produtosService.getById(id).catch(() => null)));
-    loaded.forEach((p) => {
-      if (p) cache.set(p.id, p);
-    });
-    conf.itens.forEach((it) => {
-      (it.sugestoes_produto || []).forEach((s) => {
-        if (!cache.has(s.id)) {
-          cache.set(s.id, {
-            id: s.id,
-            codigo_completo: s.codigo,
-            descricao: s.descricao,
-          } as Produto);
-        }
-      });
-    });
-    setProdutoCache(cache);
-  }, []);
-
   const pedidoSelecionado = useMemo(
     () => (dados?.pedido_compra_id ? pedidos.find((p) => p.id === dados.pedido_compra_id) : undefined),
     [dados?.pedido_compra_id, pedidos],
@@ -187,21 +163,8 @@ export function NFeEntradaConferenciaPanel({
     [dados?.itens, soPendencias],
   );
 
-  const load = async () => {
-    if (!nfId) return;
-    setErro('');
-    setAvisoPedido('');
-    const [conf, pcs] = await Promise.all([
-      nfeEntradaConferenciaService.get(nfId),
-      pedidosCompraService.getAll(),
-    ]);
-    setDados(conf);
-    setPedidos(pcs);
-    await hydrateProdutoCache(conf);
-  };
-
   useEffect(() => {
-    void load().catch((e) => setErro(apiErrorMessage(e)));
+    void acoes.load(nfId).catch((e) => acoes.setErro(apiErrorMessage(e)));
   }, [nfId]);
 
   const produtoIdDoItemPedido = (itemPedidoId: number | null | undefined): number | null => {
@@ -214,43 +177,23 @@ export function NFeEntradaConferenciaPanel({
     const produtoId = produtoIdDoItemPedido(itemPedidoId);
     if (produtoId && !item.produto_id) {
       const ipc = pedidoSelecionado?.itens.find((row) => row.id === itemPedidoId);
-      setProdutoCache((m) => {
-        if (m.has(produtoId)) return m;
-        const next = new Map(m);
-        next.set(produtoId, {
+      acoes.upsertProdutoCache(
+        {
           id: produtoId,
           codigo_completo: '',
           descricao: ipc?.produto_nome || '',
-        } as Produto);
-        return next;
-      });
+        } as Produto,
+        { apenasSeAusente: true },
+      );
       void produtosService.getById(produtoId).then((p) => {
-        if (p) setProdutoCache((m) => new Map(m).set(p.id, p));
+        if (p) acoes.upsertProdutoCache(p);
       });
     }
-    updateItem(item.id, patchVinculoItemPedido({ item, itemPedidoId, produtoIdDoPedido: produtoId }));
+    acoes.updateItem(item.id, patchVinculoItemPedido({ item, itemPedidoId, produtoIdDoPedido: produtoId }));
   };
 
   const notifyUpdated = () => {
     onUpdated?.();
-  };
-
-  const updateItem = (itemId: number, patch: Partial<ItemConferenciaNFeEntrada>) => {
-    if (!dados) return;
-    setDados({
-      ...dados,
-      itens: dados.itens.map((it) => {
-        if (it.id !== itemId) return it;
-        const merged = { ...it, ...patch };
-        if (patch.status === 'IGNORADO') {
-          return merged;
-        }
-        if (Object.prototype.hasOwnProperty.call(patch, 'status')) {
-          return merged;
-        }
-        return aplicarStatusAutomaticoItem(merged);
-      }),
-    });
   };
 
   const onChangePedidoCompra = (pedidoId: number | null) => {
@@ -261,25 +204,25 @@ export function NFeEntradaConferenciaPanel({
       pedidoMudou && tinhaVinculos
         ? dados.itens.map((it) => aplicarStatusAutomaticoItem({ ...it, item_pedido_compra_id: null }))
         : dados.itens.map((it) => aplicarStatusAutomaticoItem(it));
-    setDados({
+    acoes.setDados({
       ...dados,
       pedido_compra_id: pedidoId,
       itens: itensAtualizados,
       resumo_pedido: pedidoMudou ? undefined : dados.resumo_pedido,
     });
     if (pedidoMudou && tinhaVinculos) {
-      setAvisoPedido(
+      acoes.setAvisoPedido(
         'O pedido de compra foi alterado. Os vínculos de itens do pedido nas linhas foram removidos; vincule novamente.',
       );
     } else {
-      setAvisoPedido('');
+      acoes.setAvisoPedido('');
     }
   };
 
   const salvar = async () => {
     if (!dados) return;
-    setBusy(true);
-    setErro('');
+    acoes.setBusy(true);
+    acoes.setErro('');
     try {
       const payload = {
         pedido_compra_id: dados.pedido_compra_id,
@@ -289,9 +232,9 @@ export function NFeEntradaConferenciaPanel({
         itens: dados.itens.map((it) => mapItemPayloadConferencia(it)),
       };
       const next = await nfeEntradaConferenciaService.salvar(nfId, payload);
-      setDados(next);
-      await hydrateProdutoCache(next);
-      setAvisoPedido('');
+      acoes.setDados(next);
+      await acoes.hydrateProdutoCache(next);
+      acoes.setAvisoPedido('');
       if (next.financeiro?.possui_pendencias_operacionais) {
         toast.success(
           'Conferência salva com pendências. Você ainda pode gerar contas a pagar, mas a conferência não foi finalizada e a aplicação de estoque permanece pendente.',
@@ -302,34 +245,34 @@ export function NFeEntradaConferenciaPanel({
       notifyUpdated();
     } catch (e) {
       const msg = apiErrorMessage(e);
-      setErro(msg);
+      acoes.setErro(msg);
       toast.error(msg.split('\n')[0] || 'Não foi possível salvar a conferência.');
     } finally {
-      setBusy(false);
+      acoes.setBusy(false);
     }
   };
 
   const abrirModalAplicar = async () => {
     if (!nfId) return;
     if (!dados?.data_entrada) {
-      setErro('Informe a data de entrada da NF-e antes de aplicar estoque físico.');
+      acoes.setErro('Informe a data de entrada da NF-e antes de aplicar estoque físico.');
       return;
     }
     setModalAplicarOpen(true);
     setModalAplicarErro('');
     setConfirmarAlertasAplicar(false);
     setObsAplicar('');
-    setBusy(true);
+    acoes.setBusy(true);
     try {
       const saved = await salvarSilencioso();
-      if (saved) setDados(saved);
+      if (saved) acoes.setDados(saved);
       const preview = await nfeEntradaConferenciaService.previewAplicarEstoque(nfId, false);
       setPreviewAplicar(preview);
     } catch (e) {
       setModalAplicarErro(apiErrorMessage(e));
       setPreviewAplicar(null);
     } finally {
-      setBusy(false);
+      acoes.setBusy(false);
     }
   };
 
@@ -356,7 +299,7 @@ export function NFeEntradaConferenciaPanel({
 
   const confirmarAplicarEstoque = async () => {
     if (!nfId) return;
-    setBusy(true);
+    acoes.setBusy(true);
     setModalAplicarErro('');
     try {
       const res = await nfeEntradaConferenciaService.aplicarEstoque(nfId, {
@@ -365,10 +308,10 @@ export function NFeEntradaConferenciaPanel({
         data_entrada: dados?.data_entrada || undefined,
       });
       if (res.conferencia) {
-        setDados(res.conferencia);
-        await hydrateProdutoCache(res.conferencia);
+        acoes.setDados(res.conferencia);
+        await acoes.hydrateProdutoCache(res.conferencia);
       } else {
-        await load();
+        await acoes.load(nfId);
       }
       setModalAplicarOpen(false);
       setPreviewAplicar(null);
@@ -389,18 +332,18 @@ export function NFeEntradaConferenciaPanel({
         setModalAplicarErro(apiErrorMessage(e));
       }
     } finally {
-      setBusy(false);
+      acoes.setBusy(false);
     }
   };
 
   const preparar = async () => {
     if (!dados) return;
     if (!dados.data_entrada) {
-      setErro('Informe a data de entrada da NF-e antes de finalizar a conferência.');
+      acoes.setErro('Informe a data de entrada da NF-e antes de finalizar a conferência.');
       return;
     }
-    setBusy(true);
-    setErro('');
+    acoes.setBusy(true);
+    acoes.setErro('');
     try {
       const payload = {
         pedido_compra_id: dados.pedido_compra_id,
@@ -410,21 +353,21 @@ export function NFeEntradaConferenciaPanel({
         itens: dados.itens.map((it) => mapItemPayloadConferencia(it)),
       };
       const saved = await nfeEntradaConferenciaService.salvar(nfId, payload);
-      setDados(saved);
-      await hydrateProdutoCache(saved);
+      acoes.setDados(saved);
+      await acoes.hydrateProdutoCache(saved);
       const next = await nfeEntradaConferenciaService.prepararEstoque(nfId, {
         data_entrada: dados.data_entrada || null,
       });
-      setDados(next);
-      setAvisoPedido('');
+      acoes.setDados(next);
+      acoes.setAvisoPedido('');
       toast.success('Conferência finalizada com sucesso.');
       notifyUpdated();
     } catch (e) {
       const msg = prepararEstoqueErrorMessage(e);
-      setErro(msg);
+      acoes.setErro(msg);
       toast.error(msg.split('\n')[0] || 'Não foi possível finalizar a conferência.');
     } finally {
-      setBusy(false);
+      acoes.setBusy(false);
     }
   };
 
@@ -567,9 +510,7 @@ export function NFeEntradaConferenciaPanel({
               className="erp-input mt-1 w-full max-w-[11rem]"
               value={dados.data_entrada?.slice(0, 10) || ''}
               disabled={estoqueJaAplicado}
-              onChange={(e) =>
-                setDados((prev) => (prev ? { ...prev, data_entrada: e.target.value || null } : prev))
-              }
+              onChange={(e) => acoes.patchDados({ data_entrada: e.target.value || null })}
             />
             <p className="text-[11px] text-muted-foreground mt-1">
               Data em que a mercadoria entrou. Pode ser diferente da emissão (ex.: virada de mês).
@@ -608,11 +549,11 @@ export function NFeEntradaConferenciaPanel({
               busy={busy}
               onVincular={async (fornecedorId) => {
                 const res = await nfeEntradaConferenciaService.vincularFornecedor(nfId, fornecedorId);
-                setDados(res.conferencia);
+                acoes.setDados(res.conferencia);
               }}
               onCadastrar={async (payload) => {
                 const res = await nfeEntradaConferenciaService.cadastrarVincularFornecedor(nfId, payload);
-                setDados(res.conferencia);
+                acoes.setDados(res.conferencia);
               }}
             />
           </div>
@@ -904,7 +845,7 @@ export function NFeEntradaConferenciaPanel({
                       onClick={async () => {
                         if (!sug.produto_interno_id || !(sug.itens_nfe_conferencia_ids?.length ?? 0)) return;
                         setEqBusy(true);
-                        setErro('');
+                        acoes.setErro('');
                         try {
                           const res = await nfeEntradaConferenciaService.confirmarEquivalencia(nfId, {
                             produto_interno_id: sug.produto_interno_id,
@@ -915,10 +856,10 @@ export function NFeEntradaConferenciaPanel({
                             confianca: sug.confianca,
                             salvar_regra_fornecedor: true,
                           });
-                          setDados(res.conferencia);
-                          await hydrateProdutoCache(res.conferencia);
+                          acoes.setDados(res.conferencia);
+                          await acoes.hydrateProdutoCache(res.conferencia);
                         } catch (err) {
-                          setErro(apiErrorMessage(err));
+                          acoes.setErro(apiErrorMessage(err));
                         } finally {
                           setEqBusy(false);
                         }
@@ -938,9 +879,9 @@ export function NFeEntradaConferenciaPanel({
                             produto_interno_id: sug.produto_interno_id,
                             itens_nfe_conferencia_ids: sug.itens_nfe_conferencia_ids ?? [],
                           });
-                          setDados(res.conferencia);
+                          acoes.setDados(res.conferencia);
                         } catch (err) {
-                          setErro(apiErrorMessage(err));
+                          acoes.setErro(apiErrorMessage(err));
                         } finally {
                           setEqBusy(false);
                         }
@@ -1283,7 +1224,7 @@ export function NFeEntradaConferenciaPanel({
                             dados?.status === 'PREPARADA' ? (
                               <AtenderVendasPendentesBlock
                                 itemConferenciaId={it.id}
-                                onVinculado={() => void load()}
+                                onVinculado={() => void acoes.load(nfId)}
                               />
                             ) : null}
                           </div>
@@ -1375,8 +1316,8 @@ export function NFeEntradaConferenciaPanel({
                                 codigo_completo: sug.codigo,
                                 descricao: sug.descricao,
                               } as Produto;
-                              setProdutoCache((m) => new Map(m).set(sug.id, stub));
-                              updateItem(it.id, { produto_id: sug.id });
+                              acoes.upsertProdutoCache(stub);
+                              acoes.updateItem(it.id, { produto_id: sug.id });
                             }}
                           >
                             Usar
@@ -1407,8 +1348,8 @@ export function NFeEntradaConferenciaPanel({
                                 codigo_completo: s.codigo,
                                 descricao: s.descricao,
                               } as Produto;
-                              setProdutoCache((m) => new Map(m).set(s.id, stub));
-                              updateItem(it.id, { produto_id: s.id });
+                              acoes.upsertProdutoCache(stub);
+                              acoes.updateItem(it.id, { produto_id: s.id });
                             }}
                           >
                             ★ {s.codigo}
@@ -1436,16 +1377,16 @@ export function NFeEntradaConferenciaPanel({
                       )}
                       onChange={(val, opt) => {
                         if (opt) {
-                          setProdutoCache((m) => new Map(m).set(opt.id, opt));
+                          acoes.upsertProdutoCache(opt);
                         }
-                        updateItem(it.id, { produto_id: val != null ? Number(val) : null });
+                        acoes.updateItem(it.id, { produto_id: val != null ? Number(val) : null });
                       }}
                     />
                     {deveExibirBlocoAlocarEntradaVenda(it) ? (
                       <AlocarEntradaParaVendaBlock
                         itemConferenciaId={it.id}
                         produtoId={it.produto_id}
-                        onAtualizado={() => void load()}
+                        onAtualizado={() => void acoes.load(nfId)}
                       />
                     ) : deveOrientarVincularProdutoParaAlocacao(it) ? (
                       <p className="text-[9px] text-muted-foreground pt-1">
@@ -1469,13 +1410,13 @@ export function NFeEntradaConferenciaPanel({
                         }
                         splits={it.corridas_split || []}
                         disabled={estoqueJaAplicado}
-                        onChange={(corridas_split) => updateItem(it.id, { corridas_split, corrida: '', lote: '' })}
+                        onChange={(corridas_split) => acoes.updateItem(it.id, { corridas_split, corrida: '', lote: '' })}
                       />
                       {!estoqueJaAplicado ? (
                         <button
                           type="button"
                           className="text-[11px] text-primary hover:underline"
-                          onClick={() => updateItem(it.id, { corridas_split: [], corrida: '', lote: '' })}
+                          onClick={() => acoes.updateItem(it.id, { corridas_split: [], corrida: '', lote: '' })}
                         >
                           Usar corrida única
                         </button>
@@ -1489,14 +1430,14 @@ export function NFeEntradaConferenciaPanel({
                           placeholder="Corrida"
                           value={it.corrida || ''}
                           disabled={estoqueJaAplicado}
-                          onChange={(e) => updateItem(it.id, { corrida: normalizeOperationalInput(e.target.value) })}
+                          onChange={(e) => acoes.updateItem(it.id, { corrida: normalizeOperationalInput(e.target.value) })}
                         />
                         <input
                           className="erp-input h-8 text-xs"
                           placeholder="Lote"
                           value={it.lote || ''}
                           disabled={estoqueJaAplicado}
-                          onChange={(e) => updateItem(it.id, { lote: normalizeOperationalInput(e.target.value) })}
+                          onChange={(e) => acoes.updateItem(it.id, { lote: normalizeOperationalInput(e.target.value) })}
                         />
                       </div>
                       {!estoqueJaAplicado ? (
@@ -1505,7 +1446,7 @@ export function NFeEntradaConferenciaPanel({
                             type="button"
                             className="text-[11px] text-primary hover:underline text-left"
                             onClick={() =>
-                              updateItem(it.id, {
+                              acoes.updateItem(it.id, {
                                 corridas_split: criarSplitsIniciais(qtyAlvoItemConferencia(it)),
                                 corrida: '',
                                 lote: '',
@@ -1523,7 +1464,7 @@ export function NFeEntradaConferenciaPanel({
                               const tipoComp = itemTipoComposicaoFisica(it, produto);
                               const fatores = fatoresEquivalenciaDoProduto(produto);
                               const col = colunaAlvoEquivalenciaNf(it.unidade_nf);
-                              updateItem(it.id, {
+                              acoes.updateItem(it.id, {
                                 equivalencias: criarEquivalenciasIniciais(
                                   Number(it.quantidade_nf || 0),
                                   col,
@@ -1572,13 +1513,13 @@ export function NFeEntradaConferenciaPanel({
                           it.produto_id ? produtosMap.get(it.produto_id) : null,
                         )}
                         disabled={estoqueJaAplicado}
-                        onChange={(equivalencias) => updateItem(it.id, { equivalencias })}
+                        onChange={(equivalencias) => acoes.updateItem(it.id, { equivalencias })}
                       />
                       {!estoqueJaAplicado ? (
                         <button
                           type="button"
                           className="text-[11px] text-primary hover:underline"
-                          onClick={() => updateItem(it.id, { equivalencias: [] })}
+                          onClick={() => acoes.updateItem(it.id, { equivalencias: [] })}
                         >
                           Remover {itemControlaComposicaoFisica(
                             it,
@@ -1640,7 +1581,7 @@ export function NFeEntradaConferenciaPanel({
                     className="erp-select h-8 text-xs w-full"
                     value={it.status}
                     onChange={(e) =>
-                      updateItem(it.id, {
+                      acoes.updateItem(it.id, {
                         status: normalizeOperationalInput(e.target.value) as ItemConferenciaNFeEntrada['status'],
                       })
                     }
@@ -1657,7 +1598,7 @@ export function NFeEntradaConferenciaPanel({
                       placeholder="Motivo para ignorar"
                       value={it.motivo_ignorado || ''}
                       onChange={(e) =>
-                        updateItem(it.id, { motivo_ignorado: normalizeOperationalInput(e.target.value) })
+                        acoes.updateItem(it.id, { motivo_ignorado: normalizeOperationalInput(e.target.value) })
                       }
                     />
                   ) : null}
@@ -1673,7 +1614,7 @@ export function NFeEntradaConferenciaPanel({
           <input
             type="checkbox"
             checked={Boolean(dados?.divergencias_aceitas)}
-            onChange={(e) => dados && setDados({ ...dados, divergencias_aceitas: e.target.checked })}
+            onChange={(e) => dados && acoes.setDados({ ...dados, divergencias_aceitas: e.target.checked })}
           />
           Aceitar diferenças com o pedido
         </label>
@@ -1682,7 +1623,7 @@ export function NFeEntradaConferenciaPanel({
           placeholder="Observação das diferenças (se houver)"
           value={dados?.observacao_divergencias || ''}
           onChange={(e) =>
-            dados && setDados({ ...dados, observacao_divergencias: normalizeOperationalInput(e.target.value) })
+            dados && acoes.setDados({ ...dados, observacao_divergencias: normalizeOperationalInput(e.target.value) })
           }
         />
       </div>
@@ -1893,7 +1834,7 @@ export function NFeEntradaConferenciaPanel({
         onClose={() => setGerarCpOpen(false)}
         onGenerated={({ titulo }) => {
           toast.success('Contas a pagar geradas com sucesso.');
-          void load().catch(() => undefined);
+          void acoes.load(nfId).catch(() => undefined);
           notifyUpdated();
           if (titulo?.id && !embedded) {
             navigate(`/financeiro/contas-pagar?titulo=${titulo.id}`);
@@ -1906,8 +1847,8 @@ export function NFeEntradaConferenciaPanel({
         embedded={embedded}
         onUpdated={notifyUpdated}
         onConferenciaReaberta={(resultado) => {
-          setDados(resultado.conferencia);
-          void hydrateProdutoCache(resultado.conferencia);
+          acoes.setDados(resultado.conferencia);
+          void acoes.hydrateProdutoCache(resultado.conferencia);
         }}
         onNavigateConferencia={() => navigate(`/nfe-entrada/${nfId}/conferencia`)}
       />
@@ -1916,7 +1857,7 @@ export function NFeEntradaConferenciaPanel({
         ref={devolucaoBlocoRef}
         nfeHistoricaId={nfId}
         itensConferencia={dados?.itens ?? []}
-        onDevolucaoGerada={() => void load()}
+        onDevolucaoGerada={() => void acoes.load(nfId)}
       />
 
     </>
