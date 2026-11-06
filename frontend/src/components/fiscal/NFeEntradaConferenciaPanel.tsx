@@ -11,7 +11,10 @@ import {
   ReaberturaEntradaBloco,
   type ReaberturaEntradaBlocoHandle,
 } from '@/components/fiscal/ReaberturaEntradaBloco';
-import { NFeGerarDevolucaoCompraModal } from '@/components/fiscal/NFeGerarDevolucaoCompraModal';
+import {
+  DevolucaoEntradaBloco,
+  type DevolucaoEntradaBlocoHandle,
+} from '@/components/fiscal/DevolucaoEntradaBloco';
 import { AsyncAutocomplete } from '@/components/ui/AsyncAutocomplete';
 import {
   badgeClassStatusConferencia,
@@ -127,7 +130,7 @@ export function NFeEntradaConferenciaPanel({
   const [modalAplicarErro, setModalAplicarErro] = useState('');
   const [gerarCpOpen, setGerarCpOpen] = useState(false);
   const reabrirBlocoRef = useRef<ReaberturaEntradaBlocoHandle>(null);
-  const [showDevolucaoCompra, setShowDevolucaoCompra] = useState(false);
+  const devolucaoBlocoRef = useRef<DevolucaoEntradaBlocoHandle>(null);
   const [sugestoesCorrelacaoIgnoradas, setSugestoesCorrelacaoIgnoradas] = useState<Set<number>>(
     () => new Set(),
   );
@@ -1746,7 +1749,7 @@ export function NFeEntradaConferenciaPanel({
             <button
               type="button"
               className="erp-btn-outline w-full sm:w-auto justify-center border-amber-500 text-amber-800 hover:bg-amber-50"
-              onClick={() => setShowDevolucaoCompra(true)}
+              onClick={() => devolucaoBlocoRef.current?.abrir()}
               disabled={busy}
             >
               Gerar devolução ao fornecedor
@@ -1909,18 +1912,11 @@ export function NFeEntradaConferenciaPanel({
         onNavigateConferencia={() => navigate(`/nfe-entrada/${nfId}/conferencia`)}
       />
 
-      <NFeGerarDevolucaoCompraModal
-        open={showDevolucaoCompra}
+      <DevolucaoEntradaBloco
+        ref={devolucaoBlocoRef}
         nfeHistoricaId={nfId}
         itensConferencia={dados?.itens ?? []}
-        onClose={() => setShowDevolucaoCompra(false)}
-        onSuccess={(res) => {
-          setShowDevolucaoCompra(false);
-          toast.success(
-            `Rascunho ${res.numero} criado (R$ ${res.valor_total}). NF-e de saída #${res.nf_saida_id}.`,
-          );
-          void load();
-        }}
+        onDevolucaoGerada={() => void load()}
       />
 
     </>
