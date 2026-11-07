@@ -63,7 +63,6 @@ services:
       dockerfile: Dockerfile.build
       args:
         VITE_API_URL: /api
-        PUBLIC_CLARITY_ID: ${PUBLIC_CLARITY_ID}
     restart: "no"
     volumes:
       - frontend_dist:/srv/frontend
