@@ -852,6 +852,30 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
             'numeracao_volumes',
             'placa_veiculo',
             'uf_veiculo',
+            'entrega_xLgr',
+            'entrega_nro',
+            'entrega_xCmp',
+            'entrega_xBairro',
+            'entrega_xMun',
+            'entrega_UF',
+            'entrega_CEP',
+            'entrega_cMun',
+            'entrega_cUF',
+            'entrega_xNome',
+            'entrega_cnpj',
+            'entrega_cpf',
+            'retirada_xLgr',
+            'retirada_nro',
+            'retirada_xCmp',
+            'retirada_xBairro',
+            'retirada_xMun',
+            'retirada_UF',
+            'retirada_CEP',
+            'retirada_cMun',
+            'retirada_cUF',
+            'retirada_xNome',
+            'retirada_cnpj',
+            'retirada_cpf',
             'ind_final',
             'ind_pres',
             'indicadores_fiscais_confirmados',
@@ -1055,6 +1079,83 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError(
                         {campo: MSG_DADOS_COMPLEMENTARES_BLOQUEADOS},
                     )
+
+        # Validacao SEFAZ grupo transp <entrega>/<retirada> (leiaute 4.00).
+        # Opcional/informativo: se qualquer campo do grupo for preenchido,
+        # xMun/UF/cMun/cUF sao obrigatorios dentro desse grupo.
+        ufs_validas = [
+            'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA',
+            'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN',
+            'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',
+        ]
+        _grupos = (
+            ('entrega', ('entrega_xMun', 'entrega_UF', 'entrega_cMun', 'entrega_cUF')),
+            ('retirada', ('retirada_xMun', 'retirada_UF', 'retirada_cMun', 'retirada_cUF')),
+        )
+        for prefixo, obrigatorios in _grupos:
+            campos_grupo = (
+                f'{prefixo}_xLgr',
+                f'{prefixo}_nro',
+                f'{prefixo}_xCmp',
+                f'{prefixo}_xBairro',
+                f'{prefixo}_xMun',
+                f'{prefixo}_UF',
+                f'{prefixo}_CEP',
+                f'{prefixo}_cMun',
+                f'{prefixo}_cUF',
+                f'{prefixo}_xNome',
+                f'{prefixo}_cnpj',
+                f'{prefixo}_cpf',
+            )
+            algum_preenchido = any(
+                attrs.get(c) not in (None, '')
+                for c in campos_grupo
+                if c in attrs
+            )
+            if not algum_preenchido:
+                continue
+            faltando = [c for c in obrigatorios if not attrs.get(c)]
+            if faltando:
+                raise serializers.ValidationError(
+                    {
+                        c: 'Obrigatorio quando o grupo de entrega/retirada e preenchido.'
+                        for c in faltando
+                    },
+                )
+            cuf = attrs.get(f'{prefixo}_cUF')
+            cmun = attrs.get(f'{prefixo}_cMun')
+            if cuf and (len(cuf) != 2 or cuf not in ufs_validas):
+                raise serializers.ValidationError(
+                    {f'{prefixo}_cUF': f'cUF de {prefixo} deve ser uma UF valida de 2 letras.'}
+                )
+            if cmun and (len(cmun) != 7 or not cmun.isdigit()):
+                raise serializers.ValidationError(
+                    {f'{prefixo}_cMun': f'cMun de {prefixo} deve conter 7 digitos numericos.'}
+                )
+            # TLocal (leiaute 4.00): choice CNPJ|CPF obrigatorio — exatamente um.
+            # Normaliza mascara para digitos (o XML exige TCnpj/TCpf numericos).
+            cnpj = ''.join(ch for ch in str(attrs.get(f'{prefixo}_cnpj') or '') if ch.isdigit())
+            cpf = ''.join(ch for ch in str(attrs.get(f'{prefixo}_cpf') or '') if ch.isdigit())
+            if f'{prefixo}_cnpj' in attrs:
+                attrs[f'{prefixo}_cnpj'] = cnpj or None
+            if f'{prefixo}_cpf' in attrs:
+                attrs[f'{prefixo}_cpf'] = cpf or None
+            if bool(cnpj) == bool(cpf):
+                raise serializers.ValidationError(
+                    {
+                        f'{prefixo}_cnpj': (
+                            f'Informe exatamente um entre CNPJ e CPF no grupo de {prefixo}.'
+                        ),
+                    },
+                )
+            if cnpj and len(cnpj) != 14:
+                raise serializers.ValidationError(
+                    {f'{prefixo}_cnpj': f'CNPJ de {prefixo} deve conter 14 digitos numericos.'}
+                )
+            if cpf and len(cpf) != 11:
+                raise serializers.ValidationError(
+                    {f'{prefixo}_cpf': f'CPF de {prefixo} deve conter 11 digitos numericos.'}
+                )
         return super().validate(attrs)
 
     def get_resumo_atendimento_estoque(self, obj):

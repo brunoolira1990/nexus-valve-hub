@@ -79,7 +79,82 @@ def montar_transporte_dados_nfe(nf: NFeSaida) -> dict[str, Any]:
         'peso_liquido': _dec_str(nf.peso_liquido),
         'placa_veiculo': placa.replace('-', '').upper()[:7],
         'uf_veiculo': uf_veic.upper()[:2],
+        # Grupo <entrega> / <retirada> (leiaute 4.00) — preenchimento manual, opcional.
+        'entrega_xLgr': _text(nf.entrega_xLgr),
+        'entrega_nro': _text(nf.entrega_nro),
+        'entrega_xCmp': _text(nf.entrega_xCmp),
+        'entrega_xBairro': _text(nf.entrega_xBairro),
+        'entrega_xMun': _text(nf.entrega_xMun),
+        'entrega_UF': _text(nf.entrega_UF),
+        'entrega_CEP': _text(nf.entrega_CEP),
+        'entrega_cMun': _text(nf.entrega_cMun),
+        'entrega_cUF': _text(nf.entrega_cUF),
+        'entrega_xNome': _text(nf.entrega_xNome),
+        'entrega_cnpj': _text(nf.entrega_cnpj),
+        'entrega_cpf': _text(nf.entrega_cpf),
+        'retirada_xLgr': _text(nf.retirada_xLgr),
+        'retirada_nro': _text(nf.retirada_nro),
+        'retirada_xCmp': _text(nf.retirada_xCmp),
+        'retirada_xBairro': _text(nf.retirada_xBairro),
+        'retirada_xMun': _text(nf.retirada_xMun),
+        'retirada_UF': _text(nf.retirada_UF),
+        'retirada_CEP': _text(nf.retirada_CEP),
+        'retirada_cMun': _text(nf.retirada_cMun),
+        'retirada_cUF': _text(nf.retirada_cUF),
+        'retirada_xNome': _text(nf.retirada_xNome),
+        'retirada_cnpj': _text(nf.retirada_cnpj),
+        'retirada_cpf': _text(nf.retirada_cpf),
     }
+
+
+def _aplicar_locais_entrega_retirada(inf: Any, tr: dict[str, Any]) -> None:
+    """Preenche inf.retirada/inf.entrega (TLocal, leiaute 4.00).
+
+    Independente de modFrete: o XSD permite os grupos tambem com modFrete=9.
+    TLocal nao tem cUF; entrega_cUF/retirada_cUF ficam no modelo e serializer
+    mas nao sao mapeadas para o XML nfelib.
+    """
+    from nfelib.nfe.bindings.v4_0 import leiaute_nfe_v4_00 as layout
+
+    Tlocal = layout.Tlocal
+
+    for grupo_attr, prefixo in (('retirada', 'retirada'), ('entrega', 'entrega')):
+        campos_tlocal = {
+            'xNome': f'{prefixo}_xNome',
+            'xLgr': f'{prefixo}_xLgr',
+            'nro': f'{prefixo}_nro',
+            'xCpl': f'{prefixo}_xCmp',
+            'xBairro': f'{prefixo}_xBairro',
+            'cMun': f'{prefixo}_cMun',
+            'xMun': f'{prefixo}_xMun',
+            'UF': f'{prefixo}_UF',
+            'CEP': f'{prefixo}_CEP',
+        }
+        kw: dict[str, Any] = {}
+        algum_preenchido = False
+        # TLocal exige o choice CNPJ|CPF como primeiro filho — exatamente um.
+        cnpj = _digits(tr.get(f'{prefixo}_cnpj'), max_len=14)
+        cpf = _digits(tr.get(f'{prefixo}_cpf'), max_len=11)
+        if len(cnpj) == 14:
+            kw['CNPJ'] = cnpj
+            algum_preenchido = True
+        elif len(cpf) == 11:
+            kw['CPF'] = cpf
+            algum_preenchido = True
+        for tlocal_field, modelo_field in campos_tlocal.items():
+            valor = _text(tr.get(modelo_field))
+            if valor:
+                kw[tlocal_field] = valor[:60] if tlocal_field in ('xLgr', 'nro', 'xCpl', 'xBairro', 'xMun', 'xNome') else valor
+                algum_preenchido = True
+        # UF e CEP tem tamanho fixo, truncar se necessario
+        if _text(tr.get(f'{prefixo}_UF')):
+            kw['UF'] = _text(tr.get(f'{prefixo}_UF'))[:2]
+            algum_preenchido = True
+        if _text(tr.get(f'{prefixo}_CEP')):
+            kw['CEP'] = _text(tr.get(f'{prefixo}_CEP'))[:8]
+            algum_preenchido = True
+        if algum_preenchido:
+            setattr(inf, grupo_attr, Tlocal(**kw))
 
 
 def aplicar_transp_nfelib(inf: Any, nfe_module: Any, transporte: dict[str, Any] | None) -> None:
@@ -87,6 +162,9 @@ def aplicar_transp_nfelib(inf: Any, nfe_module: Any, transporte: dict[str, Any] 
     tr = transporte or {}
     mod_frete = _text(tr.get('mod_frete')) or '9'
     inf.transp = nfe_module.Tnfe.InfNfe.Transp(modFrete=mod_frete)
+
+    # <retirada>/<entrega> nao dependem de modFrete — antes do return de modFrete=9.
+    _aplicar_locais_entrega_retirada(inf, tr)
 
     if mod_frete == '9':
         return

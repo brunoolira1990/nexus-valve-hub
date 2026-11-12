@@ -18,6 +18,10 @@ def _xsd_path(tipo: TipoXmlSchema) -> Path:
     base = Path(nfelib.__file__).resolve().parent / 'nfe' / 'schemas' / 'v4_0'
     if tipo == 'ENVI_NFE':
         return base / 'enviNFe_v4.00.xsd'
+    # nfe_v4.00.xsd e o wrapper: declara o elemento global <NFe> e faz
+    # xs:include de leiauteNFe_v4.00.xsd (onde vive o TLocal de 16 campos).
+    # Validar direto contra leiauteNFe_v4.00.xsd NAO funciona: ele nao tem
+    # declaracao global de <NFe>, entao a validacao morre na raiz (falso verde).
     return base / 'nfe_v4.00.xsd'
 
 

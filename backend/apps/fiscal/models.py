@@ -365,6 +365,33 @@ class NFeSaida(models.Model):
     numeracao_volumes = models.CharField(max_length=64, blank=True)
     placa_veiculo = models.CharField(max_length=16, blank=True)
     uf_veiculo = models.CharField(max_length=2, blank=True)
+    # NF-e 4.00 — grupo transp: entrega e retirada (opcionais, leiaute 4.00).
+    # Preenchimento manual na tela de conferencia de emissao de saida.
+    entrega_xLgr = models.CharField(max_length=60, blank=True, null=True)
+    entrega_nro = models.CharField(max_length=60, blank=True, null=True)
+    entrega_xCmp = models.CharField(max_length=60, blank=True, null=True)
+    entrega_xBairro = models.CharField(max_length=60, blank=True, null=True)
+    entrega_xMun = models.CharField(max_length=60, blank=True, null=True)
+    entrega_UF = models.CharField(max_length=2, blank=True, null=True)
+    entrega_CEP = models.CharField(max_length=8, blank=True, null=True)
+    entrega_cMun = models.CharField(max_length=7, blank=True, null=True)
+    entrega_cUF = models.CharField(max_length=2, blank=True, null=True)
+    entrega_xNome = models.CharField(max_length=60, blank=True, null=True)
+    # TLocal exige choice CNPJ|CPF: exatamente um dos dois por grupo.
+    entrega_cnpj = models.CharField(max_length=14, blank=True, null=True)
+    entrega_cpf = models.CharField(max_length=11, blank=True, null=True)
+    retirada_xLgr = models.CharField(max_length=60, blank=True, null=True)
+    retirada_nro = models.CharField(max_length=60, blank=True, null=True)
+    retirada_xCmp = models.CharField(max_length=60, blank=True, null=True)
+    retirada_xBairro = models.CharField(max_length=60, blank=True, null=True)
+    retirada_xMun = models.CharField(max_length=60, blank=True, null=True)
+    retirada_UF = models.CharField(max_length=2, blank=True, null=True)
+    retirada_CEP = models.CharField(max_length=8, blank=True, null=True)
+    retirada_cMun = models.CharField(max_length=7, blank=True, null=True)
+    retirada_cUF = models.CharField(max_length=2, blank=True, null=True)
+    retirada_xNome = models.CharField(max_length=60, blank=True, null=True)
+    retirada_cnpj = models.CharField(max_length=14, blank=True, null=True)
+    retirada_cpf = models.CharField(max_length=11, blank=True, null=True)
     ind_final = models.CharField(
         max_length=1,
         default='1',
