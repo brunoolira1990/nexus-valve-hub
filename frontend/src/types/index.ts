@@ -3648,3 +3648,50 @@ export interface CotacaoComparativo {
   status: CotacaoFornecedorStatus;
   itens: CotacaoComparativoItem[];
 }
+
+/** DIFAL com local de entrada física diferente do destinatário (alínea "b"). */
+export type NFeSaidaDifalFundamento = 'ALINEA_A' | 'ALINEA_B';
+
+export type NFeSaidaDifalOrigemResolucao = 'CADASTRO' | 'ENTREGA' | 'MANUAL' | 'BLOQUEADO';
+
+export interface NFeSaidaDifalItem {
+  item_id: number | null;
+  n_item: number | null;
+  descricao: string;
+  usa_base_dupla: boolean;
+  tipo_base: string;
+  v_bc_uf_dest: string;
+  p_icms_uf_dest: string;
+  p_icms_inter: string;
+  v_icms_uf_dest: string;
+  p_fcp_uf_dest: string;
+  v_fcp_uf_dest: string;
+  fcp_pendente: boolean;
+  vigencia_usada: string;
+  pendencias: string[];
+  avisos: string[];
+}
+
+export interface NFeSaidaDifalTotais {
+  v_icms_uf_dest?: string;
+  v_fcp_uf_dest?: string;
+  v_icms_uf_remet?: string;
+}
+
+export interface NFeSaidaDifal {
+  aplicavel: boolean;
+  uf_origem: string;
+  uf_destinatario: string;
+  uf_entrega: string;
+  uf_destino: string;
+  fundamento: NFeSaidaDifalFundamento | null;
+  origem_resolucao: NFeSaidaDifalOrigemResolucao | null;
+  bloqueado: boolean;
+  confirmado: boolean;
+  confirmado_por: string;
+  confirmado_em: string | null;
+  endereco_entrada_fisica_confirmado: boolean;
+  itens: NFeSaidaDifalItem[];
+  totais: NFeSaidaDifalTotais;
+  pendencias: string[];
+}

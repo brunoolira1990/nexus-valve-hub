@@ -879,6 +879,12 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
             'ind_final',
             'ind_pres',
             'indicadores_fiscais_confirmados',
+            'difal_uf_destino',
+            'difal_fundamento',
+            'difal_origem_resolucao',
+            'difal_confirmado_por',
+            'difal_confirmado_em',
+            'difal_endereco_entrada_fisica_confirmado',
             'itens',
             'fornecedor_id',
             'fornecedor_nome',
@@ -893,6 +899,11 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
             'conferencia_validada_em',
             'conferencia_marcada_pronta_em',
             'conferencia_ultima_mensagem',
+            'difal_uf_destino',
+            'difal_fundamento',
+            'difal_origem_resolucao',
+            'difal_confirmado_por',
+            'difal_confirmado_em',
         )
 
     def get_pedido_venda_numero(self, obj):
@@ -1156,6 +1167,24 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {f'{prefixo}_cpf': f'CPF de {prefixo} deve conter 11 digitos numericos.'}
                 )
+
+        # A2: a confirmação do local de entrada física é explícita (checkbox) e só
+        # pode ser marcada com o endereço de entrega completo — nunca é automática.
+        confirmou_entrega = attrs.get('difal_endereco_entrada_fisica_confirmado')
+        if confirmou_entrega is None and instance is not None:
+            confirmou_entrega = instance.difal_endereco_entrada_fisica_confirmado
+        if confirmou_entrega:
+            for campo in ('entrega_cUF', 'entrega_cMun', 'entrega_xLgr'):
+                valor = attrs.get(campo, getattr(instance, campo, None) if instance else None)
+                if not str(valor or '').strip():
+                    raise serializers.ValidationError(
+                        {
+                            campo: (
+                                'Confirme o local de entrada física apenas com o endereço '
+                                'de entrega completo (logradouro, município e UF).'
+                            ),
+                        },
+                    )
         return super().validate(attrs)
 
     def get_resumo_atendimento_estoque(self, obj):
@@ -1480,6 +1509,16 @@ class NFeSaidaSerializer(serializers.ModelSerializer):
                 value = deduplicar_texto_informacoes_adicionais(value)
                 validated_data[attr] = value
             setattr(instance, attr, value)
+        if 'difal_endereco_entrada_fisica_confirmado' in validated_data:
+            # A2: auditoria da confirmação explícita do local de entrada física.
+            if validated_data['difal_endereco_entrada_fisica_confirmado']:
+                instance.difal_confirmado_por = (
+                    usuario_auditoria if getattr(usuario_auditoria, 'pk', None) else None
+                )
+                instance.difal_confirmado_em = timezone.now()
+            else:
+                instance.difal_confirmado_por = None
+                instance.difal_confirmado_em = None
         instance.save()
 
         if itens_data is not None:

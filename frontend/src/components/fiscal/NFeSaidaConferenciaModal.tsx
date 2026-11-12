@@ -772,6 +772,14 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
     setConf((p) => (p ? { ...p, nfe: { ...p.nfe, [key]: value } } : p));
   };
 
+  const patchDifalConfirmacao = (value: boolean) => {
+    setConf((p) =>
+      p && p.difal
+        ? { ...p, difal: { ...p.difal, endereco_entrada_fisica_confirmado: value } }
+        : p,
+    );
+  };
+
   const patchItemComplementar = (itemId: number, key: string, value: string) => {
     setConf((p) => {
       if (!p) return p;
@@ -1267,6 +1275,169 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                 onApplied={handleImpostosAtualizados}
               />
             </div>
+            {conf.difal
+              ? (() => {
+                  const difal = conf.difal;
+                  if (!difal) return null;
+                  const divergente =
+                    Boolean(difal.uf_entrega) && difal.uf_entrega !== difal.uf_destinatario;
+                  const relevante =
+                    Boolean(difal.uf_entrega) &&
+                    (divergente || difal.aplicavel || difal.bloqueado);
+                  if (!relevante) return null;
+                  const entregaCompleta =
+                    Boolean(String(transporte.entrega_cUF ?? '').trim()) &&
+                    Boolean(String(transporte.entrega_cMun ?? '').trim()) &&
+                    Boolean(String(transporte.entrega_xLgr ?? '').trim());
+                  const fundamentoLabel =
+                    difal.fundamento === 'ALINEA_A'
+                      ? 'Alínea "a" — contribuinte (partilha)'
+                      : difal.fundamento === 'ALINEA_B'
+                        ? 'Alínea "b" — não contribuinte consumidor final'
+                        : '—';
+                  const origemLabel =
+                    difal.origem_resolucao === 'ENTREGA'
+                      ? 'UF do local de entrega'
+                      : difal.origem_resolucao === 'CADASTRO'
+                        ? 'UF cadastral do destinatário'
+                        : difal.origem_resolucao === 'MANUAL'
+                          ? 'Informada manualmente'
+                          : difal.origem_resolucao === 'BLOQUEADO'
+                            ? 'Bloqueada por pendência'
+                            : '—';
+                  const avisosItens = difal.itens.flatMap((i) => i.avisos);
+                  const difalStale =
+                    difal.endereco_entrada_fisica_confirmado &&
+                    Boolean(difal.uf_entrega) &&
+                    difal.uf_destino !== difal.uf_entrega;
+                  return (
+                    <div className="rounded-md border border-border p-3 space-y-2 text-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h4 className="text-xs font-semibold uppercase text-muted-foreground">
+                          DIFAL — local de entrada física
+                        </h4>
+                        <span className="rounded-md border border-border px-2 py-0.5 text-xs">
+                          Destino do DIFAL: {difal.uf_destino || '—'} · {origemLabel}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-xs">
+                        <span className="rounded-md border border-border px-2 py-0.5">
+                          UF origem: {difal.uf_origem || '—'}
+                        </span>
+                        <span className="rounded-md border border-border px-2 py-0.5">
+                          UF destinatário: {difal.uf_destinatario || '—'}
+                        </span>
+                        <span
+                          className={cn(
+                            'rounded-md border px-2 py-0.5',
+                            divergente
+                              ? 'border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200'
+                              : 'border-border',
+                          )}
+                        >
+                          UF entrega: {difal.uf_entrega || '—'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Fundamento: {fundamentoLabel}</p>
+                      {divergente ? (
+                        <div className="space-y-1">
+                          <label className="flex items-start gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              className="mt-0.5"
+                              checked={Boolean(difal.endereco_entrada_fisica_confirmado)}
+                              disabled={!complementosEditaveis || !entregaCompleta}
+                              onChange={(e) => patchDifalConfirmacao(e.target.checked)}
+                            />
+                            <span>
+                              Confirmo que o endereço do grupo Entrega é o local de entrada física
+                              da mercadoria (UF {difal.uf_entrega}). O destinatário fiscal permanece
+                              o cliente ({difal.uf_destinatario || '—'}).
+                            </span>
+                          </label>
+                          {!entregaCompleta ? (
+                            <p className="text-xs text-amber-700 dark:text-amber-300">
+                              Preencha logradouro, município e UF no grupo Entrega (aba Transporte)
+                              para habilitar a confirmação.
+                            </p>
+                          ) : null}
+                          {difal.endereco_entrada_fisica_confirmado && difal.confirmado_por ? (
+                            <p className="text-xs text-muted-foreground">
+                              Confirmado por {difal.confirmado_por}
+                              {difal.confirmado_em
+                                ? ` em ${new Date(difal.confirmado_em).toLocaleString('pt-BR')}`
+                                : ''}
+                              .
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {difal.pendencias.length ? (
+                        <ul className="text-xs text-red-700 dark:text-red-300 list-disc pl-4 space-y-0.5">
+                          {difal.pendencias.map((p) => (
+                            <li key={p}>{p}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      {avisosItens.length ? (
+                        <ul className="text-xs text-amber-800 dark:text-amber-200 list-disc pl-4 space-y-0.5">
+                          {avisosItens.map((a) => (
+                            <li key={a}>{a}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      {divergente && !difal.endereco_entrada_fisica_confirmado ? (
+                        <p className="text-xs text-amber-700 dark:text-amber-300">
+                          Sem a confirmação do local de entrada física a emissão fica bloqueada.
+                          Marque a confirmação e salve a conferência.
+                        </p>
+                      ) : null}
+                      {difalStale ? (
+                        <p className="text-xs text-amber-700 dark:text-amber-300">
+                          Confirmação salva. Execute &quot;Atualizar impostos&quot; para recalcular o
+                          DIFAL com a UF de entrega.
+                        </p>
+                      ) : null}
+                      {difal.itens.length ? (
+                        <div className="space-y-1">
+                          {difal.itens.map((item) => (
+                            <div
+                              key={`${item.item_id ?? item.n_item}-${item.descricao}`}
+                              className="rounded-md border border-border p-2"
+                            >
+                              <p className="font-medium truncate">{item.descricao}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {item.usa_base_dupla || item.tipo_base === 'DUPLA'
+                                  ? 'Base dupla'
+                                  : 'Base única'}{' '}
+                                · BC {fmtMoeda(item.v_bc_uf_dest)} · pICMSUFDest{' '}
+                                {fmtNum(item.p_icms_uf_dest, 2)}% · pICMSInter{' '}
+                                {fmtNum(item.p_icms_inter, 2)}% · vICMSUFDest{' '}
+                                {fmtMoeda(item.v_icms_uf_dest)}
+                                {item.fcp_pendente
+                                  ? ' · FCP nao configurado'
+                                  : ` · FCP ${fmtNum(item.p_fcp_uf_dest, 2)}% ${fmtMoeda(item.v_fcp_uf_dest)}`}
+                                {item.vigencia_usada ? ` · vigência ${item.vigencia_usada}` : ''}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Nenhum item com DIFAL calculado.
+                        </p>
+                      )}
+                      {Object.keys(difal.totais).length ? (
+                        <div className="flex flex-wrap gap-3 text-xs">
+                          <span>ICMS UF destino: {fmtMoeda(difal.totais.v_icms_uf_dest)}</span>
+                          <span>FCP UF destino: {fmtMoeda(difal.totais.v_fcp_uf_dest)}</span>
+                          <span>ICMS UF remetente: {fmtMoeda(difal.totais.v_icms_uf_remet)}</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })()
+              : null}
             {fiscalAlertasGerais.length ? (
               <ul className="text-xs text-amber-800 dark:text-amber-200 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 list-disc pl-4">
                 {fiscalAlertasGerais.map((a) => (

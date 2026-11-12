@@ -13,6 +13,7 @@ export type ConferenciaDirtySnapshot = {
   transporte: Record<string, unknown>;
   ind_final: string;
   ind_pres: string;
+  difal_endereco_entrada_fisica_confirmado: boolean;
   itens: Array<Record<string, string>>;
 };
 
@@ -76,6 +77,9 @@ export function snapshotConferenciaDirty(
     },
     ind_final: s(ind.ind_final ?? '1'),
     ind_pres: s(ind.ind_pres ?? '1'),
+    difal_endereco_entrada_fisica_confirmado: Boolean(
+      conf.difal?.endereco_entrada_fisica_confirmado,
+    ),
     itens: (conf.itens || []).map((it) => ({
       item_id: String(it.item_id ?? ''),
       pedido_cliente_numero: s(it.pedido_cliente_numero_editavel ?? it.pedido_cliente_numero),
@@ -184,6 +188,12 @@ export function montarPayloadSalvarConferencia(
     ind_pres: (conf.indicadores_fiscais as { ind_pres?: string })?.ind_pres ?? '1',
     indicadores_fiscais_confirmados: true,
   };
+  if (conf.difal) {
+    // A2: confirmação explícita do local de entrada física (checkbox da conferência).
+    payload.difal_endereco_entrada_fisica_confirmado = Boolean(
+      conf.difal.endereco_entrada_fisica_confirmado,
+    );
+  }
   // NF-e herdada: nunca envia produto/quantidade/valor — só complementos de item (ou omite itens).
   const itensPayload = montarItensComplementaresConferencia(
     conf.itens as Parameters<typeof montarItensComplementaresConferencia>[0],

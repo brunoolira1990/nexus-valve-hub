@@ -12,6 +12,7 @@ import type {
   NFeEntrada,
   NFeEntradaPropriaImportResultado,
   NFeSaida,
+  NFeSaidaDifal,
   NFeSaidaListItem,
 } from '@/types';
 import type { DiagnosticoFiscalPreview, EnderecoFiscalResumo } from '@/lib/enderecoFiscal';
@@ -493,6 +494,8 @@ export type NFeSaidaConferenciaPayload = {
   };
   transporte: Record<string, unknown>;
   observacoes: Record<string, string>;
+  /** DIFAL com local de entrada física diferente do destinatário (alínea "b"). */
+  difal?: NFeSaidaDifal;
   checklist: ValidacaoNFeSaidaResponse | null;
   checklist_desatualizado?: boolean;
   modo_carregamento?: string;

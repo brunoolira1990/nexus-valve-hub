@@ -407,6 +407,47 @@ class NFeSaida(models.Model):
         help_text='Usuário confirmou indFinal e indPres na conferência.',
     )
 
+    # DIFAL — local de entrega diferente do destinatário (alínea "b", não contribuinte).
+    # Auditoria da UF eleita; o ICMS/CFOP continuam vindo da regra cadastral.
+    class DifalFundamento(models.TextChoices):
+        ALINEA_A = 'ALINEA_A', 'Alínea "a" — contribuinte (partilha)'
+        ALINEA_B = 'ALINEA_B', 'Alínea "b" — não contribuinte consumidor final'
+
+    class DifalOrigemResolucao(models.TextChoices):
+        CADASTRO = 'CADASTRO', 'UF cadastral do destinatário'
+        ENTREGA = 'ENTREGA', 'UF do local de entrega'
+        MANUAL = 'MANUAL', 'Informada manualmente'
+        BLOQUEADO = 'BLOQUEADO', 'Bloqueada por pendência'
+
+    difal_uf_destino = models.CharField(max_length=2, blank=True, null=True)
+    difal_fundamento = models.CharField(
+        max_length=10,
+        blank=True,
+        null=True,
+        choices=DifalFundamento.choices,
+    )
+    difal_origem_resolucao = models.CharField(
+        max_length=10,
+        blank=True,
+        null=True,
+        choices=DifalOrigemResolucao.choices,
+    )
+    difal_confirmado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+    difal_confirmado_em = models.DateTimeField(null=True, blank=True)
+    difal_endereco_entrada_fisica_confirmado = models.BooleanField(
+        default=False,
+        help_text=(
+            'Usuário confirmou que o endereço do grupo <entrega> é o local de entrada física '
+            'da mercadoria. Obrigatório quando a UF de entrega diverge da UF cadastral.'
+        ),
+    )
+
     class StatusConferencia(models.TextChoices):
         EM_CONFERENCIA = 'EM_CONFERENCIA', 'Em conferência'
         COM_PENDENCIAS = 'COM_PENDENCIAS', 'Com pendências'

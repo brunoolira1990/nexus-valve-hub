@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 MARCADOR_OBS_FISCAIS_REGRA = '--- Observações fiscais da regra ---'
 SEPARADOR_OBS_REGRA = f'\n\n{MARCADOR_OBS_FISCAIS_REGRA}\n'
@@ -265,3 +266,138 @@ def mesclar_textos_informacoes_adicionais(
         return atual_limpo + separador + '\n\n'.join(novos), True
 
     return combinado, True
+
+
+# --- Memória de cálculo do DIFAL (alínea "b", local de entrega) ---
+# Só existe quando o snapshot traz a memória A4 (resolução por ENTREGA). NFs no
+# fluxo cadastral legado continuam com o texto de totais de sempre (R7).
+
+FUNDAMENTO_DIFAL_TEXTO = {
+    'ALINEA_A': 'LC 87/96 art. 11, V, "a"',
+    'ALINEA_B': 'LC 87/96 art. 11, V, "b"',
+}
+
+
+def _q2_txt(val) -> str:
+    """Valor monetário/percentual em texto estável com 2 casas (sem float)."""
+    try:
+        dec = Decimal(str(val).strip().replace(',', '.'))
+    except (InvalidOperation, TypeError, ValueError):
+        return '0.00'
+    if not dec.is_finite():
+        return '0.00'
+    return str(dec.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+
+
+def memoria_difal_do_snapshot(snapshot) -> dict:
+    """Memória A4 do DIFAL gravada no snapshot do item (vazio quando não há)."""
+    raw = (snapshot or {}).get('difal')
+    if not isinstance(raw, dict):
+        return {}
+    uf = _text(raw.get('uf_destino')).upper()[:2]
+    if not uf:
+        return {}
+    return {
+        'uf_destino': uf,
+        'fundamento': _text(raw.get('fundamento')),
+        'origem_resolucao': _text(raw.get('origem_resolucao')),
+        'usa_base_dupla': bool(raw.get('usa_base_dupla')),
+        'tipo_base': _text(raw.get('tipo_base')),
+        'v_bc_uf_dest': _text(raw.get('v_bc_uf_dest')),
+        'p_icms_uf_dest': _text(raw.get('p_icms_uf_dest')),
+        'p_icms_inter': _text(raw.get('p_icms_inter')),
+        'p_fcp_uf_dest': _text(raw.get('p_fcp_uf_dest')),
+        'v_fcp_uf_dest': _text(raw.get('v_fcp_uf_dest')),
+        'v_icms_uf_dest': _text(raw.get('v_icms_uf_dest')),
+        'v_icms_uf_remet': _text(raw.get('v_icms_uf_remet')),
+        'vigencia_usada': _text(raw.get('vigencia_usada')),
+        'fcp_pendente': bool(raw.get('fcp_pendente')),
+        'confirmado_local_entrada_fisica': bool(raw.get('confirmado_local_entrada_fisica')),
+    }
+
+
+def linha_memoria_difal_item(n_item: str | int, memoria: dict) -> str:
+    """Linha de memória por item (UF eleita, fundamento, base, alíquotas, valores, FCP)."""
+    if not memoria:
+        return ''
+    fundamento = FUNDAMENTO_DIFAL_TEXTO.get(
+        memoria['fundamento'],
+        memoria['fundamento'] or 'alínea b',
+    )
+    base_tipo = 'base dupla' if memoria['usa_base_dupla'] else 'base unica'
+    if memoria['tipo_base'] == 'DUPLA':
+        base_tipo = 'base dupla'
+    elif memoria['tipo_base'] == 'UNICA':
+        base_tipo = 'base unica'
+    if memoria['fcp_pendente'] or _q2_txt(memoria['p_fcp_uf_dest']) == '0.00':
+        fcp = 'FCP nao configurado (confirmar)'
+    else:
+        fcp = (
+            f'FCP {_q2_txt(memoria["p_fcp_uf_dest"])}% '
+            f'R$ {_q2_txt(memoria["v_fcp_uf_dest"])}'
+        )
+    partes = [
+        f'DIFAL item {n_item}: destino {memoria["uf_destino"]} ({fundamento})',
+        base_tipo,
+        f'BC {_q2_txt(memoria["v_bc_uf_dest"])}',
+        f'pICMSUFDest {_q2_txt(memoria["p_icms_uf_dest"])}',
+        f'pICMSInter {_q2_txt(memoria["p_icms_inter"])}',
+        f'vICMSUFDest {_q2_txt(memoria["v_icms_uf_dest"])}',
+        fcp,
+    ]
+    if memoria['vigencia_usada']:
+        partes.append(f'vigencia {memoria["vigencia_usada"]}')
+    return ', '.join(partes)
+
+
+def linha_memoria_difal_total(totais_difal: dict) -> str:
+    if not totais_difal:
+        return ''
+    v_dest = _q2_txt(totais_difal.get('v_icms_uf_dest'))
+    v_fcp = _q2_txt(totais_difal.get('v_fcp_uf_dest'))
+    v_remet = _q2_txt(totais_difal.get('v_icms_uf_remet'))
+    if v_dest == '0.00' and v_fcp == '0.00' and v_remet == '0.00':
+        return ''
+    return (
+        f'DIFAL total: vICMSUFDest {v_dest}, vFCPUFDest {v_fcp}, vICMSUFRemet {v_remet}'
+    )
+
+
+def _snapshot_bruto_linha(linha: dict, itens_db: dict | None) -> dict:
+    item_id = linha.get('item_id')
+    item_db = itens_db.get(item_id) if itens_db and item_id in itens_db else None
+    snapshot = (
+        item_db.snapshot_fiscal if item_db is not None else linha.get('snapshot_fiscal')
+    )
+    if not isinstance(snapshot, dict):
+        return {}
+    return snapshot
+
+
+def linhas_memoria_difal(linhas: list[dict], itens_db: dict | None = None) -> list[str]:
+    """Memória de cálculo por item + total, na ordem dos itens do XML/DANFE.
+
+    Só existe quando o snapshot do item traz a memória A4 (DIFAL com local de
+    entrada física diferente do destinatário); nos demais casos devolve ``[]``.
+    """
+    linhas_out: list[str] = []
+    tem_memoria = False
+    for linha in linhas or []:
+        memoria = memoria_difal_do_snapshot(_snapshot_bruto_linha(linha, itens_db))
+        if not memoria:
+            continue
+        tem_memoria = True
+        texto = linha_memoria_difal_item(linha.get('n_item') or '', memoria)
+        if texto:
+            linhas_out.append(texto)
+    if not tem_memoria:
+        return []
+    from apps.fiscal.nfe_difal_calculo import (
+        agregar_totais_difal,
+        coletar_snapshots_difal_de_linhas,
+    )
+
+    total = linha_memoria_difal_total(agregar_totais_difal(coletar_snapshots_difal_de_linhas(linhas)))
+    if total:
+        linhas_out.append(total)
+    return linhas_out

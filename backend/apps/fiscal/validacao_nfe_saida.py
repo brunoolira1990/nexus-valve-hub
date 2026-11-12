@@ -202,6 +202,93 @@ MODO_VALIDACAO_COMPLETO = 'completo'
 MODO_VALIDACAO_LEVE = 'leve'
 
 
+def _validar_difal_local_entrega(
+    grupos: dict[str, list[ItemValidacao]],
+    *,
+    nf: NFeSaida,
+    perfil_nf,
+    rotulo: str,
+    item_id: int | None,
+    regra_snapshot_id=None,
+) -> None:
+    """Gate do DIFAL alínea "b" quando o local de entrega diverge do destinatário.
+
+    Só entra no fluxo de não contribuinte consumidor final — contribuinte é alínea
+    "a" (FASE 1.1) e não gera pendência aqui. Sem grupo <entrega> e UF cadastral,
+    nada é adicionado (regressão preservada).
+    """
+    from apps.fiscal.nfe_difal_calculo import (
+        determinar_metodo_base_difal,
+        resolver_aliquotas_difal,
+    )
+    from apps.fiscal.nfe_difal_destino import ORIGEM_ENTREGA, resolver_destino_tributario
+    from apps.regras_fiscais.models import RegraFiscalSaida
+
+    if (
+        perfil_nf.destinatario_contribuinte
+        != RegraFiscalSaida.DestinatarioContribuinte.NAO_CONTRIBUINTE
+        or perfil_nf.consumidor_final is not True
+    ):
+        return
+
+    resolucao = resolver_destino_tributario(nf, perfil_nf)
+    if resolucao.bloqueado:
+        for pendencia in resolucao.pendencias:
+            _add(
+                grupos,
+                tipo=TIPO_PENDENCIA,
+                codigo='DIFAL_LOCAL_ENTREGA_BLOQUEADO',
+                grupo='fiscal',
+                mensagem=(
+                    f'{rotulo}: DIFAL alínea "b" — local de entrada física não confirmado '
+                    f'(destino cadastral {resolucao.uf_cadastral or "—"}, '
+                    f'entrega {resolucao.uf_entrega or "—"}): {pendencia}. '
+                    'Confirme o endereço de entrega na conferência.'
+                ),
+                item_id=item_id,
+            )
+        return
+
+    if resolucao.origem != ORIGEM_ENTREGA:
+        return
+
+    from django.utils import timezone
+
+    metodo = determinar_metodo_base_difal(resolucao.uf, timezone.localdate())
+    if metodo.usa_base_dupla is None:
+        for pendencia in metodo.pendencias:
+            _add(
+                grupos,
+                tipo=TIPO_PENDENCIA,
+                codigo='DIFAL_UF_SEM_ALIQUOTA_VIGENTE',
+                grupo='fiscal',
+                mensagem=f'{rotulo}: {pendencia}',
+                item_id=item_id,
+            )
+
+    regra_uf = None
+    if regra_snapshot_id:
+        try:
+            regra_uf = RegraFiscalSaida.objects.get(pk=int(regra_snapshot_id))
+        except (RegraFiscalSaida.DoesNotExist, TypeError, ValueError):
+            regra_uf = None
+    if regra_uf is not None and regra_uf.fcp_aplicavel:
+        aliquotas_uf = resolver_aliquotas_difal(regra_uf, uf_destino=resolucao.uf)
+        if aliquotas_uf.aliquota_fcp <= 0:
+            _add(
+                grupos,
+                tipo=TIPO_PENDENCIA,
+                codigo='DIFAL_FCP_SEM_ALIQUOTA',
+                grupo='fiscal',
+                mensagem=(
+                    f'{rotulo}: FCP aplicável para a UF {resolucao.uf} (DIFAL alínea "b") sem '
+                    'alíquota cadastrada na regra nem na tabela de alíquotas. '
+                    'Cadastre a alíquota de FCP antes de transmitir.'
+                ),
+                item_id=item_id,
+            )
+
+
 def validar_nfe_saida_para_emissao(
     nfe_saida: NFeSaida,
     *,
@@ -816,6 +903,14 @@ def validar_nfe_saida_para_emissao(
                             ),
                             item_id=item.pk,
                         )
+            _validar_difal_local_entrega(
+                grupos,
+                nf=nf,
+                perfil_nf=perfil_nf,
+                rotulo=rotulo,
+                item_id=item.pk,
+                regra_snapshot_id=snap_f.get('regra_fiscal_saida_id'),
+            )
             from apps.fiscal.snapshot_fiscal_helpers import (
                 get_reforma_tributaria_snapshot,
                 reforma_configurada_no_snapshot,

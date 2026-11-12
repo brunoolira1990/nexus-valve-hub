@@ -59,6 +59,7 @@ CAMPOS_COMPLEMENTARES_NFE = frozenset(
         'ind_final',
         'ind_pres',
         'indicadores_fiscais_confirmados',
+        'difal_endereco_entrada_fisica_confirmado',
     },
 )
 
