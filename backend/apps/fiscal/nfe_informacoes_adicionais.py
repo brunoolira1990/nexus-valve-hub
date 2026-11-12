@@ -329,13 +329,16 @@ def linha_memoria_difal_item(n_item: str | int, memoria: dict) -> str:
         base_tipo = 'base dupla'
     elif memoria['tipo_base'] == 'UNICA':
         base_tipo = 'base unica'
-    if memoria['fcp_pendente'] or _q2_txt(memoria['p_fcp_uf_dest']) == '0.00':
+    v_fcp = _q2_txt(memoria.get('v_fcp_uf_dest', '0.00'))
+    p_fcp = _q2_txt(memoria.get('p_fcp_uf_dest', '0.00'))
+    
+    if memoria.get('fcp_pendente'):
         fcp = 'FCP nao configurado (confirmar)'
+    elif v_fcp and v_fcp != '0.00':
+        fcp = f'FCP {p_fcp}% R$ {v_fcp}'
     else:
-        fcp = (
-            f'FCP {_q2_txt(memoria["p_fcp_uf_dest"])}% '
-            f'R$ {_q2_txt(memoria["v_fcp_uf_dest"])}'
-        )
+        fcp = ''  # Não aplicável, não mostra nada (regra do PO)
+
     partes = [
         f'DIFAL item {n_item}: destino {memoria["uf_destino"]} ({fundamento})',
         base_tipo,
@@ -343,8 +346,9 @@ def linha_memoria_difal_item(n_item: str | int, memoria: dict) -> str:
         f'pICMSUFDest {_q2_txt(memoria["p_icms_uf_dest"])}',
         f'pICMSInter {_q2_txt(memoria["p_icms_inter"])}',
         f'vICMSUFDest {_q2_txt(memoria["v_icms_uf_dest"])}',
-        fcp,
     ]
+    if fcp:
+        partes.append(fcp)
     if memoria['vigencia_usada']:
         partes.append(f'vigencia {memoria["vigencia_usada"]}')
     return ', '.join(partes)
