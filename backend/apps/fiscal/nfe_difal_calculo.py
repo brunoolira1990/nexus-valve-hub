@@ -519,15 +519,6 @@ def validar_consistencia_difal_tnfe(tnfe) -> None:
 
 
 def texto_difal_inf_complementar(totais_difal: dict[str, str]) -> str:
-    if not totais_difal:
-        return ''
-    v_dest = _dec(totais_difal.get('v_icms_uf_dest'))
-    v_fcp = _dec(totais_difal.get('v_fcp_uf_dest'))
-    if v_dest <= 0 and v_fcp <= 0:
-        return ''
-    partes: list[str] = []
-    if v_dest > 0:
-        partes.append(f'VALOR ICMS UF DESTINO R$ {_q2(v_dest)}')
-    if v_fcp > 0:
-        partes.append(f'VALOR FCP UF DESTINO R$ {_q2(v_fcp)}')
-    return ' — '.join(partes)
+    """Resumo redundante removido: a memória A4 (linhas_memoria_difal) já apresenta o total."""
+    return ""
+
