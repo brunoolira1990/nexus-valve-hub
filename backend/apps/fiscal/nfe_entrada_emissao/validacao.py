@@ -52,11 +52,15 @@ def validar_destinatario_entrada_propria_emitida(nf: NFeEntrada) -> None:
     elif tem_fornecedor and nf.fornecedor_id:
         ie_cadastro = ie_apenas_digitos(getattr(nf.fornecedor, 'ie', None))
     ie_ok = ie_cadastro or ie_apenas_digitos(_ie_from_origem(nf))
-    if not ie_ok:
+    # IE só é obrigatória quando o destinatário é contribuinte (indIEDest=1).
+    # Sem IE (cadastro e origem), o XML oficial deriva indIEDest=9 (não contribuinte)
+    # e a SEFAZ NÃO exige a tag <IE> — ver xml_oficial.py:
+    # 'indIEDest': _text(dest.get('ind_ie_dest')) or ('1' if dest_ie else '9').
+    ind_ie_dest = '1' if ie_ok else '9'
+    if ind_ie_dest == '1' and not ie_ok:
         raise NFeEntradaEmissaoValidationError(
-            'Destinatário sem IE. Informe a Inscrição Estadual no cadastro do cliente '
-            '(ou garanta a IE na NF-e de origem). A SEFAZ rejeita NF-e sem IE do destinatário '
-            'quando indIEDest=1.',
+            'Destinatário contribuinte (indIEDest=1) sem IE. Informe a Inscrição '
+            'Estadual no cadastro do cliente (ou garanta a IE na NF-e de origem).',
         )
 
 
