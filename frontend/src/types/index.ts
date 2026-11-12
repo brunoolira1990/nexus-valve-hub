@@ -3087,6 +3087,31 @@ export interface NFeSaida {
   peso_liquido?: number;
   observacoes_nfe?: string;
   informacoes_adicionais?: string;
+  // Grupo <entrega> / <retirada> (leiaute 4.00) — preenchimento manual na conferencia de saida.
+  entrega_xLgr?: string | null;
+  entrega_nro?: string | null;
+  entrega_xCmp?: string | null;
+  entrega_xBairro?: string | null;
+  entrega_xMun?: string | null;
+  entrega_UF?: string | null;
+  entrega_CEP?: string | null;
+  entrega_cMun?: string | null;
+  entrega_cUF?: string | null;
+  entrega_xNome?: string | null;
+  entrega_cnpj?: string | null;
+  entrega_cpf?: string | null;
+  retirada_xLgr?: string | null;
+  retirada_nro?: string | null;
+  retirada_xCmp?: string | null;
+  retirada_xBairro?: string | null;
+  retirada_xMun?: string | null;
+  retirada_UF?: string | null;
+  retirada_CEP?: string | null;
+  retirada_cMun?: string | null;
+  retirada_cUF?: string | null;
+  retirada_xNome?: string | null;
+  retirada_cnpj?: string | null;
+  retirada_cpf?: string | null;
   financeiro_gerado?: boolean;
   pode_gerar_contas_receber?: boolean;
   motivo_bloqueio_financeiro?: string;
@@ -3622,4 +3647,51 @@ export interface CotacaoComparativo {
   proposta_id: number | null;
   status: CotacaoFornecedorStatus;
   itens: CotacaoComparativoItem[];
+}
+
+/** DIFAL com local de entrada física diferente do destinatário (alínea "b"). */
+export type NFeSaidaDifalFundamento = 'ALINEA_A' | 'ALINEA_B';
+
+export type NFeSaidaDifalOrigemResolucao = 'CADASTRO' | 'ENTREGA' | 'MANUAL' | 'BLOQUEADO';
+
+export interface NFeSaidaDifalItem {
+  item_id: number | null;
+  n_item: number | null;
+  descricao: string;
+  usa_base_dupla: boolean;
+  tipo_base: string;
+  v_bc_uf_dest: string;
+  p_icms_uf_dest: string;
+  p_icms_inter: string;
+  v_icms_uf_dest: string;
+  p_fcp_uf_dest: string;
+  v_fcp_uf_dest: string;
+  fcp_pendente: boolean;
+  vigencia_usada: string;
+  pendencias: string[];
+  avisos: string[];
+}
+
+export interface NFeSaidaDifalTotais {
+  v_icms_uf_dest?: string;
+  v_fcp_uf_dest?: string;
+  v_icms_uf_remet?: string;
+}
+
+export interface NFeSaidaDifal {
+  aplicavel: boolean;
+  uf_origem: string;
+  uf_destinatario: string;
+  uf_entrega: string;
+  uf_destino: string;
+  fundamento: NFeSaidaDifalFundamento | null;
+  origem_resolucao: NFeSaidaDifalOrigemResolucao | null;
+  bloqueado: boolean;
+  confirmado: boolean;
+  confirmado_por: string;
+  confirmado_em: string | null;
+  endereco_entrada_fisica_confirmado: boolean;
+  itens: NFeSaidaDifalItem[];
+  totais: NFeSaidaDifalTotais;
+  pendencias: string[];
 }

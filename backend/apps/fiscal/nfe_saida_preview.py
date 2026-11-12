@@ -765,6 +765,36 @@ def _xml_preview_string(dados: dict[str, Any]) -> str:
         cep=dest.get('cep'),
     )
 
+    tr = dados.get('transporte') or {}
+
+    # Grupo <retirada> / <entrega> (leiaute 4.00, tipo TLocal).
+    # Ordem do XSD (infNFe): ... dest, retirada, entrega, autXML, det ... —
+    # portanto ANTES de <det> e com <retirada> antes de <entrega>.
+    # Filhos na ordem de TLocal: CNPJ|CPF, xNome, xLgr, nro, xCpl, xBairro, cMun, xMun, UF, CEP.
+    for grupo_tag, prefixo in (('retirada', 'retirada'), ('entrega', 'entrega')):
+        campos = (
+            ('xNome', f'{prefixo}_xNome', 60),
+            ('xLgr', f'{prefixo}_xLgr', 60),
+            ('nro', f'{prefixo}_nro', 60),
+            ('xCpl', f'{prefixo}_xCmp', 60),
+            ('xBairro', f'{prefixo}_xBairro', 60),
+            ('cMun', f'{prefixo}_cMun', 7),
+            ('xMun', f'{prefixo}_xMun', 60),
+            ('UF', f'{prefixo}_UF', 2),
+            ('CEP', f'{prefixo}_CEP', 8),
+        )
+        grupo_vals = {tag: _text(tr.get(campo))[:maxlen] for tag, campo, maxlen in campos if _text(tr.get(campo))}
+        grupo_cnpj = _digits(tr.get(f'{prefixo}_cnpj'), max_len=14)
+        grupo_cpf = _digits(tr.get(f'{prefixo}_cpf'), max_len=11)
+        if len(grupo_cnpj) == 14:
+            grupo_vals = {'CNPJ': grupo_cnpj, **grupo_vals}
+        elif len(grupo_cpf) == 11:
+            grupo_vals = {'CPF': grupo_cpf, **grupo_vals}
+        if grupo_vals:
+            grupo_el = ET.SubElement(inf, grupo_tag)
+            for tag, valor in grupo_vals.items():
+                _sub(grupo_el, tag, valor)
+
     for idx, linha in enumerate(dados['itens'], start=1):
         det = ET.SubElement(inf, 'det', nItem=str(idx))
         prod = ET.SubElement(det, 'prod')
@@ -814,7 +844,6 @@ def _xml_preview_string(dados: dict[str, Any]) -> str:
         _sub(icms_tot, 'vICMSUFRemet', totais['v_icms_uf_remet'])
     _sub(icms_tot, 'vNF', dados['totais']['v_nf'])
 
-    tr = dados.get('transporte') or {}
     transp = ET.SubElement(inf, 'transp')
     _sub(transp, 'modFrete', tr.get('mod_frete', '9'))
     if _text(tr.get('transportadora_nome')):

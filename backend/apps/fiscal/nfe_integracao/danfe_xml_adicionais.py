@@ -341,6 +341,12 @@ def montar_linhas_inf_cpl_nfe(
     texto_difal = texto_difal_inf_complementar(difal_totais)
     if texto_difal:
         blocos.append(texto_difal)
+
+    # Memória de cálculo A4 (UF eleita, fundamento, base, alíquotas, FCP, valores)
+    # — só existe quando o DIFAL usa o local de entrada física (alínea "b").
+    from apps.fiscal.nfe_informacoes_adicionais import linhas_memoria_difal
+
+    blocos.extend(linhas_memoria_difal(linhas_payload, itens_db))
     blocos = deduplicar_textos_inf_cpl(blocos)
     return _linhas_inf_cpl_de_blocos(blocos)
 

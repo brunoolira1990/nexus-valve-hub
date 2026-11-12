@@ -195,3 +195,318 @@ class NFeSaidaFaturamentoTests(TestCase):
         nf = ser.save()
         self.assertEqual(nf.status, STATUS_NFE_RASCUNHO)
         self.assertEqual(AtendimentoEstoque.objects.filter(nf_saida=nf).count(), 0)
+
+    def test_ibge_entrega_cUF_invalido(self):
+        """(a) entrega_cUF="XX" + demais campos do grupo preenchidos -> ValidationError"""
+        from rest_framework.exceptions import ValidationError
+        pedido, item = _pedido_item()
+        cli = pedido.cliente
+        ser = NFeSaidaSerializer(
+            data={
+                'numero': 'RASCUNHO-IBGE-1',
+                'cliente_id': cli.pk,
+                'data': date.today().isoformat(),
+                'status': 'RASCUNHO',
+                'modo_atendimento_estoque': NFeSaida.ModoAtendimentoEstoque.IMEDIATO,
+                'itens': [
+                    {
+                        'produto_id': item.produto_id,
+                        'quantidade': '1',
+                        'valor': '10',
+                    },
+                ],
+                'entrega_xLgr': 'Rua Teste',
+                'entrega_nro': '100',
+                'entrega_xMun': 'Sao Paulo',
+                'entrega_UF': 'SP',
+                'entrega_CEP': '01001000',
+                'entrega_cMun': '3550308',
+                'entrega_cUF': 'XX',  # UF invalida
+                'entrega_xNome': 'Cliente Teste',
+            },
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            ser.is_valid(raise_exception=True)
+        self.assertIn('entrega_cUF', ctx.exception.detail)
+
+    def test_ibge_entrega_cMun_invalido(self):
+        """(b) entrega_cMun="abc" + demais campos preenchidos -> ValidationError"""
+        from rest_framework.exceptions import ValidationError
+        pedido, item = _pedido_item()
+        cli = pedido.cliente
+        ser = NFeSaidaSerializer(
+            data={
+                'numero': 'RASCUNHO-IBGE-2',
+                'cliente_id': cli.pk,
+                'data': date.today().isoformat(),
+                'status': 'RASCUNHO',
+                'modo_atendimento_estoque': NFeSaida.ModoAtendimentoEstoque.IMEDIATO,
+                'itens': [
+                    {
+                        'produto_id': item.produto_id,
+                        'quantidade': '1',
+                        'valor': '10',
+                    },
+                ],
+                'entrega_xLgr': 'Rua Teste',
+                'entrega_nro': '100',
+                'entrega_xMun': 'Sao Paulo',
+                'entrega_UF': 'SP',
+                'entrega_CEP': '01001000',
+                'entrega_cMun': 'abc',  # nao e 7 digitos
+                'entrega_cUF': 'SP',  # UF valida
+                'entrega_xNome': 'Cliente Teste',
+            },
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            ser.is_valid(raise_exception=True)
+        self.assertIn('entrega_cMun', ctx.exception.detail)
+
+    def test_ibge_grupo_vazio_passa(self):
+        """(c) grupo entrega/retirada totalmente vazio -> passa (nao lanca erro)"""
+        from rest_framework.exceptions import ValidationError
+        pedido, item = _pedido_item()
+        cli = pedido.cliente
+        ser = NFeSaidaSerializer(
+            data={
+                'numero': 'RASCUNHO-IBGE-3',
+                'cliente_id': cli.pk,
+                'data': date.today().isoformat(),
+                'status': 'RASCUNHO',
+                'modo_atendimento_estoque': NFeSaida.ModoAtendimentoEstoque.IMEDIATO,
+                'itens': [
+                    {
+                        'produto_id': item.produto_id,
+                        'quantidade': '1',
+                        'valor': '10',
+                    },
+                ],
+                # Nenhum campo de entrega/retirada preenchido
+            },
+        )
+        # Deve passar sem validacao IBGE (grupo vazio)
+        self.assertTrue(ser.is_valid(), msg=f"Expected valid, got: {ser.errors}")
+
+    def test_ibge_entrega_valido(self):
+        """(d) entrega_cUF="SP", entrega_cMun="3550308", demais campos validos -> passa"""
+        from rest_framework.exceptions import ValidationError
+        pedido, item = _pedido_item()
+        cli = pedido.cliente
+        ser = NFeSaidaSerializer(
+            data={
+                'numero': 'RASCUNHO-IBGE-4',
+                'cliente_id': cli.pk,
+                'data': date.today().isoformat(),
+                'status': 'RASCUNHO',
+                'modo_atendimento_estoque': NFeSaida.ModoAtendimentoEstoque.IMEDIATO,
+                'itens': [
+                    {
+                        'produto_id': item.produto_id,
+                        'quantidade': '1',
+                        'valor': '10',
+                    },
+                ],
+                'entrega_xLgr': 'Rua Teste',
+                'entrega_nro': '100',
+                'entrega_xMun': 'Sao Paulo',
+                'entrega_UF': 'SP',
+                'entrega_CEP': '01001000',
+                'entrega_cMun': '3550308',  # IBGE de SP
+                'entrega_cUF': 'SP',  # UF valida
+                'entrega_xNome': 'Cliente Teste',
+                'entrega_cnpj': '12345678000199',
+            },
+        )
+        self.assertTrue(ser.is_valid(), msg=f"Expected valid, got: {ser.errors}")
+
+    def test_ibge_retirada_cUF_invalido(self):
+        """(e) retirada_cUF="XX" + demais campos do grupo preenchidos -> ValidationError"""
+        from rest_framework.exceptions import ValidationError
+        pedido, item = _pedido_item()
+        cli = pedido.cliente
+        ser = NFeSaidaSerializer(
+            data={
+                'numero': 'RASCUNHO-IBGE-5',
+                'cliente_id': cli.pk,
+                'data': date.today().isoformat(),
+                'status': 'RASCUNHO',
+                'modo_atendimento_estoque': NFeSaida.ModoAtendimentoEstoque.IMEDIATO,
+                'itens': [
+                    {
+                        'produto_id': item.produto_id,
+                        'quantidade': '1',
+                        'valor': '10',
+                    },
+                ],
+                'retirada_xLgr': 'Rua Teste',
+                'retirada_nro': '200',
+                'retirada_xMun': 'Campinas',
+                'retirada_UF': 'SP',
+                'retirada_CEP': '13000000',
+                'retirada_cMun': '3509502',
+                'retirada_cUF': 'XX',  # UF invalida
+                'retirada_xNome': 'Cliente Teste',
+            },
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            ser.is_valid(raise_exception=True)
+        self.assertIn('retirada_cUF', ctx.exception.detail)
+
+    def test_ibge_retirada_cMun_invalido(self):
+        """(f) retirada_cMun="abc" + demais campos preenchidos -> ValidationError"""
+        from rest_framework.exceptions import ValidationError
+        pedido, item = _pedido_item()
+        cli = pedido.cliente
+        ser = NFeSaidaSerializer(
+            data={
+                'numero': 'RASCUNHO-IBGE-6',
+                'cliente_id': cli.pk,
+                'data': date.today().isoformat(),
+                'status': 'RASCUNHO',
+                'modo_atendimento_estoque': NFeSaida.ModoAtendimentoEstoque.IMEDIATO,
+                'itens': [
+                    {
+                        'produto_id': item.produto_id,
+                        'quantidade': '1',
+                        'valor': '10',
+                    },
+                ],
+                'retirada_xLgr': 'Rua Teste',
+                'retirada_nro': '200',
+                'retirada_xMun': 'Campinas',
+                'retirada_UF': 'SP',
+                'retirada_CEP': '13000000',
+                'retirada_cMun': 'abc',  # nao e 7 digitos
+                'retirada_cUF': 'SP',  # UF valida
+                'retirada_xNome': 'Cliente Teste',
+            },
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            ser.is_valid(raise_exception=True)
+        self.assertIn('retirada_cMun', ctx.exception.detail)
+
+    def test_ibge_grupo_retirada_vazio_passa(self):
+        """(g) grupo retirada totalmente vazio -> passa (nao lanca erro)"""
+        from rest_framework.exceptions import ValidationError
+        pedido, item = _pedido_item()
+        cli = pedido.cliente
+        ser = NFeSaidaSerializer(
+            data={
+                'numero': 'RASCUNHO-IBGE-7',
+                'cliente_id': cli.pk,
+                'data': date.today().isoformat(),
+                'status': 'RASCUNHO',
+                'modo_atendimento_estoque': NFeSaida.ModoAtendimentoEstoque.IMEDIATO,
+                'itens': [
+                    {
+                        'produto_id': item.produto_id,
+                        'quantidade': '1',
+                        'valor': '10',
+                    },
+                ],
+                # Apenas entrega preenchida, retirada vazia (nenhum campo de retirada)
+                'entrega_xLgr': 'Rua Teste',
+                'entrega_nro': '100',
+                'entrega_xMun': 'Sao Paulo',
+                'entrega_UF': 'SP',
+                'entrega_CEP': '01001000',
+                'entrega_cMun': '3550308',
+                'entrega_cUF': 'SP',
+                'entrega_xNome': 'Cliente Teste',
+                'entrega_cnpj': '12345678000199',
+                # Sem campos de retirada preenchidos
+            },
+        )
+        # Deve passar - entrega preenchida com IBGE valido
+        self.assertTrue(ser.is_valid(), msg=f"Expected valid, got: {ser.errors}")
+
+    def test_ibge_retirada_valido(self):
+        """(h) retirada_cUF="SP", retirada_cMun="3550308", demais campos validos -> passa"""
+        from rest_framework.exceptions import ValidationError
+        pedido, item = _pedido_item()
+        cli = pedido.cliente
+        ser = NFeSaidaSerializer(
+            data={
+                'numero': 'RASCUNHO-IBGE-8',
+                'cliente_id': cli.pk,
+                'data': date.today().isoformat(),
+                'status': 'RASCUNHO',
+                'modo_atendimento_estoque': NFeSaida.ModoAtendimentoEstoque.IMEDIATO,
+                'itens': [
+                    {
+                        'produto_id': item.produto_id,
+                        'quantidade': '1',
+                        'valor': '10',
+                    },
+                ],
+                # Apenas retirada preenchida, entrega vazia
+                'retirada_xLgr': 'Rua Teste',
+                'retirada_nro': '200',
+                'retirada_xMun': 'Campinas',
+                'retirada_UF': 'SP',
+                'retirada_CEP': '13000000',
+                'retirada_cMun': '3550308',  # IBGE de SP
+                'retirada_cUF': 'SP',  # UF valida
+                'retirada_xNome': 'Cliente Teste',
+                'retirada_cnpj': '12345678000199',
+                # Sem campos de entrega preenchidos
+            },
+        )
+        self.assertTrue(ser.is_valid(), msg=f"Expected valid, got: {ser.errors}")
+
+    def _payload_entrega(self, **extra):
+        pedido, item = _pedido_item()
+        data = {
+            'numero': f'RASCUNHO-TLOCAL-{uuid.uuid4().hex[:6]}',
+            'cliente_id': pedido.cliente.pk,
+            'data': date.today().isoformat(),
+            'status': 'RASCUNHO',
+            'modo_atendimento_estoque': NFeSaida.ModoAtendimentoEstoque.IMEDIATO,
+            'itens': [
+                {
+                    'produto_id': item.produto_id,
+                    'quantidade': '1',
+                    'valor': '10',
+                },
+            ],
+            'entrega_xLgr': 'Rua Teste',
+            'entrega_nro': '100',
+            'entrega_xMun': 'Sao Paulo',
+            'entrega_UF': 'SP',
+            'entrega_CEP': '01001000',
+            'entrega_cMun': '3550308',
+            'entrega_cUF': 'SP',
+            'entrega_xNome': 'Cliente Teste',
+        }
+        data.update(extra)
+        return NFeSaidaSerializer(data=data)
+
+    def test_tlocal_entrega_sem_cnpj_cpf_bloqueia(self):
+        """TLocal exige CNPJ|CPF: grupo preenchido sem documento -> ValidationError"""
+        from rest_framework.exceptions import ValidationError
+        ser = self._payload_entrega()
+        with self.assertRaises(ValidationError) as ctx:
+            ser.is_valid(raise_exception=True)
+        self.assertIn('entrega_cnpj', ctx.exception.detail)
+
+    def test_tlocal_entrega_com_cnpj_e_cpf_bloqueia(self):
+        """Choice exclusivo: CNPJ e CPF juntos -> ValidationError"""
+        from rest_framework.exceptions import ValidationError
+        ser = self._payload_entrega(entrega_cnpj='12345678000199', entrega_cpf='12345678901')
+        with self.assertRaises(ValidationError) as ctx:
+            ser.is_valid(raise_exception=True)
+        self.assertIn('entrega_cnpj', ctx.exception.detail)
+
+    def test_tlocal_entrega_cnpj_13_digitos_bloqueia(self):
+        """CNPJ com 13 digitos -> ValidationError"""
+        from rest_framework.exceptions import ValidationError
+        ser = self._payload_entrega(entrega_cnpj='1234567800019')
+        with self.assertRaises(ValidationError) as ctx:
+            ser.is_valid(raise_exception=True)
+        self.assertIn('entrega_cnpj', ctx.exception.detail)
+
+    def test_tlocal_entrega_cpf_valido(self):
+        """CPF com 11 digitos e aceito no grupo"""
+        ser = self._payload_entrega(entrega_cpf='12345678901')
+        self.assertTrue(ser.is_valid(), msg=f"Expected valid, got: {ser.errors}")
+        self.assertEqual(ser.validated_data['entrega_cpf'], '12345678901')

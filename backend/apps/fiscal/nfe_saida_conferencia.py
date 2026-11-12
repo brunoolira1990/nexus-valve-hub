@@ -545,6 +545,75 @@ def _montar_higienizacao_xml_conferencia(nf: NFeSaida) -> dict[str, Any]:
     return montar_resumo_higienizacao_xml(nf, None)
 
 
+def _montar_bloco_difal_conferencia(nf: NFeSaida, itens_rows: list[dict]) -> dict[str, Any]:
+    """Bloco auditável do DIFAL: 3 UFs, destino eleito, base, alíquotas, valores e pendências."""
+    from apps.fiscal.nfe_difal_calculo import agregar_totais_difal
+    from apps.fiscal.nfe_difal_destino import resolver_destino_tributario
+    from apps.fiscal.nfe_destinatario_fiscal import resolver_perfil_destinatario_nf
+    from apps.fiscal.nfe_saida_atualizar_impostos import _uf_origem_nf
+    from apps.fiscal.snapshot_fiscal_helpers import get_difal_snapshot
+
+    resolucao = resolver_destino_tributario(nf, resolver_perfil_destinatario_nf(nf))
+    itens_difal: list[dict[str, Any]] = []
+    pendencias_gerais: list[str] = list(resolucao.pendencias)
+    snapshots_difal: list[dict] = []
+    for row in itens_rows:
+        snap_f = (row.get('fiscal_atual') or {}).get('snapshot_fiscal') or {}
+        difal = get_difal_snapshot(snap_f)
+        raw = snap_f.get('difal') if isinstance(snap_f.get('difal'), dict) else {}
+        pendencias_item = [str(p) for p in (snap_f.get('difal_pendencias') or [])]
+        avisos_item = [str(a) for a in (snap_f.get('difal_avisos') or [])]
+        if not difal and not pendencias_item and not avisos_item:
+            continue
+        snapshots_difal.append(difal)
+        pendencias_gerais.extend(p for p in pendencias_item if p not in pendencias_gerais)
+        itens_difal.append(
+            {
+                'item_id': row.get('item_id'),
+                'n_item': row.get('n_item'),
+                'descricao': row.get('descricao'),
+                'usa_base_dupla': bool(raw.get('usa_base_dupla')),
+                'tipo_base': _text(raw.get('tipo_base')),
+                'v_bc_uf_dest': difal.get('v_bc_uf_dest', ''),
+                'p_icms_uf_dest': difal.get('p_icms_uf_dest', ''),
+                'p_icms_inter': difal.get('p_icms_inter', ''),
+                'v_icms_uf_dest': difal.get('v_icms_uf_dest', ''),
+                'p_fcp_uf_dest': difal.get('p_fcp_uf_dest', ''),
+                'v_fcp_uf_dest': difal.get('v_fcp_uf_dest', ''),
+                'fcp_pendente': bool(raw.get('fcp_pendente')),
+                'vigencia_usada': _text(raw.get('vigencia_usada')),
+                'pendencias': pendencias_item,
+                'avisos': avisos_item,
+            }
+        )
+    confirmado_por = nf.difal_confirmado_por if nf.difal_confirmado_por_id else None
+    return {
+        'aplicavel': bool(itens_difal),
+        'uf_origem': _uf_origem_nf(nf),
+        'uf_destinatario': resolucao.uf_cadastral,
+        'uf_entrega': resolucao.uf_entrega,
+        'uf_destino': resolucao.uf,
+        'fundamento': resolucao.fundamento,
+        'origem_resolucao': resolucao.origem,
+        'bloqueado': resolucao.bloqueado,
+        'confirmado': resolucao.confirmado,
+        'endereco_entrada_fisica_confirmado': bool(
+            nf.difal_endereco_entrada_fisica_confirmado
+        ),
+        'confirmado_por': (
+            (confirmado_por.get_full_name() or confirmado_por.username)
+            if confirmado_por is not None
+            else ''
+        ),
+        'confirmado_em': (
+            nf.difal_confirmado_em.isoformat() if nf.difal_confirmado_em else None
+        ),
+        'itens': itens_difal,
+        'totais': agregar_totais_difal(snapshots_difal),
+        'pendencias': pendencias_gerais,
+    }
+
+
 def _resumo_cenario_fiscal_conferencia(itens_rows: list[dict]) -> dict[str, Any]:
     """Resumo da verificação de cada item contra a regra vigente do cenário fiscal."""
     linhas: list[dict[str, Any]] = []
@@ -619,6 +688,7 @@ def montar_conferencia_nfe_saida(
                 'pedido_venda',
                 'pedido_venda__empresa_emitente',
                 'faturamento_pedido_venda',
+                'difal_confirmado_por',
             )
             .prefetch_related('itens__produto', 'itens__corrida', 'itens__item_faturamento_pedido')
             .get(pk=nf.pk)
@@ -727,6 +797,7 @@ def montar_conferencia_nfe_saida(
                 'alertas_gerais': alertas_fiscal_gerais(totais_fiscais),
             },
             'cenario_fiscal': _resumo_cenario_fiscal_conferencia(itens_rows),
+            'difal': _montar_bloco_difal_conferencia(nf, itens_rows),
             'reforma_tributaria': {
                 'resumo': _resumo_reforma_geral(itens_rows),
                 'totais': {
@@ -761,6 +832,32 @@ def montar_conferencia_nfe_saida(
                 'numeracao_volumes': nf.numeracao_volumes,
                 'placa_veiculo': nf.placa_veiculo,
                 'uf_veiculo': nf.uf_veiculo,
+                # Grupo <entrega>/<retirada> (leiaute 4.00) — precisa voltar no payload
+                # para a tela de conferência reexibir o que foi salvo.
+                'entrega_xLgr': nf.entrega_xLgr,
+                'entrega_nro': nf.entrega_nro,
+                'entrega_xCmp': nf.entrega_xCmp,
+                'entrega_xBairro': nf.entrega_xBairro,
+                'entrega_xMun': nf.entrega_xMun,
+                'entrega_UF': nf.entrega_UF,
+                'entrega_CEP': nf.entrega_CEP,
+                'entrega_cMun': nf.entrega_cMun,
+                'entrega_cUF': nf.entrega_cUF,
+                'entrega_xNome': nf.entrega_xNome,
+                'entrega_cnpj': nf.entrega_cnpj,
+                'entrega_cpf': nf.entrega_cpf,
+                'retirada_xLgr': nf.retirada_xLgr,
+                'retirada_nro': nf.retirada_nro,
+                'retirada_xCmp': nf.retirada_xCmp,
+                'retirada_xBairro': nf.retirada_xBairro,
+                'retirada_xMun': nf.retirada_xMun,
+                'retirada_UF': nf.retirada_UF,
+                'retirada_CEP': nf.retirada_CEP,
+                'retirada_cMun': nf.retirada_cMun,
+                'retirada_cUF': nf.retirada_cUF,
+                'retirada_xNome': nf.retirada_xNome,
+                'retirada_cnpj': nf.retirada_cnpj,
+                'retirada_cpf': nf.retirada_cpf,
             },
             'observacoes': {
                 'observacoes_nfe': nf.observacoes_nfe,

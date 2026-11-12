@@ -365,6 +365,33 @@ class NFeSaida(models.Model):
     numeracao_volumes = models.CharField(max_length=64, blank=True)
     placa_veiculo = models.CharField(max_length=16, blank=True)
     uf_veiculo = models.CharField(max_length=2, blank=True)
+    # NF-e 4.00 — grupo transp: entrega e retirada (opcionais, leiaute 4.00).
+    # Preenchimento manual na tela de conferencia de emissao de saida.
+    entrega_xLgr = models.CharField(max_length=60, blank=True, null=True)
+    entrega_nro = models.CharField(max_length=60, blank=True, null=True)
+    entrega_xCmp = models.CharField(max_length=60, blank=True, null=True)
+    entrega_xBairro = models.CharField(max_length=60, blank=True, null=True)
+    entrega_xMun = models.CharField(max_length=60, blank=True, null=True)
+    entrega_UF = models.CharField(max_length=2, blank=True, null=True)
+    entrega_CEP = models.CharField(max_length=8, blank=True, null=True)
+    entrega_cMun = models.CharField(max_length=7, blank=True, null=True)
+    entrega_cUF = models.CharField(max_length=2, blank=True, null=True)
+    entrega_xNome = models.CharField(max_length=60, blank=True, null=True)
+    # TLocal exige choice CNPJ|CPF: exatamente um dos dois por grupo.
+    entrega_cnpj = models.CharField(max_length=14, blank=True, null=True)
+    entrega_cpf = models.CharField(max_length=11, blank=True, null=True)
+    retirada_xLgr = models.CharField(max_length=60, blank=True, null=True)
+    retirada_nro = models.CharField(max_length=60, blank=True, null=True)
+    retirada_xCmp = models.CharField(max_length=60, blank=True, null=True)
+    retirada_xBairro = models.CharField(max_length=60, blank=True, null=True)
+    retirada_xMun = models.CharField(max_length=60, blank=True, null=True)
+    retirada_UF = models.CharField(max_length=2, blank=True, null=True)
+    retirada_CEP = models.CharField(max_length=8, blank=True, null=True)
+    retirada_cMun = models.CharField(max_length=7, blank=True, null=True)
+    retirada_cUF = models.CharField(max_length=2, blank=True, null=True)
+    retirada_xNome = models.CharField(max_length=60, blank=True, null=True)
+    retirada_cnpj = models.CharField(max_length=14, blank=True, null=True)
+    retirada_cpf = models.CharField(max_length=11, blank=True, null=True)
     ind_final = models.CharField(
         max_length=1,
         default='1',
@@ -378,6 +405,47 @@ class NFeSaida(models.Model):
     indicadores_fiscais_confirmados = models.BooleanField(
         default=False,
         help_text='Usuário confirmou indFinal e indPres na conferência.',
+    )
+
+    # DIFAL — local de entrega diferente do destinatário (alínea "b", não contribuinte).
+    # Auditoria da UF eleita; o ICMS/CFOP continuam vindo da regra cadastral.
+    class DifalFundamento(models.TextChoices):
+        ALINEA_A = 'ALINEA_A', 'Alínea "a" — contribuinte (partilha)'
+        ALINEA_B = 'ALINEA_B', 'Alínea "b" — não contribuinte consumidor final'
+
+    class DifalOrigemResolucao(models.TextChoices):
+        CADASTRO = 'CADASTRO', 'UF cadastral do destinatário'
+        ENTREGA = 'ENTREGA', 'UF do local de entrega'
+        MANUAL = 'MANUAL', 'Informada manualmente'
+        BLOQUEADO = 'BLOQUEADO', 'Bloqueada por pendência'
+
+    difal_uf_destino = models.CharField(max_length=2, blank=True, null=True)
+    difal_fundamento = models.CharField(
+        max_length=10,
+        blank=True,
+        null=True,
+        choices=DifalFundamento.choices,
+    )
+    difal_origem_resolucao = models.CharField(
+        max_length=10,
+        blank=True,
+        null=True,
+        choices=DifalOrigemResolucao.choices,
+    )
+    difal_confirmado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+    difal_confirmado_em = models.DateTimeField(null=True, blank=True)
+    difal_endereco_entrada_fisica_confirmado = models.BooleanField(
+        default=False,
+        help_text=(
+            'Usuário confirmou que o endereço do grupo <entrega> é o local de entrada física '
+            'da mercadoria. Obrigatório quando a UF de entrega diverge da UF cadastral.'
+        ),
     )
 
     class StatusConferencia(models.TextChoices):

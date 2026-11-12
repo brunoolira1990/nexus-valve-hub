@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 from decimal import Decimal
 from typing import Any
 
@@ -55,9 +56,11 @@ from apps.regras_fiscais.saida_fiscal import (
 )
 from apps.fiscal.nfe_difal_calculo import (
     calcular_difal_item,
+    determinar_metodo_base_difal,
     deve_aplicar_difal,
     resolver_aliquotas_difal,
 )
+from apps.fiscal.nfe_difal_destino import ORIGEM_ENTREGA, resolver_destino_tributario
 from apps.fiscal.nfe_destinatario_fiscal import (
     eh_devolucao_ao_fornecedor,
     resolver_perfil_destinatario_nf,
@@ -476,39 +479,151 @@ def montar_snapshot_fiscal_de_regra_atual(
             snap['recomendacoes_nfe'] = norm_rec
 
     ufo = _uf_origem_nf(nf)
-    ufd = _uf_destino_nf(nf)
+    ufd_cadastral = _uf_destino_nf(nf)
     perfil = resolver_perfil_destinatario_nf(nf)
-    if regra is not None and deve_aplicar_difal(
+    resolucao = resolver_destino_tributario(nf, perfil, uf_cadastral=ufd_cadastral)
+    # D1: a regra cadastral continua alimentando ICMS/CFOP. A UF resolvida do DIFAL
+    # pode exigir uma segunda busca — e, se não houver regra para ela, bloqueia (R6).
+    regra_difal: RegraFiscalSaida | None = regra
+    ufd = ufd_cadastral
+    if not resolucao.bloqueado:
+        ufd = resolucao.uf
+        if ufd != ufd_cadastral:
+            regra_difal = _buscar_regra_para_item(nf, item, uf_destino=ufd)[1]
+
+    # Contribuinte ICMS (alínea "a"): o DIFAL não se aplica — curto-circuito de
+    # deve_aplicar_difal preservado (A1). Nada é gravado no snapshot (R7).
+    difal_no_escopo = (
+        perfil.destinatario_contribuinte
+        != RegraFiscalSaida.DestinatarioContribuinte.CONTRIBUINTE
+    )
+
+    pendencias_difal: list[str] = []
+    if resolucao.bloqueado and difal_no_escopo:
+        pendencias_difal.extend(resolucao.pendencias)
+    elif difal_no_escopo and ufd != ufd_cadastral and regra_difal is None:
+        pendencias_difal.append(
+            f'Sem regra fiscal de saída para a UF de entrega {ufd} (NCM {ncm}). '
+            'DIFAL bloqueado — cadastre a regra para a UF do local de entrada física.',
+        )
+
+    if pendencias_difal:
+        snap.pop('difal', None)
+        snap.pop('difal_aplicavel', None)
+        snap.pop('difal_avisos', None)
+        snap.pop('difal_resolucao', None)
+        snap['difal_pendencias'] = pendencias_difal
+    elif regra_difal is not None and deve_aplicar_difal(
         uf_origem=ufo,
         uf_destino=ufd,
         destinatario_contribuinte=perfil.destinatario_contribuinte,
         consumidor_final=perfil.consumidor_final,
-        regra=regra,
+        regra=regra_difal,
     ):
-        aliquotas_difal = resolver_aliquotas_difal(
-            regra,
-            uf_destino=ufd,
-            nome_item=_descricao_item(item),
-        )
-        if aliquotas_difal.pendencias:
-            snap['difal_pendencias'] = aliquotas_difal.pendencias
+        data_ref = timezone.localdate()
+        metodo_base = determinar_metodo_base_difal(ufd, data_ref)
+        if metodo_base.usa_base_dupla is None:
+            snap.pop('difal', None)
+            snap.pop('difal_aplicavel', None)
+            snap.pop('difal_avisos', None)
+            snap['difal_pendencias'] = list(metodo_base.pendencias)
         else:
-            snap['difal'] = calcular_difal_item(v_prod, regra, aliquotas=aliquotas_difal)
-            snap['difal_aplicavel'] = True
-            frete_nf = _dec(getattr(nf, 'valor_frete', None))
-            if frete_nf > 0:
-                snap['difal_avisos'] = [
-                    f'Base do DIFAL = valor do produto do item (R$ {_q2(v_prod)}), mas a NF-e declara '
-                    f'frete R$ {_q2(frete_nf)}. A BC do DIFAL é o valor da operação (frete, seguro, '
-                    'despesas acessórias). Confira antes de transmitir.'
-                ]
+            aliquotas_difal = resolver_aliquotas_difal(
+                regra_difal,
+                uf_destino=ufd,
+                nome_item=_descricao_item(item),
+            )
+            if aliquotas_difal.pendencias:
+                snap.pop('difal', None)
+                snap.pop('difal_aplicavel', None)
+                snap.pop('difal_avisos', None)
+                snap['difal_pendencias'] = aliquotas_difal.pendencias
+            else:
+                aliquotas_aplicadas = replace(
+                    aliquotas_difal,
+                    usa_base_dupla=bool(metodo_base.usa_base_dupla),
+                )
+                snap['difal'] = calcular_difal_item(
+                    v_prod,
+                    regra_difal,
+                    aliquotas=aliquotas_aplicadas,
+                )
+                snap['difal_aplicavel'] = True
+                avisos_difal: list[str] = []
+                frete_nf = _dec(getattr(nf, 'valor_frete', None))
+                if frete_nf > 0:
+                    avisos_difal.append(
+                        f'Base do DIFAL = valor do produto do item (R$ {_q2(v_prod)}), mas a NF-e declara '
+                        f'frete R$ {_q2(frete_nf)}. A BC do DIFAL é o valor da operação (frete, seguro, '
+                        'despesas acessórias). Confira antes de transmitir.'
+                    )
+                if regra_difal.fcp_aplicavel and aliquotas_aplicadas.aliquota_fcp <= 0:
+                    # D2: FCP NULL = não presumido. Não bloqueia o cálculo; o gate de
+                    # emissão exige a alíquota cadastrada antes de transmitir.
+                    avisos_difal.append(
+                        f'{_descricao_item(item)}: FCP aplicável sem alíquota cadastrada na regra nem na '
+                        f'tabela da UF {ufd} — FCP não preenchido (confirmar antes de transmitir).'
+                    )
+                if avisos_difal:
+                    snap['difal_avisos'] = avisos_difal
+                if resolucao.origem == ORIGEM_ENTREGA:
+                    memoria_difal = _montar_memoria_difal(
+                        snap['difal'],
+                        resolucao=resolucao,
+                        metodo_base=metodo_base,
+                        fcp_pendente=bool(
+                            regra_difal.fcp_aplicavel and aliquotas_aplicadas.aliquota_fcp <= 0,
+                        ),
+                    )
+                    snap['difal'] = {**snap['difal'], **memoria_difal}
+                    snap['difal_resolucao'] = resolucao.to_dict()
     else:
         snap.pop('difal', None)
         snap.pop('difal_aplicavel', None)
         snap.pop('difal_pendencias', None)
         snap.pop('difal_avisos', None)
+        snap.pop('difal_resolucao', None)
 
     return normalize_snapshot_fiscal_for_nfe(snap)
+
+
+def _montar_memoria_difal(
+    difal: dict[str, Any],
+    *,
+    resolucao,
+    metodo_base,
+    fcp_pendente: bool,
+) -> dict[str, Any]:
+    """Memória de cálculo A4 (UF eleita, fundamento, base, alíquotas, FCP, valores)."""
+    return {
+        'uf_destino': resolucao.uf,
+        'fundamento': resolucao.fundamento,
+        'origem_resolucao': resolucao.origem,
+        'uf_cadastral': resolucao.uf_cadastral,
+        'uf_entrega': resolucao.uf_entrega,
+        'confirmado_local_entrada_fisica': resolucao.confirmado,
+        'usa_base_dupla': bool(metodo_base.usa_base_dupla),
+        'vigencia_usada': (
+            metodo_base.vigencia_usada.isoformat() if metodo_base.vigencia_usada else ''
+        ),
+        'fcp_pendente': fcp_pendente,
+        'p_icms_uf_dest': difal.get('p_icms_uf_dest', ''),
+        'p_icms_inter': difal.get('p_icms_inter', ''),
+        'v_bc_uf_dest': difal.get('v_bc_uf_dest', ''),
+        'v_icms_uf_dest': difal.get('v_icms_uf_dest', ''),
+        'v_fcp_uf_dest': difal.get('v_fcp_uf_dest', ''),
+    }
+
+
+def _campos_auditoria_difal(nf: NFeSaida) -> dict[str, Any]:
+    """Campos de auditoria da resolução do DIFAL (UF eleita, fundamento, origem)."""
+    perfil = resolver_perfil_destinatario_nf(nf)
+    resolucao = resolver_destino_tributario(nf, perfil, uf_cadastral=_uf_destino_nf(nf))
+    return {
+        'difal_uf_destino': resolucao.uf or None,
+        'difal_fundamento': resolucao.fundamento or None,
+        'difal_origem_resolucao': resolucao.origem or None,
+    }
 
 
 def _buscar_regra_para_item(
@@ -516,11 +631,22 @@ def _buscar_regra_para_item(
     item: ItemNFeSaida,
     *,
     endereco_result: EnderecoFiscalResult | None = None,
+    uf_destino: str | None = None,
 ) -> tuple[BuscaRegraFiscalSaidaDict, RegraFiscalSaida | None, list[str], dict[str, Any]]:
+    """Busca a regra do item.
+
+    ``uf_destino`` é aditivo (D1): ``None`` mantém exatamente a busca cadastral de
+    hoje (ICMS/CFOP). A UF resolvida do DIFAL só é usada em uma SEGUNDA busca, dentro
+    do ramo DIFAL, e nunca realimenta ICMS/CFOP.
+    """
     alertas: list[str] = []
     ncm = _ncm_item(item)
     ufo = _uf_origem_nf(nf)
-    ufd = _uf_destino_nf(nf, endereco_result)
+    ufd = (
+        _text(uf_destino).upper()[:2]
+        if uf_destino is not None
+        else _uf_destino_nf(nf, endereco_result)
+    )
 
     if endereco_result and endereco_result.bloqueio_fiscal:
         cliente = _cliente_nf(nf)
@@ -998,6 +1124,19 @@ def aplicar_atualizacao_impostos_nfe(
                     'regra_aplicada': diag.get('informacao', ''),
                 },
             )
+
+        # Auditoria da UF eleita para o DIFAL — uma vez para a NF (valor único para
+        # todos os itens). Não altera ICMS/CFOP nem o destinatário jurídico (R3/R4).
+        campos_resolucao = _campos_auditoria_difal(nf_locked)
+        atualizar = {
+            campo: valor
+            for campo, valor in campos_resolucao.items()
+            if getattr(nf_locked, campo) != valor
+        }
+        if atualizar:
+            for campo, valor in atualizar.items():
+                setattr(nf_locked, campo, valor)
+            nf_locked.save(update_fields=list(atualizar.keys()))
 
         campos_txt, textos_aplicados, _ = aplicar_textos_fiscais_nf(nf_locked, regras_aplicar)
         if campos_txt:

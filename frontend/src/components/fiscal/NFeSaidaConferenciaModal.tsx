@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
+import { formatCnpj, formatCpf } from '@/components/masks';
 import { extrairErrosXsd, formatNfeErrosLista } from '@/lib/nfeXsdErros';
 import { apiErrorMessage } from '@/services/api/config';
 import {
@@ -159,6 +160,11 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
   const [validacaoLoading, setValidacaoLoading] = useState(false);
   const [marcarProntaLoading, setMarcarProntaLoading] = useState(false);
   const [selectedTransportadora, setSelectedTransportadora] = useState<Transportadora | null>(null);
+  // TLocal exige CNPJ ou CPF por grupo; o toggle guarda a escolha mesmo antes de digitar.
+  const [docTipoGrupo, setDocTipoGrupo] = useState<Record<'entrega' | 'retirada', 'CNPJ' | 'CPF'>>({
+    entrega: 'CNPJ',
+    retirada: 'CNPJ',
+  });
   const [expandedItem, setExpandedItem] = useState<number | null>(null);
   const [xmlModalOpen, setXmlModalOpen] = useState(false);
   const [xmlPreview, setXmlPreview] = useState<NFeSaidaPreviewXmlResponse | null>(null);
@@ -202,7 +208,15 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
         transportadora_id?: number | null;
         transportadora_nome?: string;
         transportadora_cnpj?: string;
+        entrega_cnpj?: string | null;
+        entrega_cpf?: string | null;
+        retirada_cnpj?: string | null;
+        retirada_cpf?: string | null;
       };
+      setDocTipoGrupo({
+        entrega: tr.entrega_cpf && !tr.entrega_cnpj ? 'CPF' : 'CNPJ',
+        retirada: tr.retirada_cpf && !tr.retirada_cnpj ? 'CPF' : 'CNPJ',
+      });
       if (tr.transportadora_id) {
         setSelectedTransportadora(
           transportadoraStub(tr.transportadora_id, tr.transportadora_nome || '', tr.transportadora_cnpj || ''),
@@ -674,8 +688,15 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
     });
   };
 
+  const trocarDocumentoGrupo = (prefixo: 'entrega' | 'retirada', tipo: 'CNPJ' | 'CPF') => {
+    setDocTipoGrupo((prev) => ({ ...prev, [prefixo]: tipo }));
+    patchField('transporte', `${prefixo}_cnpj`, '');
+    patchField('transporte', `${prefixo}_cpf`, '');
+  };
+
   const limparDadosTransporte = () => {
     setSelectedTransportadora(null);
+    setDocTipoGrupo({ entrega: 'CNPJ', retirada: 'CNPJ' });
     setConf((p) => {
       if (!p) return p;
       return {
@@ -692,6 +713,30 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
           peso_liquido: 0,
           placa_veiculo: '',
           uf_veiculo: '',
+          entrega_xLgr: '',
+          entrega_nro: '',
+          entrega_xCmp: '',
+          entrega_xBairro: '',
+          entrega_xMun: '',
+          entrega_UF: '',
+          entrega_CEP: '',
+          entrega_cMun: '',
+          entrega_cUF: '',
+          entrega_xNome: '',
+          entrega_cnpj: '',
+          entrega_cpf: '',
+          retirada_xLgr: '',
+          retirada_nro: '',
+          retirada_xCmp: '',
+          retirada_xBairro: '',
+          retirada_xMun: '',
+          retirada_UF: '',
+          retirada_CEP: '',
+          retirada_cMun: '',
+          retirada_cUF: '',
+          retirada_xNome: '',
+          retirada_cnpj: '',
+          retirada_cpf: '',
         },
       };
     });
@@ -725,6 +770,14 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
 
   const patchNfe = (key: string, value: unknown) => {
     setConf((p) => (p ? { ...p, nfe: { ...p.nfe, [key]: value } } : p));
+  };
+
+  const patchDifalConfirmacao = (value: boolean) => {
+    setConf((p) =>
+      p && p.difal
+        ? { ...p, difal: { ...p.difal, endereco_entrada_fisica_confirmado: value } }
+        : p,
+    );
   };
 
   const patchItemComplementar = (itemId: number, key: string, value: string) => {
@@ -1222,6 +1275,169 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                 onApplied={handleImpostosAtualizados}
               />
             </div>
+            {conf.difal
+              ? (() => {
+                  const difal = conf.difal;
+                  if (!difal) return null;
+                  const divergente =
+                    Boolean(difal.uf_entrega) && difal.uf_entrega !== difal.uf_destinatario;
+                  const relevante =
+                    Boolean(difal.uf_entrega) &&
+                    (divergente || difal.aplicavel || difal.bloqueado);
+                  if (!relevante) return null;
+                  const entregaCompleta =
+                    Boolean(String(transporte.entrega_cUF ?? '').trim()) &&
+                    Boolean(String(transporte.entrega_cMun ?? '').trim()) &&
+                    Boolean(String(transporte.entrega_xLgr ?? '').trim());
+                  const fundamentoLabel =
+                    difal.fundamento === 'ALINEA_A'
+                      ? 'Alínea "a" — contribuinte (partilha)'
+                      : difal.fundamento === 'ALINEA_B'
+                        ? 'Alínea "b" — não contribuinte consumidor final'
+                        : '—';
+                  const origemLabel =
+                    difal.origem_resolucao === 'ENTREGA'
+                      ? 'UF do local de entrega'
+                      : difal.origem_resolucao === 'CADASTRO'
+                        ? 'UF cadastral do destinatário'
+                        : difal.origem_resolucao === 'MANUAL'
+                          ? 'Informada manualmente'
+                          : difal.origem_resolucao === 'BLOQUEADO'
+                            ? 'Bloqueada por pendência'
+                            : '—';
+                  const avisosItens = difal.itens.flatMap((i) => i.avisos);
+                  const difalStale =
+                    difal.endereco_entrada_fisica_confirmado &&
+                    Boolean(difal.uf_entrega) &&
+                    difal.uf_destino !== difal.uf_entrega;
+                  return (
+                    <div className="rounded-md border border-border p-3 space-y-2 text-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h4 className="text-xs font-semibold uppercase text-muted-foreground">
+                          DIFAL — local de entrada física
+                        </h4>
+                        <span className="rounded-md border border-border px-2 py-0.5 text-xs">
+                          Destino do DIFAL: {difal.uf_destino || '—'} · {origemLabel}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-xs">
+                        <span className="rounded-md border border-border px-2 py-0.5">
+                          UF origem: {difal.uf_origem || '—'}
+                        </span>
+                        <span className="rounded-md border border-border px-2 py-0.5">
+                          UF destinatário: {difal.uf_destinatario || '—'}
+                        </span>
+                        <span
+                          className={cn(
+                            'rounded-md border px-2 py-0.5',
+                            divergente
+                              ? 'border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200'
+                              : 'border-border',
+                          )}
+                        >
+                          UF entrega: {difal.uf_entrega || '—'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Fundamento: {fundamentoLabel}</p>
+                      {divergente ? (
+                        <div className="space-y-1">
+                          <label className="flex items-start gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              className="mt-0.5"
+                              checked={Boolean(difal.endereco_entrada_fisica_confirmado)}
+                              disabled={!complementosEditaveis || !entregaCompleta}
+                              onChange={(e) => patchDifalConfirmacao(e.target.checked)}
+                            />
+                            <span>
+                              Confirmo que o endereço do grupo Entrega é o local de entrada física
+                              da mercadoria (UF {difal.uf_entrega}). O destinatário fiscal permanece
+                              o cliente ({difal.uf_destinatario || '—'}).
+                            </span>
+                          </label>
+                          {!entregaCompleta ? (
+                            <p className="text-xs text-amber-700 dark:text-amber-300">
+                              Preencha logradouro, município e UF no grupo Entrega (aba Transporte)
+                              para habilitar a confirmação.
+                            </p>
+                          ) : null}
+                          {difal.endereco_entrada_fisica_confirmado && difal.confirmado_por ? (
+                            <p className="text-xs text-muted-foreground">
+                              Confirmado por {difal.confirmado_por}
+                              {difal.confirmado_em
+                                ? ` em ${new Date(difal.confirmado_em).toLocaleString('pt-BR')}`
+                                : ''}
+                              .
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {difal.pendencias.length ? (
+                        <ul className="text-xs text-red-700 dark:text-red-300 list-disc pl-4 space-y-0.5">
+                          {difal.pendencias.map((p) => (
+                            <li key={p}>{p}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      {avisosItens.length ? (
+                        <ul className="text-xs text-amber-800 dark:text-amber-200 list-disc pl-4 space-y-0.5">
+                          {avisosItens.map((a) => (
+                            <li key={a}>{a}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      {divergente && !difal.endereco_entrada_fisica_confirmado ? (
+                        <p className="text-xs text-amber-700 dark:text-amber-300">
+                          Sem a confirmação do local de entrada física a emissão fica bloqueada.
+                          Marque a confirmação e salve a conferência.
+                        </p>
+                      ) : null}
+                      {difalStale ? (
+                        <p className="text-xs text-amber-700 dark:text-amber-300">
+                          Confirmação salva. Execute &quot;Atualizar impostos&quot; para recalcular o
+                          DIFAL com a UF de entrega.
+                        </p>
+                      ) : null}
+                      {difal.itens.length ? (
+                        <div className="space-y-1">
+                          {difal.itens.map((item) => (
+                            <div
+                              key={`${item.item_id ?? item.n_item}-${item.descricao}`}
+                              className="rounded-md border border-border p-2"
+                            >
+                              <p className="font-medium truncate">{item.descricao}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {item.usa_base_dupla || item.tipo_base === 'DUPLA'
+                                  ? 'Base dupla'
+                                  : 'Base única'}{' '}
+                                · BC {fmtMoeda(item.v_bc_uf_dest)} · pICMSUFDest{' '}
+                                {fmtNum(item.p_icms_uf_dest, 2)}% · pICMSInter{' '}
+                                {fmtNum(item.p_icms_inter, 2)}% · vICMSUFDest{' '}
+                                {fmtMoeda(item.v_icms_uf_dest)}
+                                {item.fcp_pendente
+                                  ? ' · FCP nao configurado'
+                                  : ` · FCP ${fmtNum(item.p_fcp_uf_dest, 2)}% ${fmtMoeda(item.v_fcp_uf_dest)}`}
+                                {item.vigencia_usada ? ` · vigência ${item.vigencia_usada}` : ''}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Nenhum item com DIFAL calculado.
+                        </p>
+                      )}
+                      {Object.keys(difal.totais).length ? (
+                        <div className="flex flex-wrap gap-3 text-xs">
+                          <span>ICMS UF destino: {fmtMoeda(difal.totais.v_icms_uf_dest)}</span>
+                          <span>FCP UF destino: {fmtMoeda(difal.totais.v_fcp_uf_dest)}</span>
+                          <span>ICMS UF remetente: {fmtMoeda(difal.totais.v_icms_uf_remet)}</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })()
+              : null}
             {fiscalAlertasGerais.length ? (
               <ul className="text-xs text-amber-800 dark:text-amber-200 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 list-disc pl-4">
                 {fiscalAlertasGerais.map((a) => (
@@ -1514,6 +1730,281 @@ export function NFeSaidaConferenciaModal({ nfeId, onClose, onSaved }: Props) {
                   value={String(transporte.uf_veiculo ?? '')}
                   onChange={(e) => patchField('transporte', 'uf_veiculo', e.target.value.toUpperCase())}
                 />
+              </div>
+            </div>
+
+            {/* Grupo Entrega / Retirada (leiaute 4.00) — opcional, preenchimento manual */}
+            <div className="mt-4 rounded-md border border-border bg-muted/30 p-3">
+              <p className="text-xs font-medium text-foreground mb-3">Endereço de entrega / retirada</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div>
+                  <label className="erp-label">Entrega — tipo de documento</label>
+                  <select
+                    className={cn('erp-select mt-1 w-full', !complementosEditaveis && 'opacity-70')}
+                    disabled={!complementosEditaveis}
+                    value={docTipoGrupo.entrega}
+                    onChange={(e) => trocarDocumentoGrupo('entrega', e.target.value as 'CNPJ' | 'CPF')}
+                  >
+                    <option value="CNPJ">CNPJ</option>
+                    <option value="CPF">CPF</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="erp-label">Entrega — {docTipoGrupo.entrega}</label>
+                  <input
+                    className={cn(campoEditavel(complementosEditaveis), 'mt-1 w-full')}
+                    readOnly={!complementosEditaveis}
+                    maxLength={docTipoGrupo.entrega === 'CNPJ' ? 18 : 14}
+                    value={
+                      docTipoGrupo.entrega === 'CNPJ'
+                        ? formatCnpj(String(transporte.entrega_cnpj ?? ''))
+                        : formatCpf(String(transporte.entrega_cpf ?? ''))
+                    }
+                    onChange={(e) =>
+                      patchField(
+                        'transporte',
+                        docTipoGrupo.entrega === 'CNPJ' ? 'entrega_cnpj' : 'entrega_cpf',
+                        docTipoGrupo.entrega === 'CNPJ'
+                          ? e.target.value.replace(/\D/g, '').slice(0, 14)
+                          : e.target.value.replace(/\D/g, '').slice(0, 11),
+                      )
+                    }
+                  />
+                </div>
+                <div className="md:col-span-3 lg:col-span-3">
+                  <label className="erp-label">Entrega — logradouro</label>
+                  <input
+                    className={cn(campoEditavel(complementosEditaveis), 'mt-1 w-full')}
+                    readOnly={!complementosEditaveis}
+                    maxLength={60}
+                    value={String(transporte.entrega_xLgr ?? '')}
+                    onChange={(e) => patchField('transporte', 'entrega_xLgr', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="erp-label">Entrega — número</label>
+                  <input
+                    className={cn(campoEditavel(complementosEditaveis), 'mt-1 w-full')}
+                    readOnly={!complementosEditaveis}
+                    maxLength={60}
+                    value={String(transporte.entrega_nro ?? '')}
+                    onChange={(e) => patchField('transporte', 'entrega_nro', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="erp-label">Entrega — complemento</label>
+                  <input
+                    className={cn(campoEditavel(complementosEditaveis), 'mt-1 w-full')}
+                    readOnly={!complementosEditaveis}
+                    maxLength={60}
+                    value={String(transporte.entrega_xCmp ?? '')}
+                    onChange={(e) => patchField('transporte', 'entrega_xCmp', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="erp-label">Entrega — bairro</label>
+                  <input
+                    className={cn(campoEditavel(complementosEditaveis), 'mt-1 w-full')}
+                    readOnly={!complementosEditaveis}
+                    maxLength={60}
+                    value={String(transporte.entrega_xBairro ?? '')}
+                    onChange={(e) => patchField('transporte', 'entrega_xBairro', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="erp-label">Entrega — município</label>
+                  <input
+                    className={cn(campoEditavel(complementosEditaveis), 'mt-1 w-full')}
+                    readOnly={!complementosEditaveis}
+                    maxLength={60}
+                    value={String(transporte.entrega_xMun ?? '')}
+                    onChange={(e) => patchField('transporte', 'entrega_xMun', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="erp-label">Entrega — UF</label>
+                  <input
+                    maxLength={2}
+                    className={cn(campoEditavel(complementosEditaveis), 'mt-1 w-full')}
+                    readOnly={!complementosEditaveis}
+                    value={String(transporte.entrega_UF ?? '')}
+                    onChange={(e) => patchField('transporte', 'entrega_UF', e.target.value.toUpperCase())}
+                  />
+                </div>
+                <div>
+                  <label className="erp-label">Entrega — CEP</label>
+                  <input
+                    maxLength={8}
+                    className={cn(campoEditavel(complementosEditaveis), 'mt-1 w-full')}
+                    readOnly={!complementosEditaveis}
+                    value={String(transporte.entrega_CEP ?? '')}
+                    onChange={(e) => patchField('transporte', 'entrega_CEP', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="erp-label">Entrega — cMun</label>
+                  <input
+                    maxLength={7}
+                    className={cn(campoEditavel(complementosEditaveis), 'mt-1 w-full')}
+                    readOnly={!complementosEditaveis}
+                    value={String(transporte.entrega_cMun ?? '')}
+                    onChange={(e) => patchField('transporte', 'entrega_cMun', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="erp-label">Entrega — cUF</label>
+                  <input
+                    maxLength={2}
+                    className={cn(campoEditavel(complementosEditaveis), 'mt-1 w-full')}
+                    readOnly={!complementosEditaveis}
+                    value={String(transporte.entrega_cUF ?? '')}
+                    onChange={(e) => patchField('transporte', 'entrega_cUF', e.target.value.toUpperCase())}
+                  />
+                </div>
+                <div>
+                  <label className="erp-label">Entrega — nome</label>
+                  <input
+                    className={cn(campoEditavel(complementosEditaveis), 'mt-1 w-full')}
+                    readOnly={!complementosEditaveis}
+                    maxLength={60}
+                    value={String(transporte.entrega_xNome ?? '')}
+                    onChange={(e) => patchField('transporte', 'entrega_xNome', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="erp-label">Retirada — tipo de documento</label>
+                  <select
+                    className={cn('erp-select mt-1 w-full', !complementosEditaveis && 'opacity-70')}
+                    disabled={!complementosEditaveis}
+                    value={docTipoGrupo.retirada}
+                    onChange={(e) => trocarDocumentoGrupo('retirada', e.target.value as 'CNPJ' | 'CPF')}
+                  >
+                    <option value="CNPJ">CNPJ</option>
+                    <option value="CPF">CPF</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="erp-label">Retirada — {docTipoGrupo.retirada}</label>
+                  <input
+                    className={cn(campoEditavel(complementosEditaveis), 'mt-1 w-full')}
+                    readOnly={!complementosEditaveis}
+                    maxLength={docTipoGrupo.retirada === 'CNPJ' ? 18 : 14}
+                    value={
+                      docTipoGrupo.retirada === 'CNPJ'
+                        ? formatCnpj(String(transporte.retirada_cnpj ?? ''))
+                        : formatCpf(String(transporte.retirada_cpf ?? ''))
+                    }
+                    onChange={(e) =>
+                      patchField(
+                        'transporte',
+                        docTipoGrupo.retirada === 'CNPJ' ? 'retirada_cnpj' : 'retirada_cpf',
+                        docTipoGrupo.retirada === 'CNPJ'
+                          ? e.target.value.replace(/\D/g, '').slice(0, 14)
+                          : e.target.value.replace(/\D/g, '').slice(0, 11),
+                      )
+                    }
+                  />
+                </div>
+                <div className="md:col-span-3 lg:col-span-3">
+                  <label className="erp-label">Retirada — logradouro</label>
+                  <input
+                    className={cn(campoEditavel(complementosEditaveis), 'mt-1 w-full')}
+                    readOnly={!complementosEditaveis}
+                    maxLength={60}
+                    value={String(transporte.retirada_xLgr ?? '')}
+                    onChange={(e) => patchField('transporte', 'retirada_xLgr', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="erp-label">Retirada — número</label>
+                  <input
+                    className={cn(campoEditavel(complementosEditaveis), 'mt-1 w-full')}
+                    readOnly={!complementosEditaveis}
+                    maxLength={60}
+                    value={String(transporte.retirada_nro ?? '')}
+                    onChange={(e) => patchField('transporte', 'retirada_nro', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="erp-label">Retirada — complemento</label>
+                  <input
+                    className={cn(campoEditavel(complementosEditaveis), 'mt-1 w-full')}
+                    readOnly={!complementosEditaveis}
+                    maxLength={60}
+                    value={String(transporte.retirada_xCmp ?? '')}
+                    onChange={(e) => patchField('transporte', 'retirada_xCmp', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="erp-label">Retirada — bairro</label>
+                  <input
+                    className={cn(campoEditavel(complementosEditaveis), 'mt-1 w-full')}
+                    readOnly={!complementosEditaveis}
+                    maxLength={60}
+                    value={String(transporte.retirada_xBairro ?? '')}
+                    onChange={(e) => patchField('transporte', 'retirada_xBairro', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="erp-label">Retirada — município</label>
+                  <input
+                    className={cn(campoEditavel(complementosEditaveis), 'mt-1 w-full')}
+                    readOnly={!complementosEditaveis}
+                    maxLength={60}
+                    value={String(transporte.retirada_xMun ?? '')}
+                    onChange={(e) => patchField('transporte', 'retirada_xMun', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="erp-label">Retirada — UF</label>
+                  <input
+                    maxLength={2}
+                    className={cn(campoEditavel(complementosEditaveis), 'mt-1 w-full')}
+                    readOnly={!complementosEditaveis}
+                    value={String(transporte.retirada_UF ?? '')}
+                    onChange={(e) => patchField('transporte', 'retirada_UF', e.target.value.toUpperCase())}
+                  />
+                </div>
+                <div>
+                  <label className="erp-label">Retirada — CEP</label>
+                  <input
+                    maxLength={8}
+                    className={cn(campoEditavel(complementosEditaveis), 'mt-1 w-full')}
+                    readOnly={!complementosEditaveis}
+                    value={String(transporte.retirada_CEP ?? '')}
+                    onChange={(e) => patchField('transporte', 'retirada_CEP', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="erp-label">Retirada — cMun</label>
+                  <input
+                    maxLength={7}
+                    className={cn(campoEditavel(complementosEditaveis), 'mt-1 w-full')}
+                    readOnly={!complementosEditaveis}
+                    value={String(transporte.retirada_cMun ?? '')}
+                    onChange={(e) => patchField('transporte', 'retirada_cMun', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="erp-label">Retirada — cUF</label>
+                  <input
+                    maxLength={2}
+                    className={cn(campoEditavel(complementosEditaveis), 'mt-1 w-full')}
+                    readOnly={!complementosEditaveis}
+                    value={String(transporte.retirada_cUF ?? '')}
+                    onChange={(e) => patchField('transporte', 'retirada_cUF', e.target.value.toUpperCase())}
+                  />
+                </div>
+                <div>
+                  <label className="erp-label">Retirada — nome</label>
+                  <input
+                    className={cn(campoEditavel(complementosEditaveis), 'mt-1 w-full')}
+                    readOnly={!complementosEditaveis}
+                    maxLength={60}
+                    value={String(transporte.retirada_xNome ?? '')}
+                    onChange={(e) => patchField('transporte', 'retirada_xNome', e.target.value)}
+                  />
+                </div>
               </div>
             </div>
           </TabsContent>

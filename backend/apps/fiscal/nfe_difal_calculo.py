@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from decimal import Decimal
 from typing import Any
 
@@ -132,6 +133,65 @@ def resolver_aliquotas_difal(
         fontes=fontes,
         pendencias=pendencias,
         usa_base_dupla=usa_base_dupla,
+    )
+
+
+@dataclass(frozen=True)
+class MetodoBaseDIFAL:
+    """Regime de base da UF resolvida (tabela AliquotaIcmsUF) na data de referência."""
+
+    usa_base_dupla: bool | None
+    vigencia_usada: date | None
+    memoria: dict[str, Any] = field(default_factory=dict)
+    pendencias: tuple[str, ...] = field(default_factory=tuple)
+
+
+def determinar_metodo_base_difal(uf_resolvida: str, data: date) -> MetodoBaseDIFAL:
+    """Método de base (única/dupla) pela legislação da UF RESOLVIDA — sem fallback geográfico.
+
+    Sem linha vigente em ``AliquotaIcmsUF`` devolve ``usa_base_dupla=None`` e pendência;
+    o chamador bloqueia a conclusão automática (R5/R6). Vigência NULL é lida como
+    "vigente desde sempre" (o seed não inventa data) e perde para uma linha datada.
+    """
+    from django.db.models import F, Q
+
+    from apps.regras_fiscais.models import AliquotaIcmsUF
+
+    uf = _norm_uf(uf_resolvida)
+    if len(uf) != 2:
+        return MetodoBaseDIFAL(
+            usa_base_dupla=None,
+            vigencia_usada=None,
+            memoria={'uf': uf or '', 'fonte': 'sem_uf_resolvida'},
+            pendencias=('UF de destino do DIFAL não resolvida — método de base indefinido.',),
+        )
+    linha = (
+        AliquotaIcmsUF.objects.filter(uf=uf, ativo=True)
+        .filter(Q(vigencia_inicio__isnull=True) | Q(vigencia_inicio__lte=data))
+        .order_by(F('vigencia_inicio').desc(nulls_last=True), '-pk')
+        .first()
+    )
+    if linha is None:
+        return MetodoBaseDIFAL(
+            usa_base_dupla=None,
+            vigencia_usada=None,
+            memoria={'uf': uf, 'fonte': 'tabela_aliquota_uf_sem_vigencia'},
+            pendencias=(
+                f'Sem alíquota ICMS cadastrada e vigente para a UF {uf} em {data:%d/%m/%Y} — '
+                'DIFAL não pode ser calculado (cadastre a UF na tabela de alíquotas).',
+            ),
+        )
+    return MetodoBaseDIFAL(
+        usa_base_dupla=bool(linha.usa_base_dupla),
+        vigencia_usada=linha.vigencia_inicio,
+        memoria={
+            'uf': uf,
+            'usa_base_dupla': bool(linha.usa_base_dupla),
+            'vigencia_inicio': linha.vigencia_inicio.isoformat() if linha.vigencia_inicio else '',
+            'aliquota_interna': _q2(_dec(linha.aliquota_interna)),
+            'aliquota_interestadual': _q2(_dec(linha.aliquota_interestadual)),
+            'fonte': 'tabela_aliquota_uf',
+        },
     )
 
 
