@@ -81,7 +81,9 @@ def normalizar_condicao_de_proposta(
 
 
 def condicoes_iguais(a: dict[str, Any] | None, b: dict[str, Any] | None) -> bool:
-    if not a or not b:
+    # Registros legados podem ter JSONField gravado como string/lista: sem o isinstance,
+    # o .get abaixo levanta AttributeError e derruba a conversão com 500 em vez de bloquear.
+    if not isinstance(a, dict) or not isinstance(b, dict):
         return False
     return list(a.get('dias') or []) == list(b.get('dias') or [])
 

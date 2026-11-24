@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Download, ExternalLink, FileDown, MoreVertical, Pencil, ShoppingCart, Trash2 } from 'lucide-react';
 import {
@@ -19,7 +19,6 @@ import {
   propostaPodeGerarPedido,
   propostaRequerRecuperacao,
   propostaTemPedidoGerado,
-  propostaTotalmenteConvertida,
   statusPropostaUi,
 } from '@/lib/propostaStatus';
 import { formatDateBr } from '@/lib/dateBr';
@@ -94,25 +93,37 @@ const Propostas = () => {
     }
   }, [load]);
 
-  const startWizard = useCallback(async (proposta: Proposta) => {
+  const [convertendoId, setConvertendoId] = useState<number | null>(null);
+  const [converterErro, setConverterErro] = useState<string | null>(null);
+
+  const converterEmPedido = useCallback(async (proposta: Proposta) => {
+    const id = Number(proposta?.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      setConverterErro('Proposta inválida para conversão. Recarregue a lista.');
+      return;
+    }
+    // Proposta cancelada/perdida/rejeitada só pode ser convertida após recuperação,
+    // que acontece na tela de detalhe — não há POST válido a fazer aqui.
     if (propostaRequerRecuperacao(proposta)) {
       navigate(`/propostas/${proposta.id}`);
       return;
     }
-    if (propostaTotalmenteConvertida(proposta)) {
-      if (proposta.pedido_venda_id) {
-        abrirPedidoDaProposta(proposta);
-        return;
-      }
-      alert('Esta proposta já foi convertida integralmente em pedido de venda.');
-      return;
+    setConverterErro(null);
+    setConvertendoId(id);
+    try {
+      const r = await propostasService.convertToPedido(id);
+      toast.success(
+        r.ja_existia
+          ? `Proposta já convertida no pedido de venda ${r.numero}.`
+          : `Pedido de venda ${r.numero} criado com ${r.itens_criados} item(ns).`,
+      );
+      await load();
+    } catch (e) {
+      setConverterErro(apiErrorMessage(e, { fallback: 'Não foi possível converter a proposta em pedido de venda.' }));
+    } finally {
+      setConvertendoId(null);
     }
-    if (propostaPodeGerarPedido(proposta)) {
-      navigate(`/propostas/${proposta.id}`);
-      return;
-    }
-    navigate(`/propostas/${proposta.id}`);
-  }, [abrirPedidoDaProposta, navigate]);
+  }, [load, navigate]);
 
   const handleVisualizarPdf = useCallback(async (proposta: Proposta) => {
     const id = Number(proposta?.id);
@@ -175,6 +186,14 @@ const Propostas = () => {
         ]}
         onChange={setFilter}
       />
+      {converterErro ? (
+        <div
+          role="alert"
+          className="mb-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+        >
+          {converterErro}
+        </div>
+      ) : null}
       {loadError ? <ErrorState onRetry={() => void reloadList()} /> : null}
       {loadingList ? <TableSkeleton rows={6} cols={8} /> : null}
       {!loadingList && !loadError ? (
@@ -216,8 +235,9 @@ const Propostas = () => {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => void startWizard(e)}
+                        onClick={() => void converterEmPedido(e)}
                         className="erp-btn-ghost erp-btn-sm"
+                        disabled={convertendoId === e.id}
                         title={podeGerar ? 'Gerar pedido de venda' : 'Converter em pedido'}
                       >
                         <ShoppingCart className="h-4 w-4" />

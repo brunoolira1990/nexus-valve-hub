@@ -277,15 +277,7 @@ def aprovar_com_ajuste(
     dias = sorted(int(d) for d in dias_aprovados)
     if not condicao_aprovada_permitida_mvp(dias):
         raise ValueError('Condição aprovada inválida para o MVP.')
-    from apps.comercial.analise_financeira_condicao import modalidade_de_dias, texto_exibicao_dias
-
-    condicao = {
-        'texto': texto_exibicao_dias(dias),
-        'dias': dias,
-        'quantidade_parcelas': len(dias),
-        'modalidade': modalidade_de_dias(dias),
-        'maior_prazo_dias': max(dias) if dias else 0,
-    }
+    condicao = normalizar_condicao_de_proposta(texto=None, dias_parcelas=dias)
     validade = valida_ate or (timezone.localdate() + timedelta(days=VALIDADE_PADRAO_DIAS))
     valor = valor_maximo if valor_maximo is not None else analise.valor_solicitado
     return _aplicar_decisao(
@@ -444,12 +436,17 @@ def avaliar_aprovacao_para_proposta(
         }
 
     if not condicoes_iguais(condicao, analise.condicao_aprovada):
+        aprovada = analise.condicao_aprovada if isinstance(analise.condicao_aprovada, dict) else {}
         return {
             'exige_liberacao': True,
             'a_vista': False,
             'valida': False,
             'motivo_codigo': 'CONDICAO_DIVERGENTE',
-            'motivo': MSG_CONDICAO_DIVERGENTE,
+            'motivo': (
+                f'{MSG_CONDICAO_DIVERGENTE} '
+                f'Dias esperados: {list(condicao.get("dias") or [])}; '
+                f'dias aprovados: {list(aprovada.get("dias") or [])}.'
+            ),
             'condicao_atual': condicao,
             'analise_id': analise.pk,
         }
