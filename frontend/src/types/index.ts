@@ -1767,6 +1767,101 @@ export interface DivergenciaFiscalEntrada {
   mensagem: string;
 }
 
+export interface AjusteFiscalAtivo {
+  campo: string;
+  rotulo: string;
+  valor_xml: string;
+  valor_efetivo: string;
+}
+
+export interface DiferencaFiscalOverride {
+  campo_modelo: string;
+  campo: string;
+  rotulo: string;
+  valor_xml: string;
+  valor_efetivo: string;
+  diferenca: string;
+  origem: string;
+}
+
+export type CampoFiscalAjustavel =
+  | 'ncm_efetivo'
+  | 'cfop_entrada_efetivo'
+  | 'cst_icms_efetivo'
+  | 'csosn_efetivo'
+  | 'cst_ipi_efetivo'
+  | 'cst_pis_efetivo'
+  | 'cst_cofins_efetivo'
+  | 'origem_mercadoria_efetivo'
+  | 'modalidade_bc_icms_efetivo'
+  | 'codigo_beneficio_efetivo'
+  | 'motivo_desoneracao_efetivo';
+
+export type AjusteFiscalPayload = Partial<Record<CampoFiscalAjustavel, string | null>> & {
+  motivo_ajuste_fiscal?: string;
+};
+
+export interface RegraFiscalPreviewItem {
+  id: number | null;
+  codigo: string;
+  nome: string;
+  descricao_cenario: string;
+}
+
+export interface PreviewFiscalItem {
+  item_id: number;
+  conferencia_id: number;
+  ncm_xml: string;
+  ncm_efetivo: string;
+  cfop_entrada_xml: string;
+  cfop_entrada_efetivo: string;
+  impostos_xml: ImpostosSnapshotFiscal;
+  impostos_efetivos: ImpostosSnapshotFiscal;
+  impostos_esperados: ImpostosSnapshotFiscal;
+  diferencas: DiferencaFiscalOverride[];
+  ajustes_ativos: AjusteFiscalAtivo[];
+  total_ajustes: number;
+  status_fiscal: string;
+  regra: RegraFiscalPreviewItem;
+  divergencias: DivergenciaFiscalEntrada[];
+  custo_contabil: Record<string, unknown>;
+  estoque_ja_aplicado: boolean;
+  motivo_ajuste_fiscal: string;
+  somente_leitura: boolean;
+}
+
+export interface AjusteFiscalAplicado {
+  campo: string;
+  rotulo: string;
+  valor_anterior: string;
+  valor_novo: string;
+}
+
+export interface ResultadoAjusteFiscal {
+  total_alteracoes: number;
+  ajustes: AjusteFiscalAplicado[];
+  preview: PreviewFiscalItem;
+}
+
+export interface AjusteFiscalHistorico {
+  id: number;
+  campo: string;
+  valor_anterior: string;
+  valor_novo: string;
+  motivo: string;
+  usuario: number | null;
+  usuario_nome: string;
+  criado_em: string;
+  snapshot_regra: Record<string, unknown>;
+}
+
+export interface HistoricoAjustesFiscaisItem {
+  item_id: number;
+  motivo_ajuste_fiscal: string;
+  total: number;
+  ajustes: AjusteFiscalHistorico[];
+}
+
 export interface ResultadoFiscalEntrada {
   status: StatusFiscalConferenciaEntrada;
   regra_id: number | null;
@@ -1792,6 +1887,9 @@ export interface ResultadoFiscalEntrada {
   impostos_nf?: ImpostosSnapshotFiscal;
   impostos_esperados?: ImpostosSnapshotFiscal;
   divergencias?: DivergenciaFiscalEntrada[];
+  ajustes_fiscais_ativos?: AjusteFiscalAtivo[];
+  total_ajustes_fiscais?: number;
+  impostos_xml_originais?: ImpostosSnapshotFiscal;
   tem_reforma_configurada?: boolean;
   reforma_tributaria_esperada?: Record<string, string>;
 }
@@ -2666,6 +2764,8 @@ export interface ItemConferenciaNFeEntrada {
   quantidade_nf: number;
   valor_unitario_nf: number;
   valor_total_nf: number;
+  fiscal_status?: string;
+  estoque_status?: string;
   unidade_estoque_calculada?: string;
   quantidade_estoque_calculada?: number;
   peso_total_kg?: number;
@@ -2845,6 +2945,15 @@ export interface FornecedorEntradaStatus {
   };
 }
 
+export type FinalidadeEntrada =
+  | 'COMPRA_REVENDA'
+  | 'CONSUMO_PROPRIIO'
+  | 'INDUSTRIALIZACAO'
+  | 'DEVOLUCAO_VENDA'
+  | 'BONIFICACAO'
+  | 'FRETE_TRANSPORTE'
+  | 'OUTROS';
+
 export interface NFeEntradaConferencia {
   id: number;
   nf_entrada_historica: number;
@@ -2852,6 +2961,13 @@ export interface NFeEntradaConferencia {
   serie: string;
   data_emissao: string;
   data_entrada?: string | null;
+  chegada_em?: string | null;
+  recebido_por?: number | null;
+  recebido_por_nome?: string;
+  local_recebimento?: string;
+  observacao_chegada?: string;
+  finalidade_entrada?: FinalidadeEntrada | '';
+  iniciada?: boolean;
   valor_total: number;
   fornecedor_nome: string;
   fornecedor_cnpj: string;
@@ -2883,6 +2999,66 @@ export interface NFeEntradaConferencia {
     nfe_entrada_cancelada_com_financeiro?: boolean;
   };
   itens: ItemConferenciaNFeEntrada[];
+}
+
+export type EstadoChegadaNFeEntrada =
+  | {
+      iniciada: true;
+      conferencia: NFeEntradaConferencia;
+      pode_registrar_chegada: false;
+      motivo_chegada: 'CHEGADA_JA_REGISTRADA';
+      motivo?: never;
+    }
+  | {
+      iniciada: false;
+      conferencia: NFeEntradaConferencia | null;
+      pode_registrar_chegada: true;
+      motivo_chegada: null;
+      motivo?: never;
+    }
+  | {
+      iniciada: false;
+      conferencia: NFeEntradaConferencia;
+      pode_registrar_chegada: false;
+      motivo_chegada: 'CHEGADA_NAO_REGISTRAVEL_PARA_CONFERENCIA_ANTIGA';
+      motivo?: 'CHEGADA_NAO_REGISTRAVEL_PARA_CONFERENCIA_ANTIGA';
+    };
+
+export interface IniciarConferenciaNFeEntradaPayload {
+  local_recebimento?: string;
+  observacao_chegada?: string;
+  pedido_compra_id?: number | null;
+  finalidade_entrada?: FinalidadeEntrada | null;
+}
+
+export interface ItemCompativelPedidoConferencia {
+  item_nfe_historico_id: number;
+  n_item_nf: number;
+  item_pedido_compra_id: number;
+  produto_id: number;
+  quantidade_aberta: string;
+  confianca: 'alta' | 'media';
+}
+
+export interface CandidatoPedidoConferencia {
+  pedido_compra_id: number;
+  numero: string;
+  fornecedor_id: number;
+  fornecedor_nome: string;
+  data: string;
+  status: string;
+  status_normalizado: string;
+  itens_compativeis: ItemCompativelPedidoConferencia[];
+  confianca: 'alta' | 'media';
+  pode_selecionar: boolean;
+  motivo_bloqueio: string | null;
+  empresa_verificada: false;
+  aviso: 'EMPRESA_NAO_COMPROVAVEL_NO_PEDIDO_COMPRA';
+}
+
+export interface CandidatosPedidoConferencia {
+  candidatos: CandidatoPedidoConferencia[];
+  motivo: 'FORNECEDOR_NAO_VINCULADO' | 'NENHUM_PEDIDO_COMPATIVEL' | null;
 }
 
 export interface ResultadoGerarSaidaDevolucaoCompra {
@@ -2978,7 +3154,8 @@ export interface PendenciaAplicacaoEstoque {
 
 export interface ResultadoAplicacaoEstoque {
   aplicado: boolean;
-  conferencia_id: number;
+  iniciada?: boolean;
+  conferencia_id: number | null;
   itens_aplicados: ItemAplicadoEstoqueConferencia[];
   itens_ignorados: ItemIgnoradoAplicacaoEstoque[];
   pendencias: PendenciaAplicacaoEstoque[];

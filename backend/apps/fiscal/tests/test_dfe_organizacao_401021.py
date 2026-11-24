@@ -11,6 +11,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from apps.cadastros.models import Empresa
 from apps.fiscal.dfe_classificacao import CATEGORIA_BASE_DFE_IMPORTADA
 from apps.fiscal.models import CTeHistoricoImportado, NFeSaidaHistoricaImportada
 
@@ -26,6 +27,13 @@ class ListagemClassificacaoDfe401021Test(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(self.user)
         dh = _dh()
+        self.emp, _ = Empresa.objects.get_or_create(
+            cnpj='03999102000150',
+            defaults={
+                'razao_social': 'Nexus Tomadora CT-e',
+                'nome_fantasia': 'Nexus Tomadora',
+            },
+        )
         NFeSaidaHistoricaImportada.objects.create(
             chave_acesso='1' * 44,
             numero='1',
@@ -43,6 +51,7 @@ class ListagemClassificacaoDfe401021Test(TestCase):
             tp_amb='1',
             cstat='100',
             cancelado=False,
+            empresa_tomadora=self.emp,
         )
 
     def test_lista_saida_historica_retorna_classificacao_dfe(self) -> None:

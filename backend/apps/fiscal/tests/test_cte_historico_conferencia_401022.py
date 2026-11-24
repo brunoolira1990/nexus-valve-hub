@@ -26,7 +26,7 @@ from apps.fiscal.models import CTeEntrada, CTeHistoricoImportado, NFeEntradaHist
 from apps.fiscal.services.apuracao_fiscal import build_apuracao_fiscal
 from apps.fiscal.tests.cte_regra_fiscal_fixtures import CFOP_CTE_TESTE, garantir_regra_frete_cte
 from apps.regras_fiscais.models import RegraFiscalEntrada
-from apps.cadastros.models import Cliente
+from apps.cadastros.models import Cliente, Empresa
 
 
 def _dh() -> datetime:
@@ -50,6 +50,13 @@ class CTeHistoricoConferencia401022Test(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(self.user)
         self.dh = _dh()
+        self.emp, _ = Empresa.objects.get_or_create(
+            cnpj='03999102000150',
+            defaults={
+                'razao_social': 'Nexus Tomadora CT-e',
+                'nome_fantasia': 'Nexus Tomadora',
+            },
+        )
         garantir_regra_frete_cte()
 
     def _criar_cte(
@@ -75,6 +82,7 @@ class CTeHistoricoConferencia401022Test(TestCase):
             cfop=cfop,
             status_conferencia=status_conferencia,
             apto_operacional=False,
+            empresa_tomadora=self.emp,
         )
 
     def test_conferir_producao_autorizado(self) -> None:

@@ -145,11 +145,18 @@ class NFe402ErroTransmissaoTests(TestCase):
         payload = res.json()
         rows = payload if isinstance(payload, list) else payload.get('results', payload)
         row = next(r for r in rows if r['id'] == self.nf.pk)
-        resumo = row.get('resumo_emissao_sefaz') or {}
-        self.assertEqual(resumo.get('status_emissao_sefaz'), 'ERRO_TRANSMISSAO')
-        self.assertEqual(resumo.get('serie_nfe'), '900')
+        # Contrato de listagem: NFeSaidaListSerializer é enxuto e expõe status_emissao_sefaz
+        # direto; resumo_emissao_sefaz pertence ao NFeSaidaSerializer de detail.
+        self.assertEqual(row.get('status_emissao_sefaz'), 'ERRO_TRANSMISSAO')
         self.assertNotIn('xml_retorno', row)
         self.assertNotIn('xml_autorizado', row)
+
+        # Resumo completo pertence ao detail serializer.
+        res_detail = self.client.get(f'/api/nf-saidas/{self.nf.pk}/')
+        self.assertEqual(res_detail.status_code, 200)
+        resumo = res_detail.data.get('resumo_emissao_sefaz') or {}
+        self.assertEqual(resumo.get('status_emissao_sefaz'), 'ERRO_TRANSMISSAO')
+        self.assertEqual(resumo.get('serie_nfe'), '900')
 
     def test_resposta_padronizada_erro_tecnico(self):
         self.nf.status_emissao_sefaz = NFeSaida.StatusEmissaoSefaz.ERRO_TRANSMISSAO

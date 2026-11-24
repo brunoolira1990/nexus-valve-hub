@@ -110,6 +110,38 @@ def _produto() -> Produto:
     )
 
 
+def _garantir_regra_saida_sp_rj() -> None:
+    """Semeia a cobertura fiscal mínima (cenário padrão) exigida pela prontidão."""
+    from apps.regras_fiscais.cenario_fiscal_saida import garantir_cenario_saida_padrao
+    from apps.regras_fiscais.models import CenarioFiscalSaidaEscopo, RegraFiscalSaida
+
+    cenario = garantir_cenario_saida_padrao()
+    escopo, _ = CenarioFiscalSaidaEscopo.objects.get_or_create(
+        cenario=cenario,
+        tipo_escopo=CenarioFiscalSaidaEscopo.TipoEscopo.NCM,
+        ncm='84818200',
+        defaults={'ativo': True},
+    )
+    RegraFiscalSaida.objects.update_or_create(
+        escopo=escopo,
+        cenario=cenario,
+        uf_origem='SP',
+        uf_destino='RJ',
+        destinatario_contribuinte=RegraFiscalSaida.DestinatarioContribuinte.QUALQUER,
+        defaults={
+            'nome': 'Venda SP-RJ · NF-e 4.0.2',
+            'cfop_venda': '5102',
+            'cst_icms': '00',
+            'aliquota_icms': Decimal('18'),
+            'cst_pis': '08',
+            'aliquota_pis': Decimal('0'),
+            'cst_cofins': '08',
+            'aliquota_cofins': Decimal('0'),
+            'ativo': True,
+        },
+    )
+
+
 def _pedido_nf() -> tuple[PedidoVenda, ItemPedidoVenda, NFeSaida]:
     emp = Empresa.objects.create(
         razao_social='Emitente 402',
@@ -168,11 +200,17 @@ def _pedido_nf() -> tuple[PedidoVenda, ItemPedidoVenda, NFeSaida]:
     fat = FaturamentoPedidoVenda.objects.get(pk=criado['faturamento_id'])
     r = gerar_nfe_saida_from_faturamento(pedido, fat.pk)
     nf = NFeSaida.objects.get(pk=r['nfe_saida_id'])
+    _garantir_regra_saida_sp_rj()
     return pedido, item, nf
 
 
 def _preparar_pronta(nf: NFeSaida, user) -> NFeSaida:
     nf.refresh_from_db()
+    # Estado mínimo exigido pela prontidão (higienização XML): indicadores confirmados.
+    nf.ind_final = '1'
+    nf.ind_pres = '1'
+    nf.indicadores_fiscais_confirmados = True
+    nf.save(update_fields=['ind_final', 'ind_pres', 'indicadores_fiscais_confirmados'])
     validar_conferencia_nfe(nf, usuario=user)
     marcar_nfe_pronta_para_emissao(nf, usuario=user)
     nf.refresh_from_db()

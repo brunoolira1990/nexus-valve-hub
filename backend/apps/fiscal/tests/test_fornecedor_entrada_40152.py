@@ -11,7 +11,7 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from apps.cadastros.models import Fornecedor
+from apps.cadastros.models import Empresa, Fornecedor
 from apps.cadastros.utils import validar_cnpj
 from apps.fiscal.fornecedor_entrada import (
     MSG_FORNECEDOR_DUPLICIDADE,
@@ -101,8 +101,13 @@ class FornecedorEntradaIdentificacaoTests(TestCase):
         self.assertEqual(resultado.fornecedor_id, forn.id)
 
     def test_duplicidade_cnpj_bloqueia_auto_vinculo(self):
-        Fornecedor.objects.create(razao_social='A', cnpj=CNPJ_CONEFER, ativo=True)
-        Fornecedor.objects.create(razao_social='B', cnpj=CNPJ_CONEFER_MASK, ativo=True)
+        # Duplicidade legada: save() normaliza o CNPJ, então duas linhas com máscara e
+        # dígitos colidem na unique. bulk_create insere o estado bruto (pré-normalização)
+        # que a identificação precisa reconhecer como duplicidade.
+        Fornecedor.objects.bulk_create([
+            Fornecedor(razao_social='A', cnpj=CNPJ_CONEFER, ativo=True),
+            Fornecedor(razao_social='B', cnpj=CNPJ_CONEFER_MASK, ativo=True),
+        ])
         nf = _nf_sem_fornecedor()
         resultado = tentar_vincular_fornecedor_nfe_entrada(nf, persistir=True)
         self.assertEqual(resultado.status, StatusIdentificacaoFornecedor.DUPLICIDADE)
@@ -160,6 +165,13 @@ class FornecedorEntradaApiTests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(self.user)
         self.forn = Fornecedor.objects.create(razao_social='CONEFER', cnpj=CNPJ_CONEFER_MASK, ativo=True)
+        self.emp, _ = Empresa.objects.get_or_create(
+            cnpj='03999102000150',
+            defaults={
+                'razao_social': 'Nexus Tomadora CT-e',
+                'nome_fantasia': 'Nexus Tomadora',
+            },
+        )
         self.nf = _nf_sem_fornecedor()
         self.conf = NFeEntradaConferencia.objects.create(
             nf_entrada_historica=self.nf,
@@ -189,7 +201,7 @@ class FornecedorEntradaApiTests(TestCase):
         self.assertTrue(res.json()['conferencia']['financeiro']['pode_gerar_contas_pagar'])
 
     def test_vincular_endpoint(self):
-        Fornecedor.objects.create(razao_social='Dup', cnpj=CNPJ_CONEFER, ativo=True)
+        Fornecedor.objects.get_or_create(cnpj=CNPJ_CONEFER, defaults={'razao_social': 'Dup', 'ativo': True})
         nf = _nf_sem_fornecedor()
         res = self.client.post(
             f'/api/nf-entradas-historicas-importadas/{nf.pk}/fornecedor/vincular/',
@@ -208,6 +220,8 @@ class FornecedorEntradaApiTests(TestCase):
             dh_emissao=timezone.make_aware(datetime(2026, 3, 1, 10, 0)),
             valor_total_servico=Decimal('200.00'),
             rem_json={'CNPJ': CNPJ_CONEFER, 'xNome': 'CONEFER'},
+            cancelado=False,
+            empresa_tomadora=self.emp,
         )
         res = self.client.get(f'/api/cte-historicos-importados/{cte.pk}/fornecedor/status/')
         self.assertEqual(res.status_code, 200)

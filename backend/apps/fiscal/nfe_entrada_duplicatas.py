@@ -82,7 +82,9 @@ def _persistir_cobr_em_reforma(nf: NFeEntradaHistoricaImportada, cobr: dict[str,
     nf.save(update_fields=['reforma_e_outros_json'])
 
 
-def obter_cobr_nf_entrada(nf: NFeEntradaHistoricaImportada) -> dict[str, Any] | None:
+def obter_cobr_nf_entrada(
+    nf: NFeEntradaHistoricaImportada, *, persistir: bool = True,
+) -> dict[str, Any] | None:
     """Retorna bloco cobr do JSON persistido ou parseado de xml_conteudo."""
     extra = nf.reforma_e_outros_json or {}
     cobr = extra.get('cobr')
@@ -92,15 +94,18 @@ def obter_cobr_nf_entrada(nf: NFeEntradaHistoricaImportada) -> dict[str, Any] | 
     if (nf.xml_conteudo or '').strip():
         cobr_xml = _extrair_cobr_de_xml_texto(nf.xml_conteudo)
         if isinstance(cobr_xml, dict) and _normalize_dup_list(cobr_xml):
-            _persistir_cobr_em_reforma(nf, cobr_xml)
+            if persistir:
+                _persistir_cobr_em_reforma(nf, cobr_xml)
             return cobr_xml
 
     return cobr if isinstance(cobr, dict) else None
 
 
-def extrair_duplicatas_xml_nf_entrada(nf: NFeEntradaHistoricaImportada) -> list[dict[str, Any]]:
+def extrair_duplicatas_xml_nf_entrada(
+    nf: NFeEntradaHistoricaImportada, *, persistir: bool = True,
+) -> list[dict[str, Any]]:
     """Extrai duplicatas do bloco cobr (reforma_e_outros_json ou xml_conteudo)."""
-    cobr = obter_cobr_nf_entrada(nf)
+    cobr = obter_cobr_nf_entrada(nf, persistir=persistir)
     if not isinstance(cobr, dict):
         return []
 
@@ -177,12 +182,14 @@ def _parcelas_pedido_compra(
 def montar_parcelas_sugeridas_nf_entrada(
     nf: NFeEntradaHistoricaImportada,
     conferencia: NFeEntradaConferencia | None = None,
+    *,
+    persistir: bool = True,
 ) -> tuple[list[dict[str, Any]], str, str]:
     """
     Retorna (parcelas, origem, aviso).
     origem: XML | PEDIDO | EMISSAO
     """
-    dups = extrair_duplicatas_xml_nf_entrada(nf)
+    dups = extrair_duplicatas_xml_nf_entrada(nf, persistir=persistir)
     if dups:
         parcelas = [
             {

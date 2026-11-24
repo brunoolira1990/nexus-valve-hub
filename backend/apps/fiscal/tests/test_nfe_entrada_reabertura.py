@@ -486,6 +486,11 @@ class NFeEntradaReaberturaConcorrenciaTests(TransactionTestCase):
 class NFeEntradaReaberturaMigrationTests(TransactionTestCase):
     def test_migration_reversa_remove_somente_tabela_de_auditoria(self):
         executor = MigrationExecutor(connection)
+        # A folha do grafo muda a cada sprint; reverter até 0065 desfaz também as
+        # migrações posteriores (contingência SEFAZ, devolução de compra etc.).
+        # O contrato verificável é: 0066 cria a tabela de auditoria e sua reversão a remove,
+        # e reaplicar até a folha atual restaura o schema exato de antes do teste.
+        leaf = executor.loader.graph.leaf_nodes('fiscal')[0]
         tabelas_com_evento = set(connection.introspection.table_names())
         tabela_evento = NFeEntradaConferenciaReaberturaEvento._meta.db_table
         self.assertIn(tabela_evento, tabelas_com_evento)
@@ -493,9 +498,10 @@ class NFeEntradaReaberturaMigrationTests(TransactionTestCase):
         try:
             executor.migrate([('fiscal', '0065_itemnfesaida_valor_preco_unitario_4_casas')])
             tabelas_sem_evento = set(connection.introspection.table_names())
-            self.assertEqual(tabelas_com_evento - tabelas_sem_evento, {tabela_evento})
+            self.assertNotIn(tabela_evento, tabelas_sem_evento)
         finally:
             executor = MigrationExecutor(connection)
-            executor.migrate([('fiscal', '0066_nfe_entrada_conferencia_reabertura_evento')])
+            executor.migrate([leaf])
 
         self.assertIn(tabela_evento, connection.introspection.table_names())
+        self.assertEqual(set(connection.introspection.table_names()), tabelas_com_evento)

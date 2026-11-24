@@ -37,6 +37,26 @@ from apps.regras_fiscais.aliquotas_uf_seed import (
 from apps.regras_fiscais.cenario_fiscal_saida import garantir_cenario_saida_padrao
 from apps.regras_fiscais.models import AliquotaIcmsUF, CenarioFiscalSaidaEscopo, RegraFiscalSaida
 
+# Endereço fiscal coerente por UF de destino: a validação compara CEP/cidade à UF
+# cadastrada antes de aplicar a regra fiscal (ver apps/cadastros/endereco_fiscal.py).
+_ENDERECO_FISCAL_POR_UF: dict[str, tuple[str, str]] = {
+    'BA': ('Salvador', '40015-000'),
+    'PR': ('Curitiba', '80010-000'),
+    'MG': ('Belo Horizonte', '30110-000'),
+    'ES': ('Vitória', '29010-000'),
+}
+
+
+def _aplicar_endereco_fiscal_uf(cliente, uf: str) -> None:
+    dados = _ENDERECO_FISCAL_POR_UF.get(uf)
+    if dados is None:
+        raise ValueError(f'UF sem endereço fiscal de teste: {uf}')
+    cidade, cep = dados
+    cliente.uf = uf
+    cliente.cidade = cidade
+    cliente.cep = cep
+    cliente.save(update_fields=['uf', 'cidade', 'cep'])
+
 
 class DifalAliquotasUfTestsBase(TestCase):
     def setUp(self):
@@ -302,8 +322,7 @@ class DifalSemBaseUnicaIntegracaoTests(DifalAliquotasUfTestsBase):
 
     def _nf_com_impostos(self, uf_destino: str, *, frete: Decimal | None = None) -> NFeSaida:
         pedido, item = _pedido_item()
-        pedido.cliente.uf = uf_destino
-        pedido.cliente.save(update_fields=['uf'])
+        _aplicar_endereco_fiscal_uf(pedido.cliente, uf_destino)
         fat = _faturamento_pronto(pedido, item)
         gerada = gerar_nfe_saida_from_faturamento(pedido, fat.pk)
         if frete is not None:
@@ -341,8 +360,7 @@ class DifalSemBaseUnicaIntegracaoTests(DifalAliquotasUfTestsBase):
     def test_regra_sem_difal_aplicavel_nao_gera_snapshot(self):
         RegraFiscalSaida.objects.update(difal_aplicavel=False)
         pedido, item = _pedido_item()
-        pedido.cliente.uf = 'BA'
-        pedido.cliente.save(update_fields=['uf'])
+        _aplicar_endereco_fiscal_uf(pedido.cliente, 'BA')
         fat = _faturamento_pronto(pedido, item)
         gerada = gerar_nfe_saida_from_faturamento(pedido, fat.pk)
         nf = NFeSaida.objects.prefetch_related('itens__produto', 'cliente').get(pk=gerada['nfe_saida_id'])
@@ -403,8 +421,7 @@ class DifalRetificacaoAuditoriaTests(DifalAliquotasUfTestsBase):
             aliquota_icms_interna_destino=Decimal('18'),
         )
         pedido, item = _pedido_item()
-        pedido.cliente.uf = 'BA'
-        pedido.cliente.save(update_fields=['uf'])
+        _aplicar_endereco_fiscal_uf(pedido.cliente, 'BA')
         fat = _faturamento_pronto(pedido, item)
         gerada = gerar_nfe_saida_from_faturamento(pedido, fat.pk)
         if frete is not None:

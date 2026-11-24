@@ -39,6 +39,7 @@ from apps.produtos.conversao_medidas import ConversaoErro, converter_quantidade_
 from apps.produtos.models import Produto
 from apps.produtos.snapshot import build_produto_snapshot
 from apps.regras_fiscais.entrada_fiscal import (
+    CAMPOS_EFETIVOS_FISCAIS,
     avaliar_item_entrada_fiscal,
     montar_contexto_fiscal_entrada,
     montar_resumo_fiscal_conferencia,
@@ -75,6 +76,7 @@ from .models import (
     EventoCTeHistoricoImportado,
     EventoNFeSaidaHistoricaImportada,
     EventoNFeSaidaHistoricaPendente,
+    ItemConferenciaFiscalOverride,
     ItemNFeEntrada,
     ItemNFeEntradaConferencia,
     ItemNFeEntradaConferenciaCorridaSplit,
@@ -1901,6 +1903,8 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
     tributos_nf = serializers.SerializerMethodField(read_only=True)
     resultado_fiscal = serializers.SerializerMethodField(read_only=True)
     elegibilidade_estoque = serializers.SerializerMethodField(read_only=True)
+    fiscal_status = serializers.SerializerMethodField(read_only=True)
+    estoque_status = serializers.SerializerMethodField(read_only=True)
     quantidade_alocada_atendimento = serializers.SerializerMethodField(read_only=True)
     quantidade_disponivel_atendimento = serializers.SerializerMethodField(read_only=True)
     vinculos_atendimento = serializers.SerializerMethodField(read_only=True)
@@ -1961,6 +1965,8 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             'vinculos_atendimento',
             'controla_composicao_fisica_efetivo',
             'tipo_composicao_fisica_efetivo',
+            'fiscal_status',
+            'estoque_status',
         )
         read_only_fields = (
             'sugestoes_item_pedido',
@@ -1978,6 +1984,15 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             'quantidade_disponivel_atendimento',
             'vinculos_atendimento',
         )
+
+    def get_fiscal_status(self, obj: ItemNFeEntradaConferencia) -> str:
+        rf = self.get_resultado_fiscal(obj)
+        status = (rf.get('status') or '').upper()
+        return status
+
+    def get_estoque_status(self, obj: ItemNFeEntradaConferencia) -> str:
+        eleg = self.get_elegibilidade_estoque(obj)
+        return eleg.get('status') or ''
 
     @staticmethod
     def _produto_esta_sendo_alterado(
@@ -2298,6 +2313,17 @@ class ItemNFeEntradaConferenciaSerializer(serializers.ModelSerializer):
         return instance
 
 
+class IniciarConferenciaNFeEntradaSerializer(serializers.Serializer):
+    local_recebimento = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    observacao_chegada = serializers.CharField(required=False, allow_blank=True)
+    pedido_compra_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    finalidade_entrada = serializers.ChoiceField(
+        choices=NFeEntradaConferencia.FinalidadeEntrada.choices,
+        required=False,
+        allow_null=True,
+    )
+
+
 class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):
     pedido_compra_id = serializers.PrimaryKeyRelatedField(
         queryset=PedidoCompra.objects.all(),
@@ -2322,6 +2348,8 @@ class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):
     equivalencias = serializers.SerializerMethodField(read_only=True)
     chave_acesso = serializers.SerializerMethodField(read_only=True)
     financeiro = serializers.SerializerMethodField(read_only=True)
+    recebido_por_nome = serializers.SerializerMethodField(read_only=True)
+    iniciada = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = NFeEntradaConferencia
@@ -2333,6 +2361,13 @@ class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             'chave_acesso',
             'data_emissao',
             'data_entrada',
+            'chegada_em',
+            'recebido_por',
+            'recebido_por_nome',
+            'local_recebimento',
+            'observacao_chegada',
+            'finalidade_entrada',
+            'iniciada',
             'valor_total',
             'fornecedor_nome',
             'fornecedor_cnpj',
@@ -2354,6 +2389,15 @@ class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             'pedido_baixa_aplicado_em',
             'itens',
         )
+        read_only_fields = ('chegada_em', 'recebido_por', 'recebido_por_nome', 'finalidade_entrada', 'iniciada')
+
+    def get_recebido_por_nome(self, obj: NFeEntradaConferencia) -> str:
+        if not obj.recebido_por_id:
+            return ''
+        return obj.recebido_por.get_full_name() or obj.recebido_por.get_username()
+
+    def get_iniciada(self, obj: NFeEntradaConferencia) -> bool:
+        return obj.chegada_em is not None
 
     def _status_fornecedor_conferencia(self, obj: NFeEntradaConferencia) -> dict:
         cache = self.context.setdefault('_status_fornecedor_conferencia', {})
@@ -2361,8 +2405,7 @@ class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):
             from apps.fiscal.fornecedor_entrada import montar_status_fornecedor_nfe_entrada
 
             nf = obj.nf_entrada_historica
-            cache[obj.id] = montar_status_fornecedor_nfe_entrada(nf, auto_vincular=True)
-            obj.nf_entrada_historica.refresh_from_db(fields=['fornecedor_emitente'])
+            cache[obj.id] = montar_status_fornecedor_nfe_entrada(nf, auto_vincular=False)
         return cache[obj.id]
 
     def get_fornecedor(self, obj):
@@ -2405,7 +2448,9 @@ class NFeEntradaConferenciaSerializer(serializers.ModelSerializer):
     def get_financeiro(self, obj):
         from apps.fiscal.nfe_entrada_financeiro import montar_flags_financeiro_nfe_entrada
 
-        return montar_flags_financeiro_nfe_entrada(obj.nf_entrada_historica, obj)
+        return montar_flags_financeiro_nfe_entrada(
+            obj.nf_entrada_historica, obj, vincular_fornecedor=False,
+        )
 
     def get_pedido_compra_numero(self, obj):
         return obj.pedido_compra.numero if obj.pedido_compra_id else ''
@@ -3738,3 +3783,74 @@ class GerarSaidaDevolucaoCompraSerializer(serializers.Serializer):
                 {'observacao': 'Motivo OUTRO exige observacao preenchida.'}
             )
         return attrs
+
+
+_CAMPOS_AJUSTE_FISCAL = tuple(campo.campo_modelo for campo in CAMPOS_EFETIVOS_FISCAIS)
+
+
+class ItemConferenciaFiscalOverrideSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ItemConferenciaFiscalOverride
+        fields = (
+            'id',
+            'campo',
+            'valor_anterior',
+            'valor_novo',
+            'motivo',
+            'usuario',
+            'usuario_nome',
+            'criado_em',
+            'snapshot_regra',
+        )
+        read_only_fields = fields
+
+
+class ItemConferenciaFiscalAdjustSerializer(serializers.ModelSerializer):
+    motivo_ajuste_fiscal = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=2000,
+    )
+
+    class Meta:
+        model = ItemNFeEntradaConferencia
+        fields = ('motivo_ajuste_fiscal', *_CAMPOS_AJUSTE_FISCAL)
+        extra_kwargs = {
+            campo: {'required': False, 'allow_null': True}
+            for campo in _CAMPOS_AJUSTE_FISCAL
+        }
+
+    def validate(self, attrs):
+        item = self.context.get('item')
+        if item is None:
+            return attrs
+        from .fiscal_classificacao_manual import alteracoes_fiscais_solicitadas
+
+        alterados = alteracoes_fiscais_solicitadas(item, attrs)
+        if alterados and not (attrs.get('motivo_ajuste_fiscal') or '').strip():
+            raise serializers.ValidationError({
+                'motivo_ajuste_fiscal': 'Informe a justificativa do ajuste fiscal.',
+            })
+        return attrs
+
+
+class ItemConferenciaFiscalPreviewSerializer(serializers.Serializer):
+    item_id = serializers.IntegerField()
+    conferencia_id = serializers.IntegerField()
+    ncm_xml = serializers.CharField()
+    ncm_efetivo = serializers.CharField()
+    cfop_entrada_xml = serializers.CharField()
+    cfop_entrada_efetivo = serializers.CharField()
+    impostos_xml = serializers.DictField()
+    impostos_efetivos = serializers.DictField()
+    impostos_esperados = serializers.DictField()
+    diferencas = serializers.ListField(child=serializers.DictField(), allow_empty=True)
+    ajustes_ativos = serializers.ListField(child=serializers.DictField(), allow_empty=True)
+    total_ajustes = serializers.IntegerField()
+    status_fiscal = serializers.CharField()
+    regra = serializers.DictField()
+    divergencias = serializers.ListField(child=serializers.DictField(), allow_empty=True)
+    custo_contabil = serializers.DictField()
+    estoque_ja_aplicado = serializers.BooleanField()
+    motivo_ajuste_fiscal = serializers.CharField(allow_blank=True)
+    somente_leitura = serializers.BooleanField()
