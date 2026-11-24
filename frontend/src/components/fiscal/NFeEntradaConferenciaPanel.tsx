@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Modal } from '@/components/Modal';
@@ -13,6 +13,7 @@ import {
   type EstoqueEntradaBlocoHandle,
 } from '@/components/fiscal/EstoqueEntradaBloco';
 import { EquivalenciaEntradaBloco } from '@/components/fiscal/EquivalenciaEntradaBloco';
+import { ItemConferenciaCompacto } from '@/components/fiscal/ItemConferenciaCompacto';
 import { FornecedorEntradaAcoes } from '@/components/fiscal/FornecedorEntradaAcoes';
 import { NFeEntradaFinanceiroAcoes } from '@/components/fiscal/NFeEntradaFinanceiroAcoes';
 import {
@@ -89,26 +90,51 @@ import {
   proximoPassoOperador,
 } from '@/lib/conferenciaNfeOperadorUi';
 import type {
+  CandidatosPedidoConferencia,
+  EstadoChegadaNFeEntrada,
+  FinalidadeEntrada,
   ItemConferenciaNFeEntrada,
   NFeEntradaConferencia,
   Produto,
 } from '@/types';
 
+const FINALIDADES_ENTRADA: { value: FinalidadeEntrada; label: string }[] = [
+  { value: 'COMPRA_REVENDA', label: 'Comprar para Revenda' },
+  { value: 'CONSUMO_PROPRIIO', label: 'Uso e Consumo / Ativo' },
+  { value: 'INDUSTRIALIZACAO', label: 'Industrialização / Insumo' },
+  { value: 'DEVOLUCAO_VENDA', label: 'Devolução de Venda' },
+  { value: 'BONIFICACAO', label: 'Bonificação Recebida' },
+  { value: 'FRETE_TRANSPORTE', label: 'Frete / Transporte' },
+  { value: 'OUTROS', label: 'Outros' },
+];
+
 export type NFeEntradaConferenciaPanelProps = {
   nfeHistoricaId: number;
   embedded?: boolean;
   onUpdated?: () => void;
+  onChegadaRegistrada?: () => void;
   onClose?: () => void;
 };
 
-export function NFeEntradaConferenciaPanel({
+export function NFeEntradaConferenciaPanel(props: NFeEntradaConferenciaPanelProps) {
+  return <NFeEntradaConferenciaPanelInstance key={props.nfeHistoricaId} {...props} />;
+}
+
+function NFeEntradaConferenciaPanelInstance({
   nfeHistoricaId,
   embedded = false,
   onUpdated,
+  onChegadaRegistrada,
   onClose,
 }: NFeEntradaConferenciaPanelProps) {
   const navigate = useNavigate();
+  const camposId = useId();
   const nfId = nfeHistoricaId;
+  const ativoRef = useRef(true);
+  useLayoutEffect(() => {
+    ativoRef.current = true;
+    return () => { ativoRef.current = false; };
+  }, []);
   // PR 8a (Fase 2): os hubs de domínio da conferência vivem no store; o painel é
   // o único consumidor. Ambiente (nfId, embedded, onUpdated, onClose) fica aqui.
   const { estado, acoes } = useConferenciaStore();
@@ -125,6 +151,13 @@ export function NFeEntradaConferenciaPanel({
   const [sugestoesCorrelacaoIgnoradas, setSugestoesCorrelacaoIgnoradas] = useState<Set<number>>(
     () => new Set(),
   );
+  const [loading, setLoading] = useState(false);
+  const [carregandoConferencia, setCarregandoConferencia] = useState(true);
+  const [conferenciaCarregada, setConferenciaCarregada] = useState(false);
+  const [estadoChegada, setEstadoChegada] = useState<EstadoChegadaNFeEntrada | null>(null);
+  const [finalidadeEntrada, setFinalidadeEntrada] = useState<FinalidadeEntrada>('COMPRA_REVENDA');
+  const [candidatosPedido, setCandidatosPedido] = useState<CandidatosPedidoConferencia | null>(null);
+  const [erroCandidatos, setErroCandidatos] = useState('');
 
   const produtosMap = produtoCache;
   const estoqueJaAplicado = Boolean(dados?.estoque_aplicado_em);
@@ -157,9 +190,74 @@ export function NFeEntradaConferenciaPanel({
     [dados?.itens, soPendencias],
   );
 
-  useEffect(() => {
-    void acoes.load(nfId).catch((e) => acoes.setErro(apiErrorMessage(e)));
+  const carregarCandidatos = useCallback(async () => {
+    try {
+      const candidatos = await nfeEntradaConferenciaService.candidatosPedido(nfId);
+      if (!ativoRef.current) return;
+      setCandidatosPedido(candidatos);
+      setErroCandidatos('');
+    } catch (e) {
+      if (!ativoRef.current) return;
+      setCandidatosPedido(null);
+      setErroCandidatos(apiErrorMessage(e));
+    }
   }, [nfId]);
+
+  useEffect(() => {
+    setCarregandoConferencia(true);
+    setConferenciaCarregada(false);
+    setEstadoChegada(null);
+    setCandidatosPedido(null);
+    acoes.setDados(null);
+    void nfeEntradaConferenciaService.getEstado(nfId)
+      .then(async (resultado) => {
+        if (!ativoRef.current) return;
+        if (resultado.conferencia) await acoes.load(nfId);
+        if (ativoRef.current) {
+          setEstadoChegada(resultado);
+          setConferenciaCarregada(true);
+        }
+      })
+      .catch((e) => { if (ativoRef.current) acoes.setErro(apiErrorMessage(e)); })
+      .finally(() => { if (ativoRef.current) setCarregandoConferencia(false); });
+    void carregarCandidatos();
+  }, [nfId, carregarCandidatos]);
+
+  const chegadaDesatualizada = Boolean(dados && estadoChegada?.conferencia && (
+    dados.status !== estadoChegada.conferencia.status ||
+    (dados.chegada_em ?? null) !== (estadoChegada.conferencia.chegada_em ?? null) ||
+    (dados.preparado_em ?? null) !== (estadoChegada.conferencia.preparado_em ?? null) ||
+    (dados.estoque_aplicado_em ?? null) !== (estadoChegada.conferencia.estoque_aplicado_em ?? null)
+  ));
+
+  useEffect(() => {
+    if (!chegadaDesatualizada) return;
+    let cancelado = false;
+    void nfeEntradaConferenciaService.getEstado(nfId)
+      .then((resultado) => { if (!cancelado && ativoRef.current) setEstadoChegada(resultado); })
+      .catch((e) => { if (!cancelado && ativoRef.current) acoes.setErro(apiErrorMessage(e)); });
+    return () => { cancelado = true; };
+  }, [nfId, chegadaDesatualizada, dados?.status, dados?.chegada_em, dados?.preparado_em, dados?.estoque_aplicado_em]);
+
+  const registrarChegada = async () => {
+    acoes.setBusy(true);
+    acoes.setErro('');
+    try {
+      const resultado = await nfeEntradaConferenciaService.iniciar(nfId, { finalidade_entrada: finalidadeEntrada });
+      if (!ativoRef.current) return;
+      setEstadoChegada(resultado);
+      if (resultado.conferencia) await acoes.load(nfId);
+      if (!ativoRef.current) return;
+      if (resultado.iniciada) {
+        if (onChegadaRegistrada) onChegadaRegistrada();
+        else notifyUpdated();
+      }
+    } catch (e) {
+      if (ativoRef.current) acoes.setErro(apiErrorMessage(e));
+    } finally {
+      if (ativoRef.current) acoes.setBusy(false);
+    }
+  };
 
   const produtoIdDoItemPedido = (itemPedidoId: number | null | undefined): number | null => {
     if (!itemPedidoId || !pedidoSelecionado) return null;
@@ -180,14 +278,14 @@ export function NFeEntradaConferenciaPanel({
         { apenasSeAusente: true },
       );
       void produtosService.getById(produtoId).then((p) => {
-        if (p) acoes.upsertProdutoCache(p);
+        if (p && ativoRef.current) acoes.upsertProdutoCache(p);
       });
     }
     acoes.updateItem(item.id, patchVinculoItemPedido({ item, itemPedidoId, produtoIdDoPedido: produtoId }));
   };
 
   const notifyUpdated = () => {
-    onUpdated?.();
+    if (ativoRef.current) onUpdated?.();
   };
 
   const onChangePedidoCompra = (pedidoId: number | null) => {
@@ -226,8 +324,10 @@ export function NFeEntradaConferenciaPanel({
         itens: dados.itens.map((it) => mapItemPayloadConferencia(it)),
       };
       const next = await nfeEntradaConferenciaService.salvar(nfId, payload);
+      if (!ativoRef.current) return;
       acoes.setDados(next);
       await acoes.hydrateProdutoCache(next);
+      if (!ativoRef.current) return;
       acoes.setAvisoPedido('');
       if (next.financeiro?.possui_pendencias_operacionais) {
         toast.success(
@@ -238,11 +338,12 @@ export function NFeEntradaConferenciaPanel({
       }
       notifyUpdated();
     } catch (e) {
+      if (!ativoRef.current) return;
       const msg = apiErrorMessage(e);
       acoes.setErro(msg);
       toast.error(msg.split('\n')[0] || 'Não foi possível salvar a conferência.');
     } finally {
-      acoes.setBusy(false);
+      if (ativoRef.current) acoes.setBusy(false);
     }
   };
 
@@ -284,21 +385,25 @@ export function NFeEntradaConferenciaPanel({
         itens: dados.itens.map((it) => mapItemPayloadConferencia(it)),
       };
       const saved = await nfeEntradaConferenciaService.salvar(nfId, payload);
+      if (!ativoRef.current) return;
       acoes.setDados(saved);
       await acoes.hydrateProdutoCache(saved);
+      if (!ativoRef.current) return;
       const next = await nfeEntradaConferenciaService.prepararEstoque(nfId, {
         data_entrada: dados.data_entrada || null,
       });
+      if (!ativoRef.current) return;
       acoes.setDados(next);
       acoes.setAvisoPedido('');
       toast.success('Conferência finalizada com sucesso.');
       notifyUpdated();
     } catch (e) {
+      if (!ativoRef.current) return;
       const msg = prepararEstoqueErrorMessage(e);
       acoes.setErro(msg);
       toast.error(msg.split('\n')[0] || 'Não foi possível finalizar a conferência.');
     } finally {
-      acoes.setBusy(false);
+      if (ativoRef.current) acoes.setBusy(false);
     }
   };
 
@@ -313,6 +418,7 @@ export function NFeEntradaConferenciaPanel({
   // As duas condições do banner são as do spec. 'itens_sem_vinculo' NÃO existe na API: o
   // número vem do mesmo computarProgressoConferencia que já alimenta o card de progresso,
   // e 'produtosFaltando' conta exatamente as linhas ativas com itemPendenteProduto() = true.
+  const finalidadeRegistrada = FINALIDADES_ENTRADA.find((opcao) => opcao.value === dados?.finalidade_entrada);
   const pendenciaFornecedor = Boolean(dados) && !dados?.fornecedor_id;
   const itensSemVinculo = progresso.produtosFaltando;
   const temPendenciaConferencia = Boolean(dados) && (pendenciaFornecedor || itensSemVinculo > 0);
@@ -328,6 +434,51 @@ export function NFeEntradaConferenciaPanel({
 
   const conteudo = (
     <>
+      {erro && <div className="text-destructive text-sm mb-3 whitespace-pre-line">{erro}</div>}
+      {carregandoConferencia ? <p className="text-sm text-muted-foreground">Carregando conferência...</p> : null}
+      {conferenciaCarregada && !chegadaDesatualizada && estadoChegada && !estadoChegada.iniciada ? (
+        estadoChegada.pode_registrar_chegada ? (
+          <div className="erp-card p-4 mb-4 space-y-2">
+            <p className="text-sm">A chegada desta nota ainda não foi registrada.</p>
+            <label className="block text-sm">
+              Finalidade da Operação
+              <select
+                className="erp-input w-full mt-1"
+                value={finalidadeEntrada}
+                onChange={(event) => setFinalidadeEntrada(event.target.value as FinalidadeEntrada)}
+                disabled={busy}
+              >
+                {FINALIDADES_ENTRADA.map((opcao) => (
+                  <option key={opcao.value} value={opcao.value}>{opcao.label}</option>
+                ))}
+              </select>
+            </label>
+            <button type="button" className="erp-btn-primary" onClick={() => void registrarChegada()} disabled={busy}>
+              {estadoChegada.conferencia ? 'Registrar chegada' : 'Iniciar conferência'}
+            </button>
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground mb-4">
+            Chegada não registrada — documento anterior ao controle de chegada.
+          </p>
+        )
+      ) : null}
+      {!dados && !carregandoConferencia ? (
+        !embedded ? (
+          <button type="button" className="erp-btn-outline" onClick={() => navigate('/nfe-entrada-historica-importada')}>
+            Voltar
+          </button>
+        ) : onClose ? (
+          <button type="button" className="erp-btn-outline" onClick={onClose}>Fechar</button>
+        ) : null
+      ) : null}
+      {dados ? (
+      <>
+      {dados.iniciada && finalidadeRegistrada ? (
+        <p className="mb-4 text-xs text-muted-foreground">
+          <span className="inline-block rounded border px-2 py-1">Finalidade: {finalidadeRegistrada.label}</span>
+        </p>
+      ) : null}
       {temPendenciaConferencia ? (
         <div
           role="alert"
@@ -455,15 +606,29 @@ export function NFeEntradaConferenciaPanel({
               value={dados.pedido_compra_id ?? ''}
               onChange={(e) => onChangePedidoCompra(e.target.value ? Number(e.target.value) : null)}
             >
-              <option value="">Sem pedido vinculado</option>
-              {pedidos
-                .filter((p) => !dados.fornecedor_nome || p.fornecedor_nome === dados.fornecedor_nome)
-                .map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.numero}
-                  </option>
-                ))}
+              <option value="">
+                Sem pedido vinculado
+              </option>
+              {dados.pedido_compra_id && !candidatosPedido?.candidatos.some((p) => p.pedido_compra_id === dados.pedido_compra_id) ? (
+                <option value={dados.pedido_compra_id}>
+                  {dados.pedido_compra_numero || pedidoSelecionado?.numero || `Pedido ${dados.pedido_compra_id}`} (já vinculado)
+                </option>
+              ) : null}
+              {(candidatosPedido?.candidatos ?? []).map((p) => (
+                <option key={p.pedido_compra_id} value={p.pedido_compra_id} disabled={!p.pode_selecionar}>
+                  {p.numero}{p.motivo_bloqueio ? ` — ${p.motivo_bloqueio}` : ''}
+                </option>
+              ))}
             </select>
+            {erroCandidatos ? (
+              <p className="text-xs text-destructive mt-2">Não foi possível carregar candidatos: {erroCandidatos}</p>
+            ) : candidatosPedido?.motivo === 'FORNECEDOR_NAO_VINCULADO' ? (
+              <p className="text-xs text-muted-foreground mt-2">O fornecedor da nota não está vinculado; não há candidatos disponíveis.</p>
+            ) : candidatosPedido?.motivo === 'NENHUM_PEDIDO_COMPATIVEL' ? (
+              <p className="text-xs text-muted-foreground mt-2">Nenhum pedido compatível encontrado.</p>
+            ) : candidatosPedido?.candidatos.length ? (
+              <p className="text-xs text-muted-foreground mt-2">A empresa compradora não pode ser comprovada pelo pedido. Confira antes de selecionar.</p>
+            ) : null}
             {!dados.pedido_compra_id ? (
               <p className="text-xs text-muted-foreground mt-2">
                 Sem pedido vinculado. A conferência segue sem comparar com pedido.
@@ -480,11 +645,15 @@ export function NFeEntradaConferenciaPanel({
               busy={busy}
               onVincular={async (fornecedorId) => {
                 const res = await nfeEntradaConferenciaService.vincularFornecedor(nfId, fornecedorId);
+                if (!ativoRef.current) return;
                 acoes.setDados(res.conferencia);
+                await carregarCandidatos();
               }}
               onCadastrar={async (payload) => {
                 const res = await nfeEntradaConferenciaService.cadastrarVincularFornecedor(nfId, payload);
+                if (!ativoRef.current) return;
                 acoes.setDados(res.conferencia);
+                await carregarCandidatos();
               }}
             />
           </div>
@@ -810,7 +979,6 @@ export function NFeEntradaConferenciaPanel({
         </details>
       ) : null}
 
-      {erro && <div className="text-destructive text-sm mb-3 whitespace-pre-line">{erro}</div>}
       {dados && !dados.pedido_compra_id ? (
         <p className="text-xs text-muted-foreground mb-2 px-1">
           Selecione um pedido se quiser comparar com a nota. A conferência pode seguir sem pedido.
@@ -879,34 +1047,37 @@ export function NFeEntradaConferenciaPanel({
         </div>
       ) : null}
       <div className="erp-card overflow-x-auto">
-        <table
-          className="erp-table text-sm [&_td]:py-2 [&_th]:py-2"
-          data-mobile-table-mode="cards"
-        >
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th>Da nota</th>
-              {modoTecnico ? <th>NCM/CFOP</th> : null}
-              <th>{modoTecnico ? 'Fiscal' : 'Situação'}</th>
-              <th>Qtd. nota</th>
-              <th>Linha do pedido</th>
-              <th>Produto (estoque)</th>
-              <th>Corrida/Lote</th>
-              <th>{modoTecnico ? 'Estoque calc.' : 'Conversão'}</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
+        <div className="text-sm">
             {itensVisiveis.map((it) => {
               const idxOriginal = (dados?.itens ?? []).findIndex((x) => x.id === it.id);
               const numItem = idxOriginal >= 0 ? idxOriginal + 1 : it.numero_item || '—';
               return (
-              <tr
+              <ItemConferenciaCompacto
                 key={it.id}
-                className={itemPendenteProduto(it) ? 'bg-amber-50/40 dark:bg-amber-950/20' : undefined}
+                className={`border-b border-border border-b-border hover:bg-muted/50 ${itemPendenteProduto(it) ? 'border-l-4 border-warning' : ''}`}
+                resumo={(
+                  <>
+                    <span className={`${badgeClassStatusConferencia(it.status)} text-[10px] mb-1 inline-block`}>
+                      {labelStatusConferenciaItem(it.status)}
+                    </span>
+                    <span className={`${badgeClassStatusFiscalEntrada(it.fiscal_status || 'SEM_REGRA')} text-[10px] inline-block`}>
+                      Fiscal: {labelStatusFiscalEntrada(it.fiscal_status || 'SEM_REGRA')}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">
+                      Item {numItem} · {it.dados_nf?.descricao_fornecedor || '—'}
+                    </span>
+                    <span className="font-mono text-xs">
+                      {it.dados_nf?.codigo_fornecedor || '—'}
+                      {modoTecnico ? <> · CFOP {it.dados_nf?.cfop || '—'} · NCM {it.dados_nf?.ncm || '—'}</> : null}
+                      {' · '}{Number(it.quantidade_nf || 0).toFixed(3)} {it.unidade_nf}
+                    </span>
+                  </>
+                )}
               >
-                <td>
+                <div className="grid grid-cols-1 gap-4 px-4 pb-4 md:grid-cols-2">
+                <section className="min-w-0 space-y-3">
+                  <h3 className="text-xs font-medium uppercase tracking-wide">Origem (NF-e XML)</h3>
+                <div>
                   <div className="flex flex-col gap-1">
                     <span>{numItem}</span>
                     {it.item_pedido_compra_id ? (
@@ -915,17 +1086,23 @@ export function NFeEntradaConferenciaPanel({
                       <span className="erp-badge-warning text-[10px] w-fit">Sem pedido</span>
                     )}
                   </div>
-                </td>
-                <td>
+                </div>
+                <div>
                   <div>{it.dados_nf?.codigo_fornecedor || '—'}</div>
                   <div className="text-xs text-muted-foreground">{it.dados_nf?.descricao_fornecedor || '—'}</div>
-                </td>
+                </div>
                 {modoTecnico ? (
-                <td className="text-xs whitespace-nowrap">
+                <div className="text-xs whitespace-nowrap">
                   {it.dados_nf?.ncm || '—'} / {it.dados_nf?.cfop || '—'}
-                </td>
+                </div>
                 ) : null}
-                <td className="min-w-[11rem] max-w-[14rem]">
+                <div>
+                  Quantidade da nota: {Number(it.quantidade_nf || 0).toFixed(3)} {it.unidade_nf}
+                </div>
+                </section>
+                <section className="min-w-0 space-y-3">
+                  <h3 className="text-xs font-medium uppercase tracking-wide">Destino (ERP / regra fiscal)</h3>
+                <div className="min-w-0">
                   {(() => {
                     const rf = it.resultado_fiscal;
                     const trib = it.tributos_nf;
@@ -937,17 +1114,21 @@ export function NFeEntradaConferenciaPanel({
                     const cenario =
                       (rf?.descricao_cenario || '').trim() || (rf?.regra_nome || '').trim() || 'Sem regra';
                     const tituloMatch = tituloMatchRegraFiscal(rf);
+                    const motivosMatch = (rf?.regra_match_motivos || []).filter(
+                      (motivo) => motivo !== 'Critérios gerais',
+                    );
                     return (
                       <div className="space-y-1 text-[10px]">
-                        <span
-                          className={`${badgeClassStatusFiscalEntrada(rf?.status || 'SEM_REGRA')} inline-block`}
-                        >
-                          {labelStatusFiscalEntrada(rf?.status || 'SEM_REGRA')}
-                        </span>
                         {modoTecnico && cfopNf ? (
                           <div className="text-muted-foreground font-mono">
-                            CFOP NF: {cfopNf}
-                            {cfopEntradaEsp ? ` → Entrada esp.: ${cfopEntradaEsp}` : ''}
+                            CFOP fornecedor: {cfopNf}
+                            {cfopEntradaEsp ? ` · CFOP esperado (ERP): ${cfopEntradaEsp}` : ''}
+                          </div>
+                        ) : null}
+                        {modoTecnico && (rf?.ncm_nf || dados?.resumo_fiscal) ? (
+                          <div className="text-muted-foreground">
+                            NCM {rf?.ncm_nf || '—'} · UF {dados?.resumo_fiscal?.uf_origem || '*'}→
+                            {dados?.resumo_fiscal?.uf_destino || '*'}
                           </div>
                         ) : null}
                         {modoTecnico
@@ -969,7 +1150,7 @@ export function NFeEntradaConferenciaPanel({
                           : null}
                         {modoTecnico ? (
                           <div className="truncate font-medium" title={tituloMatch ? `${cenario}\n${tituloMatch}` : cenario}>
-                            {cenario}
+                            {motivosMatch.length ? `Match: ${motivosMatch.join(' · ')}` : cenario}
                           </div>
                         ) : null}
                         {modoTecnico && (rf?.divergencias?.length ?? 0) > 0 ? (
@@ -1009,18 +1190,34 @@ export function NFeEntradaConferenciaPanel({
                             Reforma configurada
                           </span>
                         ) : null}
-                        {it.elegibilidade_estoque &&
+                        {it.estoque_status &&
                         (modoTecnico ||
-                          it.elegibilidade_estoque.status === 'BLOQUEADO' ||
-                          it.elegibilidade_estoque.status === 'APTO_COM_ALERTA') ? (
+                          it.estoque_status === 'BLOQUEADO' ||
+                          it.estoque_status === 'APTO_COM_ALERTA') ? (
                           <div className="pt-1 border-t border-border/50 space-y-0.5">
                             <span
-                              className={`${badgeClassElegibilidadeEstoque(it.elegibilidade_estoque.status)} inline-block`}
-                              title={(it.elegibilidade_estoque.mensagens || []).join('\n')}
+                              className={`${badgeClassElegibilidadeEstoque(it.estoque_status || 'NAO_MOVIMENTA')} inline-block`}
+                              title={`Estoque: ${labelElegibilidadeEstoque(it.estoque_status || 'NAO_MOVIMENTA')}`}
                             >
-                              {labelElegibilidadeEstoque(it.elegibilidade_estoque.status)}
+                              Estoque: {(() => {
+                              const status = it.estoque_status || 'NAO_MOVIMENTA';
+                              let label = labelElegibilidadeEstoque(status);
+                              if (status === 'BLOQUEADO' && !it.produto_id) label = `${label} — sem produto`;
+                              return label;
+                            })()}
                             </span>
-                            {((modoTecnico || it.elegibilidade_estoque.status === 'BLOQUEADO') &&
+                            {(() => {
+                              const q = dados?.resumo_pedido?.resumo_quantitativo?.find(
+                                (r) => r.item_pedido_id === it.item_pedido_compra_id
+                              )?.status_quantitativo;
+                              if (!q) return null;
+                              if (q === 'completo') return <span className="text-emerald-600 inline-block mr-1 mb-1">Pedido: completo</span>;
+                              if (q === 'parcial') return <span className="text-amber-700 inline-block mr-1 mb-1">Pedido: parcial</span>;
+                              if (q === 'excedente') return <span className="text-destructive inline-block mr-1 mb-1">Pedido: excedente</span>;
+                              if (q === 'nao_vinculado') return <span className="text-muted-foreground inline-block mr-1 mb-1">Pedido: nao_vinculado</span>;
+                              return <span className="text-emerald-600 inline-block mr-1 mb-1">Pedido: {q}</span>;
+                            })()}
+                            {((modoTecnico || it.estoque_status === 'BLOQUEADO') &&
                               (it.elegibilidade_estoque.mensagens || []).length > 0) ? (
                               <p
                                 className="text-[9px] text-muted-foreground line-clamp-3"
@@ -1030,8 +1227,8 @@ export function NFeEntradaConferenciaPanel({
                               </p>
                             ) : null}
                             {it.produto_id &&
-                            (it.elegibilidade_estoque.status === 'APTO' ||
-                              it.elegibilidade_estoque.status === 'APTO_COM_ALERTA') &&
+                            (it.estoque_status === 'APTO' ||
+                              it.estoque_status === 'APTO_COM_ALERTA') &&
                             dados?.status === 'PREPARADA' ? (
                               <AtenderVendasPendentesBlock
                                 itemConferenciaId={it.id}
@@ -1050,11 +1247,15 @@ export function NFeEntradaConferenciaPanel({
                       </div>
                     );
                   })()}
-                </td>
-                <td>
-                  {Number(it.quantidade_nf || 0).toFixed(3)} {it.unidade_nf}
-                </td>
-                <td>
+                </div>
+                <div>
+                  {dados?.pedido_compra_id && pedidoSelecionado ? (
+                    <label className="mb-1 block text-xs font-medium" htmlFor={`${camposId}-pedido-${it.id}`}>
+                      Linha do pedido
+                    </label>
+                  ) : (
+                    <h4 className="mb-1 text-xs font-medium">Linha do pedido</h4>
+                  )}
                   {dados?.pedido_compra_id && pedidoSelecionado ? (
                     <div className="space-y-1 min-w-0 sm:min-w-[280px] w-full">
                       {(() => {
@@ -1082,6 +1283,7 @@ export function NFeEntradaConferenciaPanel({
                         </p>
                       ) : null}
                       <select
+                        id={`${camposId}-pedido-${it.id}`}
                         className="erp-select w-full"
                         value={it.item_pedido_compra_id ?? ''}
                         onChange={(e) =>
@@ -1107,8 +1309,9 @@ export function NFeEntradaConferenciaPanel({
                   ) : (
                     <span className="erp-badge-warning text-[10px]">Sem pedido</span>
                   )}
-                </td>
-                <td className="min-w-0 sm:min-w-[260px]">
+                </div>
+                <div className="min-w-0">
+                  <h4 className="mb-1 text-xs font-medium">Produto (estoque)</h4>
                   <div className="space-y-1 [&_input]:mt-0 [&_input]:h-8 [&_input]:text-xs [&_.erp-btn-outline]:text-[10px] [&_.erp-btn-outline]:py-0.5 [&_.erp-btn-outline]:mt-1">
                     {it.produto_sugerido && !it.produto_id && !sugestoesCorrelacaoIgnoradas.has(it.id) ? (
                       <div className="rounded border border-amber-300/80 bg-amber-50 px-2 py-1.5 text-[10px] text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100">
@@ -1205,8 +1408,9 @@ export function NFeEntradaConferenciaPanel({
                       </p>
                     ) : null}
                   </div>
-                </td>
-                <td>
+                </div>
+                <div>
+                  <h4 className="mb-1 text-xs font-medium">Corrida / lote</h4>
                   {it.status === 'IGNORADO' ? (
                     <span className="text-xs text-muted-foreground">—</span>
                   ) : itemUsaSplitCorrida(it) ? (
@@ -1301,8 +1505,9 @@ export function NFeEntradaConferenciaPanel({
                       ) : null}
                     </div>
                   )}
-                </td>
-                <td>
+                </div>
+                <div>
+                  <h4 className="mb-1 text-xs font-medium">{modoTecnico ? 'Estoque calculado' : 'Conversão'}</h4>
                   {it.status === 'IGNORADO' ? (
                     <span className="text-xs text-muted-foreground">—</span>
                   ) : itemUsaEquivalenciaEntrada(it) ? (
@@ -1383,12 +1588,13 @@ export function NFeEntradaConferenciaPanel({
                     </div>
                   ) : null}
                   {it.alertas?.length ? <div className="text-xs text-destructive">{it.alertas.join(', ')}</div> : null}
-                </td>
-                <td className="min-w-0 sm:min-w-[9.5rem]">
-                  <span className={`${badgeClassStatusConferencia(it.status)} text-[10px] mb-1 inline-block`}>
-                    {labelStatusConferenciaItem(it.status)}
-                  </span>
+                </div>
+                <div className="min-w-0">
+                  <label className="mb-1 block text-xs font-medium" htmlFor={`${camposId}-status-${it.id}`}>
+                    Status
+                  </label>
                   <select
+                    id={`${camposId}-status-${it.id}`}
                     className="erp-select h-8 text-xs w-full"
                     value={it.status}
                     onChange={(e) =>
@@ -1404,40 +1610,69 @@ export function NFeEntradaConferenciaPanel({
                     <option value="IGNORADO">{labelStatusConferenciaItem('IGNORADO')}</option>
                   </select>
                   {it.status === 'IGNORADO' ? (
-                    <input
-                      className="erp-input h-8 text-xs mt-1"
-                      placeholder="Motivo para ignorar"
-                      value={it.motivo_ignorado || ''}
-                      onChange={(e) =>
-                        acoes.updateItem(it.id, { motivo_ignorado: normalizeOperationalInput(e.target.value) })
-                      }
-                    />
+                    <>
+                      <label className="sr-only" htmlFor={`${camposId}-motivo-ignorado-${it.id}`}>
+                        Motivo para ignorar
+                      </label>
+                      <input
+                        id={`${camposId}-motivo-ignorado-${it.id}`}
+                        className="erp-input h-8 text-xs mt-1"
+                        placeholder="Motivo para ignorar"
+                        value={it.motivo_ignorado || ''}
+                        onChange={(e) =>
+                          acoes.updateItem(it.id, { motivo_ignorado: normalizeOperationalInput(e.target.value) })
+                        }
+                      />
+                    </>
                   ) : null}
-                </td>
-              </tr>
+                </div>
+                </section>
+                </div>
+              </ItemConferenciaCompacto>
               );
             })}
-          </tbody>
-        </table>
+        </div>
       </div>
       <div className="erp-card p-4 mt-4">
-        <label className="flex items-center gap-2 text-sm mb-2">
-          <input
-            type="checkbox"
-            checked={Boolean(dados?.divergencias_aceitas)}
-            onChange={(e) => dados && acoes.setDados({ ...dados, divergencias_aceitas: e.target.checked })}
+          {dados?.divergencias_aceitas ? (
+            <div className="erp-card p-4 mt-4">
+              <span className="erp-badge-success text-[10px]">Diferenças aceitas ✓</span>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="erp-button--primary w-full"
+              onClick={async () => {
+                setLoading(true);
+                try {
+                  const payload = {
+                    divergencias_aceitas: true,
+                  };
+                  const next = await nfeEntradaConferenciaService.salvar(nfId, payload);
+                  if (!ativoRef.current) return;
+                  acoes.setDados(next);
+                  await acoes.hydrateProdutoCache(next);
+                  if (ativoRef.current) toast.success('Diferenças aceitas e salvas');
+                } catch (err) {
+                  if (ativoRef.current) toast.error('Não foi possível salvar divergências');
+                } finally {
+                  if (ativoRef.current) setLoading(false);
+                }
+              }}
+              disabled={loading}
+            >
+              {loading ? 'Salvando...' : 'Aceitar diferenças e salvar'}
+            </button>
+          )}
+          <textarea
+            className="erp-input w-full min-h-[88px]"
+            placeholder="Observação das diferenças (se houver)"
+            value={dados?.observacao_divergencias || ''}
+            onChange={(e) =>
+              dados && acoes.setDados({ ...dados, observacao_divergencias: normalizeOperationalInput(e.target.value) })
+            }
           />
-          Aceitar diferenças com o pedido
-        </label>
-        <textarea
-          className="erp-input w-full min-h-[88px]"
-          placeholder="Observação das diferenças (se houver)"
-          value={dados?.observacao_divergencias || ''}
-          onChange={(e) =>
-            dados && acoes.setDados({ ...dados, observacao_divergencias: normalizeOperationalInput(e.target.value) })
-          }
-        />
-      </div>
+        </div>
       {/**
        * Sprint 3.18-3 (upgrade de UX): barra agrupada, única fonte de ações nos dois modos
        * (decisão do PO — o cabeçalho do FormShell ficou só com título, pipeline e voltar).
@@ -1534,17 +1769,19 @@ export function NFeEntradaConferenciaPanel({
         nfId={nfId}
         busy={busy}
         dataEntrada={dados?.data_entrada}
-        onBusyChange={(next) => acoes.setBusy(next)}
+        onBusyChange={(next) => { if (ativoRef.current) acoes.setBusy(next); }}
         onValidarAbrir={() => {
+          if (!ativoRef.current) return false;
           if (dados?.data_entrada) return true;
           acoes.setErro('Informe a data de entrada da NF-e antes de aplicar estoque físico.');
           return false;
         }}
         onSalvarSilencioso={async () => {
           const saved = await salvarSilencioso();
-          if (saved) acoes.setDados(saved);
+          if (ativoRef.current && saved) acoes.setDados(saved);
         }}
         onAplicado={async (res) => {
+          if (!ativoRef.current) return;
           if (res.conferencia) {
             acoes.setDados(res.conferencia);
             await acoes.hydrateProdutoCache(res.conferencia);
@@ -1559,6 +1796,7 @@ export function NFeEntradaConferenciaPanel({
         ref={financeiroBlocoRef}
         nfId={nfId}
         onGerado={(tituloId) => {
+          if (!ativoRef.current) return;
           void acoes.load(nfId).catch(() => undefined);
           notifyUpdated();
           if (tituloId && !embedded) {
@@ -1572,19 +1810,21 @@ export function NFeEntradaConferenciaPanel({
         embedded={embedded}
         onUpdated={notifyUpdated}
         onConferenciaReaberta={(resultado) => {
+          if (!ativoRef.current) return;
           acoes.setDados(resultado.conferencia);
           void acoes.hydrateProdutoCache(resultado.conferencia);
         }}
-        onNavigateConferencia={() => navigate(`/nfe-entrada/${nfId}/conferencia`)}
+        onNavigateConferencia={() => { if (ativoRef.current) navigate(`/nfe-entrada/${nfId}/conferencia`); }}
       />
 
       <DevolucaoEntradaBloco
         ref={devolucaoBlocoRef}
         nfeHistoricaId={nfId}
         itensConferencia={dados?.itens ?? []}
-        onDevolucaoGerada={() => void acoes.load(nfId)}
+        onDevolucaoGerada={() => { if (ativoRef.current) void acoes.load(nfId); }}
       />
-
+      </>
+      ) : null}
     </>
   );
 
