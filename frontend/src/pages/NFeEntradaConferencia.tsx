@@ -5,7 +5,7 @@ const NFeEntradaConferenciaPage = () => {
   const { id } = useParams();
   const nfId = Number(id);
   if (!nfId) return null;
-  return <NFeEntradaConferenciaPanel nfeHistoricaId={nfId} />;
+  return <NFeEntradaConferenciaPanel key={nfId} nfeHistoricaId={nfId} />;
 };
 
 export default NFeEntradaConferenciaPage;

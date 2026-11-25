@@ -1097,6 +1097,15 @@ class NFeEntradaConferencia(models.Model):
         PREPARADA = 'PREPARADA', 'Entrada preparada'
         CANCELADA = 'CANCELADA', 'Cancelada/Revertida'
 
+    class FinalidadeEntrada(models.TextChoices):
+        COMPRA_REVENDA = 'COMPRA_REVENDA', 'Comprar para Revenda'
+        CONSUMO_PROPRIIO = 'CONSUMO_PROPRIIO', 'Uso e Consumo / Ativo'
+        INDUSTRIALIZACAO = 'INDUSTRIALIZACAO', 'Industrialização / Insumo'
+        DEVOLUCAO_VENDA = 'DEVOLUCAO_VENDA', 'Devolução de Venda'
+        BONIFICACAO = 'BONIFICACAO', 'Bonificação Recebida'
+        FRETE_TRANSPORTE = 'FRETE_TRANSPORTE', 'Frete / Transporte'
+        OUTROS = 'OUTROS', 'Outros'
+
     nf_entrada_historica = models.OneToOneField(
         NFeEntradaHistoricaImportada,
         on_delete=models.CASCADE,
@@ -1110,6 +1119,23 @@ class NFeEntradaConferencia(models.Model):
         related_name='conferencias_nf_entrada',
     )
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDENTE)
+    chegada_em = models.DateTimeField(null=True, blank=True)
+    recebido_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='+',
+    )
+    local_recebimento = models.CharField(max_length=255, blank=True, default='')
+    observacao_chegada = models.TextField(blank=True, default='')
+    finalidade_entrada = models.CharField(
+        max_length=32,
+        choices=FinalidadeEntrada.choices,
+        blank=True,
+        default='',
+        help_text='Definida pelo operador ao iniciar. Alimenta o match fiscal.',
+    )
     divergencias_aceitas = models.BooleanField(default=False)
     observacao_divergencias = models.TextField(blank=True)
     preparado_em = models.DateTimeField(null=True, blank=True)
@@ -1263,11 +1289,85 @@ class ItemNFeEntradaConferencia(models.Model):
     )
     pedido_baixa_aplicada_em = models.DateTimeField(null=True, blank=True)
     conversao_estoque_auditoria = models.JSONField(default=dict, blank=True)
+    # Classificação fiscal efetiva (override manual auditável). Vazio = XML/regra.
+    ncm_efetivo = models.CharField(max_length=8, blank=True)
+    cfop_entrada_efetivo = models.CharField(max_length=8, blank=True)
+    cst_icms_efetivo = models.CharField(max_length=4, blank=True)
+    csosn_efetivo = models.CharField(max_length=4, blank=True)
+    cst_ipi_efetivo = models.CharField(max_length=4, blank=True)
+    cst_pis_efetivo = models.CharField(max_length=4, blank=True)
+    cst_cofins_efetivo = models.CharField(max_length=4, blank=True)
+    cst_icms_st_efetivo = models.CharField(max_length=4, blank=True)
+    origem_mercadoria_efetivo = models.CharField(max_length=2, blank=True)
+    modalidade_bc_icms_efetivo = models.CharField(max_length=4, blank=True)
+    codigo_beneficio_efetivo = models.CharField(max_length=20, blank=True)
+    motivo_desoneracao_efetivo = models.CharField(max_length=4, blank=True)
+    base_icms_efetivo = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    aliquota_icms_efetivo = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    valor_icms_efetivo = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    reducao_bc_icms_efetivo = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    base_icms_st_efetivo = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    aliquota_icms_st_efetivo = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    valor_icms_st_efetivo = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    mva_st_efetivo = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    reducao_bc_st_efetivo = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    aliquota_fcp_efetivo = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    valor_fcp_efetivo = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    aliquota_fcp_st_efetivo = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    valor_fcp_st_efetivo = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    base_ipi_efetivo = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    aliquota_ipi_efetivo = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    valor_ipi_efetivo = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    base_pis_efetivo = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    aliquota_pis_efetivo = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    valor_pis_efetivo = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    reducao_base_pis_efetivo = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    base_cofins_efetivo = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    aliquota_cofins_efetivo = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    valor_cofins_efetivo = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    reducao_base_cofins_efetivo = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    motivo_ajuste_fiscal = models.TextField(blank=True)
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['item_nfe_historico__n_item']
+
+
+class ItemConferenciaFiscalOverride(models.Model):
+    """Trilha de auditoria de cada ajuste manual de classificação fiscal."""
+
+    item_conferencia = models.ForeignKey(
+        ItemNFeEntradaConferencia,
+        on_delete=models.CASCADE,
+        related_name='fiscal_overrides',
+    )
+    campo = models.CharField(max_length=64)
+    valor_anterior = models.CharField(max_length=120, blank=True)
+    valor_novo = models.CharField(max_length=120, blank=True)
+    motivo = models.TextField()
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='ajustes_fiscais_conferencia',
+    )
+    usuario_nome = models.CharField(max_length=150, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    snapshot_regra = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ['-criado_em']
+        indexes = [
+            models.Index(fields=['item_conferencia', '-criado_em'], name='fiscal_over_item_criado_idx'),
+        ]
+        permissions = [
+            ('can_adjust_fiscal_classification', 'Pode ajustar classificação fiscal'),
+        ]
+
+    def __str__(self) -> str:
+        return f'{self.campo}: {self.valor_anterior or "—"} -> {self.valor_novo or "—"}'
 
 
 class ItemNFeEntradaConferenciaEquivalencia(models.Model):
