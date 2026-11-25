@@ -323,8 +323,10 @@ def vincular_item_conferencia_a_atendimento(
     if qtd <= 0:
         raise ValueError('Quantidade deve ser maior que zero.')
 
+    # select_related gera LEFT OUTER JOIN em nf_saida (nullable); o PostgreSQL nao
+    # permite FOR UPDATE no lado nullable do join, entao travamos so a tabela principal.
     atend = (
-        AtendimentoEstoque.objects.select_for_update()
+        AtendimentoEstoque.objects.select_for_update(of=('self',))
         .select_related('nf_saida', 'nf_saida__cliente', 'produto')
         .get(pk=atendimento.pk)
     )

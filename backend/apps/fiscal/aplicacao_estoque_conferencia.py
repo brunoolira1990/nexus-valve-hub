@@ -354,8 +354,11 @@ def montar_preview_aplicacao_estoque_conferencia(
     conferencia: NFeEntradaConferencia,
     *,
     confirmar_alertas: bool = False,
+    persistir: bool = True,
 ) -> ResultadoAplicacaoEstoqueDict:
-    return _montar_resultado_plano(conferencia, confirmar_alertas=confirmar_alertas, aplicar=False)
+    return _montar_resultado_plano(
+        conferencia, confirmar_alertas=confirmar_alertas, aplicar=False, persistir=persistir,
+    )
 
 
 def _montar_resultado_plano(
@@ -363,6 +366,7 @@ def _montar_resultado_plano(
     *,
     confirmar_alertas: bool,
     aplicar: bool,
+    persistir: bool = True,
 ) -> ResultadoAplicacaoEstoqueDict:
     resultado: ResultadoAplicacaoEstoqueDict = {
         'aplicado': False,
@@ -423,7 +427,7 @@ def _montar_resultado_plano(
         ).prefetch_related('corridas_split', 'equivalencias', 'estoque_barras').all(),
     )
     for item in itens:
-        aplicar_pos_save_item_conferencia(item, conferencia)
+        aplicar_pos_save_item_conferencia(item, conferencia, persistir=persistir)
 
     planos = _avaliar_contexto_itens(conferencia, itens)
 

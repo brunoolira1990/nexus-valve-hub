@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import copy
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
@@ -74,13 +75,28 @@ def nfe_entrada_xml_valido_para_financeiro(nf: NFeEntradaHistoricaImportada) -> 
     return bool((nf.numero or '').strip()) and _round_money(nf.valor_total_nf or 0) > 0
 
 
-def _garantir_fornecedor_identificado(nf: NFeEntradaHistoricaImportada) -> NFeEntradaHistoricaImportada:
+def _garantir_fornecedor_identificado(
+    nf: NFeEntradaHistoricaImportada, *, persistir: bool = True,
+) -> NFeEntradaHistoricaImportada:
     if nf.fornecedor_emitente_id:
         return nf
-    from apps.fiscal.fornecedor_entrada import tentar_vincular_fornecedor_nfe_entrada
+    from apps.fiscal.fornecedor_entrada import (
+        StatusIdentificacaoFornecedor,
+        identificar_fornecedor_por_party,
+        tentar_vincular_fornecedor_nfe_entrada,
+    )
 
-    tentar_vincular_fornecedor_nfe_entrada(nf, persistir=True)
-    return NFeEntradaHistoricaImportada.objects.select_related('fornecedor_emitente').get(pk=nf.pk)
+    if persistir:
+        tentar_vincular_fornecedor_nfe_entrada(nf, persistir=True)
+        return NFeEntradaHistoricaImportada.objects.select_related('fornecedor_emitente').get(pk=nf.pk)
+
+    resultado = identificar_fornecedor_por_party(nf.emit_json)
+    if resultado.status == StatusIdentificacaoFornecedor.ENCONTRADO_UNICO and resultado.fornecedor_id:
+        nf = copy(nf)
+        nf._state = copy(nf._state)
+        nf._state.fields_cache = nf._state.fields_cache.copy()
+        nf.fornecedor_emitente_id = resultado.fornecedor_id
+    return nf
 
 
 def motivo_bloqueio_financeiro_real(
@@ -88,9 +104,10 @@ def motivo_bloqueio_financeiro_real(
     conferencia: NFeEntradaConferencia | None = None,
     *,
     vinculados: list[TituloFinanceiro] | None = None,
+    vincular_fornecedor: bool = True,
 ) -> str:
     """Retorna motivo de bloqueio financeiro real ou string vazia se pode gerar."""
-    nf = _garantir_fornecedor_identificado(nf)
+    nf = _garantir_fornecedor_identificado(nf, persistir=vincular_fornecedor)
     conf = conferencia if conferencia is not None else _resolve_conferencia(nf)
     titulos = vinculados if vinculados is not None else list(titulos_vinculados_nfe_entrada(nf))
     if titulos:
@@ -173,9 +190,15 @@ def detectar_pendencias_operacionais_nfe_entrada(
             pass
 
     possui = bool(motivos)
+    # Sublistas nomeadas para exposicao separada (nao mudam as flags geradas)
+    flags_estado = [m for m in motivos if m in {'estoque_nao_aplicado', 'conferencia_em_andamento', 'estoque_nao_preparado', 'conferencia_nao_iniciada'}]
+    flags_aviso = [m for m in motivos if m in {'divergencia_pedido_compra', 'produto_nao_vinculado', 'item_conferencia_pendente'}]
+
     return {
-        'possui_pendencias_operacionais': possui,
-        'motivos_pendencias_operacionais': motivos,
+        'possui_pendencias_operacionais': possui,  # mantido para backward-compat
+        'motivos_pendencias_operacionais': motivos,  # lista completa (sem alteracao de calculo)
+        'processo_estado': flags_estado,  # apenas flags de estado/processo
+        'pedido_aviso': flags_aviso,  # apenas flags de aviso / pedido
         'aviso_pendencias_operacionais': MSG_AVISO_PENDENCIAS_OPERACIONAIS if possui else '',
         'pode_gerar_com_pendencias': possui,
     }
@@ -216,12 +239,16 @@ def montar_origem_descricao_nfe_entrada(
 def montar_flags_financeiro_nfe_entrada(
     nf: NFeEntradaHistoricaImportada,
     conferencia: NFeEntradaConferencia | None = None,
+    *,
+    vincular_fornecedor: bool = True,
 ) -> dict[str, Any]:
-    nf = _garantir_fornecedor_identificado(nf)
+    nf = _garantir_fornecedor_identificado(nf, persistir=vincular_fornecedor)
     conf = conferencia if conferencia is not None else _resolve_conferencia(nf)
     vinculados = list(titulos_vinculados_nfe_entrada(nf))
     financeiro_gerado = bool(vinculados)
-    motivo = motivo_bloqueio_financeiro_real(nf, conf, vinculados=vinculados)
+    motivo = motivo_bloqueio_financeiro_real(
+        nf, conf, vinculados=vinculados, vincular_fornecedor=vincular_fornecedor,
+    )
     pode_gerar = not financeiro_gerado and not motivo
     pendencias = detectar_pendencias_operacionais_nfe_entrada(nf, conf)
 
@@ -268,15 +295,17 @@ def _eh_nota_servico(nf: NFeEntradaHistoricaImportada) -> bool:
 
 
 def preview_contas_pagar_de_nfe_entrada(nf: NFeEntradaHistoricaImportada) -> dict[str, Any]:
-    nf = _garantir_fornecedor_identificado(nf)
+    nf = _garantir_fornecedor_identificado(nf, persistir=False)
     conf = _resolve_conferencia(nf)
-    motivo = motivo_bloqueio_financeiro_real(nf, conf)
+    motivo = motivo_bloqueio_financeiro_real(nf, conf, vincular_fornecedor=False)
     if motivo:
         raise ValueError(motivo)
 
     total = _round_money(nf.valor_total_nf or 0)
-    parcelas, origem_parcelas, aviso_origem_parcelas = montar_parcelas_sugeridas_nf_entrada(nf, conf)
-    flags = montar_flags_financeiro_nfe_entrada(nf, conf)
+    parcelas, origem_parcelas, aviso_origem_parcelas = montar_parcelas_sugeridas_nf_entrada(
+        nf, conf, persistir=False,
+    )
+    flags = montar_flags_financeiro_nfe_entrada(nf, conf, vincular_fornecedor=False)
     forn = nf.fornecedor_emitente
     pedido_numero = conf.pedido_compra.numero if conf and conf.pedido_compra_id else ''
 
@@ -439,6 +468,7 @@ def gerar_contas_pagar_de_nfe_entrada(
     usuario=None,
 ) -> TituloFinanceiro:
     nf = NFeEntradaHistoricaImportada.objects.select_for_update(of=('self',)).get(pk=nf.pk)
+    nf = _garantir_fornecedor_identificado(nf)
     conf = _resolve_conferencia(nf)
     flags = montar_flags_financeiro_nfe_entrada(nf, conf)
     motivo = flags.get('motivo_bloqueio_financeiro') or ''

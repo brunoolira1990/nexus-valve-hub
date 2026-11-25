@@ -76,6 +76,8 @@ def equivalencias_sao_legado_para_composicao(
 
 def limpar_equivalencias_legado_se_composicao_fisica(
     item: ItemNFeEntradaConferencia,
+    *,
+    persistir: bool = True,
 ) -> bool:
     """
     Remove equivalências gravadas no formato antigo quando o produto passou a usar composição física.
@@ -88,7 +90,12 @@ def limpar_equivalencias_legado_se_composicao_fisica(
     equivs = list(item.equivalencias.order_by('ordem', 'id'))
     if not equivalencias_sao_legado_para_composicao(equivs, item_tipo_composicao_fisica(item)):
         return False
-    item.equivalencias.all().delete()
+    if persistir:
+        item.equivalencias.all().delete()
+    else:
+        if not hasattr(item, '_prefetched_objects_cache'):
+            item._prefetched_objects_cache = {}
+        item._prefetched_objects_cache['equivalencias'] = []
     item.quantidade_estoque_calculada = Decimal('0')
     item.metros_total = Decimal('0')
     item.barras_total = Decimal('0')
@@ -394,6 +401,8 @@ def montar_auditoria_composicao_pecas_kg(
 def aplicar_totais_composicao_pecas_kg_item(
     item_conf: ItemNFeEntradaConferencia,
     equivs: list[ItemNFeEntradaConferenciaEquivalencia],
+    *,
+    persistir: bool = True,
 ) -> None:
     """Define estoque calculado em KG a partir das peças informadas (1 linha = 1 peça)."""
     peso_total = sum(_peso_real_row(e) for e in equivs)
@@ -412,7 +421,7 @@ def aplicar_totais_composicao_pecas_kg_item(
         (peso_total / Decimal('1000')).quantize(Decimal('0.001')) if peso_total else Decimal('0')
     )
     item_conf.conversao_estoque_auditoria = montar_auditoria_composicao_pecas_kg(item_conf, equivs)
-    if equivs:
+    if persistir and equivs:
         ItemNFeEntradaConferenciaEquivalencia.objects.bulk_update(
             equivs,
             ['metros', 'barras', 'qtd_barras', 'comprimento_unitario_m'],
@@ -465,10 +474,12 @@ def montar_auditoria_composicao_fisica(
 def aplicar_totais_composicao_fisica_item(
     item_conf: ItemNFeEntradaConferencia,
     equivs: list[ItemNFeEntradaConferenciaEquivalencia],
+    *,
+    persistir: bool = True,
 ) -> None:
     """Define estoque calculado a partir da composição informada (M para barra, KG para peça)."""
     if item_e_peca_kg(item_conf):
-        aplicar_totais_composicao_pecas_kg_item(item_conf, equivs)
+        aplicar_totais_composicao_pecas_kg_item(item_conf, equivs, persistir=persistir)
         return
     metros_total = sum(total_linha_composicao_m(e) for e in equivs)
     barras_total = Decimal(total_barras_composicao(equivs))
@@ -493,7 +504,7 @@ def aplicar_totais_composicao_fisica_item(
         (peso_total / Decimal('1000')).quantize(Decimal('0.001')) if peso_total else Decimal('0')
     )
     item_conf.conversao_estoque_auditoria = montar_auditoria_composicao_fisica(item_conf, equivs)
-    if equivs:
+    if persistir and equivs:
         ItemNFeEntradaConferenciaEquivalencia.objects.bulk_update(
             equivs,
             ['metros', 'barras', 'peso_kg'],

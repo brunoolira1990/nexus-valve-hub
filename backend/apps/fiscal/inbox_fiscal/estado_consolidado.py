@@ -118,7 +118,7 @@ def _conferencia_nfe_em_andamento(conf: NFeEntradaConferencia | None) -> bool:
         return False
     if conf.status != NFeEntradaConferencia.Status.PENDENTE:
         return False
-    if conf.pedido_compra_id:
+    if conf.chegada_em or conf.pedido_compra_id:
         return True
     return conf.itens.exclude(status=ItemNFeEntradaConferencia.Status.PENDENTE_PRODUTO).exists()
 
