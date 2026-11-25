@@ -79,6 +79,7 @@ from apps.fiscal.views import (
     AtendimentoEstoqueViewSet,
     CTeEntradaViewSet,
     CTeHistoricoImportadoViewSet,
+    ConferenciaItemFiscalViewSet,
     EstoqueKardexViewSet,
     EstoqueSaldosConsolidadosViewSet,
     EstoqueSaldosViewSet,
@@ -187,6 +188,7 @@ router.register(
     NFeEntradaHistoricaImportadaViewSet,
     basename='nf-entrada-hist-importada',
 )
+router.register(r'conferencia/items', ConferenciaItemFiscalViewSet, basename='conferencia-item-fiscal')
 router.register(r'cte-entradas', CTeEntradaViewSet, basename='cteentrada')
 router.register(r'cte-historicos-importados', CTeHistoricoImportadoViewSet, basename='cte-hist-importado')
 router.register(r'painel-fiscal-gerencial-historico', PainelFiscalGerencialHistoricoViewSet, basename='painel-fiscal-gerencial')

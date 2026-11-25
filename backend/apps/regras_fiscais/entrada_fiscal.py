@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any, TypedDict
 
 from apps.comercial.pricing import normalize_ncm
@@ -78,6 +78,9 @@ class ImpostosSnapshotDict(TypedDict, total=False):
 class ResultadoFiscalEntradaOpcionalDict(TypedDict, total=False):
     tem_reforma_configurada: bool
     reforma_tributaria_esperada: dict[str, str]
+    ajustes_fiscais_ativos: list[dict[str, Any]]
+    total_ajustes_fiscais: int
+    impostos_xml_originais: ImpostosSnapshotDict
 
 
 class ResultadoFiscalEntradaDict(ResultadoFiscalEntradaOpcionalDict):
@@ -935,6 +938,155 @@ def _extrair_tributos_item_conf(item_conf: ItemNFeEntradaConferencia) -> dict[st
     return extrair_tributos_item(prod_json, imposto_json)
 
 
+@dataclass(frozen=True)
+class CampoEfetivoFiscal:
+    campo_modelo: str
+    chave: str
+    label: str
+    tipo: str
+    destino: str = 'tributo'
+
+
+# Overrides manuais por item da conferência. Vazio (None/'') = XML/regra.
+CAMPOS_EFETIVOS_FISCAIS: tuple[CampoEfetivoFiscal, ...] = (
+    CampoEfetivoFiscal('ncm_efetivo', 'NCM', 'NCM', 'texto', 'produto'),
+    CampoEfetivoFiscal('cfop_entrada_efetivo', 'CFOP', 'CFOP de entrada', 'texto', 'produto'),
+    CampoEfetivoFiscal('cst_icms_efetivo', 'cst_icms', 'CST ICMS', 'texto'),
+    CampoEfetivoFiscal('csosn_efetivo', 'csosn', 'CSOSN', 'texto'),
+    CampoEfetivoFiscal('cst_ipi_efetivo', 'cst_ipi', 'CST IPI', 'texto'),
+    CampoEfetivoFiscal('cst_pis_efetivo', 'cst_pis', 'CST PIS', 'texto'),
+    CampoEfetivoFiscal('cst_cofins_efetivo', 'cst_cofins', 'CST COFINS', 'texto'),
+    CampoEfetivoFiscal('cst_icms_st_efetivo', 'cst_icms_st_nf', 'CST ICMS ST', 'texto'),
+    CampoEfetivoFiscal('origem_mercadoria_efetivo', 'origem_mercadoria', 'Origem da mercadoria', 'texto'),
+    CampoEfetivoFiscal('modalidade_bc_icms_efetivo', 'modalidade_bc_icms', 'Modalidade BC ICMS', 'texto'),
+    CampoEfetivoFiscal('codigo_beneficio_efetivo', 'codigo_beneficio_icms', 'Código benefício ICMS', 'texto'),
+    CampoEfetivoFiscal('motivo_desoneracao_efetivo', 'motivo_desoneracao_icms', 'Motivo desoneração ICMS', 'texto'),
+    CampoEfetivoFiscal('base_icms_efetivo', 'base_icms', 'Base ICMS', 'decimal'),
+    CampoEfetivoFiscal('aliquota_icms_efetivo', 'aliquota_icms', 'Alíquota ICMS', 'decimal'),
+    CampoEfetivoFiscal('valor_icms_efetivo', 'valor_icms', 'Valor ICMS', 'decimal'),
+    CampoEfetivoFiscal('reducao_bc_icms_efetivo', 'reducao_bc_icms', 'Redução BC ICMS', 'decimal'),
+    CampoEfetivoFiscal('base_icms_st_efetivo', 'base_icms_st', 'Base ICMS ST', 'decimal'),
+    CampoEfetivoFiscal('aliquota_icms_st_efetivo', 'aliquota_icms_st', 'Alíquota ICMS ST', 'decimal'),
+    CampoEfetivoFiscal('valor_icms_st_efetivo', 'valor_icms_st', 'Valor ICMS ST', 'decimal'),
+    CampoEfetivoFiscal('mva_st_efetivo', 'mva_st', 'MVA ST', 'decimal'),
+    CampoEfetivoFiscal('reducao_bc_st_efetivo', 'reducao_bc_st', 'Redução BC ST', 'decimal'),
+    CampoEfetivoFiscal('aliquota_fcp_efetivo', 'aliquota_fcp', 'Alíquota FCP', 'decimal'),
+    CampoEfetivoFiscal('valor_fcp_efetivo', 'valor_fcp', 'Valor FCP', 'decimal'),
+    CampoEfetivoFiscal('aliquota_fcp_st_efetivo', 'aliquota_fcp_st', 'Alíquota FCP ST', 'decimal'),
+    CampoEfetivoFiscal('valor_fcp_st_efetivo', 'valor_fcp_st', 'Valor FCP ST', 'decimal'),
+    CampoEfetivoFiscal('base_ipi_efetivo', 'base_ipi', 'Base IPI', 'decimal'),
+    CampoEfetivoFiscal('aliquota_ipi_efetivo', 'aliquota_ipi', 'Alíquota IPI', 'decimal'),
+    CampoEfetivoFiscal('valor_ipi_efetivo', 'valor_ipi', 'Valor IPI', 'decimal'),
+    CampoEfetivoFiscal('base_pis_efetivo', 'base_pis', 'Base PIS', 'decimal'),
+    CampoEfetivoFiscal('aliquota_pis_efetivo', 'aliquota_pis', 'Alíquota PIS', 'decimal'),
+    CampoEfetivoFiscal('valor_pis_efetivo', 'valor_pis', 'Valor PIS', 'decimal'),
+    CampoEfetivoFiscal('reducao_base_pis_efetivo', 'reducao_base_pis', 'Redução base PIS', 'decimal'),
+    CampoEfetivoFiscal('base_cofins_efetivo', 'base_cofins', 'Base COFINS', 'decimal'),
+    CampoEfetivoFiscal('aliquota_cofins_efetivo', 'aliquota_cofins', 'Alíquota COFINS', 'decimal'),
+    CampoEfetivoFiscal('valor_cofins_efetivo', 'valor_cofins', 'Valor COFINS', 'decimal'),
+    CampoEfetivoFiscal('reducao_base_cofins_efetivo', 'reducao_base_cofins', 'Redução base COFINS', 'decimal'),
+)
+
+CHAVES_ST_EFETIVO = frozenset({
+    'cst_icms_st_nf',
+    'base_icms_st',
+    'aliquota_icms_st',
+    'valor_icms_st',
+    'mva_st',
+    'reducao_bc_st',
+})
+CHAVES_FCP_EFETIVO = frozenset({
+    'aliquota_fcp',
+    'valor_fcp',
+    'aliquota_fcp_st',
+    'valor_fcp_st',
+})
+
+
+def _dec_efetivo(valor: Any) -> Decimal | None:
+    if valor in (None, ''):
+        return None
+    try:
+        return Decimal(str(valor))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _texto_efetivo(valor: Any) -> str:
+    return str(valor or '').strip()
+
+
+def _valor_efetivo_preenchido(valor: Any, tipo: str) -> bool:
+    if tipo == 'decimal':
+        return _dec_efetivo(valor) is not None
+    return bool(_texto_efetivo(valor))
+
+
+def _normalizar_valor_efetivo(valor: Any, tipo: str) -> Decimal | str:
+    if tipo == 'decimal':
+        return _dec_efetivo(valor)
+    return _texto_efetivo(valor)
+
+
+def fmt_valor_efetivo(valor: Any, tipo: str) -> str:
+    if tipo == 'decimal':
+        dec = _dec_efetivo(valor)
+        return '' if dec is None else format(dec.normalize(), 'f')
+    return _texto_efetivo(valor)
+
+
+def valores_efetivos_iguais(anterior: Any, atual: Any, tipo: str) -> bool:
+    return _normalizar_valor_efetivo(anterior, tipo) == _normalizar_valor_efetivo(atual, tipo)
+
+
+def aplicar_overrides_fiscais_entrada(
+    item_conf: ItemNFeEntradaConferencia,
+    trib: dict[str, Any],
+    prod_json: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+    """Sobrepõe os tributos do XML pelos campos *_efetivo do item.
+
+    Devolve (tributos efetivos, prod_json efetivo, ajustes ativos).
+    Campos *_efetivo vazios preservam o comportamento legado (XML).
+    """
+    trib_ef = dict(trib)
+    prod_ef = dict(prod_json or {})
+    ajustes: list[dict[str, Any]] = []
+    chaves_efetivas: set[str] = set()
+
+    for campo in CAMPOS_EFETIVOS_FISCAIS:
+        valor = getattr(item_conf, campo.campo_modelo, None)
+        if not _valor_efetivo_preenchido(valor, campo.tipo):
+            continue
+        alvo = prod_ef if campo.destino == 'produto' else trib_ef
+        anterior = alvo.get(campo.chave)
+        if valores_efetivos_iguais(anterior, valor, campo.tipo):
+            continue
+        alvo[campo.chave] = _normalizar_valor_efetivo(valor, campo.tipo)
+        chaves_efetivas.add(campo.chave)
+        ajustes.append({
+            'campo': campo.campo_modelo,
+            'rotulo': campo.label,
+            'valor_xml': fmt_valor_efetivo(anterior, campo.tipo),
+            'valor_efetivo': fmt_valor_efetivo(valor, campo.tipo),
+        })
+
+    if chaves_efetivas & CHAVES_ST_EFETIVO:
+        trib_ef['icms_st_aplicavel_nf'] = True
+    if chaves_efetivas & CHAVES_FCP_EFETIVO:
+        trib_ef['fcp_presente_nf'] = True
+    return trib_ef, prod_ef, ajustes
+
+
+def resolver_prod_json_efetivo(item_conf: ItemNFeEntradaConferencia) -> dict[str, Any]:
+    _, prod_ef, _ = aplicar_overrides_fiscais_entrada(
+        item_conf,
+        {},
+        item_conf.item_nfe_historico.prod_json or {},
+    )
+    return prod_ef
+
+
 def _dados_legados_cst(trib: dict[str, Any], prod_json: dict[str, Any]) -> dict[str, str]:
     csosn = str(trib.get('csosn') or trib.get('cst_icms_detalhe') or '').strip()
     cst_icms = obter_cst_icms_bruto_nf(trib)
@@ -1186,9 +1338,20 @@ def avaliar_item_entrada_fiscal(
     contexto: ContextoFiscalEntrada,
     regras: list[RegraFiscalEntrada],
 ) -> ResultadoFiscalEntradaDict:
-    trib = _extrair_tributos_item_conf(item_conf)
-    prod_json = item_conf.item_nfe_historico.prod_json or {}
+    trib_xml = _extrair_tributos_item_conf(item_conf)
+    prod_json_xml = item_conf.item_nfe_historico.prod_json or {}
+    # Overrides manuais (_efetivo) entram ANTES do match: NCM/CFOP e tributos efetivos.
+    trib, prod_json, ajustes = aplicar_overrides_fiscais_entrada(
+        item_conf,
+        trib_xml,
+        prod_json_xml,
+    )
     base = _resultado_base(trib, prod_json)
+
+    if ajustes:
+        base['ajustes_fiscais_ativos'] = ajustes
+        base['total_ajustes_fiscais'] = len(ajustes)
+        base['impostos_xml_originais'] = _montar_impostos_nf(trib_xml)
 
     match = encontrar_regra_fiscal_entrada(
         regras,
@@ -1233,6 +1396,10 @@ def avaliar_item_entrada_fiscal(
         'impostos_esperados': _montar_impostos_esperados(regra),
         'divergencias': divergencias,
     }
+    if ajustes:
+        resultado['ajustes_fiscais_ativos'] = ajustes
+        resultado['total_ajustes_fiscais'] = len(ajustes)
+        resultado['impostos_xml_originais'] = _montar_impostos_nf(trib_xml)
     if reforma_tributaria_preenchida(regra.reforma_tributaria):
         resultado['tem_reforma_configurada'] = True
         resultado['reforma_tributaria_esperada'] = reforma_tributaria_para_snapshot(
