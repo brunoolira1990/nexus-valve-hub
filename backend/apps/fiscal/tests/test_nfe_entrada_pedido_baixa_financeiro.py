@@ -88,7 +88,6 @@ def _setup_pedido_conferencia(suffix: str, *, qty='10.000', vincular=True, data_
         produto=prod,
         quantidade=Decimal('20'),
         quantidade_negociada=Decimal('20'),
-        unidade_negociada='PC',
         valor_unitario=Decimal('15'),
         valor_total_item=Decimal('300'),
     )
@@ -119,9 +118,8 @@ def _setup_pedido_conferencia(suffix: str, *, qty='10.000', vincular=True, data_
     linha.produto = prod
     linha.quantidade_nf = Decimal(qty)
     linha.unidade_nf = 'PC'
-    linha.valor_unitario_nf = Decimal('15')
     linha.quantidade_estoque_calculada = Decimal(qty)
-    linha.corrida = f'C-{suffix}'.upper()
+    linha.corrida = f'C-{suffix}'
     linha.lote = 'L1'
     linha.status = ItemNFeEntradaConferencia.Status.CONFERIDO
     if vincular:
@@ -183,9 +181,6 @@ class NFeEntradaPedidoBaixaTests(TestCase):
 
     def test_aplicar_estoque_baixa_pedido_vinculado(self):
         ctx = _setup_pedido_conferencia('estbaixa')
-        # Recebimento parcial (10 de 20) é divergência operacional: o operador aceita antes de aplicar.
-        ctx['conf'].divergencias_aceitas = True
-        ctx['conf'].save(update_fields=['divergencias_aceitas'])
         res = aplicar_estoque_fisico_conferencia(ctx['conf'], confirmar_alertas=True)
         self.assertTrue(res['aplicado'])
         self.assertTrue(res['pedido_compra_baixa']['aplicado'])
@@ -194,8 +189,6 @@ class NFeEntradaPedidoBaixaTests(TestCase):
 
     def test_gerar_cp_nao_baixa_pedido(self):
         ctx = _setup_pedido_conferencia('cpnobx')
-        ctx['nf'].xml_conteudo = XML_COM_DUP
-        ctx['nf'].save(update_fields=['xml_conteudo'])
         User = get_user_model()
         user = User.objects.create_user(username='fin', password='x')
         client = APIClient()
@@ -239,8 +232,6 @@ class NFeEntradaPedidoBaixaTests(TestCase):
 
     def test_aplicar_estoque_usa_data_entrada_corrida(self):
         ctx = _setup_pedido_conferencia('datacorr', data_entrada=date(2026, 7, 5))
-        ctx['conf'].divergencias_aceitas = True
-        ctx['conf'].save(update_fields=['divergencias_aceitas'])
         ctx['nf'].dh_emissao = timezone.make_aware(datetime(2026, 6, 30, 18, 0))
         ctx['nf'].save(update_fields=['dh_emissao'])
         res = aplicar_estoque_fisico_conferencia(ctx['conf'], confirmar_alertas=True)

@@ -1,33 +1,16 @@
 import api from './config';
 import type {
-  AjusteFiscalPayload,
-  CandidatosPedidoConferencia,
-  EstadoChegadaNFeEntrada,
-  HistoricoAjustesFiscaisItem,
-  IniciarConferenciaNFeEntradaPayload,
   NFeEntradaConferencia,
-  PreviewFiscalItem,
   PreviewReaberturaEntradaFornecedor,
-  ResultadoAjusteFiscal,
   ResultadoAplicacaoEstoque,
   ResultadoReaberturaEntradaFornecedor,
 } from '@/types';
 
 const base = 'nf-entradas-historicas-importadas/';
-const fiscalBase = 'conferencia/items/';
 
 export const nfeEntradaConferenciaService = {
-  get: async (nfeHistoricaId: number) => {
-    const { conferencia } = (await api.get<EstadoChegadaNFeEntrada>(`${base}${nfeHistoricaId}/conferencia/`)).data;
-    if (!conferencia) throw new Error('Conferência ainda não iniciada.');
-    return conferencia;
-  },
-  getEstado: async (nfeHistoricaId: number) =>
-    (await api.get<EstadoChegadaNFeEntrada>(`${base}${nfeHistoricaId}/conferencia/`)).data,
-  iniciar: async (nfeHistoricaId: number, payload: IniciarConferenciaNFeEntradaPayload = {}) =>
-    (await api.post<EstadoChegadaNFeEntrada>(`${base}${nfeHistoricaId}/conferencia/iniciar/`, payload)).data,
-  candidatosPedido: async (nfeHistoricaId: number) =>
-    (await api.get<CandidatosPedidoConferencia>(`${base}${nfeHistoricaId}/conferencia/candidatos-pedido/`)).data,
+  get: async (nfeHistoricaId: number) =>
+    (await api.get<NFeEntradaConferencia>(`${base}${nfeHistoricaId}/conferencia/`)).data,
   salvar: async (nfeHistoricaId: number, payload: Partial<NFeEntradaConferencia>) =>
     (await api.post<NFeEntradaConferencia>(`${base}${nfeHistoricaId}/conferencia/`, payload)).data,
   prepararEstoque: async (nfeHistoricaId: number, payload?: { data_entrada?: string | null }) =>
@@ -103,14 +86,14 @@ export const nfeEntradaConferenciaService = {
     ).data,
   vincularFornecedor: async (nfeHistoricaId: number, fornecedorId: number) =>
     (
-      await api.post<{ conferencia: NFeEntradaConferencia | null }>(
+      await api.post<{ conferencia: NFeEntradaConferencia }>(
         `${base}${nfeHistoricaId}/fornecedor/vincular/`,
         { fornecedor_id: fornecedorId },
       )
     ).data,
   cadastrarVincularFornecedor: async (nfeHistoricaId: number, payload: Record<string, unknown>) =>
     (
-      await api.post<{ conferencia: NFeEntradaConferencia | null }>(
+      await api.post<{ conferencia: NFeEntradaConferencia }>(
         `${base}${nfeHistoricaId}/fornecedor/cadastrar-vincular/`,
         payload,
       )
@@ -134,10 +117,4 @@ export const nfeEntradaConferenciaService = {
         mensagem: string;
       }>(`${base}${nfeHistoricaId}/conferencia/gerar-saida-devolucao-compra/`, payload)
     ).data,
-  previewFiscal: async (itemConferenciaId: number) =>
-    (await api.get<PreviewFiscalItem>(`${fiscalBase}${itemConferenciaId}/fiscal-preview/`)).data,
-  ajustarFiscal: async (itemConferenciaId: number, payload: AjusteFiscalPayload) =>
-    (await api.patch<ResultadoAjusteFiscal>(`${fiscalBase}${itemConferenciaId}/fiscal-adjust/`, payload)).data,
-  historicoFiscal: async (itemConferenciaId: number) =>
-    (await api.get<HistoricoAjustesFiscaisItem>(`${fiscalBase}${itemConferenciaId}/fiscal-history/`)).data,
 };

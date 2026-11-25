@@ -150,7 +150,6 @@ class NFe401341ListagemReformaTests(TestCase):
                 'status',
                 'status_emissao_sefaz',
                 'listagem_resumo',
-                'chave_acesso',
             },
         )
 

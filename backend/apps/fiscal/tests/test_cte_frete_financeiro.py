@@ -12,7 +12,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from apps.cadastros.models import Empresa, Fornecedor, Transportadora
+from apps.cadastros.models import Fornecedor, Transportadora
 from apps.financeiro.models import TituloFinanceiro
 from apps.fiscal.cte_financeiro import (
     gerar_contas_pagar_de_cte,
@@ -46,13 +46,6 @@ class CteFreteFinanceiroTests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(self.user)
         self.dh = _dh()
-        self.emp, _ = Empresa.objects.get_or_create(
-            cnpj='03999102000150',
-            defaults={
-                'razao_social': 'Nexus Tomadora CT-e',
-                'nome_fantasia': 'Nexus Tomadora',
-            },
-        )
         self.transp = Transportadora.objects.create(
             razao_social='Transp Frete LTDA',
             cnpj='12345678000199',
@@ -136,7 +129,7 @@ class CteFreteFinanceiroTests(TestCase):
         self.assertEqual(frete.fornecedor_id, self.forn.id)
 
     def test_api_sugerir_rateio_exige_conferido(self):
-        cte = self._cte(chave='8' * 44, empresa_tomadora=self.emp)
+        cte = self._cte(chave='8' * 44)
         url = reverse('cte-hist-importado-sugerir-rateio-frete', args=[cte.id])
         r = self.client.get(url)
         self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)

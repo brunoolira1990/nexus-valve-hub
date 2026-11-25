@@ -62,6 +62,7 @@ class CteImportSomenteTomadorTests(TestCase):
             defaults={
                 'razao_social': 'Nexus Teste Tomador',
                 'nome_fantasia': 'Nexus',
+                'ativo': True,
             },
         )
 

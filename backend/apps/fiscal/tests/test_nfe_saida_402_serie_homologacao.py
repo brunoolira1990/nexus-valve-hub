@@ -31,7 +31,6 @@ from apps.fiscal.nfe_emissao.serie_fiscal import (
 from apps.fiscal.nfe_saida_conferencia import montar_conferencia_nfe_saida
 from apps.fiscal.nfe_saida_prontidao import marcar_nfe_pronta_para_emissao, validar_conferencia_nfe
 from apps.fiscal.serializers import NFeNumeracaoConfiguracaoSerializer
-from apps.fiscal.tests.test_nfe_saida_402_emissao_homologacao import _garantir_regra_saida_sp_rj
 from apps.produtos.models import FamiliaProduto, Produto
 
 
@@ -78,7 +77,6 @@ class NFe402SerieHomologacaoTests(TestCase):
         self.user = get_user_model().objects.create_user('serie402', 'serie402@test.com', 'x')
         self.client = APIClient()
         self.client.force_authenticate(self.user)
-        _garantir_regra_saida_sp_rj()
         self.empresa = _empresa()
         ensure_numeracao_padrao_nfe(self.empresa)
         self.hom = NFeNumeracaoConfiguracao.objects.get(
@@ -136,9 +134,7 @@ class NFe402SerieHomologacaoTests(TestCase):
             razao_social='Cli',
             cnpj=_cnpj(),
             uf='RJ',
-            # Deve bater com o CEP 20040002: validar_endereco_fiscal(consultar_cep=True)
-            # bloqueia a busca de regra quando a cidade diverge do ViaCEP.
-            cidade='Rio de Janeiro',
+            cidade='Rio',
             logradouro='Rua B',
             numero='2',
             bairro='Centro',
@@ -148,7 +144,7 @@ class NFe402SerieHomologacaoTests(TestCase):
             numero=f'PV-S-{uuid.uuid4().hex[:4]}',
             empresa_emitente=self.empresa,
             cliente=cli,
-            data=date.today(),
+            data=date(2026, 5, 23),
             status='ABERTO',
             valor_total=Decimal('100'),
         )
@@ -177,14 +173,6 @@ class NFe402SerieHomologacaoTests(TestCase):
         fat = FaturamentoPedidoVenda.objects.get(pk=criado['faturamento_id'])
         r = gerar_nfe_saida_from_faturamento(pedido, fat.pk)
         nf = NFeSaida.objects.get(pk=r['nfe_saida_id'])
-        # Replica o padrão probado de _pedido_nf(): garante cobertura fiscal vigente antes da prontidão.
-        _garantir_regra_saida_sp_rj()
-        nf.refresh_from_db()
-        # Estado mínimo exigido pela prontidão (higienização XML): indicadores confirmados.
-        nf.ind_final = '1'
-        nf.ind_pres = '1'
-        nf.indicadores_fiscais_confirmados = True
-        nf.save(update_fields=['ind_final', 'ind_pres', 'indicadores_fiscais_confirmados'])
         validar_conferencia_nfe(nf, usuario=self.user)
         marcar_nfe_pronta_para_emissao(nf, usuario=self.user)
         reservar_numeracao_nfe(nf, usuario=self.user)

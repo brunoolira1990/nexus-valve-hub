@@ -68,9 +68,8 @@ def _cliente_dest_dict(cli) -> dict[str, Any]:
 
 def _ie_from_origem(nf: NFeEntrada) -> str:
     """Fallback da IE do destinatário a partir da NF-e de origem / dest_json."""
-    # 1) Snapshot gravado na entrada (pode não existir em validação de rascunho novo)
-    dest_snap = getattr(nf, 'dest_json', None)
-    dest_snap = dest_snap if isinstance(dest_snap, dict) else {}
+    # 1) Snapshot gravado na entrada
+    dest_snap = nf.dest_json if isinstance(nf.dest_json, dict) else {}
     ie = _text(dest_snap.get('ie') or dest_snap.get('IE'))
     if ie:
         return ie

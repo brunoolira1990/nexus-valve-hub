@@ -298,7 +298,6 @@ def desvincular_alocacoes_entrada_venda_da_nf(
     return len(qs)
 
 
-@transaction.atomic
 def reabrir_entrada_fornecedor(
     nf_id: int,
     *,

@@ -72,7 +72,7 @@ _CONTEXTO_ENTRADA: dict[str, tuple[frozenset[str], frozenset[str]]] = {
 # Ações recomendadas por função: divergir daqui não é erro duro (a coluna `acao`
 # aceita qualquer nome máquina até 40 chars), mas loga warning para o fluxo
 # novo de PR 3 não inventar grafia sem revisão.
-ACOES_CONFERENCIA = frozenset({'conferir', 'reabrir', 'marcar_divergente', 'desvincular_alocacoes_venda', 'chegada_iniciada'})
+ACOES_CONFERENCIA = frozenset({'conferir', 'reabrir', 'marcar_divergente', 'desvincular_alocacoes_venda'})
 ACOES_ESTOQUE = frozenset({'preparar_estoque', 'aplicar_estoque', 'reverter_estoque'})
 # PR 3 Fase 1: 'salvar_rateio' pluggado na action frete/salvar-rateio do CT-e;
 # label humano correspondente adicionado no ACAO_LABELS (lib/auditoriaHistorico.ts).

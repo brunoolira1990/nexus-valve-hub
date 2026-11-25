@@ -4,17 +4,16 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import F, Prefetch, Q
+from django.db.models import Prefetch, Q
 from django.utils import timezone
 from rest_framework import response, status, viewsets
-from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from apps.qualidade.models import Certificado
-from apps.comercial.models import ItemPedidoCompra, PedidoCompra
+from apps.comercial.models import ItemPedidoCompra
 from apps.produtos.models import Produto
 
 from nexus_erp.list_mixins import AutocompleteOrPaginationMixin, aplicar_ordering
@@ -71,7 +70,6 @@ from .models import (
     NFeSaida,
     NFeSaidaHistoricaImportada,
 )
-from .entrada_conferencia_servico import iniciar_chegada, obter_conferencia, pode_registrar_chegada
 from .conferencia_pedido import (
     aplicar_pos_save_item_conferencia,
     limpar_vinculos_pedido_invalidos,
@@ -126,10 +124,6 @@ from .serializers import (
     NFeEntradaHistoricaImportadaListSerializer,
     NFeEntradaHistoricaImportadaSerializer,
     NFeEntradaConferenciaSerializer,
-    IniciarConferenciaNFeEntradaSerializer,
-    ItemConferenciaFiscalAdjustSerializer,
-    ItemConferenciaFiscalOverrideSerializer,
-    ItemConferenciaFiscalPreviewSerializer,
     ItemNFeEntradaConferenciaSerializer,
     EventoNFeSaidaHistoricaPendenteSerializer,
     NFeSaidaHistoricaImportadaListSerializer,
@@ -138,16 +132,19 @@ from .serializers import (
     NFeSaidaListSerializer,
     NFeSaidaSerializer,
 )
-from .fiscal_classificacao_manual import (
-    AjusteFiscalErro,
-    aplicar_ajuste_fiscal_item,
-    montar_preview_fiscal_item,
-)
-from .permissoes_classificacao_fiscal import PodeAjustarClassificacaoFiscal
 
 
 def _dec(v):
     return Decimal(str(v)) if v is not None else Decimal('0')
+
+
+def _extract_item_nf(prod_json: dict) -> dict:
+    return {
+        'unidade_nf': (prod_json.get('uCom') or prod_json.get('uTrib') or '').upper(),
+        'quantidade_nf': _dec(prod_json.get('qCom') or prod_json.get('qTrib') or 0),
+        'valor_unitario_nf': _dec(prod_json.get('vUnCom') or prod_json.get('vUnTrib') or 0),
+        'valor_total_nf': _dec(prod_json.get('vProd') or 0),
+    }
 
 
 class NFeEntradaViewSet(AutocompleteOrPaginationMixin, viewsets.ModelViewSet):
@@ -2625,10 +2622,6 @@ class NFeSaidaHistoricaImportadaViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         incluir_canceladas = str(self.request.query_params.get('incluir_canceladas', '')).lower() in {'1', 'true', 'sim'}
-        # Ação de negócio: a NF cancelada precisa ser alcançada para o serviço devolver
-        # o 400 explicativo (o filtro padrão de listagem a esconderia como 404).
-        if self.action == 'gerar_entrada_devolucao':
-            incluir_canceladas = True
         if not incluir_canceladas:
             qs = qs.filter(cancelada=False)
         if self.action == 'retrieve':
@@ -3022,6 +3015,25 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
             headers={'Content-Disposition': f'inline; filename="danfe-nfe-entrada-{chave}.pdf"'},
         )
 
+    def _get_or_build_conferencia(self, nf: NFeEntradaHistoricaImportada) -> NFeEntradaConferencia:
+        conferencia, created = NFeEntradaConferencia.objects.get_or_create(nf_entrada_historica=nf)
+        if created:
+            if nf.fornecedor_emitente_id:
+                conferencia.pedido_compra = (
+                    nf.fornecedor_emitente.pedidos_compra.order_by('-data', '-id').first()
+                )
+                conferencia.save(update_fields=['pedido_compra'])
+        for item_nf in nf.itens.all():
+            item_conf, was_created = conferencia.itens.get_or_create(item_nfe_historico=item_nf)
+            if was_created:
+                fields = _extract_item_nf(item_nf.prod_json or {})
+                for k, v in fields.items():
+                    setattr(item_conf, k, v)
+                item_conf.save(
+                    update_fields=['unidade_nf', 'quantidade_nf', 'valor_unitario_nf', 'valor_total_nf']
+                )
+        return conferencia
+
     @staticmethod
     def _conferencia_com_relacionamentos(conferencia_id: int) -> NFeEntradaConferencia | None:
         return (
@@ -3115,159 +3127,25 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
                 ],
             )
 
-    @staticmethod
-    def _candidatos_pedido_conferencia(nf: NFeEntradaHistoricaImportada) -> dict:
-        if not nf.fornecedor_emitente_id:
-            return {'candidatos': [], 'motivo': 'FORNECEDOR_NAO_VINCULADO'}
-
-        def ncm_normalizado(valor) -> str:
-            digitos = ''.join(c for c in str(valor or '') if c in '0123456789')
-            return digitos if len(digitos) == 8 else ''
-
-        produtos_por_item = dict(
-            ItemNFeEntradaConferencia.objects.filter(
-                conferencia__nf_entrada_historica_id=nf.pk,
-            ).values_list('item_nfe_historico_id', 'produto_id'),
-        )
-        itens_nf = [
-            (item.pk, item.n_item, produtos_por_item.get(item.pk), ncm_normalizado((item.prod_json or {}).get('NCM')))
-            for item in nf.itens.all()
-        ]
-        itens_abertos = ItemPedidoCompra.objects.filter(
-            quantidade_recebida__lt=F('quantidade'),
-        ).select_related('produto__familia__ncm_padrao').order_by('id')
-        pedidos = PedidoCompra.objects.filter(fornecedor_id=nf.fornecedor_emitente_id).select_related(
-            'fornecedor',
-        ).prefetch_related(Prefetch('itens', queryset=itens_abertos, to_attr='itens_abertos'))
-
-        STATUS_RECEBIVEIS = {'APROVADO', 'PENDENTE', 'PARCIALMENTE RECEBIDO'}
-        candidatos = []
-        for pedido in pedidos:
-            status_normalizado = (pedido.status or '').strip().upper()
-            if status_normalizado not in STATUS_RECEBIVEIS:
-                continue
-            compativeis = []
-            for item_pc in pedido.itens_abertos:
-                produto = item_pc.produto
-                ncm_produto = ncm_normalizado(
-                    (produto.ncm or '').strip() or (
-                        produto.familia.ncm_padrao.codigo if produto.familia_id and produto.familia.ncm_padrao_id else ''
-                    ),
-                )
-                for item_nf_id, n_item, produto_id, ncm_nf in itens_nf:
-                    if produto_id and produto_id == item_pc.produto_id:
-                        confianca = 'alta'
-                    elif ncm_nf and ncm_nf == ncm_produto:
-                        confianca = 'media'
-                    else:
-                        continue
-                    compativeis.append({
-                        'item_nfe_historico_id': item_nf_id,
-                        'n_item_nf': n_item,
-                        'item_pedido_compra_id': item_pc.pk,
-                        'produto_id': item_pc.produto_id,
-                        'quantidade_aberta': str(item_pc.quantidade - item_pc.quantidade_recebida),
-                        'confianca': confianca,
-                    })
-            if not compativeis:
-                continue
-            candidatos.append({
-                'pedido_compra_id': pedido.pk,
-                'numero': pedido.numero,
-                'fornecedor_id': pedido.fornecedor_id,
-                'fornecedor_nome': pedido.fornecedor.razao_social,
-                'data': pedido.data,
-                'status': pedido.status,
-                'status_normalizado': status_normalizado,
-                'itens_compativeis': compativeis,
-                'confianca': 'alta' if any(item['confianca'] == 'alta' for item in compativeis) else 'media',
-                'pode_selecionar': True,
-                'motivo_bloqueio': None,
-                'empresa_verificada': False,
-                'aviso': 'EMPRESA_NAO_COMPROVAVEL_NO_PEDIDO_COMPRA',
-            })
-        return {'candidatos': candidatos, 'motivo': None if candidatos else 'NENHUM_PEDIDO_COMPATIVEL'}
-
-    @action(detail=True, methods=['get'], url_path='conferencia/candidatos-pedido')
-    def candidatos_pedido_conferencia(self, request, pk=None):
-        return response.Response(self._candidatos_pedido_conferencia(self.get_object()))
-
     @action(detail=True, methods=['get', 'post'], url_path='conferencia')
     def conferencia(self, request, pk=None):
         if request.method == 'POST':
             return self._salvar_conferencia(request, pk)
         try:
-            nf = self.get_object()
-            conf = obter_conferencia(nf)
-            if conf is not None:
-                conf = self._conferencia_com_relacionamentos(conf.pk) or conf
-            pode, motivo = pode_registrar_chegada(conf)
-            if conf is None:
-                return response.Response({
-                    'iniciada': False,
-                    'conferencia': None,
-                    'pode_registrar_chegada': pode,
-                    'motivo_chegada': motivo,
-                })
-            return response.Response({
-                'iniciada': conf.chegada_em is not None,
-                'conferencia': NFeEntradaConferenciaSerializer(conf).data,
-                'pode_registrar_chegada': pode,
-                'motivo_chegada': motivo,
-            })
+            nf = self.get_queryset().prefetch_related('itens').get(pk=pk)
+            conferencia = self._get_or_build_conferencia(nf)
+            conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
+            self._normalizar_equivalencias_legado_conferencia(conferencia)
+            from apps.fiscal.conferencia_pedido import sanear_conversao_unidade_peca_conferencia
+
+            sanear_conversao_unidade_peca_conferencia(conferencia)
+            conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
+            return response.Response(NFeEntradaConferenciaSerializer(conferencia).data)
         except Exception as exc:  # noqa: BLE001
             resp = self._resposta_erro_schema_nfe_entrada(exc)
             if resp:
                 return resp
             raise
-
-    @action(detail=True, methods=['post'], url_path='conferencia/iniciar')
-    @transaction.atomic
-    def iniciar_conferencia(self, request, pk=None):
-        nf = self.get_object()
-        # Serializa validação e início mesmo antes de existir a conferência OneToOne.
-        NFeEntradaHistoricaImportada.objects.select_for_update().only('id').get(pk=nf.pk)
-        conf = obter_conferencia(nf)
-        payload = IniciarConferenciaNFeEntradaSerializer(data=request.data)
-        if not payload.is_valid():
-            if 'finalidade_entrada' in payload.errors:
-                return response.Response(
-                    {'code': 'CODE_FINALIDADE_INVALIDA', 'detail': 'Finalidade de entrada inválida.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            return response.Response(payload.errors, status=status.HTTP_400_BAD_REQUEST)
-        dados = payload.validated_data
-        if conf and conf.chegada_em is not None:
-            conf = iniciar_chegada(nf, request.user)
-        else:
-            pedido_id = dados.get('pedido_compra_id')
-            if pedido_id is not None:
-                candidatos = self._candidatos_pedido_conferencia(nf)
-                if not any(c['pedido_compra_id'] == pedido_id and c['pode_selecionar'] for c in candidatos['candidatos']):
-                    return response.Response(
-                        {'code': 'PEDIDO_COMPRA_NAO_COMPATIVEL', 'motivo': candidatos['motivo']},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-            conf = iniciar_chegada(
-                nf,
-                request.user,
-                local=dados.get('local_recebimento', conf.local_recebimento if conf else ''),
-                observacao=dados.get('observacao_chegada', conf.observacao_chegada if conf else ''),
-                pedido_compra_id=pedido_id,
-                finalidade_entrada=(dados['finalidade_entrada'] or '') if 'finalidade_entrada' in dados else None,
-            )
-
-        pode, motivo = pode_registrar_chegada(conf)
-        conf = self._conferencia_com_relacionamentos(conf.pk) or conf
-        resultado = {
-            'iniciada': conf.chegada_em is not None,
-            'conferencia': NFeEntradaConferenciaSerializer(conf).data,
-            'pode_registrar_chegada': pode,
-            'motivo_chegada': motivo,
-        }
-        if conf.chegada_em is None:
-            resultado['motivo'] = motivo
-        return response.Response(resultado)
 
     @action(detail=True, methods=['post'], url_path='conferencia/gerar-saida-devolucao-compra')
     def gerar_saida_devolucao_compra(self, request, pk=None):
@@ -3288,17 +3166,12 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
 
         try:
             nf = self.get_queryset().get(pk=pk)
-            conferencia = obter_conferencia(nf)
+            conferencia = self._get_or_build_conferencia(nf)
         except Exception:
             log.exception('Falha ao carregar conferencia pk=%s', pk)
             return response.Response(
                 {'ok': False, 'mensagem': 'Conferencia nao encontrada.'},
                 status=status.HTTP_404_NOT_FOUND,
-            )
-        if conferencia is None:
-            return response.Response(
-                {'ok': False, 'code': 'CONFERENCIA_NAO_INICIADA', 'mensagem': 'Inicie a conferência antes de continuar.'},
-                status=status.HTTP_400_BAD_REQUEST,
             )
 
         try:
@@ -3343,26 +3216,8 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
     @transaction.atomic
     def _salvar_conferencia_impl(self, request, pk=None):
         nf = self.get_queryset().prefetch_related('itens').get(pk=pk)
-        conferencia = NFeEntradaConferencia.objects.filter(nf_entrada_historica=nf).first()
-        if conferencia is None:
-            return response.Response(
-                {'code': 'CONFERENCIA_NAO_INICIADA', 'detail': 'Inicie a conferência antes de salvá-la.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        conferencia = self._get_or_build_conferencia(nf)
         payload = request.data or {}
-        if 'status' in payload and payload['status'] != conferencia.status:
-            return response.Response(
-                {'detail': 'O status deve ser alterado pela ação operacional correspondente.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        pedido_id = payload.get('pedido_compra_id', conferencia.pedido_compra_id)
-        if pedido_id is not None and str(pedido_id) != str(conferencia.pedido_compra_id):
-            candidatos = self._candidatos_pedido_conferencia(nf)
-            if not any(str(c['pedido_compra_id']) == str(pedido_id) and c['pode_selecionar'] for c in candidatos['candidatos']):
-                return response.Response(
-                    {'code': 'PEDIDO_COMPRA_NAO_COMPATIVEL', 'motivo': candidatos['motivo']},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
         data_entrada_val = (
             parse_data_entrada(payload['data_entrada'])
             if 'data_entrada' in payload
@@ -3383,15 +3238,14 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
         conf_serializer = NFeEntradaConferenciaSerializer(
             conferencia,
             data={
-                'pedido_compra_id': pedido_id,
-                'status': conferencia.status,
+                'pedido_compra_id': payload.get('pedido_compra_id'),
+                'status': payload.get('status', conferencia.status),
                 'divergencias_aceitas': payload.get('divergencias_aceitas', conferencia.divergencias_aceitas),
                 'observacao_divergencias': payload.get(
                     'observacao_divergencias',
                     conferencia.observacao_divergencias,
                 ),
                 'data_entrada': data_entrada_val,
-                **{campo: payload[campo] for campo in ('local_recebimento', 'observacao_chegada') if campo in payload},
             },
             partial=True,
         )
@@ -3570,12 +3424,7 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
     @transaction.atomic
     def _preparar_estoque_impl(self, request, pk=None):
         nf = self.get_queryset().prefetch_related('itens').get(pk=pk)
-        conferencia = NFeEntradaConferencia.objects.filter(nf_entrada_historica=nf).first()
-        if conferencia is None:
-            return response.Response(
-                {'code': 'CONFERENCIA_NAO_INICIADA', 'detail': 'Inicie a conferência antes de preparar o estoque.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        conferencia = self._get_or_build_conferencia(nf)
         conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
         payload = request.data or {}
         erro_data = self._aplicar_data_entrada_payload(conferencia, payload)
@@ -3642,12 +3491,7 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
     @transaction.atomic
     def confirmar_equivalencia(self, request, pk=None):
         nf = self.get_queryset().get(pk=pk)
-        conferencia = obter_conferencia(nf)
-        if conferencia is None:
-            return response.Response(
-                {'code': 'CONFERENCIA_NAO_INICIADA', 'detail': 'Inicie a conferência antes de continuar.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        conferencia = self._get_or_build_conferencia(nf)
         payload = request.data or {}
         from apps.produtos.equivalencia_servico import (
             EquivalenciaOperacionalError,
@@ -3682,12 +3526,7 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
     @transaction.atomic
     def rejeitar_equivalencia(self, request, pk=None):
         nf = self.get_queryset().get(pk=pk)
-        conferencia = obter_conferencia(nf)
-        if conferencia is None:
-            return response.Response(
-                {'code': 'CONFERENCIA_NAO_INICIADA', 'detail': 'Inicie a conferência antes de continuar.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        conferencia = self._get_or_build_conferencia(nf)
         payload = request.data or {}
         from apps.produtos.equivalencia_servico import rejeitar_sugestao_equivalencia
 
@@ -3730,25 +3569,7 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
 
     def _aplicar_estoque_conferencia_impl(self, request, pk=None):
         nf = self.get_queryset().get(pk=pk)
-        conferencia = NFeEntradaConferencia.objects.filter(nf_entrada_historica=nf).first()
-        if conferencia is None:
-            mensagem = 'Inicie a conferência antes de consultar ou aplicar o estoque.'
-            if request.method == 'GET':
-                return response.Response({
-                    'iniciada': False,
-                    'detail': mensagem,
-                    'aplicado': False,
-                    'conferencia_id': None,
-                    'itens_aplicados': [],
-                    'itens_ignorados': [],
-                    'pendencias': [],
-                    'alertas': [],
-                    'pedido_compra_baixa': {},
-                })
-            return response.Response(
-                {'code': 'CONFERENCIA_NAO_INICIADA', 'detail': mensagem},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        conferencia = self._get_or_build_conferencia(nf)
         conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
         confirmar_alertas = False
         observacao = ''
@@ -3771,7 +3592,6 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
             data = montar_preview_aplicacao_estoque_conferencia(
                 conferencia,
                 confirmar_alertas=confirmar_alertas,
-                persistir=False,
             )
             return response.Response(data)
 
@@ -3840,12 +3660,7 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
         from apps.fiscal.pedido_compra_baixa import aplicar_baixa_pedido_compra_conferencia
 
         nf = self.get_queryset().get(pk=pk)
-        conferencia = obter_conferencia(nf)
-        if conferencia is None:
-            return response.Response(
-                {'code': 'CONFERENCIA_NAO_INICIADA', 'detail': 'Inicie a conferência antes de continuar.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        conferencia = self._get_or_build_conferencia(nf)
         conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
         try:
             resultado = aplicar_baixa_pedido_compra_conferencia(conferencia, usuario=request.user)
@@ -3880,13 +3695,12 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
         except ValueError as exc:
             return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        conferencia = obter_conferencia(nf)
-        if conferencia is not None:
-            conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
+        conferencia = self._get_or_build_conferencia(nf)
+        conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
         return response.Response(
             {
                 'fornecedor': montar_status_fornecedor_nfe_entrada(nf, auto_vincular=False),
-                'conferencia': NFeEntradaConferenciaSerializer(conferencia).data if conferencia else None,
+                'conferencia': NFeEntradaConferenciaSerializer(conferencia).data,
             },
         )
 
@@ -3903,15 +3717,14 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
         except ValueError as exc:
             return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        conferencia = obter_conferencia(nf)
-        if conferencia is not None:
-            conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
+        conferencia = self._get_or_build_conferencia(nf)
+        conferencia = self._conferencia_com_relacionamentos(conferencia.id) or conferencia
         return response.Response(
             {
                 'fornecedor': montar_status_fornecedor_nfe_entrada(nf, auto_vincular=False),
                 'fornecedor_criado': criado,
                 'fornecedor_id': fornecedor.id,
-                'conferencia': NFeEntradaConferenciaSerializer(conferencia).data if conferencia else None,
+                'conferencia': NFeEntradaConferenciaSerializer(conferencia).data,
             },
             status=status.HTTP_201_CREATED if criado else status.HTTP_200_OK,
         )
@@ -3991,7 +3804,7 @@ class NFeEntradaHistoricaImportadaViewSet(AutocompleteOrPaginationMixin, viewset
 
         nf = self.get_object()
         qs = titulos_vinculados_nfe_entrada(nf).select_related('fornecedor', 'categoria', 'centro_custo')
-        flags = montar_flags_financeiro_nfe_entrada(nf, vincular_fornecedor=False)
+        flags = montar_flags_financeiro_nfe_entrada(nf)
         return response.Response(
             {
                 **flags,
@@ -5663,76 +5476,3 @@ setattr(
     'emitir_contingencia',
     action(detail=True, methods=['post'], url_path='emitir-contingencia')(emitir_contingencia),
 )
-
-
-class ConferenciaItemFiscalViewSet(viewsets.GenericViewSet):
-    """Preview, ajuste auditado e histórico da classificação fiscal por item."""
-
-    queryset = ItemNFeEntradaConferencia.objects.select_related(
-        'conferencia',
-        'conferencia__nf_entrada_historica',
-        'item_nfe_historico',
-    ).all()
-    permission_classes = [IsAuthenticated]
-
-    def get_permissions(self):
-        # Preview expõe valores efetivos e overrides ativos: exige a mesma
-        # permissão do ajuste, senão vira leitura de classificação fiscal para
-        # qualquer autenticado.
-        if self.action in ('fiscal_adjust', 'fiscal_preview'):
-            return [IsAuthenticated(), PodeAjustarClassificacaoFiscal()]
-        return [IsAuthenticated()]
-
-    @action(detail=True, methods=['get'], url_path='fiscal-preview')
-    def fiscal_preview(self, request, pk=None):
-        item = self.get_object()
-        preview = montar_preview_fiscal_item(item)
-        return response.Response(ItemConferenciaFiscalPreviewSerializer(preview).data)
-
-    @action(detail=True, methods=['patch'], url_path='fiscal-adjust')
-    def fiscal_adjust(self, request, pk=None):
-        with transaction.atomic():
-            item = get_object_or_404(
-                ItemNFeEntradaConferencia.objects.select_for_update(of=('self',)),
-                pk=pk,
-            )
-            if item.estoque_aplicado_em is not None:
-                return response.Response(
-                    {
-                        'code': 'ESTOQUE_JA_APLICADO',
-                        'detail': (
-                            'Estoque já aplicado; ajuste fiscal bloqueado para '
-                            'preservar o custo da entrada.'
-                        ),
-                    },
-                    status=status.HTTP_409_CONFLICT,
-                )
-            serializer = ItemConferenciaFiscalAdjustSerializer(
-                data=request.data,
-                context={'item': item, 'request': request},
-            )
-            serializer.is_valid(raise_exception=True)
-            try:
-                resultado = aplicar_ajuste_fiscal_item(
-                    item,
-                    serializer.validated_data,
-                    request.user,
-                )
-            except AjusteFiscalErro as exc:
-                return response.Response(
-                    {'code': exc.code, 'detail': exc.detail},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-        resultado['preview'] = ItemConferenciaFiscalPreviewSerializer(resultado['preview']).data
-        return response.Response(resultado)
-
-    @action(detail=True, methods=['get'], url_path='fiscal-history')
-    def fiscal_history(self, request, pk=None):
-        item = self.get_object()
-        historico = item.fiscal_overrides.select_related('usuario').all()
-        return response.Response({
-            'item_id': item.id,
-            'motivo_ajuste_fiscal': item.motivo_ajuste_fiscal or '',
-            'total': historico.count(),
-            'ajustes': ItemConferenciaFiscalOverrideSerializer(historico, many=True).data,
-        })

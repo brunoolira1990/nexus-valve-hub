@@ -328,10 +328,7 @@ def montar_saldo_pedido_global_conferencia(
 
     linhas_atual = linhas_atual if linhas_atual is not None else list(conferencia.itens.all())
     agg_atual = _agregar_vinculos_por_item_pedido(linhas_atual)
-    por_item_global = _coletar_vinculos_globais_por_item_pedido(
-        conferencia.pedido_compra_id,
-        somente_baixadas=False,
-    )
+    por_item_global = _coletar_vinculos_globais_por_item_pedido(conferencia.pedido_compra_id)
     conferencia_atual_id = conferencia.id
 
     saldo_global: list[dict] = []
@@ -890,7 +887,6 @@ def aplicar_pos_save_item_conferencia(
     *,
     contexto_fiscal=None,
     regras_fiscais=None,
-    persistir: bool = True,
 ) -> ItemNFeEntradaConferencia:
     """Recalcula estoque (se produto), divergências e status operacional da linha."""
     alertas: list[str] = []
@@ -918,26 +914,20 @@ def aplicar_pos_save_item_conferencia(
             limpar_equivalencias_legado_se_composicao_fisica,
         )
 
-        if limpar_equivalencias_legado_se_composicao_fisica(item_conf, persistir=persistir):
+        if limpar_equivalencias_legado_se_composicao_fisica(item_conf):
             alertas.append(MSG_EQUIV_LEGADO_REMOVIDA)
 
         from apps.fiscal.rastreabilidade_conferencia import item_usa_equivalencia_entrada
 
         if item_usa_equivalencia_entrada(item_conf):
-            if persistir:
-                equivs = list(item_conf.equivalencias.order_by('ordem', 'id'))
-            else:
-                equivs = sorted(item_conf.equivalencias.all(), key=lambda e: (e.ordem, e.id))
-                if not hasattr(item_conf, '_prefetched_objects_cache'):
-                    item_conf._prefetched_objects_cache = {}
-                item_conf._prefetched_objects_cache['equivalencias'] = equivs
+            equivs = list(item_conf.equivalencias.order_by('ordem', 'id'))
             from apps.fiscal.composicao_fisica_conferencia import (
                 aplicar_totais_composicao_fisica_item,
                 item_controla_composicao_fisica,
             )
 
             if item_controla_composicao_fisica(item_conf):
-                aplicar_totais_composicao_fisica_item(item_conf, equivs, persistir=persistir)
+                aplicar_totais_composicao_fisica_item(item_conf, equivs)
             else:
                 peso_total = sum(Decimal(str(e.peso_kg or 0)) for e in equivs)
                 metros_total = sum(Decimal(str(e.metros or 0)) for e in equivs)
@@ -1024,20 +1014,19 @@ def aplicar_pos_save_item_conferencia(
             resultado_fiscal=rf,
         )
 
-    if persistir:
-        item_conf.save()
+    item_conf.save()
 
-        if item_conf.item_pedido_compra_id and conferencia.pedido_compra_id:
-            _recalcular_divergencias_linhas_mesmo_item_pedido(
-                conferencia,
-                item_pedido_id=item_conf.item_pedido_compra_id,
-                exceto_linha_id=item_conf.id,
-            )
+    if item_conf.item_pedido_compra_id and conferencia.pedido_compra_id:
+        _recalcular_divergencias_linhas_mesmo_item_pedido(
+            conferencia,
+            item_pedido_id=item_conf.item_pedido_compra_id,
+            exceto_linha_id=item_conf.id,
+        )
 
-        if item_conf.produto_id:
-            from apps.fiscal.correlacao_produto_fornecedor import persistir_correlacao_produto_fornecedor_conferencia
+    if item_conf.produto_id:
+        from apps.fiscal.correlacao_produto_fornecedor import persistir_correlacao_produto_fornecedor_conferencia
 
-            persistir_correlacao_produto_fornecedor_conferencia(item_conf, conferencia)
+        persistir_correlacao_produto_fornecedor_conferencia(item_conf, conferencia)
 
     return item_conf
 

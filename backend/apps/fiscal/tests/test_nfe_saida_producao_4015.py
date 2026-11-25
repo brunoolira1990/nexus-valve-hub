@@ -42,7 +42,6 @@ from apps.fiscal.nfe_emissao.xml_oficial import gerar_xml_oficial_emissao
 from apps.fiscal.nfe_saida_from_faturamento import gerar_nfe_saida_from_faturamento
 from apps.fiscal.nfe_saida_prontidao import marcar_nfe_pronta_para_emissao, validar_conferencia_nfe
 from apps.fiscal.tests.nfe_4015_test_support import NFe4015GruposMixin, vincular_grupo_teste
-from apps.fiscal.tests.test_nfe_saida_402_emissao_homologacao import _garantir_regra_saida_sp_rj
 from apps.financeiro.models import TituloFinanceiro
 from apps.produtos.models import FamiliaProduto, Produto
 
@@ -185,7 +184,6 @@ def _pedido_nf() -> tuple[PedidoVenda, NFeSaida]:
     fat = FaturamentoPedidoVenda.objects.get(pk=criado['faturamento_id'])
     r = gerar_nfe_saida_from_faturamento(pedido, fat.pk)
     nf = NFeSaida.objects.get(pk=r['nfe_saida_id'])
-    _garantir_regra_saida_sp_rj()
     return pedido, nf
 
 

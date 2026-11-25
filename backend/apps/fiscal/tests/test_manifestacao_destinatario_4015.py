@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
 from datetime import datetime
 from decimal import Decimal
 from unittest.mock import patch
@@ -29,11 +28,7 @@ from apps.fiscal.manifestacao_destinatario.uf_chave import (
     garantir_corgao_ambiente_nacional,
     uf_autorizadora_por_chave,
 )
-from apps.fiscal.models import (
-    NFeDestinadaManifestacao,
-    NFeDestinadaManifestacaoEvento,
-    NFeEntradaHistoricaImportada,
-)
+from apps.fiscal.models import NFeDestinadaManifestacao, NFeDestinadaManifestacaoEvento
 
 
 RESNFE_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
@@ -46,17 +41,6 @@ RESNFE_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
   <vNF>1500.00</vNF>
   <tpAmb>1</tpAmb>
 </resNFe>"""
-
-
-def _evento_assinado_mock(tp_evento: str = '210210') -> ET.Element:
-    """Contrato real de _montar_assinar_evento_manifestacao: devolve Element, não bytes."""
-    return ET.fromstring(
-        '<evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">'
-        f'<infEvento Id="ID2102100001111111000111000000000001">'
-        f'<cOrgao>{CORGAO_MANIFESTACAO_DESTINATARIO}</cOrgao>'
-        f'<tpEvento>{tp_evento}</tpEvento>'
-        '</infEvento></evento>',
-    )
 
 
 class ManifestacaoDestinatarioTests(TestCase):
@@ -119,6 +103,8 @@ class ManifestacaoDestinatarioTests(TestCase):
         )
 
     def test_garantir_corgao_ambiente_nacional(self):
+        import xml.etree.ElementTree as ET
+
         xml = ET.fromstring(
             b'<evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">'
             b'<infEvento Id="ID"><cOrgao>35</cOrgao></infEvento></evento>',
@@ -146,7 +132,7 @@ class ManifestacaoDestinatarioTests(TestCase):
             senha_configurada=True,
             cnpj='11111111000111',
         )
-        mock_assinar.return_value = _evento_assinado_mock()
+        mock_assinar.return_value = b'<evento/>'
         mock_tx.return_value = (
             b'<retEvento><infEvento><cStat>135</cStat>'
             b'<xMotivo>Evento registrado</xMotivo><nProt>123</nProt></infEvento></retEvento>'
@@ -199,7 +185,7 @@ class ManifestacaoDestinatarioTests(TestCase):
             senha_configurada=True,
             cnpj='11111111000111',
         )
-        mock_assinar.return_value = _evento_assinado_mock()
+        mock_assinar.return_value = b'<evento/>'
         mock_tx.return_value = (
             b'<retEnvEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">'
             b'<cStat>128</cStat><xMotivo>Lote de evento processado</xMotivo>'
@@ -233,7 +219,7 @@ class ManifestacaoDestinatarioTests(TestCase):
             senha_configurada=True,
             cnpj='11111111000111',
         )
-        mock_assinar.return_value = _evento_assinado_mock()
+        mock_assinar.return_value = b'<evento/>'
         mock_tx.return_value = (
             b'<retEnvEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">'
             b'<cStat>128</cStat><xMotivo>Lote de evento processado</xMotivo>'
@@ -264,7 +250,7 @@ class ManifestacaoDestinatarioTests(TestCase):
             senha_configurada=True,
             cnpj='11111111000111',
         )
-        mock_assinar.return_value = _evento_assinado_mock()
+        mock_assinar.return_value = b'<evento/>'
         mock_tx.return_value = (
             b'<retEvento><infEvento><cStat>135</cStat>'
             b'<xMotivo>Evento registrado</xMotivo><nProt>123</nProt></infEvento></retEvento>'
@@ -314,6 +300,7 @@ class ManifestacaoDestinatarioTests(TestCase):
             senha_configurada=True,
             cnpj='11111111000111',
         )
+        mock_import.return_value = {'importadas': [{'id': 99}], 'duplicadas': [], 'erros': []}
         parsed = ResultadoDistribuicaoDfe(
             sucesso_parse=True,
             cstat='138',
@@ -327,17 +314,6 @@ class ManifestacaoDestinatarioTests(TestCase):
             ],
         )
         doc = self._doc(status_xml=NFeDestinadaManifestacao.StatusXml.DISPONIVEL)
-        nf_importada = NFeEntradaHistoricaImportada.objects.create(
-            chave_acesso=doc.chave_acesso,
-            numero='1',
-            dh_emissao=self.dh,
-            empresa_destinataria=self.emp,
-        )
-        mock_import.return_value = {
-            'importadas': [{'id': nf_importada.pk}],
-            'duplicadas': [],
-            'erros': [],
-        }
         with patch(
             'apps.fiscal.manifestacao_destinatario.baixar_xml_service.parse_distribuicao_dfe_response',
             return_value=parsed,
@@ -350,11 +326,11 @@ class ManifestacaoDestinatarioTests(TestCase):
                 format='json',
             )
         self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.content)
-        from apps.financeiro.models import TituloFinanceiro
+        from apps.financeiro.models import ContaPagar, ContaReceber
         from apps.expedicao.models import Expedicao
 
-        self.assertEqual(TituloFinanceiro.objects.filter(tipo=TituloFinanceiro.Tipo.PAGAR).count(), 0)
-        self.assertEqual(TituloFinanceiro.objects.filter(tipo=TituloFinanceiro.Tipo.RECEBER).count(), 0)
+        self.assertEqual(ContaPagar.objects.count(), 0)
+        self.assertEqual(ContaReceber.objects.count(), 0)
         self.assertEqual(Expedicao.objects.count(), 0)
 
     def test_fechamento_preview(self):
