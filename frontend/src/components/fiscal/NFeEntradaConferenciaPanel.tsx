@@ -13,6 +13,7 @@ import {
   type EstoqueEntradaBlocoHandle,
 } from '@/components/fiscal/EstoqueEntradaBloco';
 import { EquivalenciaEntradaBloco } from '@/components/fiscal/EquivalenciaEntradaBloco';
+import { FiscalAdjustmentModal, FiscalHistoricoModal } from '@/components/fiscal/FiscalAdjustmentModal';
 import { ItemConferenciaCompacto } from '@/components/fiscal/ItemConferenciaCompacto';
 import { FornecedorEntradaAcoes } from '@/components/fiscal/FornecedorEntradaAcoes';
 import { NFeEntradaFinanceiroAcoes } from '@/components/fiscal/NFeEntradaFinanceiroAcoes';
@@ -144,6 +145,8 @@ function NFeEntradaConferenciaPanelInstance({
   const [resumoElegibilidadeAberto, setResumoElegibilidadeAberto] = useState(false);
   const [soPendencias, setSoPendencias] = useState(true);
   const [modoTecnico, setModoTecnico] = useState(false);
+  const [fiscalAjusteItem, setFiscalAjusteItem] = useState<{ id: number; numero: number | string } | null>(null);
+  const [fiscalHistoricoItem, setFiscalHistoricoItem] = useState<{ id: number; numero: number | string } | null>(null);
   const reabrirBlocoRef = useRef<ReaberturaEntradaBlocoHandle>(null);
   const devolucaoBlocoRef = useRef<DevolucaoEntradaBlocoHandle>(null);
   const financeiroBlocoRef = useRef<FinanceiroEntradaBlocoHandle>(null);
@@ -1063,6 +1066,14 @@ function NFeEntradaConferenciaPanelInstance({
                     <span className={`${badgeClassStatusFiscalEntrada(it.fiscal_status || 'SEM_REGRA')} text-[10px] inline-block`}>
                       Fiscal: {labelStatusFiscalEntrada(it.fiscal_status || 'SEM_REGRA')}
                     </span>
+                    {(it.resultado_fiscal?.ajustes_fiscais_ativos?.length ?? 0) > 0 ? (
+                      <span
+                        className="erp-badge-info text-[10px] inline-block"
+                        title="Classificação fiscal ajustada manualmente (auditada)"
+                      >
+                        Ajustado
+                      </span>
+                    ) : null}
                     <span className="min-w-0 flex-1 truncate">
                       Item {numItem} · {it.dados_nf?.descricao_fornecedor || '—'}
                     </span>
@@ -1167,6 +1178,44 @@ function NFeEntradaConferenciaPanelInstance({
                             {msg}
                           </div>
                         ) : null}
+                        {(() => {
+                          const ajustesAtivos = rf?.ajustes_fiscais_ativos ?? [];
+                          const exibir =
+                            modoTecnico ||
+                            (rf?.divergencias?.length ?? 0) > 0 ||
+                            ajustesAtivos.length > 0;
+                          if (!exibir) return null;
+                          return (
+                            <div className="space-y-1 pt-1">
+                              {ajustesAtivos.length > 0 ? (
+                                <div
+                                  className="text-muted-foreground line-clamp-2"
+                                  title={ajustesAtivos
+                                    .map((a) => `${a.rotulo}: ${a.valor_xml || '—'} → ${a.valor_efetivo || '—'}`)
+                                    .join('\n')}
+                                >
+                                  Ajustado manualmente: {ajustesAtivos.map((a) => a.rotulo).join(', ')}
+                                </div>
+                              ) : null}
+                              <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                  type="button"
+                                  className="erp-btn-outline erp-btn-sm"
+                                  onClick={() => setFiscalAjusteItem({ id: it.id, numero: numItem })}
+                                >
+                                  Ajustar Classificação Fiscal
+                                </button>
+                                <button
+                                  type="button"
+                                  className="text-primary underline"
+                                  onClick={() => setFiscalHistoricoItem({ id: it.id, numero: numItem })}
+                                >
+                                  Ver histórico de ajustes
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })()}
                         {rf?.status === 'SEM_REGRA' ? (
                           <Link
                             to={criarRegraUrl}
@@ -1825,6 +1874,24 @@ function NFeEntradaConferenciaPanelInstance({
       />
       </>
       ) : null}
+
+      <FiscalAdjustmentModal
+        open={fiscalAjusteItem !== null}
+        itemId={fiscalAjusteItem?.id ?? null}
+        numeroItem={fiscalAjusteItem?.numero ?? ''}
+        onOpenChange={(aberto) => { if (!aberto) setFiscalAjusteItem(null); }}
+        onApplied={async () => {
+          if (!ativoRef.current) return;
+          await acoes.load(nfId);
+          notifyUpdated();
+        }}
+      />
+      <FiscalHistoricoModal
+        open={fiscalHistoricoItem !== null}
+        itemId={fiscalHistoricoItem?.id ?? null}
+        numeroItem={fiscalHistoricoItem?.numero ?? ''}
+        onOpenChange={(aberto) => { if (!aberto) setFiscalHistoricoItem(null); }}
+      />
     </>
   );
 
